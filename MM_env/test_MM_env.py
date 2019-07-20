@@ -26,7 +26,7 @@ if __name__ == "__main__":
                "price": 3}
     action3 = {"type": 'limit',
                "side": 'ask',
-               "size": 7,
+               "size": 28,
                "price": 3}
 
     actions = [action1,action2,action3]

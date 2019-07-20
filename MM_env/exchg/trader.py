@@ -136,6 +136,9 @@ class Trader(object):
             self.cash -= new_order_in_book_val # reduce cash
             self.cash_on_hold += new_order_in_book_val # increase cash_on_hold
 
+            if self.ID == 2:
+                print('2222222 update_cash_on_hold')
+
         return 0
 
     # position different from trade side, eg: long & ask
@@ -160,7 +163,7 @@ class Trader(object):
         else:
             self.position_diff_side(trade)
 
-        self.update_cash_on_hold(order_in_book)
+        #self.update_cash_on_hold(order_in_book)
 
         return 0
 
