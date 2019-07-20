@@ -9,29 +9,7 @@ if "../" not in sys.path:
 
 from exchg.exchg import Exchg
 
-if __name__ == "__main__":
-
-    num_of_traders = 3
-    tape_display_length = 100
-    init_cash = 100
-    e = Exchg(num_of_traders, init_cash, tape_display_length)
-
-    action1 = {"type": 'limit',
-               "side": 'bid',
-               "size": 11,
-               "price": 3}
-    action2 = {"type": 'limit',
-               "side": 'bid',
-               "size": 11,
-               "price": 3}
-    action3 = {"type": 'limit',
-               "side": 'ask',
-               "size": 28,
-               "price": 3}
-
-    actions = [action1,action2,action3]
-    e.step(actions)
-
+def print_nav(e):
     print('T0 cash:', e.agents[0].cash)
     print('T0 cash_on_hold:', e.agents[0].cash_on_hold)
     print('T0 position_val:', e.agents[0].position_val)
@@ -49,6 +27,46 @@ if __name__ == "__main__":
     print('T2 position_val:', e.agents[2].position_val)
     print('T2 nav:', e.agents[2].nav)
     print('T2 net_position:', e.agents[2].net_position)
+
+if __name__ == "__main__":
+
+    num_of_traders = 3
+    tape_display_length = 100
+    init_cash = 100
+    e = Exchg(num_of_traders, init_cash, tape_display_length)
+
+    action1 = {"type": 'limit',
+               "side": 'bid',
+               "size": 11,
+               "price": 3}
+    action2 = {"type": 'limit',
+               "side": 'bid',
+               "size": 10,
+               "price": 4}
+    action3 = {"type": 'limit',
+               "side": 'ask',
+               "size": 7,
+               "price": 5}
+    actions = [action1,action2,action3]
+    e.step(actions)
+    print_nav(e)
+
+    action1 = {"type": 'limit',
+               "side": None,
+               "size": 11,
+               "price": 3}
+    action2 = {"type": 'limit',
+               "side": 'ask',
+               "size": 12,
+               "price": 3}
+    action3 = {"type": 'limit',
+               "side": None,
+               "size": 28,
+               "price": 3}
+    actions = [action1,action2,action3]
+    e.step(actions)
+    print_nav(e)
+
 
 
 
