@@ -9,22 +9,96 @@ if "../" not in sys.path:
 
 from exchg.exchg import Exchg
 
-max_steps = 10
-num_of_traders = 3
-tape_display_length = 100
-init_cash = 1000
-e = Exchg(num_of_traders, init_cash, tape_display_length)
+if __name__ == "__main__":
 
-for step in range(max_steps):
-    actions = []
-    for i, trader in enumerate(e.agents):
-        action = trader.select_random_action()
-        actions.append(action)
-    print('\n\n\nSTEP:', step)
+    num_of_traders = 3
+    tape_display_length = 100
+    init_cash = 100
+    e = Exchg(num_of_traders, init_cash, tape_display_length)
+
+    action1 = {"type": 'limit',
+               "side": 'bid',
+               "size": 11,
+               "price": 3}
+    action2 = {"type": 'limit',
+               "side": 'bid',
+               "size": 11,
+               "price": 3}
+    action3 = {"type": 'limit',
+               "side": 'ask',
+               "size": 11,
+               "price": 3}
+
+    actions = [action1,action2,action3]
     e.step(actions)
 
+    print('T0 cash:', e.agents[0].cash)
+    print('T0 cash_on_hold:', e.agents[0].cash_on_hold)
+    print('T0 position_val:', e.agents[0].position_val)
+    print('T0 nav:', e.agents[0].nav)
 
-sys.exit(0)
+    print('T1 cash:', e.agents[1].cash)
+    print('T1 cash_on_hold:', e.agents[1].cash_on_hold)
+    print('T1 position_val:', e.agents[1].position_val)
+    print('T1 nav:', e.agents[1].nav)
+
+    print('T2 cash:', e.agents[2].cash)
+    print('T2 cash_on_hold:', e.agents[2].cash_on_hold)
+    print('T2 position_val:', e.agents[2].position_val)
+    print('T2 nav:', e.agents[2].nav)
+
+
+
+
+
+    """
+    max_steps = 10
+    num_of_traders = 3
+    tape_display_length = 100
+    init_cash = 1000
+    e = Exchg(num_of_traders, init_cash, tape_display_length)
+    for step in range(max_steps):
+        actions = []
+        for i, trader in enumerate(e.agents):
+            action = trader.select_random_action()
+            actions.append(action)
+        print('\n\n\nSTEP:', step)
+        e.step(actions)
+    """
+    """
+    num_of_traders = 3
+    tape_display_length = 100
+    init_cash = 1000000
+    e = Exchg(num_of_traders, init_cash, tape_display_length)
+
+    e.place_order('limit', 'bid', 100, 3, e.agents[0])
+    print(e.agents[0].nav)
+    print(e.LOB)
+    e.place_order('limit', 'bid', 200, 4, e.agents[0])
+    print(e.agents[0].nav)
+    print(e.LOB)
+    e.place_order('limit', 'bid', 200, 4, e.agents[0])
+    print(e.agents[0].nav)
+    print(e.LOB)
+    e.place_order('limit', 'ask', 50, 5, e.agents[0])
+    print(e.agents[0].nav)
+    print(e.LOB)
+    e.place_order('limit', 'ask', 400, 7, e.agents[0])
+    print(e.agents[0].nav)
+    print(e.LOB)
+    e.place_order('limit', 'ask', 300, 5, e.agents[0])
+    e.place_order('limit', 'ask', 200, 6, e.agents[0])
+    print(e.agents[0].nav)
+    print(e.LOB)
+    e.place_order('market', 'bid', 400, 6, e.agents[1]) # trade
+    print(e.agents[0].nav)
+    print(e.LOB)
+    e.place_order('limit', 'bid', 400, 5, e.agents[1]) # trade
+    print(e.agents[0].nav)
+    print(e.LOB)
+    """
+
+    sys.exit(0)
 
 """
 before:
