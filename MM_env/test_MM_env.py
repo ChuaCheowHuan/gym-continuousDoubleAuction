@@ -26,7 +26,7 @@ if __name__ == "__main__":
                "price": 3}
     action3 = {"type": 'limit',
                "side": 'ask',
-               "size": 11,
+               "size": 7,
                "price": 3}
 
     actions = [action1,action2,action3]
@@ -36,16 +36,19 @@ if __name__ == "__main__":
     print('T0 cash_on_hold:', e.agents[0].cash_on_hold)
     print('T0 position_val:', e.agents[0].position_val)
     print('T0 nav:', e.agents[0].nav)
+    print('T0 net_position:', e.agents[0].net_position)
 
     print('T1 cash:', e.agents[1].cash)
     print('T1 cash_on_hold:', e.agents[1].cash_on_hold)
     print('T1 position_val:', e.agents[1].position_val)
     print('T1 nav:', e.agents[1].nav)
+    print('T1 net_position:', e.agents[1].net_position)
 
     print('T2 cash:', e.agents[2].cash)
     print('T2 cash_on_hold:', e.agents[2].cash_on_hold)
     print('T2 position_val:', e.agents[2].position_val)
     print('T2 nav:', e.agents[2].nav)
+    print('T2 net_position:', e.agents[2].net_position)
 
 
 
