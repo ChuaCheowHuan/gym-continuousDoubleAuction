@@ -138,71 +138,6 @@ class Exchg(object):
 
         return state_diff_list
 
-    # used in 2 situations
-    # when order init but no trades done
-    # when order init & trade/s are done
-    def update_cash_on_hold(self, order_in_book, trader):
-        # if there's new_order_in_book for init_party (party2)
-        if order_in_book != None: # there are new unfilled orders
-            new_order_in_book_val = order_in_book.get('price') * order_in_book.get('quantity')
-            trader.cash -= new_order_in_book_val # reduce cash
-            trader.cash_on_hold += new_order_in_book_val # increase cash_on_hold
-
-        return 0
-
-    # position different from trade side, eg: long & ask
-    def position_diff_side(self, trade, trader):
-        trade_val = trade.get('price') * trade.get('quantity')
-
-        if abs(trader.net_position) >= trade.get('quantity'): # still same net position
-            trader.cash += trade_val # entire position covered goes back to cash
-        else: # net position changed after the trade
-            trader.cash += abs(trader.net_position) * trade.get('price') # portion covered goes back to cash
-            trader.position_val += (trade.get('quantity') - abs(trader.net_position)) * trade.get('price') # remaining trade_val goes to position_val
-
-        return 0
-
-    # update cash, cash_on_hold, position_val for init_party (party2)
-    def update_val_init_party(self, trade, order_in_book, party, side, trader):
-        trade_val = trade.get('price') * trade.get('quantity')
-
-        if trade.get(party).get('side') == side:
-            trader.cash -= trade_val
-            trader.position_val += trade_val # increase position_val
-        else:
-            self.position_diff_side(trade, trader)
-
-        self.update_cash_on_hold(order_in_book, trader)
-
-        return 0
-
-    # update cash, cash_on_hold, position_val for counter_party (party1)
-    def update_val_counter_party(self, trade, party, side, trader):
-        trade_val = trade.get('price') * trade.get('quantity')
-
-        if trade.get(party).get('side') == side:
-            trader.position_val += trade_val # increase position_val
-        else:
-            self.position_diff_side(trade, trader)
-
-        trader.cash_on_hold -= trade_val # reduce cash_on_hold
-
-        return 0
-
-    def update_net_position(self, trader, side, trade_quantity):
-        if trader.net_position >= 0: # long or neutral
-            if side == 'bid':
-                trader.net_position += trade_quantity
-            else:
-                trader.net_position += -trade_quantity
-        else: # short
-            if side == 'ask':
-                trader.net_position += -trade_quantity
-            else:
-                trader.net_position += trade_quantity
-
-        return 0
-
     # take or execute action
     def place_order(self, type, side, size, price, trader):
         trades, order_in_book = [],[]
@@ -223,33 +158,33 @@ class Exchg(object):
                     for trader in self.agents:
                         if trader.ID == trade.get('counter_party').get('ID'):
                             if trader.net_position > 0: # long
-                                self.update_val_counter_party(trade, 'counter_party', 'bid', trader)
+                                trader.update_val_counter_party(trade, 'counter_party', 'bid')
                             elif trader.net_position < 0: # short
-                                self.update_val_counter_party(trade, 'counter_party', 'ask', trader)
+                                trader.update_val_counter_party(trade, 'counter_party', 'ask')
                             else: # neutral
                                 trader.cash_on_hold -= trade_val # reduce cash_on_hold
                                 trader.position_val += trade_val
-                            self.update_net_position(trader, trade.get('counter_party').get('side'), trade.get('quantity'))
+                            trader.update_net_position(trade.get('counter_party').get('side'), trade.get('quantity'))
                             break
                     for trader in self.agents:
                         if trader.ID == trade.get('init_party').get('ID'):
                             if trader.net_position > 0: # long
-                                self.update_val_init_party(trade, order_in_book, 'init_party', 'bid', trader)
+                                trader.update_val_init_party(trade, order_in_book, 'init_party', 'bid')
                             elif trader.net_position < 0: # short
-                                self.update_val_init_party(trade, order_in_book, 'init_party', 'ask', trader)
+                                trader.update_val_init_party(trade, order_in_book, 'init_party', 'ask')
                             else: # neutral
                                 trade_val = trade.get('price') * trade.get('quantity')
                                 trader.cash -= trade_val
                                 trader.position_val += trade_val
-                                self.update_cash_on_hold(order_in_book, trader) # if there's any unfilled
-                            self.update_net_position(trader, trade.get('init_party').get('side'), trade.get('quantity'))
+                                trader.update_cash_on_hold(order_in_book) # if there's any unfilled
+                            trader.update_net_position(trade.get('init_party').get('side'), trade.get('quantity'))
                             break
                 else: # init_party is also counter_party
                     for trader in self.agents:
                         if trader.ID == trade.get('counter_party').get('ID'):
                             trader.cash_on_hold -= trade_val
                             trader.cash += trade_val
-                            self.update_cash_on_hold(order_in_book, trader) # if there's any unfilled
+                            trader.update_cash_on_hold(order_in_book) # if there's any unfilled
                             break
 
             return trades, order_in_book

@@ -87,7 +87,7 @@ class Trader(object):
     # size is order size
     # price is order price
     def order_approved(self, cash, size, price):
-        if self.cash >= size * price:        
+        if self.cash >= size * price:
             return True
         else:
             return False
@@ -125,6 +125,71 @@ class Trader(object):
                   "price": price}
 
         return action
+
+    # used in 2 situations
+    # when order init but no trades done
+    # when order init & trade/s are done
+    def update_cash_on_hold(self, order_in_book):
+        # if there's new_order_in_book for init_party (party2)
+        if order_in_book != None: # there are new unfilled orders
+            new_order_in_book_val = order_in_book.get('price') * order_in_book.get('quantity')
+            self.cash -= new_order_in_book_val # reduce cash
+            self.cash_on_hold += new_order_in_book_val # increase cash_on_hold
+
+        return 0
+
+    # position different from trade side, eg: long & ask
+    def position_diff_side(self, trade):
+        trade_val = trade.get('price') * trade.get('quantity')
+
+        if abs(self.net_position) >= trade.get('quantity'): # still same net position
+            self.cash += trade_val # entire position covered goes back to cash
+        else: # net position changed after the trade
+            self.cash += abs(self.net_position) * trade.get('price') # portion covered goes back to cash
+            self.position_val += (trade.get('quantity') - abs(self.net_position)) * trade.get('price') # remaining trade_val goes to position_val
+
+        return 0
+
+    # update cash, cash_on_hold, position_val for init_party (party2)
+    def update_val_init_party(self, trade, order_in_book, party, side):
+        trade_val = trade.get('price') * trade.get('quantity')
+
+        if trade.get(party).get('side') == side:
+            self.cash -= trade_val
+            self.position_val += trade_val # increase position_val
+        else:
+            self.position_diff_side(trade)
+
+        self.update_cash_on_hold(order_in_book)
+
+        return 0
+
+    # update cash, cash_on_hold, position_val for counter_party (party1)
+    def update_val_counter_party(self, trade, party, side):
+        trade_val = trade.get('price') * trade.get('quantity')
+
+        if trade.get(party).get('side') == side:
+            self.position_val += trade_val # increase position_val
+        else:
+            self.position_diff_side(trade)
+
+        self.cash_on_hold -= trade_val # reduce cash_on_hold
+
+        return 0
+
+    def update_net_position(self, side, trade_quantity):
+        if self.net_position >= 0: # long or neutral
+            if side == 'bid':
+                self.net_position += trade_quantity
+            else:
+                self.net_position += -trade_quantity
+        else: # short
+            if side == 'ask':
+                self.net_position += -trade_quantity
+            else:
+                self.net_position += trade_quantity
+
+        return 0
 
 
 if __name__ == "__main__":
