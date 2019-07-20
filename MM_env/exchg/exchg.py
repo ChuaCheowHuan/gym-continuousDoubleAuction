@@ -172,8 +172,6 @@ class Exchg(object):
                                     counter_party.position_val += trade_val
                                 counter_party.update_net_position(trade.get('counter_party').get('side'), trade.get('quantity'))
                                 break
-                        #for trader in self.agents:
-                        #    if trader.ID == trade.get('init_party').get('ID'):
                         if trader.net_position > 0: # long
                             trader.update_val_init_party(trade, order_in_book, 'init_party', 'bid')
                         elif trader.net_position < 0: # short
@@ -182,15 +180,10 @@ class Exchg(object):
                             trade_val = trade.get('price') * trade.get('quantity')
                             trader.cash -= trade_val
                             trader.position_val += trade_val
-                        #trader.update_cash_on_hold(order_in_book) # if there's any unfilled
                         trader.update_net_position(trade.get('init_party').get('side'), trade.get('quantity'))
                     else: # init_party is also counter_party
-                        #for trader in self.agents:
-                        #    if trader.ID == trade.get('counter_party').get('ID'):
                         trader.cash_on_hold -= trade_val
                         trader.cash += trade_val
-                        #trader.update_cash_on_hold(order_in_book) # if there's any unfilled
-                                #break
                 trader.update_cash_on_hold(order_in_book) # if there's any unfilled
             return trades, order_in_book
         else: # not enough cash to place order
