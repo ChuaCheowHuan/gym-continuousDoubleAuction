@@ -25,9 +25,11 @@ class Exchg(object):
     def step(self, actions):
         LOB_state = self.LOB_state() # LOB state at t before processing LOB
 
+        print('\n')
         print('\nLOB before processing order:')
         print(self.LOB)
         print(LOB_state)
+        print('\n')
 
         # Begin processing LOB
         # process actions for all agents
@@ -56,6 +58,7 @@ class Exchg(object):
         print('\nLOB after processing order:')
         print(self.LOB)
         print(LOB_state_next)
+        print('\n')
 
         state_diff = self.state_diff(LOB_state, LOB_state_next)
         s_next = state_diff
@@ -151,63 +154,48 @@ class Exchg(object):
             order = trader.create_order(type, side, size, price)
             trades, order_in_book = self.LOB.process_order(order, False, False)
 
-            for trade in trades:
-                trade_val = trade.get('price') * trade.get('quantity')
-                # init_party is not counter_party
-                if trade.get('counter_party').get('ID') != trade.get('init_party').get('ID'):
-                    for trader in self.agents:
-                        if trader.ID == trade.get('counter_party').get('ID'):
-                            if trader.net_position > 0: # long
-                                trader.update_val_counter_party(trade, 'counter_party', 'bid')
-                            elif trader.net_position < 0: # short
-                                trader.update_val_counter_party(trade, 'counter_party', 'ask')
-                            else: # neutral
-                                trader.cash_on_hold -= trade_val # reduce cash_on_hold
-                                trader.position_val += trade_val
-                            trader.update_net_position(trade.get('counter_party').get('side'), trade.get('quantity'))
-                            break
-                    for trader in self.agents:
-                        if trader.ID == trade.get('init_party').get('ID'):
-                            if trader.net_position > 0: # long
-                                trader.update_val_init_party(trade, order_in_book, 'init_party', 'bid')
-                            elif trader.net_position < 0: # short
-                                trader.update_val_init_party(trade, order_in_book, 'init_party', 'ask')
-                            else: # neutral
-                                trade_val = trade.get('price') * trade.get('quantity')
-                                trader.cash -= trade_val
-                                trader.position_val += trade_val
+            if trades == []:
+                trader.update_cash_on_hold(order_in_book) # if there's any unfilled
+            else:
+                for trade in trades:
+                    trade_val = trade.get('price') * trade.get('quantity')
+                    # init_party is not counter_party
+                    if trade.get('counter_party').get('ID') != trade.get('init_party').get('ID'):
+                        for trader in self.agents:
+                            if trader.ID == trade.get('counter_party').get('ID'):
+                                if trader.net_position > 0: # long
+                                    trader.update_val_counter_party(trade, 'counter_party', 'bid')
+                                elif trader.net_position < 0: # short
+                                    trader.update_val_counter_party(trade, 'counter_party', 'ask')
+                                else: # neutral
+                                    trader.cash_on_hold -= trade_val # reduce cash_on_hold
+                                    trader.position_val += trade_val
+                                trader.update_net_position(trade.get('counter_party').get('side'), trade.get('quantity'))
+                                break
+                        for trader in self.agents:
+                            if trader.ID == trade.get('init_party').get('ID'):
+                                if trader.net_position > 0: # long
+                                    trader.update_val_init_party(trade, order_in_book, 'init_party', 'bid')
+                                elif trader.net_position < 0: # short
+                                    trader.update_val_init_party(trade, order_in_book, 'init_party', 'ask')
+                                else: # neutral
+                                    trade_val = trade.get('price') * trade.get('quantity')
+                                    trader.cash -= trade_val
+                                    trader.position_val += trade_val
+                                    trader.update_cash_on_hold(order_in_book) # if there's any unfilled
+                                trader.update_net_position(trade.get('init_party').get('side'), trade.get('quantity'))
+                                break
+                    else: # init_party is also counter_party
+                        for trader in self.agents:
+                            if trader.ID == trade.get('counter_party').get('ID'):
+                                trader.cash_on_hold -= trade_val
+                                trader.cash += trade_val
                                 trader.update_cash_on_hold(order_in_book) # if there's any unfilled
-                            trader.update_net_position(trade.get('init_party').get('side'), trade.get('quantity'))
-                            break
-                else: # init_party is also counter_party
-                    for trader in self.agents:
-                        if trader.ID == trade.get('counter_party').get('ID'):
-                            trader.cash_on_hold -= trade_val
-                            trader.cash += trade_val
-                            trader.update_cash_on_hold(order_in_book) # if there's any unfilled
-                            break
-
+                                break
             return trades, order_in_book
         else: # not enough cash to place order
             print('Not enough cash to place order.', trader.ID)
             return trades, order_in_book
 
 
-if __name__ == "__main__":
-
-    num_of_traders = 2
-    init_cash = 10000
-    e = Exchg(num_of_traders, init_cash)
-
-    e.place_order('limit', 'bid', 100, 3, e.agents[0])
-    e.place_order('limit', 'bid', 200, 4, e.agents[0])
-    e.place_order('limit', 'bid', 200, 4, e.agents[0])
-    e.place_order('limit', 'ask', 50, 5, e.agents[0])
-    e.place_order('limit', 'ask', 400, 7, e.agents[0])
-    e.place_order('limit', 'ask', 300, 5, e.agents[0])
-    e.place_order('limit', 'ask', 200, 6, e.agents[0])
-    e.place_order('market', 'bid', 400, 6, e.agents[1]) # trade
-    e.place_order('limit', 'bid', 400, 5, e.agents[1]) # trade
-
-
-    sys.exit(0)
+#if __name__ == "__main__":
