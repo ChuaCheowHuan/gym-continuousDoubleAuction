@@ -153,11 +153,12 @@ class Trader(object):
 
     # update cash, cash_on_hold, position_val for init_party (party2)
     def update_acc_init_party(self, trade, order_in_book, party, side):
-        trade_val = trade.get('price') * trade.get('quantity')
+        #trade_val = trade.get('price') * trade.get('quantity')
 
         if trade.get(party).get('side') == side:
-            self.cash -= trade_val
-            self.position_val += trade_val # increase position_val
+            self.cash -= trade.get('price') * trade.get('quantity')
+            #self.position_val += trade_val # increase position_val
+            self.position_val = (abs(self.net_position) + trade.get('quantity')) * trade.get('price') # increase position_val
         else:
             self.position_diff_side(trade)
 
@@ -165,14 +166,15 @@ class Trader(object):
 
     # update cash, cash_on_hold, position_val for counter_party (party1)
     def update_acc_counter_party(self, trade, party, side):
-        trade_val = trade.get('price') * trade.get('quantity')
+        #trade_val = trade.get('price') * trade.get('quantity')
 
         if trade.get(party).get('side') == side:
-            self.position_val += trade_val # increase position_val
+            #self.position_val += trade_val # increase position_val
+            self.position_val = (abs(self.net_position) + trade.get('quantity')) * trade.get('price') # increase position_val
         else:
             self.position_diff_side(trade)
 
-        self.cash_on_hold -= trade_val # reduce cash_on_hold
+        self.cash_on_hold -= trade.get('price') * trade.get('quantity') # reduce cash_on_hold
 
         return 0
 

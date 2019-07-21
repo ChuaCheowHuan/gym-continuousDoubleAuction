@@ -247,6 +247,13 @@ class OrderBook(object):
                 tempfile.write('%s' % value)
 
         tempfile.write("\n***tape***\n")
+        tempfile.write('Q' +
+        " @ " + '$' +
+        " (" + 't' +
+        ") " + 'c' +
+        "/" + 'i' +
+        " " + 'side' +
+        "\n")
         if self.tape != None and len(self.tape) > 0:
             num = 0
             for entry in reversed(self.tape):

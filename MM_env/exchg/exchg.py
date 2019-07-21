@@ -24,6 +24,12 @@ class Exchg(object):
 
         return self.LOB_state()
 
+    # update position_val for all traders with last price in last entry of tape
+    def update_position_val(self):
+        if len(self.LOB.tape) > 0:
+            for trader in self.agents:
+                trader.position_val = abs(trader.net_position) * self.LOB.tape[-1].get('price')
+
     # actions is a list of actions from all agents (traders) at t step
     # each action is a list of (type, side, size, price)
     def step(self, actions):
@@ -39,6 +45,8 @@ class Exchg(object):
             price = action.get("price")
             trader = self.agents[i]
             self.trades, self.order_in_book = self.place_order(type, side, size, price, trader)
+
+        #self.update_position_val()
 
         # after processing LOB
         self.LOB_STATE_NEXT = self.LOB_state() # LOB state at t+1 after processing LOB
