@@ -127,7 +127,7 @@ class Exchg(object):
                 else:
                     break
 
-        return (bid_price_list, bid_size_list, ask_price_list, ask_size_list)
+        return (bid_size_list, bid_price_list, ask_size_list, ask_price_list)
 
     def state_diff(self, LOB_state, LOB_state_next):
         state_diff_list = []
@@ -197,10 +197,12 @@ class Exchg(object):
     def place_order(self, type, side, size, price, trader):
         trades, order_in_book = [],[]
         if(side == None): # do nothing to LOB
-            return trades, order_in_book # do nothing to LOB
+            return trades, order_in_book
         # normal execution
         elif trader.order_approved(trader.cash, size, price):
             order = trader.create_order(type, side, size, price)
+            if order == {}: # do nothing to LOB
+                return trades, order_in_book
             trades, order_in_book = self.LOB.process_order(order, False, False)
             if trades != []:
                 for trade in trades:
