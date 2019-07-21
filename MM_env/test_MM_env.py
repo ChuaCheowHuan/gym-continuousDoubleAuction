@@ -1,10 +1,3 @@
-# place initial orders
-# create long position for T0 with unfilled, short position for T2(counter_party)
-# create long position for T0, short position for T2(counter_party) with unfilled
-
-# create short position for T2 with unfilled, long position for T1(counter_party)
-# create short position for T2, long position for T1(counter_party) with unfilled
-
 import sys
 
 if "../" not in sys.path:
@@ -383,12 +376,31 @@ def test_random():
         print_acc(e, 1)
         print_acc(e, 2)
 
+
 if __name__ == "__main__":
-    e = test_1()
+
+    e = test_1() # place initial orders
+
+
+    # ********** create positions, single counter_party **********
+
+    # create long position for T0 with unfilled, short position for T2(counter_party)
     #e1 = test_1_1(e)
+    # create long position for T0, short position for T2(counter_party) with unfilled
     #e2 = test_1_2(e)
+    # create short position for T2 with unfilled, long position for T1(counter_party)
     #e3 = test_1_3(e)
+    # create short position for T2, long position for T1(counter_party) with unfilled
     e4 = test_1_4(e)
+
+
+    # ********** close positions, single counter_party **********
+
+
+
+    # ********** create positions, more than one counter_party **********
+    # ********** close positions, more than one counter_party **********
+
 
     #test_random()
 
