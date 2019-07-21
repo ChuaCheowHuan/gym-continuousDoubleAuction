@@ -145,7 +145,8 @@ class Exchg(object):
                     counter_party.update_acc_counter_party(trade, 'counter_party', 'ask')
                 else: # neutral
                     counter_party.cash_on_hold -= trade_val # reduce cash_on_hold
-                    counter_party.position_val += trade_val
+                    #counter_party.position_val += trade_val
+                    counter_party.position_val = trade_val
                 counter_party.update_net_position(trade.get('counter_party').get('side'), trade.get('quantity'))
                 break
 
@@ -159,11 +160,12 @@ class Exchg(object):
         else: # neutral
             trade_val = trade.get('price') * trade.get('quantity')
             trader.cash -= trade_val
-            trader.position_val += trade_val
+            #trader.position_val += trade_val
+            trader.position_val = trade_val
         trader.update_net_position(trade.get('init_party').get('side'), trade.get('quantity'))
 
         return 0
-
+    """
     # take or execute action
     def place_order(self, type, side, size, price, trader):
         trades, order_in_book = [],[]
@@ -190,6 +192,28 @@ class Exchg(object):
         else: # not enough cash to place order
             print('Invalid order: order value > cash available.', trader.ID)
             return trades, order_in_book
-
-
-#if __name__ == "__main__":
+        """
+    # take or execute action
+    def place_order(self, type, side, size, price, trader):
+        trades, order_in_book = [],[]
+        if(side == None): # do nothing to LOB
+            return trades, order_in_book # do nothing to LOB
+        # normal execution
+        elif trader.order_approved(trader.cash, size, price):
+            order = trader.create_order(type, side, size, price)
+            trades, order_in_book = self.LOB.process_order(order, False, False)
+            if trades != []:
+                for trade in trades:
+                    trade_val = trade.get('price') * trade.get('quantity')
+                    # init_party is not counter_party
+                    if trade.get('counter_party').get('ID') != trade.get('init_party').get('ID'):
+                        self.process_counter_party(trade, trade_val)
+                        self.process_init_party(trader, trade, order_in_book, trade_val)
+                    else: # init_party is also counter_party
+                        trader.cash_on_hold -= trade_val
+                        trader.cash += trade_val
+            trader.update_cash_init_party(order_in_book) # if there's any unfilled
+            return trades, order_in_book
+        else: # not enough cash to place order
+            print('Invalid order: order value > cash available.', trader.ID)
+            return trades, order_in_book

@@ -84,7 +84,6 @@ class Trader(object):
         return abs(net_position * net_price) + profit
 
     # ********** TODO **********
-
     # chk if enough cash to create order
     # size is order size
     # price is order price

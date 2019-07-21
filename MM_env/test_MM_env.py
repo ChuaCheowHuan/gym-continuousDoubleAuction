@@ -45,6 +45,65 @@ def test_1(): # place initial orders
 
     return e
 
+def expected(e, ID, side, trade_price, trade_size, unfilled, is_trade):
+    ID = 2
+    trader = e.agents[ID]
+
+    side = 'bid'
+    trade_price = 4
+    trade_size = 3
+    unfilled = 1
+
+    trade_val = trade_price * trade_size
+    unfilled_val = trade_price * unfilled
+
+    cash = trader.cash
+    cash_on_hold = trader.cash_on_hold
+    position_val = trader.position_val
+    nav = trader.nav
+
+    net_position = trader.net_position
+
+    # expected after processing order:
+    if is_init: # init_party
+        if is_trade:
+            if net_position > 0: # long
+                if side == 'bid':
+                    position_val = (net_position + trade_size) * trade_price
+                else: # ask
+                    if net_position >= trade_size: # still net long or neutral
+                        cash += trade_size * trade_price # covered part goes to cash
+                        position_val = (net_position - trade_size) * trade_price # update remaining position_val
+                    else: # net position changes to short
+                        cash += net_position * trade_price # covered part goes to cash
+                        position_val = (trade_size - net_position) * trade_price # update remaining position_val
+            elif net_position < 0: # short
+                if side == 'ask':
+                    position_val = (abs(net_position) + trade_size) * trade_price
+                else: # bid
+                    if net_position >= trade_size: # still net long or neutral
+                        cash += trade_size * trade_price # covered part goes to cash
+                        position_val = (abs(net_position) - trade_size) * trade_price # update remaining position_val
+                    else: # net position changes to short
+                        cash += net_position * trade_price # covered part goes to cash
+                        position_val = (trade_size - abs(net_position)) * trade_price # update remaining position_val
+            else: # neutral
+                if side == 'bid':
+                    cash -= trade_size * trade_price
+                    position_val = trade_size * trade_price
+                else: # ask
+                    cash -= trade_size * trade_price
+                    position_val = trade_size * trade_price
+            # deal with unfilled
+            cash -= unfilled * trade_price # reduce cash
+            cash_on_hold += unfilled * trade_price # increase cash_on_hold
+        else: # no trade, order goes in LOB
+            cash -= unfilled * trade_price # reduce cash
+            cash_on_hold += unfilled * trade_price # increase cash_on_hold
+    else: # counter_party
+
+    return cash, cash_on_hold, position_val, nav, net_position
+
 def test_1_1(e): # create long position for trader 1, short for trader 2
     action1 = {"type": 'limit',
                "side": None,
@@ -94,7 +153,7 @@ def test_random():
     num_of_traders = 3
     init_cash = 1000
     tape_display_length = 10
-    max_step = 500
+    max_step = 10
     e = Exchg(num_of_traders, init_cash, tape_display_length, max_step)
     for step in range(max_step):
         actions = []
@@ -112,7 +171,7 @@ def test_random():
 if __name__ == "__main__":
     e = test_1()
     e = test_1_1(e)
-    e = test_1_2(e)
+    #e = test_1_2(e)
 
     #test_random()
 
