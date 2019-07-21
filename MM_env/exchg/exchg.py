@@ -158,15 +158,12 @@ class Exchg(object):
     # take or execute action
     def place_order(self, type, side, size, price, trader):
         trades, order_in_book = [],[]
-
-        # begin processing LOB
         if(side == None): # do nothing to LOB
             return trades, order_in_book # do nothing to LOB
         # normal execution
         elif trader.order_approved(trader.cash, size, price):
             order = trader.create_order(type, side, size, price)
             trades, order_in_book = self.LOB.process_order(order, False, False)
-
             if trades == []:
                 trader.update_cash_on_hold(order_in_book) # if there's any unfilled
             else:
@@ -175,17 +172,6 @@ class Exchg(object):
                     # init_party is not counter_party
                     if trade.get('counter_party').get('ID') != trade.get('init_party').get('ID'):
                         self.process_counter_party(trade, trade_val)
-                        """
-                        if trader.net_position > 0: # long
-                            trader.update_val_init_party(trade, order_in_book, 'init_party', 'bid')
-                        elif trader.net_position < 0: # short
-                            trader.update_val_init_party(trade, order_in_book, 'init_party', 'ask')
-                        else: # neutral
-                            trade_val = trade.get('price') * trade.get('quantity')
-                            trader.cash -= trade_val
-                            trader.position_val += trade_val
-                        trader.update_net_position(trade.get('init_party').get('side'), trade.get('quantity'))
-                        """
                         self.process_init_party(trader, trade, order_in_book, trade_val)
                     else: # init_party is also counter_party
                         trader.cash_on_hold -= trade_val
