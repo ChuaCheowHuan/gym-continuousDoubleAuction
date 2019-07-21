@@ -83,6 +83,8 @@ class Trader(object):
     def cal_position_val(self, net_position, net_price, profit):
         return abs(net_position * net_price) + profit
 
+    # ********** TODO **********
+
     # chk if enough cash to create order
     # size is order size
     # price is order price
@@ -110,7 +112,7 @@ class Trader(object):
         return order
 
     # pass action to step
-    def select_random_action(self):
+    def select_random_action(self, exchg):
         #type = np.random.randint(0, 1, size=1) # type, draw 1 int, 0(market) to 1(limit)
         type = random.choice(['market','limit'])
         #type = random.choice(['limit'])
@@ -129,7 +131,7 @@ class Trader(object):
     # used in 2 situations
     # when order init but no trade done, there must be unfilled in LOB
     # when order init & trade/s are done, deal with unfilled, if any
-    def update_cash_on_hold(self, order_in_book):
+    def update_cash_init_party(self, order_in_book):
         # if there's new_order_in_book for init_party (party2)
         if order_in_book != None: # there are new unfilled orders
             new_order_in_book_val = order_in_book.get('price') * order_in_book.get('quantity')
@@ -150,7 +152,7 @@ class Trader(object):
         return 0
 
     # update cash, cash_on_hold, position_val for init_party (party2)
-    def update_val_init_party(self, trade, order_in_book, party, side):
+    def update_acc_init_party(self, trade, order_in_book, party, side):
         trade_val = trade.get('price') * trade.get('quantity')
 
         if trade.get(party).get('side') == side:
@@ -162,7 +164,7 @@ class Trader(object):
         return 0
 
     # update cash, cash_on_hold, position_val for counter_party (party1)
-    def update_val_counter_party(self, trade, party, side):
+    def update_acc_counter_party(self, trade, party, side):
         trade_val = trade.get('price') * trade.get('quantity')
 
         if trade.get(party).get('side') == side:

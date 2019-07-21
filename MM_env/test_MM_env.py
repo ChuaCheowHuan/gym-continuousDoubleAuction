@@ -81,6 +81,7 @@ def test_1_2(e): # close T1 long, counter_party is T0
                "size": 4,
                "price": 4}
     actions = [action1,action2,action3]
+    print(actions)
     e.step(actions)
     e.render()
     print_acc(e, 0)
@@ -88,23 +89,31 @@ def test_1_2(e): # close T1 long, counter_party is T0
     print_acc(e, 2)
 
     return e
+
 def test_random():
     num_of_traders = 3
     init_cash = 1000
-    tape_display_length = 100
-    max_step = 10
+    tape_display_length = 10
+    max_step = 5
     e = Exchg(num_of_traders, init_cash, tape_display_length, max_step)
     for step in range(max_step):
         actions = []
         for i, trader in enumerate(e.agents):
-            action = trader.select_random_action()
+            action = trader.select_random_action(e)
             actions.append(action)
         print('\n\n\nSTEP:', step)
+        print(actions)
         e.step(actions)
+        e.render()
+        print_acc(e, 0)
+        print_acc(e, 1)
+        print_acc(e, 2)
 
 if __name__ == "__main__":
     e = test_1()
     e = test_1_1(e)
     e = test_1_2(e)
-    #test_random()
+
+    test_random()
+
     sys.exit(0)
