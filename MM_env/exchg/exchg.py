@@ -46,7 +46,7 @@ class Exchg(object):
             trader = self.agents[i]
             self.trades, self.order_in_book = self.place_order(type, side, size, price, trader)
 
-        #self.update_position_val()
+        self.update_position_val()
 
         # after processing LOB
         self.LOB_STATE_NEXT = self.LOB_state() # LOB state at t+1 after processing LOB
