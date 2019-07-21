@@ -47,6 +47,33 @@ def test_1():
     print_acc(e, 1)
     print_acc(e, 2)
 
+    test_1_1(e)
+    
+def test_1_1(e):
+
+    action1 = {"type": 'limit',
+               "side": 'bid',
+               "size": 2,
+               "price": 3}
+    action2 = {"type": 'limit',
+               "side": 'bid',
+               "size": 3,
+               "price": 4}
+    action3 = {"type": 'limit',
+               "side": 'ask',
+               "size": 4,
+               "price": 5}
+    actions = [action1,action2,action3]
+    e.render()
+    print_acc(e, 0)
+    print_acc(e, 1)
+    print_acc(e, 2)
+    e.step(actions)
+    e.render()
+    print_acc(e, 0)
+    print_acc(e, 1)
+    print_acc(e, 2)
+
 def test_random():
     num_of_traders = 3
     init_cash = 1000
