@@ -127,8 +127,8 @@ class Trader(object):
         return action
 
     # used in 2 situations
-    # when order init but no trades done
-    # when order init & trade/s are done
+    # when order init but no trade done, there must be unfilled in LOB
+    # when order init & trade/s are done, deal with unfilled, if any
     def update_cash_on_hold(self, order_in_book):
         # if there's new_order_in_book for init_party (party2)
         if order_in_book != None: # there are new unfilled orders
@@ -140,10 +140,8 @@ class Trader(object):
 
     # position different from trade side, eg: long & ask
     def position_diff_side(self, trade):
-        trade_val = trade.get('price') * trade.get('quantity')
-
         if abs(self.net_position) >= trade.get('quantity'): # still same net position or neutral
-            self.cash += trade_val # entire position covered goes back to cash
+            self.cash += trade.get('quantity') * trade.get('price') # entire position covered goes back to cash
             self.position_val = (abs(self.net_position) - trade.get('quantity')) * trade.get('price')
         else: # net position changed after the trade
             self.cash += abs(self.net_position) * trade.get('price') # portion covered goes back to cash
