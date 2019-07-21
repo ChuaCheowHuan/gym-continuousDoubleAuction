@@ -142,11 +142,12 @@ class Trader(object):
     def position_diff_side(self, trade):
         trade_val = trade.get('price') * trade.get('quantity')
 
-        if abs(self.net_position) >= trade.get('quantity'): # still same net position
+        if abs(self.net_position) >= trade.get('quantity'): # still same net position or neutral
             self.cash += trade_val # entire position covered goes back to cash
+            self.position_val = (abs(self.net_position) - trade.get('quantity')) * trade.get('price')
         else: # net position changed after the trade
             self.cash += abs(self.net_position) * trade.get('price') # portion covered goes back to cash
-            self.position_val += (trade.get('quantity') - abs(self.net_position)) * trade.get('price') # remaining trade_val goes to position_val
+            self.position_val = (trade.get('quantity') - abs(self.net_position)) * trade.get('price') # remaining trade_val goes to position_val
 
         return 0
 
