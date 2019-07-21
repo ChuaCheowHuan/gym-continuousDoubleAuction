@@ -7,6 +7,8 @@ from .trader import Trader
 class Exchg(object):
     def __init__(self, num_of_agents=2, init_cash=100, tape_display_length=10, max_step=100):
         self.LOB = OrderBook(0.25, tape_display_length) # limit order book
+        self.LOB_STATE = {}
+        self.LOB_STATE_NEXT = {}
         # list of agents or traders
         self.agents = [Trader(ID, init_cash) for ID in range(0, num_of_agents)]
         self.counter = 0
@@ -25,7 +27,7 @@ class Exchg(object):
     # actions is a list of actions from all agents (traders) at t step
     # each action is a list of (type, side, size, price)
     def step(self, actions):
-        LOB_state = self.LOB_state() # LOB state at t before processing LOB
+        self.LOB_STATE = self.LOB_state() # LOB state at t before processing LOB
 
         # Begin processing LOB
         # process actions for all agents
@@ -39,8 +41,8 @@ class Exchg(object):
             self.trades, self.order_in_book = self.place_order(type, side, size, price, trader)
 
         # after processing LOB
-        LOB_state_next = self.LOB_state() # LOB state at t+1 after processing LOB
-        state_diff = self.state_diff(LOB_state, LOB_state_next)
+        self.LOB_STATE_NEXT = self.LOB_state() # LOB state at t+1 after processing LOB
+        state_diff = self.state_diff(self.LOB_STATE, self.LOB_STATE_NEXT)
         self.s_next = state_diff
 
         # prepare rewards for all agents
@@ -74,7 +76,9 @@ class Exchg(object):
         print('\nLOB:\n', self.LOB)
         #print('\ntrades:\n', self.trades)
         #print('\norder_in_book\n:', self.order_in_book)
-        print('\ns_next:\n', self.s_next)
+        print('\nLOB_STATE:\n', self.LOB_STATE)
+        print('\nLOB_STATE_NEXT:\n', self.LOB_STATE_NEXT)
+        print('\nstate_diff:\n', self.s_next)
         print('\nrewards:\n', self.rewards)
 
         return 0

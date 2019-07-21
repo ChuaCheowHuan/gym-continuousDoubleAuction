@@ -257,6 +257,7 @@ class OrderBook(object):
                     " (" + str(entry['timestamp']) +
                     ") " + str(entry['counter_party']['ID']) +
                     "/" + str(entry['init_party']['ID']) +
+                    " " + str(entry['init_party']['side']) +
                     "\n")
                     num += 1
                 else:
