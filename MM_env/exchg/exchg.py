@@ -5,14 +5,16 @@ from .trader import Trader
 
 # The exchange environment
 class Exchg(object):
-    def __init__(self, num_of_agents, init_cash, tape_display_length):
+    def __init__(self, num_of_agents=2, init_cash=100, tape_display_length=10, max_step=100):
         self.LOB = OrderBook(0.25, tape_display_length) # limit order book
         # list of agents or traders
         self.agents = [Trader(ID, init_cash) for ID in range(0, num_of_agents)]
         self.counter = 0
-        self.max_step = 10
-
-    # ********** define env functions **********
+        self.max_step = max_step
+        self.s_next = []
+        self.rewards = []
+        self.trades = []
+        self.order_in_book = []
 
     # reset
     def reset(self):
@@ -25,12 +27,6 @@ class Exchg(object):
     def step(self, actions):
         LOB_state = self.LOB_state() # LOB state at t before processing LOB
 
-        print('\n')
-        print('\nLOB before processing order:')
-        print(self.LOB)
-        print(LOB_state)
-        print('\n')
-
         # Begin processing LOB
         # process actions for all agents
         for i, action in enumerate(actions):
@@ -40,11 +36,16 @@ class Exchg(object):
             size = action.get("size")
             price = action.get("price")
             trader = self.agents[i]
-            trades, order_in_book = self.place_order(type, side, size, price, trader)
+            self.trades, self.order_in_book = self.place_order(type, side, size, price, trader)
 
-            print('trader:', trader.ID)
-            print('trades:', trades) # counter party's unfilled orders in LOB are in new_order_book of party 1 list
-            print('order_in_book:', order_in_book) # init party's unfilled orders in LOB
+        # after processing LOB
+        LOB_state_next = self.LOB_state() # LOB state at t+1 after processing LOB
+        state_diff = self.state_diff(LOB_state, LOB_state_next)
+        self.s_next = state_diff
+
+        # prepare rewards for all agents
+        # reward = nav@t+1 - nav@t
+        self.rewards = self.reward()
 
         # set dones for all agents
         self.counter += 1
@@ -52,25 +53,10 @@ class Exchg(object):
         if self.counter > self.max_step-1:
             dones = 1
 
-        # after processing LOB
-        LOB_state_next = self.LOB_state() # LOB state at t+1 after processing LOB
-
-        print('\nLOB after processing order:')
-        print(self.LOB)
-        print(LOB_state_next)
-        print('\n')
-
-        state_diff = self.state_diff(LOB_state, LOB_state_next)
-        s_next = state_diff
-
-        # prepare rewards for all agents
-        # reward = nav@t+1 - nav@t
-        rewards = self.reward()
-
         # set infos for all agents
         infos = None
 
-        return s_next, rewards, dones, infos
+        return self.s_next, self.rewards, dones, infos
 
     # reward per t step
     def reward(self):
@@ -81,16 +67,17 @@ class Exchg(object):
             reward = trader.nav - prev_nav
             rewards.append({'ID': trader.ID, 'reward': reward})
 
-        print('rewards:', rewards)
-
         return rewards
 
     # render
     def render(self):
-        print(self.LOB)
+        print('\nLOB:\n', self.LOB)
+        #print('\ntrades:\n', self.trades)
+        #print('\norder_in_book\n:', self.order_in_book)
+        print('\ns_next:\n', self.s_next)
+        print('\nrewards:\n', self.rewards)
 
         return 0
-
 
     # price_map is an OrderTree object (SortedDict object)
     # SortedDict object has key & value
@@ -106,7 +93,6 @@ class Exchg(object):
         if self.LOB.bids != None and len(self.LOB.bids) > 0:
             for k, set in enumerate(reversed(self.LOB.bids.price_map.items())):
                 if k < k_rows:
-                    #print(set[0], set[1].volume)
                     bid_price_list[k] = set[0] # set[0] is price (key)
                     bid_size_list[k] = set[1].volume # set[1] is an OrderList object (value)
                 else:
@@ -115,7 +101,6 @@ class Exchg(object):
         if self.LOB.asks != None and len(self.LOB.asks) > 0:
             for k, set in enumerate(self.LOB.asks.price_map.items()):
                 if k < k_rows:
-                    #print(-set[0], -set[1].volume)
                     ask_price_list[k] = -set[0]
                     ask_size_list[k] = -set[1].volume
                 else:
@@ -137,8 +122,6 @@ class Exchg(object):
         for (state_row, state_row_next) in zip(LOB_state, LOB_state_next):
             state_diff_list.append(state_row_next - state_row)
 
-        print('state_diff_list:', state_diff_list)
-
         return state_diff_list
 
     # take or execute action
@@ -147,7 +130,6 @@ class Exchg(object):
 
         # begin processing LOB
         if(side == None): # do nothing to LOB
-            print('side == None', trader.ID)
             return trades, order_in_book # do nothing to LOB
         # normal execution
         elif trader.order_approved(trader.cash, size, price):
@@ -187,7 +169,7 @@ class Exchg(object):
                 trader.update_cash_on_hold(order_in_book) # if there's any unfilled
             return trades, order_in_book
         else: # not enough cash to place order
-            print('Not enough cash to place order.', trader.ID)
+            print('Invalid order: order value > cash available.', trader.ID)
             return trades, order_in_book
 
 
