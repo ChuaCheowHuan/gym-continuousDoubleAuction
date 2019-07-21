@@ -38,6 +38,9 @@ def test_1():
                "price": 5}
     actions = [action1,action2,action3]
     e.render()
+    print_acc(e, 0)
+    print_acc(e, 1)
+    print_acc(e, 2)
     e.step(actions)
     e.render()
     print_acc(e, 0)
