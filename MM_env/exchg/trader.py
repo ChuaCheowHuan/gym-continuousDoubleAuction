@@ -156,6 +156,10 @@ class Trader(object):
             self.cash -= trade.get('price') * trade.get('quantity')
             #self.position_val += trade_val # increase position_val
             self.position_val = (abs(self.net_position) + trade.get('quantity')) * trade.get('price') # increase position_val
+
+            # ********** TODO **********
+            #diff =
+
         else:
             self.position_diff_side(trade)
 

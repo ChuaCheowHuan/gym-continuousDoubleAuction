@@ -29,7 +29,15 @@ class Exchg(object):
         if len(self.LOB.tape) > 0:
             for trader in self.agents:
                 #trader.position_val = abs(trader.net_position) * self.LOB.tape[-1].get('price')
-                trader.position_val = trader.net_position * self.LOB.tape[-1].get('price')
+                #trader.position_val = trader.net_position * self.LOB.tape[-1].get('price')
+
+                diff = abs(trader.net_position) * self.LOB.tape[-1].get('price') - trader.position_val
+
+                if trader.net_position >= 0:
+                    trader.position_val += diff
+                else:
+                    trader.position_val -= diff
+
 
     # actions is a list of actions from all agents (traders) at t step
     # each action is a list of (type, side, size, price)
@@ -145,10 +153,8 @@ class Exchg(object):
                 elif counter_party.net_position < 0: # short
                     counter_party.update_acc_counter_party(trade, 'counter_party', 'ask')
                 else: # neutral
-                    counter_party.cash_on_hold -= trade_val # reduce cash_on_hold
-                    #counter_party.position_val += trade_val
-                    counter_party.position_val = trade_val
-
+                    counter_party.cash_on_hold -= trade_val
+                    counter_party.position_val += trade_val
                 print('counter_party:', counter_party.ID)
                 print('trade_val:', trade_val)
 
@@ -163,11 +169,8 @@ class Exchg(object):
         elif trader.net_position < 0: # short
             trader.update_acc_init_party(trade, order_in_book, 'init_party', 'ask')
         else: # neutral
-            #trade_val = trade.get('price') * trade.get('quantity')
             trader.cash -= trade_val
-            #trader.position_val += trade_val
-            trader.position_val = trade_val
-
+            trader.position_val += trade_val
         print('trader:', trader.ID)
         print('trade_val:', trade_val)
 
