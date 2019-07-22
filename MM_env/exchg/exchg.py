@@ -28,7 +28,8 @@ class Exchg(object):
     def update_position_val(self):
         if len(self.LOB.tape) > 0:
             for trader in self.agents:
-                trader.position_val = abs(trader.net_position) * self.LOB.tape[-1].get('price')
+                #trader.position_val = abs(trader.net_position) * self.LOB.tape[-1].get('price')
+                trader.position_val = trader.net_position * self.LOB.tape[-1].get('price')
 
     # actions is a list of actions from all agents (traders) at t step
     # each action is a list of (type, side, size, price)
@@ -46,7 +47,7 @@ class Exchg(object):
             trader = self.agents[i]
             self.trades, self.order_in_book = self.place_order(type, side, size, price, trader)
 
-        self.update_position_val()
+        #self.update_position_val()
 
         # after processing LOB
         self.LOB_STATE_NEXT = self.LOB_state() # LOB state at t+1 after processing LOB
@@ -147,6 +148,10 @@ class Exchg(object):
                     counter_party.cash_on_hold -= trade_val # reduce cash_on_hold
                     #counter_party.position_val += trade_val
                     counter_party.position_val = trade_val
+
+                print('counter_party:', counter_party.ID)
+                print('trade_val:', trade_val)
+
                 counter_party.update_net_position(trade.get('counter_party').get('side'), trade.get('quantity'))
                 break
 
@@ -158,41 +163,18 @@ class Exchg(object):
         elif trader.net_position < 0: # short
             trader.update_acc_init_party(trade, order_in_book, 'init_party', 'ask')
         else: # neutral
-            trade_val = trade.get('price') * trade.get('quantity')
+            #trade_val = trade.get('price') * trade.get('quantity')
             trader.cash -= trade_val
             #trader.position_val += trade_val
             trader.position_val = trade_val
+
+        print('trader:', trader.ID)
+        print('trade_val:', trade_val)
+
         trader.update_net_position(trade.get('init_party').get('side'), trade.get('quantity'))
 
         return 0
-    """
-    # take or execute action
-    def place_order(self, type, side, size, price, trader):
-        trades, order_in_book = [],[]
-        if(side == None): # do nothing to LOB
-            return trades, order_in_book # do nothing to LOB
-        # normal execution
-        elif trader.order_approved(trader.cash, size, price):
-            order = trader.create_order(type, side, size, price)
-            trades, order_in_book = self.LOB.process_order(order, False, False)
-            if trades == []:
-                trader.update_cash_init_party(order_in_book) # if there's any unfilled
-            else:
-                for trade in trades:
-                    trade_val = trade.get('price') * trade.get('quantity')
-                    # init_party is not counter_party
-                    if trade.get('counter_party').get('ID') != trade.get('init_party').get('ID'):
-                        self.process_counter_party(trade, trade_val)
-                        self.process_init_party(trader, trade, order_in_book, trade_val)
-                    else: # init_party is also counter_party
-                        trader.cash_on_hold -= trade_val
-                        trader.cash += trade_val
-                trader.update_cash_init_party(order_in_book) # if there's any unfilled
-            return trades, order_in_book
-        else: # not enough cash to place order
-            print('Invalid order: order value > cash available.', trader.ID)
-            return trades, order_in_book
-        """
+
     # take or execute action
     def place_order(self, type, side, size, price, trader):
         trades, order_in_book = [],[]
@@ -206,7 +188,8 @@ class Exchg(object):
             trades, order_in_book = self.LOB.process_order(order, False, False)
             if trades != []:
                 for trade in trades:
-                    trade_val = trade.get('price') * trade.get('quantity')
+                    print('trades:', trades)
+                    trade_val = trade.get('quantity') * trade.get('price')
                     # init_party is not counter_party
                     if trade.get('counter_party').get('ID') != trade.get('init_party').get('ID'):
                         self.process_counter_party(trade, trade_val)
