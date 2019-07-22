@@ -21,22 +21,18 @@ class Exchg(object):
     # reset
     def reset(self):
         self.counter = 0
-
         return self.LOB_state()
 
     # update position_val for all traders with last price in last entry of tape
     def update_position_val(self):
         if len(self.LOB.tape) > 0:
             for trader in self.agents:
-                #trader.position_val = abs(trader.net_position) * self.LOB.tape[-1].get('price')
-                #trader.position_val = trader.net_position * self.LOB.tape[-1].get('price')
-
                 diff = abs(trader.net_position) * self.LOB.tape[-1].get('price') - trader.position_val
-
                 if trader.net_position >= 0:
                     trader.position_val += diff
                 else:
                     trader.position_val -= diff
+        return 0
 
 
     # actions is a list of actions from all agents (traders) at t step
@@ -85,7 +81,6 @@ class Exchg(object):
             trader.nav = trader.cal_nav() # new nav
             reward = trader.nav - prev_nav
             rewards.append({'ID': trader.ID, 'reward': reward})
-
         return rewards
 
     # render
@@ -97,7 +92,6 @@ class Exchg(object):
         print('\nLOB_STATE_NEXT:\n', self.LOB_STATE_NEXT)
         print('\nstate_diff:\n', self.s_next)
         print('\nrewards:\n', self.rewards)
-
         return 0
 
     # price_map is an OrderTree object (SortedDict object)
@@ -160,7 +154,6 @@ class Exchg(object):
 
                 counter_party.update_net_position(trade.get('counter_party').get('side'), trade.get('quantity'))
                 break
-
         return 0
 
     def process_init_party(self, trader, trade, order_in_book, trade_val):
@@ -171,11 +164,10 @@ class Exchg(object):
         else: # neutral
             trader.cash -= trade_val
             trader.position_val += trade_val
-        print('trader:', trader.ID)
-        print('trade_val:', trade_val)
+            print('trader:', trader.ID)
+            print('trade_val:', trade_val)
 
         trader.update_net_position(trade.get('init_party').get('side'), trade.get('quantity'))
-
         return 0
 
     # take or execute action

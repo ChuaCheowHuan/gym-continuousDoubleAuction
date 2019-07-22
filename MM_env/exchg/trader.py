@@ -25,36 +25,7 @@ class Trader(object):
     # order_size is size of order currently executed, positive for long, negative for short
     def cal_net_position(self, net_position, order_size):
         return net_position + order_size
-    """
-    # decides if net_price remain unchanged or replace net_price with new order_price
-    # order is the current order being filled
-    def cal_net_price(self, net_position, net_price, order_size, order_price):
-        if net_position == 0:
-            net_price = order_price
-        # use VWAP for net_price
-        elif net_position > 0 and order_size > 0:
-            net_price = ((net_position * net_price) + (order_size * order_price)) / (net_position + order_size)
-        elif net_position < 0 and order_size < 0:
-            net_price = ((net_position * net_price) + (order_size * order_price)) / (net_position + order_size)
-        elif net_position > 0 and order_size < 0: # net is long, new order is short
-            if abs(net_position) > abs(order_size): # more long than short
-                net_price = net_price
-            elif abs(net_position) < abs(order_size): # more short than long
-                net_price = order_price
-            else: # even long & short, cancel out
-                net_price = 0
-        elif net_position < 0 and order_size > 0:
-            if abs(net_position) > abs(order_size): # more long than short
-                net_price = net_price
-            elif abs(net_position) < abs(order_size): # more short than long
-                net_price = order_price
-            else: # even long & short, cancel out
-                net_price = 0
-        else:
-            net_price = 0
 
-        return net_price
-    """
     # decides if net_price remain unchanged or replace net_price with new order_price
     # order is the current order being filled
     def cal_net_price(self, net_position, net_price, order_size, order_price):
@@ -72,7 +43,6 @@ class Trader(object):
                 net_price = 0
         else:
             net_price = 0
-
         return net_price
 
     # negative profit is loss
@@ -107,7 +77,6 @@ class Trader(object):
                      'trade_id': self.ID}
         else:
             order = {}
-
         return order
 
     # pass action to step
@@ -124,7 +93,6 @@ class Trader(object):
                   "side": side,
                   "size": size,
                   "price": price}
-
         return action
 
     # used in 2 situations
@@ -136,7 +104,6 @@ class Trader(object):
             new_order_in_book_val = order_in_book.get('price') * order_in_book.get('quantity')
             self.cash -= new_order_in_book_val # reduce cash
             self.cash_on_hold += new_order_in_book_val # increase cash_on_hold
-
         return 0
 
     # position different from trade side, eg: long & ask
@@ -147,34 +114,26 @@ class Trader(object):
         else: # net position changed after the trade
             self.cash += abs(self.net_position) * trade.get('price') # portion covered goes back to cash
             self.position_val = (trade.get('quantity') - abs(self.net_position)) * trade.get('price') # remaining trade_val goes to position_val
-
         return 0
 
     # update cash, cash_on_hold, position_val for init_party (party2)
     def update_acc_init_party(self, trade, order_in_book, party, side):
         if trade.get(party).get('side') == side:
             self.cash -= trade.get('price') * trade.get('quantity')
-            #self.position_val += trade_val # increase position_val
-            self.position_val = (abs(self.net_position) + trade.get('quantity')) * trade.get('price') # increase position_val
-
-            # ********** TODO **********
-            #diff =
-
+            self.position_val += trade.get('quantity') * trade.get('price') # increase position_val
         else:
             self.position_diff_side(trade)
-
         return 0
 
     # update cash, cash_on_hold, position_val for counter_party (party1)
     def update_acc_counter_party(self, trade, party, side):
         if trade.get(party).get('side') == side:
-            #self.position_val += trade_val # increase position_val
-            self.position_val = (abs(self.net_position) + trade.get('quantity')) * trade.get('price') # increase position_val
+            #self.position_val = (abs(self.net_position) + trade.get('quantity')) * trade.get('price') # increase position_val
+            self.position_val = trade.get('quantity') * trade.get('price') # increase position_val
         else:
             self.position_diff_side(trade)
 
         self.cash_on_hold -= trade.get('price') * trade.get('quantity') # reduce cash_on_hold
-
         return 0
 
     def update_net_position(self, side, trade_quantity):
@@ -188,45 +147,7 @@ class Trader(object):
                 self.net_position += -trade_quantity
             else:
                 self.net_position += trade_quantity
-
         return 0
 
     def update_position_val(self, trader, tape):
         return trader.net_position * tape[-1].get('price')
-
-
-if __name__ == "__main__":
-
-    ID = 1
-    nav = 10000
-    cash = 10000
-    cash_on_hold = 0
-    position_val = 0
-    live_order = []
-    trade_rec = []
-    net_position = 0
-    net_price = 0
-
-    t1 = Trader(ID, nav, cash, cash_on_hold, position_val, live_order, trade_rec, net_position, net_price)
-    print(t1)
-
-    t1.nav = t1.cal_nav(cash, position_val)
-    print(t1.nav)
-
-    order_size = 100
-    order_size = -100
-    t1.net_position = t1.cal_net_position(net_position, order_size)
-    print(t1.net_position)
-
-    net_position = 0
-    net_price = 0
-    order_price = 3
-    order_size = 200
-    t1.net_price = t1.cal_net_price(net_position, net_price, order_size, order_price)
-    print(t1.net_price)
-    net_position = 100
-    net_price = 3
-    order_price = 1
-    order_size = -200
-    t1.net_price = t1.cal_net_price(net_position, net_price, order_size, order_price)
-    print(t1.net_price)
