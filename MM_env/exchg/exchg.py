@@ -149,6 +149,7 @@ class Exchg(object):
                 else: # neutral
                     counter_party.cash_on_hold -= trade_val
                     counter_party.position_val += trade_val
+                    
                 print('counter_party:', counter_party.ID)
                 print('trade_val:', trade_val)
 
@@ -164,6 +165,7 @@ class Exchg(object):
         else: # neutral
             trader.cash -= trade_val
             trader.position_val += trade_val
+
             print('trader:', trader.ID)
             print('trade_val:', trade_val)
 

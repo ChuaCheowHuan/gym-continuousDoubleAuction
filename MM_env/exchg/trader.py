@@ -120,7 +120,9 @@ class Trader(object):
     def update_acc_init_party(self, trade, order_in_book, party, side):
         if trade.get(party).get('side') == side:
             self.cash -= trade.get('price') * trade.get('quantity')
+
             self.position_val += trade.get('quantity') * trade.get('price') # increase position_val
+
         else:
             self.position_diff_side(trade)
         return 0
@@ -128,8 +130,9 @@ class Trader(object):
     # update cash, cash_on_hold, position_val for counter_party (party1)
     def update_acc_counter_party(self, trade, party, side):
         if trade.get(party).get('side') == side:
-            #self.position_val = (abs(self.net_position) + trade.get('quantity')) * trade.get('price') # increase position_val
-            self.position_val = trade.get('quantity') * trade.get('price') # increase position_val
+            
+            self.position_val += trade.get('quantity') * trade.get('price') # increase position_val
+
         else:
             self.position_diff_side(trade)
 
