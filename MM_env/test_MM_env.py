@@ -9,32 +9,6 @@ if "../" not in sys.path:
 
 from exchg.exchg import Exchg
 
-def test_raw():
-    e = test_1()
-    """
-    action1 = {"type": 'limit', "side": 'bid', "size": 4, "price": 2}
-    action2 = {"type": 'limit', "side": 'ask', "size": 6, "price": 4}
-    action3 = {"type": 'limit', "side": 'bid', "size": 8, "price": 3}
-    """
-    # actions
-    action1 = {"type": 'limit', "side": 'bid', "size": 4, "price": 2}
-    action2 = {"type": 'limit', "side": 'ask', "size": 6, "price": 4}
-    action3 = {"type": 'limit', "side": 'bid', "size": 8, "price": 3}
-    actions = [action1,action2,action3]
-    """
-    expected_result_1 = (92, 8, 0, 100, 0)
-    expected_result_2 = (76, 24, 0, 100, 0)
-    expected_result_3 = (76, 24, 0, 100, 0)
-    """
-    # hard coded expected results
-    expected_result_1 = (92, 8, 0, 100, 0)
-    expected_result_2 = (76, 24, 0, 100, 0)
-    expected_result_3 = (76, 24, 0, 100, 0)
-
-    _test(e, actions, expected_result_1, expected_result_2, expected_result_3)
-
-    return e
-
 def print_acc(e, ID):
     print('\nID:', ID)
     print('cash:', e.agents[ID].cash)
@@ -65,13 +39,14 @@ def create_env():
 
     return e
 
-def _test(e, actions, expected_result_1, expected_result_2, expected_result_3):
+def test(e, actions, expected_result_1, expected_result_2, expected_result_3, expected_result_4):
     e.step(actions) # execute actions in 1 step
 
     # get results
     result_1 = _acc(e, ID=0)
     result_2 = _acc(e, ID=1)
     result_3 = _acc(e, ID=2)
+    result_4 = _acc(e, ID=3)
 
     print('expected_result_1:', expected_result_1)
     print('result_1:', result_1)
@@ -79,11 +54,14 @@ def _test(e, actions, expected_result_1, expected_result_2, expected_result_3):
     print('result_2:', result_2)
     print('expected_result_3:', expected_result_3)
     print('result_3:', result_3)
+    print('expected_result_4:', expected_result_4)
+    print('result_4:', result_4)
 
     # test
     assert(expected_result_1 == result_1)
     assert(expected_result_2 == result_2)
     assert(expected_result_3 == result_3)
+    assert(expected_result_4 == result_4)
 
     print_info(e)
 
@@ -92,26 +70,19 @@ def test_1():
     e = create_env()
 
     # actions
-    action1 = {"type": 'limit',
-               "side": 'bid',
-               "size": 4,
-               "price": 2}
-    action2 = {"type": 'limit',
-               "side": 'ask',
-               "size": 6,
-               "price": 4}
-    action3 = {"type": 'limit',
-               "side": 'bid',
-               "size": 8,
-               "price": 3}
-    actions = [action1,action2,action3]
+    action1 = {"type": 'limit', "side": 'bid', "size": 6, "price": 2}
+    action2 = {"type": 'limit', "side": 'bid', "size": 5, "price": 3}
+    action3 = {"type": 'limit', "side": 'ask', "size": 4, "price": 4}
+    action4 = {"type": 'limit', "side": 'ask', "size": 3, "price": 5}
+    actions = [action1,action2,action3,action4]
 
     # hard coded expected results
-    expected_result_1 = (92, 8, 0, 100, 0)
-    expected_result_2 = (76, 24, 0, 100, 0)
-    expected_result_3 = (76, 24, 0, 100, 0)
+    expected_result_1 = (88, 12, 0, 100, 0)
+    expected_result_2 = (85, 15, 0, 100, 0)
+    expected_result_3 = (84, 16, 0, 100, 0)
+    expected_result_4 = (85, 15, 0, 100, 0)
 
-    _test(e, actions, expected_result_1, expected_result_2, expected_result_3)
+    test(e, actions, expected_result_1, expected_result_2, expected_result_3, expected_result_4)
 
     return e
 
@@ -160,150 +131,6 @@ def test_1_1():
 
     return e
 
-# init short position for T1, counter party T2 with unfilled
-def test_1_2():
-    e = test_1()
-    """
-    action1 = {"type": 'limit',
-               "side": 'bid',
-               "size": 4,
-               "price": 2}
-    action2 = {"type": 'limit',
-               "side": 'ask',
-               "size": 6,
-               "price": 4}
-    action3 = {"type": 'limit',
-               "side": 'bid',
-               "size": 8,
-               "price": 3}
-    """
-    # actions
-    action1 = {"type": 'limit',
-               "side": None,
-               "size": 4,
-               "price": 2}
-    action2 = {"type": 'limit',
-               "side": 'ask',
-               "size": 3,
-               "price": 3}
-    action3 = {"type": 'limit',
-               "side": None,
-               "size": 8,
-               "price": 3}
-    actions = [action1,action2,action3]
-    """
-    expected_result_1 = (92, 8, 0, 100, 0)
-    expected_result_2 = (76, 24, 0, 100, 0)
-    expected_result_3 = (76, 24, 0, 100, 0)
-    """
-    # hard coded expected results
-    expected_result_1 = (92, 8, 0, 100, 0)
-    expected_result_2 = (67, 24, 9, 100, -3)
-    expected_result_3 = (76, 15, 9, 100, 3)
-
-    _test(e, actions, expected_result_1, expected_result_2, expected_result_3)
-
-    return e
-
-# init long position for T0 with unfilled, counter party T1
-def test_1_3():
-    e = test_1()
-    """
-    action1 = {"type": 'limit',
-               "side": 'bid',
-               "size": 4,
-               "price": 2}
-    action2 = {"type": 'limit',
-               "side": 'ask',
-               "size": 6,
-               "price": 4}
-    action3 = {"type": 'limit',
-               "side": 'bid',
-               "size": 8,
-               "price": 3}
-    """
-    # actions
-    action1 = {"type": 'limit',
-               "side": 'bid',
-               "size": 10,
-               "price": 5}
-    action2 = {"type": 'limit',
-               "side": None,
-               "size": 6,
-               "price": 4}
-    action3 = {"type": 'limit',
-               "side": None,
-               "size": 8,
-               "price": 3}
-    actions = [action1,action2,action3]
-    """
-    expected_result_1 = (92, 8, 0, 100, 0)
-    expected_result_2 = (76, 24, 0, 100, 0)
-    expected_result_3 = (76, 24, 0, 100, 0)
-    """
-    # hard coded expected results
-    expected_result_1 = (48, 28, 24, 100, 6)
-    expected_result_2 = (76, 0, 24, 100, -6)
-    expected_result_3 = (76, 24, 0, 100, 0)
-
-    _test(e, actions, expected_result_1, expected_result_2, expected_result_3)
-
-    return e
-
-# init short position for T1 with unfilled, counter party T2
-def test_1_4():
-    e = test_1()
-    """
-    action1 = {"type": 'limit', "side": 'bid', "size": 4, "price": 2}
-    action2 = {"type": 'limit', "side": 'ask', "size": 6, "price": 4}
-    action3 = {"type": 'limit', "side": 'bid', "size": 8, "price": 3}
-    """
-    # actions
-    action1 = {"type": 'limit', "side": None, "size": 4, "price": 2}
-    action2 = {"type": 'limit', "side": 'ask', "size": 10, "price": 3}
-    action3 = {"type": 'limit', "side": None, "size": 8, "price": 3}
-    actions = [action1,action2,action3]
-    """
-    expected_result_1 = (92, 8, 0, 100, 0)
-    expected_result_2 = (76, 24, 0, 100, 0)
-    expected_result_3 = (76, 24, 0, 100, 0)
-    """
-    # hard coded expected results
-    expected_result_1 = (92, 8, 0, 100, 0)
-    expected_result_2 = (46, 30, 24, 100, -8)
-    expected_result_3 = (76, 0, 24, 100, 8)
-
-    _test(e, actions, expected_result_1, expected_result_2, expected_result_3)
-
-    return e
-
-# 
-def test_raw():
-    e = test_1()
-    """
-    action1 = {"type": 'limit', "side": 'bid', "size": 4, "price": 2}
-    action2 = {"type": 'limit', "side": 'ask', "size": 6, "price": 4}
-    action3 = {"type": 'limit', "side": 'bid', "size": 8, "price": 3}
-    """
-    # actions
-    action1 = {"type": 'limit', "side": 'bid', "size": 4, "price": 2}
-    action2 = {"type": 'limit', "side": 'ask', "size": 6, "price": 4}
-    action3 = {"type": 'limit', "side": 'bid', "size": 8, "price": 3}
-    actions = [action1,action2,action3]
-    """
-    expected_result_1 = (92, 8, 0, 100, 0)
-    expected_result_2 = (76, 24, 0, 100, 0)
-    expected_result_3 = (76, 24, 0, 100, 0)
-    """
-    # hard coded expected results
-    expected_result_1 = (92, 8, 0, 100, 0)
-    expected_result_2 = (76, 24, 0, 100, 0)
-    expected_result_3 = (76, 24, 0, 100, 0)
-
-    _test(e, actions, expected_result_1, expected_result_2, expected_result_3)
-
-    return e
-
 def test_random():
     num_of_traders = 3
     init_cash = 1000
@@ -324,10 +151,10 @@ def test_random():
 if __name__ == "__main__":
 
     test_1() # place initial orders
-    test_1_1()
-    test_1_2()
-    test_1_3()
-    test_1_4()
+    #test_1_1()
+    #test_1_2()
+    #test_1_3()
+    #test_1_4()
 
 
     #test_random()
