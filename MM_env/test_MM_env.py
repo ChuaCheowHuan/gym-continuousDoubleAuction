@@ -31,7 +31,7 @@ def _acc(e, ID):
             e.agents[ID].net_position)
 
 def create_env():
-    num_of_traders = 3
+    num_of_traders = 4
     tape_display_length = 100
     init_cash = 100
     max_step = 10
@@ -90,44 +90,32 @@ def test_1():
 def test_1_1():
     e = test_1()
     """
-    action1 = {"type": 'limit',
-               "side": 'bid',
-               "size": 4,
-               "price": 2}
-    action2 = {"type": 'limit',
-               "side": 'ask',
-               "size": 6,
-               "price": 4}
-    action3 = {"type": 'limit',
-               "side": 'bid',
-               "size": 8,
-               "price": 3}
+    # actions
+    action1 = {"type": 'limit', "side": 'bid', "size": 6, "price": 2}
+    action2 = {"type": 'limit', "side": 'bid', "size": 5, "price": 3}
+    action3 = {"type": 'limit', "side": 'ask', "size": 4, "price": 4}
+    action4 = {"type": 'limit', "side": 'ask', "size": 3, "price": 5}
+
+    # hard coded expected results
+    expected_result_1 = (88, 12, 0, 100, 0)
+    expected_result_2 = (85, 15, 0, 100, 0)
+    expected_result_3 = (84, 16, 0, 100, 0)
+    expected_result_4 = (85, 15, 0, 100, 0)
     """
     # actions
-    action1 = {"type": 'limit',
-               "side": 'bid',
-               "size": 2,
-               "price": 4}
-    action2 = {"type": 'limit',
-               "side": None,
-               "size": 6,
-               "price": 4}
-    action3 = {"type": 'limit',
-               "side": None,
-               "size": 8,
-               "price": 3}
+    action1 = {"type": 'limit', "side": 'bid', "size": 6, "price": 2}
+    action2 = {"type": 'limit', "side": 'bid', "size": 5, "price": 3}
+    action3 = {"type": 'limit', "side": 'ask', "size": 4, "price": 4}
+    action4 = {"type": 'limit', "side": 'ask', "size": 3, "price": 5}
     actions = [action1,action2,action3]
-    """
-    expected_result_1 = (92, 8, 0, 100, 0)
-    expected_result_2 = (76, 24, 0, 100, 0)
-    expected_result_3 = (76, 24, 0, 100, 0)
-    """
-    # hard coded expected results
-    expected_result_1 = (84, 8, 8, 100, 2)
-    expected_result_2 = (76, 16, 8, 100, -2)
-    expected_result_3 = (76, 24, 0, 100, 0)
 
-    _test(e, actions, expected_result_1, expected_result_2, expected_result_3)
+    # hard coded expected results
+    expected_result_1 = (88, 12, 0, 100, 0)
+    expected_result_2 = (85, 15, 0, 100, 0)
+    expected_result_3 = (84, 16, 0, 100, 0)
+    expected_result_4 = (85, 15, 0, 100, 0)
+
+    _test(e, actions, expected_result_1, expected_result_2, expected_result_3, expected_result_4)
 
     return e
 
