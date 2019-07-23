@@ -39,90 +39,92 @@ def create_env():
 
     return e
 
-def test(e, expected_result_1, expected_result_2, expected_result_3, expected_result_4):
+def test(e, expected_result_0, expected_result_1, expected_result_2, expected_result_3):
     # get results
-    result_1 = _acc(e, ID=0)
-    result_2 = _acc(e, ID=1)
-    result_3 = _acc(e, ID=2)
-    result_4 = _acc(e, ID=3)
+    result_0 = _acc(e, ID=0)
+    result_1 = _acc(e, ID=1)
+    result_2 = _acc(e, ID=2)
+    result_3 = _acc(e, ID=3)
+    print('expected_result_0:', expected_result_0)
+    print('result_0:', result_0)
     print('expected_result_1:', expected_result_1)
     print('result_1:', result_1)
     print('expected_result_2:', expected_result_2)
     print('result_2:', result_2)
     print('expected_result_3:', expected_result_3)
     print('result_3:', result_3)
-    print('expected_result_4:', expected_result_4)
-    print('result_4:', result_4)
     # test
-    #assert(expected_result_1 == result_1)
-    #assert(expected_result_2 == result_2)
-    #assert(expected_result_3 == result_3)
-    #assert(expected_result_4 == result_4)
+    #assert(expected_result_0 == result_0)
+    #assert(expected_result_0 == result_1)
+    #assert(expected_result_1 == result_2)
+    #assert(expected_result_2 == result_3)
     print_info(e)
 
-# place initial orders
+# place initial orders, 4 traders each with 3 bids, 3 asks all in LOB, no trade
 def test_1():
     e = create_env()
-    action1 = {"type": 'limit', "side": 'bid', "size": 3, "price": 2}
-    action2 = {"type": 'limit', "side": 'bid', "size": 4, "price": 5}
-    action3 = {"type": 'limit', "side": 'bid', "size": 5, "price": 8}
-    action4 = {"type": 'limit', "side": 'bid', "size": 6, "price": 11}
-    actions = [action1,action2,action3,action4] # actions
+    # bid
+    action0 = {"type": 'limit', "side": 'bid', "size": 3, "price": 2}
+    action1 = {"type": 'limit', "side": 'bid', "size": 4, "price": 5}
+    action2 = {"type": 'limit', "side": 'bid', "size": 5, "price": 8}
+    action3 = {"type": 'limit', "side": 'bid', "size": 6, "price": 11}
+    actions = [action0,action1,action2,action3] # actions
     e.step(actions) # execute actions in 1 step
-    action1 = {"type": 'limit', "side": 'bid', "size": 3, "price": 3}
-    action2 = {"type": 'limit', "side": 'bid', "size": 4, "price": 6}
-    action3 = {"type": 'limit', "side": 'bid', "size": 5, "price": 9}
-    action4 = {"type": 'limit', "side": 'bid', "size": 6, "price": 12}
-    actions = [action1,action2,action3,action4] # actions
+    action0 = {"type": 'limit', "side": 'bid', "size": 3, "price": 3}
+    action1 = {"type": 'limit', "side": 'bid', "size": 4, "price": 6}
+    action2 = {"type": 'limit', "side": 'bid', "size": 5, "price": 9}
+    action3 = {"type": 'limit', "side": 'bid', "size": 6, "price": 12}
+    actions = [action0,action1,action2,action3] # actions
     e.step(actions) # execute actions in 1 step
-    action1 = {"type": 'limit', "side": 'bid', "size": 3, "price": 4}
-    action2 = {"type": 'limit', "side": 'bid', "size": 4, "price": 7}
-    action3 = {"type": 'limit', "side": 'bid', "size": 5, "price": 10}
-    action4 = {"type": 'limit', "side": 'bid', "size": 6, "price": 13}
-    actions = [action1,action2,action3,action4] # actions
+    action0 = {"type": 'limit', "side": 'bid', "size": 3, "price": 4}
+    action1 = {"type": 'limit', "side": 'bid', "size": 4, "price": 7}
+    action2 = {"type": 'limit', "side": 'bid', "size": 5, "price": 10}
+    action3 = {"type": 'limit', "side": 'bid', "size": 6, "price": 13}
+    actions = [action0,action1,action2,action3] # actions
+    e.step(actions) # execute actions in 1 step
+    # ask
+    action0 = {"type": 'limit', "side": 'ask', "size": 3, "price": 14}
+    action1 = {"type": 'limit', "side": 'ask', "size": 4, "price": 17}
+    action2 = {"type": 'limit', "side": 'ask', "size": 5, "price": 20}
+    action3 = {"type": 'limit', "side": 'ask', "size": 6, "price": 23}
+    actions = [action0,action1,action2,action3] # actions
+    e.step(actions) # execute actions in 1 step
+    action0 = {"type": 'limit', "side": 'ask', "size": 3, "price": 15}
+    action1 = {"type": 'limit', "side": 'ask', "size": 4, "price": 18}
+    action2 = {"type": 'limit', "side": 'ask', "size": 5, "price": 21}
+    action3 = {"type": 'limit', "side": 'ask', "size": 6, "price": 24}
+    actions = [action0,action1,action2,action3] # actions
+    e.step(actions) # execute actions in 1 step
+    action0 = {"type": 'limit', "side": 'ask', "size": 3, "price": 16}
+    action1 = {"type": 'limit', "side": 'ask', "size": 4, "price": 19}
+    action2 = {"type": 'limit', "side": 'ask', "size": 5, "price": 22}
+    action3 = {"type": 'limit', "side": 'ask', "size": 6, "price": 25}
+    actions = [action0,action1,action2,action3] # actions
     e.step(actions) # execute actions in 1 step
 
-    action1 = {"type": 'limit', "side": 'ask', "size": 3, "price": 14}
-    action2 = {"type": 'limit', "side": 'ask', "size": 4, "price": 17}
-    action3 = {"type": 'limit', "side": 'ask', "size": 5, "price": 20}
-    action4 = {"type": 'limit', "side": 'ask', "size": 6, "price": 23}
-    actions = [action1,action2,action3,action4] # actions
-    e.step(actions) # execute actions in 1 step
-    action1 = {"type": 'limit', "side": 'ask', "size": 3, "price": 15}
-    action2 = {"type": 'limit', "side": 'ask', "size": 4, "price": 18}
-    action3 = {"type": 'limit', "side": 'ask', "size": 5, "price": 21}
-    action4 = {"type": 'limit', "side": 'ask', "size": 6, "price": 24}
-    actions = [action1,action2,action3,action4] # actions
-    e.step(actions) # execute actions in 1 step
-    action1 = {"type": 'limit', "side": 'ask', "size": 3, "price": 16}
-    action2 = {"type": 'limit', "side": 'ask', "size": 4, "price": 19}
-    action3 = {"type": 'limit', "side": 'ask', "size": 5, "price": 22}
-    action4 = {"type": 'limit', "side": 'ask', "size": 6, "price": 25}
-    actions = [action1,action2,action3,action4] # actions
-    e.step(actions) # execute actions in 1 step
-
-    expected_result_1 = (67, 12, 21, 100, 5)
-    expected_result_2 = (85, 15, 0, 100, 0)
-    expected_result_3 = (84, 0, 16, 100, -4)
-    expected_result_4 = (85, 10, 5, 100, -1)
-    test(e, expected_result_1, expected_result_2, expected_result_3, expected_result_4)
+    expected_result_0 = (10000, 0, 0, 10000, 0)
+    expected_result_0 = (10000, 0, 0, 10000, 0)
+    expected_result_1 = (10000, 0, 0, 10000, 0)
+    expected_result_2 = (10000, 0, 0, 10000, 0)
+    test(e, expected_result_0, expected_result_0, expected_result_1, expected_result_2)
     return e
 
-# init long position for T0, counter party T2, T3(unfilled)
+# init long position for T0, counter party T0, T1, T2(unfilled)
 def test_1_1():
     e = test_1()
     # actions
-    action1 = {"type": 'limit', "side": 'bid', "size": 3, "price": 2}
-    action2 = {"type": 'limit', "side": 'bid', "size": 4, "price": 3}
-    action3 = {"type": 'limit', "side": 'bid', "size": 5, "price": 4}
-    action4 = {"type": 'limit', "side": 'bid', "size": 6, "price": 5}
-    actions = [action1,action2,action3,action4]
+    action0 = {"type": 'limit', "side": 'bid', "size": 3, "price": 2}
+    action1 = {"type": 'limit', "side": 'bid', "size": 4, "price": 3}
+    action2 = {"type": 'limit', "side": 'bid', "size": 5, "price": 4}
+    action3 = {"type": 'limit', "side": 'bid', "size": 6, "price": 5}
+    actions = [action0,action1,action2,action3]
+    e.step(actions) # execute actions in 1 step
     # hard coded expected results
-    expected_result_1 = (67, 12, 21, 100, 5)
-    expected_result_2 = (85, 15, 0, 100, 0)
-    expected_result_3 = (84, 0, 16, 100, -4)
-    expected_result_4 = (85, 10, 5, 100, -1)
-    test(e, actions, expected_result_1, expected_result_2, expected_result_3, expected_result_4)
+    expected_result_0 = (10000, 0, 0, 10000, 0)
+    expected_result_0 = (10000, 0, 0, 10000, 0)
+    expected_result_1 = (10000, 0, 0, 10000, 0)
+    expected_result_2 = (10000, 0, 0, 10000, 0)
+    test(e, expected_result_0, expected_result_0, expected_result_1, expected_result_2)
     return e
 
 def test_random():

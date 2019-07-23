@@ -42,7 +42,6 @@ class Trader(object):
         side = random.choice(['bid',None,'ask'])
         size = random.randrange(1, 100, 100) # size in 100s from 0(min) to 1000(max)
         price = random.randrange(1, 10, 1) # price from 1(min) to 100(max)
-
         action = {"type": type,
                   "side": side,
                   "size": size,
@@ -53,16 +52,24 @@ class Trader(object):
         for counter_party in agents: # search for counter_party
             if counter_party.ID == trade.get('counter_party').get('ID'):
                 counter_party.acc.process_acc(trade, 'counter_party')
+
+                counter_party.acc.print_acc()
+
                 break
 
     def process_trades(self, trades, agents):
         for trade in trades:
+
             print('trades:', trades)
+
             trade_val = trade.get('quantity') * trade.get('price')
             # init_party is not counter_party
             if trade.get('counter_party').get('ID') != trade.get('init_party').get('ID'):
                 self.process_counter_party(agents, trade)
                 self.acc.process_acc(trade, 'init_party')
+
+                self.acc.print_acc()
+
             else: # init_party is also counter_party
                 # ****************************** TODO ******************************
                 self.acc.cash_on_hold -= trade_val

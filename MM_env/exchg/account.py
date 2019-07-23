@@ -8,6 +8,14 @@ class Account(object):
         # assuming only one ticker (1 type of contract)
         self.net_position = net_position # number of contracts currently holding long (positive) or short (negative)
 
+    def print_acc(self):
+        print('cash', self.cash)
+        print('cash_on_hold', self.cash_on_hold)
+        print('position_val', self.position_val)
+        print('nav', self.nav)
+        print('net_position', self.net_position)
+        return 0
+
     def cal_nav(self):
         return self.cash + self.cash_on_hold + self.position_val
 
