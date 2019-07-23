@@ -40,7 +40,6 @@ class Account(object):
 
         if self.net_position >= 0: #long
             if trade.get(party).get('side') == 'bid':
-                curr_position_val = abs(self.net_position) * trade.get('price')
                 self.position_val = curr_position_val + trade_val
                 self.cash -= trade_val
             else: # ask
