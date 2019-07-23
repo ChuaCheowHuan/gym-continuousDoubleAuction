@@ -11,11 +11,11 @@ from exchg.exchg import Exchg
 
 def print_acc(e, ID):
     print('\nID:', ID)
-    print('cash:', e.agents[ID].cash)
-    print('cash_on_hold:', e.agents[ID].cash_on_hold)
-    print('position_val:', e.agents[ID].position_val)
-    print('nav:', e.agents[ID].nav)
-    print('net_position:', e.agents[ID].net_position)
+    print('cash:', e.agents[ID].acc.cash)
+    print('cash_on_hold:', e.agents[ID].acc.cash_on_hold)
+    print('position_val:', e.agents[ID].acc.position_val)
+    print('nav:', e.agents[ID].acc.nav)
+    print('net_position:', e.agents[ID].acc.net_position)
     print('\n')
 
 def print_info(e):
@@ -24,11 +24,11 @@ def print_info(e):
         print_acc(e, trader.ID)
 
 def _acc(e, ID):
-    return (e.agents[ID].cash,
-            e.agents[ID].cash_on_hold,
-            e.agents[ID].position_val,
-            e.agents[ID].nav,
-            e.agents[ID].net_position)
+    return (e.agents[ID].acc.cash,
+            e.agents[ID].acc.cash_on_hold,
+            e.agents[ID].acc.position_val,
+            e.agents[ID].acc.nav,
+            e.agents[ID].acc.net_position)
 
 def create_env():
     num_of_traders = 4
