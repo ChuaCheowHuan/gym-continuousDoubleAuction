@@ -27,11 +27,11 @@ class Exchg(object):
     def update_position_val(self):
         if len(self.LOB.tape) > 0:
             for trader in self.agents:
-                diff = abs(trader.net_position) * self.LOB.tape[-1].get('price') - trader.position_val
-                if trader.net_position >= 0:
-                    trader.position_val += diff
+                diff = abs(trader.acc.net_position) * self.LOB.tape[-1].get('price') - trader.acc.position_val
+                if trader.acc.net_position >= 0:
+                    trader.acc.position_val += diff
                 else:
-                    trader.position_val -= diff
+                    trader.acc.position_val -= diff
         return 0
 
 

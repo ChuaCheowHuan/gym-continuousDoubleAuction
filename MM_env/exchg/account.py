@@ -32,12 +32,15 @@ class Account(object):
 
     def process_acc(self, trade, party):
         prev_position_val = self.position_val
+        curr_position_val = abs(self.net_position) * trade.get('price')
         trade_val = trade.get('quantity') * trade.get('price')
 
         if self.net_position > 0: #long
             if trade.get(party).get('side') == 'bid':
-                self.position_val = prev_position_val + trade_val
-                self.cash -= trade_val
+                #self.position_val = curr_position_val + trade_val
+                position_val_diff = curr_position_val - prev_position_val
+                long_position_val = prev_position_val + position_val_diff # add
+                self.position_val = long_position_val + trade_val
             else: # ask
                 if self.net_position >= trade.get('quantity'): # still long or neutral
                     # val of long left
@@ -49,13 +52,20 @@ class Account(object):
                     self.cash += self.net_position * trade.get('price') # entire position covered goes back to cash
         elif self.net_position < 0: # short
             if trade.get(party).get('side') == 'ask':
-                curr_position_val = abs(self.net_position) * trade.get('price')
                 # if price decrease, diff is negative
                 position_val_diff = curr_position_val - prev_position_val
-                short_position_val = prev_position_val - position_val_diff
+                short_position_val = prev_position_val - position_val_diff # subtract
                 self.position_val = short_position_val + trade_val
+                """
+                prev_position_price = prev_position_val / abs(self.net_position)
+                old_short_prev_val = abs(self.net_position) * prev_position_price
+                old_short_curr_val = abs(self.net_position) * trade.get('price')
+                old_short_val_diff = old_short_curr_val - old_short_prev_val
+                old_short_val = old_short_prev_val - old_short_val_diff
+                self.position_val = old_short_val + trade_val
+                """
             else: # bid
-                prev_position_price = prev_position_val / self.net_position
+                prev_position_price = prev_position_val / abs(self.net_position)
                 if abs(net_position) >= trade_size: # still short or neutral
                     left_over_short = (abs(self.net_position) - trade.get('quantity'))
                     left_over_short_prev_val = left_over_short * prev_position_price
@@ -63,24 +73,22 @@ class Account(object):
                     left_over_short_val_diff = left_over_short_curr_val - left_over_short_prev_val
                     left_over_short_val = left_over_short_prev_val - left_over_short_val_diff
                     self.position_val = left_over_short_val
-                    cash += trade_val #trade_val goes back to cash
+                    self.cash += trade_val #trade_val goes back to cash
                 else: # net_position changed
                     short_prev_val = abs(self.net_position) * prev_position_price
                     short_curr_val = abs(self.net_position) * trade.get('price')
                     short_val_diff = short_curr_val - short_prev_val
                     short_val = short_prev_val - short_val_diff
-                    cash += short_val # short_val goes back to cash
+                    self.cash += short_val # short_val goes back to cash
                     left_over_long_val = (trade.get('quantity' - abs(self.net_position))) * trade.get('price')
                     self.position_val = left_over_long_val
         else: # neutral
-            if party == 'init_party':
-                self.cash -= trade_val
-            #else: # counter_party
-            #    self.cash_on_hold -= trade_val
             self.position_val += trade_val
 
         if party == 'counter_party':
             self.cash_on_hold -= trade_val
+        if party == 'init_party':
+            self.cash -= trade_val
 
         self.update_net_position(trade.get(party).get('side'), trade.get('quantity'))
         self.nav = self.cal_nav()

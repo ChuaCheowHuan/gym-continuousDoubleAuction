@@ -82,6 +82,7 @@ def test_1():
     actions = [action0,action1,action2,action3] # actions
     e.step(actions) # execute actions in 1 step
     # ask
+
     action0 = {"type": 'limit', "side": 'ask', "size": 3, "price": 14}
     action1 = {"type": 'limit', "side": 'ask', "size": 4, "price": 17}
     action2 = {"type": 'limit', "side": 'ask', "size": 5, "price": 20}
@@ -98,6 +99,24 @@ def test_1():
     action1 = {"type": 'limit', "side": 'ask', "size": 4, "price": 19}
     action2 = {"type": 'limit', "side": 'ask', "size": 5, "price": 22}
     action3 = {"type": 'limit', "side": 'ask', "size": 6, "price": 25}
+    """
+    action0 = {"type": 'limit', "side": 'ask', "size": 6, "price": 14}
+    action1 = {"type": 'limit', "side": 'ask', "size": 5, "price": 17}
+    action2 = {"type": 'limit', "side": 'ask', "size": 4, "price": 20}
+    action3 = {"type": 'limit', "side": 'ask', "size": 3, "price": 23}
+    actions = [action0,action1,action2,action3] # actions
+    e.step(actions) # execute actions in 1 step
+    action0 = {"type": 'limit', "side": 'ask', "size": 6, "price": 15}
+    action1 = {"type": 'limit', "side": 'ask', "size": 5, "price": 18}
+    action2 = {"type": 'limit', "side": 'ask', "size": 4, "price": 21}
+    action3 = {"type": 'limit', "side": 'ask', "size": 3, "price": 24}
+    actions = [action0,action1,action2,action3] # actions
+    e.step(actions) # execute actions in 1 step
+    action0 = {"type": 'limit', "side": 'ask', "size": 6, "price": 16}
+    action1 = {"type": 'limit', "side": 'ask', "size": 5, "price": 19}
+    action2 = {"type": 'limit', "side": 'ask', "size": 4, "price": 22}
+    action3 = {"type": 'limit', "side": 'ask', "size": 3, "price": 25}
+    """
     actions = [action0,action1,action2,action3] # actions
     e.step(actions) # execute actions in 1 step
 
@@ -188,6 +207,24 @@ Q @ $ (t) c/i side
 3 @ 15 (25) 0/0 bid
 3 @ 14 (25) 0/0 bid
 """
+# init short position for T0, counter party T0, T1, T2, T3(unfilled)
+def test_1_2():
+    e = test_1()
+    # actions
+    action0 = {"type": 'limit', "side": 'ask', "size": 52, "price": 2}
+    action1 = {"type": 'limit', "side": None, "size": 4, "price": 3}
+    action2 = {"type": 'limit', "side": None, "size": 5, "price": 4}
+    action3 = {"type": 'limit', "side": None, "size": 6, "price": 5}
+    actions = [action0,action1,action2,action3]
+    e.step(actions) # execute actions in 1 step
+    # hard coded expected results
+    expected_result_0 = (10000, 0, 0, 10000, 0)
+    expected_result_0 = (10000, 0, 0, 10000, 0)
+    expected_result_1 = (10000, 0, 0, 10000, 0)
+    expected_result_2 = (10000, 0, 0, 10000, 0)
+    test(e, expected_result_0, expected_result_0, expected_result_1, expected_result_2)
+    return e
+
 def test_random():
     num_of_traders = 4
     init_cash = 1000
@@ -208,8 +245,8 @@ def test_random():
 if __name__ == "__main__":
 
     #test_1() # place initial orders
-    test_1_1()
-    #test_1_2()
+    #test_1_1()
+    test_1_2()
     #test_1_3()
     #test_1_4()
 
