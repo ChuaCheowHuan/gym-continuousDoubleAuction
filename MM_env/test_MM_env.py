@@ -224,12 +224,51 @@ def test_1_2():
     expected_result_2 = (10000, 0, 0, 10000, 0)
     test(e, expected_result_0, expected_result_0, expected_result_1, expected_result_2)
     return e
+"""
+LOB:
+ ***Bids***
+2@2/0 - 1
 
+***Asks***
+3@14/0 - 13
+3@15/0 - 17
+3@16/0 - 21
+4@17/1 - 14
+4@18/1 - 18
+4@19/1 - 22
+5@20/2 - 15
+5@21/2 - 19
+5@22/2 - 23
+6@23/3 - 16
+6@24/3 - 20
+6@25/3 - 24
+
+***tape***
+Q @ $ (t) c/i side
+1 @ 2 (25) 0/0 ask  0  66
+3 @ 3 (25) 0/0 ask  3  60
+3 @ 4 (25) 0/0 ask  6  54
+4 @ 5 (25) 1/0 ask  12 48
+4 @ 6 (25) 1/0 ask  16 42
+4 @ 7 (25) 1/0 ask  20 36
+5 @ 8 (25) 2/0 ask  30 30
+5 @ 9 (25) 2/0 ask  35 24
+5 @ 10 (25) 2/0 ask 40 18
+6 @ 11 (25) 3/0 ask 54 12
+6 @ 12 (25) 3/0 ask 60 6
+6 @ 13 (25) 3/0 ask 66 0
+
+start pv: 78
+
+total profit: 342
+
+NEED VWAP
+"""
 def test_random():
     num_of_traders = 4
     init_cash = 1000
-    tape_display_length = 10
-    max_step = 10
+    tape_display_length = 100
+    max_step = 100
     e = Exchg(num_of_traders, init_cash, tape_display_length, max_step)
     for step in range(max_step):
         actions = []

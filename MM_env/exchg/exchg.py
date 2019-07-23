@@ -12,7 +12,7 @@ class Exchg(object):
         # list of agents or traders
         self.agents = [Trader(ID, init_cash) for ID in range(0, num_of_agents)]
         self.counter = 0
-        self.max_step = max_step
+        self.max_step = max_step # not tick time
         self.s_next = []
         self.rewards = []
         self.trades = []
