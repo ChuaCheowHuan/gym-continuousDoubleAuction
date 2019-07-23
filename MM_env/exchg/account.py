@@ -46,8 +46,9 @@ class Account(object):
             else: # bid
                 prev_position_price = prev_position_val / self.net_position
                 if abs(net_position) >= trade_size: # still short or neutral
-                    left_over_short_prev_val = (abs(self.net_position) - trade.get('quantity')) * prev_position_price
-                    left_over_short_curr_val = (abs(self.net_position) - trade.get('quantity')) * trade.get('price')
+                    left_over_short = (abs(self.net_position) - trade.get('quantity'))
+                    left_over_short_prev_val = left_over_short * prev_position_price
+                    left_over_short_curr_val = left_over_short * trade.get('price')
                     left_over_short_val_diff = left_over_short_curr_val - left_over_short_prev_val
                     left_over_short_val = left_over_short_prev_val - left_over_short_val_diff
                     self.position_val = left_over_short_val
