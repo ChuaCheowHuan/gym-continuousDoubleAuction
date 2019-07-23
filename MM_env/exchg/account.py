@@ -53,7 +53,7 @@ class Account(object):
                 # if price decrease, diff is negative
                 position_val_diff = curr_position_val - prev_position_val
                 short_position_val = prev_position_val - position_val_diff
-                position_val = short_position_val + trade_val
+                self.position_val = short_position_val + trade_val
             else: # bid
                 prev_position_price = prev_position_val / self.net_position
                 if abs(net_position) >= trade_size: # still short or neutral
@@ -75,11 +75,15 @@ class Account(object):
         else: # neutral
             if party == 'init_party':
                 self.cash -= trade_val
-            else: # counter_party
-                self.cash_on_hold -= trade_val
+            #else: # counter_party
+            #    self.cash_on_hold -= trade_val
             self.position_val += trade_val
 
+        if party == 'counter_party':
+            self.cash_on_hold -= trade_val
+
         self.update_net_position(trade.get(party).get('side'), trade.get('quantity'))
+        self.nav = self.cal_nav()
         return 0
 
     def update_net_position(self, side, trade_quantity):

@@ -16,7 +16,6 @@ def print_acc(e, ID):
     print('position_val:', e.agents[ID].acc.position_val)
     print('nav:', e.agents[ID].acc.nav)
     print('net_position:', e.agents[ID].acc.net_position)
-    print('\n')
 
 def print_info(e):
     e.render()

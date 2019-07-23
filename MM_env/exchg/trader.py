@@ -59,8 +59,9 @@ class Trader(object):
                 break
 
     def process_trades(self, trades, agents):
-        for trade in trades:
+        for i, trade in enumerate(trades):
 
+            print('i:', i)
             print('trade:', trade)
 
             trade_val = trade.get('quantity') * trade.get('price')
@@ -76,6 +77,9 @@ class Trader(object):
                 # ****************************** TODO ******************************
                 self.acc.cash_on_hold -= trade_val
                 self.acc.cash += trade_val
+
+                print('init_party:', self.ID)
+                self.acc.print_acc()
         return 0
 
     # take or execute action
