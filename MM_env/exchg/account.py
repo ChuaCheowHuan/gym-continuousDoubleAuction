@@ -19,12 +19,11 @@ class Account(object):
             self.cash_on_hold += order_in_book_val # increase cash_on_hold
         return 0
 
-    # update cash, cash_on_hold, position_val for init_party (party2)
     def process_acc(self, trade, party):
         prev_position_val = self.position_val
         trade_val = trade.get('quantity') * trade.get('price')
 
-        if self.net_position >= 0: #long
+        if self.net_position > 0: #long
             if trade.get(party).get('side') == 'bid':
                 self.position_val = prev_position_val + trade_val
                 self.cash -= trade_val
@@ -63,9 +62,10 @@ class Account(object):
                     self.position_val = left_over_long_val
         else: # neutral
             if party == 'init_party':
+                print('****************************** init_party trade_val:', trade_val)
                 self.cash -= trade_val
             else: # counter_party
-                print('****************************** trade_val:', trade_val)
+                print('****************************** counter_party trade_val:', trade_val)
                 self.cash_on_hold -= trade_val
             self.position_val += trade_val
 
