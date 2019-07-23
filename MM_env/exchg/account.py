@@ -30,9 +30,8 @@ class Account(object):
         return 0
 
     # update cash, cash_on_hold, position_val for init_party (party2)
-    def process_init_party(self, trade):
+    def process_init_party(self, trade, party):
         prev_position_val = self.position_val
-        prev_position_price = prev_position_val / self.net_position
         curr_position_val = abs(self.net_position) * trade.get('price')
         trade_val = trade.get('quantity') * trade.get('price')
         # if price decrease, diff is negative
@@ -57,6 +56,7 @@ class Account(object):
             if side == 'ask':
                 position_val = short_position_val + trade_val
             else: # bid
+                prev_position_price = prev_position_val / self.net_position
                 if abs(net_position) >= trade_size: # still short or neutral
                     left_over_short_prev_val = (abs(self.net_position) - trade.get('quantity')) * prev_position_price
                     left_over_short_curr_val = (abs(self.net_position) - trade.get('quantity')) * trade.get('price')
@@ -106,6 +106,7 @@ class Account(object):
         return 0
 
     def init_party(self, trade, order_in_book, trade_val):
+        """
         if self.net_position > 0: # long
             self.process_init_party(trade, order_in_book, 'init_party', 'bid')
         elif self.net_position < 0: # short
@@ -114,6 +115,8 @@ class Account(object):
             self.cash -= trade_val
             self.position_val += trade_val
         self.update_net_position(trade.get('init_party').get('side'), trade.get('quantity'))
+        """
+        self.process_init_party(trade, 'init_party')
         return 0
 
     def update_net_position(self, side, trade_quantity):
