@@ -30,7 +30,7 @@ class Account(object):
         return 0
 
     # update cash, cash_on_hold, position_val for init_party (party2)
-    def process_init_party(self, trade, party):
+    def process_acc(self, trade, party):
         prev_position_val = self.position_val
         curr_position_val = abs(self.net_position) * trade.get('price')
         trade_val = trade.get('quantity') * trade.get('price')
@@ -72,7 +72,10 @@ class Account(object):
                     left_over_long_val = (trade.get('quantity' - abs(self.net_position))) * trade.get('price')
                     self.position_val = left_over_long_val
         else: # neutral
-            self.cash -= trade_val
+            if party == 'init_party':
+                self.cash -= trade_val
+            else: # counter_party
+                self.cash_on_hold -= trade_val
             self.position_val += trade_val
 
         self.update_net_position(trade.get('init_party').get('side'), trade.get('quantity'))
@@ -91,6 +94,7 @@ class Account(object):
         return 0
 
     def counter_party(self, agents, trade, trade_val):
+        """
         for counter_party in agents: # search for counter_party
             if counter_party.ID == trade.get('counter_party').get('ID'):
                 if counter_party.acc.net_position > 0: # long
@@ -101,6 +105,11 @@ class Account(object):
                     counter_party.acc.cash_on_hold -= trade_val
                     counter_party.acc.position_val += trade_val
                 counter_party.acc.update_net_position(trade.get('counter_party').get('side'), trade.get('quantity'))
+                break
+        """
+        for counter_party in agents: # search for counter_party
+            if counter_party.ID == trade.get('counter_party').get('ID'):
+                self.process_acc(trade, 'counter_party')
                 break
         return 0
 
@@ -115,7 +124,7 @@ class Account(object):
             self.position_val += trade_val
         self.update_net_position(trade.get('init_party').get('side'), trade.get('quantity'))
         """
-        self.process_init_party(trade, 'init_party')
+        self.process_acc(trade, 'init_party')
         return 0
 
     def update_net_position(self, side, trade_quantity):
