@@ -49,6 +49,26 @@ class Trader(object):
                   "price": price}
         return action
 
+    def process_counter_party(self, agents, trade):
+        for counter_party in agents: # search for counter_party
+            if counter_party.ID == trade.get('counter_party').get('ID'):
+                counter_party.acc.process_acc(trade, 'counter_party')
+                break
+
+    def process_trades(self, trades, agents):
+        for trade in trades:
+            print('trades:', trades)
+            trade_val = trade.get('quantity') * trade.get('price')
+            # init_party is not counter_party
+            if trade.get('counter_party').get('ID') != trade.get('init_party').get('ID'):
+                self.process_counter_party(agents, trade)
+                self.acc.process_acc(trade, 'init_party')
+            else: # init_party is also counter_party
+                # ****************************** TODO ******************************
+                self.acc.cash_on_hold -= trade_val
+                self.acc.cash += trade_val
+        return 0
+
     # take or execute action
     def place_order(self, type, side, size, price, LOB, agents):
         trades, order_in_book = [],[]
@@ -61,17 +81,7 @@ class Trader(object):
                 return trades, order_in_book
             trades, order_in_book = LOB.process_order(order, False, False)
             if trades != []:
-                for trade in trades:
-                    print('trades:', trades)
-                    trade_val = trade.get('quantity') * trade.get('price')
-                    # init_party is not counter_party
-                    if trade.get('counter_party').get('ID') != trade.get('init_party').get('ID'):
-                        self.acc.counter_party(agents, trade, trade_val)
-                        self.acc.init_party(trade, order_in_book, trade_val)
-                    else: # init_party is also counter_party
-                        # ****************************** TODO ******************************                        
-                        self.acc.cash_on_hold -= trade_val
-                        self.acc.cash += trade_val
+                self.process_trades(trades, agents)
             self.acc.order_in_book_init_party(order_in_book) # if there's any unfilled
             return trades, order_in_book
         else: # not enough cash to place order
