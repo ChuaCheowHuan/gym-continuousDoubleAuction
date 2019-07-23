@@ -65,10 +65,11 @@ class Account(object):
             if party == 'init_party':
                 self.cash -= trade_val
             else: # counter_party
+                print('****************************** trade_val:', trade_val)
                 self.cash_on_hold -= trade_val
             self.position_val += trade_val
 
-        self.update_net_position(trade.get('init_party').get('side'), trade.get('quantity'))
+        self.update_net_position(trade.get(party).get('side'), trade.get('quantity'))
         return 0
 
     def update_net_position(self, side, trade_quantity):
