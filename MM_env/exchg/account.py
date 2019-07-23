@@ -1,12 +1,13 @@
 class Account(object):
-    def __init__(self, cash=0, nav=0, cash_on_hold=0, position_val=0, net_position=0):
+    def __init__(self, cash=0, nav=0, cash_on_hold=0, position_val=0, net_position=0, net_price=0):
         self.cash = cash
         # nav is used to calculate P&L & r per t step
         self.nav = cash # net asset value = cash + equity
         self.cash_on_hold = cash_on_hold # cash deducted for placing order = cash - value of live oreder in LOB)
-        self.position_val = position_val # value of net_position
+        self.position_val = net_position * net_price # value of net_position
         # assuming only one ticker (1 type of contract)
         self.net_position = net_position # number of contracts currently holding long (positive) or short (negative)
+        self.net_price = net_price # VWAP
 
     def print_acc(self):
         print('cash', self.cash)
@@ -36,11 +37,15 @@ class Account(object):
         trade_val = trade.get('quantity') * trade.get('price')
 
         if self.net_position > 0: #long
-            if trade.get(party).get('side') == 'bid':
-                #self.position_val = curr_position_val + trade_val
-                position_val_diff = curr_position_val - prev_position_val
-                long_position_val = prev_position_val + position_val_diff # add
-                self.position_val = long_position_val + trade_val
+            if trade.get(party).get('side') == 'bid':                
+                total_size = abs(self.net_position) + (trade.get('quantity'))
+                self.net_price = (abs(self.net_position) * self.net_price + trade.get('quantity') * trade.get('price')) / total_size
+                curr_position_val = total_size * self.net_price
+                curr_mkt_val = total_size * trade.get('price')
+                val_diff = curr_mkt_val - curr_position_val# profit
+                print('val_diff:', val_diff)
+                self.position_val = curr_position_val + val_diff
+
             else: # ask
                 if self.net_position >= trade.get('quantity'): # still long or neutral
                     # val of long left
@@ -52,26 +57,13 @@ class Account(object):
                     self.cash += self.net_position * trade.get('price') # entire position covered goes back to cash
         elif self.net_position < 0: # short
             if trade.get(party).get('side') == 'ask':
-
-                # if price decrease, diff is negative
-                position_val_diff = curr_position_val - prev_position_val
-                short_position_val = prev_position_val - position_val_diff # subtract
-                self.position_val = short_position_val + trade_val
-                """
-                prev_position_price = prev_position_val / abs(self.net_position)
-                old_short_prev_val = abs(self.net_position) * prev_position_price
-                old_short_curr_val = abs(self.net_position) * trade.get('price')
-                old_short_val_diff = old_short_curr_val - old_short_prev_val
-                old_short_val = old_short_prev_val - old_short_val_diff
-                self.position_val = old_short_val + trade_val
-
-                prev_position_price = prev_position_val / abs(self.net_position)
-                price_diff = trade.get('price') - prev_position_price
-                val_diff = abs(self.net_position) * price_diff
-                old_short_val = prev_position_val - val_diff
-                self.position_val = old_short_val + trade_val
-                """
-
+                total_size = abs(self.net_position) + (trade.get('quantity'))
+                self.net_price = (abs(self.net_position) * self.net_price + trade.get('quantity') * trade.get('price')) / total_size
+                curr_position_val = total_size * self.net_price
+                curr_mkt_val = total_size * trade.get('price')
+                val_diff = curr_position_val - curr_mkt_val # profit
+                print('val_diff:', val_diff)
+                self.position_val = curr_position_val + val_diff
             else: # bid
                 prev_position_price = prev_position_val / abs(self.net_position)
                 if abs(self.net_position) >= trade.get('quantity'): # still short or neutral
@@ -92,6 +84,7 @@ class Account(object):
                     self.position_val = left_over_long_val
         else: # neutral
             self.position_val += trade_val
+            self.net_price = trade.get('price')
 
         if party == 'counter_party':
             self.cash_on_hold -= trade_val

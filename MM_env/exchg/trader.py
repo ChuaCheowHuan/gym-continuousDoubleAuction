@@ -9,7 +9,7 @@ class Trader(object):
         self.live_order = live_order # live order in LOB
         self.trade_rec = trade_rec # record of trades executed
         self.net_price = net_price # net_price paid for net_position (VWAP)
-        self.acc = Account(cash, nav, cash_on_hold, position_val, net_position)
+        self.acc = Account(cash, nav, cash_on_hold, position_val, net_position, net_price)
 
     def order_approved(self, cash, size, price):
         if self.acc.cash >= size * price:
@@ -99,5 +99,5 @@ class Trader(object):
             self.acc.order_in_book_init_party(order_in_book) # if there's any unfilled
             return trades, order_in_book
         else: # not enough cash to place order
-            print('Invalid order: order value > cash available.', trader.ID)
+            print('Invalid order: order value > cash available.', self.ID)
             return trades, order_in_book
