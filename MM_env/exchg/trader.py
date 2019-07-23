@@ -69,6 +69,7 @@ class Trader(object):
                         self.acc.counter_party(agents, trade, trade_val)
                         self.acc.init_party(trade, order_in_book, trade_val)
                     else: # init_party is also counter_party
+                        # ****************************** TODO ******************************                        
                         self.acc.cash_on_hold -= trade_val
                         self.acc.cash += trade_val
             self.acc.order_in_book_init_party(order_in_book) # if there's any unfilled
