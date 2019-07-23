@@ -244,7 +244,7 @@ LOB:
 6@25/3 - 24
 
 ***tape***
-Q @ $ (t) c/i side
+Q @ $ (t) c/i side        [flawed logic]                [correct value]
 1 @ 2 (25) 0/0 ask  0  66
 3 @ 3 (25) 0/0 ask  3  60
 3 @ 4 (25) 0/0 ask  6  54
