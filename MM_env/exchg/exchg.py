@@ -49,7 +49,7 @@ class Exchg(object):
             size = action.get("size")
             price = action.get("price")
             trader = self.agents[i]
-            self.trades, self.order_in_book = self.place_order(type, side, size, price, trader)
+            self.trades, self.order_in_book = trader.place_order(type, side, size, price, self.LOB, self.agents)
 
         #self.update_position_val()
 
@@ -136,31 +136,3 @@ class Exchg(object):
         for (state_row, state_row_next) in zip(LOB_state, LOB_state_next):
             state_diff_list.append(state_row_next - state_row)
         return state_diff_list
-
-    # take or execute action
-    def place_order(self, type, side, size, price, trader):
-        trades, order_in_book = [],[]
-        if(side == None): # do nothing to LOB
-            return trades, order_in_book
-        # normal execution
-        if trader.order_approved(trader.acc.cash, size, price):
-            order = trader.create_order(type, side, size, price)
-            if order == {}: # do nothing to LOB
-                return trades, order_in_book
-            trades, order_in_book = self.LOB.process_order(order, False, False)
-            if trades != []:
-                for trade in trades:
-                    print('trades:', trades)
-                    trade_val = trade.get('quantity') * trade.get('price')
-                    # init_party is not counter_party
-                    if trade.get('counter_party').get('ID') != trade.get('init_party').get('ID'):
-                        trader.acc.counter_party(self.agents, trade, trade_val)
-                        trader.acc.init_party(trade, order_in_book, trade_val)
-                    else: # init_party is also counter_party
-                        trader.acc.cash_on_hold -= trade_val
-                        trader.acc.cash += trade_val
-            trader.acc.order_in_book_init_party(order_in_book) # if there's any unfilled
-            return trades, order_in_book
-        else: # not enough cash to place order
-            print('Invalid order: order value > cash available.', trader.ID)
-            return trades, order_in_book

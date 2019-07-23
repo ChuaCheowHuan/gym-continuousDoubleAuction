@@ -48,3 +48,31 @@ class Trader(object):
                   "size": size,
                   "price": price}
         return action
+
+    # take or execute action
+    def place_order(self, type, side, size, price, LOB, agents):
+        trades, order_in_book = [],[]
+        if(side == None): # do nothing to LOB
+            return trades, order_in_book
+        # normal execution
+        if self.order_approved(self.acc.cash, size, price):
+            order = self.create_order(type, side, size, price)
+            if order == {}: # do nothing to LOB
+                return trades, order_in_book
+            trades, order_in_book = LOB.process_order(order, False, False)
+            if trades != []:
+                for trade in trades:
+                    print('trades:', trades)
+                    trade_val = trade.get('quantity') * trade.get('price')
+                    # init_party is not counter_party
+                    if trade.get('counter_party').get('ID') != trade.get('init_party').get('ID'):
+                        self.acc.counter_party(agents, trade, trade_val)
+                        self.acc.init_party(trade, order_in_book, trade_val)
+                    else: # init_party is also counter_party
+                        self.acc.cash_on_hold -= trade_val
+                        self.acc.cash += trade_val
+            self.acc.order_in_book_init_party(order_in_book) # if there's any unfilled
+            return trades, order_in_book
+        else: # not enough cash to place order
+            print('Invalid order: order value > cash available.', trader.ID)
+            return trades, order_in_book
