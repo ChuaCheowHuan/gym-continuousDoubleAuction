@@ -39,7 +39,6 @@ class Exchg(object):
     # each action is a list of (type, side, size, price)
     def step(self, actions):
         self.LOB_STATE = self.LOB_state() # LOB state at t before processing LOB
-
         # Begin processing LOB
         # process actions for all agents
         for i, action in enumerate(actions):
@@ -51,26 +50,23 @@ class Exchg(object):
             trader = self.agents[i]
             self.trades, self.order_in_book = trader.place_order(type, side, size, price, self.LOB, self.agents)
 
+        # ****************************** TODO ******************************
         #self.update_position_val()
 
         # after processing LOB
         self.LOB_STATE_NEXT = self.LOB_state() # LOB state at t+1 after processing LOB
         state_diff = self.state_diff(self.LOB_STATE, self.LOB_STATE_NEXT)
         self.s_next = state_diff
-
         # prepare rewards for all agents
         # reward = nav@t+1 - nav@t
         self.rewards = self.reward()
-
         # set dones for all agents
         self.counter += 1
         dones = 0
         if self.counter > self.max_step-1:
             dones = 1
-
         # set infos for all agents
         infos = None
-
         return self.s_next, self.rewards, dones, infos
 
     # reward per t step
