@@ -22,7 +22,6 @@ class Account(object):
     # update cash, cash_on_hold, position_val for init_party (party2)
     def process_acc(self, trade, party):
         prev_position_val = self.position_val
-        curr_position_val = abs(self.net_position) * trade.get('price')
         trade_val = trade.get('quantity') * trade.get('price')
 
         if self.net_position >= 0: #long
@@ -40,6 +39,7 @@ class Account(object):
                     self.cash += self.net_position * trade.get('price') # entire position covered goes back to cash
         elif self.net_position < 0: # short
             if side == 'ask':
+                curr_position_val = abs(self.net_position) * trade.get('price')
                 # if price decrease, diff is negative
                 position_val_diff = curr_position_val - prev_position_val
                 short_position_val = prev_position_val - position_val_diff
