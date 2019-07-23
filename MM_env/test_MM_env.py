@@ -128,7 +128,7 @@ def test_1_1():
     return e
 
 def test_random():
-    num_of_traders = 3
+    num_of_traders = 4
     init_cash = 1000
     tape_display_length = 10
     max_step = 10
