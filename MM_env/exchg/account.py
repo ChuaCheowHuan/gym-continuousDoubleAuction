@@ -48,7 +48,7 @@ class Account(object):
                     self.position_val = (trade.get('quantity') - self.net_position) * trade.get('price')
                     self.cash += self.net_position * trade.get('price') # entire position covered goes back to cash
         elif self.net_position < 0: # short
-            if side == 'ask':
+            if trade.get(party).get('side') == 'ask':
                 curr_position_val = abs(self.net_position) * trade.get('price')
                 # if price decrease, diff is negative
                 position_val_diff = curr_position_val - prev_position_val

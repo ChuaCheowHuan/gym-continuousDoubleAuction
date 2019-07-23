@@ -108,15 +108,44 @@ def test_1():
     expected_result_2 = (10000, 0, 0, 10000, 0)
     test(e, expected_result_0, expected_result_0, expected_result_1, expected_result_2)
     return e
+"""
+LOB:
+ ***Bids***
+6@13/3 - 12
+6@12/3 - 8
+6@11/3 - 4
+5@10/2 - 11
+5@9/2 - 7
+5@8/2 - 3
+4@7/1 - 10
+4@6/1 - 6
+4@5/1 - 2
+3@4/0 - 9
+3@3/0 - 5
+3@2/0 - 1
 
-# init long position for T0, counter party T0, T1, T2(unfilled)
+***Asks***
+3@14/0 - 13
+3@15/0 - 17
+3@16/0 - 21
+4@17/1 - 14
+4@18/1 - 18
+4@19/1 - 22
+5@20/2 - 15
+5@21/2 - 19
+5@22/2 - 23
+6@23/3 - 16
+6@24/3 - 20
+6@25/3 - 24
+"""
+# init long position for T0, counter party T0, T1, T2, T3(unfilled)
 def test_1_1():
     e = test_1()
     # actions
-    action0 = {"type": 'limit', "side": 'bid', "size": 3, "price": 2}
-    action1 = {"type": 'limit', "side": 'bid', "size": 4, "price": 3}
-    action2 = {"type": 'limit', "side": 'bid', "size": 5, "price": 4}
-    action3 = {"type": 'limit', "side": 'bid', "size": 6, "price": 5}
+    action0 = {"type": 'limit', "side": 'bid', "size": 50, "price": 27}
+    action1 = {"type": 'limit', "side": None, "size": 4, "price": 3}
+    action2 = {"type": 'limit', "side": None, "size": 5, "price": 4}
+    action3 = {"type": 'limit', "side": None, "size": 6, "price": 5}
     actions = [action0,action1,action2,action3]
     e.step(actions) # execute actions in 1 step
     # hard coded expected results
@@ -126,7 +155,40 @@ def test_1_1():
     expected_result_2 = (10000, 0, 0, 10000, 0)
     test(e, expected_result_0, expected_result_0, expected_result_1, expected_result_2)
     return e
+"""
+LOB:
+ ***Bids***
+6@13/3 - 12
+6@12/3 - 8
+6@11/3 - 4
+5@10/2 - 11
+5@9/2 - 7
+5@8/2 - 3
+4@7/1 - 10
+4@6/1 - 6
+4@5/1 - 2
+3@4/0 - 9
+3@3/0 - 5
+3@2/0 - 1
 
+***Asks***
+4@25/3 - 24
+
+***tape***
+Q @ $ (t) c/i side
+2 @ 25 (25) 3/0 bid
+6 @ 24 (25) 3/0 bid
+6 @ 23 (25) 3/0 bid
+5 @ 22 (25) 2/0 bid
+5 @ 21 (25) 2/0 bid
+5 @ 20 (25) 2/0 bid
+4 @ 19 (25) 1/0 bid
+4 @ 18 (25) 1/0 bid
+4 @ 17 (25) 1/0 bid
+3 @ 16 (25) 0/0 bid
+3 @ 15 (25) 0/0 bid
+3 @ 14 (25) 0/0 bid
+"""
 def test_random():
     num_of_traders = 4
     init_cash = 1000
@@ -146,8 +208,8 @@ def test_random():
 
 if __name__ == "__main__":
 
-    test_1() # place initial orders
-    #test_1_1()
+    #test_1() # place initial orders
+    test_1_1()
     #test_1_2()
     #test_1_3()
     #test_1_4()

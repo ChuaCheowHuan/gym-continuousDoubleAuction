@@ -53,6 +53,7 @@ class Trader(object):
             if counter_party.ID == trade.get('counter_party').get('ID'):
                 counter_party.acc.process_acc(trade, 'counter_party')
 
+                print('counter_party:', counter_party.ID)
                 counter_party.acc.print_acc()
 
                 break
@@ -60,7 +61,7 @@ class Trader(object):
     def process_trades(self, trades, agents):
         for trade in trades:
 
-            print('trades:', trades)
+            print('trade:', trade)
 
             trade_val = trade.get('quantity') * trade.get('price')
             # init_party is not counter_party
@@ -68,6 +69,7 @@ class Trader(object):
                 self.process_counter_party(agents, trade)
                 self.acc.process_acc(trade, 'init_party')
 
+                print('init_party:', self.ID)
                 self.acc.print_acc()
 
             else: # init_party is also counter_party
@@ -80,6 +82,7 @@ class Trader(object):
     def place_order(self, type, side, size, price, LOB, agents):
         trades, order_in_book = [],[]
         if(side == None): # do nothing to LOB
+            print('side == None')
             return trades, order_in_book
         # normal execution
         if self.order_approved(self.acc.cash, size, price):
