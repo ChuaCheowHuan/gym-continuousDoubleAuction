@@ -34,13 +34,10 @@ class Account(object):
         prev_position_val = self.position_val
         curr_position_val = abs(self.net_position) * trade.get('price')
         trade_val = trade.get('quantity') * trade.get('price')
-        # if price decrease, diff is negative
-        position_val_diff = curr_position_val - prev_position_val
-        short_position_val = prev_position_val - position_val_diff
 
         if self.net_position >= 0: #long
             if trade.get(party).get('side') == 'bid':
-                self.position_val = curr_position_val + trade_val
+                self.position_val = prev_position_val + trade_val
                 self.cash -= trade_val
             else: # ask
                 if net_position >= trade_size: # still long or neutral
@@ -53,6 +50,9 @@ class Account(object):
                     self.cash += self.net_position * trade.get('price') # entire position covered goes back to cash
         elif self.net_position < 0: # short
             if side == 'ask':
+                # if price decrease, diff is negative
+                position_val_diff = curr_position_val - prev_position_val
+                short_position_val = prev_position_val - position_val_diff
                 position_val = short_position_val + trade_val
             else: # bid
                 prev_position_price = prev_position_val / self.net_position
