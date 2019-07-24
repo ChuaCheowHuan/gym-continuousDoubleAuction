@@ -246,7 +246,7 @@ NEED VWAP
 # init short position for T0, counter party T0, T1, T2, T3(unfilled)
 def test_1_3(e):
     # actions
-    action0 = {"type": 'limit', "side": 'ask', "size": 13, "price": 2}
+    action0 = {"type": 'limit', "side": 'ask', "size": 1, "price": 2}
     action1 = {"type": 'limit', "side": None, "size": 4, "price": 3}
     action2 = {"type": 'limit', "side": None, "size": 5, "price": 4}
     action3 = {"type": 'limit', "side": None, "size": 6, "price": 5}

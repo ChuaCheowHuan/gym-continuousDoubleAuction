@@ -90,12 +90,11 @@ class Account(object):
             self.VWAP = 0
             self.cash += trade_val
 
-        if party == 'init_party':
-            #self.cash_on_hold -= trade_val
-            self.cash += trade_val # portion covered goes back to cash
+        #if party == 'init_party':
+        #    self.cash += trade_val # portion covered goes back to cash
         if party == 'counter_party':
             self.cash_on_hold -= trade_val
-            #self.cash += trade_val # portion covered goes back to cash
+            self.cash += trade_val # portion covered goes back to cash
 
         return 0
 
