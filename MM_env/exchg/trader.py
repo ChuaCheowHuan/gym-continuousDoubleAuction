@@ -2,8 +2,9 @@ import random
 import numpy as np
 
 from .account import Account
+from .random_agent import Random_agent
 
-class Trader(object):
+class Trader(Random_agent):
     def __init__(self, ID, cash=0, nav=0, cash_on_hold=0, position_val=0, live_order=[], trade_rec=[], net_position=0, net_price=0):
         self.ID = ID # trader unique ID
         self.live_order = live_order # live order in LOB
@@ -32,7 +33,7 @@ class Trader(object):
         else:
             order = {}
         return order
-
+    """
     # pass action to step
     def select_random_action(self, exchg):
         #type = np.random.randint(0, 1, size=1) # type, draw 1 int, 0(market) to 1(limit)
@@ -47,7 +48,7 @@ class Trader(object):
                   "size": size,
                   "price": price}
         return action
-
+    """
     def process_counter_party(self, agents, trade):
         for counter_party in agents: # search for counter_party
             if counter_party.ID == trade.get('counter_party').get('ID'):
