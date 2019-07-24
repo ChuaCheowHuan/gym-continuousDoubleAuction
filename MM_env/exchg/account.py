@@ -56,9 +56,22 @@ class Account(object):
         raw_val = size_left * self.net_price # val of long left
         mkt_val = size_left * trade.get('price')
         self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
+
         self.cash += trade.get('quantity') * trade.get('price') # portion covered goes back to cash
         return 0
-        
+
+    def covered_side_chg(self, trade, position):
+        size_left = self.size_left(abs(self.net_position), trade.get('quantity'))
+
+        raw_val = abs(self.net_position) * self.net_price # val of long left
+        mkt_val = abs(self.net_position) * trade.get('price')
+        covered_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
+
+        self.position_val = size_left * trade.get('price')
+        #self.cash += abs(self.net_position) * trade.get('price') # portion covered goes back to cash
+        self.cash += covered_val # portion covered goes back to cash
+        return 0
+
     def process_acc(self, trade, party):
         trade_val = trade.get('quantity') * trade.get('price')
 
