@@ -93,7 +93,7 @@ class Account(object):
         #if party == 'init_party':
         #    self.cash += trade_val # portion covered goes back to cash
         if party == 'counter_party':
-            self.cash_on_hold -= trade_val
+            #self.cash_on_hold -= trade_val
             self.cash += trade_val # portion covered goes back to cash
 
         return 0
