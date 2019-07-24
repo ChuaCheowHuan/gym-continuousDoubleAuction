@@ -82,7 +82,7 @@ class Account(object):
                 if self.net_position >= trade.get('quantity'): # still long or neutral
                     self.covered(trade, 'long')
                 else: # net_position changed to short
-                    self.covered(trade, 'short')
+                    self.covered_side_chg(trade, 'long')
         elif self.net_position < 0: # short
             if trade.get(party).get('side') == 'ask':
                 self.same_side(trade, 'short')
@@ -90,7 +90,7 @@ class Account(object):
                 if abs(self.net_position) >= trade.get('quantity'): # still short or neutral
                     self.covered(trade, 'short')
                 else: # net_position changed to long
-                    self.covered(trade, 'long')
+                    self.covered_side_chg(trade, 'short')
         else: # neutral
             self.position_val += trade_val
             self.net_price = trade.get('price')

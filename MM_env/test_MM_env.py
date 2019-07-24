@@ -285,11 +285,11 @@ if __name__ == "__main__":
 
     #test_1() # place initial orders
     #test_1_1()
-    #test_1_2()
+    test_1_2()
     #test_1_3()
     #test_1_4()
 
 
-    test_random()
+    #test_random()
 
     sys.exit(0)
