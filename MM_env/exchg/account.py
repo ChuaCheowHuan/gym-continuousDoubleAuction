@@ -65,26 +65,38 @@ class Account(object):
         else:
             return trade_size - abs(net_position)
 
-    # ********** WRONG!!! **********
+    # ********** BUG (works for size_left > 0 only, fails if size_left == 0), counter_party cash_on_hold not deducted issue **********
     def size_decrease_0(self, trade, position, party, trade_val):
-        size_left = abs(self.net_position) - trade.get('quantity')
-        raw_val = size_left * self.VWAP
-        mkt_val = size_left * trade.get('price')
-        # self.position_val after covering
-        self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
-        # (on_false, on_true)[condition]
-        self.VWAP = (self.position_val / size_left, 0)[size_left == 0]
-        self.cash += trade_val # portion covered goes back to cash
-        return 0
-    # ********** CORRECT!!! **********
-    def size_decrease(self, trade, position, party, trade_val):
         size_left = abs(self.net_position) - (trade.get('quantity'))
-        # VWAP
-        self.VWAP = (abs(self.net_position) * self.VWAP - trade_val) / size_left
+        #  VWAP = (on_false, on_true)[condition]
+        self.VWAP = (0, (abs(self.net_position) * self.VWAP - trade_val) / size_left)[size_left > 0]
+        #self.VWAP = (abs(self.net_position) * self.VWAP - trade_val) / size_left
         raw_val = size_left * self.VWAP # value acquired with VWAP
         mkt_val = size_left * trade.get('price')
         self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
         self.cash += trade_val # portion covered goes back to cash
+        return 0
+    # ********** NEED TESTING **********
+    def size_decrease(self, trade, position, party, trade_val):
+        size_left = abs(self.net_position) - (trade.get('quantity'))
+        if size_left > 0:
+            self.VWAP = (abs(self.net_position) * self.VWAP - trade_val) / size_left
+            raw_val = size_left * self.VWAP # value acquired with VWAP
+            mkt_val = size_left * trade.get('price')
+            self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
+            self.cash += trade_val # portion covered goes back to cash
+        else: # size_left == 0
+            self.position_val = 0
+            self.VWAP = 0
+            self.cash += trade_val
+
+        if party == 'init_party':
+            #self.cash_on_hold -= trade_val
+            self.cash += trade_val # portion covered goes back to cash
+        if party == 'counter_party':
+            self.cash_on_hold -= trade_val
+            #self.cash += trade_val # portion covered goes back to cash
+
         return 0
 
     # ********** NEED TESTING **********
