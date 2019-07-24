@@ -8,6 +8,7 @@ class Account(object):
         # assuming only one ticker (1 type of contract)
         self.net_position = net_position # number of contracts currently holding long (positive) or short (negative)
         self.net_price = net_price # VWAP
+        self.profit = 0
 
     def print_acc(self):
         print('cash', self.cash)
@@ -16,19 +17,19 @@ class Account(object):
         print('nav', self.nav)
         print('net_position', self.net_position)
         print('net_price', self.net_price)
+        print('profit', self.profit)
         return 0
 
     def cal_nav(self):
         return self.cash + self.cash_on_hold + self.position_val
 
     def cal_profit(self, position, mkt_val, raw_val):
-        profit = 0
         if position == 'long':
-            profit = mkt_val - raw_val
+            self.profit = mkt_val - raw_val
         else:
-            profit = raw_val - mkt_val
-        print('profit:', profit)
-        return profit
+            self.profit = raw_val - mkt_val
+        print('profit:', self.profit)
+        return self.profit
 
     def order_in_book_init_party(self, order_in_book):
         # if there's order_in_book for init_party (party2)
@@ -43,8 +44,9 @@ class Account(object):
 
     def same_side(self, trade, position):
         total_size = abs(self.net_position) + (trade.get('quantity'))
+        # VWAP
         self.net_price = (abs(self.net_position) * self.net_price + trade.get('quantity') * trade.get('price')) / total_size
-        raw_val = total_size * self.net_price # value acquired with VWAP 
+        raw_val = total_size * self.net_price # value acquired with VWAP
         mkt_val = total_size * trade.get('price')
         self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
         return 0
@@ -70,7 +72,7 @@ class Account(object):
         raw_val = abs(self.net_position) * self.net_price # val of long left
         mkt_val = abs(self.net_position) * trade.get('price')
         covered_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
-
+        self.net_price = trade.get('price')
         self.position_val = size_left * trade.get('price')
         #self.cash += abs(self.net_position) * trade.get('price') # portion covered goes back to cash
         self.cash += covered_val # portion covered goes back to cash

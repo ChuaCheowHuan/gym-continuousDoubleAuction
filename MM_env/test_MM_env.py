@@ -16,6 +16,8 @@ def print_acc(e, ID):
     print('position_val:', e.agents[ID].acc.position_val)
     print('nav:', e.agents[ID].acc.nav)
     print('net_position:', e.agents[ID].acc.net_position)
+    print('net_price:', e.agents[ID].acc.net_price)
+    print('profit:', e.agents[ID].acc.profit)
 
 def print_info(e):
     e.render()
@@ -264,6 +266,25 @@ total profit: 342
 
 NEED VWAP
 """
+# init short position for T0, counter party T0, T1, T2, T3(unfilled)
+def test_1_3():
+    e = test_1_1()
+    #e = test_1_2()
+    # actions
+    action0 = {"type": 'limit', "side": 'ask', "size": 30, "price": 2}
+    action1 = {"type": 'limit', "side": None, "size": 4, "price": 3}
+    action2 = {"type": 'limit', "side": None, "size": 5, "price": 4}
+    action3 = {"type": 'limit', "side": None, "size": 6, "price": 5}
+    actions = [action0,action1,action2,action3]
+    e.step(actions) # execute actions in 1 step
+    # hard coded expected results
+    expected_result_0 = (10000, 0, 0, 10000, 0)
+    expected_result_0 = (10000, 0, 0, 10000, 0)
+    expected_result_1 = (10000, 0, 0, 10000, 0)
+    expected_result_2 = (10000, 0, 0, 10000, 0)
+    test(e, expected_result_0, expected_result_0, expected_result_1, expected_result_2)
+    return e
+
 def test_random():
     num_of_traders = 4
     init_cash = 1000
@@ -284,8 +305,8 @@ def test_random():
 if __name__ == "__main__":
 
     #test_1() # place initial orders
-    #test_1_1()
-    test_1_2()
+    test_1_1()
+    #test_1_2()
     #test_1_3()
     #test_1_4()
 
