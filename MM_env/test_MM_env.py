@@ -9,16 +9,6 @@ if "../" not in sys.path:
 
 from exchg.exchg import Exchg
 
-def print_acc(e, ID):
-    print('\nID:', ID)
-    print('cash:', e.agents[ID].acc.cash)
-    print('cash_on_hold:', e.agents[ID].acc.cash_on_hold)
-    print('position_val:', e.agents[ID].acc.position_val)
-    print('nav:', e.agents[ID].acc.nav)
-    print('net_position:', e.agents[ID].acc.net_position)
-    print('net_price:', e.agents[ID].acc.net_price)
-    print('profit:', e.agents[ID].acc.profit)
-
 def total_sys_nav(e):
     sum = 0
     for trader in e.agents:
@@ -28,8 +18,9 @@ def total_sys_nav(e):
 def print_info(e):
     e.render()
     for trader in e.agents:
-        print_acc(e, trader.ID)
+        trader.acc.print_acc()
         print('total_sys_nav:', total_sys_nav(e))
+    return 0
 
 def _acc(e, ID):
     return (e.agents[ID].acc.cash,
@@ -44,10 +35,10 @@ def create_env():
     init_cash = 10000
     max_step = 100
     e = Exchg(num_of_traders, init_cash, tape_display_length, max_step)
-
     return e
 
 def test(e, expected_result_0, expected_result_1, expected_result_2, expected_result_3):
+    """
     # get results
     result_0 = _acc(e, ID=0)
     result_1 = _acc(e, ID=1)
@@ -61,16 +52,17 @@ def test(e, expected_result_0, expected_result_1, expected_result_2, expected_re
     print('result_2:', result_2)
     print('expected_result_3:', expected_result_3)
     print('result_3:', result_3)
-    # test
-    #assert(expected_result_0 == result_0)
-    #assert(expected_result_0 == result_1)
-    #assert(expected_result_1 == result_2)
-    #assert(expected_result_2 == result_3)
+    #test
+    assert(expected_result_0 == result_0)
+    assert(expected_result_0 == result_1)
+    assert(expected_result_1 == result_2)
+    assert(expected_result_2 == result_3)
+    """
     print_info(e)
+    return 0
 
 # place initial orders, 4 traders each with 3 bids, 3 asks all in LOB, no trade
-def test_1():
-    e = create_env()
+def test_1(e):
     # bid
     action0 = {"type": 'limit', "side": 'bid', "size": 3, "price": 2}
     action1 = {"type": 'limit', "side": 'bid', "size": 4, "price": 5}
@@ -91,7 +83,6 @@ def test_1():
     actions = [action0,action1,action2,action3] # actions
     e.step(actions) # execute actions in 1 step
     # ask
-
     action0 = {"type": 'limit', "side": 'ask', "size": 3, "price": 14}
     action1 = {"type": 'limit', "side": 'ask', "size": 4, "price": 17}
     action2 = {"type": 'limit', "side": 'ask', "size": 5, "price": 20}
@@ -108,33 +99,15 @@ def test_1():
     action1 = {"type": 'limit', "side": 'ask', "size": 4, "price": 19}
     action2 = {"type": 'limit', "side": 'ask', "size": 5, "price": 22}
     action3 = {"type": 'limit', "side": 'ask', "size": 6, "price": 25}
-    """
-    action0 = {"type": 'limit', "side": 'ask', "size": 6, "price": 14}
-    action1 = {"type": 'limit', "side": 'ask', "size": 5, "price": 17}
-    action2 = {"type": 'limit', "side": 'ask', "size": 4, "price": 20}
-    action3 = {"type": 'limit', "side": 'ask', "size": 3, "price": 23}
-    actions = [action0,action1,action2,action3] # actions
-    e.step(actions) # execute actions in 1 step
-    action0 = {"type": 'limit', "side": 'ask', "size": 6, "price": 15}
-    action1 = {"type": 'limit', "side": 'ask', "size": 5, "price": 18}
-    action2 = {"type": 'limit', "side": 'ask', "size": 4, "price": 21}
-    action3 = {"type": 'limit', "side": 'ask', "size": 3, "price": 24}
-    actions = [action0,action1,action2,action3] # actions
-    e.step(actions) # execute actions in 1 step
-    action0 = {"type": 'limit', "side": 'ask', "size": 6, "price": 16}
-    action1 = {"type": 'limit', "side": 'ask', "size": 5, "price": 19}
-    action2 = {"type": 'limit', "side": 'ask', "size": 4, "price": 22}
-    action3 = {"type": 'limit', "side": 'ask', "size": 3, "price": 25}
-    """
     actions = [action0,action1,action2,action3] # actions
     e.step(actions) # execute actions in 1 step
 
     expected_result_0 = (10000, 0, 0, 10000, 0)
-    expected_result_0 = (10000, 0, 0, 10000, 0)
     expected_result_1 = (10000, 0, 0, 10000, 0)
     expected_result_2 = (10000, 0, 0, 10000, 0)
-    test(e, expected_result_0, expected_result_0, expected_result_1, expected_result_2)
-    return e
+    expected_result_3 = (10000, 0, 0, 10000, 0)
+    test(e, expected_result_0, expected_result_1, expected_result_2, expected_result_3)
+    return 0
 """
 LOB:
  ***Bids***
@@ -166,8 +139,7 @@ LOB:
 6@25/3 - 24
 """
 # init long position for T0, counter party T0, T1, T2, T3(unfilled)
-def test_1_1():
-    e = test_1()
+def test_1_1(e):
     # actions
     action0 = {"type": 'limit', "side": 'bid', "size": 50, "price": 27}
     action1 = {"type": 'limit', "side": None, "size": 4, "price": 3}
@@ -177,11 +149,11 @@ def test_1_1():
     e.step(actions) # execute actions in 1 step
     # hard coded expected results
     expected_result_0 = (10000, 0, 0, 10000, 0)
-    expected_result_0 = (10000, 0, 0, 10000, 0)
     expected_result_1 = (10000, 0, 0, 10000, 0)
     expected_result_2 = (10000, 0, 0, 10000, 0)
-    test(e, expected_result_0, expected_result_0, expected_result_1, expected_result_2)
-    return e
+    expected_result_3 = (10000, 0, 0, 10000, 0)
+    test(e, expected_result_0, expected_result_1, expected_result_2, expected_result_3)
+    return 0
 """
 LOB:
  ***Bids***
@@ -217,8 +189,7 @@ Q @ $ (t) c/i side
 3 @ 14 (25) 0/0 bid
 """
 # init short position for T0, counter party T0, T1, T2, T3(unfilled)
-def test_1_2():
-    e = test_1()
+def test_1_2(e):
     # actions
     action0 = {"type": 'limit', "side": 'ask', "size": 52, "price": 2}
     action1 = {"type": 'limit', "side": None, "size": 4, "price": 3}
@@ -226,13 +197,12 @@ def test_1_2():
     action3 = {"type": 'limit', "side": None, "size": 6, "price": 5}
     actions = [action0,action1,action2,action3]
     e.step(actions) # execute actions in 1 step
-    # hard coded expected results
-    expected_result_0 = (10000, 0, 0, 10000, 0)
     expected_result_0 = (10000, 0, 0, 10000, 0)
     expected_result_1 = (10000, 0, 0, 10000, 0)
     expected_result_2 = (10000, 0, 0, 10000, 0)
-    test(e, expected_result_0, expected_result_0, expected_result_1, expected_result_2)
-    return e
+    expected_result_3 = (10000, 0, 0, 10000, 0)
+    test(e, expected_result_0, expected_result_1, expected_result_2, expected_result_3)
+    return 0
 """
 LOB:
  ***Bids***
@@ -274,23 +244,20 @@ total profit: 342
 NEED VWAP
 """
 # init short position for T0, counter party T0, T1, T2, T3(unfilled)
-def test_1_3():
-    e = test_1_1()
-    #e = test_1_2()
+def test_1_3(e):
     # actions
-    action0 = {"type": 'limit', "side": 'ask', "size": 30, "price": 2}
+    action0 = {"type": 'limit', "side": 'ask', "size": 1, "price": 2}
     action1 = {"type": 'limit', "side": None, "size": 4, "price": 3}
     action2 = {"type": 'limit', "side": None, "size": 5, "price": 4}
     action3 = {"type": 'limit', "side": None, "size": 6, "price": 5}
     actions = [action0,action1,action2,action3]
     e.step(actions) # execute actions in 1 step
-    # hard coded expected results
-    expected_result_0 = (10000, 0, 0, 10000, 0)
     expected_result_0 = (10000, 0, 0, 10000, 0)
     expected_result_1 = (10000, 0, 0, 10000, 0)
     expected_result_2 = (10000, 0, 0, 10000, 0)
-    test(e, expected_result_0, expected_result_0, expected_result_1, expected_result_2)
-    return e
+    expected_result_3 = (10000, 0, 0, 10000, 0)
+    test(e, expected_result_0, expected_result_1, expected_result_2, expected_result_3)
+    return 0
 
 def test_random():
     num_of_traders = 4
@@ -310,13 +277,12 @@ def test_random():
 
 
 if __name__ == "__main__":
-
-    #test_1() # place initial orders
-    #test_1_1()
-    #test_1_2()
-    test_1_3()
+    e = create_env()
+    test_1(e) # place initial orders
+    test_1_1(e)
+    #test_1_2(e)
+    test_1_3(e)
     #test_1_4()
-
 
     #test_random()
 

@@ -10,7 +10,7 @@ class Trader(Random_agent):
         self.live_order = live_order # live order in LOB
         self.trade_rec = trade_rec # record of trades executed
         self.net_price = net_price # net_price paid for net_position (VWAP)
-        self.acc = Account(cash, nav, cash_on_hold, position_val, net_position, net_price)
+        self.acc = Account(ID, cash, nav, cash_on_hold, position_val, net_position, net_price)
 
     def order_approved(self, cash, size, price):
         if self.acc.cash >= size * price:

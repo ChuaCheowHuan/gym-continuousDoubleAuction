@@ -1,5 +1,6 @@
 class Account(object):
-    def __init__(self, cash=0, nav=0, cash_on_hold=0, position_val=0, net_position=0, net_price=0):
+    def __init__(self, ID, cash=0, nav=0, cash_on_hold=0, position_val=0, net_position=0, net_price=0):
+        self.ID = ID
         self.cash = cash
         # nav is used to calculate P&L & r per t step
         self.nav = cash # net asset value = cash + equity
@@ -11,13 +12,14 @@ class Account(object):
         self.profit = 0
 
     def print_acc(self):
-        print('cash', self.cash)
-        print('cash_on_hold', self.cash_on_hold)
-        print('position_val', self.position_val)
-        print('nav', self.nav)
-        print('net_position', self.net_position)
-        print('net_price', self.net_price)
-        print('profit', self.profit)
+        print('ID:', self.ID)
+        print('cash:', self.cash)
+        print('cash_on_hold:', self.cash_on_hold)
+        print('position_val:', self.position_val)
+        print('nav:', self.nav)
+        print('net_position:', self.net_position)
+        print('net_price:', self.net_price)
+        print('profit:', self.profit)
         return 0
 
     def cal_nav(self):
@@ -28,7 +30,6 @@ class Account(object):
             self.profit = mkt_val - raw_val
         else:
             self.profit = raw_val - mkt_val
-        print('profit:', self.profit)
         return self.profit
 
     def order_in_book_init_party(self, order_in_book):
@@ -42,33 +43,54 @@ class Account(object):
 
         return 0
 
-    def size_increase(self, trade, position):
+    def neutral_cash_transfer(self, party, trade_val):
+        if party == 'counter_party':
+            self.cash_on_hold -= trade_val
+        if party == 'init_party':
+            self.cash -= trade_val
+
+    def size_increase(self, trade, position, party, trade_val):
         total_size = abs(self.net_position) + (trade.get('quantity'))
         # VWAP
         self.net_price = (abs(self.net_position) * self.net_price + trade.get('quantity') * trade.get('price')) / total_size
         raw_val = total_size * self.net_price # value acquired with VWAP
         mkt_val = total_size * trade.get('price')
         self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
+        self.neutral_cash_transfer(party, trade_val)
         return 0
 
     def size_left(self, net_position, trade_size):
-        if net_position >= trade_size:
+        if abs(net_position) >= trade_size:
             return abs(net_position) - trade_size
         else:
             return trade_size - abs(net_position)
 
-    def size_decrease(self, trade, position):
-        size_left = self.size_left(abs(self.net_position), trade.get('quantity'))
-        raw_val = size_left * self.net_price # val of long left
+    # ********** WRONG!!! **********
+    def size_decrease_0(self, trade, position, party, trade_val):
+        size_left = abs(self.net_position) - trade.get('quantity')
+        raw_val = size_left * self.net_price
         mkt_val = size_left * trade.get('price')
+        # self.position_val after covering
+        self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
+        # (on_false, on_true)[condition]
+        self.net_price = (self.position_val / size_left, 0)[size_left == 0]
+        self.cash += trade_val # portion covered goes back to cash
+        return 0
+    # ********** CORRECT!!! **********
+    def size_decrease(self, trade, position, party, trade_val):
+        total_size = abs(self.net_position) - (trade.get('quantity'))
+        # VWAP
+        self.net_price = (abs(self.net_position) * self.net_price - trade.get('quantity') * trade.get('price')) / total_size
+        raw_val = total_size * self.net_price # value acquired with VWAP
+        mkt_val = total_size * trade.get('price')
         self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
 
-        self.cash += trade.get('quantity') * trade.get('price') # portion covered goes back to cash
+        self.cash += trade_val # portion covered goes back to cash
         return 0
 
-    def covered_side_chg(self, trade, position):
+    # ********** NEED TESTING **********
+    def covered_side_chg(self, trade, position, party, trade_val):
         size_left = self.size_left(abs(self.net_position), trade.get('quantity'))
-
         raw_val = abs(self.net_position) * self.net_price # val of long left
         mkt_val = abs(self.net_position) * trade.get('price')
         covered_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
@@ -76,35 +98,35 @@ class Account(object):
         self.position_val = size_left * trade.get('price')
         #self.cash += abs(self.net_position) * trade.get('price') # portion covered goes back to cash
         self.cash += covered_val # portion covered goes back to cash
+        self.neutral_cash_transfer(party, trade_val)
         return 0
+
+    def neutral(self, trade_val, trade, party):
+        self.position_val += trade_val
+        self.net_price = trade.get('price')
+        self.neutral_cash_transfer(party, trade_val)
 
     def process_acc(self, trade, party):
         trade_val = trade.get('quantity') * trade.get('price')
 
         if self.net_position > 0: #long
             if trade.get(party).get('side') == 'bid':
-                self.size_increase(trade, 'long')
+                self.size_increase(trade, 'long', party, trade_val)
             else: # ask
                 if self.net_position >= trade.get('quantity'): # still long or neutral
-                    self.size_decrease(trade, 'long')
+                    self.size_decrease(trade, 'long', party, trade_val)
                 else: # net_position changed to short
-                    self.covered_side_chg(trade, 'long')
+                    self.covered_side_chg(trade, 'long', party, trade_val)
         elif self.net_position < 0: # short
             if trade.get(party).get('side') == 'ask':
-                self.size_increase(trade, 'short')
+                self.size_increase(trade, 'short', party, trade_val)
             else: # bid
                 if abs(self.net_position) >= trade.get('quantity'): # still short or neutral
-                    self.size_decrease(trade, 'short')
+                    self.size_decrease(trade, 'short', party, trade_val)
                 else: # net_position changed to long
-                    self.covered_side_chg(trade, 'short')
+                    self.covered_side_chg(trade, 'short', party, trade_val)
         else: # neutral
-            self.position_val += trade_val
-            self.net_price = trade.get('price')
-
-        if party == 'counter_party':
-            self.cash_on_hold -= trade_val
-        if party == 'init_party':
-            self.cash -= trade_val
+            self.neutral(trade_val, trade, party)
 
         self.update_net_position(trade.get(party).get('side'), trade.get('quantity'))
         self.nav = self.cal_nav()

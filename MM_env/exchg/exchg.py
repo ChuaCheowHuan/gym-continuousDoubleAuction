@@ -25,15 +25,14 @@ class Exchg(object):
 
     # update acc for all traders with last price in last entry of tape
     # mark to market
-    def update_acc(self):
+    def sync_acc(self):
         if len(self.LOB.tape) > 0:
             mkt_price = self.LOB.tape[-1].get('price')
             for trader in self.agents:
-                if trader.acc.net_position >= 0: # long
-                    diff = mkt_price - trader.acc.net_price
-                else: # short
-                    diff = trader.acc.net_price - mkt_price
-                trader.acc.profit = abs(trader.acc.net_position) * diff
+                # (on_false, on_true)[condition]
+                price_diff = (trader.acc.net_price - mkt_price, mkt_price - trader.acc.net_price)[trader.acc.net_position >= 0]
+                trader.acc.profit = abs(trader.acc.net_position) * price_diff
+                print('trader.acc.profit:', trader.ID, trader.acc.profit, price_diff)
                 raw_val = abs(trader.acc.net_position) * trader.acc.net_price
                 trader.acc.position_val = raw_val + trader.acc.profit
         return 0
@@ -54,7 +53,7 @@ class Exchg(object):
             self.trades, self.order_in_book = trader.place_order(type, side, size, price, self.LOB, self.agents)
 
         # ****************************** TODO ******************************
-        self.update_acc()
+        self.sync_acc()
 
         # after processing LOB
         self.LOB_STATE_NEXT = self.LOB_state() # LOB state at t+1 after processing LOB
@@ -70,7 +69,6 @@ class Exchg(object):
             dones = 1
         # set infos for all agents
         infos = None
-
         return self.s_next, self.rewards, dones, infos
 
     # reward per t step
