@@ -52,7 +52,7 @@ class Account(object):
     def size_increase(self, trade, position, party, trade_val):
         total_size = abs(self.net_position) + (trade.get('quantity'))
         # VWAP
-        self.net_price = (abs(self.net_position) * self.net_price + trade.get('quantity') * trade.get('price')) / total_size
+        self.net_price = (abs(self.net_position) * self.net_price + trade_val) / total_size
         raw_val = total_size * self.net_price # value acquired with VWAP
         mkt_val = total_size * trade.get('price')
         self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
@@ -80,11 +80,10 @@ class Account(object):
     def size_decrease(self, trade, position, party, trade_val):
         total_size = abs(self.net_position) - (trade.get('quantity'))
         # VWAP
-        self.net_price = (abs(self.net_position) * self.net_price - trade.get('quantity') * trade.get('price')) / total_size
+        self.net_price = (abs(self.net_position) * self.net_price - trade_val) / total_size
         raw_val = total_size * self.net_price # value acquired with VWAP
         mkt_val = total_size * trade.get('price')
         self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
-
         self.cash += trade_val # portion covered goes back to cash
         return 0
 
