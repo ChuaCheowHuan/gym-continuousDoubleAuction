@@ -30,10 +30,10 @@ class Exchg(object):
             mkt_price = self.LOB.tape[-1].get('price')
             for trader in self.agents:
                 # (on_false, on_true)[condition]
-                price_diff = (trader.acc.net_price - mkt_price, mkt_price - trader.acc.net_price)[trader.acc.net_position >= 0]
+                price_diff = (trader.acc.VWAP - mkt_price, mkt_price - trader.acc.VWAP)[trader.acc.net_position >= 0]
                 trader.acc.profit = abs(trader.acc.net_position) * price_diff
                 print('trader.acc.profit:', trader.ID, trader.acc.profit, price_diff)
-                raw_val = abs(trader.acc.net_position) * trader.acc.net_price
+                raw_val = abs(trader.acc.net_position) * trader.acc.VWAP
                 trader.acc.position_val = raw_val + trader.acc.profit
         return 0
 

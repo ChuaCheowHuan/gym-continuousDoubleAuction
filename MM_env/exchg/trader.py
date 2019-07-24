@@ -5,12 +5,12 @@ from .account import Account
 from .random_agent import Random_agent
 
 class Trader(Random_agent):
-    def __init__(self, ID, cash=0, nav=0, cash_on_hold=0, position_val=0, live_order=[], trade_rec=[], net_position=0, net_price=0):
+    def __init__(self, ID, cash=0, nav=0, cash_on_hold=0, position_val=0, live_order=[], trade_rec=[], net_position=0, VWAP=0):
         self.ID = ID # trader unique ID
         self.live_order = live_order # live order in LOB
         self.trade_rec = trade_rec # record of trades executed
-        self.net_price = net_price # net_price paid for net_position (VWAP)
-        self.acc = Account(ID, cash, nav, cash_on_hold, position_val, net_position, net_price)
+        self.VWAP = VWAP # VWAP paid for net_position (VWAP)
+        self.acc = Account(ID, cash, nav, cash_on_hold, position_val, net_position, VWAP)
 
     def order_approved(self, cash, size, price):
         if self.acc.cash >= size * price:
