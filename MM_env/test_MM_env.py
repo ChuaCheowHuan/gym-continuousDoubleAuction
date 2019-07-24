@@ -19,10 +19,17 @@ def print_acc(e, ID):
     print('net_price:', e.agents[ID].acc.net_price)
     print('profit:', e.agents[ID].acc.profit)
 
+def total_sys_nav(e):
+    sum = 0
+    for trader in e.agents:
+        sum += trader.acc.nav
+    return sum
+
 def print_info(e):
     e.render()
     for trader in e.agents:
         print_acc(e, trader.ID)
+        print('total_sys_nav:', total_sys_nav(e))
 
 def _acc(e, ID):
     return (e.agents[ID].acc.cash,
@@ -35,7 +42,7 @@ def create_env():
     num_of_traders = 4
     tape_display_length = 100
     init_cash = 10000
-    max_step = 10
+    max_step = 100
     e = Exchg(num_of_traders, init_cash, tape_display_length, max_step)
 
     return e
@@ -287,7 +294,7 @@ def test_1_3():
 
 def test_random():
     num_of_traders = 4
-    init_cash = 1000
+    init_cash = 10000
     tape_display_length = 100
     max_step = 100
     e = Exchg(num_of_traders, init_cash, tape_display_length, max_step)
@@ -305,9 +312,9 @@ def test_random():
 if __name__ == "__main__":
 
     #test_1() # place initial orders
-    test_1_1()
+    #test_1_1()
     #test_1_2()
-    #test_1_3()
+    test_1_3()
     #test_1_4()
 
 

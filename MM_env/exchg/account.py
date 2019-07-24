@@ -42,7 +42,7 @@ class Account(object):
 
         return 0
 
-    def same_side(self, trade, position):
+    def size_increase(self, trade, position):
         total_size = abs(self.net_position) + (trade.get('quantity'))
         # VWAP
         self.net_price = (abs(self.net_position) * self.net_price + trade.get('quantity') * trade.get('price')) / total_size
@@ -57,7 +57,7 @@ class Account(object):
         else:
             return trade_size - abs(net_position)
 
-    def covered(self, trade, position):
+    def size_decrease(self, trade, position):
         size_left = self.size_left(abs(self.net_position), trade.get('quantity'))
         raw_val = size_left * self.net_price # val of long left
         mkt_val = size_left * trade.get('price')
@@ -83,18 +83,18 @@ class Account(object):
 
         if self.net_position > 0: #long
             if trade.get(party).get('side') == 'bid':
-                self.same_side(trade, 'long')
+                self.size_increase(trade, 'long')
             else: # ask
                 if self.net_position >= trade.get('quantity'): # still long or neutral
-                    self.covered(trade, 'long')
+                    self.size_decrease(trade, 'long')
                 else: # net_position changed to short
                     self.covered_side_chg(trade, 'long')
         elif self.net_position < 0: # short
             if trade.get(party).get('side') == 'ask':
-                self.same_side(trade, 'short')
+                self.size_increase(trade, 'short')
             else: # bid
                 if abs(self.net_position) >= trade.get('quantity'): # still short or neutral
-                    self.covered(trade, 'short')
+                    self.size_decrease(trade, 'short')
                 else: # net_position changed to long
                     self.covered_side_chg(trade, 'short')
         else: # neutral

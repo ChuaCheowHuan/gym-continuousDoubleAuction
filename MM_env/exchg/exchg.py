@@ -70,6 +70,7 @@ class Exchg(object):
             dones = 1
         # set infos for all agents
         infos = None
+
         return self.s_next, self.rewards, dones, infos
 
     # reward per t step
