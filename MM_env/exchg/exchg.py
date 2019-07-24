@@ -23,7 +23,8 @@ class Exchg(object):
         self.counter = 0
         return self.LOB_state()
 
-    # update position_val for all traders with last price in last entry of tape
+    # update acc for all traders with last price in last entry of tape
+    # mark to market
     def update_acc(self):
         if len(self.LOB.tape) > 0:
             mkt_price = self.LOB.tape[-1].get('price')
