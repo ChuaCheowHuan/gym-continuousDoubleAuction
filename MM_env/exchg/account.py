@@ -45,16 +45,16 @@ class Account(object):
 
     def size_increase_cash_transfer(self, party, trade_val):
         if party == 'init_party':
-            self.cash -= trade_val
+            self.cash -= trade_val # initial order cash reduction
         else: #counter_party
-            self.cash_on_hold -= trade_val
+            self.cash_on_hold -= trade_val # reduce cash_on_hold for initial order cash_on_hold increase
 
     def size_decrease_cash_transfer(self, party, trade_val):
         if party == 'init_party':
             self.cash += trade_val # portion covered goes back to cash
         else: #counter_party
-            self.cash_on_hold -= trade_val
-            self.cash += trade_val # portion covered goes back to cash
+            self.cash += trade_val # increase cash for initial order cash reduction
+            self.cash_on_hold -= trade_val # reduce cash_on_hold for initial order cash_on_hold increase
             self.cash += trade_val # portion covered goes back to cash
 
     def size_increase(self, trade, position, party, trade_val):
