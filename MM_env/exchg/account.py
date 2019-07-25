@@ -93,8 +93,19 @@ class Account(object):
             mkt_val = size_left * trade.get('price')
             self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
         else: # size_left == 0
+            raw_val = abs(self.net_position) * self.VWAP # value acquired with VWAP
+            mkt_val = abs(self.net_position) * trade.get('price')
+            self.profit = self.cal_profit(position, mkt_val, raw_val)
+            self.position_val = raw_val + self.profit
+
+            #self.cash += trade_val # portion covered goes back to cash
+            #self.cash += self.profit
+            self.cash += self.position_val
+            #self.cash += self.position_val - 2*trade.get('price')
+
             self.position_val = 0
             self.VWAP = 0
+
         self.size_decrease_cash_transfer(party, trade_val)
         return 0
 
