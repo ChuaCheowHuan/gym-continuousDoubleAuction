@@ -73,18 +73,7 @@ class Account(object):
         else:
             return trade_size - abs(net_position)
 
-    # ********** BUG (works for size_left > 0 only, fails if size_left == 0), counter_party cash_on_hold not deducted issue **********
-    def size_decrease_0(self, trade, position, party, trade_val):
-        size_left = abs(self.net_position) - (trade.get('quantity'))
-        #  VWAP = (on_false, on_true)[condition]
-        self.VWAP = (0, (abs(self.net_position) * self.VWAP - trade_val) / size_left)[size_left > 0]
-        #self.VWAP = (abs(self.net_position) * self.VWAP - trade_val) / size_left
-        raw_val = size_left * self.VWAP # value acquired with VWAP
-        mkt_val = size_left * trade.get('price')
-        self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
-        self.cash += trade_val # portion covered goes back to cash
-        return 0
-    # ********** NEED TESTING **********
+    # ********** NEED TESTING (works for size_left > 0 only, fails if size_left == 0) **********
     def size_decrease(self, trade, position, party, trade_val):
         size_left = abs(self.net_position) - (trade.get('quantity'))
         if size_left > 0:
@@ -98,10 +87,14 @@ class Account(object):
             self.profit = self.cal_profit(position, mkt_val, raw_val)
             self.position_val = raw_val + self.profit
 
+            # ********** BUG +2 time trade price in self.position_val **********
             #self.cash += trade_val # portion covered goes back to cash
             #self.cash += self.profit
-            self.cash += self.position_val
-            #self.cash += self.position_val - 2*trade.get('price')
+            #self.cash += raw_val
+            #self.cash += self.position_val
+            self.cash += self.position_val - trade_val
+
+            assert(mkt_val == trade_val)
 
             self.position_val = 0
             self.VWAP = 0
