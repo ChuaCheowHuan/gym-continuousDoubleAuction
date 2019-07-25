@@ -110,7 +110,7 @@ class Account(object):
         return 0
     def covered_side_chg(self, trade, position, party, trade_val):
         self.size_decrease(trade, 'long', party, trade_val)
-        self.size_increase(trade, 'long', party, trade_val)
+        self.neutral(trade_val, trade, party)
         return 0
 
     def neutral(self, trade_val, trade, party):
