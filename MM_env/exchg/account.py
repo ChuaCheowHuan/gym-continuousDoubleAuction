@@ -43,11 +43,19 @@ class Account(object):
 
         return 0
 
-    def neutral_cash_transfer(self, party, trade_val):
-        if party == 'counter_party':
-            self.cash_on_hold -= trade_val
+    def size_increase_cash_transfer(self, party, trade_val):
         if party == 'init_party':
             self.cash -= trade_val
+        else: #counter_party
+            self.cash_on_hold -= trade_val
+
+    def size_decrease_cash_transfer(self, party, trade_val):
+        if party == 'init_party':
+            self.cash += trade_val # portion covered goes back to cash
+        else: #counter_party
+            self.cash_on_hold -= trade_val
+            self.cash += trade_val # portion covered goes back to cash
+            self.cash += trade_val # portion covered goes back to cash
 
     def size_increase(self, trade, position, party, trade_val):
         total_size = abs(self.net_position) + (trade.get('quantity'))
@@ -56,7 +64,7 @@ class Account(object):
         raw_val = total_size * self.VWAP # value acquired with VWAP
         mkt_val = total_size * trade.get('price')
         self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
-        self.neutral_cash_transfer(party, trade_val)
+        self.size_increase_cash_transfer(party, trade_val)
         return 0
 
     def size_left(self, net_position, trade_size):
@@ -84,18 +92,10 @@ class Account(object):
             raw_val = size_left * self.VWAP # value acquired with VWAP
             mkt_val = size_left * trade.get('price')
             self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
-            self.cash += trade_val # portion covered goes back to cash
         else: # size_left == 0
             self.position_val = 0
             self.VWAP = 0
-            self.cash += trade_val
-
-        #if party == 'init_party':
-        #    self.cash += trade_val # portion covered goes back to cash
-        if party == 'counter_party':
-            self.cash_on_hold -= trade_val
-            self.cash += trade_val # portion covered goes back to cash
-
+        self.size_decrease_cash_transfer(party, trade_val)
         return 0
 
     # ********** NEED TESTING **********
@@ -108,13 +108,13 @@ class Account(object):
         self.position_val = size_left * trade.get('price')
         #self.cash += abs(self.net_position) * trade.get('price') # portion covered goes back to cash
         self.cash += covered_val # portion covered goes back to cash
-        self.neutral_cash_transfer(party, trade_val)
+        self.size_increase_cash_transfer(party, trade_val)
         return 0
 
     def neutral(self, trade_val, trade, party):
         self.position_val += trade_val
         self.VWAP = trade.get('price')
-        self.neutral_cash_transfer(party, trade_val)
+        self.size_increase_cash_transfer(party, trade_val)
 
     def process_acc(self, trade, party):
         trade_val = trade.get('quantity') * trade.get('price')
