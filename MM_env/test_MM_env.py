@@ -247,12 +247,12 @@ NEED VWAP
 def test_1_3(e):
     # actions
     action0 = {"type": 'limit', "side": None, "size": 41, "price": 2}
-    action1 = {"type": 'limit', "side": None, "size": 11, "price": 3}
+    action1 = {"type": 'limit', "side": 'bid', "size": 10, "price": 5}
     action2 = {"type": 'limit', "side": None, "size": 6, "price": 4}
     action3 = {"type": 'limit', "side": 'ask', "size": 6, "price": 5}
     actions = [action0,action1,action2,action3]
     e.step(actions) # execute actions in 1 step
-    action0 = {"type": 'limit', "side": 'ask', "size": 43, "price": 2}
+    action0 = {"type": 'limit', "side": 'ask', "size": 41, "price": 5}
     action1 = {"type": 'limit', "side": None, "size": 11, "price": 3}
     action2 = {"type": 'limit', "side": None, "size": 14, "price": 4}
     action3 = {"type": 'limit', "side": None, "size": 4, "price": 5}
