@@ -57,6 +57,11 @@ class Account(object):
             self.cash_on_hold -= trade_val # reduce cash_on_hold for initial order cash_on_hold increase
             self.cash += trade_val # portion covered goes back to cash
 
+    def size_zero_cash_transfer(self, trade_val):
+        # add position_val back to cash minus trade_val, trade_val is handled in size_decrease_cash_transfer
+        self.cash += self.position_val - trade_val
+        return 0
+
     def size_increase(self, trade, position, party, trade_val):
         total_size = abs(self.net_position) + (trade.get('quantity'))
         # VWAP
@@ -85,7 +90,9 @@ class Account(object):
             mkt_val = abs(self.net_position) * trade.get('price')
             self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
             # add position_val back to cash minus trade_val, trade_val is handled in size_decrease_cash_transfer
-            self.cash += self.position_val - trade_val
+            #self.cash += self.position_val - trade_val
+            size_zero_cash_transfer(self, trade_val):
+            # reset to 0
             self.position_val = 0
             self.VWAP = 0
         self.size_decrease_cash_transfer(party, trade_val)
