@@ -301,8 +301,8 @@ if __name__ == "__main__":
     test_1(e) # place initial orders
     test_1_1(e)
     #test_1_2(e)
-    test_1_3(e)
-    #test_1_4()
+    #test_1_3(e)
+    test_1_4(e)
 
     #test_random()
 
