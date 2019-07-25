@@ -102,12 +102,12 @@ class Account(object):
         self.size_decrease_cash_transfer(party, trade_val)
         return 0
 
-    def covered_side_chg(self, trade, position, party, trade_val):
+    def covered_side_chg(self, trade, position, party):
         mkt_val = self.covered(trade, position)
         self.size_decrease_cash_transfer(party, mkt_val)
         # deal with remaining size that cause position change
         new_size = trade.get('quantity') - abs(self.net_position)
-        self.position_val = new_size * trade.get('price')
+        self.position_val = new_size * trade.get('price') # traded value
         self.VWAP = trade.get('price')
         self.size_increase_cash_transfer(party, self.position_val)
         return 0
