@@ -91,7 +91,7 @@ class Account(object):
             self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
             # add position_val back to cash minus trade_val, trade_val is handled in size_decrease_cash_transfer
             #self.cash += self.position_val - trade_val
-            size_zero_cash_transfer(self, trade_val):
+            self.size_zero_cash_transfer(trade_val)
             # reset to 0
             self.position_val = 0
             self.VWAP = 0
