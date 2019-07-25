@@ -102,7 +102,6 @@ class Account(object):
         self.size_decrease_cash_transfer(party, trade_val)
         return 0
 
-    # ********** NEED TESTING **********
     def covered_side_chg(self, trade, position, party, trade_val):
         mkt_val = self.covered(trade, position)
         self.size_decrease_cash_transfer(party, mkt_val)
