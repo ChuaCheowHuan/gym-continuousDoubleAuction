@@ -266,7 +266,7 @@ def test_1_3(e):
 
 def test_1_4(e):
     # actions
-    action0 = {"type": 'limit', "side": 'ask', "size": 101, "price": 5}
+    action0 = {"type": 'limit', "side": 'ask', "size": 43, "price": 5}
     action1 = {"type": 'limit', "side": None, "size": 11, "price": 3}
     action2 = {"type": 'limit', "side": None, "size": 14, "price": 4}
     action3 = {"type": 'limit', "side": None, "size": 4, "price": 5}
@@ -304,6 +304,6 @@ if __name__ == "__main__":
     #test_1_3(e)
     test_1_4(e)
 
-    #test_random()
+    test_random()
 
     sys.exit(0)

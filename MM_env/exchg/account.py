@@ -78,6 +78,17 @@ class Account(object):
         else:
             return trade_size - abs(net_position)
 
+    # entire position covered, net position = 0
+    def covered(self, trade, position):
+        raw_val = abs(self.net_position) * self.VWAP # value acquired with VWAP
+        mkt_val = abs(self.net_position) * trade.get('price')
+        self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
+        self.size_zero_cash_transfer(mkt_val)
+        # reset to 0
+        self.position_val = 0
+        self.VWAP = 0
+        return mkt_val
+
     def size_decrease(self, trade, position, party, trade_val):
         size_left = abs(self.net_position) - (trade.get('quantity'))
         if size_left > 0:
@@ -86,29 +97,16 @@ class Account(object):
             mkt_val = size_left * trade.get('price')
             self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
         else: # size_left == 0
-            raw_val = abs(self.net_position) * self.VWAP # value acquired with VWAP
-            mkt_val = abs(self.net_position) * trade.get('price')
-            self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
-            self.size_zero_cash_transfer(trade_val)
-            # reset to 0
-            self.position_val = 0
-            self.VWAP = 0
+            mkt_val = self.covered(trade, position)
 
         self.size_decrease_cash_transfer(party, trade_val)
         return 0
 
     # ********** NEED TESTING **********
     def covered_side_chg(self, trade, position, party, trade_val):
-        raw_val = abs(self.net_position) * self.VWAP # value acquired with VWAP
-        mkt_val = abs(self.net_position) * trade.get('price')
-        self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
-        self.size_zero_cash_transfer(mkt_val)
-        # reset to 0
-        self.position_val = 0
-        self.VWAP = 0
-
+        mkt_val = self.covered(trade, position)
         self.size_decrease_cash_transfer(party, mkt_val)
-
+        # deal with remaining size that cause position change
         new_size = trade.get('quantity') - abs(self.net_position)
         self.position_val = new_size * trade.get('price')
         self.VWAP = trade.get('price')
