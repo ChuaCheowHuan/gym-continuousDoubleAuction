@@ -89,8 +89,6 @@ class Account(object):
             raw_val = abs(self.net_position) * self.VWAP # value acquired with VWAP
             mkt_val = abs(self.net_position) * trade.get('price')
             self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
-            # add position_val back to cash minus trade_val, trade_val is handled in size_decrease_cash_transfer
-            #self.cash += self.position_val - trade_val
             self.size_zero_cash_transfer(trade_val)
             # reset to 0
             self.position_val = 0
@@ -99,7 +97,7 @@ class Account(object):
         return 0
 
     # ********** NEED TESTING **********
-    def covered_side_chg(self, trade, position, party, trade_val):
+    def covered_side_chg_0(self, trade, position, party, trade_val):
         size_left = self.size_left(abs(self.net_position), trade.get('quantity'))
         raw_val = abs(self.net_position) * self.VWAP # val of long left
         mkt_val = abs(self.net_position) * trade.get('price')
@@ -109,6 +107,10 @@ class Account(object):
         #self.cash += abs(self.net_position) * trade.get('price') # portion covered goes back to cash
         self.cash += covered_val # portion covered goes back to cash
         self.size_increase_cash_transfer(party, trade_val)
+        return 0
+    def covered_side_chg(self, trade, position, party, trade_val):
+        self.size_decrease(trade, 'long', party, trade_val)
+        self.size_increase(trade, 'long', party, trade_val)
         return 0
 
     def neutral(self, trade_val, trade, party):
