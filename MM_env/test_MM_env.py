@@ -243,7 +243,6 @@ total profit: 342
 
 NEED VWAP
 """
-# init short position for T0, counter party T0, T1, T2, T3(unfilled)
 def test_1_3(e):
     # actions
     action0 = {"type": 'limit', "side": None, "size": 41, "price": 2}
@@ -253,6 +252,21 @@ def test_1_3(e):
     actions = [action0,action1,action2,action3]
     e.step(actions) # execute actions in 1 step
     action0 = {"type": 'limit', "side": 'ask', "size": 41, "price": 5}
+    action1 = {"type": 'limit', "side": None, "size": 11, "price": 3}
+    action2 = {"type": 'limit', "side": None, "size": 14, "price": 4}
+    action3 = {"type": 'limit', "side": None, "size": 4, "price": 5}
+    actions = [action0,action1,action2,action3]
+    e.step(actions) # execute actions in 1 step
+    expected_result_0 = (10000, 0, 0, 10000, 0)
+    expected_result_1 = (10000, 0, 0, 10000, 0)
+    expected_result_2 = (10000, 0, 0, 10000, 0)
+    expected_result_3 = (10000, 0, 0, 10000, 0)
+    test(e, expected_result_0, expected_result_1, expected_result_2, expected_result_3)
+    return 0
+
+def test_1_4(e):
+    # actions
+    action0 = {"type": 'limit', "side": 'ask', "size": 43, "price": 5}
     action1 = {"type": 'limit', "side": None, "size": 11, "price": 3}
     action2 = {"type": 'limit', "side": None, "size": 14, "price": 4}
     action3 = {"type": 'limit', "side": None, "size": 4, "price": 5}

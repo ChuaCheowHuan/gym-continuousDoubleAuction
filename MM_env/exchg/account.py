@@ -109,7 +109,16 @@ class Account(object):
         self.size_increase_cash_transfer(party, trade_val)
         return 0
     def covered_side_chg(self, trade, position, party, trade_val):
-        self.size_decrease(trade, 'long', party, trade_val)
+        raw_val = abs(self.net_position) * self.VWAP # value acquired with VWAP
+        mkt_val = abs(self.net_position) * trade.get('price')
+        self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
+        self.size_zero_cash_transfer(trade_val)
+        # reset to 0
+        self.position_val = 0
+        self.VWAP = 0
+        #self.net_position = 0
+        self.size_decrease_cash_transfer(party, trade_val)
+
         self.neutral(trade_val, trade, party)
         return 0
 
