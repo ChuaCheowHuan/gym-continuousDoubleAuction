@@ -5,12 +5,9 @@ from .account import Account
 from .random_agent import Random_agent
 
 class Trader(Random_agent):
-    def __init__(self, ID, cash=0, nav=0, cash_on_hold=0, position_val=0, live_order=[], trade_rec=[], net_position=0, VWAP=0):
+    def __init__(self, ID, cash=0):
         self.ID = ID # trader unique ID
-        self.live_order = live_order # live order in LOB
-        self.trade_rec = trade_rec # record of trades executed
-        self.VWAP = VWAP # VWAP paid for net_position (VWAP)
-        self.acc = Account(ID, cash, nav, cash_on_hold, position_val, net_position, VWAP)
+        self.acc = Account(ID, cash)
 
     def order_approved(self, cash, size, price):
         if self.acc.cash >= size * price:
@@ -60,11 +57,9 @@ class Trader(Random_agent):
                 self.acc.print_acc()
 
             else: # init_party is also counter_party
-                # ****************************** TODO ******************************
-                self.acc.cash_on_hold -= trade_val
-                self.acc.cash += trade_val
+                self.acc.init_is_counter_cash_transfer(trade_val)
 
-                print('init_party:', self.ID)
+                print('init_party = counter_party:', self.ID)
                 self.acc.print_acc()
         return 0
 

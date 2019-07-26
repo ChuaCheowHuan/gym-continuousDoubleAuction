@@ -11,20 +11,28 @@ class Exchg(object):
         self.LOB_STATE_NEXT = {}
         # list of agents or traders
         self.agents = [Trader(ID, init_cash) for ID in range(0, num_of_agents)]
-        self.counter = 0
-        self.max_step = max_step # not tick time
+        # step when actions by all traders are executed, not tick time
+        # within a step, multiple trades(ticks) could happened
+        self.t_step = 0
+        self.max_step = max_step
         self.s_next = []
         self.rewards = []
-        self.trades = []
-        self.order_in_book = []
+        self.trades = [] # a trade between init_party & counter_party
+        self.order_in_book = [] # unfilled orders goes to LOB
 
     # reset
-    def reset(self):
-        self.counter = 0
+    def reset(self, tape_display_length):
+        self.LOB = OrderBook(0.25, tape_display_length) # new limit order book
+        self.LOB_STATE = {}
+        self.LOB_STATE_NEXT = {}
+        self.t_step = 0
+        self.s_next = []
+        self.rewards = []
+        self.trades = [] # a trade between init_party & counter_party
+        self.order_in_book = [] # unfilled orders goes to LOB
         return self.LOB_state()
 
-    # update acc for all traders with last price in last entry of tape
-    # mark to market
+    # update acc for all traders with last price in most recent entry of tape
     def sync_acc(self):
         if len(self.LOB.tape) > 0:
             mkt_price = self.LOB.tape[-1].get('price')
@@ -32,9 +40,15 @@ class Exchg(object):
                 # (on_false, on_true)[condition]
                 price_diff = (trader.acc.VWAP - mkt_price, mkt_price - trader.acc.VWAP)[trader.acc.net_position >= 0]
                 trader.acc.profit = abs(trader.acc.net_position) * price_diff
-                print('trader.acc.profit:', trader.ID, trader.acc.profit, price_diff)
+
+                print('sync_acc profit@t:', trader.ID, trader.acc.profit, price_diff)
+
                 raw_val = abs(trader.acc.net_position) * trader.acc.VWAP
                 trader.acc.position_val = raw_val + trader.acc.profit
+
+                trader.acc.prev_nav = trader.acc.nav
+                trader.acc.cal_nav()
+                trader.acc.cal_total_profit()
         return 0
 
     # actions is a list of actions from all agents (traders) at t step
@@ -51,41 +65,34 @@ class Exchg(object):
             price = action.get("price")
             trader = self.agents[i]
             self.trades, self.order_in_book = trader.place_order(type, side, size, price, self.LOB, self.agents)
-
-        # ****************************** TODO ******************************
-        self.sync_acc()
-
+        self.sync_acc() # mark to market
         # after processing LOB
         self.LOB_STATE_NEXT = self.LOB_state() # LOB state at t+1 after processing LOB
         state_diff = self.state_diff(self.LOB_STATE, self.LOB_STATE_NEXT)
         self.s_next = state_diff
         # prepare rewards for all agents
-        # reward = nav@t+1 - nav@t
         self.rewards = self.reward()
         # set dones for all agents
-        self.counter += 1
+        self.t_step += 1
         dones = 0
-        if self.counter > self.max_step-1:
+        if self.t_step > self.max_step-1:
             dones = 1
         # set infos for all agents
         infos = None
         return self.s_next, self.rewards, dones, infos
 
     # reward per t step
+    # reward = nav@t+1 - nav@t
     def reward(self):
         rewards = []
         for trader in self.agents:
-            prev_nav = trader.acc.nav
-            trader.acc.nav = trader.acc.cal_nav() # new nav
-            reward = trader.acc.nav - prev_nav
+            reward = trader.acc.nav - trader.acc.prev_nav
             rewards.append({'ID': trader.ID, 'reward': reward})
         return rewards
 
     # render
     def render(self):
         print('\nLOB:\n', self.LOB)
-        #print('\ntrades:\n', self.trades)
-        #print('\norder_in_book\n:', self.order_in_book)
         print('\nLOB_STATE:\n', self.LOB_STATE)
         print('\nLOB_STATE_NEXT:\n', self.LOB_STATE_NEXT)
         print('\nstate_diff:\n', self.s_next)

@@ -1,29 +1,42 @@
-class Account(object):
-    def __init__(self, ID, cash=0, nav=0, cash_on_hold=0, position_val=0, net_position=0, VWAP=0):
+from .cash_processor import Cash_Processor
+
+class Account(Cash_Processor):
+    def __init__(self, ID, cash=0):
         self.ID = ID
         self.cash = cash
         # nav is used to calculate P&L & r per t step
+        self.cash_on_hold = 0 # cash deducted for placing order = cash - value of live oreder in LOB)
+        self.position_val = 0 # value of net_position
+        # nav is used to calculate P&L & r per t step
+        self.prev_nav = cash # nav @t-1
         self.nav = cash # net asset value = cash + equity
-        self.cash_on_hold = cash_on_hold # cash deducted for placing order = cash - value of live oreder in LOB)
-        self.position_val = net_position * VWAP # value of net_position
+        self.init_nav = cash # starting nav @t = 0
         # assuming only one ticker (1 type of contract)
-        self.net_position = net_position # number of contracts currently holding long (positive) or short (negative)
-        self.VWAP = VWAP # VWAP
-        self.profit = 0
+        self.net_position = 0 # number of contracts currently holding long (positive) or short (negative)
+        self.VWAP = 0 # VWAP
+        self.profit = 0 # profit @ each trade(tick) within a single t step
+        self.total_profit = 0
 
     def print_acc(self):
         print('ID:', self.ID)
         print('cash:', self.cash)
         print('cash_on_hold:', self.cash_on_hold)
         print('position_val:', self.position_val)
+        print('prev_nav:', self.prev_nav)
         print('nav:', self.nav)
         print('net_position:', self.net_position)
         print('VWAP:', self.VWAP)
-        print('profit:', self.profit)
+        print('profit from trade(tick):', self.profit)
+        print('total_profit:', self.total_profit)
         return 0
 
     def cal_nav(self):
-        return self.cash + self.cash_on_hold + self.position_val
+        self.nav =  self.cash + self.cash_on_hold + self.position_val
+        return self.nav
+
+    def cal_total_profit(self):
+        self.total_profit = self.nav - self.init_nav
+        return self.total_profit
 
     def cal_profit(self, position, mkt_val, raw_val):
         if position == 'long':
@@ -31,36 +44,6 @@ class Account(object):
         else:
             self.profit = raw_val - mkt_val
         return self.profit
-
-    def order_in_book_init_party(self, order_in_book):
-        # if there's order_in_book for init_party (party2)
-        if order_in_book != None: # there are new unfilled orders
-            order_in_book_val = order_in_book.get('price') * order_in_book.get('quantity')
-            self.cash -= order_in_book_val # reduce cash
-            self.cash_on_hold += order_in_book_val # increase cash_on_hold
-
-            print('order_in_book:', order_in_book)
-
-        return 0
-
-    def size_increase_cash_transfer(self, party, trade_val):
-        if party == 'init_party':
-            self.cash -= trade_val # initial order cash reduction
-        else: #counter_party
-            self.cash_on_hold -= trade_val # reduce cash_on_hold for initial order cash_on_hold increase
-
-    def size_decrease_cash_transfer(self, party, trade_val):
-        if party == 'init_party':
-            self.cash += trade_val # portion covered goes back to cash
-        else: #counter_party
-            self.cash += trade_val # increase cash for initial order cash reduction
-            self.cash_on_hold -= trade_val # reduce cash_on_hold for initial order cash_on_hold increase
-            self.cash += trade_val # portion covered goes back to cash
-
-    def size_zero_cash_transfer(self, trade_val):
-        # add position_val back to cash minus trade_val, trade_val is handled in size_decrease_cash_transfer
-        self.cash += self.position_val - trade_val
-        return 0
 
     def size_increase(self, trade, position, party, trade_val):
         total_size = abs(self.net_position) + (trade.get('quantity'))
@@ -71,12 +54,6 @@ class Account(object):
         self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
         self.size_increase_cash_transfer(party, trade_val)
         return 0
-
-    def size_left(self, net_position, trade_size):
-        if abs(net_position) >= trade_size:
-            return abs(net_position) - trade_size
-        else:
-            return trade_size - abs(net_position)
 
     # entire position covered, net position = 0
     def covered(self, trade, position):
@@ -98,7 +75,6 @@ class Account(object):
             self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
         else: # size_left == 0
             mkt_val = self.covered(trade, position)
-
         self.size_decrease_cash_transfer(party, trade_val)
         return 0
 
@@ -119,7 +95,6 @@ class Account(object):
 
     def process_acc(self, trade, party):
         trade_val = trade.get('quantity') * trade.get('price')
-
         if self.net_position > 0: #long
             if trade.get(party).get('side') == 'bid':
                 self.size_increase(trade, 'long', party, trade_val)
@@ -138,9 +113,9 @@ class Account(object):
                     self.covered_side_chg(trade, 'short', party)
         else: # neutral
             self.neutral(trade_val, trade, party)
-
         self.update_net_position(trade.get(party).get('side'), trade.get('quantity'))
-        self.nav = self.cal_nav()
+        #self.cal_nav()
+        #self.cal_total_profit()
         return 0
 
     def update_net_position(self, side, trade_quantity):

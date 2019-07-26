@@ -3,9 +3,7 @@ import sys
 if "../" not in sys.path:
     sys.path.append("../")
 
-#from exchg.lib.envs.simple_rooms import SimpleRoomsEnv
-#from exchg.lib.envs.cliff_walking import CliffWalkingEnv
-#from exchg.lib.simulation import Experiment
+#from exchg.x.y import z
 
 from exchg.exchg import Exchg
 
@@ -21,20 +19,21 @@ def print_info(e):
         trader.acc.print_acc()
         print('total_sys_nav:', total_sys_nav(e))
     return 0
-
+"""
 def _acc(e, ID):
     return (e.agents[ID].acc.cash,
             e.agents[ID].acc.cash_on_hold,
             e.agents[ID].acc.position_val,
             e.agents[ID].acc.nav,
             e.agents[ID].acc.net_position)
-
+"""
 def create_env():
     num_of_traders = 4
     tape_display_length = 100
     init_cash = 10000
     max_step = 100
     e = Exchg(num_of_traders, init_cash, tape_display_length, max_step)
+    e.reset(tape_display_length)
     return e
 
 def test(e, expected_result_0, expected_result_1, expected_result_2, expected_result_3):
@@ -108,36 +107,7 @@ def test_1(e):
     expected_result_3 = (10000, 0, 0, 10000, 0)
     test(e, expected_result_0, expected_result_1, expected_result_2, expected_result_3)
     return 0
-"""
-LOB:
- ***Bids***
-6@13/3 - 12
-6@12/3 - 8
-6@11/3 - 4
-5@10/2 - 11
-5@9/2 - 7
-5@8/2 - 3
-4@7/1 - 10
-4@6/1 - 6
-4@5/1 - 2
-3@4/0 - 9
-3@3/0 - 5
-3@2/0 - 1
 
-***Asks***
-3@14/0 - 13
-3@15/0 - 17
-3@16/0 - 21
-4@17/1 - 14
-4@18/1 - 18
-4@19/1 - 22
-5@20/2 - 15
-5@21/2 - 19
-5@22/2 - 23
-6@23/3 - 16
-6@24/3 - 20
-6@25/3 - 24
-"""
 # init long position for T0, counter party T0, T1, T2, T3(unfilled)
 def test_1_1(e):
     # actions
@@ -154,40 +124,7 @@ def test_1_1(e):
     expected_result_3 = (10000, 0, 0, 10000, 0)
     test(e, expected_result_0, expected_result_1, expected_result_2, expected_result_3)
     return 0
-"""
-LOB:
- ***Bids***
-6@13/3 - 12
-6@12/3 - 8
-6@11/3 - 4
-5@10/2 - 11
-5@9/2 - 7
-5@8/2 - 3
-4@7/1 - 10
-4@6/1 - 6
-4@5/1 - 2
-3@4/0 - 9
-3@3/0 - 5
-3@2/0 - 1
 
-***Asks***
-4@25/3 - 24
-
-***tape***
-Q @ $ (t) c/i side
-2 @ 25 (25) 3/0 bid
-6 @ 24 (25) 3/0 bid
-6 @ 23 (25) 3/0 bid
-5 @ 22 (25) 2/0 bid
-5 @ 21 (25) 2/0 bid
-5 @ 20 (25) 2/0 bid
-4 @ 19 (25) 1/0 bid
-4 @ 18 (25) 1/0 bid
-4 @ 17 (25) 1/0 bid
-3 @ 16 (25) 0/0 bid
-3 @ 15 (25) 0/0 bid
-3 @ 14 (25) 0/0 bid
-"""
 # init short position for T0, counter party T0, T1, T2, T3(unfilled)
 def test_1_2(e):
     # actions
@@ -203,46 +140,7 @@ def test_1_2(e):
     expected_result_3 = (10000, 0, 0, 10000, 0)
     test(e, expected_result_0, expected_result_1, expected_result_2, expected_result_3)
     return 0
-"""
-LOB:
- ***Bids***
-2@2/0 - 1
 
-***Asks***
-3@14/0 - 13
-3@15/0 - 17
-3@16/0 - 21
-4@17/1 - 14
-4@18/1 - 18
-4@19/1 - 22
-5@20/2 - 15
-5@21/2 - 19
-5@22/2 - 23
-6@23/3 - 16
-6@24/3 - 20
-6@25/3 - 24
-
-***tape***
-Q @ $ (t) c/i side        [flawed logic]                [correct value]
-1 @ 2 (25) 0/0 ask  0  66
-3 @ 3 (25) 0/0 ask  3  60
-3 @ 4 (25) 0/0 ask  6  54
-4 @ 5 (25) 1/0 ask  12 48                               45@
-4 @ 6 (25) 1/0 ask  16 42                               41@
-4 @ 7 (25) 1/0 ask  20 36                               37@
-5 @ 8 (25) 2/0 ask  30 30                               33@[(5*8)+(28*11.11)/(5+28)]=10.64  87.08
-5 @ 9 (25) 2/0 ask  35 24 362+155+45=562 562/28=20.07   28@[(5*9)+(23*11.57)/(5+23)]=11.11  59.11
-5 @ 10 (25) 2/0 ask 40 18 246+66+50=362 362/23=15.74    23@[(5*10)+(18*12)]/(5+18)=11.57
-6 @ 11 (25) 3/0 ask 54 12 156+24+66=246 246/18=13.67    18@[(6*11)+(12*12.5)]/(6+12)=12
-6 @ 12 (25) 3/0 ask 60 6  78+6+72=156 156/12=13         12@12.5                             (12.5*12)-(12*12)=6
-6 @ 13 (25) 3/0 ask 66 0  78                            6@13                                0
-
-start pv: 78
-
-total profit: 342
-
-NEED VWAP
-"""
 def test_1_3(e):
     # actions
     action0 = {"type": 'limit', "side": None, "size": 41, "price": 2}
@@ -304,6 +202,6 @@ if __name__ == "__main__":
     #test_1_3(e)
     test_1_4(e)
 
-    test_random()
+    #test_random()
 
     sys.exit(0)
