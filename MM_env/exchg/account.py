@@ -100,8 +100,6 @@ class Account(Calculate, Cash_Processor):
         else: # neutral
             self.neutral(trade_val, trade, party)
         self.update_net_position(trade.get(party).get('side'), trade.get('quantity'))
-        #self.cal_nav()
-        #self.cal_total_profit()
         return 0
 
     def update_net_position(self, side, trade_quantity):
