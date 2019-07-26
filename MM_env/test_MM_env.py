@@ -202,6 +202,6 @@ if __name__ == "__main__":
     #test_1_3(e)
     test_1_4(e)
 
-    #test_random()
+    test_random()
 
     sys.exit(0)
