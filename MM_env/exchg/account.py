@@ -1,6 +1,7 @@
 from .cash_processor import Cash_Processor
+from .calculate import Calculate
 
-class Account(Cash_Processor):
+class Account(Calculate, Cash_Processor):
     def __init__(self, ID, cash=0):
         self.ID = ID
         self.cash = cash
@@ -29,21 +30,6 @@ class Account(Cash_Processor):
         print('profit from trade(tick):', self.profit)
         print('total_profit:', self.total_profit)
         return 0
-
-    def cal_nav(self):
-        self.nav =  self.cash + self.cash_on_hold + self.position_val
-        return self.nav
-
-    def cal_total_profit(self):
-        self.total_profit = self.nav - self.init_nav
-        return self.total_profit
-
-    def cal_profit(self, position, mkt_val, raw_val):
-        if position == 'long':
-            self.profit = mkt_val - raw_val
-        else:
-            self.profit = raw_val - mkt_val
-        return self.profit
 
     def size_increase(self, trade, position, party, trade_val):
         total_size = abs(self.net_position) + (trade.get('quantity'))

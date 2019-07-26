@@ -33,22 +33,11 @@ class Exchg(object):
         return self.LOB_state()
 
     # update acc for all traders with last price in most recent entry of tape
-    def sync_acc(self):
+    def mark_to_mkt(self):
         if len(self.LOB.tape) > 0:
             mkt_price = self.LOB.tape[-1].get('price')
             for trader in self.agents:
-                # (on_false, on_true)[condition]
-                price_diff = (trader.acc.VWAP - mkt_price, mkt_price - trader.acc.VWAP)[trader.acc.net_position >= 0]
-                trader.acc.profit = abs(trader.acc.net_position) * price_diff
-
-                print('sync_acc profit@t:', trader.ID, trader.acc.profit, price_diff)
-
-                raw_val = abs(trader.acc.net_position) * trader.acc.VWAP
-                trader.acc.position_val = raw_val + trader.acc.profit
-
-                trader.acc.prev_nav = trader.acc.nav
-                trader.acc.cal_nav()
-                trader.acc.cal_total_profit()
+                trader.acc.mark_to_mkt(trader.ID, mkt_price)
         return 0
 
     # actions is a list of actions from all agents (traders) at t step
@@ -65,7 +54,7 @@ class Exchg(object):
             price = action.get("price")
             trader = self.agents[i]
             self.trades, self.order_in_book = trader.place_order(type, side, size, price, self.LOB, self.agents)
-        self.sync_acc() # mark to market
+        self.mark_to_mkt() # mark to market
         # after processing LOB
         self.LOB_STATE_NEXT = self.LOB_state() # LOB state at t+1 after processing LOB
         state_diff = self.state_diff(self.LOB_STATE, self.LOB_STATE_NEXT)
