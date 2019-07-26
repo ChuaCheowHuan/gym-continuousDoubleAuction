@@ -46,13 +46,14 @@ class Exchg(object):
         self.LOB_STATE = self.LOB_state() # LOB state at t before processing LOB
         # Begin processing LOB
         # process actions for all agents
-        for i, action in enumerate(actions):
+        for action in actions:
             # use dict
+            ID = action.get("ID")
             type = action.get("type")
             side = action.get("side")
             size = action.get("size")
             price = action.get("price")
-            trader = self.agents[i]
+            trader = self.agents[ID]
             self.trades, self.order_in_book = trader.place_order(type, side, size, price, self.LOB, self.agents)
         self.mark_to_mkt() # mark to market
         # after processing LOB
