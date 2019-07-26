@@ -1,5 +1,7 @@
 import numpy as np
 
+from sklearn.utils import shuffle
+
 from .orderbook import OrderBook
 from .trader import Trader
 
@@ -40,9 +42,15 @@ class Exchg(object):
                 trader.acc.mark_to_mkt(trader.ID, mkt_price)
         return 0
 
+    # seed for reproducible behavior
+    def rand_exec_seq(self, actions, seed):
+        actions = shuffle(actions, random_state=seed)
+        return actions
+
     # actions is a list of actions from all agents (traders) at t step
     # each action is a list of (type, side, size, price)
     def step(self, actions):
+        self.rand_exec_seq(actions, 0) # randomized traders execution sequence
         self.LOB_STATE = self.LOB_state() # LOB state at t before processing LOB
         # Begin processing LOB
         # process actions for all agents
