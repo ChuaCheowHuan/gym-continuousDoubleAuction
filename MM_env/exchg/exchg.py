@@ -113,7 +113,7 @@ class Exchg(object):
         print('\nstate_diff:\n', self.s_next)
         print('\nrewards:\n', self.rewards)
         self.print_accs()
-        print('total_sys_nav:', self.total_sys_profit())
+        print('total_sys_profit:', self.total_sys_profit())
         print('total_sys_nav:', self.total_sys_nav())
         return 0
 
