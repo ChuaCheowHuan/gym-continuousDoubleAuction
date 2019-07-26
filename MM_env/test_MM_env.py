@@ -181,7 +181,7 @@ def test_random():
     num_of_traders = 4
     init_cash = 10000
     tape_display_length = 100
-    max_step = 100
+    max_step = 10
     e = Exchg(num_of_traders, init_cash, tape_display_length, max_step)
     for step in range(max_step):
         actions = []
