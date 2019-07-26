@@ -17,6 +17,7 @@ class Account(Calculate, Cash_Processor):
         self.VWAP = 0 # VWAP
         self.profit = 0 # profit @ each trade(tick) within a single t step
         self.total_profit = 0 # profit at the end of a single t-step
+        self.num_trades = 0
 
     def print_acc(self):
         print('ID:', self.ID)
@@ -29,6 +30,7 @@ class Account(Calculate, Cash_Processor):
         print('VWAP:', self.VWAP)
         print('profit from trade(tick):', self.profit)
         print('total_profit:', self.total_profit)
+        print('num_trades:', self.num_trades)
         return 0
 
     def size_increase(self, trade, position, party, trade_val):
@@ -98,6 +100,7 @@ class Account(Calculate, Cash_Processor):
                 self.covered_side_chg(trade, 'short', party)
 
     def process_acc(self, trade, party):
+        self.num_trades += 1
         trade_val = trade.get('quantity') * trade.get('price')
         if self.net_position > 0: #long
             self.net_long(trade_val, trade, party)
