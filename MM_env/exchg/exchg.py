@@ -88,6 +88,17 @@ class Exchg(object):
             rewards.append({'ID': trader.ID, 'reward': reward})
         return rewards
 
+    def print_accs(self):
+        for trader in self.agents:
+            trader.acc.print_acc()
+        return 0
+
+    def total_sys_nav(self):
+        sum = 0
+        for trader in self.agents:
+            sum += trader.acc.nav
+        return sum
+        
     # render
     def render(self):
         print('\nLOB:\n', self.LOB)
@@ -95,6 +106,8 @@ class Exchg(object):
         print('\nLOB_STATE_NEXT:\n', self.LOB_STATE_NEXT)
         print('\nstate_diff:\n', self.s_next)
         print('\nrewards:\n', self.rewards)
+        self.print_accs()
+        print('total_sys_nav:', self.total_sys_nav())
         return 0
 
     # price_map is an OrderTree object (SortedDict object)
