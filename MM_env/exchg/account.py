@@ -79,24 +79,30 @@ class Account(Calculate, Cash_Processor):
         self.VWAP = trade.get('price')
         self.size_increase_cash_transfer(party, trade_val)
 
+    def net_long(self, trade_val, trade, party):
+        if trade.get(party).get('side') == 'bid':
+            self.size_increase(trade, 'long', party, trade_val)
+        else: # ask
+            if self.net_position >= trade.get('quantity'): # still long or neutral
+                self.size_decrease(trade, 'long', party, trade_val)
+            else: # net_position changed to short
+                self.covered_side_chg(trade, 'long', party)
+
+    def net_short(self, trade_val, trade, party):
+        if trade.get(party).get('side') == 'ask':
+            self.size_increase(trade, 'short', party, trade_val)
+        else: # bid
+            if abs(self.net_position) >= trade.get('quantity'): # still short or neutral
+                self.size_decrease(trade, 'short', party, trade_val)
+            else: # net_position changed to long
+                self.covered_side_chg(trade, 'short', party)
+
     def process_acc(self, trade, party):
         trade_val = trade.get('quantity') * trade.get('price')
         if self.net_position > 0: #long
-            if trade.get(party).get('side') == 'bid':
-                self.size_increase(trade, 'long', party, trade_val)
-            else: # ask
-                if self.net_position >= trade.get('quantity'): # still long or neutral
-                    self.size_decrease(trade, 'long', party, trade_val)
-                else: # net_position changed to short
-                    self.covered_side_chg(trade, 'long', party)
+            self.net_long(trade_val, trade, party)
         elif self.net_position < 0: # short
-            if trade.get(party).get('side') == 'ask':
-                self.size_increase(trade, 'short', party, trade_val)
-            else: # bid
-                if abs(self.net_position) >= trade.get('quantity'): # still short or neutral
-                    self.size_decrease(trade, 'short', party, trade_val)
-                else: # net_position changed to long
-                    self.covered_side_chg(trade, 'short', party)
+            self.net_short(trade_val, trade, party)
         else: # neutral
             self.neutral(trade_val, trade, party)
         self.update_net_position(trade.get(party).get('side'), trade.get('quantity'))
