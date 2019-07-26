@@ -93,12 +93,18 @@ class Exchg(object):
             trader.acc.print_acc()
         return 0
 
+    def total_sys_profit(self):
+        sum = 0
+        for trader in self.agents:
+            sum += trader.acc.total_profit
+        return sum
+
     def total_sys_nav(self):
         sum = 0
         for trader in self.agents:
             sum += trader.acc.nav
         return sum
-        
+
     # render
     def render(self):
         print('\nLOB:\n', self.LOB)
@@ -107,6 +113,7 @@ class Exchg(object):
         print('\nstate_diff:\n', self.s_next)
         print('\nrewards:\n', self.rewards)
         self.print_accs()
+        print('total_sys_nav:', self.total_sys_profit())
         print('total_sys_nav:', self.total_sys_nav())
         return 0
 
