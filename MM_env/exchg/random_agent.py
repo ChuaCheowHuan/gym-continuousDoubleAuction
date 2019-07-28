@@ -2,7 +2,6 @@ import random
 import numpy as np
 
 class Random_agent(object):
-    #def __init__():
 
     # pass action to step
     def select_random_action(self, ID):
