@@ -8,30 +8,40 @@ class Exchg(Exchg_Helper):
         self.LOB = OrderBook(0.25, tape_display_length) # limit order book
         self.LOB_STATE = {}
         self.LOB_NEXT_STATE = {}
+
+        self.next_states = {}
+        self.rewards = {}
+        self.dones = {}
         self.done_set = set()
-        # list of agents or traders
-        self.agents = [Trader(ID, init_cash) for ID in range(0, num_of_agents)]
+        self.infos = {}
+
+        self.trades = {} # a trade between init_party & counter_party
+        self.order_in_book = {} # unfilled orders goes to LOB
+
         # step when actions by all traders are executed, not tick time
         # within a step, multiple trades(ticks) could happened
         self.t_step = 0
         self.max_step = max_step
-        self.next_states = {}
-        self.rewards = {}
-        self.dones = {}
-        self.infos = {}
-        self.trades = {} # a trade between init_party & counter_party
-        self.order_in_book = {} # unfilled orders goes to LOB
+        
+        # list of agents or traders
+        self.agents = [Trader(ID, init_cash) for ID in range(0, num_of_agents)]
 
     # reset
     def reset(self, tape_display_length):
         self.LOB = OrderBook(0.25, tape_display_length) # new limit order book
         self.LOB_STATE = {}
         self.LOB_NEXT_STATE = {}
-        self.t_step = 0
+
         self.next_states = {}
         self.rewards = {}
+        self.dones = {}
+        self.done_set = set()
+        self.infos = {}
+
         self.trades = {} # a trade between init_party & counter_party
         self.order_in_book = {} # unfilled orders goes to LOB
+
+        self.t_step = 0
 
         # ********** reset traders' accounts but keep the original traders **********
 
