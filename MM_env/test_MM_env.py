@@ -124,11 +124,12 @@ def test_random():
     e = Exchg(num_of_traders, init_cash, tape_display_length, max_step)
     for step in range(max_step):
         actions = []
-        for trader in e.agents:
+        #actions = {}
+        for i, trader in enumerate(e.agents):
             action = trader.select_random_action(trader.ID)
             actions.append(action)
-        print('\n\n\nSTEP:', step)
-        print('actions:', actions)
+            #actions[i] = action
+        print('\n\n\nSTEP:', step)        
         e.step(actions)
         e.render()
 

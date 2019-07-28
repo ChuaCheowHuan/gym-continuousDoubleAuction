@@ -25,9 +25,11 @@ class Exchg_Helper(object):
         return 0
 
     def rand_exec_seq(self, actions, seed):
+        print('actions:', actions)
         # seed for reproducible behavior
-        actions = shuffle(actions, random_state=seed)
-        return actions
+        shuffle_actions = shuffle(actions, random_state=seed)
+        print('shuffle_actions:', shuffle_actions)
+        return shuffle_actions
 
     # process actions for all agents
     def do_actions(self, actions):
@@ -84,7 +86,7 @@ class Exchg_Helper(object):
             dones = self.set_done(dones, trader)
             infos = self.set_info(infos, trader)
         dones = self.set_all_done(dones)
-        return next_states, rewards, dones, infos        
+        return next_states, rewards, dones, infos
 
     def print_accs(self):
         for trader in self.agents:
