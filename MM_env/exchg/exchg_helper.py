@@ -25,16 +25,19 @@ class Exchg_Helper(object):
         return 0
 
     def rand_exec_seq(self, actions, seed):
+
         print('actions:', actions)
+
         # seed for reproducible behavior
         shuffle_actions = shuffle(actions, random_state=seed)
+
         print('shuffle_actions:', shuffle_actions)
+
         return shuffle_actions
 
     # process actions for all agents
     def do_actions(self, actions):
         for action in actions:
-            # use dict
             ID = action.get("ID")
             type = action.get("type")
             side = action.get("side")

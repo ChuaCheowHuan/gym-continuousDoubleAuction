@@ -36,10 +36,16 @@ class Exchg(Exchg_Helper):
         #     array([7., 0., 0., 0., 0., 0., 0., 0., 0., 0.])]
         #self.observation_space = self.agents[0].observation_space
         #self.observation_space = spaces.Dict({"position": spaces.Discrete(2), "velocity": spaces.Discrete(3)})
-        
+
         # action space per agent: {'ID': 0, 'type': 'market', 'side': 'bid', 'size': 1, 'price': 8}
         #self.action_space = self.agents[0].action_space
-
+        """
+        self.action_space = spaces.Dict({"ID": spaces.Discrete(num_of_agents),
+                                         "type": spaces.Discrete(2),
+                                         "side": spaces.Discrete(2),
+                                         "size": spaces.Discrete(10),
+                                         "price": spaces.Discrete(10)})
+        """
     # reset
     def reset(self):
         self.LOB = OrderBook(0.25, self.tape_display_length) # new limit order book
