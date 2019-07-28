@@ -29,6 +29,16 @@ class Exchg(Exchg_Helper):
         # list of agents or traders
         self.agents = [Trader(ID, init_cash) for ID in range(0, num_of_agents)]
 
+        # observation space per agent:
+        # 0: [array([0., 0., 0., 0., 0., 1., 0., 0., 0., 0.]),
+        #     array([0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]),
+        #     array([1., 0., 0., 0., 0., 0., 0., 0., 0., 0.]),
+        #     array([7., 0., 0., 0., 0., 0., 0., 0., 0., 0.])]
+        #self.observation_space = self.agents[0].observation_space
+
+        # action space per agent: {'ID': 0, 'type': 'market', 'side': 'bid', 'size': 1, 'price': 8}
+        #self.action_space = self.agents[0].action_space
+
     # reset
     def reset(self):
         self.LOB = OrderBook(0.25, self.tape_display_length) # new limit order book

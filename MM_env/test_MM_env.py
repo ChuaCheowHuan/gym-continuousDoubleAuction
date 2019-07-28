@@ -128,7 +128,7 @@ def test_random():
             action = trader.select_random_action(trader.ID)
             actions.append(action)
         print('\n\n\nSTEP:', step)
-        print(actions)
+        print('actions:', actions)
         e.step(actions)
         e.render()
 
