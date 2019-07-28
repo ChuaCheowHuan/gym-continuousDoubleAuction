@@ -12,7 +12,7 @@ def create_env():
     init_cash = 10000
     max_step = 100
     e = Exchg(num_of_traders, init_cash, tape_display_length, max_step)
-    e.reset(tape_display_length)
+    e.reset()
     return e
 
 # place initial orders, 4 traders each with 3 bids, 3 asks all in LOB, no trade
@@ -119,8 +119,8 @@ def test_1_4(e):
 def test_random():
     num_of_traders = 4
     init_cash = 10000
-    tape_display_length = 300
-    max_step = 100
+    tape_display_length = 100
+    max_step = 50
     e = Exchg(num_of_traders, init_cash, tape_display_length, max_step)
     for step in range(max_step):
         actions = []

@@ -4,7 +4,7 @@ from .trader import Trader
 
 # The exchange environment
 class Exchg(Exchg_Helper):
-    def __init__(self, num_of_agents=2, init_cash=100, tape_display_length=10, max_step=100):
+    def __init__(self, num_of_agents=2, init_cash=0, tape_display_length=10, max_step=100):
         self.LOB = OrderBook(0.25, tape_display_length) # limit order book
         self.LOB_STATE = {}
         self.LOB_NEXT_STATE = {}
@@ -22,13 +22,16 @@ class Exchg(Exchg_Helper):
         # within a step, multiple trades(ticks) could happened
         self.t_step = 0
         self.max_step = max_step
-        
+
+        self.init_cash = init_cash
+        self.tape_display_length = tape_display_length
+
         # list of agents or traders
         self.agents = [Trader(ID, init_cash) for ID in range(0, num_of_agents)]
 
     # reset
-    def reset(self, tape_display_length):
-        self.LOB = OrderBook(0.25, tape_display_length) # new limit order book
+    def reset(self):
+        self.LOB = OrderBook(0.25, self.tape_display_length) # new limit order book
         self.LOB_STATE = {}
         self.LOB_NEXT_STATE = {}
 
@@ -43,7 +46,7 @@ class Exchg(Exchg_Helper):
 
         self.t_step = 0
 
-        # ********** reset traders' accounts but keep the original traders **********
+        self.reset_traders_acc()
 
         return self.LOB_state()
 

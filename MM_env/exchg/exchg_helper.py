@@ -4,6 +4,11 @@ from sklearn.utils import shuffle
 
 class Exchg_Helper(object):
 
+    # reset traders accounts
+    def reset_traders_acc(self):
+        for trader in self.agents:
+            trader.acc.reset_acc(trader.ID, self.init_cash)
+
     # update acc for all traders with last price in most recent entry of tape
     def mark_to_mkt(self):
         if len(self.LOB.tape) > 0:
@@ -132,4 +137,4 @@ class Exchg_Helper(object):
         state_diff = []
         for (state_row, next_state_row) in zip(LOB_state, LOB_next_state):
             state_diff.append(next_state_row - state_row)
-        return state_diff                
+        return state_diff

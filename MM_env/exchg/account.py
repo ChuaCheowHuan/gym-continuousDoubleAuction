@@ -19,6 +19,23 @@ class Account(Calculate, Cash_Processor):
         self.total_profit = 0 # profit at the end of a single t-step
         self.num_trades = 0
 
+    def reset_acc(self, ID, cash=0):
+        self.ID = ID
+        self.cash = cash
+        # nav is used to calculate P&L & r per t step
+        self.cash_on_hold = 0 # cash deducted for placing order = cash - value of live order in LOB
+        self.position_val = 0 # value of net_position
+        # nav is used to calculate P&L & r per t step
+        self.init_nav = cash # starting nav @t = 0
+        self.nav = cash # nav @t (nav @ end of a single t-step)
+        self.prev_nav = cash # nav @t-1
+        # assuming only one ticker (1 type of contract)
+        self.net_position = 0 # number of contracts currently holding long (positive) or short (negative)
+        self.VWAP = 0 # VWAP
+        self.profit = 0 # profit @ each trade(tick) within a single t step
+        self.total_profit = 0 # profit at the end of a single t-step
+        self.num_trades = 0
+
     def print_acc(self):
         print('ID:', self.ID)
         print('cash:', self.cash)
