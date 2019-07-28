@@ -35,7 +35,8 @@ class Exchg(Exchg_Helper):
         #     array([1., 0., 0., 0., 0., 0., 0., 0., 0., 0.]),
         #     array([7., 0., 0., 0., 0., 0., 0., 0., 0., 0.])]
         #self.observation_space = self.agents[0].observation_space
-
+        #self.observation_space = spaces.Dict({"position": spaces.Discrete(2), "velocity": spaces.Discrete(3)})
+        
         # action space per agent: {'ID': 0, 'type': 'market', 'side': 'bid', 'size': 1, 'price': 8}
         #self.action_space = self.agents[0].action_space
 
