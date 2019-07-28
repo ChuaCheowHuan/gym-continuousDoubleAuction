@@ -47,16 +47,6 @@ class Exchg_Helper(object):
         state_diff = self.state_diff(self.agg_LOB, self.agg_LOB_aft)
         return state_diff
 
-    def set_step_outputs(self, state_input):
-        next_states, rewards, dones, infos = {},{},{},{}
-        for trader in self.agents:
-            next_states = self.set_next_state(next_states, trader, state_input)
-            rewards = self.set_reward(rewards, trader)
-            dones = self.set_done(dones, trader)
-            infos = self.set_info(infos, trader)
-        dones = self.set_all_done(dones)
-        return next_states, rewards, dones, infos
-
     def set_next_state(self, next_states, trader, state_input):
         next_states[trader.ID] = state_input
         return next_states
@@ -85,6 +75,16 @@ class Exchg_Helper(object):
         #info = trader.acc.nav - trader.acc.prev_nav
         infos[trader.ID] = ''
         return infos
+
+    def set_step_outputs(self, state_input):
+        next_states, rewards, dones, infos = {},{},{},{}
+        for trader in self.agents:
+            next_states = self.set_next_state(next_states, trader, state_input)
+            rewards = self.set_reward(rewards, trader)
+            dones = self.set_done(dones, trader)
+            infos = self.set_info(infos, trader)
+        dones = self.set_all_done(dones)
+        return next_states, rewards, dones, infos        
 
     def print_accs(self):
         for trader in self.agents:
