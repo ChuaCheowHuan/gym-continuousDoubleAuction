@@ -38,11 +38,11 @@ class Exchg(Exchg_Helper):
         return self.LOB_state()
 
     # actions is a list of actions from all agents (traders) at t step
-    # each action is a list of (type, side, size, price)
+    # each action is a list of (ID, type, side, size, price)
     def step(self, actions):
-        #obs, rew, done, info = {}, {}, {}, {}
+        self.next_states, self.rewards, self.dones, self.infos = {}, {}, {}, {}
         self.LOB_STATE = self.LOB_state() # LOB state at t before processing LOB
-        actions = self.rand_exec_seq(actions, 0) # randomized traders execution sequence        
+        actions = self.rand_exec_seq(actions, 0) # randomized traders execution sequence
         self.do_actions(actions) # Begin processing LOB
         self.mark_to_mkt() # mark to market
         # after processing LOB
