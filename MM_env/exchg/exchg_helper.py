@@ -5,10 +5,10 @@ from sklearn.utils import shuffle
 class Exchg_Helper(object):
 
     # reset traders LOB observations/states
-    def reset_traders_LOB_states(self):
+    def reset_traders_agg_LOB(self):
         states = {}
         for trader in self.agents:
-            states[trader.ID] = self.LOB_state()
+            states[trader.ID] = self.set_agg_LOB()
         return states
 
     # reset traders accounts
@@ -43,8 +43,8 @@ class Exchg_Helper(object):
         return self.trades, self.order_in_book
 
     def prep_next_state(self):
-        self.LOB_NEXT_STATE = self.LOB_state() # LOB state at t+1 after processing LOB
-        state_diff = self.state_diff(self.LOB_STATE, self.LOB_NEXT_STATE)
+        self.agg_LOB_aft = self.set_agg_LOB() # LOB state at t+1 after processing LOB
+        state_diff = self.state_diff(self.agg_LOB, self.agg_LOB_aft)
         return state_diff
 
     def set_step_outputs(self, state_input):
@@ -106,7 +106,7 @@ class Exchg_Helper(object):
     # price_map is an OrderTree object (SortedDict object)
     # SortedDict object has key & value
     # key is price, value is an OrderList object
-    def LOB_state(self):
+    def set_agg_LOB(self):
         k_rows = 10
         bid_price_list = np.zeros(k_rows)
         bid_size_list = np.zeros(k_rows)
@@ -140,8 +140,8 @@ class Exchg_Helper(object):
                     break
         return (bid_size_list, bid_price_list, ask_size_list, ask_price_list)
 
-    def state_diff(self, LOB_state, LOB_next_state):
+    def state_diff(self, agg_LOB, agg_LOB_aft):
         state_diff = []
-        for (state_row, next_state_row) in zip(LOB_state, LOB_next_state):
+        for (state_row, next_state_row) in zip(agg_LOB, agg_LOB_aft):
             state_diff.append(next_state_row - state_row)
         return state_diff

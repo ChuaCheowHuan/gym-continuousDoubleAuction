@@ -6,8 +6,8 @@ from .trader import Trader
 class Exchg(Exchg_Helper):
     def __init__(self, num_of_agents=2, init_cash=0, tape_display_length=10, max_step=100):
         self.LOB = OrderBook(0.25, tape_display_length) # limit order book
-        self.LOB_STATE = {}
-        self.LOB_NEXT_STATE = {}
+        self.agg_LOB = {}
+        self.agg_LOB_aft = {}
 
         self.next_states = {}
         self.rewards = {}
@@ -32,8 +32,8 @@ class Exchg(Exchg_Helper):
     # reset
     def reset(self):
         self.LOB = OrderBook(0.25, self.tape_display_length) # new limit order book
-        self.LOB_STATE = {}
-        self.LOB_NEXT_STATE = {}
+        self.agg_LOB = {}
+        self.agg_LOB_aft = {}
 
         self.next_states = {}
         self.rewards = {}
@@ -48,13 +48,13 @@ class Exchg(Exchg_Helper):
 
         self.reset_traders_acc()
 
-        return self.reset_traders_LOB_states()
+        return self.reset_traders_agg_LOB()
 
     # actions is a list of actions from all agents (traders) at t step
     # each action is a list of (ID, type, side, size, price)
     def step(self, actions):
         self.next_states, self.rewards, self.dones, self.infos = {}, {}, {}, {}
-        self.LOB_STATE = self.LOB_state() # LOB state at t before processing LOB
+        self.agg_LOB = self.set_agg_LOB() # LOB state at t before processing LOB
         actions = self.rand_exec_seq(actions, 0) # randomized traders execution sequence
         self.do_actions(actions) # Begin processing LOB
         self.mark_to_mkt() # mark to market
@@ -67,8 +67,8 @@ class Exchg(Exchg_Helper):
     # render
     def render(self):
         print('\nLOB:\n', self.LOB)
-        print('\nLOB_STATE:\n', self.LOB_STATE)
-        print('\nLOB_STATE_NEXT:\n', self.LOB_NEXT_STATE)
+        print('\nagg_LOB:\n', self.agg_LOB)
+        print('\nagg_LOB_aft:\n', self.agg_LOB_aft)
         print('\nnext_states:\n', self.next_states)
         print('\nrewards:\n', self.rewards)
         print('\ndones:\n', self.dones)
