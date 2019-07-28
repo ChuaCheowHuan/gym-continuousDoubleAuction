@@ -48,7 +48,7 @@ class Exchg(Exchg_Helper):
 
         self.reset_traders_acc()
 
-        return self.LOB_state()
+        return self.reset_traders_LOB_states()
 
     # actions is a list of actions from all agents (traders) at t step
     # each action is a list of (ID, type, side, size, price)
@@ -69,8 +69,10 @@ class Exchg(Exchg_Helper):
         print('\nLOB:\n', self.LOB)
         print('\nLOB_STATE:\n', self.LOB_STATE)
         print('\nLOB_STATE_NEXT:\n', self.LOB_NEXT_STATE)
-        print('\nnext_states (state_diff):\n', self.next_states)
+        print('\nnext_states:\n', self.next_states)
         print('\nrewards:\n', self.rewards)
+        print('\ndones:\n', self.dones)
+        print('\ninfos:\n', self.infos)
         self.print_accs()
         print('total_sys_profit:', self.total_sys_profit())
         print('total_sys_nav:', self.total_sys_nav())

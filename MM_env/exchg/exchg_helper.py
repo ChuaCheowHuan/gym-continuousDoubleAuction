@@ -4,6 +4,13 @@ from sklearn.utils import shuffle
 
 class Exchg_Helper(object):
 
+    # reset traders LOB observations/states
+    def reset_traders_LOB_states(self):
+        states = {}
+        for trader in self.agents:
+            states[trader.ID] = self.LOB_state()
+        return states
+
     # reset traders accounts
     def reset_traders_acc(self):
         for trader in self.agents:
