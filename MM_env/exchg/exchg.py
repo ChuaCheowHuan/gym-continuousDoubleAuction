@@ -32,20 +32,12 @@ class Exchg(Exchg_Helper):
         self.agents = [Trader(ID, init_cash) for ID in range(0, num_of_agents)]
 
         # observation space per agent:
-        # ((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
-        #  (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
-        #  (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
-        #  (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
+        # array([[ 1.,  0., -1.,  0.,  0.,  0.,  0.,  0.,  0.,  0.],
+        #        [-1., -4., -4.,  0.,  0.,  0.,  0.,  0.,  0.,  0.],
+        #        [ 0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.],
+        #        [ 0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.]])
         inf = float('inf')
         neg_inf = float('-inf')
-        """
-        aBox = spaces.Box(low=neg_inf, high=inf, shape=(1,1))
-        aTuple = spaces.Tuple((aBox,aBox,aBox,aBox,aBox,aBox,aBox,aBox,aBox,aBox))
-        self.observation_space = spaces.Tuple((spaces.Tuple(aTuple),
-                                               spaces.Tuple(aTuple),
-                                               spaces.Tuple(aTuple),
-                                               spaces.Tuple(aTuple)))
-        """
         self.observation_space = spaces.Box(low=neg_inf, high=inf, shape=(4,10))
 
         # action space per agent: {'ID': 0, 'type': 'market', 'side': 'bid', 'size': 1, 'price': 8}

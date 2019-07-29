@@ -145,14 +145,6 @@ class Exchg_Helper(object):
                     break
         return [bid_size_list, bid_price_list, ask_size_list, ask_price_list] # list of np.arrays
 
-    def state_diff_0(self, agg_LOB, agg_LOB_aft):
-        state_diff = [] # list of tuples
-        for (state_row, next_state_row) in zip(agg_LOB, agg_LOB_aft):
-            diff = next_state_row - state_row
-            tuple_diff = tuple(diff)
-            state_diff.append(tuple_diff)
-        tuple_state_diff = tuple(state_diff) # tuple of tuples
-        return tuple_state_diff
     def state_diff(self, agg_LOB, agg_LOB_aft):
         state_diff = []
         #state_diff = np.array()
@@ -161,11 +153,7 @@ class Exchg_Helper(object):
             list_diff = list(diff)
             state_diff.append(list_diff)
         state_diff = np.array(state_diff)
+
         print('state_diff.shape:', state_diff.shape)
-        return state_diff
-    def state_diff_2(self, agg_LOB, agg_LOB_aft):
-        state_diff = np.array()
-        for (state_row, next_state_row) in zip(agg_LOB, agg_LOB_aft):
-            diff = next_state_row - state_row
-            state_diff.append(diff)
+
         return state_diff
