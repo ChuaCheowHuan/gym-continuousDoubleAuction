@@ -74,33 +74,22 @@ if __name__ == "__main__":
 
     # Each policy can have a different configuration (including custom model)
     def gen_policy(i):
-        config = {
-            "model": {
-                "custom_model": ["model1", "model2"][i % 2],
-            },
-            "gamma": random.choice([0.95, 0.99]),
-        }
+        config = {"model": {"custom_model": ["model1", "model2"][i % 2],},
+                  "gamma": random.choice([0.95, 0.99]),}
         return (None, obs_space, act_space, config)
 
     # Setup PPO with an ensemble of `num_policies` different policies
-    policies = {
-        "policy_{}".format(i): gen_policy(i)
-        for i in range(args.num_policies)
-    }
+    policies = {"policy_{}".format(i): gen_policy(i) for i in range(args.num_policies)}
     policy_ids = list(policies.keys())
 
-    tune.run(
-        "PPO",
-        stop={"training_iteration": args.num_iters},
-        config={
-            "env": "multi_cartpole",
-            "log_level": "DEBUG",
-            "simple_optimizer": args.simple,
-            "num_sgd_iter": 10,
-            "multiagent": {
-                "policies": policies,
-                "policy_mapping_fn": tune.function(
-                    lambda agent_id: random.choice(policy_ids)),
-            },
-        },
-    )
+    tune.run("PPO",
+             stop={"training_iteration": args.num_iters},
+             config={"env": "multi_cartpole",
+                     "log_level": "DEBUG",
+                     "simple_optimizer": args.simple,
+                     "num_sgd_iter": 10,
+                     "multiagent": {"policies": policies,
+                                    "policy_mapping_fn": tune.function(lambda agent_id: random.choice(policy_ids)),
+                                   },
+                    },
+            )

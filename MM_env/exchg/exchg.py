@@ -1,3 +1,5 @@
+from gym import spaces
+
 from .exchg_helper import Exchg_Helper
 from .orderbook import OrderBook
 from .trader import Trader
@@ -6,8 +8,8 @@ from .trader import Trader
 class Exchg(Exchg_Helper):
     def __init__(self, num_of_agents=2, init_cash=0, tape_display_length=10, max_step=100):
         self.LOB = OrderBook(0.25, tape_display_length) # limit order book
-        self.agg_LOB = {}
-        self.agg_LOB_aft = {}
+        self.agg_LOB = {} # aggregated or consolidated LOB
+        self.agg_LOB_aft = {} # aggregated or consolidated LOB after processing orders
 
         self.next_states = {}
         self.rewards = {}
@@ -30,22 +32,29 @@ class Exchg(Exchg_Helper):
         self.agents = [Trader(ID, init_cash) for ID in range(0, num_of_agents)]
 
         # observation space per agent:
-        # 0: [array([0., 0., 0., 0., 0., 1., 0., 0., 0., 0.]),
-        #     array([0., 0., 0., 0., 0., 0., 0., 0., 0., 0.]),
-        #     array([1., 0., 0., 0., 0., 0., 0., 0., 0., 0.]),
-        #     array([7., 0., 0., 0., 0., 0., 0., 0., 0., 0.])]
-        #self.observation_space = self.agents[0].observation_space
-        #self.observation_space = spaces.Dict({"position": spaces.Discrete(2), "velocity": spaces.Discrete(3)})
+        # ((0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        #  (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        #  (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        #  (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
+        inf = float('inf')
+        neg_inf = float('-inf')
+        """
+        aBox = spaces.Box(low=neg_inf, high=inf, shape=(1,1))
+        aTuple = spaces.Tuple((aBox,aBox,aBox,aBox,aBox,aBox,aBox,aBox,aBox,aBox))
+        self.observation_space = spaces.Tuple((spaces.Tuple(aTuple),
+                                               spaces.Tuple(aTuple),
+                                               spaces.Tuple(aTuple),
+                                               spaces.Tuple(aTuple)))
+        """
+        self.observation_space = spaces.Box(low=neg_inf, high=inf, shape=(4,10))
 
         # action space per agent: {'ID': 0, 'type': 'market', 'side': 'bid', 'size': 1, 'price': 8}
-        #self.action_space = self.agents[0].action_space
-        """
         self.action_space = spaces.Dict({"ID": spaces.Discrete(num_of_agents),
-                                         "type": spaces.Discrete(2),
-                                         "side": spaces.Discrete(2),
-                                         "size": spaces.Discrete(10),
-                                         "price": spaces.Discrete(10)})
-        """
+                                         "type": spaces.Discrete(2), # 'market', 'limit'
+                                         "side": spaces.Discrete(3), # 'bid', None, 'ask'
+                                         "size": spaces.Box(low=0, high=inf, shape=(1,1)),
+                                         "price": spaces.Box(low=0, high=inf, shape=(1,1))})
+
     # reset
     def reset(self):
         self.LOB = OrderBook(0.25, self.tape_display_length) # new limit order book

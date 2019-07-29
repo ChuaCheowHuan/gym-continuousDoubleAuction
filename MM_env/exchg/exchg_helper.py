@@ -84,7 +84,7 @@ class Exchg_Helper(object):
     def set_step_outputs(self, state_input):
         next_states, rewards, dones, infos = {},{},{},{}
         for trader in self.agents:
-            next_states = self.set_next_state(next_states, trader, state_input)
+            next_states = self.set_next_state(next_states, trader, state_input) # dict of tuple of tuples
             rewards = self.set_reward(rewards, trader)
             dones = self.set_done(dones, trader)
             infos = self.set_info(infos, trader)
@@ -143,10 +143,29 @@ class Exchg_Helper(object):
                     num += 1
                 else:
                     break
-        return (bid_size_list, bid_price_list, ask_size_list, ask_price_list)
+        return [bid_size_list, bid_price_list, ask_size_list, ask_price_list] # list of np.arrays
 
+    def state_diff_0(self, agg_LOB, agg_LOB_aft):
+        state_diff = [] # list of tuples
+        for (state_row, next_state_row) in zip(agg_LOB, agg_LOB_aft):
+            diff = next_state_row - state_row
+            tuple_diff = tuple(diff)
+            state_diff.append(tuple_diff)
+        tuple_state_diff = tuple(state_diff) # tuple of tuples
+        return tuple_state_diff
     def state_diff(self, agg_LOB, agg_LOB_aft):
         state_diff = []
+        #state_diff = np.array()
         for (state_row, next_state_row) in zip(agg_LOB, agg_LOB_aft):
-            state_diff.append(next_state_row - state_row)
+            diff = next_state_row - state_row
+            list_diff = list(diff)
+            state_diff.append(list_diff)
+        state_diff = np.array(state_diff)
+        print('state_diff.shape:', state_diff.shape)
+        return state_diff
+    def state_diff_2(self, agg_LOB, agg_LOB_aft):
+        state_diff = np.array()
+        for (state_row, next_state_row) in zip(agg_LOB, agg_LOB_aft):
+            diff = next_state_row - state_row
+            state_diff.append(diff)
         return state_diff
