@@ -9,6 +9,7 @@ from exchg.exchg import Exchg
 def create_env():
     num_of_traders = 4
     tape_display_length = 100
+    tick_size = 1
     init_cash = 10000
     max_step = 100
     e = Exchg(num_of_traders, init_cash, tape_display_length, max_step)
@@ -119,6 +120,7 @@ def test_1_4(e):
 def test_random():
     num_of_traders = 4
     init_cash = 10000
+    tick_size = 1
     tape_display_length = 100
     max_step = 50
     e = Exchg(num_of_traders, init_cash, tape_display_length, max_step)
@@ -129,7 +131,7 @@ def test_random():
             action = trader.select_random_action(trader.ID)
             actions.append(action)
             #actions[i] = action
-        print('\n\n\nSTEP:', step)        
+        print('\n\n\nSTEP:', step)
         e.step(actions)
         e.render()
 

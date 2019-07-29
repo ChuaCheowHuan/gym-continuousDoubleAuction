@@ -6,8 +6,8 @@ from .trader import Trader
 
 # The exchange environment
 class Exchg(Exchg_Helper):
-    def __init__(self, num_of_agents=2, init_cash=0, tape_display_length=10, max_step=100):
-        self.LOB = OrderBook(0.25, tape_display_length) # limit order book
+    def __init__(self, num_of_agents=2, init_cash=0, tick_size=1, tape_display_length=10, max_step=100):
+        self.LOB = OrderBook(tick_size, tape_display_length) # limit order book
         self.agg_LOB = {} # aggregated or consolidated LOB
         self.agg_LOB_aft = {} # aggregated or consolidated LOB after processing orders
 
@@ -44,8 +44,8 @@ class Exchg(Exchg_Helper):
         self.action_space = spaces.Dict({"ID": spaces.Discrete(num_of_agents),
                                          "type": spaces.Discrete(2), # 'market', 'limit'
                                          "side": spaces.Discrete(3), # 'bid', None, 'ask'
-                                         "size": spaces.Box(low=0, high=inf, shape=(1,1)),
-                                         "price": spaces.Box(low=0, high=inf, shape=(1,1))})
+                                         "size": spaces.Box(low=1, high=inf, shape=(1,1)),
+                                         "price": spaces.Box(low=tick_size, high=inf, shape=(1,1))})
 
     # reset
     def reset(self):
