@@ -12,6 +12,7 @@ execution, set the TF_TIMELINE_DIR environment variable.
 import argparse
 import gym
 import random
+import numpy as np
 
 import ray
 from ray import tune
@@ -91,7 +92,9 @@ class CustomModel1(Model):
         norm_dist_price = tf.distributions.Normal(loc=mu_price, scale=sigma_price)
         price = tf.squeeze(norm_dist_price.sample(1), axis=0) # choosing price
 
-        output = {'type_side': type_side,'size': size,'price': price}
+        # ********** output FOR SINGLE AGENT IS TUPLE NOT DICT **********
+        #output = {'type_side': type_side,'size': size,'price': price}
+        output = (type_side, size, price)
 
         print('CustomModel1:', output)
 

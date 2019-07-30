@@ -49,9 +49,12 @@ class Exchg(Exchg_Helper, MultiAgentEnv):
         # NEED TO ADD trader.ID before randomizing execution sequence
         # action per agent: {'ID': 0, 'type': 'market', 'side': 'bid', 'size': 1, 'price': 8}
         # action space per agent: {'type_side': 0-4, 'size': 1-inf, 'price': tick_size-inf}
-        self.action_space = spaces.Dict({"type_side": spaces.Discrete(5), # type_side: None=0, market_bid=1, market_ask=2, limit_bid=3, limit_ask=4
-                                         "size": spaces.Box(low=1, high=inf, shape=(1,)),
-                                         "price": spaces.Box(low=tick_size, high=inf, shape=(1,))})
+        #self.action_space = spaces.Dict({"type_side": spaces.Discrete(5), # type_side: None=0, market_bid=1, market_ask=2, limit_bid=3, limit_ask=4
+        #                                 "size": spaces.Box(low=1, high=inf, shape=(1,)),
+        #                                 "price": spaces.Box(low=tick_size, high=inf, shape=(1,))})
+        self.action_space = spaces.Tuple((spaces.Discrete(5), # type_side: None=0, market_bid=1, market_ask=2, limit_bid=3, limit_ask=4
+                                          spaces.Box(low=1, high=inf, shape=(1,)),
+                                          spaces.Box(low=tick_size, high=inf, shape=(1,))))
 
     # reset
     def reset(self):

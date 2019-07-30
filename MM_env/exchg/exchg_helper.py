@@ -48,9 +48,17 @@ class Exchg_Helper(object):
     def set_action(self, ID, nn_out_act):
         act = {}
         act["ID"] = ID
+
+        # ********** nn_out_act IS TUPLE NOT DICT **********
+        """
         act["type"], act["side"] = self.set_type_side(nn_out_act['type_side'])
         act["size"] = nn_out_act["size"]
         act["price"] = nn_out_act["price"]
+        """
+        act["type"], act["side"] = self.set_type_side(nn_out_act[0])
+        act["size"] = nn_out_act[1]
+        act["price"] = nn_out_act[2]
+
         return act
 
     def set_type_side(self, type_side):
