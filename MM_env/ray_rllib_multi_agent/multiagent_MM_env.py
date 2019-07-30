@@ -1,5 +1,4 @@
 # https://github.com/ray-project/ray/blob/master/python/ray/rllib/examples/multiagent_cartpole.py
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -10,7 +9,6 @@ many TF policies will take some time.
 Also, TF evals might slow down with large numbers of policies. To debug TF
 execution, set the TF_TIMELINE_DIR environment variable.
 """
-
 import argparse
 import gym
 import random
@@ -22,8 +20,6 @@ from ray.rllib.tests.test_multi_agent_env import MultiCartpole
 from ray.tune.registry import register_env
 from ray.rllib.utils import try_import_tf
 
-
-
 import sys
 
 if "../" not in sys.path:
@@ -32,14 +28,13 @@ if "../" not in sys.path:
 #from exchg.x.y import z
 from exchg.exchg import Exchg
 
-
-
 tf = try_import_tf()
 
 parser = argparse.ArgumentParser()
 
 parser.add_argument("--num-agents", type=int, default=4)
-parser.add_argument("--num-policies", type=int, default=2)
+#parser.add_argument("--num-policies", type=int, default=2)
+parser.add_argument("--num-policies", type=int, default=1)
 parser.add_argument("--num-iters", type=int, default=20)
 parser.add_argument("--simple", action="store_true")
 
@@ -80,6 +75,8 @@ class CustomModel1(Model):
 
         output = {'type_side': type_side,'size': size,'price': price}
 
+        print('CustomModel1:', output)
+
         return output, last_layer
         # ********** TESTING **********
 
@@ -95,27 +92,32 @@ class CustomModel2(Model):
                                auxiliary_name_scope=False):
             last_layer = tf.layers.dense(input_dict["obs"], 64, activation=tf.nn.relu, name="fc1")
         last_layer = tf.layers.dense(last_layer, 64, activation=tf.nn.relu, name="fc2")
+        # output are action logits
         output = tf.layers.dense(last_layer, num_outputs, activation=None, name="fc_out")
         return output, last_layer
 
 if __name__ == "__main__":
-    args = parser.parse_args()
-    ray.init()
-
     num_of_traders = 4
     tape_display_length = 100
     tick_size = 1
     init_cash = 10000
     max_step = 100
+    MM_env = Exchg(num_of_traders, init_cash, tape_display_length, max_step)
+    print('MM_env:', MM_env.print_accs())
+
+    args = parser.parse_args()
+    ray.init()
+
     # Simple environment with `num_agents` independent cartpole entities
     #register_env("multi_cartpole", lambda _: MultiCartpole(args.num_agents))
-    register_env("MM_env", lambda _: Exchg(args.num_agents, init_cash, tape_display_length, max_step))
+    register_env("MM_env", lambda _: Exchg(args.num_agents, init_cash, tick_size, tape_display_length, max_step))
     ModelCatalog.register_custom_model("model1", CustomModel1)
     #ModelCatalog.register_custom_model("model2", CustomModel2)
     #single_env = gym.make("CartPole-v0")
     #obs_space = single_env.observation_space
     #act_space = single_env.action_space
-    MM_env = Exchg(num_of_traders, init_cash, tape_display_length, max_step)
+
+    #MM_env = Exchg(num_of_traders, init_cash, tape_display_length, max_step)
     obs_space = MM_env.observation_space
     act_space = MM_env.action_space
 
