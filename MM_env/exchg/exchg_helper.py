@@ -35,6 +35,44 @@ class Exchg_Helper(object):
 
         return shuffle_actions
 
+    # called in step function in exchg before randomizing/processing orders
+    def set_actions(self, nn_out_acts):
+        acts = []
+        #for i, nn_out_act in enumerate(nn_out_acts):
+        #    act = set_action(self, i, nn_out_act):
+        for key, value in nn_out_acts.items():
+            act = self.set_action(key, value)
+            acts.append(act)
+        return acts
+
+    def set_action(self, ID, nn_out_act):
+        act = {}
+        act["ID"] = ID
+        act["type"], act["side"] = self.set_type_side(nn_out_act['type_side'])
+        act["size"] = nn_out_act["size"]
+        act["price"] = nn_out_act["price"]
+        return act
+
+    def set_type_side(self, type_side):
+        type = None
+        side = None
+        if type_side == 0:
+            type = None
+            side = None
+        elif type_side == 1:
+            type = 'market'
+            side = 'bid'
+        elif type_side == 2:
+            type = 'market'
+            side = 'ask'
+        elif type_side == 3:
+            type = 'limit'
+            side = 'bid'
+        else:
+            type = 'limit'
+            side = 'ask'
+        return type, side
+
     # process actions for all agents
     def do_actions(self, actions):
         for action in actions:

@@ -40,12 +40,14 @@ class Exchg(Exchg_Helper):
         neg_inf = float('-inf')
         self.observation_space = spaces.Box(low=neg_inf, high=inf, shape=(4,10))
 
-        # action space per agent: {'ID': 0, 'type': 'market', 'side': 'bid', 'size': 1, 'price': 8}
-        self.action_space = spaces.Dict({"ID": spaces.Discrete(num_of_agents),
-                                         "type": spaces.Discrete(2), # 'market', 'limit'
-                                         "side": spaces.Discrete(3), # 'bid', None, 'ask'
-                                         "size": spaces.Box(low=1, high=inf, shape=(1,1)),
-                                         "price": spaces.Box(low=tick_size, high=inf, shape=(1,1))})
+        # ********** NEED TO PREPROCESS ACTION FROM NN BEFORE EXECUTION **********
+        # NEED TO DECODE type_side
+        # NEED TO ADD trader.ID before randomizing execution sequence
+        # action per agent: {'ID': 0, 'type': 'market', 'side': 'bid', 'size': 1, 'price': 8}
+        # action space per agent: {'type_side': 0-4, 'size': 1-inf, 'price': tick_size-inf}
+        self.action_space = spaces.Dict({"type_side": spaces.Discrete(5), # type_side: None=0, market_bid=1, market_ask=2, limit_bid=3, limit_ask=4
+                                         "size": spaces.Box(low=1, high=inf, shape=(1,)),
+                                         "price": spaces.Box(low=tick_size, high=inf, shape=(1,))})
 
     # reset
     def reset(self):
@@ -73,6 +75,7 @@ class Exchg(Exchg_Helper):
     def step(self, actions):
         self.next_states, self.rewards, self.dones, self.infos = {}, {}, {}, {}
         self.agg_LOB = self.set_agg_LOB() # LOB state at t before processing LOB
+        actions = self.set_actions(actions) # format actions from nn output to be acceptable by LOB        
         actions = self.rand_exec_seq(actions, 0) # randomized traders execution sequence
         self.do_actions(actions) # Begin processing LOB
         self.mark_to_mkt() # mark to market

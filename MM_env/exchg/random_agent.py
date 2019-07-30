@@ -5,25 +5,19 @@ class Random_agent(object):
 
     # pass action to step
     def select_random_action(self, ID):
-        #type = np.random.randint(0, 1, size=1) # type, draw 1 int, 0(market) to 1(limit)
-        type = random.choice(['market','limit'])
-        #type = random.choice(['limit'])
-        #side = np.random.randint(-1, 1, size=1) # side, draw 1 int, -1(ask), 0(None), 1(bid)
-        side = random.choice(['bid',None,'ask'])
+        type_side = np.random.randint(0, 5, size=1) # type_side: None=0, market_bid=1, market_ask=2, limit_bid=3, limit_ask=4
         size = random.randrange(1, 100, 100) # size in 100s from 0(min) to 1000(max)
         price = random.randrange(1, 10, 1) # price from 1(min) to 100(max)
-        action = {"ID": ID,
-                  "type": type,
-                  "side": side,
-                  "size": size,
-                  "price": price}
-        return action
+        act = {"type_side": type_side,
+               "size": size,
+               "price": price}
+        return act
 
 """
 hidden_layer = tf.layers.dense(self.s, num_hidden, tf.nn.relu, kernel_initializer = a_w, name='a_hidden', trainable=trainable)
 # tanh [-1,1]
 mu = tf.layers.dense(hidden_layer, A_DIM, tf.nn.tanh, kernel_initializer = a_w, name='mu', trainable=trainable)
-# softplus [0,inf)
+# softplus {0,inf)
 sigma = tf.layers.dense(hidden_layer, A_DIM, tf.nn.softplus, kernel_initializer = a_w, name='sigma', trainable=trainable) + 1e-4
 norm_dist = tf.distributions.Normal(loc=mu, scale=sigma)
 
