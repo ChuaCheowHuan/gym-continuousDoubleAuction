@@ -23,7 +23,6 @@ from ray.rllib.env.base_env import _MultiAgentEnvToBaseEnv
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from ray.tune.registry import register_env
 
-
 def one_hot(i, n):
     out = [0.0] * n
     out[i] = 1.0
@@ -155,7 +154,6 @@ class RoundRobinMultiAgent(MultiAgentEnv):
         done["__all__"] = len(self.dones) == len(self.agents)
         return obs, rew, done, info
 
-
 def make_multiagent(env_name):
     class MultiEnv(MultiAgentEnv):
         def __init__(self, num):
@@ -179,10 +177,8 @@ def make_multiagent(env_name):
 
     return MultiEnv
 
-
 MultiCartpole = make_multiagent("CartPole-v0")
 MultiMountainCar = make_multiagent("MountainCarContinuous-v0")
-
 
 class TestMultiAgentEnv(unittest.TestCase):
     def testBasicMock(self):

@@ -1,11 +1,15 @@
+import ray
+from ray.rllib.env.multi_agent_env import MultiAgentEnv
+
 from gym import spaces
 
 from .exchg_helper import Exchg_Helper
-from .orderbook import OrderBook
+#from .orderbook import OrderBook
+from .orderbook.orderbook import OrderBook
 from .trader import Trader
 
 # The exchange environment
-class Exchg(Exchg_Helper):
+class Exchg(Exchg_Helper, MultiAgentEnv):
     def __init__(self, num_of_agents=2, init_cash=0, tick_size=1, tape_display_length=10, max_step=100):
         self.LOB = OrderBook(tick_size, tape_display_length) # limit order book
         self.agg_LOB = {} # aggregated or consolidated LOB
@@ -75,7 +79,7 @@ class Exchg(Exchg_Helper):
     def step(self, actions):
         self.next_states, self.rewards, self.dones, self.infos = {}, {}, {}, {}
         self.agg_LOB = self.set_agg_LOB() # LOB state at t before processing LOB
-        actions = self.set_actions(actions) # format actions from nn output to be acceptable by LOB        
+        actions = self.set_actions(actions) # format actions from nn output to be acceptable by LOB
         actions = self.rand_exec_seq(actions, 0) # randomized traders execution sequence
         self.do_actions(actions) # Begin processing LOB
         self.mark_to_mkt() # mark to market

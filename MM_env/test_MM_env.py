@@ -12,7 +12,7 @@ def create_env():
     tick_size = 1
     init_cash = 10000
     max_step = 100
-    e = Exchg(num_of_traders, init_cash, tape_display_length, max_step)
+    e = Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step)
     e.reset()
     return e
 
@@ -123,7 +123,7 @@ def test_random():
     tick_size = 1
     tape_display_length = 100
     max_step = 50
-    e = Exchg(num_of_traders, init_cash, tape_display_length, max_step)
+    e = Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step)
     for step in range(max_step):
         #actions = []
         actions = {}
