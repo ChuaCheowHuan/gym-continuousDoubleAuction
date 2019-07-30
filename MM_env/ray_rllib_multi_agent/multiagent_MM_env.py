@@ -61,11 +61,10 @@ class CustomModel1(Model):
 
         # ********** TESTING **********
         num_outputs = 1
+        num_type_side = 5
 
-        type_side_layer = tf.layers.dense(last_layer, num_outputs * 4, activation=tf.nn.relu, name="fc2")
-        #type_side = tf.layers.dense(type_side_layer, num_outputs, activation=tf.nn.softmax, name="type_side")
-        # use softmax for probabilities of each of the 4 outputs, all 4 probs summed to 1
-        # select max prob
+        prob_weights = tf.layers.dense(last_layer, num_outputs * num_type_side, activation=tf.nn.softmax, name="prob_weights")
+        type_side = np.random.choice(range(prob_weights.shape[1]), p=prob_weights.ravel())
 
         mu_size = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.tanh, name="mu_size")
         sigma_size = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="sigma_size")
@@ -78,8 +77,6 @@ class CustomModel1(Model):
 
         norm_dist_price = tf.distributions.Normal(loc=mu_price, scale=sigma_price)
         price = tf.squeeze(norm_dist_price.sample(1), axis=0) # choosing price
-
-
 
         output = {'type_side': type_side,'size': size,'price': price}
 
