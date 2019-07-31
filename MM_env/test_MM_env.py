@@ -19,46 +19,46 @@ def create_env():
 # place initial orders, 4 traders each with 3 bids, 3 asks all in LOB, no trade
 def test_1(e):
     # bid
-    action0 = {"type_side": 3, "size": 3, "price": 2}
-    action1 = {"type_side": 3, "size": 4, "price": 5}
-    action2 = {"type_side": 3, "size": 5, "price": 8}
-    action3 = {"type_side": 3, "size": 6, "price": 11}
+    action0 = (3, 3, 2)
+    action1 = (3, 4, 5)
+    action2 = (3, 5, 8)
+    action3 = (3, 6, 11)
     actions = {0:action0,1:action1,2:action2,3:action3} # actions
     e.step(actions) # execute actions in 1 step
     e.render()
-    action0 = {"type_side": 3, "size": 3, "price": 3}
-    action1 = {"type_side": 3, "size": 4, "price": 6}
-    action2 = {"type_side": 3, "size": 5, "price": 9}
-    action3 = {"type_side": 3, "size": 6, "price": 12}
+    action0 = (3, 3, 3)
+    action1 = (3, 4, 6)
+    action2 = (3, 5, 9)
+    action3 = (3, 6, 12)
     actions = {0:action0,1:action1,2:action2,3:action3} # actions
     e.step(actions) # execute actions in 1 step
     e.render()
-    action0 = {"type_side": 3, "size": 3, "price": 4}
-    action1 = {"type_side": 3, "size": 4, "price": 7}
-    action2 = {"type_side": 3, "size": 5, "price": 10}
-    action3 = {"type_side": 3, "size": 6, "price": 13}
+    action0 = (3, 3, 4)
+    action1 = (3, 4, 7)
+    action2 = (3, 5, 10)
+    action3 = (3, 6, 13)
     actions = {0:action0,1:action1,2:action2,3:action3} # actions
     e.step(actions) # execute actions in 1 step
     e.render()
     # ask
-    action0 = {"type_side": 4, "size": 3, "price": 14}
-    action1 = {"type_side": 4, "size": 4, "price": 17}
-    action2 = {"type_side": 4, "size": 5, "price": 20}
-    action3 = {"type_side": 4, "size": 6, "price": 23}
+    action0 = (4, 3, 14)
+    action1 = (4, 4, 17)
+    action2 = (4, 5, 20)
+    action3 = (4, 6, 23)
     actions = {0:action0,1:action1,2:action2,3:action3} # actions
     e.step(actions) # execute actions in 1 step
     e.render()
-    action0 = {"type_side": 4, "size": 3, "price": 15}
-    action1 = {"type_side": 4, "size": 4, "price": 18}
-    action2 = {"type_side": 4, "size": 5, "price": 21}
-    action3 = {"type_side": 4, "size": 6, "price": 24}
+    action0 = (4, 3, 15)
+    action1 = (4, 4, 18)
+    action2 = (4, 5, 21)
+    action3 = (4, 6, 24)
     actions = {0:action0,1:action1,2:action2,3:action3} # actions
     e.step(actions) # execute actions in 1 step
     e.render()
-    action0 = {"type_side": 4, "size": 3, "price": 16}
-    action1 = {"type_side": 4, "size": 4, "price": 19}
-    action2 = {"type_side": 4, "size": 5, "price": 22}
-    action3 = {"type_side": 4, "size": 6, "price": 25}
+    action0 = (4, 3, 16)
+    action1 = (4, 4, 19)
+    action2 = (4, 5, 22)
+    action3 = (4, 6, 25)
     actions = {0:action0,1:action1,2:action2,3:action3} # actions
     e.step(actions) # execute actions in 1 step
     e.render()
@@ -67,10 +67,10 @@ def test_1(e):
 # init long position for T0, counter party T0, T1, T2, T3(unfilled)
 def test_1_1(e):
     # actions
-    action0 = {"type_side": 3, "size": 50, "price": 27}
-    action1 = {"type_side": 0, "size": 4, "price": 3}
-    action2 = {"type_side": 0, "size": 5, "price": 4}
-    action3 = {"type_side": 0, "size": 6, "price": 5}
+    action0 = (3, 50, 27)
+    action1 = (0, 4, 3)
+    action2 = (0, 5, 4)
+    action3 = (0, 6, 5)
     actions = {0:action0,1:action1,2:action2,3:action3} # actions
     e.step(actions) # execute actions in 1 step
     e.render()
@@ -79,10 +79,10 @@ def test_1_1(e):
 # init short position for T0, counter party T0, T1, T2, T3(unfilled)
 def test_1_2(e):
     # actions
-    action0 = {"type_side": 4, "size": 52, "price": 2}
-    action1 = {"type_side": 0, "size": 4, "price": 3}
-    action2 = {"type_side": 0, "size": 5, "price": 4}
-    action3 = {"type_side": 0, "size": 6, "price": 5}
+    action0 = (4, 52, 2)
+    action1 = (0, 4, 3)
+    action2 = (0, 5, 4)
+    action3 = (0, 6, 5)
     actions = {0:action0,1:action1,2:action2,3:action3} # actions
     e.step(actions) # execute actions in 1 step
     e.render()
@@ -90,17 +90,17 @@ def test_1_2(e):
 
 def test_1_3(e):
     # actions
-    action0 = {"type_side": 0, "size": 41, "price": 2}
-    action1 = {"type_side": 3, "size": 10, "price": 5}
-    action2 = {"type_side": 0, "size": 6, "price": 4}
-    action3 = {"type_side": 4, "size": 6, "price": 5}
+    action0 = (0, 41, 2)
+    action1 = (3, 10, 5)
+    action2 = (0, 6, 4)
+    action3 = (4, 6, 5)
     actions = {0:action0,1:action1,2:action2,3:action3} # actions
     e.step(actions) # execute actions in 1 step
     e.render()
-    action0 = {"type_side": 4, "size": 41, "price": 5}
-    action1 = {"type_side": 0, "size": 11, "price": 3}
-    action2 = {"type_side": 0, "size": 14, "price": 4}
-    action3 = {"type_side": 0, "size": 4, "price": 5}
+    action0 = (4, 41, 5)
+    action1 = (0, 11, 3)
+    action2 = (0, 14, 4)
+    action3 = (0, 4, 5)
     actions = {0:action0,1:action1,2:action2,3:action3} # actions
     e.step(actions) # execute actions in 1 step
     e.render()
@@ -108,10 +108,10 @@ def test_1_3(e):
 
 def test_1_4(e):
     # actions
-    action0 = {"type_side": 4, "size": 43, "price": 5}
-    action1 = {"type_side": 0, "size": 11, "price": 3}
-    action2 = {"type_side": 0, "size": 14, "price": 4}
-    action3 = {"type_side": 0, "size": 4, "price": 5}
+    action0 = (4, 43, 5)
+    action1 = (0, 11, 3)
+    action2 = (0, 14, 4)
+    action3 = (0, 4, 5)
     actions = {0:action0,1:action1,2:action2,3:action3} # actions
     e.step(actions) # execute actions in 1 step
     e.render()

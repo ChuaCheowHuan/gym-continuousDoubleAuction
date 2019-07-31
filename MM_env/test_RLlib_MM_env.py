@@ -12,6 +12,7 @@ execution, set the TF_TIMELINE_DIR environment variable.
 import argparse
 import gym
 import random
+import numpy as np
 
 import ray
 from ray import tune
@@ -19,7 +20,6 @@ from ray.rllib.models import Model, ModelCatalog
 from ray.rllib.tests.test_multi_agent_env import MultiCartpole
 from ray.tune.registry import register_env
 from ray.rllib.utils import try_import_tf
-
 
 
 
@@ -49,8 +49,8 @@ from exchg.exchg import Exchg
 tf = try_import_tf()
 
 parser = argparse.ArgumentParser()
-
-parser.add_argument("--num-agents", type=int, default=4)
+#parser.add_argument("--num-agents", type=int, default=4)
+parser.add_argument("--num-agents", type=int, default=2)
 #parser.add_argument("--num-policies", type=int, default=2)
 parser.add_argument("--num-policies", type=int, default=1)
 parser.add_argument("--num-iters", type=int, default=20)
@@ -58,6 +58,7 @@ parser.add_argument("--simple", action="store_true")
 
 class CustomModel1(Model):
     def _build_layers_v2(self, input_dict, num_outputs, options):
+        hidden = 8
         # Example of (optional) weight sharing between two different policies.
         # Here, we share the variables defined in the 'shared' variable scope
         # by entering it explicitly with tf.AUTO_REUSE. This creates the
@@ -66,8 +67,8 @@ class CustomModel1(Model):
         with tf.variable_scope(tf.VariableScope(tf.AUTO_REUSE, "shared"),
                                reuse=tf.AUTO_REUSE,
                                auxiliary_name_scope=False):
-            last_layer = tf.layers.dense(input_dict["obs"], 64, activation=tf.nn.relu, name="fc1")
-        last_layer = tf.layers.dense(last_layer, 64, activation=tf.nn.relu, name="fc2")
+            last_layer = tf.layers.dense(input_dict["obs"], hidden, activation=tf.nn.relu, name="fc1")
+        last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc2")
         #output = tf.layers.dense(last_layer, num_outputs, activation=None, name="fc_out")
 
 
@@ -77,7 +78,10 @@ class CustomModel1(Model):
         num_type_side = 5
 
         prob_weights = tf.layers.dense(last_layer, num_outputs * num_type_side, activation=tf.nn.softmax, name="prob_weights")
-        type_side = np.random.choice(range(prob_weights.shape[1]), p=prob_weights.ravel())
+        print('********** prob_weights: **********', prob_weights)
+        #type_side = np.random.choice(range(prob_weights.shape[1]), p=prob_weights.ravel())
+        #type_side = np.random.choice(range(prob_weights.shape[1]), p=tf.shape(prob_weights))
+        #type_side = np.random.choice(range(prob_weights.shape[1]), p=tf.reshape(prob_weights, [-1]))
 
         mu_size = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.tanh, name="mu_size")
         sigma_size = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="sigma_size")
@@ -86,12 +90,15 @@ class CustomModel1(Model):
         sigma_price = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="sigma_price")
 
         norm_dist_size = tf.distributions.Normal(loc=mu_size, scale=sigma_size)
-        size = tf.squeeze(norm_dist_size.sample(1), axis=0) # choosing size
+        #size = tf.squeeze(norm_dist_size.sample(1), axis=0) # choosing size
 
         norm_dist_price = tf.distributions.Normal(loc=mu_price, scale=sigma_price)
-        price = tf.squeeze(norm_dist_price.sample(1), axis=0) # choosing price
+        #price = tf.squeeze(norm_dist_price.sample(1), axis=0) # choosing price
 
-        output = {'type_side': type_side,'size': size,'price': price}
+        # ********** output FOR SINGLE AGENT IS TUPLE NOT DICT **********
+        #output = (type_side, size, price)
+        #output = tf.concat([prob_weights, mu_size, sigma_size], 1)
+        output = tuple((prob_weights, mu_size, sigma_size))
 
         print('CustomModel1:', output)
 
@@ -104,18 +111,19 @@ class CustomModel1(Model):
 
 class CustomModel2(Model):
     def _build_layers_v2(self, input_dict, num_outputs, options):
+        hidden = 8
         # Weights shared with CustomModel1
         with tf.variable_scope(tf.VariableScope(tf.AUTO_REUSE, "shared"),
                                reuse=tf.AUTO_REUSE,
                                auxiliary_name_scope=False):
-            last_layer = tf.layers.dense(input_dict["obs"], 64, activation=tf.nn.relu, name="fc1")
-        last_layer = tf.layers.dense(last_layer, 64, activation=tf.nn.relu, name="fc2")
+            last_layer = tf.layers.dense(input_dict["obs"], hidden, activation=tf.nn.relu, name="fc1")
+        last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc2")
         # output are action logits
         output = tf.layers.dense(last_layer, num_outputs, activation=None, name="fc_out")
         return output, last_layer
 
 if __name__ == "__main__":
-    num_of_traders = 4
+    num_of_traders = 2
     tape_display_length = 100
     tick_size = 1
     init_cash = 10000
