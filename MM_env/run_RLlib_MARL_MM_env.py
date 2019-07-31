@@ -78,7 +78,8 @@ class CustomModel1(Model):
         num_type_side = 5
 
         prob_weights = tf.layers.dense(last_layer, num_outputs * num_type_side, activation=tf.nn.softmax, name="prob_weights")
-        type_side = np.random.choice(range(prob_weights.shape[1]), p=prob_weights.ravel())
+        #type_side = np.random.choice(range(prob_weights.shape[1]), p=prob_weights.ravel())
+        type_side = np.random.choice(range(prob_weights.shape[1]), p=prob_weights)
 
         mu_size = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.tanh, name="mu_size")
         sigma_size = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="sigma_size")
