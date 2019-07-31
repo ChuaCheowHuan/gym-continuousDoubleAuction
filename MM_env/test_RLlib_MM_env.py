@@ -85,13 +85,11 @@ class CustomModel1(Model):
 
         mu_size = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.tanh, name="mu_size")
         sigma_size = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="sigma_size")
-
         mu_price = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.tanh, name="mu_price")
         sigma_price = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="sigma_price")
 
         norm_dist_size = tf.distributions.Normal(loc=mu_size, scale=sigma_size)
         #size = tf.squeeze(norm_dist_size.sample(1), axis=0) # choosing size
-
         norm_dist_price = tf.distributions.Normal(loc=mu_price, scale=sigma_price)
         #price = tf.squeeze(norm_dist_price.sample(1), axis=0) # choosing price
 
