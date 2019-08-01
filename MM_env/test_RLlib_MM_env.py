@@ -53,7 +53,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--num-agents", type=int, default=2)
 #parser.add_argument("--num-policies", type=int, default=2)
 parser.add_argument("--num-policies", type=int, default=1)
-parser.add_argument("--num-iters", type=int, default=20)
+parser.add_argument("--num-iters", type=int, default=3)
 parser.add_argument("--simple", action="store_true")
 
 class CustomModel1(Model):
@@ -126,7 +126,7 @@ class CustomModel1(Model):
         # ********** output FOR SINGLE AGENT IS TUPLE NOT DICT **********
         #output = (type_side, size, price)
         #output = mu_size
-        output = size    
+        output = size
         #output = tf.concat([mu_size, sigma_size], axis = 0) # ValueError: Expected output shape of [None, 2], got [None, 1]
         #output = tf.concat([mu_size, sigma_size], axis = 1) # ValueError: Expected output shape of [None, 2], got [None, 2]
         #output = tf.stack([mu_size, sigma_size]) # CustomModel1 output: Tensor("policy_0/stack:0", shape=(2, ?, 1), dtype=float32)
