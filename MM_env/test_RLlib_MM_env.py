@@ -114,7 +114,7 @@ class CustomModel1(Model):
 
         norm_dist_size = tf.distributions.Normal(loc=mu_size, scale=sigma_size)
         size = tf.squeeze(norm_dist_size.sample(1), axis=0) # choosing size
-        #print('********** size: **********', size)
+        print('********** size: **********', size)
         norm_dist_price = tf.distributions.Normal(loc=mu_price, scale=sigma_price)
         price = tf.squeeze(norm_dist_price.sample(1), axis=0) # choosing price
 
@@ -125,11 +125,12 @@ class CustomModel1(Model):
         #output = tf.concat(prob_weights, mu_size, sigma_size)
         # ********** output FOR SINGLE AGENT IS TUPLE NOT DICT **********
         #output = (type_side, size, price)
-        output = mu_size
+        #output = mu_size
+        output = size    
         #output = tf.concat([mu_size, sigma_size], axis = 0) # ValueError: Expected output shape of [None, 2], got [None, 1]
         #output = tf.concat([mu_size, sigma_size], axis = 1) # ValueError: Expected output shape of [None, 2], got [None, 2]
         #output = tf.stack([mu_size, sigma_size]) # CustomModel1 output: Tensor("policy_0/stack:0", shape=(2, ?, 1), dtype=float32)
-        #output = tf.tuple([mu_size, sigma_size])  ValueError: Expected output shape of [None, 2], got [2, None, 1]
+        #output = tf.tuple([mu_size, sigma_size]) # ValueError: Expected output shape of [None, 2], got [2, None, 1]
         print('CustomModel1 output:', output)
 
         return output, last_layer

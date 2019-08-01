@@ -59,6 +59,8 @@ class Exchg(Exchg_Helper, MultiAgentEnv):
                                           spaces.Box(low=tick_size, high=inf, shape=(1,))))
         """
         self.action_space = spaces.Tuple((spaces.Box(low=neg_inf, high=inf, shape=(1,)),
+                                          spaces.Box(low=neg_inf, high=inf, shape=(1,)),
+                                          spaces.Box(low=neg_inf, high=inf, shape=(1,)),
                                         ))
 
         print('(self.action_space).shape:', (self.action_space).shape) # None
@@ -89,6 +91,9 @@ class Exchg(Exchg_Helper, MultiAgentEnv):
     # actions is a list of actions from all agents (traders) at t step
     # each action is a list of (ID, type, side, size, price)
     def step(self, actions):
+
+        print('step actions:', actions)
+
         self.next_states, self.rewards, self.dones, self.infos = {}, {}, {}, {}
         self.agg_LOB = self.set_agg_LOB() # LOB state at t before processing LOB
         actions = self.set_actions(actions) # format actions from nn output to be acceptable by LOB
