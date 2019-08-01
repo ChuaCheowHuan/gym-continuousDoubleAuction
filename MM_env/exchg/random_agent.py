@@ -6,9 +6,10 @@ class Random_agent(object):
     # pass action to step
     def select_random_action(self, ID):
         type_side = np.random.randint(0, 5, size=1) # type_side: None=0, market_bid=1, market_ask=2, limit_bid=3, limit_ask=4
-        size = [random.randrange(1, 100, 100)] # size in 100s from 0(min) to 1000(max)
+        size = [random.randrange(1, 100, 10)] # size in 100s from 0(min) to 1000(max)
         price = [random.randrange(1, 10, 1)] # price from 1(min) to 100(max)
         act = (type_side, size, price)
+        print('select_random_action act:', act)
         return act
 
 """

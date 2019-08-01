@@ -52,8 +52,10 @@ class Exchg_Helper(object):
         act = {}
         act["ID"] = ID
         act["type"], act["side"] = self.set_type_side(round(nn_out_act[0][0]))
-        act["size"] = round(nn_out_act[1][0]).item()
-        act["price"] = round(nn_out_act[2][0]).item()
+        #act["size"] = round(nn_out_act[1][0]).item()
+        #act["price"] = round(nn_out_act[2][0]).item()
+        act["size"] = round(nn_out_act[1][0])
+        act["price"] = round(nn_out_act[2][0])
 
         print('act:', act)
 
