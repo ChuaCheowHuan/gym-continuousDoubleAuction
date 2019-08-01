@@ -1,3 +1,5 @@
+#import tensorflow as tf
+
 import ray
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 
@@ -42,7 +44,9 @@ class Exchg(Exchg_Helper, MultiAgentEnv):
         #        [ 0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.]])
         inf = float('inf')
         neg_inf = float('-inf')
-        self.observation_space = spaces.Box(low=neg_inf, high=inf, shape=(4,10))
+        obs_row = 4
+        obs_col = 10
+        self.observation_space = spaces.Box(low=neg_inf, high=inf, shape=(obs_row,obs_col))
 
         # ********** NEED TO PREPROCESS ACTION FROM NN BEFORE EXECUTION **********
         # NEED TO DECODE type_side
@@ -54,9 +58,12 @@ class Exchg(Exchg_Helper, MultiAgentEnv):
                                           spaces.Box(low=1, high=inf, shape=(1,)),
                                           spaces.Box(low=tick_size, high=inf, shape=(1,))))
         """
-        self.action_space = spaces.Tuple((spaces.Discrete(5), # type_side: None=0, market_bid=1, market_ask=2, limit_bid=3, limit_ask=4
-                                          spaces.Box(low=neg_inf, high=inf, shape=(1,)),
-                                          spaces.Box(low=neg_inf, high=inf, shape=(1,))))
+        self.action_space = spaces.Tuple((spaces.Box(low=neg_inf, high=inf, shape=(1,)),
+                                        ))
+
+        print('(self.action_space).shape:', (self.action_space).shape) # None
+        self.a_box = spaces.Box(low=neg_inf, high=inf, shape=(1,))
+        print('(self.a_box).shape:', (self.a_box).shape) # (1,)
 
     # reset
     def reset(self):

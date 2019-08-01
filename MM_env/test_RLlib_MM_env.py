@@ -58,7 +58,32 @@ parser.add_argument("--simple", action="store_true")
 
 class CustomModel1(Model):
     def _build_layers_v2(self, input_dict, num_outputs, options):
+        """
+        Define the layers of a custom model.
+            Arguments:
+                input_dict (dict): Dictionary of input tensors, including "obs", "prev_action", "prev_reward", "is_training".
+                num_outputs (int): Output tensor must be of size [BATCH_SIZE, num_outputs].
+                options (dict): Model options.
+            Returns:
+                (outputs, feature_layer): Tensors of size [BATCH_SIZE, num_outputs] and [BATCH_SIZE, desired_feature_size].
+
+        When using dict or tuple observation spaces, you can access the nested sub-observation batches here as well:
+        Examples:
+            >>> print(input_dict)
+            {'prev_actions': <tf.Tensor shape=(?,) dtype=int64>,
+             'prev_rewards': <tf.Tensor shape=(?,) dtype=float32>,
+             'is_training': <tf.Tensor shape=(), dtype=bool>,
+             'obs': OrderedDict([
+                ('sensors', OrderedDict([
+                    ('front_cam', [
+                        <tf.Tensor shape=(?, 10, 10, 3) dtype=float32>,
+                        <tf.Tensor shape=(?, 10, 10, 3) dtype=float32>]),
+                    ('position', <tf.Tensor shape=(?, 3) dtype=float32>),
+                    ('velocity', <tf.Tensor shape=(?, 3) dtype=float32>)]))])}
+        """
         hidden = 8
+        #S = input_dict["obs"]
+        S = tf.layers.flatten(input_dict["obs"]) # Flattens an input tensor while preserving the batch axis (axis 0). (deprecated)
         # Example of (optional) weight sharing between two different policies.
         # Here, we share the variables defined in the 'shared' variable scope
         # by entering it explicitly with tf.AUTO_REUSE. This creates the
@@ -67,18 +92,17 @@ class CustomModel1(Model):
         with tf.variable_scope(tf.VariableScope(tf.AUTO_REUSE, "shared"),
                                reuse=tf.AUTO_REUSE,
                                auxiliary_name_scope=False):
-            last_layer = tf.layers.dense(input_dict["obs"], hidden, activation=tf.nn.relu, name="fc1")
+            last_layer = tf.layers.dense(S, hidden, activation=tf.nn.relu, name="fc1")
         last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc2")
         #output = tf.layers.dense(last_layer, num_outputs, activation=None, name="fc_out")
 
-
-
         # ********** TESTING **********
-        num_outputs = 1
+        #num_outputs = 1
+        print('num_outputs:', num_outputs)
         num_type_side = 5
 
         prob_weights = tf.layers.dense(last_layer, num_outputs * num_type_side, activation=tf.nn.softmax, name="prob_weights")
-        print('********** prob_weights: **********', prob_weights)
+        print('CustomModel1 prob_weights:', prob_weights)
         #type_side = np.random.choice(range(prob_weights.shape[1]), p=prob_weights.ravel())
         #type_side = np.random.choice(range(prob_weights.shape[1]), p=tf.shape(prob_weights))
         #type_side = np.random.choice(range(prob_weights.shape[1]), p=tf.reshape(prob_weights, [-1]))
@@ -89,16 +113,24 @@ class CustomModel1(Model):
         sigma_price = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="sigma_price")
 
         norm_dist_size = tf.distributions.Normal(loc=mu_size, scale=sigma_size)
-        #size = tf.squeeze(norm_dist_size.sample(1), axis=0) # choosing size
+        size = tf.squeeze(norm_dist_size.sample(1), axis=0) # choosing size
+        #print('********** size: **********', size)
         norm_dist_price = tf.distributions.Normal(loc=mu_price, scale=sigma_price)
-        #price = tf.squeeze(norm_dist_price.sample(1), axis=0) # choosing price
+        price = tf.squeeze(norm_dist_price.sample(1), axis=0) # choosing price
 
+        #mu_size = tf.tile(mu_size, [1, 5])
+        print('CustomModel1 mu_size:', mu_size) # shape=(?, 1)
+        #sigma_size = tf.tile(sigma_size, [1, 5])
+        print('CustomModel1 sigma_size:', sigma_size) # shape=(?, 1)
+        #output = tf.concat(prob_weights, mu_size, sigma_size)
         # ********** output FOR SINGLE AGENT IS TUPLE NOT DICT **********
         #output = (type_side, size, price)
-        #output = tf.concat([prob_weights, mu_size, sigma_size], 1)
-        output = tuple((prob_weights, mu_size, sigma_size))
-
-        print('CustomModel1:', output)
+        output = mu_size
+        #output = tf.concat([mu_size, sigma_size], axis = 0) # ValueError: Expected output shape of [None, 2], got [None, 1]
+        #output = tf.concat([mu_size, sigma_size], axis = 1) # ValueError: Expected output shape of [None, 2], got [None, 2]
+        #output = tf.stack([mu_size, sigma_size]) # CustomModel1 output: Tensor("policy_0/stack:0", shape=(2, ?, 1), dtype=float32)
+        #output = tf.tuple([mu_size, sigma_size])  ValueError: Expected output shape of [None, 2], got [2, None, 1]
+        print('CustomModel1 output:', output)
 
         return output, last_layer
         # ********** TESTING **********
