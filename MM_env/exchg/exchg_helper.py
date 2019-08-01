@@ -46,11 +46,16 @@ class Exchg_Helper(object):
         return acts
 
     def set_action(self, ID, nn_out_act):
+
+        print('nn_out_act:', nn_out_act)
+
         act = {}
         act["ID"] = ID
-        act["type"], act["side"] = self.set_type_side(nn_out_act[0])
-        act["size"] = nn_out_act[1]
-        act["price"] = nn_out_act[2]
+        act["type"], act["side"] = self.set_type_side(round(nn_out_act[0][0]))
+        act["size"] = round(nn_out_act[1][0]).item()
+        act["price"] = round(nn_out_act[2][0]).item()
+
+        print('act:', act)
 
         return act
 
@@ -117,7 +122,7 @@ class Exchg_Helper(object):
 
     def set_info(self, infos, trader):
         #info = trader.acc.nav - trader.acc.prev_nav
-        infos[trader.ID] = ''
+        infos[trader.ID] = {}
         return infos
 
     def set_step_outputs(self, state_input):

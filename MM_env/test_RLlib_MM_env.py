@@ -49,11 +49,10 @@ from exchg.exchg import Exchg
 tf = try_import_tf()
 
 parser = argparse.ArgumentParser()
-#parser.add_argument("--num-agents", type=int, default=4)
-parser.add_argument("--num-agents", type=int, default=2)
+parser.add_argument("--num-agents", type=int, default=4)
 #parser.add_argument("--num-policies", type=int, default=2)
 parser.add_argument("--num-policies", type=int, default=1)
-parser.add_argument("--num-iters", type=int, default=3)
+parser.add_argument("--num-iters", type=int, default=5)
 parser.add_argument("--simple", action="store_true")
 
 class CustomModel1(Model):
@@ -96,47 +95,21 @@ class CustomModel1(Model):
         last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc2")
         #output = tf.layers.dense(last_layer, num_outputs, activation=None, name="fc_out")
 
+
+
         # ********** TESTING **********
-        #num_outputs = 1
-        print('num_outputs:', num_outputs)
-        num_type_side = 5
 
-        prob_weights = tf.layers.dense(last_layer, num_outputs * num_type_side, activation=tf.nn.softmax, name="prob_weights")
-        print('CustomModel1 prob_weights:', prob_weights)
-        #type_side = np.random.choice(range(prob_weights.shape[1]), p=prob_weights.ravel())
-        #type_side = np.random.choice(range(prob_weights.shape[1]), p=tf.shape(prob_weights))
-        #type_side = np.random.choice(range(prob_weights.shape[1]), p=tf.reshape(prob_weights, [-1]))
+#File "/Users/hadron0/venv/lib/python3.7/site-packages/ray/rllib/evaluation/sampler.py", line 429, in _process_observations
+#agent_id, {}).get("training_enabled", True)):
+#AttributeError: 'str' object has no attribute 'get'
 
-        mu_size = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.tanh, name="mu_size")
-        sigma_size = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="sigma_size")
-        mu_price = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.tanh, name="mu_price")
-        sigma_price = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="sigma_price")
-
-        norm_dist_size = tf.distributions.Normal(loc=mu_size, scale=sigma_size)
-        size = tf.squeeze(norm_dist_size.sample(1), axis=0) # choosing size
-        print('********** size: **********', size)
-        norm_dist_price = tf.distributions.Normal(loc=mu_price, scale=sigma_price)
-        price = tf.squeeze(norm_dist_price.sample(1), axis=0) # choosing price
-
-        #mu_size = tf.tile(mu_size, [1, 5])
-        print('CustomModel1 mu_size:', mu_size) # shape=(?, 1)
-        #sigma_size = tf.tile(sigma_size, [1, 5])
-        print('CustomModel1 sigma_size:', sigma_size) # shape=(?, 1)
-        #output = tf.concat(prob_weights, mu_size, sigma_size)
-        # ********** output FOR SINGLE AGENT IS TUPLE NOT DICT **********
-        #output = (type_side, size, price)
-        #output = mu_size
-        output = size
-        #output = tf.concat([mu_size, sigma_size], axis = 0) # ValueError: Expected output shape of [None, 2], got [None, 1]
-        #output = tf.concat([mu_size, sigma_size], axis = 1) # ValueError: Expected output shape of [None, 2], got [None, 2]
-        #output = tf.stack([mu_size, sigma_size]) # CustomModel1 output: Tensor("policy_0/stack:0", shape=(2, ?, 1), dtype=float32)
-        #output = tf.tuple([mu_size, sigma_size]) # ValueError: Expected output shape of [None, 2], got [2, None, 1]
-        print('CustomModel1 output:', output)
+        mu = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.tanh, name="mu_size")
+        sigma = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="sigma_size")
+        norm_dist = tf.distributions.Normal(loc=mu, scale=sigma)
+        output = tf.squeeze(norm_dist.sample(1), axis=0)
 
         return output, last_layer
         # ********** TESTING **********
-
-        #return output, last_layer
 
 
 

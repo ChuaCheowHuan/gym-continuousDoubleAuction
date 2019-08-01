@@ -1,9 +1,11 @@
+from decimal import Decimal
+
 class Cash_Processor(object):
 
     def order_in_book_init_party(self, order_in_book):
         # if there's order_in_book for init_party (party2)
         if order_in_book != None: # there are new unfilled orders
-            order_in_book_val = order_in_book.get('price') * order_in_book.get('quantity')
+            order_in_book_val = order_in_book.get('price') * Decimal(order_in_book.get('quantity'))
             self.cash -= order_in_book_val # reduce cash
             self.cash_on_hold += order_in_book_val # increase cash_on_hold
 

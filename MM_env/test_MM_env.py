@@ -139,10 +139,10 @@ def test_random():
 
 if __name__ == "__main__":
     e = create_env()
-    test_1(e) # place initial orders
-    test_1_1(e)
+    #test_1(e) # place initial orders
+    #test_1_1(e)
     #test_1_2(e)
-    test_1_3(e)
+    #test_1_3(e)
     #test_1_4(e)
 
     test_random()

@@ -1,6 +1,8 @@
 import random
 import numpy as np
 
+from decimal import Decimal
+
 from .account import Account
 from .random_agent import Random_agent
 
@@ -47,7 +49,7 @@ class Trader(Random_agent):
             print('i:', i)
             print('trade:', trade)
 
-            trade_val = trade.get('quantity') * trade.get('price')
+            trade_val = Decimal(trade.get('quantity')) * trade.get('price')
             # init_party is not counter_party
             if trade.get('counter_party').get('ID') != trade.get('init_party').get('ID'):
                 self.process_counter_party(agents, trade)

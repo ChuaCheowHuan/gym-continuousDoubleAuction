@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from .cash_processor import Cash_Processor
 from .calculate import Calculate
 
@@ -118,7 +120,7 @@ class Account(Calculate, Cash_Processor):
 
     def process_acc(self, trade, party):
         self.num_trades += 1
-        trade_val = trade.get('quantity') * trade.get('price')
+        trade_val = Decimal(trade.get('quantity')) * trade.get('price')
         if self.net_position > 0: #long
             self.net_long(trade_val, trade, party)
         elif self.net_position < 0: # short

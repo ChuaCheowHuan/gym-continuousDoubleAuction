@@ -53,20 +53,11 @@ class Exchg(Exchg_Helper, MultiAgentEnv):
         # NEED TO ADD trader.ID before randomizing execution sequence
         # action per agent: {'ID': 0, 'type': 'market', 'side': 'bid', 'size': 1, 'price': 8}
         # action space per agent: {'type_side': 0-4, 'size': 1-inf, 'price': tick_size-inf}
-        """
-        self.action_space = spaces.Tuple((spaces.Discrete(5), # type_side: None=0, market_bid=1, market_ask=2, limit_bid=3, limit_ask=4
-                                          spaces.Box(low=1, high=inf, shape=(1,)),
-                                          spaces.Box(low=tick_size, high=inf, shape=(1,))))
-
-        self.action_space = spaces.Tuple((spaces.Box(low=neg_inf, high=inf, shape=(1,)),
-                                          spaces.Box(low=neg_inf, high=inf, shape=(1,)),
-                                          spaces.Box(low=neg_inf, high=inf, shape=(1,)),
+        self.action_space = spaces.Tuple((spaces.Box(low=0, high=4, shape=(1,)),
+                                          spaces.Box(low=1, high=999, shape=(1,)),
+                                          spaces.Box(low=1, high=999, shape=(1,)),
                                         ))
-        """
-        self.action_space = spaces.Box(low=-100, high=100, shape=(3,))
-        print('(self.action_space).shape:', (self.action_space).shape) # None
-        self.a_box = spaces.Box(low=neg_inf, high=inf, shape=(1,))
-        print('(self.a_box).shape:', (self.a_box).shape) # (1,)
+        #self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(3,))
 
     # reset
     def reset(self):
