@@ -6,19 +6,19 @@ from .calculate import Calculate
 class Account(Calculate, Cash_Processor):
     def __init__(self, ID, cash=0):
         self.ID = ID
-        self.cash = cash
+        self.cash = Decimal(cash)
         # nav is used to calculate P&L & r per t step
-        self.cash_on_hold = 0 # cash deducted for placing order = cash - value of live order in LOB
-        self.position_val = 0 # value of net_position
+        self.cash_on_hold = Decimal(0) # cash deducted for placing order = cash - value of live order in LOB
+        self.position_val = Decimal(0) # value of net_position
         # nav is used to calculate P&L & r per t step
-        self.init_nav = cash # starting nav @t = 0
-        self.nav = cash # nav @t (nav @ end of a single t-step)
-        self.prev_nav = cash # nav @t-1
+        self.init_nav = Decimal(cash) # starting nav @t = 0
+        self.nav = Decimal(cash) # nav @t (nav @ end of a single t-step)
+        self.prev_nav = Decimal(cash) # nav @t-1
         # assuming only one ticker (1 type of contract)
         self.net_position = 0 # number of contracts currently holding long (positive) or short (negative)
-        self.VWAP = 0 # VWAP
-        self.profit = 0 # profit @ each trade(tick) within a single t step
-        self.total_profit = 0 # profit at the end of a single t-step
+        self.VWAP = Decimal(0) # VWAP
+        self.profit = Decimal(0) # profit @ each trade(tick) within a single t step
+        self.total_profit = Decimal(0) # profit at the end of a single t-step
         self.num_trades = 0
 
     def reset_acc(self, ID, cash=0):
@@ -53,9 +53,9 @@ class Account(Calculate, Cash_Processor):
         return 0
 
     def size_increase(self, trade, position, party, trade_val):
-        total_size = Decimal(abs(self.net_position)) + Decimal(trade.get('quantity'))
+        total_size = abs(self.net_position) + Decimal(trade.get('quantity'))
         # VWAP
-        self.VWAP = (Decimal(abs(self.net_position)) * self.VWAP + trade_val) / total_size
+        self.VWAP = (abs(self.net_position) * self.VWAP + trade_val) / total_size
         raw_val = total_size * self.VWAP # value acquired with VWAP
         mkt_val = total_size * trade.get('price')
         self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
@@ -64,8 +64,8 @@ class Account(Calculate, Cash_Processor):
 
     # entire position covered, net position = 0
     def covered(self, trade, position):
-        raw_val = Decimal(abs(self.net_position)) * self.VWAP # value acquired with VWAP
-        mkt_val = Decimal(abs(self.net_position)) * trade.get('price')
+        raw_val = abs(self.net_position) * self.VWAP # value acquired with VWAP
+        mkt_val = abs(self.net_position) * trade.get('price')
         self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
         self.size_zero_cash_transfer(mkt_val)
         # reset to 0
@@ -74,9 +74,9 @@ class Account(Calculate, Cash_Processor):
         return mkt_val
 
     def size_decrease(self, trade, position, party, trade_val):
-        size_left = Decimal(abs(self.net_position)) - Decimal(trade.get('quantity'))
+        size_left = abs(self.net_position) - Decimal(trade.get('quantity'))
         if size_left > 0:
-            self.VWAP = (Decimal(abs(self.net_position)) * self.VWAP - trade_val) / size_left
+            self.VWAP = (abs(self.net_position) * self.VWAP - trade_val) / size_left
             raw_val = size_left * self.VWAP # value acquired with VWAP
             mkt_val = size_left * trade.get('price')
             self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
@@ -89,7 +89,7 @@ class Account(Calculate, Cash_Processor):
         mkt_val = self.covered(trade, position)
         self.size_decrease_cash_transfer(party, mkt_val)
         # deal with remaining size that cause position change
-        new_size = trade.get('quantity') - abs(self.net_position)
+        new_size = Decimal(trade.get('quantity')) - abs(self.net_position)
         self.position_val = new_size * trade.get('price') # traded value
         self.VWAP = trade.get('price')
         self.size_increase_cash_transfer(party, self.position_val)

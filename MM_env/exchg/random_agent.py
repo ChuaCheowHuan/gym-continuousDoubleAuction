@@ -4,7 +4,7 @@ import numpy as np
 class Random_agent(object):
 
     # pass action to step
-    def select_random_action(self, ID):
+    def select_random_action(self):
         type_side = np.random.randint(0, 5, size=1) # type_side: None=0, market_bid=1, market_ask=2, limit_bid=3, limit_ask=4
         size = [np.int32(random.randrange(1, 100, 1))] # size in 100s from 0(min) to 1000(max)
         price = [np.float32(random.randrange(1, 10, 1))] # price from 1(min) to 100(max)

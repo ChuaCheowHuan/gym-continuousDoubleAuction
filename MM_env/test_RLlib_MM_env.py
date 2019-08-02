@@ -52,7 +52,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--num-agents", type=int, default=4)
 #parser.add_argument("--num-policies", type=int, default=2)
 parser.add_argument("--num-policies", type=int, default=1)
-parser.add_argument("--num-iters", type=int, default=5)
+parser.add_argument("--num-iters", type=int, default=20)
 parser.add_argument("--simple", action="store_true")
 
 class CustomModel1(Model):
@@ -80,7 +80,7 @@ class CustomModel1(Model):
                     ('position', <tf.Tensor shape=(?, 3) dtype=float32>),
                     ('velocity', <tf.Tensor shape=(?, 3) dtype=float32>)]))])}
         """
-        hidden = 8
+        hidden = 4
         #S = input_dict["obs"]
         S = tf.layers.flatten(input_dict["obs"]) # Flattens an input tensor while preserving the batch axis (axis 0). (deprecated)
         # Example of (optional) weight sharing between two different policies.
@@ -115,7 +115,7 @@ class CustomModel1(Model):
 
 class CustomModel2(Model):
     def _build_layers_v2(self, input_dict, num_outputs, options):
-        hidden = 8
+        hidden = 4
         # Weights shared with CustomModel1
         with tf.variable_scope(tf.VariableScope(tf.AUTO_REUSE, "shared"),
                                reuse=tf.AUTO_REUSE,
@@ -126,8 +126,12 @@ class CustomModel2(Model):
         output = tf.layers.dense(last_layer, num_outputs, activation=None, name="fc_out")
         return output, last_layer
 
+
 if __name__ == "__main__":
-    num_of_traders = 2
+    args = parser.parse_args()
+    ray.init()
+
+    num_of_traders = args.num_agents
     tape_display_length = 100
     tick_size = 1
     init_cash = 10000
@@ -135,16 +139,13 @@ if __name__ == "__main__":
     MM_env = Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step)
     print('MM_env:', MM_env.print_accs())
 
-    args = parser.parse_args()
-    ray.init()
-
     # Simple environment with `num_agents` independent cartpole entities
     #register_env("multi_cartpole", lambda _: MultiCartpole(args.num_agents))
 
 
 
     # ********** exchg path BUG **********
-    register_env("MMenv-v0", lambda _: Exchg(args.num_agents, init_cash, tick_size, tape_display_length, max_step))
+    register_env("MMenv-v0", lambda _: Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step))
 
 
 
@@ -161,7 +162,7 @@ if __name__ == "__main__":
         #config = {"model": {"custom_model": ["model1", "model2"][i % 2],},
         #          "gamma": random.choice([0.95, 0.99]),}
         config = {"model": {"custom_model": "model1"},
-                  "gamma": 0.95,}
+                  "gamma": 0.99,}
         return (None, obs_space, act_space, config)
 
     # Setup PPO with an ensemble of `num_policies` different policies
@@ -175,6 +176,7 @@ if __name__ == "__main__":
                      "log_level": "DEBUG",
                      "simple_optimizer": args.simple,
                      "num_sgd_iter": 10,
+                     #'observation_filter': 'MeanStdFilter'
                      "multiagent": {"policies": policies,
                                     "policy_mapping_fn": tune.function(lambda agent_id: random.choice(policy_ids)),
                                    },
