@@ -31,6 +31,7 @@ sigma = tf.layers.dense(hidden_layer, A_DIM, tf.nn.softplus, kernel_initializer 
 norm_dist = tf.distributions.Normal(loc=mu, scale=sigma)
 
 
+
 #https://www.tensorflow.org/api_docs/python/tf/contrib/distributions/MultivariateNormalFullCovariance
 import tensorflow_probability as tfp
 tfd = tfp.distributions

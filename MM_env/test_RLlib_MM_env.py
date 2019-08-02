@@ -80,7 +80,7 @@ class CustomModel1(Model):
                     ('position', <tf.Tensor shape=(?, 3) dtype=float32>),
                     ('velocity', <tf.Tensor shape=(?, 3) dtype=float32>)]))])}
         """
-        hidden = 4
+        hidden = 64
         #S = input_dict["obs"]
         S = tf.layers.flatten(input_dict["obs"]) # Flattens an input tensor while preserving the batch axis (axis 0). (deprecated)
         # Example of (optional) weight sharing between two different policies.
@@ -93,6 +93,7 @@ class CustomModel1(Model):
                                auxiliary_name_scope=False):
             last_layer = tf.layers.dense(S, hidden, activation=tf.nn.relu, name="fc1")
         last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc2")
+        last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc3")
         #output = tf.layers.dense(last_layer, num_outputs, activation=None, name="fc_out")
 
 
@@ -115,7 +116,7 @@ class CustomModel1(Model):
 
 class CustomModel2(Model):
     def _build_layers_v2(self, input_dict, num_outputs, options):
-        hidden = 4
+        hidden = 64
         # Weights shared with CustomModel1
         with tf.variable_scope(tf.VariableScope(tf.AUTO_REUSE, "shared"),
                                reuse=tf.AUTO_REUSE,

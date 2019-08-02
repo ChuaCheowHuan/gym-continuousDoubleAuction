@@ -99,7 +99,7 @@ class Exchg_Helper(object):
             trader = self.agents[ID]
 
             # ********** TEST RANDOM ACTIONS **********
-            type, side, size, price = self._test_rand_act()
+            #type, side, size, price = self._test_rand_act()
 
             self.trades, self.order_in_book = trader.place_order(type, side, size, price, self.LOB, self.agents)
         return self.trades, self.order_in_book
