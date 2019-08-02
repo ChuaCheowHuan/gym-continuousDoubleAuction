@@ -57,7 +57,10 @@ class OrderBook(object):
             if quantity_to_trade < head_order.quantity:
                 traded_quantity = quantity_to_trade
                 # Do the transaction
-                new_book_quantity = head_order.quantity - quantity_to_trade
+                # original line but produce error on RLlib,
+                # cause: TypeError: unsupported operand type(s) for -: 'decimal.Decimal' and 'float'
+                #new_book_quantity = head_order.quantity - quantity_to_trade
+                new_book_quantity = head_order.quantity - Decimal(quantity_to_trade)
                 head_order.update_quantity(new_book_quantity, head_order.timestamp)
                 quantity_to_trade = 0
             elif quantity_to_trade == head_order.quantity:
@@ -73,7 +76,8 @@ class OrderBook(object):
                     self.bids.remove_order_by_id(head_order.order_id)
                 else:
                     self.asks.remove_order_by_id(head_order.order_id)
-                quantity_to_trade -= traded_quantity
+                #quantity_to_trade -= traded_quantity
+                quantity_to_trade = Decimal(quantity_to_trade) - traded_quantity
             if verbose:
                 print(("TRADE: Time - {}, Price - {}, Quantity - {}, TradeID - {}, Matching TradeID - {}".format(self.time, traded_price, traded_quantity, counter_party, quote['trade_id'])))
 

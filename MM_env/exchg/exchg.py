@@ -51,13 +51,12 @@ class Exchg(Exchg_Helper, MultiAgentEnv):
         # ********** NEED TO PREPROCESS ACTION FROM NN BEFORE EXECUTION **********
         # NEED TO DECODE type_side
         # NEED TO ADD trader.ID before randomizing execution sequence
-        # action per agent: {'ID': 0, 'type': 'market', 'side': 'bid', 'size': 1, 'price': 8}
+        # order per agent: {'ID': 0, 'type': 'market', 'side': 'bid', 'size': 1, 'price': 8}
         # action space per agent: {'type_side': 0-4, 'size': 1-inf, 'price': tick_size-inf}
-        self.action_space = spaces.Tuple((spaces.Box(low=0, high=4, shape=(1,)),
-                                          spaces.Box(low=1, high=999, shape=(1,)),
-                                          spaces.Box(low=1, high=999, shape=(1,)),
+        self.action_space = spaces.Tuple((spaces.Box(low=0.0, high=4.0, shape=(1,)),
+                                          spaces.Box(low=1.0, high=999.0, shape=(1,)),
+                                          spaces.Box(low=1.0, high=999.0, shape=(1,)),
                                         ))
-        #self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(3,))
 
     # reset
     def reset(self):

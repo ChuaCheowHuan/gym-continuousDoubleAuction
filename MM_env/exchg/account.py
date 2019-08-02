@@ -53,9 +53,9 @@ class Account(Calculate, Cash_Processor):
         return 0
 
     def size_increase(self, trade, position, party, trade_val):
-        total_size = abs(self.net_position) + (trade.get('quantity'))
+        total_size = Decimal(abs(self.net_position)) + Decimal(trade.get('quantity'))
         # VWAP
-        self.VWAP = (abs(self.net_position) * self.VWAP + trade_val) / total_size
+        self.VWAP = (Decimal(abs(self.net_position)) * self.VWAP + trade_val) / total_size
         raw_val = total_size * self.VWAP # value acquired with VWAP
         mkt_val = total_size * trade.get('price')
         self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
@@ -64,8 +64,8 @@ class Account(Calculate, Cash_Processor):
 
     # entire position covered, net position = 0
     def covered(self, trade, position):
-        raw_val = abs(self.net_position) * self.VWAP # value acquired with VWAP
-        mkt_val = abs(self.net_position) * trade.get('price')
+        raw_val = Decimal(abs(self.net_position)) * self.VWAP # value acquired with VWAP
+        mkt_val = Decimal(abs(self.net_position)) * trade.get('price')
         self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
         self.size_zero_cash_transfer(mkt_val)
         # reset to 0
@@ -74,9 +74,9 @@ class Account(Calculate, Cash_Processor):
         return mkt_val
 
     def size_decrease(self, trade, position, party, trade_val):
-        size_left = abs(self.net_position) - (trade.get('quantity'))
+        size_left = Decimal(abs(self.net_position)) - Decimal(trade.get('quantity'))
         if size_left > 0:
-            self.VWAP = (abs(self.net_position) * self.VWAP - trade_val) / size_left
+            self.VWAP = (Decimal(abs(self.net_position)) * self.VWAP - trade_val) / size_left
             raw_val = size_left * self.VWAP # value acquired with VWAP
             mkt_val = size_left * trade.get('price')
             self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
@@ -133,12 +133,16 @@ class Account(Calculate, Cash_Processor):
     def update_net_position(self, side, trade_quantity):
         if self.net_position >= 0: # long or neutral
             if side == 'bid':
-                self.net_position += trade_quantity
+                #self.net_position += trade_quantity
+                self.net_position = Decimal(self.net_position) + Decimal(trade_quantity)
             else:
-                self.net_position += -trade_quantity
+                #self.net_position += -trade_quantity
+                self.net_position = Decimal(self.net_position) - Decimal(trade_quantity)
         else: # short
             if side == 'ask':
-                self.net_position += -trade_quantity
+                #self.net_position += -trade_quantity
+                self.net_position = Decimal(self.net_position) - Decimal(trade_quantity)
             else:
-                self.net_position += trade_quantity
+                #self.net_position += trade_quantity
+                self.net_position = Decimal(self.net_position) + Decimal(trade_quantity)
         return 0

@@ -52,10 +52,9 @@ class Exchg_Helper(object):
         act = {}
         act["ID"] = ID
         act["type"], act["side"] = self.set_type_side(round(nn_out_act[0][0]))
-        #act["size"] = round(nn_out_act[1][0]).item()
-        #act["price"] = round(nn_out_act[2][0]).item()
-        act["size"] = round(nn_out_act[1][0])
-        act["price"] = round(nn_out_act[2][0])
+
+        act["size"] = round(nn_out_act[1][0]).item()
+        act["price"] = round(nn_out_act[2][0]).item()
 
         print('act:', act)
 
@@ -105,7 +104,7 @@ class Exchg_Helper(object):
     # reward per t step
     # reward = nav@t+1 - nav@t
     def set_reward(self, rewards, trader):
-        rewards[trader.ID] = trader.acc.nav - trader.acc.prev_nav
+        rewards[trader.ID] = float(trader.acc.nav - trader.acc.prev_nav)
         return rewards
 
     def set_done(self, dones, trader):
