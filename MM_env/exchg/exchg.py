@@ -60,7 +60,7 @@ class Exchg(Exchg_Helper, MultiAgentEnv):
 
     # reset
     def reset(self):
-        
+
         self.render()
 
         self.LOB = OrderBook(0.25, self.tape_display_length) # new limit order book
@@ -107,7 +107,10 @@ class Exchg(Exchg_Helper, MultiAgentEnv):
 
     # render
     def render(self):
-        #print('\nt_step:\n', self.t_step)
+
+        print('\n********** render **********:\n', self.dones)
+
+        print('\nt_step:\n', self.t_step)
         #print('\nLOB:\n', self.LOB)
         #print('\nagg_LOB:\n', self.agg_LOB)
         #print('\nagg_LOB_aft:\n', self.agg_LOB_aft)

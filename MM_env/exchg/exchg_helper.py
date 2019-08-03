@@ -106,7 +106,10 @@ class Exchg_Helper(object):
 
     def prep_next_state(self):
         self.agg_LOB_aft = self.set_agg_LOB() # LOB state at t+1 after processing LOB
+
         state_diff = self.state_diff(self.agg_LOB, self.agg_LOB_aft)
+        #state_diff = self.agg_LOB_aft
+
         return state_diff
 
     def set_next_state(self, next_states, trader, state_input):
@@ -116,7 +119,10 @@ class Exchg_Helper(object):
     # reward per t step
     # reward = nav@t+1 - nav@t
     def set_reward(self, rewards, trader):
+
         rewards[trader.ID] = float(trader.acc.nav - trader.acc.prev_nav)
+        #rewards[trader.ID] = float(trader.acc.nav - trader.acc.prev_nav) * (1+trader.ID)
+
         return rewards
 
     def set_done(self, dones, trader):

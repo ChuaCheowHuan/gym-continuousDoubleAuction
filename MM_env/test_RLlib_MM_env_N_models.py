@@ -50,8 +50,7 @@ tf = try_import_tf()
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--num-agents", type=int, default=4)
-#parser.add_argument("--num-policies", type=int, default=2)
-parser.add_argument("--num-policies", type=int, default=1)
+parser.add_argument("--num-policies", type=int, default=2)
 parser.add_argument("--num-iters", type=int, default=10)
 parser.add_argument("--simple", action="store_true")
 
@@ -142,13 +141,14 @@ if __name__ == "__main__":
     print('MM_env:', MM_env.print_accs())
     register_env("MMenv-v0", lambda _: Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step))
     ModelCatalog.register_custom_model("model1", CustomModel1)
+    ModelCatalog.register_custom_model("model2", CustomModel1)
     obs_space = MM_env.observation_space
     act_space = MM_env.action_space
 
     # Each policy can have a different configuration (including custom model)
     def gen_policy(i):
-        config = {"model": {"custom_model": "model1"},
-                  "gamma": 0.99,}
+        config = {"model": {"custom_model": ["model1", "model2"][i % 2],},
+                  "gamma": random.choice([0.95, 0.99]),}
         return (None, obs_space, act_space, config)
 
     # Setup PPO with an ensemble of `num_policies` different policies
