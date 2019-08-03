@@ -51,7 +51,7 @@ tf = try_import_tf()
 parser = argparse.ArgumentParser()
 parser.add_argument("--num-agents", type=int, default=4)
 parser.add_argument("--num-policies", type=int, default=2)
-parser.add_argument("--num-iters", type=int, default=10)
+parser.add_argument("--num-iters", type=int, default=3)
 parser.add_argument("--simple", action="store_true")
 
 class CustomModel1(Model):
@@ -88,8 +88,8 @@ class CustomModel1(Model):
                     ('position', <tf.Tensor shape=(?, 3) dtype=float32>),
                     ('velocity', <tf.Tensor shape=(?, 3) dtype=float32>)]))])}
         """
-        hidden = 64
-        cell_size = 32
+        hidden = 8
+        cell_size = 4
         #S = input_dict["obs"]
         S = tf.layers.flatten(input_dict["obs"]) # Flattens an input tensor while preserving the batch axis (axis 0). (deprecated)
         # Example of (optional) weight sharing between two different policies.
@@ -116,12 +116,14 @@ class CustomModel1(Model):
 
 class CustomModel2(Model):
     def _build_layers_v2(self, input_dict, num_outputs, options):
-        hidden = 64
+        hidden = 8
         # Weights shared with CustomModel1
+        #S = input_dict["obs"]
+        S = tf.layers.flatten(input_dict["obs"]) # Flattens an input tensor while preserving the batch axis (axis 0). (deprecated)
         with tf.variable_scope(tf.VariableScope(tf.AUTO_REUSE, "shared"),
                                reuse=tf.AUTO_REUSE,
                                auxiliary_name_scope=False):
-            last_layer = tf.layers.dense(input_dict["obs"], hidden, activation=tf.nn.relu, name="fc1")
+            last_layer = tf.layers.dense(S, hidden, activation=tf.nn.relu, name="fc1")
         last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc2")
         # output are action logits
         output = tf.layers.dense(last_layer, num_outputs, activation=None, name="fc_out")
@@ -136,12 +138,12 @@ if __name__ == "__main__":
     tape_display_length = 100
     tick_size = 1
     init_cash = 10000
-    max_step = 100
+    max_step = 10
     MM_env = Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step)
     print('MM_env:', MM_env.print_accs())
     register_env("MMenv-v0", lambda _: Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step))
     ModelCatalog.register_custom_model("model1", CustomModel1)
-    ModelCatalog.register_custom_model("model2", CustomModel1)
+    ModelCatalog.register_custom_model("model2", CustomModel2)
     obs_space = MM_env.observation_space
     act_space = MM_env.action_space
 
