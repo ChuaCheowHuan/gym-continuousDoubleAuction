@@ -125,6 +125,11 @@ class Exchg_Helper(object):
 
         return rewards
 
+    def norm_rewards(self, rewards):
+        #for r in rewards:
+
+        return rewards
+
     def set_done(self, dones, trader):
         if trader.acc.nav <= 0: # when trader is broke, he's done ;)
             dones[trader.ID] = 1

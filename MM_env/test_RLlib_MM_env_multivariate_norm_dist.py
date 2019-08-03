@@ -19,8 +19,9 @@ from ray import tune
 from ray.rllib.models import Model, ModelCatalog
 from ray.rllib.tests.test_multi_agent_env import MultiCartpole
 from ray.tune.registry import register_env
-from ray.rllib.utils import try_import_tf
-
+#from ray.rllib.utils import try_import_tf
+#python3 -c 'import tensorflow as tf; print(tf.__version__)'
+import tensorflow as tf
 
 
 import unittest
@@ -46,7 +47,7 @@ if "../" not in sys.path:
 #from exchg.x.y import z
 from exchg.exchg import Exchg
 
-tf = try_import_tf()
+#tf = try_import_tf()
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--num-agents", type=int, default=4)
@@ -102,16 +103,26 @@ class CustomModel1(Model):
                                reuse=tf.AUTO_REUSE,
                                auxiliary_name_scope=False):
             last_layer = tf.layers.dense(S, hidden, activation=tf.nn.relu, name="fc1")
-        last_layer = self._lstm(last_layer, cell_size)
+        last_layer = self._lstm(last_layer, cell_size) # lstm layer
         last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc2")
         last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc3")
         #output = tf.layers.dense(last_layer, num_outputs, activation=None, name="fc_out")
 
-        mu = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.tanh, name="mu_")
-        sigma = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="sigma_")
-        norm_dist = tf.distributions.Normal(loc=mu, scale=sigma)
-        output = tf.squeeze(norm_dist.sample(1), axis=0)
-
+        """
+        Using tf.MultivariateNormalDiag
+        Assume variables are linearly uncorrelated, which is consistent with them being
+        independent (although they are not necessarily independent).
+        """
+        #num_outputs = 1 # ValueError: Expected output shape of [None, 6], got [3, None, 1]
+        mu_0 = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.tanh, name="mu_0") # mean of 1st variable
+        mu_1 = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.tanh, name="mu_1")
+        mu_2 = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.tanh, name="mu_2")
+        sigma_0 = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="sigma_0") # variance of 1st variable
+        sigma_1 = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="sigma_1")
+        sigma_2 = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="sigma_2")
+        mvn = tf.contrib.distributions.MultivariateNormalDiag(loc=[mu_0, mu_1, mu_2], scale_diag=[sigma_0, sigma_1, sigma_2])
+        #output = tf.squeeze(mvn.sample(1), axis=0) # ValueError: Expected output shape of [None, 6], got [3, None, 6]
+        output = tf.squeeze(mvn.sample(1), axis=0)[0] # uses 1st item
         return output, last_layer
 
 
