@@ -1,5 +1,5 @@
 class Reward_Helper(object):
-    
+
     # reward per t step
     # reward = nav@t+1 - nav@t
     def set_reward(self, rewards, trader):
