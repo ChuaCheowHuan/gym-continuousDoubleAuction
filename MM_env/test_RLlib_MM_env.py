@@ -106,9 +106,10 @@ class CustomModel1(Model):
         last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc2")
         last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc3")
         #output = tf.layers.dense(last_layer, num_outputs, activation=None, name="fc_out")
+        #mu = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.tanh, name="mu_") # [-1,1]
+        mu = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="mu_") # (0, inf)
+        sigma = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="sigma_") # (0, inf)
 
-        mu = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.tanh, name="mu_")
-        sigma = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="sigma_")
         norm_dist = tf.distributions.Normal(loc=mu, scale=sigma)
         output = tf.squeeze(norm_dist.sample(1), axis=0)
 
@@ -123,7 +124,7 @@ if __name__ == "__main__":
     tape_display_length = 100
     tick_size = 1
     init_cash = 10000
-    max_step = 10
+    max_step = 1000
     MM_env = Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step)
     print('MM_env:', MM_env.print_accs())
     register_env("MMenv-v0", lambda _: Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step))
