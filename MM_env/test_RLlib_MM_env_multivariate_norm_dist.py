@@ -14,6 +14,9 @@ import gym
 import random
 import numpy as np
 
+import os
+os.environ['RAY_DEBUG_DISABLE_MEMORY_MONITOR'] = "True"
+
 import ray
 from ray import tune
 from ray.rllib.models import Model, ModelCatalog

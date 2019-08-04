@@ -9,6 +9,9 @@ many TF policies will take some time.
 Also, TF evals might slow down with large numbers of policies. To debug TF
 execution, set the TF_TIMELINE_DIR environment variable.
 """
+import os
+os.environ['RAY_DEBUG_DISABLE_MEMORY_MONITOR'] = "True"
+
 import argparse
 import gym
 import random
@@ -128,7 +131,7 @@ if __name__ == "__main__":
     tape_display_length = 100
     tick_size = 1
     init_cash = 10000
-    max_step = 1000
+    max_step = 10
     MM_env = Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step)
     print('MM_env:', MM_env.print_accs())
     register_env("MMenv-v0", lambda _: Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step))

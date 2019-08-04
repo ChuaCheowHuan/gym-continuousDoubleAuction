@@ -130,7 +130,7 @@ class ParametricActionsModel(Model):
         avail_actions = input_dict["obs"]["avail_actions"]
         action_mask = input_dict["obs"]["action_mask"]
         action_embed_size = avail_actions.shape[2].value
-        if num_outputs != avail_actions.shape[1].value:
+        if num_outputs != avail_actions.shape[1].value: # batch is 0, row is 1, col is 2
             raise ValueError(
                 "This model assumes num outputs is equal to max avail actions",
                 num_outputs, avail_actions)
@@ -148,7 +148,7 @@ class ParametricActionsModel(Model):
                 scope=label)
         output = slim.fully_connected(
             last_layer,
-            action_embed_size,
+            action_embed_size, # continous parameters
             weights_initializer=normc_initializer(0.01),
             activation_fn=None,
             scope="fc_out")
