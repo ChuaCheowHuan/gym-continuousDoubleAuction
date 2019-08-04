@@ -57,7 +57,12 @@ class Exchg(Exchg_Helper, MultiAgentEnv):
                                           spaces.Box(low=1.0, high=999.0, shape=(1,)),
                                           spaces.Box(low=1.0, high=999.0, shape=(1,)),
                                         ))
-
+        """
+        self.action_space = spaces.Tuple((spaces.Discrete(5),
+                                          spaces.Box(low=1.0, high=999.0, shape=(1,)),
+                                          spaces.Box(low=1.0, high=999.0, shape=(1,)),
+                                        ))
+        """
     # reset
     def reset(self):
 

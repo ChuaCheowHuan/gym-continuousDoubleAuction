@@ -106,13 +106,17 @@ class CustomModel1(Model):
         last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc2")
         last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc3")
         #output = tf.layers.dense(last_layer, num_outputs, activation=None, name="fc_out")
-        #mu = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.tanh, name="mu_") # [-1,1]
-        mu = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="mu_") # (0, inf)
-        sigma = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="sigma_") # (0, inf)
+
+        print('********** num_outputs: **********', num_outputs)
+
+        #mu = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.tanh, name="mu") # [-1,1]
+        mu = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="mu") # (0, inf)
+        sigma = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="sigma") # (0, inf)
 
         norm_dist = tf.distributions.Normal(loc=mu, scale=sigma)
         output = tf.squeeze(norm_dist.sample(1), axis=0)
-
+        #output = norm_dist.sample(1)
+        print('********** output: **********', output)
         return output, last_layer
 
 
