@@ -53,22 +53,27 @@ class Exchg(Exchg_Helper, MultiAgentEnv):
         # NEED TO ADD trader.ID before randomizing execution sequence
         # order per agent: {'ID': 0, 'type': 'market', 'side': 'bid', 'size': 1, 'price': 8}
         # action space per agent: {'type_side': 0-4, 'size': 1-inf, 'price': tick_size-inf}
-        self.action_space = spaces.Tuple((spaces.Box(low=0.0, high=4.0, shape=(1,)),
-                                          spaces.Box(low=1.0, high=999.0, shape=(1,)),
-                                          spaces.Box(low=1.0, high=999.0, shape=(1,)),
-                                        ))
         """
         self.action_space = spaces.Tuple((spaces.Discrete(5),
                                           spaces.Box(low=1.0, high=999.0, shape=(1,)),
                                           spaces.Box(low=1.0, high=999.0, shape=(1,)),
                                         ))
         """
+        
+        self.action_space = spaces.Tuple((spaces.Box(low=0.0, high=4.0, shape=(1,)),
+                                          spaces.Box(low=1.0, high=999.0, shape=(1,)),
+                                          spaces.Box(low=1.0, high=999.0, shape=(1,)),
+                                        ))
+
+        #self.action_space = spaces.MultiDiscrete([5, 100, 10]) # type_side, size, price
+
     # reset
     def reset(self):
 
         self.render()
 
-        self.LOB = OrderBook(0.25, self.tape_display_length) # new limit order book
+        self.LOB = OrderBook(1, self.tape_display_length) # new limit order book
+        #self.LOB = OrderBook(0.25, self.tape_display_length) # new limit order book
         self.agg_LOB = {}
         self.agg_LOB_aft = {}
 
@@ -107,6 +112,8 @@ class Exchg(Exchg_Helper, MultiAgentEnv):
         state_input = self.prep_next_state()
         self.next_states, self.rewards, self.dones, self.infos = self.set_step_outputs(state_input)
         self.t_step += 1
+
+        #self.render()
 
         return self.next_states, self.rewards, self.dones, self.infos
 

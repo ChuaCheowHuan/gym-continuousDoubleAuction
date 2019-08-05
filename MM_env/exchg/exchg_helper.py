@@ -26,6 +26,10 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
             rewards = self.set_reward(rewards, trader)
             dones = self.set_done(dones, trader)
             infos = self.set_info(infos, trader)
+
+        # ********** TEST **********
+        rewards = self.norm_step_rewards(rewards)
+
         dones = self.set_all_done(dones)
         return next_states, rewards, dones, infos
 

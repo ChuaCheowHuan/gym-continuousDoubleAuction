@@ -24,8 +24,6 @@ from ray.rllib.tests.test_multi_agent_env import MultiCartpole
 from ray.tune.registry import register_env
 from ray.rllib.utils import try_import_tf
 
-
-
 import unittest
 
 from ray.rllib.agents.pg import PGTrainer
@@ -50,15 +48,15 @@ if "../" not in sys.path:
 from exchg.exchg import Exchg
 
 tf = try_import_tf()
+#import tensorflow as tf
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--num-agents", type=int, default=4)
-#parser.add_argument("--num-policies", type=int, default=2)
-parser.add_argument("--num-policies", type=int, default=1)
-parser.add_argument("--num-iters", type=int, default=3)
+parser.add_argument("--num-policies", type=int, default=2)
+parser.add_argument("--num-iters", type=int, default=2)
 parser.add_argument("--simple", action="store_true")
 
-class CustomModel1(Model):
+class CustomModel_cont(Model):
     def _lstm(self, Inputs, cell_size):
         s = tf.expand_dims(Inputs, axis=1, name='time_major')  # [time_step, feature] => [time_step, batch, feature]
         lstm_cell = tf.nn.rnn_cell.LSTMCell(cell_size)
@@ -110,18 +108,40 @@ class CustomModel1(Model):
         last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc3")
         #output = tf.layers.dense(last_layer, num_outputs, activation=None, name="fc_out")
 
-        print('********** num_outputs: **********', num_outputs)
-
         #mu = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.tanh, name="mu") # [-1,1]
         mu = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="mu") # (0, inf)
         sigma = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="sigma") # (0, inf)
 
         norm_dist = tf.distributions.Normal(loc=mu, scale=sigma)
         output = tf.squeeze(norm_dist.sample(1), axis=0)
-        #output = norm_dist.sample(1)
-        print('********** output: **********', output)
         return output, last_layer
 
+class CustomModel_disc(Model):
+    def _lstm(self, Inputs, cell_size):
+        s = tf.expand_dims(Inputs, axis=1, name='time_major')  # [time_step, feature] => [time_step, batch, feature]
+        lstm_cell = tf.nn.rnn_cell.LSTMCell(cell_size)
+        self.init_state = lstm_cell.zero_state(batch_size=1, dtype=tf.float32)
+        # time_major means [time_step, batch, feature] while batch major means [batch, time_step, feature]
+        outputs, self.final_state = tf.nn.dynamic_rnn(cell=lstm_cell, inputs=s, initial_state=self.init_state, time_major=True)
+        lstm_out = tf.reshape(outputs, [-1, cell_size], name='flatten_rnn_outputs')  # joined state representation
+        return lstm_out
+
+    def _build_layers_v2(self, input_dict, num_outputs, options):
+        hidden = 8
+        cell_size = 4
+        #S = input_dict["obs"]
+        S = tf.layers.flatten(input_dict["obs"])
+        with tf.variable_scope(tf.VariableScope(tf.AUTO_REUSE, "shared"),
+                               reuse=tf.AUTO_REUSE,
+                               auxiliary_name_scope=False):
+            last_layer = tf.layers.dense(S, hidden, activation=tf.nn.relu, name="fc1")
+        last_layer = self._lstm(last_layer, cell_size)
+        last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc2")
+        last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc3")
+
+        output = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softmax, name="mu")
+
+        return output, last_layer
 
 if __name__ == "__main__":
     args = parser.parse_args()
@@ -131,17 +151,19 @@ if __name__ == "__main__":
     tape_display_length = 100
     tick_size = 1
     init_cash = 10000
-    max_step = 10
+    max_step = 1000
     MM_env = Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step)
     print('MM_env:', MM_env.print_accs())
     register_env("MMenv-v0", lambda _: Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step))
-    ModelCatalog.register_custom_model("model1", CustomModel1)
+    #ModelCatalog.register_custom_model("model_disc", CustomModel_disc)
+    ModelCatalog.register_custom_model("model_cont", CustomModel_cont)
     obs_space = MM_env.observation_space
     act_space = MM_env.action_space
 
     # Each policy can have a different configuration (including custom model)
     def gen_policy(i):
-        config = {"model": {"custom_model": "model1"},
+        #config = {"model": {"custom_model": "model_disc"},
+        config = {"model": {"custom_model": "model_cont"},
                   "gamma": 0.99,}
         return (None, obs_space, act_space, config)
 
@@ -155,7 +177,6 @@ if __name__ == "__main__":
                      "log_level": "DEBUG",
                      "simple_optimizer": args.simple,
                      "num_sgd_iter": 10,
-                     #'observation_filter': 'MeanStdFilter'
                      "multiagent": {"policies": policies,
                                     "policy_mapping_fn": tune.function(lambda agent_id: random.choice(policy_ids)),
                                    },
