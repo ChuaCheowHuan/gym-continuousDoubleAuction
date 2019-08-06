@@ -53,7 +53,7 @@ tf = try_import_tf()
 parser = argparse.ArgumentParser()
 parser.add_argument("--num-agents", type=int, default=4)
 parser.add_argument("--num-policies", type=int, default=4)
-parser.add_argument("--num-iters", type=int, default=3)
+parser.add_argument("--num-iters", type=int, default=2)
 parser.add_argument("--simple", action="store_true")
 
 class CustomModel_cont(Model):
@@ -90,8 +90,8 @@ class CustomModel_cont(Model):
                     ('position', <tf.Tensor shape=(?, 3) dtype=float32>),
                     ('velocity', <tf.Tensor shape=(?, 3) dtype=float32>)]))])}
         """
-        hidden = 128
-        cell_size = 64
+        hidden = 64
+        cell_size = 32
         #S = input_dict["obs"]
         S = tf.layers.flatten(input_dict["obs"]) # Flattens an input tensor while preserving the batch axis (axis 0). (deprecated)
         # Example of (optional) weight sharing between two different policies.
@@ -99,18 +99,19 @@ class CustomModel_cont(Model):
         # by entering it explicitly with tf.AUTO_REUSE. This creates the
         # variables for the 'fc1' layer in a global scope called 'shared'
         # outside of the policy's normal variable scope.
+        a_w = tf.glorot_uniform_initializer(seed=0)
         with tf.variable_scope(tf.VariableScope(tf.AUTO_REUSE, "shared"),
                                reuse=tf.AUTO_REUSE,
                                auxiliary_name_scope=False):
-            last_layer = tf.layers.dense(S, hidden, activation=tf.nn.relu, name="fc1")
+            last_layer = tf.layers.dense(S, hidden, activation=tf.nn.relu, kernel_initializer=a_w, name="fc1")
         last_layer = self._lstm(last_layer, cell_size)
-        last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc2")
-        last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc3")
+        last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, kernel_initializer=a_w, name="fc2")
+        last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, kernel_initializer=a_w, name="fc3")
         #output = tf.layers.dense(last_layer, num_outputs, activation=None, name="fc_out")
 
-        mu = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.tanh, name="mu") # [-1,1]
-        #mu = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="mu") # (0, inf)
-        sigma = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, name="sigma") # (0, inf)
+        mu = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.tanh, kernel_initializer=a_w, name="mu") # [-1,1]
+        #mu = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, kernel_initializer=a_w, name="mu") # (0, inf)
+        sigma = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softplus, kernel_initializer=a_w, name="sigma") + 1e-4 # (0, inf)
 
         norm_dist = tf.distributions.Normal(loc=mu, scale=sigma)
         output = tf.squeeze(norm_dist.sample(1), axis=0)
@@ -125,7 +126,7 @@ if __name__ == "__main__":
     tape_display_length = 100
     tick_size = 1
     init_cash = 10000
-    max_step = 3000
+    max_step = 300
     MM_env = Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step)
     print('MM_env:', MM_env.print_accs())
     register_env("MMenv-v0", lambda _: Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step))
@@ -148,7 +149,7 @@ if __name__ == "__main__":
              config={"env": "MMenv-v0",
                      "log_level": "DEBUG",
                      "simple_optimizer": args.simple,
-                     "num_sgd_iter": 10,
+                     "num_sgd_iter": 3,
                      "multiagent": {"policies": policies,
                                     "policy_mapping_fn": tune.function(lambda agent_id: random.choice(policy_ids)),
                                    },

@@ -30,11 +30,13 @@ class Action_Helper(Norm_Action):
             acts.append(act)
         return acts
 
-    # for cont act space
-    def set_action(self, ID, nn_out_act):
+    # ********** TEST **********
+    # for cont act space norm nn outputs
+    def set_action_t(self, ID, nn_out_act):
 
         print('nn_out_act:', nn_out_act)
 
+        # ********** TEST **********
         type_side, size, price = self.norm_vals(nn_out_act)
 
         print('type_side, size, price:', type_side, size, price)
@@ -57,7 +59,7 @@ class Action_Helper(Norm_Action):
 
         return act
     # for cont act space
-    def set_action_c_0(self, ID, nn_out_act):
+    def set_action(self, ID, nn_out_act):
 
         print('nn_out_act:', nn_out_act)
 
