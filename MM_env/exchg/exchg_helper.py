@@ -44,7 +44,7 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
 
         # ********** TEST **********
         # ********** for RLlib tests **********
-        #rewards = self.norm_step_rewards(rewards)
+        rewards = self.norm_step_rewards(rewards)
 
         dones = self.set_all_done(dones)
         return next_states, rewards, dones, infos

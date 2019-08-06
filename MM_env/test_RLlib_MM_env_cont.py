@@ -52,8 +52,8 @@ tf = try_import_tf()
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--num-agents", type=int, default=4)
-parser.add_argument("--num-policies", type=int, default=2)
-parser.add_argument("--num-iters", type=int, default=2)
+parser.add_argument("--num-policies", type=int, default=4)
+parser.add_argument("--num-iters", type=int, default=3)
 parser.add_argument("--simple", action="store_true")
 
 class CustomModel_cont(Model):
@@ -125,7 +125,7 @@ if __name__ == "__main__":
     tape_display_length = 100
     tick_size = 1
     init_cash = 10000
-    max_step = 1000
+    max_step = 3000
     MM_env = Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step)
     print('MM_env:', MM_env.print_accs())
     register_env("MMenv-v0", lambda _: Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step))
@@ -148,7 +148,7 @@ if __name__ == "__main__":
              config={"env": "MMenv-v0",
                      "log_level": "DEBUG",
                      "simple_optimizer": args.simple,
-                     "num_sgd_iter": 3,
+                     "num_sgd_iter": 10,
                      "multiagent": {"policies": policies,
                                     "policy_mapping_fn": tune.function(lambda agent_id: random.choice(policy_ids)),
                                    },

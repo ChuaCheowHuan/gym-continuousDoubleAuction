@@ -57,7 +57,7 @@ class Action_Helper(Norm_Action):
 
         return act
     # for cont act space
-    def set_action_c(self, ID, nn_out_act):
+    def set_action_c_0(self, ID, nn_out_act):
 
         print('nn_out_act:', nn_out_act)
 
