@@ -31,6 +31,7 @@ class Reward_Helper(object):
     e = (a - np.mean(a)) / np.std(a)
     """
     def norm_step_rewards(self, rewards):
+
         print('rewards:', rewards)
 
         # rewards is python dictionary
@@ -40,12 +41,11 @@ class Reward_Helper(object):
             normalized_rewards_arr = np.zeros_like(rewards_arr)
         else:
             normalized_rewards_arr = 255*(rewards_arr - np.min(rewards_arr)) / np.ptp(rewards_arr).astype(int)
-
         df = pd.DataFrame(normalized_rewards_arr)
         normalized_rewards_dict = dict(zip(df.index, df.values.tolist()))
-        print('normalized_rewards_dict:', normalized_rewards_dict)
-
         normalized_rewards_dict = self.rm_list_in_dict(normalized_rewards_dict)
+
+        print('normalized_rewards_dict:', normalized_rewards_dict)
 
         return normalized_rewards_dict
 
@@ -53,6 +53,4 @@ class Reward_Helper(object):
         result_dict = {}
         for key, val in dict.items():
             result_dict[key] = val[0]
-        print('result_dict:', result_dict)
-
         return result_dict

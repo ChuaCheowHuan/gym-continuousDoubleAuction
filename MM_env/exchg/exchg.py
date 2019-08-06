@@ -13,9 +13,7 @@ from .trader import Trader
 # The exchange environment
 class Exchg(Exchg_Helper, MultiAgentEnv):
     def __init__(self, num_of_agents=2, init_cash=0, tick_size=1, tape_display_length=10, max_step=100):
-        self.LOB = OrderBook(tick_size, tape_display_length) # limit order book
-        self.agg_LOB = {} # aggregated or consolidated LOB
-        self.agg_LOB_aft = {} # aggregated or consolidated LOB after processing orders
+        super(Exchg, self).__init__(init_cash, tick_size, tape_display_length)
 
         self.next_states = {}
         self.rewards = {}
@@ -23,16 +21,10 @@ class Exchg(Exchg_Helper, MultiAgentEnv):
         self.done_set = set()
         self.infos = {}
 
-        self.trades = {} # a trade between init_party & counter_party
-        self.order_in_book = {} # unfilled orders goes to LOB
-
         # step when actions by all traders are executed, not tick time
         # within a step, multiple trades(ticks) could happened
         self.t_step = 0
         self.max_step = max_step
-
-        self.init_cash = init_cash
-        self.tape_display_length = tape_display_length
 
         # list of agents or traders
         self.agents = [Trader(ID, init_cash) for ID in range(0, num_of_agents)]
@@ -59,7 +51,7 @@ class Exchg(Exchg_Helper, MultiAgentEnv):
                                           spaces.Box(low=1.0, high=999.0, shape=(1,)),
                                         ))
         """
-        
+
         self.action_space = spaces.Tuple((spaces.Box(low=0.0, high=4.0, shape=(1,)),
                                           spaces.Box(low=1.0, high=999.0, shape=(1,)),
                                           spaces.Box(low=1.0, high=999.0, shape=(1,)),

@@ -4,7 +4,22 @@ from .reward_helper import Reward_Helper
 from .done_helper import Done_Helper
 from .info_helper import Info_Helper
 
+from .orderbook.orderbook import OrderBook
+from .trader import Trader
+
 class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info_Helper):
+    def __init__(self, init_cash=0, tick_size=1, tape_display_length=10):
+        super(Exchg_Helper, self).__init__()
+
+        self.LOB = OrderBook(tick_size, tape_display_length) # limit order book
+        self.agg_LOB = {} # aggregated or consolidated LOB
+        self.agg_LOB_aft = {} # aggregated or consolidated LOB after processing orders
+
+        self.trades = {} # a trade between init_party & counter_party
+        self.order_in_book = {} # unfilled orders goes to LOB
+
+        self.init_cash = init_cash
+        self.tape_display_length = tape_display_length
 
     # reset traders accounts
     def reset_traders_acc(self):

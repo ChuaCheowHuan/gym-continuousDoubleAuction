@@ -1,9 +1,13 @@
 import numpy as np
 import random
 
+from .norm_action import Norm_Action
+
 from sklearn.utils import shuffle
 
-class Action_Helper(object):
+class Action_Helper(Norm_Action):
+    def __init__(self):
+        super(Action_Helper, self).__init__()
 
     def rand_exec_seq(self, actions, seed):
 
@@ -28,6 +32,32 @@ class Action_Helper(object):
 
     # for cont act space
     def set_action(self, ID, nn_out_act):
+
+        print('nn_out_act:', nn_out_act)
+
+        type_side, size, price = self.norm_vals(nn_out_act)
+
+        print('type_side, size, price:', type_side, size, price)
+
+        act = {}
+        act["ID"] = ID
+        act["type"], act["side"] = self.set_type_side(round(type_side))
+
+        size = round(size)#.item()
+        price = round(price)#.item()
+        if size <= 0:
+            size = 1
+        if price <= 0:
+            price = 1
+
+        act["size"] = size
+        act["price"] = price
+
+        print('act:', act)
+
+        return act
+    # for cont act space
+    def set_action_c(self, ID, nn_out_act):
 
         print('nn_out_act:', nn_out_act)
 
