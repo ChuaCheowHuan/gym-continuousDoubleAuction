@@ -24,9 +24,7 @@ from ray.tune.registry import register_env
 from ray.rllib.utils import try_import_tf
 
 from ray.rllib.policy.policy import Policy
-from ray.rllib.policy.tf_policy import TFPolicy
-import ray.experimental.tf_utils
-
+#from ray.rllib.policy.tf_policy import TFPolicy
 
 import sys
 if "../" not in sys.path:
@@ -148,33 +146,35 @@ if __name__ == "__main__":
     obs_space = MM_env.observation_space
     act_space = MM_env.action_space
 
+    def policy_mapper_0(agent_id):
+        if agent_id.startswith("supervisor_"):
+            return "supervisor_policy"
+        else:
+            return random.choice(["worker_p1", "worker_p2"])
+
     # Each policy can have a different configuration (including custom model)
     def gen_policy(i):
         config = {"model": {"custom_model": "model_cont"},
                   #"log_level": "DEBUG",
-                  #"simple_optimizer": args.simple,
-                  #"simple_optimizer": True,
-                  #"num_sgd_iter": 3,
                   "gamma": 0.99,}
         return (None, obs_space, act_space, config) # "policy_graphs"
 
     # Setup PPO with an ensemble of `num_policies` different policies
     policies = {"policy_{}".format(i): gen_policy(i) for i in range(args.num_policies)} # contains many "policy_graphs" in a policies dictionary
     # override last policy with random policy
-    policies[str(args.num_policies)] = (RandomPolicy, obs_space, act_space, {}) # random policy stored as the last item in policies dictionary
+    policies["policy_{}".format(args.num_policies-1)] = (RandomPolicy, obs_space, act_space, {}) # random policy stored as the last item in policies dictionary
 
     print('policies:', policies)
 
     policy_ids = list(policies.keys())
 
-    tune.run("PG",
-             #"PPO",
+    tune.run("PPO",
              stop={"training_iteration": args.num_iters},
              config={"env": "MMenv-v0",
                      #"log_level": "DEBUG",
                      #"simple_optimizer": args.simple,
-                     #"simple_optimizer": True,
-                     #"num_sgd_iter": 3,
+                     "simple_optimizer": True,
+                     "num_sgd_iter": 3,
                      "multiagent": {"policies": policies, # dictionary of "policy_graphs"
                                     # policy_mapper(agent_id) function using tune
                                     "policy_mapping_fn": tune.function(lambda agent_id: random.choice(policy_ids)),

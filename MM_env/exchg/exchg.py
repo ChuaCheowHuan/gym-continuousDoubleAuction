@@ -62,8 +62,6 @@ class Exchg(Exchg_Helper, MultiAgentEnv):
     # reset
     def reset(self):
 
-        self.render()
-
         self.LOB = OrderBook(1, self.tape_display_length) # new limit order book
         #self.LOB = OrderBook(0.25, self.tape_display_length) # new limit order book
         self.agg_LOB = {}
@@ -105,24 +103,24 @@ class Exchg(Exchg_Helper, MultiAgentEnv):
         self.next_states, self.rewards, self.dones, self.infos = self.set_step_outputs(state_input)
         self.t_step += 1
 
-        #self.render()
+        self.render()
 
         return self.next_states, self.rewards, self.dones, self.infos
 
     # render
     def render(self):
 
-        print('\n********** render **********:\n', self.dones)
+        print('\n********** render **********:\n')
 
         print('\nt_step:\n', self.t_step)
-        #print('\nLOB:\n', self.LOB)
-        #print('\nagg_LOB:\n', self.agg_LOB)
-        #print('\nagg_LOB_aft:\n', self.agg_LOB_aft)
-        #print('\nnext_states:\n', self.next_states)
-        #print('\nrewards:\n', self.rewards)
+        print('\nLOB:\n', self.LOB)
+        print('\nagg_LOB:\n', self.agg_LOB)
+        print('\nagg_LOB_aft:\n', self.agg_LOB_aft)
+        print('\nnext_states:\n', self.next_states)
+        print('\nrewards:\n', self.rewards)
         print('\ndones:\n', self.dones)
-        #print('\ninfos:\n', self.infos)
+        print('\ninfos:\n', self.infos)
         self.print_accs()
         print('total_sys_profit:', self.total_sys_profit())
         print('total_sys_nav:', self.total_sys_nav())
-        return 0
+        #return 0

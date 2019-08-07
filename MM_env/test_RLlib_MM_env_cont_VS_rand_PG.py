@@ -140,7 +140,7 @@ if __name__ == "__main__":
     tape_display_length = 100
     tick_size = 1
     init_cash = 10000
-    max_step = 100
+    max_step = 10
     MM_env = Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step)
     print('MM_env:', MM_env.print_accs())
     register_env("MMenv-v0", lambda _: Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step))
@@ -152,16 +152,13 @@ if __name__ == "__main__":
     def gen_policy(i):
         config = {"model": {"custom_model": "model_cont"},
                   #"log_level": "DEBUG",
-                  #"simple_optimizer": args.simple,
-                  #"simple_optimizer": True,
-                  #"num_sgd_iter": 3,
                   "gamma": 0.99,}
         return (None, obs_space, act_space, config) # "policy_graphs"
 
     # Setup PPO with an ensemble of `num_policies` different policies
     policies = {"policy_{}".format(i): gen_policy(i) for i in range(args.num_policies)} # contains many "policy_graphs" in a policies dictionary
     # override last policy with random policy
-    policies[str(args.num_policies)] = (RandomPolicy, obs_space, act_space, {}) # random policy stored as the last item in policies dictionary
+    policies["policy_{}".format(args.num_policies-1)] = (RandomPolicy, obs_space, act_space, {}) # random policy stored as the last item in policies dictionary
 
     print('policies:', policies)
 

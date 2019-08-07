@@ -1,11 +1,15 @@
 class Done_Helper(object):
 
     def set_done(self, dones, trader):
-        if trader.acc.nav <= 0: # when trader is broke, he's done ;)
-            dones[trader.ID] = 1
-            self.done_set.add(trader.ID) # done_set is a set while done is a dictionary
-        else:
-            dones[trader.ID] = 0
+        #if trader.acc.nav >= 10100: # when trader is broke, he's done ;)
+
+        #    print('********** trader.acc.nav **********', trader.acc.nav)
+
+            #dones[trader.ID] = 1
+            #dones[trader.ID] = 0 # if set to 1, ERROR in RLlib for VS rand
+            #self.done_set.add(trader.ID) # done_set is a set while done is a dictionary
+        #else:
+            #dones[trader.ID] = 0
         return dones
 
     def set_all_done(self, dones):

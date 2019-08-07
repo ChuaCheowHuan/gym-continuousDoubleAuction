@@ -25,7 +25,7 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
     def reset_traders_acc(self):
         for trader in self.agents:
             trader.acc.reset_acc(trader.ID, self.init_cash)
-
+            
     # update acc for all traders with last price in most recent entry of tape
     def mark_to_mkt(self):
         if len(self.LOB.tape) > 0:

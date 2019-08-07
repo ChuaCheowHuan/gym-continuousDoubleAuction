@@ -12,7 +12,8 @@ class Trader(Random_agent):
         self.acc = Account(ID, cash)
 
     def order_approved(self, cash, size, price):
-        if self.acc.cash >= size * price:
+        #if self.acc.cash >= size * price:
+        if self.acc.cash >= size * price and self.acc.nav > 0:        
             return True
         else:
             return False
