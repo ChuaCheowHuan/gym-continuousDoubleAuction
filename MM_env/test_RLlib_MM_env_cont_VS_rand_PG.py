@@ -20,9 +20,12 @@ import numpy as np
 import ray
 from ray import tune
 from ray.rllib.models import Model, ModelCatalog
-from ray.rllib.tests.test_multi_agent_env import MultiCartpole
 from ray.tune.registry import register_env
 from ray.rllib.utils import try_import_tf
+
+from ray.rllib.policy.policy import Policy
+from ray.rllib.policy.tf_policy import TFPolicy
+import ray.experimental.tf_utils
 
 
 import sys
@@ -38,7 +41,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--num-agents", type=int, default=4)
 parser.add_argument("--num-policies", type=int, default=4)
 parser.add_argument("--num-iters", type=int, default=2)
-parser.add_argument("--simple", action="store_true")
+parser.add_argument("--simple", action="store_true") # False as default
 
 class CustomModel_cont(Model):
     def _lstm(self, Inputs, cell_size):
@@ -102,6 +105,33 @@ class CustomModel_cont(Model):
         return output, last_layer
 
 
+# a hand-coded policy that acts at random in the env (doesn't learn)
+class RandomPolicy(Policy):
+    """Hand-coded policy that returns random actions."""
+
+    def compute_actions(self,
+                        obs_batch,
+                        state_batches,
+                        prev_action_batch=None,
+                        prev_reward_batch=None,
+                        info_batch=None,
+                        episodes=None,
+                        **kwargs):
+        """Compute actions on a batch of observations."""
+        return [self.action_space.sample() for _ in obs_batch], [], {}
+
+    def learn_on_batch(self, samples):
+        """No learning."""
+        #return {}
+        pass
+
+    def get_weights(self):
+        pass
+
+    def set_weights(self, weights):
+        pass
+
+
 if __name__ == "__main__":
     args = parser.parse_args()
     ray.init()
@@ -121,20 +151,32 @@ if __name__ == "__main__":
     # Each policy can have a different configuration (including custom model)
     def gen_policy(i):
         config = {"model": {"custom_model": "model_cont"},
+                  #"log_level": "DEBUG",
+                  #"simple_optimizer": args.simple,
+                  #"simple_optimizer": True,
+                  #"num_sgd_iter": 3,
                   "gamma": 0.99,}
-        return (None, obs_space, act_space, config)
+        return (None, obs_space, act_space, config) # "policy_graphs"
 
     # Setup PPO with an ensemble of `num_policies` different policies
-    policies = {"policy_{}".format(i): gen_policy(i) for i in range(args.num_policies)}
+    policies = {"policy_{}".format(i): gen_policy(i) for i in range(args.num_policies)} # contains many "policy_graphs" in a policies dictionary
+    # override last policy with random policy
+    policies[str(args.num_policies)] = (RandomPolicy, obs_space, act_space, {}) # random policy stored as the last item in policies dictionary
+
+    print('policies:', policies)
+
     policy_ids = list(policies.keys())
 
-    tune.run("PPO",
+    tune.run("PG",
+             #"PPO",
              stop={"training_iteration": args.num_iters},
              config={"env": "MMenv-v0",
-                     "log_level": "DEBUG",
-                     "simple_optimizer": args.simple,
-                     "num_sgd_iter": 3,
-                     "multiagent": {"policies": policies,
+                     #"log_level": "DEBUG",
+                     #"simple_optimizer": args.simple,
+                     #"simple_optimizer": True,
+                     #"num_sgd_iter": 3,
+                     "multiagent": {"policies": policies, # dictionary of "policy_graphs"
+                                    # policy_mapper(agent_id) function using tune
                                     "policy_mapping_fn": tune.function(lambda agent_id: random.choice(policy_ids)),
                                    },
                     },

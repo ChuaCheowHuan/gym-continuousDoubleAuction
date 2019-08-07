@@ -53,8 +53,8 @@ class Exchg(Exchg_Helper, MultiAgentEnv):
         """
 
         self.action_space = spaces.Tuple((spaces.Box(low=0.0, high=4.0, shape=(1,)),
-                                          spaces.Box(low=1.0, high=999.0, shape=(1,)),
-                                          spaces.Box(low=1.0, high=999.0, shape=(1,)),
+                                          spaces.Box(low=1.0, high=1000.0, shape=(1,)),
+                                          spaces.Box(low=1.0, high=100.0, shape=(1,)),
                                         ))
 
         #self.action_space = spaces.MultiDiscrete([5, 100, 10]) # type_side, size, price

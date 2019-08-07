@@ -13,8 +13,8 @@ class State_Helper(object):
         self.agg_LOB_aft = self.set_agg_LOB() # LOB state at t+1 after processing LOB
 
         # ********** TEST **********
-        #state_diff = self.state_diff(self.agg_LOB, self.agg_LOB_aft)
-        state_diff = self.agg_LOB_aft
+        state_diff = self.state_diff(self.agg_LOB, self.agg_LOB_aft)
+        #state_diff = self.agg_LOB_aft
 
         return state_diff
 
