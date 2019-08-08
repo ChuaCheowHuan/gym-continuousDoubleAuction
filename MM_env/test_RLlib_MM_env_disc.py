@@ -23,6 +23,9 @@ from ray.rllib.models import Model, ModelCatalog
 from ray.tune.registry import register_env
 from ray.rllib.utils import try_import_tf
 
+from ray.rllib.policy.policy import Policy
+#from ray.rllib.policy.tf_policy import TFPolicy
+
 
 import sys
 if "../" not in sys.path:
@@ -34,8 +37,8 @@ tf = try_import_tf()
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--num-agents", type=int, default=4)
-parser.add_argument("--num-policies", type=int, default=2)
-parser.add_argument("--num-iters", type=int, default=2)
+parser.add_argument("--num-policies", type=int, default=4)
+parser.add_argument("--num-iters", type=int, default=10)
 parser.add_argument("--simple", action="store_true")
 
 
@@ -50,21 +53,49 @@ class CustomModel_disc(Model):
         return lstm_out
 
     def _build_layers_v2(self, input_dict, num_outputs, options):
-        hidden = 32
-        cell_size = 16
+        hidden = 512
+        cell_size = 128
         #S = input_dict["obs"]
         S = tf.layers.flatten(input_dict["obs"])
         with tf.variable_scope(tf.VariableScope(tf.AUTO_REUSE, "shared"),
                                reuse=tf.AUTO_REUSE,
                                auxiliary_name_scope=False):
             last_layer = tf.layers.dense(S, hidden, activation=tf.nn.relu, name="fc1")
-        #last_layer = self._lstm(last_layer, cell_size)
         last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc2")
-        last_layer = tf.layers.dense(last_layer, hidden, name="fc3")
+        last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc3")
+
+        last_layer = self._lstm(last_layer, cell_size)
 
         output = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softmax, name="mu")
 
         return output, last_layer
+
+
+# a hand-coded policy that acts at random in the env (doesn't learn)
+class RandomPolicy(Policy):
+    """Hand-coded policy that returns random actions."""
+
+    def compute_actions(self,
+                        obs_batch,
+                        state_batches,
+                        prev_action_batch=None,
+                        prev_reward_batch=None,
+                        info_batch=None,
+                        episodes=None,
+                        **kwargs):
+        """Compute actions on a batch of observations."""
+        return [self.action_space.sample() for _ in obs_batch], [], {}
+
+    def learn_on_batch(self, samples):
+        """No learning."""
+        #return {}
+        pass
+
+    def get_weights(self):
+        pass
+
+    def set_weights(self, weights):
+        pass
 
 
 if __name__ == "__main__":
@@ -74,14 +105,24 @@ if __name__ == "__main__":
     num_of_traders = args.num_agents
     tape_display_length = 100
     tick_size = 1
-    init_cash = 10000
-    max_step = 300
+    init_cash = 1000000
+    max_step = 1000
     MM_env = Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step)
     print('MM_env:', MM_env.print_accs())
     register_env("MMenv-v0", lambda _: Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step))
     ModelCatalog.register_custom_model("model_disc", CustomModel_disc)
     obs_space = MM_env.observation_space
     act_space = MM_env.action_space
+
+    def policy_mapper(agent_id):
+        if agent_id == 0:
+            return "policy_0" # PPO
+        elif agent_id == 1:
+            return "policy_1" # RandomPolicy
+        elif agent_id == 2:
+            return "policy_2" # RandomPolicy
+        else:
+            return "policy_3" # RandomPolicy
 
     # Each policy can have a different configuration (including custom model)
     def gen_policy(i):
@@ -91,6 +132,13 @@ if __name__ == "__main__":
 
     # Setup PPO with an ensemble of `num_policies` different policies
     policies = {"policy_{}".format(i): gen_policy(i) for i in range(args.num_policies)}
+    # override policy with random policy
+    policies["policy_{}".format(args.num_policies-3)] = (RandomPolicy, obs_space, act_space, {}) # random policy stored as the last item in policies dictionary
+    policies["policy_{}".format(args.num_policies-2)] = (RandomPolicy, obs_space, act_space, {}) # random policy stored as the last item in policies dictionary
+    policies["policy_{}".format(args.num_policies-1)] = (RandomPolicy, obs_space, act_space, {}) # random policy stored as the last item in policies dictionary
+
+    print('policies:', policies)
+
     policy_ids = list(policies.keys())
 
     tune.run("PPO",
@@ -98,11 +146,12 @@ if __name__ == "__main__":
              stop={"training_iteration": args.num_iters},
              config={"env": "MMenv-v0",
                      "log_level": "DEBUG",
-                     "simple_optimizer": args.simple,
-                     #"simple_optimizer": True,
+                     #"simple_optimizer": args.simple,
+                     "simple_optimizer": True,
                      "num_sgd_iter": 10,
                      "multiagent": {"policies": policies,
-                                    "policy_mapping_fn": tune.function(lambda agent_id: random.choice(policy_ids)),
+                                    #"policy_mapping_fn": tune.function(lambda agent_id: random.choice(policy_ids)),
+                                    "policy_mapping_fn": tune.function(policy_mapper),
                                    },
                     },
             )

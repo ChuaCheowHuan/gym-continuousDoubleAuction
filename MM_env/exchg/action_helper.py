@@ -1,13 +1,37 @@
 import numpy as np
 import random
+from gym import spaces
 
 from .norm_action import Norm_Action
 
+from gym import spaces
 from sklearn.utils import shuffle
 
 class Action_Helper(Norm_Action):
     def __init__(self):
         super(Action_Helper, self).__init__()
+
+    def disc_act(self):
+        act_space = spaces.Tuple((spaces.Discrete(5),
+                                  spaces.Discrete(100),
+                                  spaces.Discrete(100),
+                                ))
+        #self.action_space = spaces.MultiDiscrete([5, 100, 100]) # type_side, size, price
+        return act_space
+
+    def cont_act(self):
+        act_space = spaces.Tuple((spaces.Box(low=0.0, high=4.0, shape=(1,)),
+                                  spaces.Box(low=1.0, high=1000.0, shape=(1,)),
+                                  spaces.Box(low=1.0, high=100.0, shape=(1,)),
+                                ))
+        """
+        # hybrid or parametric action space
+        act_space = spaces.Tuple((spaces.Discrete(5),
+                                  spaces.Box(low=1.0, high=999.0, shape=(1,)),
+                                  spaces.Box(low=1.0, high=999.0, shape=(1,)),
+                                ))
+        """
+        return act_space
 
     def rand_exec_seq(self, actions, seed):
 
@@ -82,7 +106,7 @@ class Action_Helper(Norm_Action):
         act["ID"] = ID
         act["type"], act["side"] = self.set_type_side((nn_out_act[0]))
 
-        act["size"] = (nn_out_act[1] + 1) * 1.0
+        act["size"] = (nn_out_act[1] + 1) * 1.0 # +1 as size or price can't be 0
         act["price"] = (nn_out_act[2] + 1) * 1.0
 
         print('act:', act)

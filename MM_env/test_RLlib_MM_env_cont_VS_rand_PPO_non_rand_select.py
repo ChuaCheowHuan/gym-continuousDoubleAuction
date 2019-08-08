@@ -157,7 +157,7 @@ if __name__ == "__main__":
         elif agent_id == 1:
             return "policy_1" # PPO
         elif agent_id == 2:
-            return "policy_2" # RandomPolicy
+            return "policy_2" # PPO
         else:
             return "policy_3" # RandomPolicy
 
