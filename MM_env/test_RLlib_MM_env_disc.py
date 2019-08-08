@@ -20,25 +20,8 @@ import numpy as np
 import ray
 from ray import tune
 from ray.rllib.models import Model, ModelCatalog
-from ray.rllib.tests.test_multi_agent_env import MultiCartpole
 from ray.tune.registry import register_env
 from ray.rllib.utils import try_import_tf
-
-import unittest
-
-from ray.rllib.agents.pg import PGTrainer
-from ray.rllib.agents.pg.pg_policy import PGTFPolicy
-from ray.rllib.agents.dqn.dqn_policy import DQNTFPolicy
-from ray.rllib.optimizers import (SyncSamplesOptimizer, SyncReplayOptimizer,
-                                  AsyncGradientsOptimizer)
-from ray.rllib.tests.test_rollout_worker import (MockEnv, MockEnv2, MockPolicy)
-from ray.rllib.evaluation.rollout_worker import RolloutWorker
-from ray.rllib.policy.policy import Policy
-from ray.rllib.evaluation.metrics import collect_metrics
-from ray.rllib.evaluation.worker_set import WorkerSet
-from ray.rllib.env.base_env import _MultiAgentEnvToBaseEnv
-from ray.rllib.env.multi_agent_env import MultiAgentEnv
-
 
 
 import sys
@@ -48,7 +31,6 @@ if "../" not in sys.path:
 from exchg.exchg import Exchg
 
 tf = try_import_tf()
-#import tensorflow as tf
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--num-agents", type=int, default=4)
@@ -68,17 +50,17 @@ class CustomModel_disc(Model):
         return lstm_out
 
     def _build_layers_v2(self, input_dict, num_outputs, options):
-        hidden = 8
-        cell_size = 4
+        hidden = 32
+        cell_size = 16
         #S = input_dict["obs"]
         S = tf.layers.flatten(input_dict["obs"])
         with tf.variable_scope(tf.VariableScope(tf.AUTO_REUSE, "shared"),
                                reuse=tf.AUTO_REUSE,
                                auxiliary_name_scope=False):
             last_layer = tf.layers.dense(S, hidden, activation=tf.nn.relu, name="fc1")
-        last_layer = self._lstm(last_layer, cell_size)
+        #last_layer = self._lstm(last_layer, cell_size)
         last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc2")
-        last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc3")
+        last_layer = tf.layers.dense(last_layer, hidden, name="fc3")
 
         output = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softmax, name="mu")
 
@@ -93,7 +75,7 @@ if __name__ == "__main__":
     tape_display_length = 100
     tick_size = 1
     init_cash = 10000
-    max_step = 10
+    max_step = 300
     MM_env = Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step)
     print('MM_env:', MM_env.print_accs())
     register_env("MMenv-v0", lambda _: Exchg(num_of_traders, init_cash, tick_size, tape_display_length, max_step))
@@ -112,11 +94,13 @@ if __name__ == "__main__":
     policy_ids = list(policies.keys())
 
     tune.run("PPO",
+             #"PG",
              stop={"training_iteration": args.num_iters},
              config={"env": "MMenv-v0",
                      "log_level": "DEBUG",
                      "simple_optimizer": args.simple,
-                     "num_sgd_iter": 3,
+                     #"simple_optimizer": True,
+                     "num_sgd_iter": 10,
                      "multiagent": {"policies": policies,
                                     "policy_mapping_fn": tune.function(lambda agent_id: random.choice(policy_ids)),
                                    },

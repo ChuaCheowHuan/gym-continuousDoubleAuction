@@ -27,17 +27,19 @@ class Norm_Action(object):
     def update_size(self, new_size):
         if new_size < self.min_size:
             self.min_size = new_size
-
+            print('min_size:', self.min_size)
         if new_size > self.max_size:
             self.max_size = new_size
+            print('max_size:', self.max_size)
         return 0
 
     def update_price(self, new_price):
         if new_price < self.min_price:
             self.min_price = new_price
-
+            print('min_price:', self.min_price)
         if new_price > self.max_price:
             self.max_price = new_price
+            print('max_price:', self.max_price)
         return 0
 
     def norm_val(self, val, min_val, max_val, min_range, max_range):

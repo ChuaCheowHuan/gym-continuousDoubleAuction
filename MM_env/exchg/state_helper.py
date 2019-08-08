@@ -12,9 +12,9 @@ class State_Helper(object):
     def prep_next_state(self):
         self.agg_LOB_aft = self.set_agg_LOB() # LOB state at t+1 after processing LOB
 
-        # ********** TEST **********
-        state_diff = self.state_diff(self.agg_LOB, self.agg_LOB_aft)
-        #state_diff = self.agg_LOB_aft
+        # ********** state_diff should be used in obs preprocessing, not here **********
+        #state_diff = self.state_diff(self.agg_LOB, self.agg_LOB_aft)
+        state_diff = self.agg_LOB_aft
 
         return state_diff
 
@@ -59,6 +59,7 @@ class State_Helper(object):
                     break
         return [bid_size_list, bid_price_list, ask_size_list, ask_price_list] # list of np.arrays
 
+    # state_diff should be used in obs preprocessing if needed
     def state_diff(self, agg_LOB, agg_LOB_aft):
         state_diff = []
         #state_diff = np.array()

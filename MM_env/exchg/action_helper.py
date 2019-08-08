@@ -59,7 +59,7 @@ class Action_Helper(Norm_Action):
 
         return act
     # for cont act space
-    def set_action(self, ID, nn_out_act):
+    def set_action_c(self, ID, nn_out_act):
 
         print('nn_out_act:', nn_out_act)
 
@@ -74,7 +74,7 @@ class Action_Helper(Norm_Action):
 
         return act
     # for discrete act space
-    def set_action_d(self, ID, nn_out_act):
+    def set_action(self, ID, nn_out_act):
 
         print('nn_out_act:', nn_out_act)
 
