@@ -10,7 +10,7 @@ CDA environment is available in CDA_env_disc_RLlib.py
 
 PPO agent is using policy 0 while policies 1 to 3 are used by the random agents
 ![Agents' performance from Tensorboard:](/pic/agent0and1.png)
-![](/pic/agent2and3.png)
+![image](/pic/agent2and3.png)
 
 # Dependencies:
 1) OpenAI's Gym
