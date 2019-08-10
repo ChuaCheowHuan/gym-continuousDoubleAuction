@@ -34,7 +34,7 @@ PPO agent is using policy 0 while policies 1 to 3 are used by the random agents.
 # Installation:
 The environment is installable via pip.
 ```
-cd gym-continuousDoubleAuction
+cd MARL_env/gym-continuousDoubleAuction
 ```
 ```
 pip install -e .
