@@ -18,8 +18,9 @@ The figure below from Tensorboard shows the agents' performance:
 PPO agent is using policy 0 while policies 1 to 3 are used by the random agents.
 
 # Dependencies:
-1) OpenAI's Gym
-2) Ray & RLlib
+1) Tensorflow
+2) OpenAI's Gym
+3) Ray & RLlib
 
 # Installation:
 The environment is installable via pip.
