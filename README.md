@@ -13,6 +13,9 @@ CDA environment is available in CDA_env_disc_RLlib.py
 
 To run:
 ```
+cd MARL_env/gym-continuousDoubleAuction/gym_continuousDoubleAuction
+```
+```
 python CDA_env_disc_RLlib.py
 ```
 
