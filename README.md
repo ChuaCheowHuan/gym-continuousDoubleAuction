@@ -9,8 +9,8 @@ An example of using RLlib to pit 1 PPO agent against 3 random agents using this
 CDA environment is available in CDA_env_disc_RLlib.py
 
 PPO agent is using policy 0 while policies 1 to 3 are used by the random agents
-![Agents' performance from Tensorboard:](/pic/agent0and1.png)
-![image](/pic/agent2and3.png)
+![Agents' performance from Tensorboard:](https://github.com/ChuaCheowHuan/MARL_env/blob/master/pic/agent0and1.png)
+![image](https://github.com/ChuaCheowHuan/MARL_env/blob/master/pic/agent2and3.png)
 
 # Dependencies:
 1) OpenAI's Gym
