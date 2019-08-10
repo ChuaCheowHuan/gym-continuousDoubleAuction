@@ -14,10 +14,12 @@ CDA environment is available in CDA_env_disc_RLlib.py
 
 # Installation:
 The environment is installable via pip.
-'''
+```
 cd gym-continuousDoubleAuction
+```
+```
 pip install -e .
-'''
+```
 
 # TODO:
 1) custom RLlib workflow
