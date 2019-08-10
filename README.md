@@ -42,5 +42,7 @@ https://github.com/dyn4mik3/OrderBook
 
 # Disclaimer:
 This repository is only meant for research purposes & is **never** meant to be
-used in any form of financial trading. If you suffer losses from using this
-repository, the author will **NOT** be held responsible in any way.
+used in any form of financial trading. Past performance is no guarantee of
+future results. If you suffer losses from using this repository, you are the
+sole person responsible for the losses. The author will **NOT** be held
+responsible in any way.
