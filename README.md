@@ -19,7 +19,7 @@ CDA_env_disc_RLlib.py
 
 To run:
 ```
-cd MARL_env/gym-continuousDoubleAuction/gym_continuousDoubleAuction
+cd gym-continuousDoubleAuction/gym_continuousDoubleAuction
 ```
 ```
 python CDA_env_disc_RLlib.py
@@ -27,8 +27,8 @@ python CDA_env_disc_RLlib.py
 
 The figure below from Tensorboard shows the agents' performance:
 
-![](https://github.com/ChuaCheowHuan/MARL_env/blob/master/pic/agent0and1.png)
-![](https://github.com/ChuaCheowHuan/MARL_env/blob/master/pic/agent2and3.png)
+![](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/agent0and1.png)
+![](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/agent2and3.png)
 
 PPO agent is using policy 0 while policies 1 to 3 are used by the random agents.
 
@@ -40,7 +40,7 @@ PPO agent is using policy 0 while policies 1 to 3 are used by the random agents.
 # Installation:
 The environment is installable via pip.
 ```
-cd MARL_env/gym-continuousDoubleAuction
+cd gym-continuousDoubleAuction
 ```
 ```
 pip install -e .
