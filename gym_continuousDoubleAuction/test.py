@@ -1,14 +1,14 @@
 import unittest
 
-  #from prime import is_prime
+#from prime import is_prime
 
 
-  class Tests(unittest.TestCase):
+class Tests(unittest.TestCase):
 
-      def test_1(self):
-          """test_1"""
-          return 0
+    def test_1(self):
+        """test_1"""
+        return 0
 
 
-  if __name__ == "__main__":
-      unittest.main()
+if __name__ == "__main__":
+    unittest.main()
