@@ -24,7 +24,7 @@ gast==0.2.2
 google-pasta==0.1.7
 grpcio==1.19.0
 gym==0.14.0
--e git+https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction.git@f60d08639bee30a11b0e1533bb9bb9e5acf4f046#egg=gym_continuousDoubleAuction
+-e git+https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction.git@02e90e9e1beff7a3372f973c408b0ce9596a7270#egg=gym_continuousDoubleAuction
 h5py==2.9.0
 horovod==0.16.4
 idna==2.8
@@ -34,11 +34,11 @@ ipython==7.4.0
 ipython-genutils==0.2.0
 ipywidgets==7.4.2
 jedi==0.13.3
-Jinja2==2.10
+Jinja2==2.10.1
 joblib==0.13.2
 jsonschema==3.0.1
 jupyter==1.0.0
-jupyter-client==5.2.4
+jupyter-client==5.3.1
 jupyter-console==6.0.0
 jupyter-core==4.4.0
 Keras-Applications==1.0.7
@@ -54,7 +54,7 @@ more-itertools==7.2.0
 mpi4py==3.0.2
 nbconvert==5.4.1
 nbformat==4.4.0
-notebook==5.7.6
+notebook==6.0.1
 numpy==1.16.2
 opencv-python==4.1.0.25
 opencv-python-headless==4.1.0.25
@@ -106,7 +106,7 @@ urllib3==1.25.3
 virtualenv==16.4.3
 wcwidth==0.1.7
 webencodings==0.5.1
-Werkzeug==0.15.1
+Werkzeug==0.15.5
 widgetsnbextension==3.4.2
 wrapt==1.11.2
 zipp==0.5.2
