@@ -26,7 +26,6 @@ grpcio==1.19.0
 gym==0.14.0
 -e git+https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction.git@02e90e9e1beff7a3372f973c408b0ce9596a7270#egg=gym_continuousDoubleAuction
 h5py==2.9.0
-horovod==0.16.4
 idna==2.8
 importlib-metadata==0.19
 ipykernel==5.1.0
