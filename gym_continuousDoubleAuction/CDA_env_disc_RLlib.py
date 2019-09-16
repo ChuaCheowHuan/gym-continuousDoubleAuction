@@ -164,5 +164,9 @@ if __name__ == "__main__":
                                     #"policy_mapping_fn": tune.function(lambda agent_id: random.choice(policy_ids)),
                                     "policy_mapping_fn": tune.function(policy_mapper),
                                    },
+
+                     "trial_resources": {"cpu": 1,
+                                         "extra_cpu": max(self.num_cpus-1, 1)},
+                                         
                     },
             )
