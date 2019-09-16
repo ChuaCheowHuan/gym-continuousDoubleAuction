@@ -167,8 +167,8 @@ if __name__ == "__main__":
                                     "policy_mapping_fn": tune.function(policy_mapper),
                                    },
 
-                     "trial_resources": {"cpu": 1,
-                                         "extra_cpu": max(os.cpu_count()-1, 1)},
+                     "trial_resources": {"cpu": 2},
+                                         #"extra_cpu": max(os.cpu_count()-1, 1)},
 
                     },
             )
