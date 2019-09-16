@@ -166,7 +166,7 @@ if __name__ == "__main__":
                                    },
 
                      "trial_resources": {"cpu": 1,
-                                         "extra_cpu": max(self.num_cpus-1, 1)},
-                                         
+                                         "extra_cpu": 1},
+
                     },
             )
