@@ -152,6 +152,8 @@ if __name__ == "__main__":
 
     policy_ids = list(policies.keys())
 
+    print('num_CPU=', os.cpu_count())
+
     tune.run("PPO",
              #"PG",
              stop={"training_iteration": args.num_iters},
@@ -166,7 +168,7 @@ if __name__ == "__main__":
                                    },
 
                      "trial_resources": {"cpu": 1,
-                                         "extra_cpu": 1},
+                                         "extra_cpu": max(os.cpu_count()-1, 1)},
 
                     },
             )
