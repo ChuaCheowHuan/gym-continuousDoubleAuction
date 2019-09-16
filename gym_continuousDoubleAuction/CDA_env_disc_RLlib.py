@@ -166,7 +166,7 @@ if __name__ == "__main__":
                                     #"policy_mapping_fn": tune.function(lambda agent_id: random.choice(policy_ids)),
                                     "policy_mapping_fn": tune.function(policy_mapper),
                                    },
-                     "resources_per_trial": {"cpu": 2},
+                     "resources_per_trial": {"cpu": 1},
                      #"trial_resources": {"cpu": 2, "extra_cpu": max(os.cpu_count()-1, 1)},
 
                     },
