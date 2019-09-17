@@ -3,5 +3,5 @@ language: python
 python: 3.7.2
 #pip3 freeze > requirements.txt
 install: pip install -r requirements.txt
-#script: python gym_continuousDoubleAuction/test.py
-script: python gym_continuousDoubleAuction/CDA_env_disc_RLlib.py
+script: python gym_continuousDoubleAuction/test.py
+#script: python gym_continuousDoubleAuction/test_CDA_env_disc_RLlib.py
