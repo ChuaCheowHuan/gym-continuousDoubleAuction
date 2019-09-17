@@ -113,7 +113,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     #ray.init()
-    ray.init(num_cpus=2, local_mode=True) # local_mode for sequential trials
+    #ray.init(num_cpus=2)
+    ray.init(num_cpus=1, local_mode=True) # local_mode for sequential trials
     print(' ********** num_CPU =', os.cpu_count())
 
     num_of_traders = args.num_agents
@@ -158,7 +159,8 @@ if __name__ == "__main__":
     tune.run("PPO",
              #"PG",
              #queue_trials=True,
-             #num_samples=2,
+             num_samples=2,
+
              stop={"training_iteration": args.num_iters},
              config={"env": "continuousDoubleAuction-v0",
                      "log_level": "DEBUG",
@@ -172,8 +174,10 @@ if __name__ == "__main__":
 
                      #"resources_per_trial": None,
                      #"resources_per_trial": {"cpu":2},
-                     #"resources_per_trial": {"cpu":2, "num_workers":1},
+                     #"resources_per_trial": {"cpu":1},
                      #"repeat": 10,
+                     "num_workers": 1,
+                     "num_envs_per_worker": 1,
 
                     },
             )
