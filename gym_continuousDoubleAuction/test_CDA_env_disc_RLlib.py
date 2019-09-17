@@ -56,8 +56,8 @@ class CustomModel_disc(Model):
         return lstm_out
 
     def _build_layers_v2(self, input_dict, num_outputs, options):
-        hidden = 512
-        cell_size = 256
+        hidden = 8
+        cell_size = 4
         #S = input_dict["obs"]
         S = tf.layers.flatten(input_dict["obs"])
         with tf.variable_scope(tf.VariableScope(tf.AUTO_REUSE, "shared"),
@@ -115,7 +115,7 @@ if __name__ == "__main__":
     #ray.init()
     #ray.init(num_cpus=2)
     #ray.init(num_cpus=1, logging_level=logging.ERROR, local_mode=True) # local_mode for sequential trials to work in Travis which has only 2 CPU
-    ray.init(num_cpus=1, logging_level=0, local_mode=True) # local_mode for sequential trials to work in Travis which has only 2 CPU
+    ray.init(num_cpus=2, logging_level=0, local_mode=True) # local_mode for sequential trials to work in Travis which has only 2 CPU
     print(' ********** num_CPU =', os.cpu_count())
 
     num_of_traders = args.num_agents
