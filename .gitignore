@@ -4,3 +4,4 @@
 **/*.pyc
 .cache
 .DS_Store
+venv
