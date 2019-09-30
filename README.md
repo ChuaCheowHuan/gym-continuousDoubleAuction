@@ -35,7 +35,9 @@ PPO agent is using policy 0 while policies 1 to 3 are used by the random agents.
 # Dependencies:
 1) Tensorflow
 2) OpenAI's Gym
-3) Ray & RLlib
+3) Ray [RLlib] 0.7.3
+
+Please see `requirements.txt`.
 
 # Installation:
 The environment is installable via pip.
@@ -49,11 +51,15 @@ pip install -e .
 # TODO:
 1) custom RLlib workflow to include custom RND + PPO policies.
 2) parametric or hybrid action space
-3) more documentation
+3) more robust tests
+3) better documentation
 
 # Acknowledgements:
 The orderbook matching engine is adapted from
 https://github.com/dyn4mik3/OrderBook
+
+# Contributing:
+Please see [CONTRIBUTING.md](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/CONTRIBUTING.md).
 
 # Disclaimer:
 This repository is only meant for research purposes & is **never** meant to be
