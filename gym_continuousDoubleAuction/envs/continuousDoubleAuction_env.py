@@ -80,6 +80,7 @@ class continuousDoubleAuctionEnv(gym.Env, Exchg_Helper, MultiAgentEnv):
     def step(self, actions):
 
         print('step actions:', actions)
+
 # clip & floor div before passing into LOB
 # step actions: {0: array([ 1.1145465,  2.0979862, -1.5236733], dtype=float32), 1: array([-0.5973312 ,  4.129451  , -0.29671174], dtype=float32)}
 # (pid=9574) actions: [{'ID': 0, 'type': 'limit', 'side': 'ask', 'size': 2.0979862, 'price': -1.5236733}, {'ID': 1, 'type': 'limit', 'side': 'ask', 'size': 4.129451, 'price': -0.29671174}]
