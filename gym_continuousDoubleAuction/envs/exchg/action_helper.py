@@ -12,11 +12,21 @@ class Action_Helper(Norm_Action):
         super(Action_Helper, self).__init__()
 
     def disc_act(self):
-        act_space = spaces.Tuple((spaces.Discrete(5),
-                                  spaces.Discrete(100),
-                                  spaces.Discrete(100),
-                                ))
         #self.action_space = spaces.MultiDiscrete([5, 100, 100]) # type_side, size, price
+        """
+        act_space = spaces.Tuple((spaces.Discrete(5), # none, bid market, ask market, bit limit, ask limit
+                                  spaces.Discrete(100), # size
+                                  spaces.Discrete(100), # price
+                                ))
+        """
+        # Set price according to price_code 0 to 11 where price_code 1 to 10 correspond to slot in agg_LOB (mkt depth table)
+        # 0 & 11 are the border cases where they could be the lowest or highest bid respectively
+        # if order is on the ask side,
+        # 0 & 11 are the border cases where they could be the highest or lowest ask respectively
+        act_space = spaces.Tuple((spaces.Discrete(5), # none, bid market, ask market, bit limit, ask limit, (0 to 4)
+                                  spaces.Discrete(100), # size
+                                  spaces.Discrete(12), # price based on mkt depth from 0 to 11
+                                ))
         return act_space
 
     def cont_act(self):
@@ -99,6 +109,8 @@ class Action_Helper(Norm_Action):
         return act
     # for discrete act space
     def set_action(self, ID, nn_out_act):
+        min_size = 1
+        min_tick = 1
 
         print('nn_out_act:', nn_out_act)
 
@@ -106,8 +118,16 @@ class Action_Helper(Norm_Action):
         act["ID"] = ID
         act["type"], act["side"] = self.set_type_side((nn_out_act[0]))
 
-        act["size"] = (nn_out_act[1] + 1) * 1.0 # +1 as size or price can't be 0
-        act["price"] = (nn_out_act[2] + 1) * 1.0
+        #act["size"] = (nn_out_act[1] + min_size) * 1.0 # +min_size as size or price can't be 0, *1 for float
+        if act["type"] == 'market':
+            act["size"] = ((nn_out_act[1] // 10) + min_size) * 1.0 # +min_size as size or price can't be 0, *1 for float
+        else:
+            act["size"] = (nn_out_act[1] + min_size) * 1.0 # +min_size as size or price can't be 0, *1 for float
+
+        if act["type"] == 'market':
+            act["price"] = (nn_out_act[2] + min_tick) * 1.0 # +tick_size as size or price can't be 0, *1 for float
+        else:
+            act["price"] = self._set_price(min_tick, act["side"], nn_out_act[2])
 
         print('act:', act)
 
@@ -147,6 +167,94 @@ class Action_Helper(Norm_Action):
             type = 'limit'
             side = 'ask'
         return type, side
+
+    """
+    # agg_LOB is [bid_size_list, bid_price_list, ask_size_list, ask_price_list] # list of np.arrays
+    # Set price according to price_code 0 to 11 where price_code 1 to 10 correspond to slot in agg_LOB (mkt depth table) on one side
+    # if order is on the bid side,
+    # 0 & 11 are the border cases where they could be the lowest or highest bid respectively
+    # if order is on the ask side,
+    # 0 & 11 are the border cases where they could be the highest or lowest ask respectively
+    def _set_price(self, min_tick, side, price_code):
+        if side == 'bid':
+            price_array = self.agg_LOB[1] # bid price np.array
+            if price_code == 0: # lower by 1 tick or equal to lowest bid
+                # price_array[9] is the lowest bid
+                if price_array[9] == 0 or price_array[9] == min_tick:
+                    set_price = min_tick
+                else:
+                    set_price = price_array[9] - min_tick # one tick lower than the lowest bid
+            elif price_code == 11: # higher by 1 tick than highest bid
+                # price_array[0] is the highest bid
+                set_price = price_array[0] + min_tick # one tick higher than the highest bid
+            else: # price_code between 1 to 10
+                set_price = self.within_price_slot(min_tick, price_code, price_array)
+        else: # 'ask' side
+            price_array = self.agg_LOB[3] # ask price np.array
+            if price_code == 0:
+                # price_array[9] is the highest ask
+                set_price = abs(price_array[9]) + min_tick # one tick higher than the highest ask
+            elif price_code == 11:
+                # price_array[0] is the lowest ask
+                if abs(price_array[0]) == 0 or abs(price_array[0]) == min_tick:
+                    set_price = min_tick
+                else:
+                    set_price = abs(price_array[0]) - min_tick # one tick lower than the lowest ask
+            else: # price_code between 1 to 10
+                set_price = self.within_price_slot(min_tick, price_code, price_array)
+
+        return set_price*1.0
+    """
+    # agg_LOB is [bid_size_list, bid_price_list, ask_size_list, ask_price_list] # list of np.arrays
+    # Set price according to price_code 0 to 11 where price_code 1 to 10 correspond to slot in agg_LOB (mkt depth table) on one side
+    # if order is on the bid side,
+    # 0 & 11 are the border cases where they could be the lowest or highest bid respectively
+    # if order is on the ask side,
+    # 0 & 11 are the border cases where they could be the highest or lowest ask respectively
+    def _set_price(self, min_tick, side, price_code):
+        if side == 'bid':
+            price_array = self.agg_LOB[1] # bid price np.array
+            if price_code == 0: # lower by 1 tick or equal to lowest bid
+                # price_array[9] is the lowest bid
+                if min(price_array) == 0:
+                    set_price = random.randrange(1, 101, 1)
+                elif min(price_array) == min_tick:
+                    set_price = min_tick
+                else:
+                    set_price = min(price_array) - min_tick # one tick lower than the lowest bid
+            elif price_code == 11: # higher by 1 tick than highest bid
+                # price_array[0] is the highest bid
+                set_price = max(price_array) + min_tick # one tick higher than the highest bid
+            else: # price_code between 1 to 10
+                set_price = self.within_price_slot(min_tick, price_code, price_array)
+        else: # 'ask' side is negative on agg_LOB for both size & price
+            price_array = self.agg_LOB[3] # ask price np.array
+            if price_code == 0:
+                # price_array[9] is the highest ask
+                set_price = abs(min(price_array)) + min_tick # one tick higher than the highest ask
+            elif price_code == 11:
+                # price_array[0] is the lowest ask
+                if abs(max(price_array)) == 0:
+                    set_price = random.randrange(1, 101, 1)
+                elif abs(max(price_array)) == min_tick:
+                    set_price = min_tick
+                else:
+                    set_price = abs(max(price_array)) - min_tick # one tick lower than the lowest ask
+            else: # price_code between 1 to 10
+                set_price = self.within_price_slot(min_tick, price_code, price_array)
+
+        return set_price*1.0
+
+    def within_price_slot(self, min_tick, price_code, price_array):
+        set_price = min_tick
+        for i, price in enumerate(price_array):
+            if price_code == i+1:
+                if price == 0:
+                    set_price = price_code * min_tick
+                else:
+                    set_price = abs(price)
+                break
+        return set_price
 
     # for debugging
     def _test_rand_act(self):

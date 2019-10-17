@@ -17,7 +17,7 @@ class Trader(Random_agent):
             return True
         else:
             return False
-
+    
     def create_order(self, type, side, size, price):
         if type == 'market':
             order = {'type': 'market',

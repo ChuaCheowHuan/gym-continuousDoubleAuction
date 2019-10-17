@@ -119,17 +119,18 @@ def test_1_4(e):
 
 def test_random():
     num_of_traders = 4
-    init_cash = 10000
+    init_cash = 1000000
     tick_size = 1
-    tape_display_length = 100
-    max_step = 100
+    tape_display_length = 10
+    max_step = 3000
     e = continuousDoubleAuctionEnv(num_of_traders, init_cash, tick_size, tape_display_length, max_step)
     e.reset()
     for step in range(max_step):
         #actions = []
         actions = {}
         for i, trader in enumerate(e.agents):
-            action = trader.select_random_action()
+            #action = trader.select_random_action()
+            action = trader.select_random_action_price_code()
             #actions.append(action)
             actions[i] = action
         print('\n\n\nSTEP:', step)
