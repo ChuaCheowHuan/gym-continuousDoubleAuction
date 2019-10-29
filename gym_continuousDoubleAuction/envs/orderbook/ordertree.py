@@ -56,6 +56,9 @@ class OrderTree(object):
         order = self.order_map[order_update['order_id']]
         original_quantity = order.quantity
         if order_update['price'] != order.price:
+
+            print('ordertree.py, update_order(self, order_update):, if order_update["price"] != order.price:, order_update["price"], order.price', order_update['price'], order.price)
+
             # Price changed. Remove order and update tree.
             order_list = self.price_map[order.price]
             order_list.remove_order(order)
@@ -63,12 +66,19 @@ class OrderTree(object):
                 self.remove_price(order.price)
             self.insert_order(order_update)
         else:
+
+            print('ordertree.py, update_order(self, order_update):, else, order_update["price"], order.price', order_update['price'], order.price)
+
             # Quantity changed. Price is the same.
             order.update_quantity(order_update['quantity'], order_update['timestamp'])
         self.volume += order.quantity - original_quantity
 
     def remove_order_by_id(self, order_id):
         self.num_orders -= 1
+
+        if order_id not in self.order_map:
+            print('********** ordertree, remove_order_by_id, if order_id not in self.order_map:', order_id)
+
         order = self.order_map[order_id]
         self.volume -= order.quantity
         order.order_list.remove_order(order)

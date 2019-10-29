@@ -122,7 +122,7 @@ def test_random():
     init_cash = 1000000
     tick_size = 1
     tape_display_length = 10
-    max_step = 3000
+    max_step = 10000
     e = continuousDoubleAuctionEnv(num_of_traders, init_cash, tick_size, tape_display_length, max_step)
     e.reset()
     for step in range(max_step):

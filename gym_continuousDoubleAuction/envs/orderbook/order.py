@@ -27,15 +27,42 @@ class Order(object):
         return self.prev_order
 
     def update_quantity(self, new_quantity, new_timestamp):
+
+        print('order.py, update_quantity(self, new_quantity, new_timestamp):, self.order_list.get_head_order()', self.order_list.get_head_order())
+        print('order.py, update_quantity(self, new_quantity, new_timestamp):, self.order_list.tail_order', self.order_list.tail_order)
+
+        print('order.py, update_quantity(self, new_quantity, new_timestamp):, str(self.order_list)\n', str(self.order_list))
+
         if new_quantity > self.quantity and self.order_list.tail_order != self:
             # check to see that the order is not the last order in list and the quantity is more
             self.order_list.move_to_tail(self) # move to the end
+
+            print('order.py, update_quantity(self, new_quantity, new_timestamp):, if new_quantity > self.quantity and self.order_list.tail_order != self:', str(self))
+
+            print('order.py, update_quantity(self, new_quantity, new_timestamp):, str(self.order_list)\n', str(self.order_list))
+
         self.order_list.volume -= (self.quantity - new_quantity) # update volume
         self.timestamp = new_timestamp
         self.quantity = new_quantity
 
+        print('order.py, update_quantity(self, new_quantity, new_timestamp):, self.order_list.volume', self.order_list.volume)
+        print('order.py, update_quantity(self, new_quantity, new_timestamp):', str(self), self.quantity, self.timestamp)
+
+        print('order.py, update_quantity(self, new_quantity, new_timestamp):, self.order_list.get_head_order()', self.order_list.get_head_order())
+        print('order.py, update_quantity(self, new_quantity, new_timestamp):, self.order_list.tail_order', self.order_list.tail_order)
+
+        print('order.py, update_quantity(self, new_quantity, new_timestamp):, str(self.order_list)\n', str(self.order_list))
+
+    """
     def __str__(self):
         return "{}@{}/{} - {}".format(self.quantity,
-                                      self.price,
-                                      self.trade_id,
-                                      self.timestamp)
+                                           self.price,
+                                           self.trade_id,
+                                           self.timestamp)
+    """
+    def __str__(self):
+        return "{}@{}/{} - {} - {}".format(self.quantity,
+                                           self.price,
+                                           self.trade_id,
+                                           self.timestamp,
+                                           self.order_id)

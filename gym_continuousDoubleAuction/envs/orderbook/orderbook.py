@@ -243,6 +243,7 @@ class OrderBook(object):
 
         tempfile.write("***Bids***\n")
         if self.bids != None and len(self.bids) > 0:
+            # price_map is sorted dict, key is price, value is orderlist
             for key, value in reversed(self.bids.price_map.items()):
                 tempfile.write('%s' % value)
         tempfile.write("\n***Asks***\n")
@@ -261,7 +262,7 @@ class OrderBook(object):
         if self.tape != None and len(self.tape) > 0:
             num = 0
             for entry in reversed(self.tape):
-                if num < self.tape_display_length: # get last 5 entries
+                if num < self.tape_display_length: # get last num of entries
                     #tempfile.write(str(entry['quantity']) + " @ " + str(entry['price']) + " (" + str(entry['timestamp']) + ") " + str(entry['party1'][0]) + "/" + str(entry['party2'][0]) + "\n")
                     tempfile.write(str(entry['quantity']) +
                     " @ " + str(entry['price']) +
