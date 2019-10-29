@@ -84,18 +84,10 @@ class OrderList(object):
         '''
         if order.prev_order != None: # This Order is not the first Order in the OrderList
             order.prev_order.next_order = order.next_order # Link the previous Order to the next Order, then move the Order to tail
-
-            print('orderlist.py, move_to_tail(self, order):, if order.prev_order != None:, str(self)\n', str(self))
-
         else: # This Order is the first Order in the OrderList
             self.head_order = order.next_order # Make next order the first
 
-            print('NORMAL\n orderlist.py, move_to_tail(self, order):, else, str(self)\n', str(self))
-
         order.next_order.prev_order = order.prev_order
-
-        print('orderlist.py, move_to_tail(self, order):, order.next_order.prev_order = order.prev_order, str(self)\n', str(self))
-        print('orderlist.py, move_to_tail(self, order):, order.next_order.prev_order = order.prev_order, order\n', order)
 
         # Added to resolve non termmination bug
         order.prev_order = self.tail_order
@@ -103,29 +95,12 @@ class OrderList(object):
 
         # Move Order to the last position. Link up the previous last position Order.
         self.tail_order.next_order = order
-
-        print('orderlist.py, move_to_tail(self, order):, self.tail_order.next_order = order, str(self)\n', str(self))
-
         self.tail_order = order
 
-        print('orderlist.py, move_to_tail(self, order):, self.tail_order = order, str(self)\n', str(self))
-
-    """
     def __str__(self):
         from six.moves import cStringIO as StringIO
         temp_file = StringIO()
         for order in self:
-            temp_file.write("%s\n" % str(order))
-        #temp_file.write("%s\n" % str(self.head_order))
-        return temp_file.getvalue()
-    """
-    def __str__(self):
-        from six.moves import cStringIO as StringIO
-        temp_file = StringIO()
-        for order in self:
-
-            #print('********** orderlist.py, __str__(self):, order', str(order))
-
             temp_file.write("%s\n" % str(order))
         #temp_file.write("%s\n" % str(self.head_order))
         return temp_file.getvalue()

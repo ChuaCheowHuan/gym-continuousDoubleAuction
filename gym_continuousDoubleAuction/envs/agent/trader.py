@@ -20,9 +20,6 @@ class Trader(Random_agent):
         # normal execution
         if self._order_approved(self.acc.cash, size, price):
             order = self._create_order(type, side, size, price)
-
-            print('********** trader.py, place_order, order:', order)
-
             if order['type'] == 'market':
                 trades, order_in_book = LOB.process_order(order, False, False)
             elif order['type'] == 'limit':
@@ -60,24 +57,18 @@ class Trader(Random_agent):
         elif type == 'limit':
             order = {'type': type,
                      'side': side,
-                     #'quantity': Decimal(size),
-                     #'price': Decimal(price),
                      'quantity': size,
                      'price': price,
                      'trade_id': self.ID}
         elif type == 'modify':
             order = {'type': type,
                      'side': side,
-                     #'quantity': Decimal(size),
-                     #'price': Decimal(price),
                      'quantity': size,
                      'price': price,
                      'trade_id': self.ID}
         elif type == 'cancel':
             order = {'type': type,
                      'side': side,
-                     #'quantity': Decimal(size),
-                     #'price': Decimal(price),
                      'quantity': size,
                      'price': price,
                      'trade_id': self.ID}
@@ -89,11 +80,6 @@ class Trader(Random_agent):
         trades, order_in_book = [],[]
         order_id, order = self._get_order_ID(orderBook, qoute)
         if order_id == -1:  # no duplicates
-
-            #print('********** orderBook', orderBook)
-            print('********** trader.py, _place_limit_order, if order_id == -1:, order:', order)
-            print('********** trader.py, _place_limit_order, if order_id == -1:, qoute:', qoute)
-
             trades, order_in_book = orderBook.process_order(qoute, False, False)
         else:
             trades, order_in_book = self.__modify_limit_order(orderBook, order_id, order, qoute)
@@ -108,22 +94,10 @@ class Trader(Random_agent):
         return trades, order_in_book
 
     def __modify_limit_order(self, orderBook, order_id, order, qoute):
-        print('********** trader.py, start, orderBook.modify_order(order_id, qoute), str(orderBook):\n', str(orderBook))
-
-        #qoute['type'] = 'limit'
+        qoute['type'] = 'limit'
         qoute['quantity'] = Decimal(qoute['quantity'])
         self.acc.modify_cash_transfer(qoute, order)
-
-        #order.quantity = qoute['quantity']
-        #orderBook.modify_order(order_id, order)
-        print('********** trader.py __modify_limit_order order_id', order_id)
-        print('********** trader.py __modify_limit_order order', order)
-        print('********** trader.py __modify_limit_order qoute', qoute)
-
         orderBook.modify_order(order_id, qoute)
-
-        print('********** trader.py, end, orderBook.modify_order(order_id, qoute), str(orderBook):\n', str(orderBook))
-
         return [],[]
 
     def _cancel_limit_order(self, orderBook, qoute):

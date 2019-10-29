@@ -98,7 +98,7 @@ class continuousDoubleAuctionEnv(gym.Env, Exchg_Helper, MultiAgentEnv):
         print('\n********** render **********:\n')
 
         print('\nt_step:\n', self.t_step)
-        #print('\nLOB:\n', self.LOB)
+        print('\nLOB:\n', self.LOB)
         print('\nagg_LOB:\n', self.agg_LOB)
         print('\nagg_LOB_aft:\n', self.agg_LOB_aft)
         #print('\nnext_states:\n', self.next_states)
