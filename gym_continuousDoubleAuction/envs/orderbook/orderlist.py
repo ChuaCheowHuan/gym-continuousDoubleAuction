@@ -89,6 +89,10 @@ class OrderList(object):
 
         order.next_order.prev_order = order.prev_order
 
+        # Added to resolve non termmination bug
+        order.prev_order = self.tail_order
+        order.next_order = None
+
         # Move Order to the last position. Link up the previous last position Order.
         self.tail_order.next_order = order
         self.tail_order = order

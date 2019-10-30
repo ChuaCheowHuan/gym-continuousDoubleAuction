@@ -24,6 +24,19 @@ $ cd gym-continuousDoubleAuction/gym_continuousDoubleAuction
 $ python CDA_env_disc_RLlib.py
 ```
 
+Running the following tensorboard command & navigate to ```localhost:6006``` in
+your browser to access the tensorboard graphs:
+```
+$ tensorboard --logdir ~/ray_results
+```
+
+The figure below from Tensorboard shows the agents' performance:
+
+![](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/agent0and1.png)
+![](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/agent2and3.png)
+
+PPO agent is using policy 0 while policies 1 to 3 are used by the random agents.
+
 Sample training output results:
 ```
 .
@@ -106,19 +119,6 @@ Number of trials: 1 ({'TERMINATED': 1})
 TERMINATED trials:
  - PPO_continuousDoubleAuction-v0_0:	TERMINATED, [3 CPUs, 0 GPUs], [pid=10220], 649 s, 10 iter, 40000 ts, 0 rew
 ```
-
-Running the following tensorboard command & navigate to ```localhost:6006``` in
-your browser to access the tensorboard graphs:
-```
-$ tensorboard --logdir ~/ray_results
-```
-
-The figure below from Tensorboard shows the agents' performance:
-
-![](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/agent0and1.png)
-![](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/agent2and3.png)
-
-PPO agent is using policy 0 while policies 1 to 3 are used by the random agents.
 
 # Dependencies:
 Please see `requirements.txt` in this repository.

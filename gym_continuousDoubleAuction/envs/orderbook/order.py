@@ -33,9 +33,10 @@ class Order(object):
         self.order_list.volume -= (self.quantity - new_quantity) # update volume
         self.timestamp = new_timestamp
         self.quantity = new_quantity
-
+        
     def __str__(self):
-        return "{}@{}/{} - {}".format(self.quantity,
-                                      self.price,
-                                      self.trade_id,
-                                      self.timestamp)
+        return "{}@{}/{} - {} - {}".format(self.quantity,
+                                           self.price,
+                                           self.trade_id,
+                                           self.timestamp,
+                                           self.order_id)

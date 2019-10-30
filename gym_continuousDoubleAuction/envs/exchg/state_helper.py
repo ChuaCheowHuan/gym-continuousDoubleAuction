@@ -34,14 +34,16 @@ class State_Helper(object):
 
         # LOB
         if self.LOB.bids != None and len(self.LOB.bids) > 0:
+            # reversed because we want the highest bid as the first entry in the np.array
             for k, set in enumerate(reversed(self.LOB.bids.price_map.items())):
                 if k < k_rows:
                     bid_price_list[k] = set[0] # set[0] is price (key)
-                    bid_size_list[k] = set[1].volume # set[1] is an OrderList object (value)
+                    bid_size_list[k] = set[1].volume # set[1] is an OrderList object (value) & volume is total volume of the OrderList object
                 else:
                     break
 
         if self.LOB.asks != None and len(self.LOB.asks) > 0:
+            # lowest ask is the first entry in the np.array
             for k, set in enumerate(self.LOB.asks.price_map.items()):
                 if k < k_rows:
                     ask_price_list[k] = -set[0]

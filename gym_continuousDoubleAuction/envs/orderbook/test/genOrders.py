@@ -6,29 +6,29 @@ sys.path.append('..')
 from orderbook import OrderBook
 
 def generate_new_buy(trade_id):
-    return {'type' : 'limit', 
-           'side' : 'bid', 
+    return {'type' : 'limit',
+           'side' : 'bid',
            'quantity' : randint(1,1000),
            'price' : randint(900,1050),
            'trade_id' : trade_id}
-           
+
 def generate_cross_buy(trade_id):
-    return {'type' : 'limit', 
-            'side' : 'bid', 
-            'quantity' : randint(1,1000), 
+    return {'type' : 'limit',
+            'side' : 'bid',
+            'quantity' : randint(1,1000),
             'price' : randint(1055,1200),
             'trade_id' : trade_id}
 
 def generate_new_sell(trade_id):
-    return {'type' : 'limit', 
-            'side' : 'ask', 
-            'quantity' : randint(1,1000), 
+    return {'type' : 'limit',
+            'side' : 'ask',
+            'quantity' : randint(1,1000),
             'price' : randint(1055,1200),
             'trade_id' : trade_id}
-            
+
 def generate_cross_sell(trade_id):
-    return {'type' : 'limit', 
-            'side' : 'ask', 
+    return {'type' : 'limit',
+            'side' : 'ask',
             'quantity' : randint(1,1000),
             'price' : randint(900,1050),
             'trade_id' : trade_id}
@@ -91,7 +91,13 @@ def testCases(trade_id, action, side, verbose = False):
             if len(buys):
                 order = buys[choice(buys.keys())]
                 order['quantity'] = randint(1,1000)
+
+                print('order', order)
+
                 order_book.modify_order(order['order_id'], order)
+
+                print('order', order)
+
         else:
             if len(sells):
                 order = sells[choice(sells.keys())]
@@ -110,7 +116,7 @@ def testCases(trade_id, action, side, verbose = False):
                 order = sells[key]
                 del sells[key]
                 order_book.cancel_order('ask', order['order_id'])
-    elif action == 'C': 
+    elif action == 'C':
         if side == 'B':
             trades,neworder = order_book.process_order(generate_cross_buy(trade_id), False, verbose)
             treat_trades(trades, side)
@@ -133,7 +139,7 @@ prefill(10)
 #print(order_book)
 
 
-#usage: 
+#usage:
 # 1/ trade_id
 # 2/ choice('AMXC') : A (new), M (modify), X (cancel), C (cross)
 # 3/ choice('BS') : B (buy), S (sell)
@@ -143,5 +149,3 @@ for trade_id in xrange(10, 100):
 print(order_book)
 
 # quit()
-
-

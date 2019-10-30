@@ -44,13 +44,9 @@ class continuousDoubleAuctionEnv(gym.Env, Exchg_Helper, MultiAgentEnv):
         obs_col = 10
         self.observation_space = spaces.Box(low=neg_inf, high=inf, shape=(obs_row,obs_col))
 
-        # ********** NEED TO PREPROCESS ACTION FROM NN BEFORE EXECUTION **********
-        # NEED TO DECODE type_side
-        # NEED TO ADD trader.ID before randomizing execution sequence
         # order per agent: {'ID': 0, 'type': 'market', 'side': 'bid', 'size': 1, 'price': 8}
         # action space per agent: {'type_side': 0-4, 'size': 1-inf, 'price': tick_size-inf}
         self.action_space = self.disc_act()
-        #self.action_space = self.cont_act()
 
     # reset
     def reset(self):
@@ -81,11 +77,6 @@ class continuousDoubleAuctionEnv(gym.Env, Exchg_Helper, MultiAgentEnv):
 
         print('step actions:', actions)
 
-# clip & floor div before passing into LOB
-# step actions: {0: array([ 1.1145465,  2.0979862, -1.5236733], dtype=float32), 1: array([-0.5973312 ,  4.129451  , -0.29671174], dtype=float32)}
-# (pid=9574) actions: [{'ID': 0, 'type': 'limit', 'side': 'ask', 'size': 2.0979862, 'price': -1.5236733}, {'ID': 1, 'type': 'limit', 'side': 'ask', 'size': 4.129451, 'price': -0.29671174}]
-# (pid=9574) shuffle_actions: [{'ID': 1, 'type': 'limit', 'side': 'ask', 'size': 4.129451, 'price': -0.29671174}, {'ID': 0, 'type': 'limit', 'side': 'ask', 'size': 2.0979862, 'price': -1.5236733}]
-
         self.next_states, self.rewards, self.dones, self.infos = {}, {}, {}, {}
         self.agg_LOB = self.set_agg_LOB() # LOB state at t before processing LOB
         actions = self.set_actions(actions) # format actions from nn output to be acceptable by LOB
@@ -110,7 +101,7 @@ class continuousDoubleAuctionEnv(gym.Env, Exchg_Helper, MultiAgentEnv):
         print('\nLOB:\n', self.LOB)
         print('\nagg_LOB:\n', self.agg_LOB)
         print('\nagg_LOB_aft:\n', self.agg_LOB_aft)
-        print('\nnext_states:\n', self.next_states)
+        #print('\nnext_states:\n', self.next_states)
         print('\nrewards:\n', self.rewards)
         print('\ndones:\n', self.dones)
         print('\ninfos:\n', self.infos)
