@@ -17,12 +17,14 @@ against 3 random agents using this CDA environment is available in:
 CDA_env_disc_RLlib.py
 ```
 
-To run:
+To run the environment with the sample training script:
 ```
 $ cd gym-continuousDoubleAuction/gym_continuousDoubleAuction
 
 $ python CDA_env_disc_RLlib.py
 ```
+
+---
 
 Running the following tensorboard command & navigate to ```localhost:6006``` in
 your browser to access the tensorboard graphs:
@@ -30,12 +32,22 @@ your browser to access the tensorboard graphs:
 $ tensorboard --logdir ~/ray_results
 ```
 
+---
+
+An alternate way to run this environment is by using the Jupyter notebook
+`CDA_env_disc_RLlib.ipynb`. This notebook contains a sample training
+script (implemented with Ray RLlib) & is tested in Colab.
+
+---
+
 The figure below from Tensorboard shows the agents' performance:
 
 ![](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/agent0and1.png)
 ![](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/agent2and3.png)
 
 PPO agent is using policy 0 while policies 1 to 3 are used by the random agents.
+
+---
 
 Sample training output results:
 ```
@@ -121,7 +133,15 @@ TERMINATED trials:
 ```
 
 # Dependencies:
-Please see `requirements.txt` in this repository.
+
+1) tensorFlow
+2) ray[rllib]
+3) pandas
+4) sortedcontainers
+5) sklearn
+
+For a full list of dependencies & versions, see `requirements.txt` in this
+repository.
 
 # Installation:
 The environment is installable via pip.
