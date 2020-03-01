@@ -182,8 +182,8 @@ if __name__ == "__main__":
 
                      # Number of rollout worker actors to create for parallel sampling.
                      # Setting to 0 will force rollouts to be done in the trainer actor.
-                     "num_workers": 1, # Colab (only 2 CPUs or 1 GPU)
-                     "num_envs_per_worker": 2, #4
+                     "num_workers": 0, # Colab (only 2 CPUs or 1 GPU)
+                     "num_envs_per_worker": 1, #4
 
                      #"timesteps_per_iteration": max_step,
 
