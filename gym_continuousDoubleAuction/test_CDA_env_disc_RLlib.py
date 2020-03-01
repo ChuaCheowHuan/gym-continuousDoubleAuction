@@ -122,7 +122,9 @@ if __name__ == "__main__":
     tape_display_length = 100
     tick_size = 1
     init_cash = 1000000
-    max_step = 10
+    max_step = 400
+    episode = 2
+
     CDA_env = continuousDoubleAuctionEnv(num_of_traders, init_cash, tick_size, tape_display_length, max_step)
     print('CDA_env:', CDA_env.print_accs())
     register_env("continuousDoubleAuction-v0", lambda _: continuousDoubleAuctionEnv(num_of_traders, init_cash, tick_size, tape_display_length, max_step))
@@ -157,28 +159,45 @@ if __name__ == "__main__":
 
     policy_ids = list(policies.keys())
 
-    tune.run("PPO",
+    tune.run(#PPOTrainer,
+             "PPO",
              #"PG",
-             #queue_trials=True,
-             num_samples=2,
+             #queue_trials=False,
+             #resources_per_trial={"cpu": 2,
+             #                     "gpu": 0},
 
-             stop={"training_iteration": args.num_iters},
+             #stop={"training_iteration": args.num_iters},
+             #stop={"timesteps_total": max_step,
+             #      "training_iteration": num_iters},
+             stop={"timesteps_total": max_step * episode},
+
              config={"env": "continuousDoubleAuction-v0",
-                     "log_level": "DEBUG",
+
+                     #"log_level": "DEBUG",
                      #"simple_optimizer": args.simple,
-                     "simple_optimizer": True,
-                     "num_sgd_iter": 2,
-                     "multiagent": {"policies": policies,
+                     #"simple_optimizer": True,
+                     #"num_sgd_iter": 10,
+
+                     #"gamma": 0.9,
+
+                     # Number of rollout worker actors to create for parallel sampling.
+                     # Setting to 0 will force rollouts to be done in the trainer actor.
+                     "num_workers": 1, # Colab (only 2 CPUs or 1 GPU)
+                     "num_envs_per_worker": 2, #4
+
+                     #"timesteps_per_iteration": max_step,
+
+                     # https://github.com/ray-project/ray/issues/4628
+                     "sample_batch_size": 32, # number of environment steps sampled from each environment
+                     "train_batch_size": 128, # minibatch size must be >= 128, number of environment steps sampled from all available environments
+
+                     "multiagent": {"policies_to_train": ["policy_0"],
+                                    "policies": policies,
                                     #"policy_mapping_fn": tune.function(lambda agent_id: random.choice(policy_ids)),
-                                    "policy_mapping_fn": tune.function(policy_mapper),
-                                   },
-
-                     #"resources_per_trial": None,
-                     #"resources_per_trial": {"cpu":2},
-                     #"resources_per_trial": {"cpu":1},
-                     #"repeat": 10,
-                     "num_workers": 1,
-                     "num_envs_per_worker": 1,
-
+                                    #"policy_mapping_fn": tune.function(policy_mapper),
+                                    "policy_mapping_fn": policy_mapper,
+                                    },
                     },
-            )
+                )
+
+#ray.shutdown()
