@@ -1,6 +1,6 @@
 language: python
 #python --version
-python: 3.7.2
+python: 3.7.4
 #pip3 freeze > requirements.txt
 install: pip install -r requirements.txt
 #script: python gym_continuousDoubleAuction/test.py
