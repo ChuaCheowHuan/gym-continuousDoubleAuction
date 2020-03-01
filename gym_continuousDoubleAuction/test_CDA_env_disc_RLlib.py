@@ -1,4 +1,3 @@
-# https://github.com/ray-project/ray/blob/master/python/ray/rllib/examples/multiagent_cartpole.py
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -23,20 +22,32 @@ import numpy as np
 import ray
 from ray import tune
 from ray.rllib.models import Model, ModelCatalog
+
+from ray.rllib.models.tf.tf_modelv2 import TFModelV2
+from ray.rllib.models.tf.fcnet_v2 import FullyConnectedNetwork
+
 from ray.tune.registry import register_env
 from ray.rllib.utils import try_import_tf
 
+
 from ray.rllib.policy.policy import Policy
 #from ray.rllib.policy.tf_policy import TFPolicy
+#from ray.rllib.policy import Policy
+
+
+#from ray.rllib.agents.ppo import PPOTrainer, DEFAULT_CONFIG
 
 
 import sys
 if "../" not in sys.path:
     sys.path.append("../")
 #from exchg.x.y import z
-from envs.continuousDoubleAuction_env import continuousDoubleAuctionEnv
+
+#from envs.continuousDoubleAuction_env import continuousDoubleAuctionEnv
+from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import continuousDoubleAuctionEnv
 
 tf = try_import_tf()
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--num-agents", type=int, default=4)
@@ -109,13 +120,20 @@ def make_RandomPolicy(_seed):
     return RandomPolicy
 
 
+num_agents = 4
+num_policies = 4
+num_iters = 3
+simple = False#store_true
+
+
 if __name__ == "__main__":
     args = parser.parse_args()
 
     #ray.init()
     #ray.init(num_cpus=2)
     #ray.init(num_cpus=1, logging_level=logging.ERROR, local_mode=True) # local_mode for sequential trials to work in Travis which has only 2 CPU
-    ray.init(num_cpus=2, logging_level=0, local_mode=True) # local_mode for sequential trials to work in Travis which has only 2 CPU
+    ray.init(num_cpus=2, logging_level=0, local_mode=True, ignore_reinit_error=True, log_to_driver=False, webui_host='127.0.0.1') # local_mode for sequential trials to work in Travis which has only 2 CPU
+    #ray.init(ignore_reinit_error=True, log_to_driver=False, webui_host='127.0.0.1', num_cpus=2)
     print(' ********** num_CPU =', os.cpu_count())
 
     num_of_traders = args.num_agents
@@ -132,6 +150,12 @@ if __name__ == "__main__":
     obs_space = CDA_env.observation_space
     act_space = CDA_env.action_space
 
+    # Each policy can have a different configuration (including custom model)
+    def gen_policy(i):
+        config = {"model": {"custom_model": "model_disc"},
+                  "gamma": 0.99,}
+        return (None, obs_space, act_space, config)
+
     def policy_mapper(agent_id):
         if agent_id == 0:
             return "policy_0" # PPO
@@ -141,12 +165,6 @@ if __name__ == "__main__":
             return "policy_2" # RandomPolicy
         else:
             return "policy_3" # RandomPolicy
-
-    # Each policy can have a different configuration (including custom model)
-    def gen_policy(i):
-        config = {"model": {"custom_model": "model_disc"},
-                  "gamma": 0.99,}
-        return (None, obs_space, act_space, config)
 
     # Setup PPO with an ensemble of `num_policies` different policies
     policies = {"policy_{}".format(i): gen_policy(i) for i in range(args.num_policies)}
