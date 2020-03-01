@@ -17,7 +17,7 @@ against 3 random agents using this CDA environment is available in:
 CDA_env_disc_RLlib.py
 ```
 
-To run:
+To run the environment with the sample training script:
 ```
 $ cd gym-continuousDoubleAuction/gym_continuousDoubleAuction
 
@@ -120,8 +120,20 @@ TERMINATED trials:
  - PPO_continuousDoubleAuction-v0_0:	TERMINATED, [3 CPUs, 0 GPUs], [pid=10220], 649 s, 10 iter, 40000 ts, 0 rew
 ```
 
+An alternate way to run this environment is by using the Jupyter notebook
+```CDA_env_disc_RLlib.ipynb```. This notebook contains a sample training
+script (implemented with Ray RLlib) & is tested in Colab.
+
 # Dependencies:
-Please see `requirements.txt` in this repository.
+
+tensorFlow
+ray[rllib]
+pandas
+sortedcontainers
+sklearn
+
+For a full list of dependencies & versions, see `requirements.txt` in this
+repository.
 
 # Installation:
 The environment is installable via pip.
