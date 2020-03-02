@@ -1,4 +1,5 @@
 #import tensorflow as tf
+import numpy as np
 
 import gym
 from gym import error, spaces, utils
@@ -10,6 +11,8 @@ from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from .orderbook.orderbook import OrderBook
 from .exchg.exchg_helper import Exchg_Helper
 from .agent.trader import Trader
+
+from tabulate import tabulate
 
 # The exchange environment
 class continuousDoubleAuctionEnv(gym.Env, Exchg_Helper, MultiAgentEnv):
@@ -75,12 +78,18 @@ class continuousDoubleAuctionEnv(gym.Env, Exchg_Helper, MultiAgentEnv):
     # each action is a list of (ID, type, side, size, price)
     def step(self, actions):
 
-        print('step actions:', actions)
+        #print('step actions:', actions)
+        self._table("raw act\n", actions)
 
         self.next_states, self.rewards, self.dones, self.infos = {}, {}, {}, {}
         self.agg_LOB = self.set_agg_LOB() # LOB state at t before processing LOB
+
         actions = self.set_actions(actions) # format actions from nn output to be acceptable by LOB
+        self._table("act\n", actions)
+
         actions = self.rand_exec_seq(actions, 0) # randomized traders execution sequence
+        self._table("shuffled act\n", actions)
+
         self.do_actions(actions) # Begin processing LOB
         self.mark_to_mkt() # mark to market
         # after processing LOB
@@ -94,21 +103,34 @@ class continuousDoubleAuctionEnv(gym.Env, Exchg_Helper, MultiAgentEnv):
 
     # render
     def render(self):
+        #if self.t_step % 300 == 0:
+        self._render()
+        #return 0
 
+    def _render(self):
         print('\n********** render **********:\n')
-
         print('\nt_step:\n', self.t_step)
-        print('\nLOB:\n', self.LOB)
-        print('\nagg_LOB:\n', self.agg_LOB)
-        print('\nagg_LOB_aft:\n', self.agg_LOB_aft)
+
         #print('\nnext_states:\n', self.next_states)
         print('\nrewards:\n', self.rewards)
         print('\ndones:\n', self.dones)
         print('\ninfos:\n', self.infos)
+
+        #print('\nagg_LOB:\n', self.agg_LOB)
+        self._table("\nagg LOB @ t-1\n", self.agg_LOB)
+        #print('\nagg_LOB_aft:\n', self.agg_LOB_aft)
+        self._table("\nagg LOB @ t\n", self.agg_LOB_aft)
+
+        print('\nLOB:\n', self.LOB)
+
         self.print_accs()
         print('total_sys_profit:', self.total_sys_profit())
         print('total_sys_nav:', self.total_sys_nav())
-        #return 0
+
+    def _table(self, msg, data):
+        print(msg, tabulate(data))
+        #print(tabulate(data, headers=["bid size","bid price", "ask size","ask price"]))
+        return 0
 
     def close(self):
         pass

@@ -68,7 +68,7 @@ class OrderTree(object):
         self.volume += order.quantity - original_quantity
 
     def remove_order_by_id(self, order_id):
-        self.num_orders -= 1    
+        self.num_orders -= 1
         order = self.order_map[order_id]
         self.volume -= order.quantity
         order.order_list.remove_order(order)

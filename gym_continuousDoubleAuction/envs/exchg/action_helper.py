@@ -9,27 +9,36 @@ class Action_Helper():
     def __init__(self):
         super(Action_Helper, self).__init__()
 
+        self.size_upper_bound = 1000
+
     def disc_act(self):
         # Set price according to price_code 0 to 11 where price_code 1 to 10 correspond to slot in agg_LOB (mkt depth table)
         # 0 & 11 are the border cases where they could be the lowest or highest bid respectively
         # if order is on the ask side,
         # 0 & 11 are the border cases where they could be the highest or lowest ask respectively
+        '''
         act_space = spaces.Tuple((spaces.Discrete(3), # none, bid, ask (0 to 2)
                                   spaces.Discrete(4), # market, limit, modify, cancel (0 to 3)
                                   spaces.Discrete(100), # size
                                   spaces.Discrete(12), # price based on mkt depth from 0 to 11
                                 ))
+        '''
+
+        '''
+        nn_out_act: [0, 3, array([0.47555637], dtype=float32), array([0.5383144], dtype=float32), 5]
+        '''
+        act_space = spaces.Tuple((spaces.Discrete(3), # side: none, bid, ask (0 to 2)
+                                  spaces.Discrete(4), # type: market, limit, modify, cancel (0 to 3)
+                                  spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32), # array of mean
+                                  spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32), # array of sigma
+                                  spaces.Discrete(12), # price: based on mkt depth from 0 to 11
+                                ))
+
         return act_space
 
     def rand_exec_seq(self, actions, seed):
-
-        print('actions:', actions)
-
         # seed for reproducible behavior
         shuffle_actions = shuffle(actions, random_state=seed)
-
-        print('shuffle_actions:', shuffle_actions)
-
         return shuffle_actions
 
     # called in step function in exchg before randomizing/processing orders
@@ -43,12 +52,13 @@ class Action_Helper():
             acts.append(act)
         return acts
 
+    def get_size(self, size_upper_bound, mean, sigma):
+        return np.random.normal(size_upper_bound * mean, sigma, 1)
+
     # for discrete act space
     def set_action(self, ID, nn_out_act):
         min_size = 1
         min_tick = 1
-
-        print('nn_out_act:', nn_out_act)
 
         act = {}
         act["ID"] = ID
@@ -58,8 +68,6 @@ class Action_Helper():
 
         act["size"] = (nn_out_act[2] + min_size) * 1.0 # +min_size as size or price can't be 0, *1 for float
         act["price"] = (nn_out_act[3] + min_tick) * 1.0 # +tick_size as size or price can't be 0, *1 for float
-
-        print('act:', act)
 
         return act
 
@@ -72,30 +80,36 @@ class Action_Helper():
         fl_div = random.randrange(min_tick+1, max_size+1, min_tick)
         #fl_div = 10
 
-        print('nn_out_act:', nn_out_act)
+        side = nn_out_act[0]
+        type = nn_out_act[1]
+        size_mean = nn_out_act[2]
+        size_sigma = nn_out_act[3]
+        price_code = nn_out_act[4]
 
         act = {}
         act["ID"] = ID
-        act["side"] = self._set_side(nn_out_act[0])
-        act["type"] = self._set_type(nn_out_act[1])
+        act["side"] = self._set_side(side)
+        act["type"] = self._set_type(type)
+
+        size = np.asscalar(np.rint(np.abs(self.get_size(self.size_upper_bound, size_mean, size_sigma))))
 
         if act["type"] == 'market':
-            act["size"] = ((nn_out_act[2] // fl_div) + min_size) * 1.0 # +min_size as size or price can't be 0, *1 for float
+            act["size"] = ((size // fl_div) + min_size) * 1.0 # +min_size as size or price can't be 0, *1 for float
         else:
-            act["size"] = (nn_out_act[2] + min_size) * 1.0 # +min_size as size or price can't be 0, *1 for float
+            act["size"] = (size + min_size) * 1.0 # +min_size as size or price can't be 0, *1 for float
 
         if act["type"] == 'market':
-            act["price"] = (nn_out_act[3] + min_tick) * 1.0 # +tick_size as size or price can't be 0, *1 for float
+            # price depends on side if type is market
+            #act["price"] = (price_code + min_tick) * 1.0 # +tick_size as size or price can't be 0, *1 for float
+            act["price"] = 0 # +tick_size as size or price can't be 0, *1 for float
         elif act["type"] == 'limit':
-            act["price"] = self._set_price(min_tick, act["side"], nn_out_act[3])
+            act["price"] = self._set_price(min_tick, act["side"], price_code)
         elif act["type"] == 'modify':
-            act["price"] = self._set_price(min_tick, act["side"], nn_out_act[3])
+            act["price"] = self._set_price(min_tick, act["side"], price_code)
         elif act["type"] == 'cancel':
-            act["price"] = self._set_price(min_tick, act["side"], nn_out_act[3])
+            act["price"] = self._set_price(min_tick, act["side"], price_code)
         else:
             act["price"] = 0
-
-        print('act:', act)
 
         return act
 
@@ -156,7 +170,7 @@ class Action_Helper():
                 # price_array[0] is the highest bid
                 set_price = self._higher(min_tick, max_price, max(price_array)) # one tick higher than the highest bid
             else: # price_code between 1 to 10
-                set_price = self._within_price_slot(min_tick, price_code, price_array)
+                set_price = self._within_price_slot(min_tick, side, max_price, price_code, price_array)
         else: # 'ask' side is negative on agg_LOB for both size & price
             price_array = self.agg_LOB[3] # ask price np.array
             if price_code == 0:
@@ -166,7 +180,7 @@ class Action_Helper():
                 # price_array[0] is the lowest ask
                 set_price = self._lower(min_tick, max_price, abs(max(price_array)))
             else: # price_code between 1 to 10
-                set_price = self._within_price_slot(min_tick, price_code, price_array)
+                set_price = self._within_price_slot(min_tick, side, max_price, price_code, price_array)
 
         return set_price * 1.0
 
@@ -186,14 +200,19 @@ class Action_Helper():
             set_price = price - min_tick
         return set_price
 
-    def _within_price_slot(self, min_tick, price_code, price_array):
+    def _within_price_slot(self, min_tick, side, max_price, price_code, price_array):
         set_price = min_tick
         for i, price in enumerate(price_array):
             if price_code == i+1:
                 if price == 0:
-                    set_price = price_code * min_tick
+                    #set_price = price_code * min_tick
+                    set_price = random.randrange(min_tick, max_price, min_tick)
                 else:
-                    set_price = abs(price)
+                    #set_price = abs(price)
+                    if(side == 'bid'):
+                        set_price = abs(price) + min_tick
+                    else:
+                        set_price = abs(price) - min_tick
                 break
         return set_price
 

@@ -90,7 +90,8 @@ class CustomModel_disc(Model):
 
         last_layer = self._lstm(last_layer, cell_size)
 
-        output = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softmax, name="mu")
+        #output = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.tanh, name="mu")
+        output = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softmax, name="sigma")
 
         return output, last_layer
 
@@ -142,11 +143,11 @@ ray.init(ignore_reinit_error=True, num_cpus=2)
 
 #num_of_traders = args.num_agents
 num_of_traders = num_agents
-tape_display_length = 100
+tape_display_length = 30 #100
 tick_size = 1
 init_cash = 1000000
-max_step = 400 # per episode
-episode = 2
+max_step = 10000 # per episode
+episode = 1
 CDA_env = continuousDoubleAuctionEnv(num_of_traders, init_cash, tick_size, tape_display_length, max_step)
 print('CDA_env:', CDA_env.print_accs())
 register_env("continuousDoubleAuction-v0", lambda _: continuousDoubleAuctionEnv(num_of_traders, init_cash, tick_size, tape_display_length, max_step))
@@ -213,8 +214,8 @@ tune.run(#PPOTrainer,
 
                   # Number of rollout worker actors to create for parallel sampling.
                   # Setting to 0 will force rollouts to be done in the trainer actor.
-                  "num_workers": 1, # Colab (only 2 CPUs or 1 GPU)
-                  "num_envs_per_worker": 2, #4
+                  "num_workers": 0, # Colab (only 2 CPUs or 1 GPU)
+                  "num_envs_per_worker": 1, #4
 
                   #"timesteps_per_iteration": max_step,
 
