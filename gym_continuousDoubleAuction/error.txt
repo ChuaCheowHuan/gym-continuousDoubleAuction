@@ -1,0 +1,36 @@
+2020-03-02 14:47:56,492	INFO resource_spec.py:212 -- Starting Ray with 1.12 GiB memory available for workers and up to 0.58 GiB for objects. You can adjust these settings with ray.init(memory=<bytes>, object_store_memory=<bytes>).
+2020-03-02 14:47:57,605	INFO services.py:498 -- Failed to connect to the redis server, retrying.
+2020-03-02 14:47:58,314	INFO services.py:1078 -- View the Ray dashboard at localhost:8265
+E0302 14:47:58.975662 118799808 raylet_client.cc:60] Retrying to connect to socket for pathname /tmp/ray/session_2020-03-02_14-47-56_481965_5494/sockets/raylet (num_attempts = 1, num_retries = 5)
+E0302 14:47:59.477763 118799808 raylet_client.cc:60] Retrying to connect to socket for pathname /tmp/ray/session_2020-03-02_14-47-56_481965_5494/sockets/raylet (num_attempts = 2, num_retries = 5)
+E0302 14:47:59.979125 118799808 raylet_client.cc:60] Retrying to connect to socket for pathname /tmp/ray/session_2020-03-02_14-47-56_481965_5494/sockets/raylet (num_attempts = 3, num_retries = 5)
+E0302 14:48:00.484356 118799808 raylet_client.cc:60] Retrying to connect to socket for pathname /tmp/ray/session_2020-03-02_14-47-56_481965_5494/sockets/raylet (num_attempts = 4, num_retries = 5)
+F0302 14:48:00.984797 118799808 raylet_client.cc:69] Could not connect to socket /tmp/ray/session_2020-03-02_14-47-56_481965_5494/sockets/raylet
+*** Check failure stack trace: ***
+@        0x10b3afb82  google::LogMessage::~LogMessage()
+@        0x10b06f585  ray::RayLog::~RayLog()
+@        0x10af47da7  ray::raylet::RayletConnection::RayletConnection()
+@        0x10af492cf  ray::raylet::RayletClient::RayletClient()
+@        0x10aeb3f0c  ray::CoreWorker::CoreWorker()
+@        0x10ae528ac  __pyx_tp_new_3ray_7_raylet_CoreWorker()
+@        0x10300bba0  type_call
+@        0x102fd0918  _PyObject_FastCallKeywords
+@        0x103065ef0  call_function
+@        0x10305ec70  _PyEval_EvalFrameDefault
+@        0x1030667a6  _PyEval_EvalCodeWithName
+@        0x102fd0a77  _PyFunction_FastCallKeywords
+@        0x103065ef7  call_function
+@        0x10305edb3  _PyEval_EvalFrameDefault
+@        0x1030667a6  _PyEval_EvalCodeWithName
+@        0x102fd0a77  _PyFunction_FastCallKeywords
+@        0x103065ef7  call_function
+@        0x10305edb3  _PyEval_EvalFrameDefault
+@        0x1030667a6  _PyEval_EvalCodeWithName
+@        0x10305d2b8  PyEval_EvalCode
+@        0x10308b94b  run_mod
+@        0x10308a975  PyRun_FileExFlags
+@        0x10308a01b  PyRun_SimpleFileExFlags
+@        0x1030a289e  pymain_main
+@        0x1030a2f80  _Py_UnixMain
+@     0x7fff70be07fd  start
+Abort trap: 6
