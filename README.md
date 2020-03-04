@@ -21,8 +21,8 @@ This is **WIP**.
 
 1) Upgraded to use (for training script):
 
-tensorflow 2.10
-ray[RLlib] 0.8.2
+1)tensorflow 2.10
+2)ray[RLlib] 0.8.2
 
 2) New "mixed" (discrete and continuous) action space. (This action space could
 be changed in the future to make way for action spaces that make more sense.)
@@ -162,13 +162,22 @@ way.
 
 # Making sense of the render output:
 
-The step separator:
+**The step separator:**
 ```
 ************************************************** t_step = 306 **************************************************
 ```
 ---
 
-Actions:
+**Actions:**
+
+Actions output from the model:
+
+1) Each column represents the action from each trader(agent).
+2) Row 1 represents the side: none, bid, ask (0 to 2).
+3) Row 2 represents the type: market, limit, modify, cancel.
+4) Row 3 represents the mean for size selection.
+5) Row 4 represents the sigma for size selection.
+6) Row 5 represents the price: based on LOB market depth from 0 to 11.
 ```
 Model actions:
  --  --  --  --
@@ -178,6 +187,14 @@ Model actions:
 19  89  13   0
  7   4   9  10
 --  --  --  --
+```
+
+1) Column 1 represents the ID of each trader(agent).
+2) Column 2 the side: none, bid, ask (0 to 2).
+3) Column 3 type: market, limit, modify, cancel.
+4) Column 4 represents the order size.
+5) Column 5 represents the order price.
+```
 Formatted actions acceptable by LOB:
  -  ---  ------  -----  --
 0  bid  limit   38982  15
@@ -185,7 +202,7 @@ Formatted actions acceptable by LOB:
 2  bid  market    999   0
 3  ask  limit   17001  47
 -  ---  ------  -----  --
-Shuffled action queueing sequence for LOB executions:
+Shuffled action queue sequence for LOB executions:
  -  ---  ------  -----  --
 3  ask  limit   17001  47
 2  bid  market    999   0
@@ -196,7 +213,7 @@ Shuffled action queueing sequence for LOB executions:
 
 ---
 
-Rewards, dones, & infos:
+**Rewards, dones, & infos:**
 ```
 rewards:
  {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0}
@@ -210,7 +227,14 @@ infos:
 
 ---
 
-aggregated LOB:
+**aggregated LOB:**
+
+1) The columns represents the 10 levels (1 to 10, left to right) of the market
+depth in the LOB.
+2) Row 1 represents the bid size.
+3) Row 2 represents the bid price.
+4) Row 3 represents the ask size.
+5) Row 4 represents the ask price.
 ```
 agg LOB @ t-1
  ------  -----  ------  ------  ------  ------  ------  ------  ------  ------
@@ -219,7 +243,9 @@ agg LOB @ t-1
 -62448  -7224  -65989  -96940  -77985  -93987  -55942   -4173  -16998  -81011
    -36    -37     -38     -39     -40     -41     -42     -43     -47     -48
 ------  -----  ------  ------  ------  ------  ------  ------  ------  ------
+```
 
+```
 agg LOB @ t
  ------  -----  ------  ------  ------  ------  ------  ------  ------  ------
   7746  19011  126634  116130   43073  163037   74977  188096  139117  143968
@@ -231,7 +257,9 @@ agg LOB @ t
 
 ---
 
-LOB bids:
+**LOB bids:**
+
+The current limit bid orders in the LOB.
 ```
 LOB:
  ***Bids***
@@ -263,7 +291,9 @@ LOB:
 
 ---
 
-LOB asks:
+**LOB asks:**
+
+The current limit ask orders in the LOB.
 ```
 ***Asks***
      size price  trade_id  timestamp  order_id
@@ -284,7 +314,7 @@ LOB asks:
 
 ---
 
-Tape (Time & sales):
+**Tape (Time & sales):**
 ```
 ***tape***
     size price  timestamp  counter_party_ID  init_party_ID init_party_side
@@ -300,7 +330,12 @@ Tape (Time & sales):
 
 ---
 
-Trades:
+**Trades:**
+
+Trades that took place when executing the action of a trader(agent) at t-step.
+
+act_seq_num represents the sequence of the action. In this case, it's the
+2nd action executed at t-step.
 ```
 TRADES (act_seq_num): 2
    seq_Trade_ID  timestamp price    size  time  counter_ID counter_side  counter_order_ID counter_new_book_size  init_ID init_side init_order_ID init_new_LOB_size
@@ -309,7 +344,10 @@ TRADES (act_seq_num): 2
 
 ---
 
-New order in LOB (includes unfilled from trade):
+**New order in LOB:**
+
+The new limit orders inserted into LOB
+(includes unfilled leftover quantity from previous order).
 ```
 order_in_book (act_seq_num): 0
 type    side      quantity    price    trade_id    timestamp    order_id
@@ -323,7 +361,7 @@ limit   bid          38982       15           0          359         275
 
 ---
 
-mark_to_mkt profit @ t-step:
+**Mark to market profit @ t-step:**
 ```
 mark_to_mkt profit@t:
 ID: 0; profit: 1491150.999999999999999999998
@@ -334,7 +372,7 @@ ID: 3; profit: -676658.0000000000000000000013
 
 ---
 
-Accounts info:
+**Accounts info:**
 ```
 Accounts:
    ID          cash    cash_on_hold    position_val      prev_nav           nav    net_position     VWAP             profit    total_profit    num_trades
@@ -347,10 +385,10 @@ Accounts:
 
 ---
 
-1)total_sys_profit (total profit of all agents at each step) should be equal to
-0 (zero-sum game).
+1) **total_sys_profit** (total profit of all agents at each step) should be
+equal to 0 (zero-sum game).
 
-2)total_sys_nav (total net asset value of all agents at each step) is the total
+2) **total_sys_nav** (total net asset value of all agents at each step) is the total
 sum of beginning NAV of all traders(agents).
 
 Note: Small random rounding errors are present.
