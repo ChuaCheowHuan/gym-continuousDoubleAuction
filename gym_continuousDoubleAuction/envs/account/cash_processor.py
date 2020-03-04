@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+from tabulate import tabulate
+
 class Cash_Processor(object):
 
     def order_in_book_init_party(self, order_in_book):
@@ -9,7 +11,9 @@ class Cash_Processor(object):
             self.cash -= order_in_book_val # reduce cash
             self.cash_on_hold += order_in_book_val # increase cash_on_hold
 
-            print('order_in_book:', order_in_book)
+            #print('order_in_book:', order_in_book)
+            #table_order_in_book = order_in_book
+            #print("\norder_in_book_0:\n {}".format(tabulate([table_order_in_book], headers="keys")))
 
         return 0
 

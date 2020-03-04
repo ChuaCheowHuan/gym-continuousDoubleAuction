@@ -1,7 +1,9 @@
 import sys
 import math
+
 import pandas as pd
 #import json
+
 from itertools import chain
 
 from collections import deque # a faster insert/pop queue
@@ -282,61 +284,16 @@ class OrderBook(object):
 
         return tempfile.getvalue()
 
-    def __str__1(self):
-        tempfile = StringIO()
-
-        tempfile.write("***Bids***\n")
-        if self.bids != None and len(self.bids) > 0:
-            # price_map is sorted dict, key is price, value is orderlist
-            for key, value in reversed(self.bids.price_map.items()):
-                tempfile.write('%s' % value)
-        tempfile.write("\n***Asks***\n")
-        if self.asks != None and len(self.asks) > 0:
-            for key, value in self.asks.price_map.items():
-                tempfile.write('%s' % value)
-
-        tempfile.write("\n***tape***\n")
-        tempfile.write('Q' +
-                        " @ " + '$' +
-                        " (" + 't' +
-                        ") " + 'c' +
-                        "/" + 'i' +
-                        " " + 'side' +
-                        "\n")
-        if self.tape != None and len(self.tape) > 0:
-            num = 0
-            for entry in reversed(self.tape):
-                if num < self.tape_display_length: # get last num of entries
-                    TS = {}
-                    TS["size"] = entry['quantity']
-                    TS["price"] = entry['price']
-                    TS["timestamp"] = entry['timestamp']
-                    TS["counter_party_ID"] = entry['counter_party']['ID']
-                    TS["init_party_ID"] = entry['init_party']['ID']
-                    TS["init_party_side"] = entry['init_party']['side']
-                    tempfile.write(str(TS) + "\n")
-
-                    num += 1
-                else:
-                    break
-        tempfile.write("\n")
-
-        return tempfile.getvalue()
-
     def __str__(self):
         tempfile = StringIO()
+
+        #tempfile.write(self.__str__0() + "\n")
 
         tempfile.write("***Bids***\n")
         if self.bids != None and len(self.bids) > 0:
             # price_map is sorted dict, key is price, value is orderlist
             all_bids = []
             for key, value in reversed(self.bids.price_map.items()):
-                #tempfile.write('%s' % value)
-                #value_dict = json.loads(value.res_str()) # convert dict string to dict
-
-                #df_bid = pd.DataFrame(value.to_list())
-                #tempfile.write(df_bid.to_string() + "\n")
-
                 all_bids.append(value.to_list())
 
             flat_bids = list(self._flatten(all_bids)) # flat list of dicts
@@ -347,7 +304,6 @@ class OrderBook(object):
         if self.asks != None and len(self.asks) > 0:
             all_asks = []
             for key, value in self.asks.price_map.items():
-                #tempfile.write('%s' % value)
                 all_asks.append(value.to_list())
 
             flat_ask = list(self._flatten(all_asks)) # flat list of dicts
@@ -368,7 +324,6 @@ class OrderBook(object):
                     TS["init_party_ID"] = entry['init_party']['ID']
                     TS["init_party_side"] = entry['init_party']['side']
                     #tempfile.write(str(TS) + "\n")
-                    #print(TS)
                     all_TS.append(TS)
 
                     num += 1

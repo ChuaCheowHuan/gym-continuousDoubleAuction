@@ -1,10 +1,13 @@
 import random
 import numpy as np
+import pandas as pd
 
 from decimal import Decimal
 
 from ..account.account import Account
 from .random_agent import Random_agent
+
+from tabulate import tabulate
 
 class Trader(Random_agent):
     def __init__(self, ID, cash=0):
@@ -15,7 +18,7 @@ class Trader(Random_agent):
     def place_order(self, type, side, size, price, LOB, agents):
         trades, order_in_book = [],[]
         if(side == None): # do nothing to LOB
-            print('side == None')
+            #print('side == None')
             return trades, order_in_book
         # normal execution
         if self._order_approved(self.acc.cash, size, price):
@@ -28,7 +31,6 @@ class Trader(Random_agent):
                 trades, order_in_book = self._modify_limit_order(LOB, order)
             elif order['type'] == 'cancel':
                 trades, order_in_book = self._cancel_limit_order(LOB, order)
-
             else: # order == {} do nothing to LOB
                 return trades, order_in_book
 
@@ -38,7 +40,7 @@ class Trader(Random_agent):
             return trades, order_in_book
         else: # not enough cash to place order
             #print('Invalid order: order value > cash available.', self.ID)
-            print('Order NOT approved: -ve NAV.', self.ID)
+            print("\nOrder NOT approved: -ve NAV for trader_ID {}.\n".format(self.ID))
             return trades, order_in_book
 
     def _order_approved(self, cash, size, price):
@@ -126,33 +128,74 @@ class Trader(Random_agent):
             return None
 
     def _process_trades(self, trades, agents):
+        trade_list = []
         for i, trade in enumerate(trades):
-
-            print('i:', i)
-            print('trade:', trade)
-
             trade_val = Decimal(trade.get('quantity')) * trade.get('price')
             # init_party is not counter_party
             if trade.get('counter_party').get('ID') != trade.get('init_party').get('ID'):
-                self._process_counter_party(agents, trade)
+                counter_party = self._process_counter_party(agents, trade)
                 self.acc.process_acc(trade, 'init_party')
-
-                print('init_party:', self.ID)
-                self.acc.print_acc()
-
-            else: # init_party is also counter_party
+                #self.print_both_accs("\nAffected accounts_0:\n", i, counter_party, init_party=self)
+            else: # init_party is also counter_party, balance out limit order in LOB with mkt order.
                 self.acc.init_is_counter_cash_transfer(trade_val)
+                #self.print_both_accs("\nAffected accounts (init_party = counter_party)_0:\n", i, counter_party=self, init_party=self)
 
-                print('init_party = counter_party:', self.ID)
-                self.acc.print_acc()
+            trade_list.append(self.pack_trade_dict(i, trade))
+
+        #print("\ntrader_ID: {}".format(self.ID))
+        #print("\nTRADES_0:\n", pd.DataFrame(trade_list).to_string())
+
         return 0
 
     def _process_counter_party(self, agents, trade):
+        agent = None
         for counter_party in agents: # search for counter_party
             if counter_party.ID == trade.get('counter_party').get('ID'):
                 counter_party.acc.process_acc(trade, 'counter_party')
-
-                print('counter_party:', counter_party.ID)
-                counter_party.acc.print_acc()
-
+                agent = counter_party
                 break
+        return agent
+
+    def pack_trade_dict(self, i, trade):
+        trade_dict = {}
+
+        trade_dict['curr_step_Trade_ID'] = i
+
+        trade_dict['timestamp'] = trade['timestamp']
+        trade_dict['price'] = trade['price']
+        trade_dict['size'] = trade['quantity']
+        trade_dict['time'] = trade['time']
+
+        counter_party_dict = trade['counter_party']
+        trade_dict['counter_ID'] = counter_party_dict['ID']
+        trade_dict['counter_side'] = counter_party_dict['side']
+        trade_dict['counter_order_ID'] = counter_party_dict['order_id']
+        trade_dict['counter_new_book_size'] = counter_party_dict['new_book_quantity']
+
+        init_party_dict = trade['init_party']
+        trade_dict['init_ID'] = init_party_dict['ID']
+        trade_dict['init_side'] = init_party_dict['side']
+        trade_dict['init_order_ID'] = init_party_dict['order_id']
+        trade_dict['init_new_LOB_size'] = init_party_dict['new_book_quantity']
+
+        return trade_dict
+
+    def print_both_accs(self, msg, curr_step_trade_ID, counter_party, init_party):
+        acc = {}
+        acc['seq_Trade_ID'] = [curr_step_trade_ID, curr_step_trade_ID]
+        acc['party'] = ["counter", "init"]
+        acc['ID'] = [counter_party.acc.ID, self.acc.ID]
+        acc['cash'] = [counter_party.acc.cash, self.acc.cash]
+        acc['cash_on_hold'] = [counter_party.acc.cash_on_hold, self.acc.cash_on_hold]
+        acc['position_val'] = [counter_party.acc.position_val, self.acc.position_val]
+        acc['prev_nav'] = [counter_party.acc.prev_nav, self.acc.prev_nav]
+        acc['nav'] = [counter_party.acc.nav, self.acc.nav]
+        acc['net_position'] = [counter_party.acc.net_position, self.acc.net_position]
+        acc['VWAP'] = [counter_party.acc.VWAP, self.acc.VWAP]
+        acc['profit'] = [counter_party.acc.profit, self.acc.profit]
+        acc['total_profit'] = [counter_party.acc.total_profit, self.acc.total_profit]
+        acc['num_trades'] = [counter_party.acc.num_trades, self.acc.num_trades]
+
+        print(msg, tabulate(acc, headers="keys"))
+
+        return 0

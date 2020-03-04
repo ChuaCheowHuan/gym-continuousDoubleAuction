@@ -133,8 +133,8 @@ def test_random():
             action = trader.select_random_action_price_code()
             #actions.append(action)
             actions[i] = action
-        print('\n\n\nSTEP:', step)
-        print('test_random actions:', actions)
+        #print('\n\n\nSTEP:', step)
+        #print('test_random actions:', actions)
         e.step(actions)
         e.render()
 

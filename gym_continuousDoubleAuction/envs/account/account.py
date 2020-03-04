@@ -3,6 +3,8 @@ from decimal import Decimal
 from .cash_processor import Cash_Processor
 from .calculate import Calculate
 
+from tabulate import tabulate
+
 class Account(Calculate, Cash_Processor):
     def __init__(self, ID, cash=0):
         self.ID = ID
@@ -38,18 +40,22 @@ class Account(Calculate, Cash_Processor):
         self.total_profit = Decimal(0) # profit at the end of a single t-step
         self.num_trades = 0
 
-    def print_acc(self):
-        print('ID:', self.ID)
-        print('cash:', self.cash)
-        print('cash_on_hold:', self.cash_on_hold)
-        print('position_val:', self.position_val)
-        print('prev_nav:', self.prev_nav)
-        print('nav:', self.nav)
-        print('net_position:', self.net_position)
-        print('VWAP:', self.VWAP)
-        print('profit from trade(tick):', self.profit)
-        print('total_profit:', self.total_profit)
-        print('num_trades:', self.num_trades)
+    def print_acc(self, msg):
+        acc = {}
+        acc['ID'] = [self.ID]
+        acc['cash'] = [self.cash]
+        acc['cash_on_hold'] = [self.cash_on_hold]
+        acc['position_val'] = [self.position_val]
+        acc['prev_nav'] = [self.prev_nav]
+        acc['nav'] = [self.nav]
+        acc['net_position'] = [self.net_position]
+        acc['VWAP'] = [self.VWAP]
+        acc['profit'] = [self.profit]
+        acc['total_profit'] = [self.total_profit]
+        acc['num_trades'] = [self.num_trades]
+
+        print(msg, tabulate(acc, headers="keys"))
+
         return 0
 
     def size_increase(self, trade, position, party, trade_val):

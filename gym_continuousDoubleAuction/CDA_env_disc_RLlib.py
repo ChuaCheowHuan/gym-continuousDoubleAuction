@@ -143,13 +143,13 @@ ray.init(ignore_reinit_error=True, num_cpus=2)
 
 #num_of_traders = args.num_agents
 num_of_traders = num_agents
-tape_display_length = 30 #100
+tape_display_length = 10 #100
 tick_size = 1
 init_cash = 1000000
 max_step = 10000 # per episode
 episode = 1
 CDA_env = continuousDoubleAuctionEnv(num_of_traders, init_cash, tick_size, tape_display_length, max_step)
-print('CDA_env:', CDA_env.print_accs())
+CDA_env.print_accs("CDA_env\n")
 register_env("continuousDoubleAuction-v0", lambda _: continuousDoubleAuctionEnv(num_of_traders, init_cash, tick_size, tape_display_length, max_step))
 
 ModelCatalog.register_custom_model("model_disc", CustomModel_disc)

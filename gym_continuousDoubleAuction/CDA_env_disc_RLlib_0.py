@@ -148,7 +148,7 @@ init_cash = 1000000
 max_step = 400 # per episode
 episode = 2
 CDA_env = continuousDoubleAuctionEnv(num_of_traders, init_cash, tick_size, tape_display_length, max_step)
-print('CDA_env:', CDA_env.print_accs())
+CDA_env.print_accs("CDA_env\n")
 register_env("continuousDoubleAuction-v0", lambda _: continuousDoubleAuctionEnv(num_of_traders, init_cash, tick_size, tape_display_length, max_step))
 
 ModelCatalog.register_custom_model("model_disc", CustomModel_disc)

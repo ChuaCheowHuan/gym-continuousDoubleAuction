@@ -76,7 +76,8 @@ class Action_Helper():
         min_size = 1
         min_tick = 1
         max_size = 10
-        # reduce market order size compare with limit orders
+
+        # reduce market order size compare with limit orders (for testing)
         fl_div = random.randrange(min_tick+1, max_size+1, min_tick)
         #fl_div = 10
 
@@ -194,7 +195,7 @@ class Action_Helper():
     def _lower(self, min_tick, max_price, price):
         if price == 0:
             set_price = random.randrange(min_tick, max_price, min_tick)
-        elif price == min_tick:
+        elif price == min_tick: # prevent -ve price
             set_price = min_tick
         else:
             set_price = price - min_tick
@@ -207,17 +208,26 @@ class Action_Helper():
                 if price == 0:
                     #set_price = price_code * min_tick
                     set_price = random.randrange(min_tick, max_price, min_tick)
-                else:
+
+                else: # Is there a better way to do this?
+
                     #set_price = abs(price)
+
                     if(side == 'bid'):
                         set_price = abs(price) + min_tick
                     else:
-                        set_price = abs(price) - min_tick
+                        if price == min_tick: # prevent -ve price
+                            set_price = min_tick
+                        else:
+                            set_price = abs(price) - min_tick
                 break
         return set_price
 
     # process actions for all agents
     def do_actions(self, actions):
+        i = 0
+        all_trades = []
+        all_order_in_book = []
         for action in actions:
             ID = action.get("ID")
             type = action.get("type")
@@ -226,4 +236,10 @@ class Action_Helper():
             price = action.get("price")
             trader = self.agents[ID]
             self.trades, self.order_in_book = trader.place_order(type, side, size, price, self.LOB, self.agents)
-        return self.trades, self.order_in_book
+            all_trades.append(self.trades)
+            all_order_in_book.append(self.order_in_book)
+            i = i + 1
+
+        #print('do_actions: ', i)
+
+        return all_trades, all_order_in_book

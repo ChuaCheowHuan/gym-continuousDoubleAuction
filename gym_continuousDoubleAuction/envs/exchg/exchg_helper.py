@@ -7,6 +7,8 @@ from .info_helper import Info_Helper
 from ..orderbook.orderbook import OrderBook
 from ..agent.trader import Trader
 
+from tabulate import tabulate
+
 class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info_Helper):
     def __init__(self, init_cash=0, tick_size=1, tape_display_length=10):
         super(Exchg_Helper, self).__init__()
@@ -45,9 +47,48 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         dones = self.set_all_done(dones)
         return next_states, rewards, dones, infos
 
-    def print_accs(self):
+    def print_accs(self, msg):
+        acc = {}
+
+        ID_list = []
+        cash_list = []
+        cash_on_hold_list = []
+        position_val_list = []
+        prev_nav_list = []
+        nav_list = []
+        net_position_list = []
+        VWAP_list = []
+        profit_list = []
+        total_profit_list = []
+        num_trades_list = []
+
         for trader in self.agents:
-            trader.acc.print_acc()
+            ID_list.append(trader.acc.ID)
+            cash_list.append(trader.acc.cash)
+            cash_on_hold_list.append(trader.acc.cash_on_hold)
+            position_val_list.append(trader.acc.position_val)
+            prev_nav_list.append(trader.acc.prev_nav)
+            nav_list.append(trader.acc.nav)
+            net_position_list.append(trader.acc.net_position)
+            VWAP_list.append(trader.acc.VWAP)
+            profit_list.append(trader.acc.profit)
+            total_profit_list.append(trader.acc.total_profit)
+            num_trades_list.append(trader.acc.num_trades)
+
+        acc['ID'] = ID_list
+        acc['cash'] = cash_list
+        acc['cash_on_hold'] = cash_on_hold_list
+        acc['position_val'] = position_val_list
+        acc['prev_nav'] = prev_nav_list
+        acc['nav'] = nav_list
+        acc['net_position'] = net_position_list
+        acc['VWAP'] = VWAP_list
+        acc['profit'] = profit_list
+        acc['total_profit'] = total_profit_list
+        acc['num_trades'] = num_trades_list
+
+        print(msg, tabulate(acc, headers="keys"))
+
         return 0
 
     def total_sys_profit(self):

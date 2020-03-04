@@ -13,11 +13,21 @@ class Random_agent(object):
         print('select_random_action act:', act)
         return act
 
-    def select_random_action_price_code(self):
+    def select_random_action_price_code_0(self):
         side = random.randrange(0, 3, 1) # side: None=0, bid=1, ask=2
         type = random.randrange(0, 4, 1) # type_side: market=0, limit=1, modify=2, cancel=3
         size = random.randrange(1, 11, 1) # size in 100s from 0(min) to 1000(max)
         price_code = random.randrange(0, 12, 1) # price code
         act = (side, type, size, price_code)
         print('select_random_action act:', act)
+        return act
+
+    def select_random_action_price_code(self):
+        side = random.randrange(0, 3, 1) # side: None=0, bid=1, ask=2
+        type = random.randrange(0, 4, 1) # type_side: market=0, limit=1, modify=2, cancel=3
+        mean = random.randrange(-100, 100, 1) # size in 100s from 0(min) to 1000(max)
+        sigma = random.randrange(0, 100, 1) # size in 100s from 0(min) to 1000(max)
+        price_code = random.randrange(0, 12, 1) # price code
+        act = (side, type, mean, sigma, price_code)
+        #print('select_random_action act:', act)
         return act
