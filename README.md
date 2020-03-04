@@ -49,6 +49,9 @@ simulation.
 
 4) Improved render standard [output](#making-sense-of-the-render-output).
 
+5) Includes new Jupyter notebook training script (implemented with RLlib),
+tested in Colab.
+
 ---
 
 # Purpose of this repository:
