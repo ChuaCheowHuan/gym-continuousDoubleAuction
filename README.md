@@ -21,8 +21,9 @@ This is **WIP**.
 
 1) Upgraded to use (for training script):
 
-1)tensorflow 2.10
-2)ray[RLlib] 0.8.2
+tensorflow 2.10
+
+ray[RLlib] 0.8.2
 
 2) New "mixed" (discrete and continuous) action space. (This action space could
 be changed in the future to make way for action spaces that make more sense.)
@@ -227,7 +228,7 @@ infos:
 
 ---
 
-**aggregated LOB:**
+**Aggregated LOB:**
 
 1) The columns represents the 10 levels (1 to 10, left to right) of the market
 depth in the LOB.
