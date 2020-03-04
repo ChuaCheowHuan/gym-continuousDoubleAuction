@@ -2,7 +2,23 @@ This is **WIP**.
 
 ---
 
-# Update 20200304
+# Contents:
+1) [Update](#update)
+2) [What's in this repository](#what's-in-this-repository?)
+3) [Example](#example)
+4) [Dependencies](#dependencies)
+5) [Installation](#installation)
+6) [TODO](#todo)
+7) [Acknowledgements](#acknowledgements)
+8) [Contributing](#contributing)
+9) [Disclaimer](#disclaimer)
+10) [Making sense of the render output](#making-sense-of-the-render-output)
+
+---
+
+# Update:
+20200304
+
 1) Upgraded to use (for training script):
 
 tensorflow 2.10
@@ -34,21 +50,7 @@ simulation.
 
 ---
 
-# Contents
-1) [Update](#update)
-2) [What's in this repository](#what's-in-this-repository)
-3) [Example](#example)
-4) [Dependencies](#dependencies)
-5) [Installation](#installation)
-6) [TODO](#todo)
-7) [Acknowledgements](#acknowledgements)
-8) [Contributing](#contributing)
-9) [Disclaimer](#disclaimer)
-10) [Making sense of the render output](#making-sense-of-the-render-output)
-
----
-
-# What's in this repository?
+# What's in this repository?:
 A custom MARL (multi-agent reinforcement learning) environment where multiple
 agents trade against one another in a CDA (continuous double auction).
 
