@@ -144,9 +144,9 @@ if __name__ == "__main__":
     episode = 2
 
     CDA_env = continuousDoubleAuctionEnv(num_of_traders, init_cash, tick_size, tape_display_length, max_step)
-    #CDA_env.print_accs("CDA_env\n")
-    #CDA_env.print_accs("CDA_env")
-    CDA_env.print_accs()    
+    #CDA_env.print_accs("CDA_env\n") # strange error in Travis, takes no arguments
+    #CDA_env.print_accs("CDA_env") # strange error in Travis, takes no arguments
+    CDA_env.print_accs() # this works in Travis, strange since print_accs(msg) should take in msg string
     register_env("continuousDoubleAuction-v0", lambda _: continuousDoubleAuctionEnv(num_of_traders, init_cash, tick_size, tape_display_length, max_step))
     ModelCatalog.register_custom_model("model_disc", CustomModel_disc)
     obs_space = CDA_env.observation_space
