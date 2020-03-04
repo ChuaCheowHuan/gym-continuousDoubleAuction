@@ -1,5 +1,53 @@
 This is **WIP**.
 
+---
+
+# Update 20200304
+1) Upgraded to use (for training script):
+
+tensorflow 2.10
+ray[RLlib] 0.8.2
+
+2) New "mixed" (discrete and continuous) action space. (This action space could
+be changed in the future to make way for action spaces that make more sense.)
+```
+act_space = spaces.Tuple((spaces.Discrete(3), # side: none, bid, ask (0 to 2)
+                          spaces.Discrete(4), # type: market, limit, modify, cancel (0 to 3)
+
+                          # for size selection:
+                          spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32), # array of mean
+                          spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32), # array of sigma
+
+                          spaces.Discrete(12), # price: based on mkt depth from 0 to 11
+                        ))
+```
+
+Example model output:
+```
+[0, 3, array([0.47555637], dtype=float32), array([0.5383144], dtype=float32), 5]
+```
+
+3) Tweak code to allow bid ask spread to narrow more efficiently during
+simulation.
+
+4) Improved render standard [output](#making-sense-of-the-render-output).
+
+---
+
+# Contents
+1) [Update](#update)
+2) [What's in this repository](#what's-in-this-repository)
+3) [Example](#example)
+4) [Dependencies](#dependencies)
+5) [Installation](#installation)
+6) [TODO](#todo)
+7) [Acknowledgements](#acknowledgements)
+8) [Contributing](#contributing)
+9) [Disclaimer](#disclaimer)
+10) [Making sense of the render output](#making-sense-of-the-render-output)
+
+---
+
 # What's in this repository?
 A custom MARL (multi-agent reinforcement learning) environment where multiple
 agents trade against one another in a CDA (continuous double auction).
@@ -9,6 +57,15 @@ of the agents themselves through their interaction with the limit order book.
 
 At each time step, the environment emits the top k rows of the aggregated
 order book as observations to the agents.
+
+observation_space:
+```
+inf = float('inf')
+neg_inf = float('-inf')
+obs_row = 4
+obs_col = 10
+self.observation_space = spaces.Box(low=neg_inf, high=inf, shape=(obs_row, obs_col))
+```
 
 # Example:
 An example of using RLlib to pit 1 PPO (Proximal Policy Optimization) agent
@@ -26,9 +83,14 @@ $ python CDA_env_disc_RLlib.py
 
 ---
 
-An **alternate way** to run this environment is by using the Jupyter notebook
-`CDA_env_disc_RLlib.ipynb`. This notebook contains a sample training
-script (implemented with Ray RLlib) & is tested in Colab.
+**Alternative ways** to run this environment:
+
+1) By using the Jupyter notebook `CDA_env_disc_RLlib.ipynb`.
+This notebook contains a sample training script (implemented with Ray RLlib)
+& is tested in Colab.
+
+2) By using the python `CDA_env_rand.py` script which is basically running a CDA
+simulator with dummy (non-learning) random agents.
 
 ---
 
@@ -69,10 +131,16 @@ $ pip install -e .
 ```
 
 # TODO:
-1) custom RLlib workflow to include custom RND + PPO policies.
-2) parametric or hybrid action space
-3) more robust tests
-3) better documentation
+1) Custom RLlib workflow to include custom RND + PPO policies.
+(for training script).
+2) Parametric or hybrid action space (or experiment with different types of
+  action space).
+3) More robust tests (add LOB test into test script).
+4) Better documentation.
+5) Logging of trading data for all steps (for visualization after simlution).
+6) Move action consequences after each step by each agent into the respective
+info dictionary.
+7) A random starting price for better narrowing of spread (currently need many iterations for spread to narrow).
 
 # Acknowledgements:
 The orderbook matching engine is adapted from
@@ -189,14 +257,6 @@ LOB:
 20  46001    10         1        313       243
 21  45871     9         2         52        52
 22  94993     9         3        209       176
-23  65973     9         0        321       137
-24  78018     8         0         44        44
-25  60980     5         1         89        86
-26  60103     4         1         97        66
-27  58979     4         2        104        98
-28  27130     4         0        162       129
-29  46020     3         3         13        13
-30  94009     2         3         82        80
 ```
 
 ---
@@ -218,26 +278,6 @@ LOB asks:
 10  55942    42         1        290       189
 11   4173    43         0        112       104
 12  16998    47         1        341       239
-13  17001    47         3        357       273
-14  81011    48         3        241       195
-15  72997    49         3        161       139
-16  91987    49         0        282       222
-17  27024    79         3        226        75
-18  39003    80         1        243       155
-19  99023    80         3        273       215
-20  10074    81         2         54        54
-21  82949    81         0        211       177
-22  40008    82         1        229       187
-23  92001    85         1        193       163
-24  10892    86         1        169       145
-25   1077    87         3        118       109
-26     76    87         1        190       162
-27  86001    88         1         81        79
-28  33993    89         3        106        57
-29   3004    89         1        114       106
-30   8944    89         0        168       144
-31  75016    90         3         65        65
-32  66066    90         0        127       115
 ```
 
 ---
@@ -254,8 +294,6 @@ Tape (Time & sales):
 5  12874    23        347                 0              0             ask
 6   7501    23        346                 0              1             ask
 7   9405    22        342                 1              3             ask
-8  27122    36        339                 3              3             bid
-9  11415    36        339                 1              3             bid
 ```
 
 ---
@@ -269,7 +307,7 @@ TRADES (act_seq_num): 2
 
 ---
 
-new order in LOB (includes unfilled from trade):
+New order in LOB (includes unfilled from trade):
 ```
 order_in_book (act_seq_num): 0
 type    side      quantity    price    trade_id    timestamp    order_id
@@ -307,15 +345,29 @@ Accounts:
 
 ---
 
-1)total_sys_profit should be equal to 0.
-2)total_sys_nav is the total sum of beginning NAV of all traders(agents).
+1)total_sys_profit (total profit of all agents at each step) should be equal to
+0 (zero-sum game).
+
+2)total_sys_nav (total net asset value of all agents at each step) is the total
+sum of beginning NAV of all traders(agents).
+
+Note: Small random rounding errors are present.
 ```
 total_sys_profit = -9E-21; total_sys_nav = 3999999.999999999999999999991
 ```
 
 ---
 
-Sample training output results:
+**Sample output results** for final training iteration:
+
+1) The episode_reward is zero (zero sum game) for each episode.
+```
+episode_reward_max: 0.0
+episode_reward_mean: 0.0
+episode_reward_min: 0.0
+```
+
+2) The mean reward of each policy is shown under `policy_reward_mean`.
 ```
 .
 .
