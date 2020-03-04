@@ -4,7 +4,7 @@ This is **WIP**.
 
 # Contents:
 1) [Update](#update)
-2) [What's in this repository](#what's-in-this-repository?)
+2) [What's in this repository?](#what-is-in-this-repository?)
 3) [Example](#example)
 4) [Dependencies](#dependencies)
 5) [Installation](#installation)
@@ -50,7 +50,7 @@ simulation.
 
 ---
 
-# What's in this repository?:
+# What is in this repository?:
 A custom MARL (multi-agent reinforcement learning) environment where multiple
 agents trade against one another in a CDA (continuous double auction).
 
