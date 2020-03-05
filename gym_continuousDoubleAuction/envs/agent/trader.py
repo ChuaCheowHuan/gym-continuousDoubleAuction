@@ -1,5 +1,6 @@
 import random
 import numpy as np
+import pandas as pd
 
 from decimal import Decimal
 
@@ -14,8 +15,9 @@ class Trader(Random_agent):
     # take or execute action
     def place_order(self, type, side, size, price, LOB, agents):
         trades, order_in_book = [],[]
+
         if(side == None): # do nothing to LOB
-            print('side == None')
+            #print('side == None')
             return trades, order_in_book
         # normal execution
         if self._order_approved(self.acc.cash, size, price):
@@ -28,7 +30,6 @@ class Trader(Random_agent):
                 trades, order_in_book = self._modify_limit_order(LOB, order)
             elif order['type'] == 'cancel':
                 trades, order_in_book = self._cancel_limit_order(LOB, order)
-
             else: # order == {} do nothing to LOB
                 return trades, order_in_book
 
@@ -38,7 +39,7 @@ class Trader(Random_agent):
             return trades, order_in_book
         else: # not enough cash to place order
             #print('Invalid order: order value > cash available.', self.ID)
-            print('Order NOT approved: -ve NAV.', self.ID)
+            print("\nOrder NOT approved: -ve NAV for trader_ID {}.\n".format(self.ID))
             return trades, order_in_book
 
     def _order_approved(self, cash, size, price):
@@ -127,32 +128,28 @@ class Trader(Random_agent):
 
     def _process_trades(self, trades, agents):
         for i, trade in enumerate(trades):
-
-            print('i:', i)
-            print('trade:', trade)
-
             trade_val = Decimal(trade.get('quantity')) * trade.get('price')
             # init_party is not counter_party
             if trade.get('counter_party').get('ID') != trade.get('init_party').get('ID'):
-                self._process_counter_party(agents, trade)
+                counter_party = self._process_counter_party(agents, trade)
                 self.acc.process_acc(trade, 'init_party')
 
-                print('init_party:', self.ID)
-                self.acc.print_acc()
+                #self.acc.print_both_accs("\nAffected accounts_0:\n", i, counter_party, init_party=self)
 
-            else: # init_party is also counter_party
+            else: # init_party is also counter_party, balance out limit order in LOB with mkt order.
                 self.acc.init_is_counter_cash_transfer(trade_val)
 
-                print('init_party = counter_party:', self.ID)
-                self.acc.print_acc()
+                #self.acc.print_both_accs("\nAffected accounts (init_party = counter_party)_0:\n", i, counter_party=self, init_party=self)
+
+            #print('trades:', trades)
+
         return 0
 
     def _process_counter_party(self, agents, trade):
+        agent = None
         for counter_party in agents: # search for counter_party
             if counter_party.ID == trade.get('counter_party').get('ID'):
                 counter_party.acc.process_acc(trade, 'counter_party')
-
-                print('counter_party:', counter_party.ID)
-                counter_party.acc.print_acc()
-
+                agent = counter_party
                 break
+        return agent

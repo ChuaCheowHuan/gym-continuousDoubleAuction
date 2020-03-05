@@ -1,5 +1,11 @@
 import sys
 import math
+
+import pandas as pd
+#import json
+
+from itertools import chain
+
 from collections import deque # a faster insert/pop queue
 from six.moves import cStringIO as StringIO
 from decimal import Decimal
@@ -238,7 +244,7 @@ class OrderBook(object):
 
     # for print(order_book)
     # print LOB & tape
-    def __str__(self):
+    def __str__0(self):
         tempfile = StringIO()
 
         tempfile.write("***Bids***\n")
@@ -277,3 +283,60 @@ class OrderBook(object):
         tempfile.write("\n")
 
         return tempfile.getvalue()
+
+    def __str__(self):
+        tempfile = StringIO()
+
+        #tempfile.write(self.__str__0() + "\n")
+
+        tempfile.write("***Bids***\n")
+        if self.bids != None and len(self.bids) > 0:
+            # price_map is sorted dict, key is price, value is orderlist
+            all_bids = []
+            for key, value in reversed(self.bids.price_map.items()):
+                all_bids.append(value.to_list())
+
+            flat_bids = list(self._flatten(all_bids)) # flat list of dicts
+            df_bid = pd.DataFrame(flat_bids)
+            tempfile.write(df_bid.to_string())
+
+        tempfile.write("\n***Asks***\n")
+        if self.asks != None and len(self.asks) > 0:
+            all_asks = []
+            for key, value in self.asks.price_map.items():
+                all_asks.append(value.to_list())
+
+            flat_ask = list(self._flatten(all_asks)) # flat list of dicts
+            df_ask = pd.DataFrame(flat_ask)
+            tempfile.write(df_ask.to_string())
+
+        tempfile.write("\n***tape***\n")
+        if self.tape != None and len(self.tape) > 0:
+            num = 0
+            all_TS = []
+            for entry in reversed(self.tape):
+                if num < self.tape_display_length: # get last num of entries
+                    TS = {}
+                    TS["size"] = entry['quantity']
+                    TS["price"] = entry['price']
+                    TS["timestamp"] = entry['timestamp']
+                    TS["counter_party_ID"] = entry['counter_party']['ID']
+                    TS["init_party_ID"] = entry['init_party']['ID']
+                    TS["init_party_side"] = entry['init_party']['side']
+                    #tempfile.write(str(TS) + "\n")
+                    all_TS.append(TS)
+
+                    num += 1
+                else:
+                    break
+
+            all_TS_df = pd.DataFrame(all_TS)
+            tempfile.write(all_TS_df.to_string())
+
+        tempfile.write("\n")
+
+        return tempfile.getvalue()
+
+    def _flatten(self, list_of_lists):
+        "Flatten one level of nesting"
+        return chain.from_iterable(list_of_lists)

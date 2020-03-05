@@ -1,7 +1,9 @@
 ## CONTRIBUTING.md:
 
-I'm happy if you find this repository useful & you are free to
-download/clone/fork this repository as long as due credit is given.
+You are free to download/clone/fork/use this repository.
+
+If you find this repository useful, I would be happy if you could
+**reference this repository** if you use it in your work.
 
 # Pull request:
 Pull requests generally welcomed but please open an issue to discuss the work

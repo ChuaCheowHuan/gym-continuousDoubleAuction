@@ -104,3 +104,21 @@ class OrderList(object):
             temp_file.write("%s\n" % str(order))
         #temp_file.write("%s\n" % str(self.head_order))
         return temp_file.getvalue()
+
+    def to_str(self):
+        res_str = ""
+        for order in self:
+             res_str = res_str + str(order)
+        return res_str
+
+    def to_list(self):
+        res_list = []
+        for order in self:
+            order_dict = {}
+            order_dict["size"] = order.quantity
+            order_dict["price"] = order.price
+            order_dict["trade_id"] = order.trade_id
+            order_dict["timestamp"] = order.timestamp
+            order_dict["order_id"] = order.order_id
+            res_list.append(order_dict)
+        return res_list

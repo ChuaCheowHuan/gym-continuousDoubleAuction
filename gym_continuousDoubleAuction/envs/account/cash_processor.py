@@ -9,7 +9,7 @@ class Cash_Processor(object):
             self.cash -= order_in_book_val # reduce cash
             self.cash_on_hold += order_in_book_val # increase cash_on_hold
 
-            print('order_in_book:', order_in_book)
+            #print('order_in_book:', order_in_book)
 
         return 0
 
