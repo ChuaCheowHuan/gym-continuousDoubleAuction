@@ -58,6 +58,26 @@ class Account(Calculate, Cash_Processor):
 
         return 0
 
+    def print_both_accs(self, msg, curr_step_trade_ID, counter_party, init_party):
+        acc = {}
+        acc['seq_Trade_ID'] = [curr_step_trade_ID, curr_step_trade_ID]
+        acc['party'] = ["counter", "init"]
+        acc['ID'] = [counter_party.acc.ID, init_party.acc.ID]
+        acc['cash'] = [counter_party.acc.cash, init_party.acc.cash]
+        acc['cash_on_hold'] = [counter_party.acc.cash_on_hold, init_party.acc.cash_on_hold]
+        acc['position_val'] = [counter_party.acc.position_val, init_party.acc.position_val]
+        acc['prev_nav'] = [counter_party.acc.prev_nav, init_party.acc.prev_nav]
+        acc['nav'] = [counter_party.acc.nav, init_party.acc.nav]
+        acc['net_position'] = [counter_party.acc.net_position, init_party.acc.net_position]
+        acc['VWAP'] = [counter_party.acc.VWAP, init_party.acc.VWAP]
+        acc['profit'] = [counter_party.acc.profit, init_party.acc.profit]
+        acc['total_profit'] = [counter_party.acc.total_profit, init_party.acc.total_profit]
+        acc['num_trades'] = [counter_party.acc.num_trades, init_party.acc.num_trades]
+
+        print(msg, tabulate(acc, headers="keys"))
+
+        return 0
+
     def size_increase(self, trade, position, party, trade_val):
         total_size = abs(self.net_position) + Decimal(trade.get('quantity'))
         # VWAP

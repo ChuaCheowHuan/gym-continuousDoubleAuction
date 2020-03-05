@@ -15,15 +15,7 @@ class Action_Helper():
         # Set price according to price_code 0 to 11 where price_code 1 to 10 correspond to slot in agg_LOB (mkt depth table)
         # 0 & 11 are the border cases where they could be the lowest or highest bid respectively
         # if order is on the ask side,
-        # 0 & 11 are the border cases where they could be the highest or lowest ask respectively
-        '''
-        act_space = spaces.Tuple((spaces.Discrete(3), # none, bid, ask (0 to 2)
-                                  spaces.Discrete(4), # market, limit, modify, cancel (0 to 3)
-                                  spaces.Discrete(100), # size
-                                  spaces.Discrete(12), # price based on mkt depth from 0 to 11
-                                ))
-        '''
-
+        # 0 & 11 are the border cases where they could be the highest or lowest ask respectively    
         '''
         nn_out_act: [0, 3, array([0.47555637], dtype=float32), array([0.5383144], dtype=float32), 5]
         '''
@@ -102,7 +94,7 @@ class Action_Helper():
         if act["type"] == 'market':
             # price depends on side if type is market
             #act["price"] = (price_code + min_tick) * 1.0 # +tick_size as size or price can't be 0, *1 for float
-            act["price"] = 0 # +tick_size as size or price can't be 0, *1 for float
+            act["price"] = -1.0 #min_tick * 1.0 # +tick_size as size or price can't be 0, *1 for float
         elif act["type"] == 'limit':
             act["price"] = self._set_price(min_tick, act["side"], price_code)
         elif act["type"] == 'modify':
@@ -225,9 +217,8 @@ class Action_Helper():
 
     # process actions for all agents
     def do_actions(self, actions):
-        i = 0
-        all_trades = []
-        all_order_in_book = []
+        seq_trades = []
+        seq_order_in_book = []
         for action in actions:
             ID = action.get("ID")
             type = action.get("type")
@@ -236,10 +227,7 @@ class Action_Helper():
             price = action.get("price")
             trader = self.agents[ID]
             self.trades, self.order_in_book = trader.place_order(type, side, size, price, self.LOB, self.agents)
-            all_trades.append(self.trades)
-            all_order_in_book.append(self.order_in_book)
-            i = i + 1
+            seq_trades.append(self.trades)
+            seq_order_in_book.append(self.order_in_book)
 
-        #print('do_actions: ', i)
-
-        return all_trades, all_order_in_book
+        return seq_trades, seq_order_in_book

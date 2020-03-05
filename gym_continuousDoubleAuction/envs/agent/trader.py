@@ -7,8 +7,6 @@ from decimal import Decimal
 from ..account.account import Account
 from .random_agent import Random_agent
 
-from tabulate import tabulate
-
 class Trader(Random_agent):
     def __init__(self, ID, cash=0):
         self.ID = ID # trader unique ID
@@ -17,6 +15,7 @@ class Trader(Random_agent):
     # take or execute action
     def place_order(self, type, side, size, price, LOB, agents):
         trades, order_in_book = [],[]
+
         if(side == None): # do nothing to LOB
             #print('side == None')
             return trades, order_in_book
@@ -128,22 +127,21 @@ class Trader(Random_agent):
             return None
 
     def _process_trades(self, trades, agents):
-        trade_list = []
         for i, trade in enumerate(trades):
             trade_val = Decimal(trade.get('quantity')) * trade.get('price')
             # init_party is not counter_party
             if trade.get('counter_party').get('ID') != trade.get('init_party').get('ID'):
                 counter_party = self._process_counter_party(agents, trade)
                 self.acc.process_acc(trade, 'init_party')
-                #self.print_both_accs("\nAffected accounts_0:\n", i, counter_party, init_party=self)
+
+                #self.acc.print_both_accs("\nAffected accounts_0:\n", i, counter_party, init_party=self)
+
             else: # init_party is also counter_party, balance out limit order in LOB with mkt order.
                 self.acc.init_is_counter_cash_transfer(trade_val)
-                #self.print_both_accs("\nAffected accounts (init_party = counter_party)_0:\n", i, counter_party=self, init_party=self)
 
-            trade_list.append(self.pack_trade_dict(i, trade))
+                #self.acc.print_both_accs("\nAffected accounts (init_party = counter_party)_0:\n", i, counter_party=self, init_party=self)
 
-        #print("\ntrader_ID: {}".format(self.ID))
-        #print("\nTRADES_0:\n", pd.DataFrame(trade_list).to_string())
+            #print('trades:', trades)
 
         return 0
 
@@ -155,47 +153,3 @@ class Trader(Random_agent):
                 agent = counter_party
                 break
         return agent
-
-    def pack_trade_dict(self, i, trade):
-        trade_dict = {}
-
-        trade_dict['curr_step_Trade_ID'] = i
-
-        trade_dict['timestamp'] = trade['timestamp']
-        trade_dict['price'] = trade['price']
-        trade_dict['size'] = trade['quantity']
-        trade_dict['time'] = trade['time']
-
-        counter_party_dict = trade['counter_party']
-        trade_dict['counter_ID'] = counter_party_dict['ID']
-        trade_dict['counter_side'] = counter_party_dict['side']
-        trade_dict['counter_order_ID'] = counter_party_dict['order_id']
-        trade_dict['counter_new_book_size'] = counter_party_dict['new_book_quantity']
-
-        init_party_dict = trade['init_party']
-        trade_dict['init_ID'] = init_party_dict['ID']
-        trade_dict['init_side'] = init_party_dict['side']
-        trade_dict['init_order_ID'] = init_party_dict['order_id']
-        trade_dict['init_new_LOB_size'] = init_party_dict['new_book_quantity']
-
-        return trade_dict
-
-    def print_both_accs(self, msg, curr_step_trade_ID, counter_party, init_party):
-        acc = {}
-        acc['seq_Trade_ID'] = [curr_step_trade_ID, curr_step_trade_ID]
-        acc['party'] = ["counter", "init"]
-        acc['ID'] = [counter_party.acc.ID, self.acc.ID]
-        acc['cash'] = [counter_party.acc.cash, self.acc.cash]
-        acc['cash_on_hold'] = [counter_party.acc.cash_on_hold, self.acc.cash_on_hold]
-        acc['position_val'] = [counter_party.acc.position_val, self.acc.position_val]
-        acc['prev_nav'] = [counter_party.acc.prev_nav, self.acc.prev_nav]
-        acc['nav'] = [counter_party.acc.nav, self.acc.nav]
-        acc['net_position'] = [counter_party.acc.net_position, self.acc.net_position]
-        acc['VWAP'] = [counter_party.acc.VWAP, self.acc.VWAP]
-        acc['profit'] = [counter_party.acc.profit, self.acc.profit]
-        acc['total_profit'] = [counter_party.acc.total_profit, self.acc.total_profit]
-        acc['num_trades'] = [counter_party.acc.num_trades, self.acc.num_trades]
-
-        print(msg, tabulate(acc, headers="keys"))
-
-        return 0

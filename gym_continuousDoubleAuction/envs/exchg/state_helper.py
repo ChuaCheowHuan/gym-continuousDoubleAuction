@@ -6,6 +6,9 @@ class State_Helper(object):
     def reset_traders_agg_LOB(self):
         states = {}
         for trader in self.agents:
+
+            # https://github.com/ray-project/ray/blob/master/doc/source/rllib-env.rst
+            # May not need to have all traders(agents) in this state(obs) dict.
             states[trader.ID] = self.set_agg_LOB()
         return states
 

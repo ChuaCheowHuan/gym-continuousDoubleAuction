@@ -120,21 +120,20 @@ def make_RandomPolicy(_seed):
     return RandomPolicy
 
 
-num_agents = 4
-num_policies = 4
-num_iters = 3
-simple = False#store_true
-
-
 if __name__ == "__main__":
     args = parser.parse_args()
 
     #ray.init()
     #ray.init(num_cpus=2)
     #ray.init(num_cpus=1, logging_level=logging.ERROR, local_mode=True) # local_mode for sequential trials to work in Travis which has only 2 CPU
-    ray.init(num_cpus=2, logging_level=0, local_mode=True, ignore_reinit_error=True, log_to_driver=False, webui_host='127.0.0.1') # local_mode for sequential trials to work in Travis which has only 2 CPU
+    ray.init(num_cpus=1, logging_level=0, local_mode=True, ignore_reinit_error=True, log_to_driver=False, webui_host='127.0.0.1') # local_mode for sequential trials to work in Travis which has only 2 CPU
     #ray.init(ignore_reinit_error=True, log_to_driver=False, webui_host='127.0.0.1', num_cpus=2)
     print(' ********** num_CPU =', os.cpu_count())
+
+    num_agents = 4
+    num_policies = num_agents
+    num_iters = 3
+    simple = False#store_true
 
     num_of_traders = args.num_agents
     tape_display_length = 100
@@ -143,22 +142,21 @@ if __name__ == "__main__":
     max_step = 400
     episode = 2
 
-    CDA_env = continuousDoubleAuctionEnv(num_of_traders, init_cash, tick_size, tape_display_length, max_step)
-    #CDA_env.print_accs("CDA_env\n") # strange error in Travis, takes no arguments
-    #CDA_env.print_accs("CDA_env") # strange error in Travis, takes no arguments
-    CDA_env.print_accs() # this works in Travis, strange since print_accs(msg) should take in msg string
+    single_CDA_env = continuousDoubleAuctionEnv(num_of_traders, init_cash, tick_size, tape_display_length, max_step)
+    obs_space = single_CDA_env.observation_space
+    act_space = single_CDA_env.action_space
     register_env("continuousDoubleAuction-v0", lambda _: continuousDoubleAuctionEnv(num_of_traders, init_cash, tick_size, tape_display_length, max_step))
     ModelCatalog.register_custom_model("model_disc", CustomModel_disc)
-    obs_space = CDA_env.observation_space
-    act_space = CDA_env.action_space
+
 
     # Each policy can have a different configuration (including custom model)
     def gen_policy(i):
         config = {"model": {"custom_model": "model_disc"},
-                  "gamma": 0.99,}
+                "gamma": 0.99,}
         return (None, obs_space, act_space, config)
 
-    def policy_mapper(agent_id):
+    """
+    def policy_mapper_0(agent_id):
         if agent_id == 0:
             return "policy_0" # PPO
         elif agent_id == 1:
@@ -167,17 +165,36 @@ if __name__ == "__main__":
             return "policy_2" # RandomPolicy
         else:
             return "policy_3" # RandomPolicy
+    """
+    def policy_mapper(agent_id):
+        for i in range(num_agents):
+            if agent_id == i:
+                return "policy_{}".format(i)
 
     # Setup PPO with an ensemble of `num_policies` different policies
-    policies = {"policy_{}".format(i): gen_policy(i) for i in range(args.num_policies)}
+
+    # Dictionary of policies
+    #policies = {"policy_{}".format(i): gen_policy(i) for i in range(args.num_policies)}
+    policies = {"policy_{}".format(i): gen_policy(i) for i in range(num_policies)}
+
     # override policy with random policy
-    policies["policy_{}".format(args.num_policies-3)] = (make_RandomPolicy(1), obs_space, act_space, {}) # random policy stored as the last item in policies dictionary
-    policies["policy_{}".format(args.num_policies-2)] = (make_RandomPolicy(2), obs_space, act_space, {}) # random policy stored as the last item in policies dictionary
-    policies["policy_{}".format(args.num_policies-1)] = (make_RandomPolicy(3), obs_space, act_space, {}) # random policy stored as the last item in policies dictionary
+    """
+    policies["policy_{}".format(num_policies-3)] = (make_RandomPolicy(1), obs_space, act_space, {}) # random policy stored as the last item in policies dictionary
+    policies["policy_{}".format(num_policies-2)] = (make_RandomPolicy(2), obs_space, act_space, {}) # random policy stored as the last item in policies dictionary
+    policies["policy_{}".format(num_policies-1)] = (make_RandomPolicy(3), obs_space, act_space, {}) # random policy stored as the last item in policies dictionary
+    """
+    def set_RandomPolicy(policies):
+        for i in range(num_agents):
+            # random policy stored as the last item in policies dictionary
+            policies["policy_{}".format(num_policies-1)] = (make_RandomPolicy(3), obs_space, act_space, {})
 
-    print('policies:', policies)
+        print('policies:', policies)
 
+        return 0
+
+    set_RandomPolicy(policies)
     policy_ids = list(policies.keys())
+
 
     tune.run(#PPOTrainer,
              "PPO",

@@ -129,14 +129,12 @@ def test_random():
         #actions = []
         actions = {}
         for i, trader in enumerate(e.agents):
-            #action = trader.select_random_action()
-            action = trader.select_random_action_price_code()
+            action = trader.select_random_action()
             #actions.append(action)
             actions[i] = action
-        #print('\n\n\nSTEP:', step)
+        #print('\n\n\nSTEP:', e.t_step)
         #print('test_random actions:', actions)
         e.step(actions)
-        e.render()
 
 
 if __name__ == "__main__":
