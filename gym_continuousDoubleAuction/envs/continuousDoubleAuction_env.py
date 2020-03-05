@@ -109,8 +109,8 @@ class continuousDoubleAuctionEnv(Exchg_Helper, gym.Env, MultiAgentEnv):
 
     # render
     def render(self):
-        if self.t_step % 1 == 0:
-            self._render()
+        #if self.t_step % 300 == 0:
+        self._render()
         #return 0
 
     def _render(self):

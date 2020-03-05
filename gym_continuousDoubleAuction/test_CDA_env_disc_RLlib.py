@@ -126,7 +126,7 @@ if __name__ == "__main__":
     #ray.init()
     #ray.init(num_cpus=2)
     #ray.init(num_cpus=1, logging_level=logging.ERROR, local_mode=True) # local_mode for sequential trials to work in Travis which has only 2 CPU
-    ray.init(num_cpus=1, logging_level=0, local_mode=True, ignore_reinit_error=True, log_to_driver=False, webui_host='127.0.0.1') # local_mode for sequential trials to work in Travis which has only 2 CPU
+    ray.init(num_cpus=2, logging_level=0, local_mode=True, ignore_reinit_error=True, log_to_driver=False, webui_host='127.0.0.1') # local_mode for sequential trials to work in Travis which has only 2 CPU
     #ray.init(ignore_reinit_error=True, log_to_driver=False, webui_host='127.0.0.1', num_cpus=2)
     print(' ********** num_CPU =', os.cpu_count())
 
@@ -139,8 +139,8 @@ if __name__ == "__main__":
     tape_display_length = 100
     tick_size = 1
     init_cash = 1000000
-    max_step = 400
-    episode = 2
+    max_step = 500
+    episode = 5
 
     single_CDA_env = continuousDoubleAuctionEnv(num_of_traders, init_cash, tick_size, tape_display_length, max_step)
     obs_space = single_CDA_env.observation_space
