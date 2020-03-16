@@ -1,8 +1,23 @@
 from decimal import Decimal
 
 class Cash_Processor(object):
+    """
+    Handles the cash & cash_on_hold for the trader's account.
+
+    note:
+        When the trader places an order, certain amount of cash
+        (the order's value) is placed on hold so that his amount of cash will
+        decrease accordingly.
+        This is to prevent the trader having the ability to keep placing orders
+        as if he has an unlimited amount of cash.
+    """
 
     def order_in_book_init_party(self, order_in_book):
+        """
+        If there are new unfilled orders for this trader(init_party),
+        reduce his cash & increase his cash_on_hold.
+        """
+
         # if there's order_in_book for init_party (party2)
         if order_in_book != None and order_in_book != []: # there are new unfilled orders
             order_in_book_val = order_in_book.get('price') * Decimal(order_in_book.get('quantity'))
@@ -30,17 +45,32 @@ class Cash_Processor(object):
         return 0
 
     def size_zero_cash_transfer(self, trade_val):
-        # add position_val back to cash minus trade_val, trade_val is handled in size_decrease_cash_transfer
+        """
+        add position_val back to cash minus trade_val, trade_val is handled in size_decrease_cash_transfer
+        """
+
         self.cash += self.position_val - trade_val
         return 0
 
-    # init_party is also counter_party
     def init_is_counter_cash_transfer(self, trade_val):
+        """
+        init_party is also counter_party.
+        """
+
         self.cash_on_hold -= trade_val
         self.cash += trade_val
         return 0
 
     def modify_cash_transfer(self, qoute, order):
+        """
+        Update account of trader accordingly if his orders in LOB changes.
+
+        note:
+            Changes in LOB orders refer to changes in size.
+            If size decrease, deduct from cash_on_hold, return to cash.
+            If size increase, deduct from cash, add to cash_on_hold.
+        """
+
         order_val = (order.price) * (order.quantity)
         qoute_val = Decimal(qoute['price']) * (qoute['quantity'])
         if order_val >= qoute_val: # reducing size
@@ -56,6 +86,13 @@ class Cash_Processor(object):
         return 0
 
     def cancel_cash_transfer(self, order):
+        """
+        Update account of trader accordingly if his order in LOB is cancelled.
+
+        note:
+            deduct from cash_on_hold, return to cash.
+        """
+
         order_val = (order.price) * (order.quantity)
         # deduct from cash_on_hold, return to cash
         self.cash_on_hold -= order_val

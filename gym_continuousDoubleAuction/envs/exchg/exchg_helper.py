@@ -43,7 +43,7 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         """
 
         if len(self.LOB.tape) > 0:
-            mkt_price = self.LOB.tape[-1].get('price')
+            mkt_price = self.LOB.tape[-1].get('price') # last price from tape
             for trader in self.agents:
                 trader.acc.mark_to_mkt(trader.ID, mkt_price)
         return 0

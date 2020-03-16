@@ -55,10 +55,13 @@ class Account(Calculate, Cash_Processor):
         acc['num_trades'] = [self.num_trades]
 
         print(msg, tabulate(acc, headers="keys"))
-
         return 0
 
     def print_both_accs(self, msg, curr_step_trade_ID, counter_party, init_party):
+        """
+        Print accounts of both counter_party & init_party.
+        """
+
         acc = {}
         acc['seq_Trade_ID'] = [curr_step_trade_ID, curr_step_trade_ID]
         acc['party'] = ["counter", "init"]
@@ -75,10 +78,9 @@ class Account(Calculate, Cash_Processor):
         acc['num_trades'] = [counter_party.acc.num_trades, init_party.acc.num_trades]
 
         print(msg, tabulate(acc, headers="keys"))
-
         return 0
 
-    def size_increase(self, trade, position, party, trade_val):
+    def _size_increase(self, trade, position, party, trade_val):
         total_size = abs(self.net_position) + Decimal(trade.get('quantity'))
         # VWAP
         self.VWAP = (abs(self.net_position) * self.VWAP + trade_val) / total_size
@@ -88,8 +90,11 @@ class Account(Calculate, Cash_Processor):
         self.size_increase_cash_transfer(party, trade_val)
         return 0
 
-    # entire position covered, net position = 0
-    def covered(self, trade, position):
+    def _covered(self, trade, position):
+        """
+        Entire position covered, net position = 0
+        """
+
         raw_val = abs(self.net_position) * self.VWAP # value acquired with VWAP
         mkt_val = abs(self.net_position) * trade.get('price')
         self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
@@ -99,7 +104,7 @@ class Account(Calculate, Cash_Processor):
         self.VWAP = 0
         return mkt_val
 
-    def size_decrease(self, trade, position, party, trade_val):
+    def _size_decrease(self, trade, position, party, trade_val):
         size_left = abs(self.net_position) - Decimal(trade.get('quantity'))
         if size_left > 0:
             self.VWAP = (abs(self.net_position) * self.VWAP - trade_val) / size_left
@@ -107,12 +112,12 @@ class Account(Calculate, Cash_Processor):
             mkt_val = size_left * trade.get('price')
             self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
         else: # size_left == 0
-            mkt_val = self.covered(trade, position)
+            mkt_val = self._covered(trade, position)
         self.size_decrease_cash_transfer(party, trade_val)
         return 0
 
-    def covered_side_chg(self, trade, position, party):
-        mkt_val = self.covered(trade, position)
+    def _covered_side_chg(self, trade, position, party):
+        mkt_val = self._covered(trade, position)
         self.size_decrease_cash_transfer(party, mkt_val)
         # deal with remaining size that cause position change
         new_size = Decimal(trade.get('quantity')) - abs(self.net_position)
@@ -121,42 +126,30 @@ class Account(Calculate, Cash_Processor):
         self.size_increase_cash_transfer(party, self.position_val)
         return 0
 
-    def neutral(self, trade_val, trade, party):
+    def _neutral(self, trade_val, trade, party):
         self.position_val += trade_val
         self.VWAP = trade.get('price')
         self.size_increase_cash_transfer(party, trade_val)
 
-    def net_long(self, trade_val, trade, party):
+    def _net_long(self, trade_val, trade, party):
         if trade.get(party).get('side') == 'bid':
-            self.size_increase(trade, 'long', party, trade_val)
+            self._size_increase(trade, 'long', party, trade_val)
         else: # ask
             if self.net_position >= trade.get('quantity'): # still long or neutral
-                self.size_decrease(trade, 'long', party, trade_val)
+                self._size_decrease(trade, 'long', party, trade_val)
             else: # net_position changed to short
-                self.covered_side_chg(trade, 'long', party)
+                self._covered_side_chg(trade, 'long', party)
 
-    def net_short(self, trade_val, trade, party):
+    def _net_short(self, trade_val, trade, party):
         if trade.get(party).get('side') == 'ask':
-            self.size_increase(trade, 'short', party, trade_val)
+            self._size_increase(trade, 'short', party, trade_val)
         else: # bid
             if abs(self.net_position) >= trade.get('quantity'): # still short or neutral
-                self.size_decrease(trade, 'short', party, trade_val)
+                self._size_decrease(trade, 'short', party, trade_val)
             else: # net_position changed to long
-                self.covered_side_chg(trade, 'short', party)
+                self._covered_side_chg(trade, 'short', party)
 
-    def process_acc(self, trade, party):
-        self.num_trades += 1
-        trade_val = Decimal(trade.get('quantity')) * trade.get('price')
-        if self.net_position > 0: #long
-            self.net_long(trade_val, trade, party)
-        elif self.net_position < 0: # short
-            self.net_short(trade_val, trade, party)
-        else: # neutral
-            self.neutral(trade_val, trade, party)
-        self.update_net_position(trade.get(party).get('side'), trade.get('quantity'))
-        return 0
-
-    def update_net_position(self, side, trade_quantity):
+    def _update_net_position(self, side, trade_quantity):
         if self.net_position >= 0: # long or neutral
             if side == 'bid':
                 #self.net_position += trade_quantity
@@ -171,4 +164,16 @@ class Account(Calculate, Cash_Processor):
             else:
                 #self.net_position += trade_quantity
                 self.net_position = Decimal(self.net_position) + Decimal(trade_quantity)
+        return 0
+
+    def process_acc(self, trade, party):
+        self.num_trades += 1
+        trade_val = Decimal(trade.get('quantity')) * trade.get('price')
+        if self.net_position > 0: #long
+            self._net_long(trade_val, trade, party)
+        elif self.net_position < 0: # short
+            self._net_short(trade_val, trade, party)
+        else: # neutral
+            self._neutral(trade_val, trade, party)
+        self._update_net_position(trade.get(party).get('side'), trade.get('quantity'))
         return 0

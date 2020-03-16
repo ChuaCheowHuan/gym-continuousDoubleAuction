@@ -108,45 +108,83 @@ class Trader(Random_agent):
         return order
 
     def _place_limit_order(self, orderBook, qoute):
+        """
+        Note:
+            process_order if no such order exists in order tree.
+            Otherwise, modify the existing limit order.
+        """
+
         trades, order_in_book = [],[]
         order_id, order = self._get_order_ID(orderBook, qoute)
-        if order_id == -1:  # no duplicates
+        if order_id == -1:  # no such order exist
             trades, order_in_book = orderBook.process_order(qoute, False, False)
         else:
             trades, order_in_book = self.__modify_limit_order(orderBook, order_id, order, qoute)
+
         return trades, order_in_book
 
     def _modify_limit_order(self, orderBook, qoute):
+        """
+        Note:
+            __modify_limit_order if order exists in order tree.
+        """
+
         order_id, order = self._get_order_ID(orderBook, qoute)
-        if order_id == -1:  # no found
+        if order_id == -1:  # not found
             trades, order_in_book = [],[]
         else:
             trades, order_in_book = self.__modify_limit_order(orderBook, order_id, order, qoute)
+
         return trades, order_in_book
 
     def __modify_limit_order(self, orderBook, order_id, order, qoute):
+        """
+        Note:
+            Handle cash transfer accordingly before modifying order then,
+            modify_order in LOB.
+        """
+
         qoute['type'] = 'limit'
         qoute['quantity'] = Decimal(qoute['quantity'])
         self.acc.modify_cash_transfer(qoute, order)
         orderBook.modify_order(order_id, qoute)
+
         return [],[]
 
     def _cancel_limit_order(self, orderBook, qoute):
+        """
+        Note:
+            If order is found in LOB,
+            handle cash transfer accordingly after cancel_order in LOB.
+        """
+
         order_id, order = self._get_order_ID(orderBook, qoute)
-        if order_id == -1:  # no found
+        if order_id == -1:  # not found
             trades, order_in_book = [],[]
         else:
             orderBook.cancel_order(qoute['side'], order_id)
             self.acc.cancel_cash_transfer(order)
             trades, order_in_book = [],[]
+
         return trades, order_in_book
 
     def _get_order_ID(self, orderBook, qoute):
+        """
+        Find the order in the order tree.
+
+        Note:
+            If order already exist, return
+                order_ID, order.
+            If no such order in order tree, return
+                -1, None.
+        """
+
         order_map = self._find_orderTree(orderBook, qoute)
         for order_ID, order in order_map.items():
             if order.price == qoute['price'] and order.trade_id == qoute['trade_id']:
-                return order_ID, order
-        return -1, None # no found
+                return order_ID, order # order already exist
+
+        return -1, None # no such order in order tree.
 
     def _find_orderTree(self, orderBook, qoute):
         """
