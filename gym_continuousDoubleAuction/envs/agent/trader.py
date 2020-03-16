@@ -12,13 +12,27 @@ class Trader(Random_agent):
         self.ID = ID # trader unique ID
         self.acc = Account(ID, cash)
 
-    # take or execute action
     def place_order(self, type, side, size, price, LOB, agents):
+        """
+        Execute an action.
+
+        Return:
+            trades: list
+            order_in_book: list
+
+        Notes:
+            If side is None, do nothing. Otherwise, if the order is approved,
+            create the order & execute it. If trades took placed in this order,
+            process the trades. Update the (init_party) trader's account if
+            there's any unfilled.
+        """
+
         trades, order_in_book = [],[]
 
         if(side == None): # do nothing to LOB
             #print('side == None')
             return trades, order_in_book
+
         # normal execution
         if self._order_approved(self.acc.cash, size, price):
             order = self._create_order(type, side, size, price)
@@ -33,16 +47,24 @@ class Trader(Random_agent):
             else: # order == {} do nothing to LOB
                 return trades, order_in_book
 
-            if trades != []:
+            if trades != []: # if trades took placed in this order
                 self._process_trades(trades, agents)
+
             self.acc.order_in_book_init_party(order_in_book) # if there's any unfilled
             return trades, order_in_book
+
         else: # not enough cash to place order
             #print('Invalid order: order value > cash available.', self.ID)
             print("\nOrder NOT approved: -ve NAV for trader_ID {}.\n".format(self.ID))
             return trades, order_in_book
 
     def _order_approved(self, cash, size, price):
+        """
+        Conditions for order approval.
+
+        Return: boolean.
+        """
+
         #if self.acc.cash >= size * price and self.acc.nav > 0:
         if self.acc.nav > 0:
             return True
@@ -50,6 +72,13 @@ class Trader(Random_agent):
             return False
 
     def _create_order(self, type, side, size, price):
+        """
+        Create the order dictionary.
+
+        Return:
+            order: A dictionary.
+        """
+
         if type == 'market':
             order = {'type': type,
                      'side': side,
@@ -75,6 +104,7 @@ class Trader(Random_agent):
                      'trade_id': self.ID}
         else:
             order = {}
+
         return order
 
     def _place_limit_order(self, orderBook, qoute):
@@ -119,6 +149,12 @@ class Trader(Random_agent):
         return -1, None # no found
 
     def _find_orderTree(self, orderBook, qoute):
+        """
+        Get 1 of the 2 LOB trees.
+
+        returns: Either the bid or ask tree or None.
+        """
+
         if qoute['side'] == 'bid':
             return orderBook.bids.order_map
         elif qoute['side'] == 'ask':
@@ -127,8 +163,16 @@ class Trader(Random_agent):
             return None
 
     def _process_trades(self, trades, agents):
+        """
+        Process trades for the init_party & counter_party.
+
+        Notes:
+            It's possible that the init_party is also the counter_party.
+        """
+
         for i, trade in enumerate(trades):
             trade_val = Decimal(trade.get('quantity')) * trade.get('price')
+
             # init_party is not counter_party
             if trade.get('counter_party').get('ID') != trade.get('init_party').get('ID'):
                 counter_party = self._process_counter_party(agents, trade)
@@ -146,10 +190,18 @@ class Trader(Random_agent):
         return 0
 
     def _process_counter_party(self, agents, trade):
+        """
+        Find & return the counter_party.
+
+        return:
+            agent: A trader object.
+        """
+
         agent = None
         for counter_party in agents: # search for counter_party
             if counter_party.ID == trade.get('counter_party').get('ID'):
                 counter_party.acc.process_acc(trade, 'counter_party')
                 agent = counter_party
                 break
+
         return agent
