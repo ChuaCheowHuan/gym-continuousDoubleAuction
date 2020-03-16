@@ -153,10 +153,9 @@ $ pip install -e .
 5) Logging of trading data for all steps (for visualization after simulation).
 6) Move action consequences after each step by each agent into the respective
 info dictionary.
-7) A random starting price for better narrowing of spread (currently need many iterations for spread to narrow).
-8) Instead of traders(agents) having the same lag, introduce zero lag
+7) Instead of traders(agents) having the same lag, introduce zero lag
 (Each LOB snapshot in each t-step is visible to all traders) or random lag.
-9) Allow traders to have different starting capital.
+8) Allow traders to have different starting capital.
 
 # Acknowledgements:
 The orderbook matching engine is adapted from
