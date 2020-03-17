@@ -155,17 +155,6 @@ if __name__ == "__main__":
                 "gamma": 0.99,}
         return (None, obs_space, act_space, config)
 
-    """
-    def policy_mapper_0(agent_id):
-        if agent_id == 0:
-            return "policy_0" # PPO
-        elif agent_id == 1:
-            return "policy_1" # RandomPolicy
-        elif agent_id == 2:
-            return "policy_2" # RandomPolicy
-        else:
-            return "policy_3" # RandomPolicy
-    """
     def policy_mapper(agent_id):
         for i in range(num_agents):
             if agent_id == i:
@@ -177,19 +166,19 @@ if __name__ == "__main__":
     #policies = {"policy_{}".format(i): gen_policy(i) for i in range(args.num_policies)}
     policies = {"policy_{}".format(i): gen_policy(i) for i in range(num_policies)}
 
-    # override policy with random policy
-    """
-    policies["policy_{}".format(num_policies-3)] = (make_RandomPolicy(1), obs_space, act_space, {}) # random policy stored as the last item in policies dictionary
-    policies["policy_{}".format(num_policies-2)] = (make_RandomPolicy(2), obs_space, act_space, {}) # random policy stored as the last item in policies dictionary
-    policies["policy_{}".format(num_policies-1)] = (make_RandomPolicy(3), obs_space, act_space, {}) # random policy stored as the last item in policies dictionary
-    """
     def set_RandomPolicy(policies):
+        """
+        Set 1st policy as PPO & override all other policies as RandomPolicy with
+        different seed.
+        """
+
         for i in range(num_agents):
-            # random policy stored as the last item in policies dictionary
-            policies["policy_{}".format(num_policies-1)] = (make_RandomPolicy(3), obs_space, act_space, {})
+            if i == num_agents-1:
+                break
+            x = i + 1
+            policies["policy_{}".format(num_policies-x)] = (make_RandomPolicy(num_policies-x), obs_space, act_space, {})
 
         print('policies:', policies)
-
         return 0
 
     set_RandomPolicy(policies)
