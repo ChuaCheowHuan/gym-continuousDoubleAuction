@@ -84,21 +84,21 @@ self.observation_space = spaces.Box(low=neg_inf, high=inf, shape=(obs_row, obs_c
 An example of using RLlib to pit 1 PPO (Proximal Policy Optimization) agent
 against 3 random agents using this CDA environment is available in:
 ```
-CDA_env_RLlib.py
+CDA_env_RLlib_tune.py
 ```
 
 To **run** the environment with the sample training script:
 ```
 $ cd gym-continuousDoubleAuction/gym_continuousDoubleAuction
 
-$ python CDA_env_RLlib.py
+$ python CDA_env_RLlib_tune.py
 ```
 
 ---
 
 **Alternative ways** to run this environment:
 
-1) By using the Jupyter notebook `CDA_env_RLlib.ipynb`.
+1) By using the Jupyter notebook `CDA_env_RLlib_tune.ipynb`.
 This notebook contains a sample training script (implemented with Ray RLlib)
 & is tested in Colab.
 

@@ -1,15 +1,6 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-"""Simple example of setting up a multi-agent policy mapping.
-Control the number of agents and policies via --num-agents and --num-policies.
-This works with hundreds of agents and policies, but note that initializing
-many TF policies will take some time.
-Also, TF evals might slow down with large numbers of policies. To debug TF
-execution, set the TF_TIMELINE_DIR environment variable.
-"""
-
-# rllib rollout ~/ray_results/PPO/PPO_MMenv-v0_0_2019-08-09_00-06-10t4b1lscr/checkpoint-1 --run PPO --env MMenv-v0 --steps 100
 
 import os
 os.environ['RAY_DEBUG_DISABLE_MEMORY_MONITOR'] = "True"
@@ -21,29 +12,19 @@ import numpy as np
 
 import ray
 from ray import tune
-from ray.rllib.models import Model, ModelCatalog
-
+from ray.rllib.utils import try_import_tf
+from ray.tune.registry import register_env
 from ray.rllib.models.tf.tf_modelv2 import TFModelV2
 from ray.rllib.models.tf.fcnet_v2 import FullyConnectedNetwork
-
-from ray.tune.registry import register_env
-from ray.rllib.utils import try_import_tf
-
-
+from ray.rllib.models import Model, ModelCatalog
 from ray.rllib.policy.policy import Policy
-#from ray.rllib.policy.tf_policy import TFPolicy
-#from ray.rllib.policy import Policy
-
-
-#from ray.rllib.agents.ppo import PPOTrainer, DEFAULT_CONFIG
-
+from ray.rllib.agents.ppo.ppo import PPOTrainer
+from ray.rllib.agents.ppo.ppo_tf_policy import PPOTFPolicy
 
 import sys
 if "../" not in sys.path:
     sys.path.append("../")
-#from exchg.x.y import z
 
-#from envs.continuousDoubleAuction_env import continuousDoubleAuctionEnv
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import continuousDoubleAuctionEnv
 
 tf = try_import_tf()
@@ -123,17 +104,13 @@ def make_RandomPolicy(_seed):
 if __name__ == "__main__":
     args = parser.parse_args()
 
-    #ray.init()
-    #ray.init(num_cpus=2)
-    #ray.init(num_cpus=1, logging_level=logging.ERROR, local_mode=True) # local_mode for sequential trials to work in Travis which has only 2 CPU
     ray.init(num_cpus=2, logging_level=0, local_mode=True, ignore_reinit_error=True, log_to_driver=False, webui_host='127.0.0.1') # local_mode for sequential trials to work in Travis which has only 2 CPU
-    #ray.init(ignore_reinit_error=True, log_to_driver=False, webui_host='127.0.0.1', num_cpus=2)
     print(' ********** num_CPU =', os.cpu_count())
 
     num_agents = 4
     num_policies = num_agents
     num_iters = 3
-    simple = False#store_true
+    simple = False #store_true
 
     num_of_traders = args.num_agents
     tape_display_length = 100
@@ -160,10 +137,7 @@ if __name__ == "__main__":
             if agent_id == i:
                 return "policy_{}".format(i)
 
-    # Setup PPO with an ensemble of `num_policies` different policies
-
     # Dictionary of policies
-    #policies = {"policy_{}".format(i): gen_policy(i) for i in range(args.num_policies)}
     policies = {"policy_{}".format(i): gen_policy(i) for i in range(num_policies)}
 
     def set_RandomPolicy(policies):
@@ -185,45 +159,19 @@ if __name__ == "__main__":
     policy_ids = list(policies.keys())
 
 
-    tune.run(#PPOTrainer,
-             "PPO",
-             #"PG",
-             #queue_trials=False,
-             #resources_per_trial={"cpu": 2,
-             #                     "gpu": 0},
-
-             #stop={"training_iteration": args.num_iters},
-             #stop={"timesteps_total": max_step,
-             #      "training_iteration": num_iters},
+    tune.run(PPOTrainer,
              stop={"timesteps_total": max_step * episode},
-
              config={"env": "continuousDoubleAuction-v0",
-
-                     #"log_level": "DEBUG",
-                     #"simple_optimizer": args.simple,
-                     #"simple_optimizer": True,
-                     #"num_sgd_iter": 10,
-
-                     #"gamma": 0.9,
-
                      # Number of rollout worker actors to create for parallel sampling.
                      # Setting to 0 will force rollouts to be done in the trainer actor.
                      "num_workers": 0, # Colab (only 2 CPUs or 1 GPU)
-                     "num_envs_per_worker": 1, #4
-
-                     #"timesteps_per_iteration": max_step,
-
-                     # https://github.com/ray-project/ray/issues/4628
+                     "num_envs_per_worker": 1,
                      "sample_batch_size": 32, # number of environment steps sampled from each environment
                      "train_batch_size": 128, # minibatch size must be >= 128, number of environment steps sampled from all available environments
 
                      "multiagent": {"policies_to_train": ["policy_0"],
                                     "policies": policies,
-                                    #"policy_mapping_fn": tune.function(lambda agent_id: random.choice(policy_ids)),
-                                    #"policy_mapping_fn": tune.function(policy_mapper),
                                     "policy_mapping_fn": policy_mapper,
                                     },
                     },
                 )
-
-#ray.shutdown()

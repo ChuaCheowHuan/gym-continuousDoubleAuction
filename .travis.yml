@@ -5,4 +5,4 @@ python: 3.7.4
 install: pip install -r requirements.txt
 #script: python gym_continuousDoubleAuction/test.py
 # use > /dev/null to discard stdout from CDA env
-script: python gym_continuousDoubleAuction/test_CDA_env_RLlib.py > /dev/null
+script: python gym_continuousDoubleAuction/test_CDA_env_RLlib_tune.py > /dev/null
