@@ -17,40 +17,8 @@ This is **WIP**.
 ---
 
 # Update:
-20200304
-
-1) Upgraded to use (for training script):
-
-tensorflow 2.10
-
-ray[RLlib] 0.8.2
-
-2) New "mixed" (discrete and continuous) action space. (This action space could
-be changed in the future to make way for action spaces that make more sense.)
-```
-act_space = spaces.Tuple((spaces.Discrete(3), # side: none, bid, ask (0 to 2)
-                          spaces.Discrete(4), # type: market, limit, modify, cancel (0 to 3)
-
-                          # for size selection:
-                          spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32), # array of mean
-                          spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32), # array of sigma
-
-                          spaces.Discrete(12), # price: based on mkt depth from 0 to 11
-                        ))
-```
-
-Example model output:
-```
-[0, 3, array([0.47555637], dtype=float32), array([0.5383144], dtype=float32), 5]
-```
-
-3) Tweak code to allow bid ask spread to narrow more efficiently during
-simulation.
-
-4) Improved render standard [output](#making-sense-of-the-render-output).
-
-5) Includes new Jupyter notebook training script (implemented with RLlib),
-tested in Colab.
+[20200304](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/pull/9)
+[20191030](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/pull/4)
 
 ---
 
@@ -87,23 +55,35 @@ against 3 random agents using this CDA environment is available in:
 CDA_env_RLlib_tune.py
 ```
 
-To **run** the environment with the sample training script:
+To **run** the environment with the sample training script (which uses Tune):
 ```
 $ cd gym-continuousDoubleAuction/gym_continuousDoubleAuction
 
 $ python CDA_env_RLlib_tune.py
 ```
 
+or with the sample training script `CDA_env_RLlib_pyAPI.py`
+(which uses RLlib Python API):
+```
+$ cd gym-continuousDoubleAuction/gym_continuousDoubleAuction
+
+$ python CDA_env_RLlib_pyAPI.py
+```
+
 ---
 
-**Alternative ways** to run this environment:
+**Other ways** to run this environment:
 
-1) By using the Jupyter notebook `CDA_env_RLlib_tune.ipynb`.
-This notebook contains a sample training script (implemented with Ray RLlib)
-& is tested in Colab.
+1) By using the Jupyter notebook `CDA_env_RLlib_tune.ipynb`. This script uses
+Tune.
 
-2) By using the python `CDA_env_rand.py` script which is basically running a CDA
-simulator with dummy (non-learning) random agents.
+2) By using the Jupyter notebook `CDA_env_RLlib_pyAPI.ipynb`. This script uses
+the RLlib python API.
+
+Both notebooks (implemented with Ray RLlib) are tested in Colab.
+
+3) By using the python `CDA_env_rand.py` script which is basically running a
+CDA simulator with dummy (non-learning) random agents.
 
 ---
 
@@ -117,10 +97,10 @@ $ tensorboard --logdir ~/ray_results
 
 The figure below from Tensorboard shows the agents' performance:
 
+PPO agent is using policy 0 while policies 1 to 3 are used by the random agents.
+
 ![](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/agent0and1.png)
 ![](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/agent2and3.png)
-
-PPO agent is using policy 0 while policies 1 to 3 are used by the random agents.
 
 ---
 
@@ -156,6 +136,8 @@ info dictionary.
 7) Instead of traders(agents) having the same lag, introduce zero lag
 (Each LOB snapshot in each t-step is visible to all traders) or random lag.
 8) Allow traders to have different starting capital.
+9) Expose the limit orders (that are currently in the LOB or aggregated LOB)
+which belongs to a particular trader as observation to that trader.  
 
 # Acknowledgements:
 The orderbook matching engine is adapted from

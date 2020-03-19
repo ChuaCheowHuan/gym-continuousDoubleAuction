@@ -6,4 +6,5 @@
 .cache
 .DS_Store
 .error.txt
+**/chkpt
 venv
