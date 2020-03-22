@@ -48,7 +48,7 @@ class continuousDoubleAuctionEnv(Exchg_Helper, gym.Env, MultiAgentEnv):
         self.observation_space = spaces.Box(low=neg_inf, high=inf, shape=(obs_row,obs_col))
 
         # order per agent: {'ID': 0, 'type': 'market', 'side': 'bid', 'size': 1, 'price': 8}
-        self.action_space = self.disc_act()
+        self.action_space = self.act_space()
 
     # reset
     def reset(self):
