@@ -18,6 +18,16 @@ This is **WIP**.
 ---
 
 # Update:
+20200322:
+
+1) Include advance example of competitive self-play weights replacement between agents in training scripts.
+2) Allow checkpoint & restore in training scripts.
+3) Include dependencies using requirements.txt in Jupyter notebook training
+scripts.
+4) Include a different mean multiplier for sizes of market order & limit order.
+5) Add new comments.
+6) Code cleanup.
+
 [20200304](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/pull/9)
 
 [20191030](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/pull/4)
