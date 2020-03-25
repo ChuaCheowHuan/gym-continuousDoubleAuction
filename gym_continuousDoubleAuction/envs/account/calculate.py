@@ -42,7 +42,7 @@ class Calculate(object):
         price_diff = (self.VWAP - mkt_price, mkt_price - self.VWAP)[self.net_position >= 0] # (on_false, on_true)[condition]
         self.profit = Decimal(abs(self.net_position)) * price_diff
 
-        print('ID: {}; profit: {}'.format(ID, self.profit))
+        #print('ID: {}; profit: {}'.format(ID, self.profit))
 
         raw_val = abs(self.net_position) * self.VWAP
         self.position_val = raw_val + self.profit

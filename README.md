@@ -136,7 +136,7 @@ Winning here is defined as having the highest reward per training iteration.
 
 The results of this advance example are shown the figures below:
 
-The trained agents are P0 & P1, both using separate PPO policy weights. P1 & P2
+The trained agents are P0 & P1, both using separate PPO policy weights. P2 & P3
 are just random agents. The training iteration is per episode & rewards are
 episodic.
 

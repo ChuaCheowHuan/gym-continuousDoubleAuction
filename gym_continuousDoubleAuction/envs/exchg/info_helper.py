@@ -13,5 +13,7 @@ class Info_Helper(object):
         """
 
         #info = trader.acc.nav - trader.acc.prev_nav
-        infos[trader.ID] = {}
+        #infos[trader.ID] = {}
+        infos[trader.ID] = {"NAV": trader.acc.nav, "p_NAV": trader.acc.prev_nav}
+
         return infos
