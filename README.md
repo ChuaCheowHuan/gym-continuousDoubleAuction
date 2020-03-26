@@ -6,27 +6,29 @@ This is **WIP**.
 1) [Update](#update)
 2) [Purpose of this repository](#purpose-of-this-repository)
 3) [Example](#example)
-4) [Advance example](#advance-example)
-5) [Dependencies](#dependencies)
-6) [Installation](#installation)
-7) [TODO](#todo)
-8) [Acknowledgements](#acknowledgements)
-9) [Contributing](#contributing)
-10) [Disclaimer](#disclaimer)
-11) [Making sense of the render output](#making-sense-of-the-render-output)
+4) [Dependencies](#dependencies)
+5) [Installation](#installation)
+6) [TODO](#todo)
+7) [Acknowledgements](#acknowledgements)
+8) [Contributing](#contributing)
+9) [Disclaimer](#disclaimer)
+10) [Making sense of the render output](#making-sense-of-the-render-output)
 
 ---
 
 # Update:
-20200322:
+20200327:
 
-1) Include advance example of competitive self-play weights replacement between agents in training scripts.
-2) Allow checkpoint & restore in training scripts.
-3) Include dependencies using requirements.txt in Jupyter notebook training
-scripts.
-4) Include a different mean multiplier for sizes of market order & limit order.
-5) Add new comments.
-6) Code cleanup.
+1) Include training script with n agents & k trained agents.
+
+2) New reward function which requires the agents to maximize profit while
+minimizing number of trades made in an episode (trading session).
+
+3) Improve storage for callback functions & plot functionality to allow
+plotting of more than 100 episodes.
+
+
+[20200322](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/pull/10)
 
 [20200304](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/pull/9)
 
@@ -56,93 +58,50 @@ Note:
 Each agent is a trader, both terms will be used interchangeably in this
 environment.
 
-observation_space:
-```
-inf = float('inf')
-neg_inf = float('-inf')
-obs_row = 4
-obs_col = 10
-self.observation_space = spaces.Box(low=neg_inf, high=inf, shape=(obs_row, obs_col))
-```
+---
 
 # Example:
-An example of using RLlib to pit 1 PPO (Proximal Policy Optimization) agent
-against 3 random agents using this CDA environment is available in:
-```
-CDA_env_RLlib_tune.py
-```
+The example is available in this Jupyter notebook implemented with
+RLlib: `CDA_env_RLlib.ipynb`. This notebook is tested in Colab.
 
-To **run** the environment with the sample training script (which uses Tune):
-```
-$ cd gym-continuousDoubleAuction/gym_continuousDoubleAuction
+This example uses two trained agents & N random agents. All agents compete with
+one another in this zero-sum environment, irregardless of whether they're
+trained or random.
 
-$ python CDA_env_RLlib_tune.py
-```
+**competitive self-play**
 
-or with the sample training script `CDA_env_RLlib_pyAPI.py`
-(which uses RLlib Python API):
-```
-$ cd gym-continuousDoubleAuction/gym_continuousDoubleAuction
+The policy weights of the winning trained agent(trader) is used to replace the
+policy weights of the other trained agents after each training iteration.
+Winning here is defined as having the highest reward per training iteration.
 
-$ python CDA_env_RLlib_pyAPI.py
-```
+The reward function requires the agents to maximize profit while minimizing
+number of trades made in an episode (trading session). As the number of trades
+accumulates in the later stages of a session, profits will be scaled down by
+the number of trades & losses will be magnified.
 
----
+The trained agents are P0 & P1, both using separate PPO policy weights. The
+rest are random agents.
 
-**Other ways** to run this environment:
+The results with 10 agents are shown in the figures below:
 
-1) By using the Jupyter notebook `CDA_env_RLlib_tune.ipynb`. This script uses
-Tune.
+![Cumulative rewards](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/penalize_r.png)
 
-2) By using the Jupyter notebook `CDA_env_RLlib_pyAPI.ipynb`. This script uses
-the RLlib python API.
-
-Both notebooks (implemented with Ray RLlib) are tested in Colab.
-
-3) By using the python `CDA_env_rand.py` script which is basically running a
-CDA simulator with dummy (non-learning) random agents.
+![Cumulative P & L](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/penalize_PandL.png)
 
 ---
 
-Running the following tensorboard command & navigate to ```localhost:6006``` in
-your browser to access the **tensorboard graphs**:
+If you're running locally, you can run the following command & navigate
+to ```localhost:6006``` in your browser to access the **tensorboard graphs**:
 ```
 $ tensorboard --logdir ~/ray_results
 ```
 
 ---
 
-The figure below from Tensorboard shows the agents' performance:
+**Other ways** to run this environment:
 
-PPO agent is using policy 0 while policies 1 to 3 are used by the random agents.
-
-![](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/agent0and1.png)
-![](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/agent2and3.png)
-
----
-
-# Advance example:
-The examples above use at most one trained agent & N random agents.
-A more advance example is available in `CDA_env_RLlib_pyAPI_2_learned_agents.py`
-& it's Jupyter notebook version `CDA_env_RLlib_pyAPI_2_learned_agents.ipynb`.
-
-This example uses two train agents & N random agents. All agents compete with
-one another in this zero-sum environment, irregardless of whether they're
-trained or random (**competitive self-play**).
-
-The policy weights of the winning trained agent(trader) is used to replace the
-policy weights of the other trained agents after each training iteration.
-Winning here is defined as having the highest reward per training iteration.
-
-The results of this advance example are shown the figures below:
-
-The trained agents are P0 & P1, both using separate PPO policy weights. P2 & P3
-are just random agents. The training iteration is per episode & rewards are
-episodic.
-
-![Episodic rewards vs episode](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/2_trained_agents.png)
-
-![Cumulative episodic rewards vs episode](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/2_trained_agents_cumsum.png)
+By using the python `CDA_env_rand.py` script which is basically running a
+CDA simulator with dummy (non-learning) random agents.
 
 ---
 
@@ -157,6 +116,8 @@ episodic.
 For a full list of dependencies & versions, see `requirements.txt` in this
 repository.
 
+---
+
 # Installation:
 The environment is installable via pip.
 ```
@@ -165,29 +126,49 @@ $ cd gym-continuousDoubleAuction
 $ pip install -e .
 ```
 
+---
+
 # TODO:
 1) Custom RLlib workflow to include custom RND + PPO policies.
 (for training script).
+
 2) Parametric or hybrid action space (or experiment with different types of
   action space).
+
 3) More robust tests (add LOB test into test script).
+
 4) Better documentation.
+
 5) Display data for all steps (for visualization after simulation).
+
 6) Move action consequences after each step by each agent into the respective
 info dictionary.
+
 7) Instead of traders(agents) having the same lag, introduce zero lag
 (Each LOB snapshot in each t-step is visible to all traders) or random lag.
+
 8) Allow traders to have different starting capital.
+
 9) Expose the limit orders (that are currently in the LOB or aggregated LOB)
 which belongs to a particular trader as observation to that trader.  
-10) Move TODO to issues.
+
+10) Allows a distribution of previous winning policies to be selected for
+trained agents.
+
+11) Move TODO to issues.
+
+---
 
 # Acknowledgements:
 The orderbook matching engine is adapted from
 https://github.com/dyn4mik3/OrderBook
 
+---
+
 # Contributing:
 Please see [CONTRIBUTING.md](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/CONTRIBUTING.md).
+
+---
 
 # Disclaimer:
 This repository is only meant for research purposes & is **never** meant to be
