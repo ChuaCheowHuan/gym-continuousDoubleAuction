@@ -172,7 +172,7 @@ $ pip install -e .
   action space).
 3) More robust tests (add LOB test into test script).
 4) Better documentation.
-5) Logging of trading data for all steps (for visualization after simulation).
+5) Display data for all steps (for visualization after simulation).
 6) Move action consequences after each step by each agent into the respective
 info dictionary.
 7) Instead of traders(agents) having the same lag, introduce zero lag

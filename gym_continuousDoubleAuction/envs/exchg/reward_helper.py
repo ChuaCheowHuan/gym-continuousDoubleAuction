@@ -12,14 +12,12 @@ class Reward_Helper(object):
         NAV_chg = float(trader.acc.nav - trader.acc.prev_nav)
 
         # maximize NAV
-        rewards[trader.ID] = NAV_chg
+        #rewards[trader.ID] = NAV_chg
 
-        """
         # maximize NAV, minimize num of trades (more trades gets penalized).
         if NAV_chg >= 0:
             rewards[trader.ID] = NAV_chg / (trader.acc.num_trades + 1)
         else:
             rewards[trader.ID] = NAV_chg * (trader.acc.num_trades + 1)
-        """
 
         return rewards
