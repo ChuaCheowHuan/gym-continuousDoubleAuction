@@ -19,7 +19,7 @@ class continuousDoubleAuctionEnv(Exchg_Helper, gym.Env, MultiAgentEnv):
 
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, num_of_agents=2, init_cash=0, tick_size=1, tape_display_length=10, max_step=100):
+    def __init__(self, num_of_agents=2, init_cash=0, tick_size=1, tape_display_length=10, max_step=100, is_render=True):
         super(continuousDoubleAuctionEnv, self).__init__(init_cash, tick_size, tape_display_length)
 
         self.next_states = {}
@@ -32,6 +32,8 @@ class continuousDoubleAuctionEnv(Exchg_Helper, gym.Env, MultiAgentEnv):
         # within a step, multiple trades(ticks) could happened
         self.t_step = 0
         self.max_step = max_step
+
+        self.is_render = is_render
 
         # list of agents or traders
         self.agents = [Trader(ID, init_cash) for ID in range(0, num_of_agents)]
@@ -96,7 +98,7 @@ class continuousDoubleAuctionEnv(Exchg_Helper, gym.Env, MultiAgentEnv):
         #self.print_table("Shuffled action queueing sequence for LOB executions:\n", actions)
 
         self.seq_trades, self.seq_order_in_book = self.do_actions(actions) # Begin processing LOB
-        #self.mark_to_mkt() # mark to market
+        self.mark_to_mkt() # mark to market
 
         # after processing LOB
         state_input = self.prep_next_state()
@@ -109,9 +111,9 @@ class continuousDoubleAuctionEnv(Exchg_Helper, gym.Env, MultiAgentEnv):
 
     # render
     def render(self):
-        #if self.t_step % 300 == 0:
-        self._render()
-        #return 0
+        if self.is_render == True:
+            #if self.t_step % 300 == 0:
+            self._render()
 
     def _render(self):
         print('\n************************************************** t_step = {} **************************************************\n'.format(self.t_step))
@@ -138,8 +140,10 @@ class continuousDoubleAuctionEnv(Exchg_Helper, gym.Env, MultiAgentEnv):
         self.print_order_in_book_all_seq(self.seq_order_in_book)
         self.seq_order_in_book = []
 
-        print("mark_to_mkt profit@t:")
-        self.mark_to_mkt() # mark to market
+        #print("mark_to_mkt profit@t:")
+        #self.mark_to_mkt() # mark to market
+        self.print_mark_to_mkt("mark_to_mkt profit@t:")
+
         self.print_accs("\nAccounts:\n")
         print('\ntotal_sys_profit = {}; total_sys_nav = {}\n'.format(self.total_sys_profit(), self.total_sys_nav()))
 

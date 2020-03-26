@@ -152,6 +152,17 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
 
         return trade_dict
 
+    def print_mark_to_mkt(self, msg):
+        """
+        Print mark_to_mkt info for all traders(agents).
+        """
+
+        print(msg)
+        for trader in self.agents:
+            print('ID: {}; profit: {}'.format(trader.ID, trader.acc.profit))
+
+        return 0
+
     def print_accs(self, msg):
         """
         Print account info for all traders(agents).
