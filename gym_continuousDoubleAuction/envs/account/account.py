@@ -22,6 +22,7 @@ class Account(Calculate, Cash_Processor):
         self.profit = Decimal(0) # profit @ each trade(tick) within a single t step
         self.total_profit = Decimal(0) # profit at the end of a single t-step
         self.num_trades = 0
+        self.reward = 0
 
     def reset_acc(self, ID, cash=0):
         self.ID = ID
@@ -39,6 +40,7 @@ class Account(Calculate, Cash_Processor):
         self.profit = Decimal(0) # profit @ each trade(tick) within a single t step
         self.total_profit = Decimal(0) # profit at the end of a single t-step
         self.num_trades = 0
+        self.reward = 0
 
     def print_acc(self, msg):
         acc = {}

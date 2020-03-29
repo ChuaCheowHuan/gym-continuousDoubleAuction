@@ -12,7 +12,9 @@ This is **WIP**.
 7) [Acknowledgements](#acknowledgements)
 8) [Contributing](#contributing)
 9) [Disclaimer](#disclaimer)
-10) [Making sense of the render output](#making-sense-of-the-render-output)
+10) [Observation space](#observation-space)
+11) [Action space](#action-space)
+12) [Making sense of the render output](#making-sense-of-the-render-output)
 
 ---
 
@@ -176,6 +178,60 @@ used in any form of trading. Past performance is no guarantee of future results.
 If you suffer losses from using this repository, you are the sole person
 responsible for the losses. The author will **NOT** be held responsible in any
 way.
+
+---
+
+# Observation space:
+
+Each obs is a snapshot in each step.
+
+```
+obs = [array([1026., 2883., 1258., 1263., 3392., 1300., 1950., 1894., 2401., 4241.],          # bid size list
+       array([64., 63., 62., 61., 60., 59., 58., 57., 56., 55.]),                             # bid price list
+       array([ -519., -2108.,  -215., -1094., -1687., -2667., -3440., -2902., -1440 -3078.]), # ask size list
+       array([-65., -66., -67., -68., -69., -70., -71., -72., -73., -74.])]                   # ask price list
+```
+
+`obs_step_store` stores obs for all agents for all episodes for all steps.
+
+The storage for obs:
+
+```
+obs_step_store["agt_0_obs_step_list"] # stores all eps for 1 agent
+obs_step_store["agt_0_obs_step_list"][i] # stores eps i
+obs_step_store["agt_0_obs_step_list"][i][k] # stores step k in eps i
+obs_step_store["agt_0_obs_step_list"][i][k][3] # 1 of 4 columns of LOB for step k, c = 3 = (4th column)
+obs_step_store["agt_0_obs_step_list"][i][k][3][9] # 1 of 10 rows of last column (ask_price_list) in LOB, r = 9 = (level 10th ask price in LOB)
+```
+
+Nested loops to access info in each dictionary:
+
+```
+all_eps = obs_step_store["agt_0_obs_step_list"] # for agent 0
+for eps in all_eps:
+    for step in eps:
+        for col in step:
+            for lvl in col:
+                # print lvl
+```
+
+The 4 columns for agent 0:
+
+```
+bid_size_list = obs_step_store["agt_0_obs_step_list"][eps_i][k_step][c=0][0<=r<=9]
+bid_price_list = obs_step_store["agt_0_obs_step_list"][eps_i][k_step][c=1][0<=r<=9]
+ask_size_list = obs_step_store["agt_0_obs_step_list"][eps_i][k_step][c=2][0<=r<=9]
+ask_price_list = obs_step_store["agt_0_obs_step_list"][eps_i][k_step][c=3][0<=r<=9]        
+
+# The 10 rows or levels for agent 0:
+print(len(obs_step_store["agt_0_obs_step_list"][eps_i][k_step][c=3][0<=r<=9])) # len = 10
+```
+
+---
+
+# Action space:
+
+See [PR 9](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/pull/9)
 
 ---
 

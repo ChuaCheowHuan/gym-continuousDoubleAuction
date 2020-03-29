@@ -20,4 +20,6 @@ class Reward_Helper(object):
         else:
             rewards[trader.ID] = NAV_chg * (trader.acc.num_trades + 1)
 
+        trader.acc.reward = rewards[trader.ID]
+
         return rewards
