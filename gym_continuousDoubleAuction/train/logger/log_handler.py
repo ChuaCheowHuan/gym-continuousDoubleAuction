@@ -1,6 +1,7 @@
 import json
 import os
 
+calbk_counter = 0
 file_num = 0
 
 def log_json(agt_id, eps_id, sample_obj, write_dir):

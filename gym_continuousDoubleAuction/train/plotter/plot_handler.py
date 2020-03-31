@@ -107,7 +107,7 @@ def _show_obs(start, offset, fig_size, x_msg, y_msg, store, key, title):
 
 def show_obs(store):
     """
-    Display obs for all steps in all episodes for all agents from json files.
+    Display obs for all steps in all episodes from 1 agent from json files.
     """
 
     bid_size_start = 0
@@ -119,8 +119,8 @@ def show_obs(store):
     x_msg = "step"
     key = "agt_0_obs_list"
 
-    _show_obs(ask_size_start, offset, fig_size, x_msg, "ask size", store, key, 'Ask size for all steps in all episodes for all agents.')
-    _show_obs(bid_size_start, offset, fig_size, x_msg, "bid size", store, key, 'Bid size for all steps in all episodes for all agents.')
+    _show_obs(ask_size_start, offset, fig_size, x_msg, "ask size", store, key, 'Ask size for all steps.')
+    _show_obs(bid_size_start, offset, fig_size, x_msg, "bid size", store, key, 'Bid size for all steps.')
 
-    _show_obs(ask_price_start, offset, fig_size, x_msg, "ask price", store, key, 'Ask price for all steps in all episodes for all agents.')
-    _show_obs(bid_price_start, offset, fig_size, x_msg, "bid price", store, key, 'Bid price for all steps in all episodes for all agents.')
+    _show_obs(ask_price_start, offset, fig_size, x_msg, "ask price", store, key, 'Ask price for all steps.')
+    _show_obs(bid_price_start, offset, fig_size, x_msg, "bid price", store, key, 'Bid price for all steps.')
