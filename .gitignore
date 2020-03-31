@@ -7,4 +7,6 @@
 .DS_Store
 **/chkpt
 **/raw
+**/eps_data
+**/ray_results
 venv
