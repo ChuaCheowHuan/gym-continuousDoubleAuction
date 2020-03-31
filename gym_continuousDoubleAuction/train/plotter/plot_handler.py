@@ -39,7 +39,7 @@ def plot_step_result(init_cash, num_agents, num_trained_agent, the_type, store, 
     """
     Plot all steps in all episodes for all agents.
     """
-    plt.figure(figsize=(20,5))
+    plt.figure(figsize=(20,3))
     plt.xlabel(x_msg)
     plt.ylabel(y_msg)
 
@@ -60,7 +60,7 @@ def plot_eps_result(init_cash, num_agents, num_trained_agent, the_type, store, m
     """
     Plot all episodes for all agents.
     """
-    plt.figure(figsize=(20,5))
+    plt.figure(figsize=(20,3))
     plt.xlabel(x_msg)
     plt.ylabel(y_msg)
 

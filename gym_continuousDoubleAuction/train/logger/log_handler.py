@@ -51,3 +51,21 @@ def load_json(write_dir, max_step, obs_store, act_store):
                 agent_ID = split_words[1]
 
                 _load_json(agent_ID, max_step, obs_store, act_store, data)
+
+def log_eps(write_eps_dir, file_name, store):
+    """
+    Log episode data from trainer callback.
+    """
+    with open(write_eps_dir + file_name + '.txt', 'w') as outfile:
+        json.dump(store, outfile, indent=3) # write to file in json format:
+
+def load_eps(write_eps_dir, store):
+    """
+    Load episode data to memory storage.
+    """
+    for file_name in os.listdir(write_eps_dir):
+        #print(file_name)
+        if file_name == 'reward.txt':
+            with open(os.path.join(write_eps_dir, file_name)) as json_file:
+                store = json.load(json_file)
+                #print(store)
