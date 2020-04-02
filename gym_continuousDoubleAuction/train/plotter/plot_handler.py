@@ -89,7 +89,7 @@ def plot_last_eps_steps(y_dict, num_trained_agent, the_type, init_cash, prefix, 
     plt.ylabel(y_label)
     i=0
     for k,v in y_dict.items():
-        print("{}, {}".format(k, v))
+        #print("{}, {}".format(k, v))
         x=range(len(v))
         y = _cal_y(the_type, v, init_cash, store_suffix)
         #print(y)

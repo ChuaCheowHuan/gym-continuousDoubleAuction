@@ -4,6 +4,24 @@ import os
 callbk_counter = 0
 file_num = 0
 
+def log_threshold(num_workers, num_envs_per_worker, num_iters, num_agents):
+    """
+    num_workers
+    num_envs_per_worker
+    num_iters
+
+    num_eps = num_workers * num_envs_per_worker * num_iters
+
+    num_agents
+    """
+    num_eps = num_workers * num_envs_per_worker * num_iters
+    print("num_eps", num_eps)
+
+    if num_iters % num_envs_per_worker == 0:
+        return (num_iters * num_agents) - num_agents
+    else:
+        return num_iters * num_agents
+
 def create_dir(path):
     try:
         os.mkdir(path)
