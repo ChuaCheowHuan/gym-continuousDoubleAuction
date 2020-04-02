@@ -1,4 +1,27 @@
+import decimal
+import ast
 from gym_continuousDoubleAuction.train.helper.helper import str_to_arr
+
+def create_storage(num_agents, prefix, store_suffix):
+    """
+    Storage for on_train_result callback, use for plotting.
+    """
+    storage = {}
+    for i in range(0, num_agents):
+        storage[prefix + str(i) + store_suffix] = []
+    return storage
+
+def create_train_policy_list(num_trained_agent, prefix):
+    """
+    Storage for train_policy_list for declaring train poilicies in trainer config.
+    """
+    storage = []
+    for i in range(0, num_trained_agent):
+        storage.append(prefix + str(i))
+
+    print("train_policy_list = ", storage)
+
+    return storage
 
 def get_lv_data(lv, store):
     """
@@ -10,23 +33,25 @@ def get_lv_data(lv, store):
         lv_data.append(obs[lv])
     return lv_data
 
-def create_storage(num_agents, msg, msg2):
+def _get_last_eps_steps(the_type, store, key):
     """
-    Storage for on_train_result callback, use for plotting.
+    For steps from last episode
     """
-    storage = {}
-    for i in range(0, num_agents):
-        storage[msg + str(i) + msg2] = []
-    return storage
+    y = []
+    for step_str in store[key]:
+        step_dict = ast.literal_eval(step_str)
+        if the_type == 'NAV':
+            y.append(decimal.Decimal(step_dict[the_type]))
+        else:
+            y.append(step_dict[the_type])
+    return y
 
-def create_train_policy_list(num_trained_agent, msg):
+def get_last_eps_steps(num_agents, the_type, store, prefix, store_suffix):
     """
-    Storage for train_policy_list for declaring train poilicies in trainer config.
+    For steps from last episode
     """
-    storage = []
-    for i in range(0, num_trained_agent):
-        storage.append(msg + str(i))
-
-    print("train_policy_list = ", storage)
-
-    return storage
+    y_dict = {}
+    for i in range(num_agents):
+        key = prefix + str(i) + store_suffix
+        y_dict[key] = _get_last_eps_steps(the_type, store, key)
+    return y_dict
