@@ -149,3 +149,32 @@ def show_obs(store):
 
     _show_obs(ask_price_start, offset, x_msg, "ask price", store, key, 'Ask price for all steps.')
     _show_obs(bid_price_start, offset, x_msg, "bid price", store, key, 'Bid price for all steps.')
+
+def plot_sum_imb(store, title, y_label):
+    plt.figure(figsize=fig_size)
+    plt.xlabel("step")
+    plt.ylabel(y_label)
+    y = store
+    x = range(len(y))
+    col = np.random.uniform(0,1,3)
+    plt.axhline(y=0.0, color='black', label='size=0', linewidth=0.5, linestyle='-')
+    plt.plot(x, y, color='b', label='sum of all levels', linewidth=0.75)
+    y_MA = pd.Series(y).rolling(window=_window_size(y)).mean()
+    plt.plot(x, y_MA, color='black', label='MA sum of all levels', linewidth=1)
+    plt.legend()
+    plt.title(title)
+    plt.show()
+
+def plot_imb(store, title, y_label):
+    plt.figure(figsize=fig_size)
+    plt.xlabel("step")
+    plt.ylabel(y_label)
+    for k,v in store.items():
+        x = range(len(v))
+        y = v
+        col = np.random.uniform(0,1,3)
+        plt.plot(x, y, color=col, label='lv_'+str(k), linewidth=0.8)
+        #break
+    plt.legend()
+    plt.title(title)
+    plt.show()

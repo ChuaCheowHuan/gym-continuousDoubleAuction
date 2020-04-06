@@ -116,6 +116,6 @@ class State_Helper(object):
             state_diff.append(list_diff)
         state_diff = np.array(state_diff)
 
-        print('state_diff.shape:', state_diff.shape)
+        #print('state_diff.shape:', state_diff.shape)
 
         return state_diff

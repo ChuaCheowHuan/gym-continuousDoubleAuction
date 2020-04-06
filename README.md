@@ -12,9 +12,10 @@ This is **WIP**.
 7) [Acknowledgements](#acknowledgements)
 8) [Contributing](#contributing)
 9) [Disclaimer](#disclaimer)
-10) [Observation space](#observation-space)
-11) [Action space](#action-space)
-12) [Making sense of the render output](#making-sense-of-the-render-output)
+10) [Generated LOB](#generated-lob)
+11) [Observation space](#observation-space)
+12) [Action space](#action-space)
+13) [Making sense of the render output](#making-sense-of-the-render-output)
 
 ---
 
@@ -178,6 +179,21 @@ used in any form of trading. Past performance is no guarantee of future results.
 If you suffer losses from using this repository, you are the sole person
 responsible for the losses. The author will **NOT** be held responsible in any
 way.
+
+---
+
+# Generated LOB:
+
+![bid_price](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/bid_price.png)
+![ask_price](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/ask_price.png)
+
+![midpt_price](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/midpt_price.png)
+
+![bid_size](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/bid_size.png)
+![ask_size](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/ask_size.png)
+
+![ord_imb](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/ord_imb.png)
+![sum_imb](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/sum_imb.png)
 
 ---
 

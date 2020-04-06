@@ -20,7 +20,6 @@ def create_train_policy_list(num_trained_agent, prefix):
         storage.append(prefix + str(i))
 
     print("train_policy_list = ", storage)
-
     return storage
 
 def get_lv_data(lv, store):
@@ -55,3 +54,14 @@ def get_last_eps_steps(num_agents, the_type, store, prefix, store_suffix):
         key = prefix + str(i) + store_suffix
         y_dict[key] = _get_last_eps_steps(the_type, store, key)
     return y_dict
+
+def get_lv_dict(lv_start, lv_end, store, key):
+    """
+    Return n levels data from lv_start to lv_end-1 for all steps in a dictionary.
+    """
+    lv_dict = {}
+    for lv in range(lv_start, lv_end):
+        lv_data = get_lv_data(lv, store[key])
+        #_plot_lv(lv_data, lv, lv_start)
+        lv_dict[lv] = lv_data
+    return lv_dict
