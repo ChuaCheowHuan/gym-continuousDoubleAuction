@@ -150,6 +150,20 @@ def show_obs(store):
     _show_obs(ask_price_start, offset, x_msg, "ask price", store, key, 'Ask price for all steps.')
     _show_obs(bid_price_start, offset, x_msg, "bid price", store, key, 'Bid price for all steps.')
 
+def plot_imb(store, title, y_label):
+    plt.figure(figsize=fig_size)
+    plt.xlabel("step")
+    plt.ylabel(y_label)
+    for k,v in store.items():
+        x = range(len(v))
+        y = v
+        col = np.random.uniform(0,1,3)
+        plt.plot(x, y, color=col, label='lv_'+str(k), linewidth=0.8)
+        #break
+    plt.legend()
+    plt.title(title)
+    plt.show()
+
 def plot_sum_imb(store, title, y_label):
     plt.figure(figsize=fig_size)
     plt.xlabel("step")
@@ -165,16 +179,16 @@ def plot_sum_imb(store, title, y_label):
     plt.title(title)
     plt.show()
 
-def plot_imb(store, title, y_label):
-    plt.figure(figsize=fig_size)
-    plt.xlabel("step")
-    plt.ylabel(y_label)
-    for k,v in store.items():
-        x = range(len(v))
-        y = v
-        col = np.random.uniform(0,1,3)
-        plt.plot(x, y, color=col, label='lv_'+str(k), linewidth=0.8)
-        #break
-    plt.legend()
-    plt.title(title)
-    plt.show()
+def subplot_lv(lv_dict, offset, fig_size, title, y_label):
+    fig, axs = plt.subplots(10, figsize=(25,25), sharex=True, sharey=True)
+    fig.suptitle(title, x=0.5, y=0.1, verticalalignment='top', fontsize=20, fontweight='bold')
+
+    for i, _ in enumerate(axs):
+        if title == 'order imbalance' or title == 'midpoint price':
+                x = range(len(lv_dict[str(offset)]))
+                axs[i].plot(x, lv_dict[str(i + offset)], color=np.random.uniform(0,1,3))
+        else:
+                x = range(len(lv_dict[offset]))
+                axs[i].plot(x, lv_dict[i + offset], color=np.random.uniform(0,1,3))
+        axs[i].set(ylabel='lv_' + str(i+1) + y_label)
+    axs[i].set(xlabel='step')
