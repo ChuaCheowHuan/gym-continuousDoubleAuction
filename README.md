@@ -65,7 +65,7 @@ environment.
 
 # Example:
 The example is available in this Jupyter notebook implemented with
-RLlib: `CDA_env_RLlib.ipynb`. This notebook is tested in Colab.
+RLlib: `CDA_env_RLlib_NSF.ipynb`. This notebook is tested in Colab.
 
 This example uses two trained agents & N random agents. All agents compete with
 one another in this zero-sum environment, irregardless of whether they're
@@ -136,7 +136,7 @@ $ pip install -e .
 (for training script).
 
 2) Parametric or hybrid action space (or experiment with different types of
-  action space).
+action space).
 
 3) More robust tests (add LOB test into test script).
 
@@ -158,7 +158,9 @@ which belongs to a particular trader as observation to that trader.
 10) Allows a distribution of previous winning policies to be selected for
 trained agents.
 
-11) Move TODO to issues.
+11) Update current sample model (deprecated).
+
+12) Move TODO to issues.
 
 ---
 
