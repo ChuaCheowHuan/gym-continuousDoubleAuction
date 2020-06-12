@@ -12,24 +12,27 @@ This is **WIP**.
 7) [Acknowledgements](#acknowledgements)
 8) [Contributing](#contributing)
 9) [Disclaimer](#disclaimer)
-10) [Generated LOB](#generated-lob)
-11) [Observation space](#observation-space)
-12) [Action space](#action-space)
-13) [Making sense of the render output](#making-sense-of-the-render-output)
+
+# Appendix:
+10) [Observation space](#observation-space)
+11) [Action space](#action-space)
+12) [Making sense of the render output](#making-sense-of-the-render-output)
+13) [Generated LOB](#generated-lob)
 
 ---
 
 # Update:
-20200327:
+20200612
 
-1) Include training script with n agents & k trained agents.
+1) Breakup training script into smaller parts under train folder.
 
-2) New reward function which requires the agents to maximize profit while
-minimizing number of trades made in an episode (trading session).
+2) Some info from trader's account such as NAV are added to the environment's step info dictionary.
 
-3) Improve storage for callback functions & plot functionality to allow
-plotting of more than 100 episodes.
+3) Added logging/loading of step & episodic data to json files with gzip.
 
+4) Added subplot functionalities for self-play generated LOB data.
+
+[20200327](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/pull/11)
 
 [20200322](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/pull/10)
 
@@ -55,11 +58,6 @@ time step.
 Each time step is a snapshot of the limit order book & a key assumption is that
 all traders(agents) suffer the same lag (wait for all traders to have their orders
 executed before seeing the next LOB snapshot).
-
-Note:
-
-Each agent is a trader, both terms will be used interchangeably in this
-environment.
 
 ---
 
@@ -132,35 +130,32 @@ $ pip install -e .
 ---
 
 # TODO:
-1) Custom RLlib workflow to include custom RND + PPO policies.
-(for training script).
 
-2) Parametric or hybrid action space (or experiment with different types of
+1) Better documentation.
+
+2) More robust tests (add LOB test into test script).
+
+3) Generalize the environment to use more than 1 LOB.
+
+4) Parametric or hybrid action space (or experiment with different types of
 action space).
 
-3) More robust tests (add LOB test into test script).
+5) Expose the limit orders (that are currently in the LOB or aggregated LOB)
+which belongs to a particular trader as observation to that trader.  
 
-4) Better documentation.
-
-5) Display data for all steps (for visualization after simulation).
-
-6) Move action consequences after each step by each agent into the respective
-info dictionary.
+6) Allow traders to have random starting capital.
 
 7) Instead of traders(agents) having the same lag, introduce zero lag
 (Each LOB snapshot in each t-step is visible to all traders) or random lag.
 
-8) Allow traders to have different starting capital.
+8) Allows a distribution of previous winning policies to be selected for
+trained agents (for training script).
 
-9) Expose the limit orders (that are currently in the LOB or aggregated LOB)
-which belongs to a particular trader as observation to that trader.  
+9) Custom RLlib workflow to include custom RND + PPO policies (for training script).
 
-10) Allows a distribution of previous winning policies to be selected for
-trained agents.
+10) Update current sample model (deprecated) (for training script).
 
-11) Update current sample model (deprecated).
-
-12) Move TODO to issues.
+11) Move TODO to issues.
 
 ---
 
@@ -184,24 +179,13 @@ way.
 
 ---
 
-# Generated LOB:
-
-![bid_price](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/bid_price.png)
-![ask_price](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/ask_price.png)
-
-![midpt_price](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/midpt_price.png)
-
-![bid_size](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/bid_size.png)
-![ask_size](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/ask_size.png)
-
-![ord_imb](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/ord_imb.png)
-![sum_imb](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/sum_imb.png)
+## Appendix:
 
 ---
 
 # Observation space:
 
-Each obs is a snapshot in each step.
+Each obs is a snapshot in each environment step.
 
 ```
 obs = [array([1026., 2883., 1258., 1263., 3392., 1300., 1950., 1894., 2401., 4241.],          # bid size list
@@ -210,46 +194,11 @@ obs = [array([1026., 2883., 1258., 1263., 3392., 1300., 1950., 1894., 2401., 424
        array([-65., -66., -67., -68., -69., -70., -71., -72., -73., -74.])]                   # ask price list
 ```
 
-`obs_step_store` stores obs for all agents for all episodes for all steps.
-
-The storage for obs:
-
-```
-obs_step_store["agt_0_obs_step_list"] # stores all eps for 1 agent
-obs_step_store["agt_0_obs_step_list"][i] # stores eps i
-obs_step_store["agt_0_obs_step_list"][i][k] # stores step k in eps i
-obs_step_store["agt_0_obs_step_list"][i][k][3] # 1 of 4 columns of LOB for step k, c = 3 = (4th column)
-obs_step_store["agt_0_obs_step_list"][i][k][3][9] # 1 of 10 rows of last column (ask_price_list) in LOB, r = 9 = (level 10th ask price in LOB)
-```
-
-Nested loops to access info in each dictionary:
-
-```
-all_eps = obs_step_store["agt_0_obs_step_list"] # for agent 0
-for eps in all_eps:
-    for step in eps:
-        for col in step:
-            for lvl in col:
-                # print lvl
-```
-
-The 4 columns for agent 0:
-
-```
-bid_size_list = obs_step_store["agt_0_obs_step_list"][eps_i][k_step][c=0][0<=r<=9]
-bid_price_list = obs_step_store["agt_0_obs_step_list"][eps_i][k_step][c=1][0<=r<=9]
-ask_size_list = obs_step_store["agt_0_obs_step_list"][eps_i][k_step][c=2][0<=r<=9]
-ask_price_list = obs_step_store["agt_0_obs_step_list"][eps_i][k_step][c=3][0<=r<=9]        
-
-# The 10 rows or levels for agent 0:
-print(len(obs_step_store["agt_0_obs_step_list"][eps_i][k_step][c=3][0<=r<=9])) # len = 10
-```
-
 ---
 
 # Action space:
 
-See [PR 9](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/pull/9)
+See [PR 9](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/pull/9) for the current action space.
 
 ---
 
@@ -582,3 +531,20 @@ Number of trials: 1 ({'TERMINATED': 1})
 TERMINATED trials:
  - PPO_continuousDoubleAuction-v0_0:	TERMINATED, [3 CPUs, 0 GPUs], [pid=10220], 649 s, 10 iter, 40000 ts, 0 rew
 ```
+
+---
+
+# Generated LOB:
+
+![bid_price](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/bid_price.png)
+![ask_price](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/ask_price.png)
+
+![midpt_price](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/midpt_price.png)
+
+![bid_size](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/bid_size.png)
+![ask_size](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/ask_size.png)
+
+![ord_imb](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/ord_imb.png)
+![sum_imb](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/sum_imb.png)
+
+---
