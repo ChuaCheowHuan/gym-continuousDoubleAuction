@@ -5,6 +5,10 @@
 .ipynb_checkpoints
 .cache
 .DS_Store
+.dat
 **/chkpt
+**/ray_results
 **/raw
+**/eps
+**/last_eps_steps
 venv
