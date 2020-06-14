@@ -45,9 +45,11 @@ def store_user(num_agents, episode, suffix, msg2):
     for i in range(num_agents):
         key = "agt_" + str(i) + suffix
         val = episode.last_info_for(i).get(msg2)
-        if val is None:
+        if val is None:     # ISSUE: CHECK THE INFO DICT FROM ENV FOR None.
             continue # goto next agent
-        episode.user_data[key].append(float(val))
+            #val = 0.0
+        episode.user_data[key].append(float(val))           # stores a step
+
         #episode.user_data[key].append(str(val))
         #episode.user_data[key].append(unicode(val))
 
@@ -60,7 +62,7 @@ def store_step_hist(num_agents, episode, suffix):
     for i in range(num_agents):
         key = "agt_" + str(i) + suffix
         episode.custom_metrics[key] = np.mean(episode.user_data[key])
-        episode.hist_data[key].append(episode.user_data[key]) # stores a list
+        episode.hist_data[key].append(episode.user_data[key]) # stores a list of steps
 
 def store_hist(num_agents, episode, suffix):
     """

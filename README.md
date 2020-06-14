@@ -63,7 +63,7 @@ executed before seeing the next LOB snapshot).
 
 # Example:
 The example is available in this Jupyter notebook implemented with
-RLlib: `CDA_env_RLlib_NSF.ipynb`. This notebook is tested in Colab.
+RLlib: `CDA_NSP.ipynb`. This notebook is tested in Colab.
 
 This example uses two trained agents & N random agents. All agents compete with
 one another in this zero-sum environment, irregardless of whether they're
@@ -148,14 +148,17 @@ which belongs to a particular trader as observation to that trader.
 7) Instead of traders(agents) having the same lag, introduce zero lag
 (Each LOB snapshot in each t-step is visible to all traders) or random lag.
 
-8) Allows a distribution of previous winning policies to be selected for
-trained agents (for training script).
+8) Replace the need for using RLlib built-in dictionary info['result']['hist_stats']
+(to transfer episodic data from worker to trainer) by using detached actors from ray. (training)
 
-9) Custom RLlib workflow to include custom RND + PPO policies (for training script).
+9) Allows a distribution of previous winning policies to be selected for
+trained agents. (training)
 
-10) Update current sample model (deprecated) (for training script).
+10) Custom RLlib workflow to include custom RND + PPO policies. (training)
 
-11) Move TODO to issues.
+11) Update current model (deprecated). (training)
+
+12) Move TODO to issues.
 
 ---
 
