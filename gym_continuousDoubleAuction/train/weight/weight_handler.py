@@ -13,7 +13,7 @@ def get_trained_policies_name(policies, num_trained_agent):
         i = i + 1
     return train_policies_name
 
-def get_max_reward_ind(info, train_policies_name):
+def get_max_reward_ind(result, train_policies_name):
     """
     #Get index of the max reward of the trained policies in most recent episode.
     Get index of the max reward of the trained policies in most recent training iteration.
@@ -22,8 +22,8 @@ def get_max_reward_ind(info, train_policies_name):
     recent_policies_rewards = []
     prefix = "policy_"
     suffix = "_reward"
-    hist_stats = info["result"]["hist_stats"]
-    eps_this_iter = info["result"]["episodes_this_iter"]
+    hist_stats = result["hist_stats"]
+    eps_this_iter = result["episodes_this_iter"]
     for name in train_policies_name:
         key = prefix + str(name) + suffix
 

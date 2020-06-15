@@ -22,23 +22,7 @@ This is **WIP**.
 ---
 
 # Update:
-20200612
-
-1) Breakup training script into smaller parts under train folder.
-
-2) Some info from trader's account such as NAV are added to the environment's step info dictionary.
-
-3) Added logging/loading of step & episodic data to json files with gzip.
-
-4) Added subplot functionalities for self-play generated LOB data.
-
-[20200327](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/pull/11)
-
-[20200322](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/pull/10)
-
-[20200304](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/pull/9)
-
-[20191030](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/pull/4)
+See latest PR.
 
 ---
 
@@ -148,17 +132,14 @@ which belongs to a particular trader as observation to that trader.
 7) Instead of traders(agents) having the same lag, introduce zero lag
 (Each LOB snapshot in each t-step is visible to all traders) or random lag.
 
-8) Replace the need for using RLlib built-in dictionary info['result']['hist_stats']
-(to transfer episodic data from worker to trainer) by using detached actors from ray. (training)
-
-9) Allows a distribution of previous winning policies to be selected for
+8) Allows a distribution of previous winning policies to be selected for
 trained agents. (training)
 
-10) Custom RLlib workflow to include custom RND + PPO policies. (training)
+9) Custom RLlib workflow to include custom RND + PPO policies. (training)
 
-11) Update current model (deprecated). (training)
+10) Update current model (deprecated). (training)
 
-12) Move TODO to issues.
+11) Move TODO to issues.
 
 ---
 

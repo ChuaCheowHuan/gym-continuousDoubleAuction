@@ -1,67 +1,87 @@
-import decimal
-import ast
-from gym_continuousDoubleAuction.train.helper.helper import str_to_arr
+import numpy as np
+import ray
+#from gym_continuousDoubleAuction.train.helper.helper import str_to_arr
 
-def create_storage(num_agents, prefix, store_suffix):
+@ray.remote(num_cpus=0.25, num_gpus=0.25)
+class storage():
     """
-    Storage for on_train_result callback, use for plotting.
+    A remote object running as a ray detached actor on a separate process.
     """
-    storage = {}
-    for i in range(0, num_agents):
-        storage[prefix + str(i) + store_suffix] = []
-    return storage
+    def __init__(self, num_agents):
+        self.num_agents = num_agents
+        self.prefix = "agt_"
+        self.storage = self.create_storage(self.num_agents)
+        self.eps_counter = 0
 
-def create_train_policy_list(num_trained_agent, prefix):
-    """
-    Storage for train_policy_list for declaring train poilicies in trainer config.
-    """
-    storage = []
-    for i in range(0, num_trained_agent):
-        storage.append(prefix + str(i))
+    def create_storage(self, num_agents):
+        """
+        Global storage.
+        """
+        storage = {}
+        for i in range(self.num_agents):
+            storage[self.prefix + str(i)] = {"step": {"obs": [],
+                                                      "act": [],
+                                                      "reward": [],
+                                                      "NAV": [],
+                                                      "num_trades": []},
+                                             "eps":  {"policy_reward": [],
+                                                      "reward": [],
+                                                      "NAV": [],
+                                                      "num_trades": []}}
+        return storage
 
-    print("train_policy_list = ", storage)
-    return storage
+    def store(self, agt_id, step_or_eps, key, data):
+        """
+        agt_id: int
+        step_or_eps: string
+        key: string
+        data: steps (in a list) or episodic data (a numeric value)
+        """
+        self.storage[self.prefix + str(agt_id)][step_or_eps][key].append(data)
 
-def get_lv_data(lv, store):
-    """
-    Get a single level data for all steps.
-    """
-    lv_data = []
-    for val in store: # steps, each step is a obs string
-        obs = str_to_arr(val) # convert to 1D array
-        lv_data.append(obs[lv])
-    return lv_data
+    def store_agt_step(self, agt_id, obs, act, reward, NAV, num_trades):
+        self.store(agt_id, "step", "obs", obs)     # a dictionary
+        self.store(agt_id, "step", "act", act)
+        self.store(agt_id, "step", "reward", reward)
+        self.store(agt_id, "step", "NAV", NAV)
+        self.store(agt_id, "step", "num_trades", num_trades)
 
-def _get_last_eps_steps(the_type, store, key):
-    """
-    For steps from last episode
-    """
-    y = []
-    for step_str in store[key]:
-        step_dict = ast.literal_eval(step_str)
-        if the_type == 'NAV':
-            y.append(decimal.Decimal(step_dict[the_type]))
-        else:
-            y.append(step_dict[the_type])
-    return y
+    def store_agt_eps(self, agt_id, reward, NAV, num_trades):
+        self.store(agt_id, "eps", "reward", reward)
+        self.store(agt_id, "eps", "NAV", NAV)
+        self.store(agt_id, "eps", "num_trades", num_trades)
 
-def get_last_eps_steps(num_agents, the_type, store, prefix, store_suffix):
-    """
-    For steps from last episode
-    """
-    y_dict = {}
-    for i in range(num_agents):
-        key = prefix + str(i) + store_suffix
-        y_dict[key] = _get_last_eps_steps(the_type, store, key)
-    return y_dict
+    def store_agt_train(self, agt_id, policy_reward):
+        self.store(agt_id, "eps", "policy_reward", policy_reward)
 
-def get_lv_dict(lv_start, lv_end, store, key):
-    """
-    Return n levels data from lv_start to lv_end-1 for all steps in a dictionary.
-    """
-    lv_dict = {}
-    for lv in range(lv_start, lv_end):
-        lv_data = get_lv_data(lv, store[key])
-        #_plot_lv(lv_data, lv, lv_start)
-        lv_dict[lv] = lv_data
-    return lv_dict
+    def get_storage(self):
+        return self.storage
+
+    def inc_eps_counter(self):
+        self.eps_counter += 1
+
+    def get_eps_counter(self):
+        return self.eps_counter
+
+    def get_obs_from_agt(self, agt_id, depth):
+        """
+        Get bid_size, bid_price, ask_size, ask_price for all steps.
+        """
+        agt_key = "agt_" + str(agt_id)
+        obs = self.storage[agt_key]["step"]["obs"]
+        bid_size = np.empty((0, depth), float)
+        bid_price = np.empty((0, depth), float)
+        ask_size = np.empty((0, depth), float)
+        ask_price = np.empty((0, depth), float)
+        for eps_obs in obs:
+            for step_obs in eps_obs:      # 4 rows in 1 step_obs
+                bid_size_row = step_obs[0]
+                bid_price_row = step_obs[1]
+                ask_size_row = step_obs[2]
+                ask_price_row = step_obs[3]
+                bid_size = np.vstack((bid_size, bid_size_row))
+                bid_price = np.vstack((bid_price, bid_price_row))
+                ask_size = np.vstack((ask_size, ask_size_row))
+                ask_price = np.vstack((ask_price, ask_price_row))
+
+        return np.transpose(bid_size), np.transpose(bid_price), np.transpose(ask_size), np.transpose(ask_price)     # shape(depth_lvl, steps)

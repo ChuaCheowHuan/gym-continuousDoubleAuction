@@ -56,10 +56,22 @@ def set_agents_policies(policies, obs_space, act_space, num_agents, num_trained_
     for i in range(num_agents):
         policies["policy_{}".format(i)] = (make_RandomPolicy(i), obs_space, act_space, {})
 
-    # set agent 0 & 1 to use None (PPOTFPolicy)
+    # set trained agents to use None (PPOTFPolicy)
     for i in range(num_trained_agent):
         #policies["policy_{}".format(i)] = (PPOTFPolicy, obs_space, act_space, {})
         policies["policy_{}".format(i)] = (None, obs_space, act_space, {})
 
     print('policies:', policies)
     return 0
+
+def create_train_policy_list(num_trained_agent, prefix):
+    """
+    Storage for train_policy_list for declaring train poilicies in trainer config.
+    """
+    
+    storage = []
+    for i in range(0, num_trained_agent):
+        storage.append(prefix + str(i))
+
+    print("train_policy_list = ", storage)
+    return storage
