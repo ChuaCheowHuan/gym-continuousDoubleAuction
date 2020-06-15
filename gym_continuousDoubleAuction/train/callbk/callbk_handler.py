@@ -60,9 +60,17 @@ def store_step_hist(num_agents, episode, suffix):
     store steps into hist_data
     """
     for i in range(num_agents):
-        key = "agt_" + str(i) + suffix
-        episode.custom_metrics[key] = np.mean(episode.user_data[key])
+        key = "agt_" + str(i) + "_" +suffix
+        list = episode.user_data[key]
+        list[0] = 0 if list[0] is None else list[0]
+        episode.custom_metrics[key] = np.mean(list)
         episode.hist_data[key].append(episode.user_data[key]) # stores a list of steps
+
+def store_eps_hist_data(episode, key):
+    data = episode.user_data[key]
+    #data[0] = 0 if data[0] is None else data[0]
+    episode.custom_metrics[key] = np.mean(data)
+    episode.hist_data[key].append(data) # stores a list of steps
 
 def store_hist(num_agents, episode, suffix):
     """
