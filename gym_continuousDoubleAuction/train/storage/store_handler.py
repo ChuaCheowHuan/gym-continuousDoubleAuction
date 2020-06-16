@@ -2,7 +2,7 @@ import numpy as np
 import ray
 #from gym_continuousDoubleAuction.train.helper.helper import str_to_arr
 
-@ray.remote(num_cpus=0.25, num_gpus=0.25)
+@ray.remote(num_cpus=0.25, num_gpus=0)
 class storage():
     """
     A remote object running as a ray detached actor on a separate process.
@@ -53,6 +53,9 @@ class storage():
 
     def store_agt_train(self, agt_id, policy_reward):
         self.store(agt_id, "eps", "policy_reward", policy_reward)
+
+    def set_storage(self, store):
+        self.storage = store
 
     def get_storage(self):
         return self.storage
