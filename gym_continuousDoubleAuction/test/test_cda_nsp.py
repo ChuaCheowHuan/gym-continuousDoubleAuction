@@ -91,8 +91,8 @@ is_restore = False
 
 # log & load (g_store)
 log_g_store_dir = log_base_dir + "log_g_store/"
-create_dir(log_base_dir)
-create_dir(log_g_store_dir)
+#create_dir(log_base_dir)
+#create_dir(log_g_store_dir)
 
 # get obs & act spaces from dummy CDA env
 single_CDA_env = continuousDoubleAuctionEnv(num_of_traders, init_cash, tick_size, tape_display_length, max_step, is_render)
@@ -337,7 +337,7 @@ def get_config():
     config["sgd_minibatch_size"] = sgd_minibatch_size
     config["log_level"] = "WARN" # WARN/INFO/DEBUG
     config["callbacks"] = MyCallbacks
-    config["output"] = log_dir      # When using basic RLlib python API & not using tune.run,
+    #config["output"] = log_dir      # When using basic RLlib python API & not using tune.run,
                                     # tune will not set this path in experiment.py &
                                     # it will still use default path: ~/ray_results or root/ray_results
                                     # in colab (Accessible from folder icon on the left in colab).
