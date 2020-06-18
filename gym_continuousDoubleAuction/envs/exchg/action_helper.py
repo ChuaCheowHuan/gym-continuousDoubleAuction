@@ -12,7 +12,7 @@ class Action_Helper():
         self.min_size = 1
         self.mkt_max_size = 100
         self.N = 10
-        self.limit_max_size = self.mkt_max_size * N
+        self.limit_max_size = self.mkt_max_size * self.N
         self.mkt_size_mean_mul = (self.mkt_max_size - self.min_size) / 2 # multiplier for mean size of mkt orders
         self.limit_size_mean_mul = (self.limit_max_size - self.min_size) / 2 # multiplier for mean size of non mkt orders
 
