@@ -16,8 +16,9 @@ This is **WIP**.
 # Appendix:
 10) [Observation space](#observation-space)
 11) [Action space](#action-space)
-12) [Making sense of the render output](#making-sense-of-the-render-output)
-13) [Generated LOB](#generated-lob)
+12) [Reward](#Reward)
+13) [Making sense of the render output](#making-sense-of-the-render-output)
+14) [Generated LOB](#generated-lob)
 
 ---
 
@@ -183,6 +184,33 @@ obs = [array([1026., 2883., 1258., 1263., 3392., 1300., 1950., 1894., 2401., 424
 # Action space:
 
 See [PR 9](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/pull/9) for the current action space.
+
+---
+
+# Reward:
+
+If `NAV_chg` is used as the reward. The `episode_reward` from RLlib training
+output will be 0, indicating a zero-sum game.
+
+```
+NAV_chg = float(trader.acc.nav - trader.acc.prev_nav)
+
+# maximize NAV
+#rewards[trader.ID] = NAV_chg
+```
+
+However, if the `NAV_chg` is scaled, then the `episode_reward` from RLlib
+training output will NOT be 0.
+
+```
+# maximize NAV, minimize num of trades (more trades gets penalized).
+if NAV_chg >= 0:
+    rewards[trader.ID] = NAV_chg / (trader.acc.num_trades + 1)
+else:
+    rewards[trader.ID] = NAV_chg * (trader.acc.num_trades + 1)
+
+trader.acc.reward = rewards[trader.ID]
+```
 
 ---
 

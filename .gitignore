@@ -8,7 +8,7 @@
 .dat
 **/chkpt
 **/ray_results
-**/raw
+**/my_tmp
 **/eps
 **/last_eps_steps
 venv
