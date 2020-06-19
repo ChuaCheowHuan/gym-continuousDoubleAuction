@@ -10,8 +10,11 @@ class Action_Helper():
         super(Action_Helper, self).__init__()
 
         self.min_size = 1
-        self.mkt_size_mean_mul = 10 # multiplier for mean size of mkt orders
-        self.limit_size_mean_mul = 1000 # multiplier for mean size of non mkt orders
+        self.mkt_max_size = 100
+        self.N = 10
+        self.limit_max_size = self.mkt_max_size * self.N
+        self.mkt_size_mean_mul = (self.mkt_max_size - self.min_size) / 2 # multiplier for mean size of mkt orders
+        self.limit_size_mean_mul = (self.limit_max_size - self.min_size) / 2 # multiplier for mean size of non mkt orders
 
         # for random price generation
         self.min_tick = 1 # price tick
@@ -175,14 +178,16 @@ class Action_Helper():
     def _set_price(self, min_tick, max_price, side, price_code):
         """
         Set price according to price_code 0 to 11 where price_code 1 to 10
-        correspond to slot in agg_LOB (mkt depth table) on one side
+        correspond to a price slot in agg_LOB (mkt depth table) on one side
         (bid or ask).
 
         If order is on the bid side, 0 & 11 are the border cases where they
-        could be the lowest or highest bid respectively
+        could be 1 tick lower than the lowest bid or 1 tick higher than highest
+        bid respectively.
 
         If order is on the ask side, 0 & 11 are the border cases where they
-        could be the highest or lowest ask respectively
+        could be 1 tick higher than the highest ask or 1 tick lower than the
+        lowest ask respectively.
 
         Arguments:
             min_tick: Minimum price tick, a real number.

@@ -1,27 +1,24 @@
+import numpy as np
 import json
 import gzip
 import os
 
-callbk_counter = 0
-file_num = 0
-
-def log_threshold(num_workers, num_envs_per_worker, num_iters, num_agents):
+import ray
+        
+class NpEncoder(json.JSONEncoder):
     """
-    num_workers
-    num_envs_per_worker
-    num_iters
-
-    num_eps = num_workers * num_envs_per_worker * num_iters
-
-    num_agents
+    Your codes .... 
+    json.dumps(data, cls=NpEncoder)
     """
-    num_eps = num_workers * num_envs_per_worker * num_iters
-    print("num_eps", num_eps)
-
-    if num_iters % num_envs_per_worker == 0:
-        return (num_iters * num_agents) - num_agents
-    else:
-        return num_iters * num_agents
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        else:
+            return super(NpEncoder, self).default(obj)
 
 def create_dir(path):
     try:
@@ -31,113 +28,62 @@ def create_dir(path):
     else:
         print ("Folder created: %s" % path)
 
-def log_json(agt_id, eps_id, sample_obj, write_dir):
+def log_g_store(log_g_store_dir, num_agents, experiment_id):
     """
-    Output as training data as json files.
+    Store g_store as json file.
+    Store only last episode for step data.
+    Store all episodes for episodic data.
     """
+    g_store = ray.util.get_actor("g_store")
+    store = ray.get(g_store.get_storage.remote())
 
-    global file_num
-    file_name = str(file_num) + '_' + str(agt_id) + '_' + str(eps_id)
-    tmp_dict = {}
-    tmp_dict["eps"] = {}
-    for i,r in enumerate(sample_obj.rows()): # each row is a step dictionary
-        tmp_dict["eps"][str(i)] = {}
-        for k,v in r.items():
-            tmp_dict["eps"][str(i)][k] = str(v)
+    file_name = str(experiment_id)
 
-        with open(write_dir + file_name + '.dat', 'w') as outfile:
-            json.dump(tmp_dict, outfile, indent=3) # write to file in json format:
-    file_num = file_num + 1
+    tmp_dict = ray.get(g_store.create_storage.remote(num_agents)) 
 
-def _load_json(agent_ID, max_step, obs_store, act_store, infos_store, data):
-    """
-    Load 1 json file (1 episode) to memory for 1 agent
-    """
-    key_obs = 'agt' + '_' + agent_ID + '_obs_list'
-    key_act = 'agt' + '_' + agent_ID + '_act_list'
-    key_infos = 'agt' + '_' + agent_ID + '_infos_list'
-    for i in range(max_step):
-        obs_store[key_obs].append(data["eps"][str(i)]["obs"])
-        act_store[key_act].append(data["eps"][str(i)]["actions"])
-        infos_store[key_infos].append(data["eps"][str(i)]["infos"])
+    for agt_key, _ in store.items():
+               
+        tmp_dict[agt_key]["step"]["obs"] = store[str(agt_key)]["step"]["obs"][-1]
+        tmp_dict[agt_key]["step"]["act"] = store[agt_key]["step"]["act"][-1] 
+        tmp_dict[agt_key]["step"]["reward"] = store[agt_key]["step"]["reward"][-1] 
+        tmp_dict[agt_key]["step"]["NAV"] = store[agt_key]["step"]["NAV"][-1] 
+        tmp_dict[agt_key]["step"]["num_trades"] = store[agt_key]["step"]["num_trades"][-1]
+        tmp_dict[agt_key]["eps"]["policy_reward"] = store[agt_key]["eps"]["policy_reward"]
+        tmp_dict[agt_key]["eps"]["reward"] = store[agt_key]["eps"]["reward"]
+        tmp_dict[agt_key]["eps"]["NAV"] = store[agt_key]["eps"]["NAV"] 
+        tmp_dict[agt_key]["eps"]["num_trades"] = store[agt_key]["eps"]["num_trades"]
 
-        #print("{}, obs_store = {}".format(key_obs, obs_store[key_obs][i]))
-        #print("{}, act_store = {}".format(key_act, act_store[key_act][i]))
-        #if i == 1:
-        #    break
+    #with open(write_dir + file_name + '.dat', 'w') as outfile:
+    #   json.dump(tmp_dict, outfile, indent=3) # write to file in json format:
+    with gzip.GzipFile(log_g_store_dir + file_name + '.gzip', 'w') as fout:
+        fout.write(json.dumps(tmp_dict, cls=NpEncoder).encode('utf-8'))
 
-def load_json(write_dir, max_step, obs_store, act_store, infos_store):
+def load_g_store(log_g_store_dir, num_agents, experiment_id):
     """
-    Load all json files to memory.
+    Load json file to g_store.
     """
-    for file_name in os.listdir(write_dir):
+    g_store = ray.util.get_actor("g_store")
+    tmp_dict = ray.get(g_store.create_storage.remote(num_agents)) 
+
+    for file_name in os.listdir(log_g_store_dir):
         print(file_name)
-        if file_name.endswith('.dat'):
-            with open(os.path.join(write_dir, file_name)) as json_file:
-                data = json.load(json_file)
-                split_words = file_name.split('_')
-                #print("split_words", split_words)
-                agent_ID = split_words[1]
+        if file_name.endswith(str(experiment_id) + '.gzip'):
 
-                _load_json(agent_ID, max_step, obs_store, act_store, infos_store, data)
-
-def log_eps(write_eps_dir, file_name, store):
-    """
-    Log episode data from trainer callback.
-    """
-    with open(write_eps_dir + file_name + '.dat', 'w') as outfile:
-        json.dump(store, outfile, indent=3) # write to file in json format:
-
-def load_eps(write_eps_dir, file_name, store):
-    """
-    Load episode data to memory storage.
-    """
-    for f in os.listdir(write_eps_dir):
-        #print(file_name)
-        if f == file_name:
-            with open(os.path.join(write_eps_dir, f)) as json_file:
-                store = json.load(json_file)
-                #print(store)
-                return store
-
-def log_json_gzip(agt_id, eps_id, sample_obj, write_dir):
-    """
-    Output as training data as json files.
-    """
-
-    global file_num
-    file_name = str(file_num) + '_' + str(agt_id) + '_' + str(eps_id)
-    tmp_dict = {}
-    tmp_dict["eps"] = {}
-    for i,r in enumerate(sample_obj.rows()): # each row is a step dictionary
-        tmp_dict["eps"][str(i)] = {}
-        for k,v in r.items():
-            tmp_dict["eps"][str(i)][k] = str(v)
-
-        #with open(write_dir + file_name + '.dat', 'w') as outfile:
-        #    json.dump(tmp_dict, outfile, indent=3) # write to file in json format:
-
-        with gzip.GzipFile(write_dir + file_name + '.gzip', 'w') as fout:
-            fout.write(json.dumps(tmp_dict).encode('utf-8'))
-
-    file_num = file_num + 1
-
-def load_json_gzip(write_dir, max_step, obs_store, act_store, infos_store):
-    """
-    Load all json files to memory.
-    """
-    for file_name in os.listdir(write_dir):
-        print(file_name)
-        if file_name.endswith('.gzip'):
-
-            #with open(os.path.join(write_dir, file_name)) as json_file:
+            #with open(os.path.join(log_g_store_dir, file_name)) as json_file:
             #    data = json.load(json_file)
 
-            with gzip.GzipFile(write_dir + file_name, 'r') as fin:
+            with gzip.GzipFile(log_g_store_dir + file_name, 'r') as fin:
                 data = json.loads(fin.read().decode('utf-8'))
 
-                split_words = file_name.split('_')
-                #print("split_words", split_words)
-                agent_ID = split_words[1]
+                for agt_key, _ in data.items():
+                    tmp_dict[agt_key]["step"]["obs"].append(data[agt_key]["step"]["obs"])
+                    tmp_dict[agt_key]["step"]["act"].append(data[agt_key]["step"]["act"])
+                    tmp_dict[agt_key]["step"]["reward"].append(data[agt_key]["step"]["reward"])
+                    tmp_dict[agt_key]["step"]["NAV"].append(data[agt_key]["step"]["NAV"])
+                    tmp_dict[agt_key]["step"]["num_trades"].append(data[agt_key]["step"]["num_trades"])
+                    tmp_dict[agt_key]["eps"]["policy_reward"].append(data[agt_key]["eps"]["policy_reward"])
+                    tmp_dict[agt_key]["eps"]["reward"].append(data[agt_key]["eps"]["reward"])
+                    tmp_dict[agt_key]["eps"]["NAV"].append(data[agt_key]["eps"]["NAV"])
+                    tmp_dict[agt_key]["eps"]["num_trades"].append(data[agt_key]["eps"]["num_trades"])
 
-                _load_json(agent_ID, max_step, obs_store, act_store, infos_store, data)
+    ray.get(g_store.set_storage.remote(tmp_dict))        

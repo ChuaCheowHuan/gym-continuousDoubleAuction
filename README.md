@@ -16,29 +16,14 @@ This is **WIP**.
 # Appendix:
 10) [Observation space](#observation-space)
 11) [Action space](#action-space)
-12) [Making sense of the render output](#making-sense-of-the-render-output)
-13) [Generated LOB](#generated-lob)
+12) [Reward](#Reward)
+13) [Making sense of the render output](#making-sense-of-the-render-output)
+14) [Generated LOB](#generated-lob)
 
 ---
 
 # Update:
-20200612
-
-1) Breakup training script into smaller parts under train folder.
-
-2) Some info from trader's account such as NAV are added to the environment's step info dictionary.
-
-3) Added logging/loading of step & episodic data to json files with gzip.
-
-4) Added subplot functionalities for self-play generated LOB data.
-
-[20200327](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/pull/11)
-
-[20200322](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/pull/10)
-
-[20200304](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/pull/9)
-
-[20191030](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/pull/4)
+See latest PR.
 
 ---
 
@@ -63,7 +48,7 @@ executed before seeing the next LOB snapshot).
 
 # Example:
 The example is available in this Jupyter notebook implemented with
-RLlib: `CDA_env_RLlib_NSF.ipynb`. This notebook is tested in Colab.
+RLlib: `CDA_NSP.ipynb`. This notebook is tested in Colab.
 
 This example uses two trained agents & N random agents. All agents compete with
 one another in this zero-sum environment, irregardless of whether they're
@@ -133,29 +118,27 @@ $ pip install -e .
 
 1) Better documentation.
 
-2) More robust tests (add LOB test into test script).
+2) Generalize the environment to use more than 1 LOB.
 
-3) Generalize the environment to use more than 1 LOB.
-
-4) Parametric or hybrid action space (or experiment with different types of
+3) Parametric or hybrid action space (or experiment with different types of
 action space).
 
-5) Expose the limit orders (that are currently in the LOB or aggregated LOB)
+4) Expose the limit orders (that are currently in the LOB or aggregated LOB)
 which belongs to a particular trader as observation to that trader.  
 
-6) Allow traders to have random starting capital.
+5) Allow traders to have random starting capital.
 
-7) Instead of traders(agents) having the same lag, introduce zero lag
+6) Instead of traders(agents) having the same lag, introduce zero lag
 (Each LOB snapshot in each t-step is visible to all traders) or random lag.
 
-8) Allows a distribution of previous winning policies to be selected for
-trained agents (for training script).
+7) Allows a distribution of previous winning policies to be selected for
+trained agents. (training)
 
-9) Custom RLlib workflow to include custom RND + PPO policies (for training script).
+8) Custom RLlib workflow to include custom RND + PPO policies. (training)
 
-10) Update current sample model (deprecated) (for training script).
+9) Update current model (deprecated) or use default from RLlib. (training)
 
-11) Move TODO to issues.
+10) Move TODO to issues.
 
 ---
 
@@ -199,6 +182,33 @@ obs = [array([1026., 2883., 1258., 1263., 3392., 1300., 1950., 1894., 2401., 424
 # Action space:
 
 See [PR 9](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/pull/9) for the current action space.
+
+---
+
+# Reward:
+
+If `NAV_chg` is used as the reward. The `episode_reward` from RLlib training
+output will be 0, indicating a zero-sum game.
+
+```
+NAV_chg = float(trader.acc.nav - trader.acc.prev_nav)
+
+# maximize NAV
+#rewards[trader.ID] = NAV_chg
+```
+
+However, if the `NAV_chg` is scaled, then the `episode_reward` from RLlib
+training output will NOT be 0.
+
+```
+# maximize NAV, minimize num of trades (more trades gets penalized).
+if NAV_chg >= 0:
+    rewards[trader.ID] = NAV_chg / (trader.acc.num_trades + 1)
+else:
+    rewards[trader.ID] = NAV_chg * (trader.acc.num_trades + 1)
+
+trader.acc.reward = rewards[trader.ID]
+```
 
 ---
 

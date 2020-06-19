@@ -11,13 +11,9 @@ class Info_Helper(object):
         Returns:
             infos: Dictionary of dictionaries.
         """
-
-        #info = trader.acc.nav - trader.acc.prev_nav
-        #infos[trader.ID] = {}
-        infos[trader.ID] = {"NAV": str(trader.acc.nav),
-                            "prev_NAV": str(trader.acc.prev_nav),
+        infos[trader.ID] = {"reward": trader.acc.reward,
+                            "NAV": str(trader.acc.nav),
                             "num_trades": trader.acc.num_trades,
-                            "reward": trader.acc.reward,
                             }
 
         return infos
