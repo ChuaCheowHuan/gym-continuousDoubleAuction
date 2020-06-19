@@ -22,12 +22,14 @@ def _process_list(init_cash, agt_id, step_or_eps, data_key):
 
     if data_key == "reward":
         l = np.cumsum(l)
+        #l = l
     elif data_key == "NAV":
         l = [val - init_cash for val in l]         # cumulative returns
         l = np.cumsum(l)
     elif data_key == "num_trades":
-        l = pd.Series(l).rolling(window=_window_size(l)).mean()
+        #l = pd.Series(l).rolling(window=_window_size(l)).mean()
         l = np.cumsum(l)
+        #l = l
     else:
         l = []
 
