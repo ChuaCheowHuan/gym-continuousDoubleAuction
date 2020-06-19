@@ -118,29 +118,27 @@ $ pip install -e .
 
 1) Better documentation.
 
-2) More robust tests (add LOB test into test script).
+2) Generalize the environment to use more than 1 LOB.
 
-3) Generalize the environment to use more than 1 LOB.
-
-4) Parametric or hybrid action space (or experiment with different types of
+3) Parametric or hybrid action space (or experiment with different types of
 action space).
 
-5) Expose the limit orders (that are currently in the LOB or aggregated LOB)
+4) Expose the limit orders (that are currently in the LOB or aggregated LOB)
 which belongs to a particular trader as observation to that trader.  
 
-6) Allow traders to have random starting capital.
+5) Allow traders to have random starting capital.
 
-7) Instead of traders(agents) having the same lag, introduce zero lag
+6) Instead of traders(agents) having the same lag, introduce zero lag
 (Each LOB snapshot in each t-step is visible to all traders) or random lag.
 
-8) Allows a distribution of previous winning policies to be selected for
+7) Allows a distribution of previous winning policies to be selected for
 trained agents. (training)
 
-9) Custom RLlib workflow to include custom RND + PPO policies. (training)
+8) Custom RLlib workflow to include custom RND + PPO policies. (training)
 
-10) Update current model (deprecated). (training)
+9) Update current model (deprecated) or use default from RLlib. (training)
 
-11) Move TODO to issues.
+10) Move TODO to issues.
 
 ---
 
