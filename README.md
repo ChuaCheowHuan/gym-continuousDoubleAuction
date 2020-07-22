@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.com/ChuaCheowHuan/gym-continuousDoubleAuction.svg?branch=master)](https://travis-ci.com/ChuaCheowHuan/gym-continuousDoubleAuction)
+
 This is **WIP**.
 
 ---
