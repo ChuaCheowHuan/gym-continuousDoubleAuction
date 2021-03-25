@@ -59,7 +59,7 @@ pyrsistent==0.15.7
 pytest==5.3.5
 python-dateutil==2.8.1
 pytz==2019.3
-PyYAML==5.3
+PyYAML==5.4
 ray==0.8.5
 redis==3.4.1
 requests==2.23.0
