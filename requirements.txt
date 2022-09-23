@@ -48,7 +48,7 @@ packaging==20.1
 pandas==1.0.1
 Pillow==7.0.0
 pluggy==0.13.1
-protobuf==3.11.3
+protobuf==3.18.3
 py==1.8.1
 py-spy==0.3.3
 pyasn1==0.4.8
