@@ -14,7 +14,7 @@ def _window_size(y):
     return int(np.rint(len(y) * 0.1))
 
 def _process_list(init_cash, agt_id, step_or_eps, data_key):
-    g_store = ray.util.get_actor("g_store")
+    g_store = ray.get_actor("g_store")
     store = ray.get(g_store.get_storage.remote())
     l = store[agt_id][step_or_eps][data_key]
     if step_or_eps == "step":

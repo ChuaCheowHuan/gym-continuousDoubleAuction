@@ -15,8 +15,8 @@ from .agent.trader import Trader
 from tabulate import tabulate
 
 # The exchange environment
-class continuousDoubleAuctionEnv(Exchg_Helper, gym.Env, MultiAgentEnv):
-
+# class continuousDoubleAuctionEnv(Exchg_Helper, gym.Env, MultiAgentEnv):
+class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
     metadata = {'render.modes': ['human']}
 
     def __init__(self, num_of_agents=2, init_cash=0, tick_size=1, tape_display_length=10, max_step=100, is_render=True):

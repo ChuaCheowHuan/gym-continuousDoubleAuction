@@ -34,7 +34,7 @@ def log_g_store(log_g_store_dir, num_agents, experiment_id):
     Store only last episode for step data.
     Store all episodes for episodic data.
     """
-    g_store = ray.util.get_actor("g_store")
+    g_store = ray.get_actor("g_store")
     store = ray.get(g_store.get_storage.remote())
 
     file_name = str(experiment_id)
@@ -62,7 +62,7 @@ def load_g_store(log_g_store_dir, num_agents, experiment_id):
     """
     Load json file to g_store.
     """
-    g_store = ray.util.get_actor("g_store")
+    g_store = ray.get_actor("g_store")
     tmp_dict = ray.get(g_store.create_storage.remote(num_agents)) 
 
     for file_name in os.listdir(log_g_store_dir):

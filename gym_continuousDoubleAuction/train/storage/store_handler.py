@@ -2,6 +2,7 @@ import numpy as np
 import ray
 #from gym_continuousDoubleAuction.train.helper.helper import str_to_arr
 
+# Decorator's arguments should be read from config file.
 @ray.remote(num_cpus=0.25, num_gpus=0)
 class storage():
     """
