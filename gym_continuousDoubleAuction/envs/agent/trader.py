@@ -12,7 +12,7 @@ class Trader(Random_agent):
         self.ID = ID # trader unique ID
         self.acc = Account(ID, cash)
 
-    def place_order(self, type, side, size, price, LOB, agents):
+    def place_order(self, ord_type, side, size, price, LOB, agents):
         """
         Execute an action.
 
@@ -35,7 +35,7 @@ class Trader(Random_agent):
 
         # normal execution
         if self._order_approved(self.acc.cash, size, price):
-            order = self._create_order(type, side, size, price)
+            order = self._create_order(ord_type, side, size, price)
             if order['type'] == 'market':
                 trades, order_in_book = LOB.process_order(order, False, False)
             elif order['type'] == 'limit':
@@ -71,7 +71,7 @@ class Trader(Random_agent):
         else:
             return False
 
-    def _create_order(self, type, side, size, price):
+    def _create_order(self, ord_type, side, size, price):
         """
         Create the order dictionary.
 
@@ -79,25 +79,25 @@ class Trader(Random_agent):
             order: A dictionary.
         """
 
-        if type == 'market':
-            order = {'type': type,
+        if ord_type == 'market':
+            order = {'type': ord_type,
                      'side': side,
                      'quantity': size,
                      'trade_id': self.ID}
-        elif type == 'limit':
-            order = {'type': type,
-                     'side': side,
-                     'quantity': size,
-                     'price': price,
-                     'trade_id': self.ID}
-        elif type == 'modify':
-            order = {'type': type,
+        elif ord_type == 'limit':
+            order = {'type': ord_type,
                      'side': side,
                      'quantity': size,
                      'price': price,
                      'trade_id': self.ID}
-        elif type == 'cancel':
-            order = {'type': type,
+        elif ord_type == 'modify':
+            order = {'type': ord_type,
+                     'side': side,
+                     'quantity': size,
+                     'price': price,
+                     'trade_id': self.ID}
+        elif ord_type == 'cancel':
+            order = {'type': ord_type,
                      'side': side,
                      'quantity': size,
                      'price': price,

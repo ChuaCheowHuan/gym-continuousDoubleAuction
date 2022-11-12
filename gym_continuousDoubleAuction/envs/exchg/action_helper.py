@@ -81,12 +81,12 @@ class Action_Helper():
         seq_order_in_book = []
         for action in actions:
             ID = action.get("ID")
-            type = action.get("type")
+            ord_type = action.get("type")
             side = action.get("side")
             size = action.get("size")
             price = action.get("price")
             trader = self.agents[ID]
-            self.trades, self.order_in_book = trader.place_order(type, side, size, price, self.LOB, self.agents)
+            self.trades, self.order_in_book = trader.place_order(ord_type, side, size, price, self.LOB, self.agents)
             seq_trades.append(self.trades)
             seq_order_in_book.append(self.order_in_book)
 
@@ -106,7 +106,7 @@ class Action_Helper():
 
         # Assign model output for a single action to their respective fields.
         side = model_out[0]
-        type = model_out[1]
+        ord_type = model_out[1]
         size_mean = model_out[2]
         size_sigma = model_out[3]
         price_code = model_out[4]
@@ -114,7 +114,7 @@ class Action_Helper():
         act = {}
         act["ID"] = ID
         act["side"] = self._set_side(side)
-        act["type"] = self._set_type(type)
+        act["type"] = self._set_type(ord_type)
 
         size = self._set_size(act["type"], self.mkt_size_mean_mul, self.limit_size_mean_mul, size_mean, size_sigma)
         act["size"] = (size + self.min_size) * 1.0 # +self.min_size as size can't be 0, *1 for float
@@ -142,19 +142,19 @@ class Action_Helper():
 
         return side
 
-    def _set_type(self, type):
-        if type == 0:
-            type = 'market'
-        elif type == 1:
-            type = 'limit'
-        elif type == 2:
-            type = 'modify'
+    def _set_type(self, ord_type):
+        if ord_type == 0:
+            ord_type = 'market'
+        elif ord_type == 1:
+            ord_type = 'limit'
+        elif ord_type == 2:
+            ord_type = 'modify'
         else:
-            type = 'cancel'
+            ord_type = 'cancel'
 
-        return type
+        return ord_type
 
-    def _set_size(self, type, mkt_size_mean_mul, limit_size_mean_mul, mean, sigma):
+    def _set_size(self, ord_type, mkt_size_mean_mul, limit_size_mean_mul, mean, sigma):
         """
         Get size.
 
@@ -168,7 +168,7 @@ class Action_Helper():
         Returns:
             A size sampled from the distribution.
         """
-        if type == 'market':
+        if ord_type == 'market':
             sample = np.random.normal(mkt_size_mean_mul * mean, sigma, 1)
         else:
             sample = np.random.normal(limit_size_mean_mul * mean, sigma, 1)
