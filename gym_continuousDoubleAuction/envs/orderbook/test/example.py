@@ -84,7 +84,12 @@ print(crossing_limit_order)
 trades, order_in_book = order_book.process_order(crossing_limit_order, False, False)
 print("Trade occurs as incoming bid limit crosses best ask")
 print(trades)
-ans = "[{'timestamp': 9, 'price': Decimal('101'), 'quantity': 2, 'time': 9, 'counter_party': {'ID': 100, 'side': 'ask', 'order_id': 1, 'new_book_quantity': Decimal('3')}, 'init_party': {'ID': 109, 'side': 'bid', 'order_id': None, 'new_book_quantity': None}}]"
+ans = "[ \
+    {'timestamp': 9, 'price': Decimal('101'), 'quantity': 2, 'time': 9, \
+        'counter_party': {'ID': 100, 'side': 'ask', 'order_id': 1, 'new_book_quantity': Decimal('3')}, \
+        'init_party': {'ID': 109, 'side': 'bid', 'order_id': None, 'new_book_quantity': None} \
+    } \
+]"
 assert str(trades) == ans, "order_book.process_order ERROR."
 
 print(order_book)

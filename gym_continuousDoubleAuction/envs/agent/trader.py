@@ -9,10 +9,10 @@ from .random_agent import Random_agent
 
 class Trader(Random_agent):
     def __init__(self, ID, cash=0):
-        self.ID = ID # trader unique ID
+        self.ID = ID # unique ID
         self.acc = Account(ID, cash)
 
-    def place_order(self, ord_type, side, size, price, LOB, agents):
+    def place_order(self, ord_type, side, size, price, LOB, agents, step):
         """
         Execute an action.
 
@@ -26,50 +26,115 @@ class Trader(Random_agent):
             process the trades. Update the (init_party) trader's account if
             there's any unfilled.
         """
-
-        trades, order_in_book = [],[]
-
-        if(side == None): # do nothing to LOB
-            #print('side == None')
-            return trades, order_in_book
-
-        # normal execution
-        if self._order_approved(self.acc.cash, size, price):
-            order = self._create_order(ord_type, side, size, price)
-            if order['type'] == 'market':
-                trades, order_in_book = LOB.process_order(order, False, False)
-            elif order['type'] == 'limit':
-                trades, order_in_book = self._place_limit_order(LOB, order)
-            elif order['type'] == 'modify':
-                trades, order_in_book = self._modify_limit_order(LOB, order)
-            elif order['type'] == 'cancel':
-                trades, order_in_book = self._cancel_limit_order(LOB, order)
-            else: # order == {} do nothing to LOB
-                return trades, order_in_book
-
-            if trades != []: # if trades took placed in this order
-                self._process_trades(trades, agents)
-
-            self.acc.order_in_book_init_party(order_in_book) # if there's any unfilled
-            return trades, order_in_book
-
-        else: # not enough cash to place order
-            #print('Invalid order: order value > cash available.', self.ID)
-            print("\nOrder NOT approved: -ve NAV for trader_ID {}.\n".format(self.ID))
-            return trades, order_in_book
-
-    def _order_approved(self, cash, size, price):
-        """
-        Conditions for order approval.
-
-        Return: boolean.
-        """
-
-        #if self.acc.cash >= size * price and self.acc.nav > 0:
-        if self.acc.nav > 0:
-            return True
+        if side == None: # Do nothing to LOB.
+            trades, order_in_book = [], None
         else:
-            return False
+            # Normal execution.
+            if self._order_approved(size, price):
+                order = self._create_order(ord_type, side, size, price)
+                trades, order_in_book = self._place_order(order, LOB)
+
+                # There are unfilled qty.
+                if order_in_book != None:
+                    order_in_book['step'] = step
+                    self.acc.LOB_recs.append(order_in_book)
+
+                # If trades took placed in this order.
+                if trades != []:
+                    self._proc_init_party(agents, trades, step)
+
+
+                    # for agent in agents:
+                    #     # Update agent account.
+                    #     agent.acc.update_acc(trades[-1]['price'])
+
+
+            # Not enough cash to place order.
+            else:
+                print(f'Order NOT approved for trader ID: {self.ID}')
+                trades, order_in_book = [], None
+
+        return trades, order_in_book
+
+    def _place_order(self, order, LOB):
+        if order['type'] == 'market':
+            trades, order_in_book = LOB.process_order(order, False, False)
+        elif order['type'] == 'limit':
+            trades, order_in_book = self._place_limit_order(LOB, order)
+        elif order['type'] == 'modify':
+            trades, order_in_book = self._modify_limit_order(LOB, order)
+        elif order['type'] == 'cancel':
+            trades, order_in_book = self._cancel_limit_order(LOB, order)
+        else: # order == {} do nothing to LOB
+            trades, order_in_book = [], None
+
+        return trades, order_in_book
+
+    def _proc_init_party(self, agents, trades, step):
+        # self._process_trades(trades, agents)
+
+        # Process for this init trader
+        for trade in trades:
+            init_d = {
+                'step': step, 
+                'tick':trade['timestamp'], 
+                'party':'init',
+                'side':trade['init_party']['side'],
+                'price':trade['price'],
+                'quantity':trade['quantity'], 
+            }
+            self.acc.trade_recs.append(init_d)
+            self._proc_counter_party(agents, trade, step)
+
+            # # Update trader's acc.
+            # self.acc.update_acc(trade['price'])
+
+            
+        for agent in agents:
+            # Update agent account.
+            agent.acc.update_acc(trade['price'])
+
+
+    def _proc_counter_party(self, agents, trade, step):
+        # Process the counter parties of this trader (at this point, init & counter party could be same trader).
+        counter_d = {
+            'step': step, 
+            'tick':trade['timestamp'], 
+            'party':'counter',
+            'side':trade['counter_party']['side'],
+            'price':trade['price'],
+            'quantity':trade['quantity'], 
+        }
+        for agent in agents:
+            if agent.ID == trade['counter_party']['ID']:
+                # Add trade rec for agent.
+                agent.acc.trade_recs.append(counter_d)
+                # Update LOB rec for agent.
+                self.__proc_counter_party(agent, trade)
+
+                # # Update agent account.
+                # agent.acc.update_acc(trade['price'])
+
+                break         
+
+    def __proc_counter_party(self, agent, trade):
+        # Update LOB rec for agent.
+        for rec in agent.acc.LOB_recs:
+            if rec['order_id'] == trade['counter_party']['order_id']:
+                # Update quantity in LOB rec.
+                qty = trade['counter_party']['new_book_quantity'] 
+                if qty is not None:
+                    if isinstance(qty, int) or isinstance(qty, float):
+                        if qty > 0:
+                            rec['quantity'] = qty
+                        # Remove rec from LOB_recs.    
+                        else:
+                            agent.acc.LOB_recs.remove(rec)
+                # Remove rec from LOB_recs.
+                else:
+                    agent.acc.LOB_recs.remove(rec)
+
+                break
 
     def _create_order(self, ord_type, side, size, price):
         """
@@ -78,34 +143,38 @@ class Trader(Random_agent):
         Return:
             order: A dictionary.
         """
-
         if ord_type == 'market':
-            order = {'type': ord_type,
-                     'side': side,
-                     'quantity': size,
-                     'trade_id': self.ID}
-        elif ord_type == 'limit':
-            order = {'type': ord_type,
-                     'side': side,
-                     'quantity': size,
-                     'price': price,
-                     'trade_id': self.ID}
-        elif ord_type == 'modify':
-            order = {'type': ord_type,
-                     'side': side,
-                     'quantity': size,
-                     'price': price,
-                     'trade_id': self.ID}
-        elif ord_type == 'cancel':
-            order = {'type': ord_type,
-                     'side': side,
-                     'quantity': size,
-                     'price': price,
-                     'trade_id': self.ID}
+            order = {
+                'type': ord_type,
+                'side': side,
+                'quantity': size,
+                'trade_id': self.ID}
+        elif ord_type in ['limit','modify','cancel']:
+            order = {
+                'type': ord_type,
+                'side': side,
+                'quantity': size,
+                'price': price,
+                'trade_id': self.ID}
         else:
             order = {}
 
         return order
+
+    def _order_approved(self, size, price):
+        """
+        Conditions for order approval.
+
+        Return: boolean.
+        """
+        # Traverse LOB to find cost of all limit orders of this trader at this tick time.
+        # This cost if the cash_on_hold at this tick time.
+        # if self.acc.cash - self.acc.cash_on_hold >= Decimal(size) * Decimal(price):
+        if self.acc.nav > 0:
+            return True
+        else:
+            print(self.acc.nav, self.acc.cash, self.acc.cash_on_hold, self.acc.pos_val, self.acc.net_pos, Decimal(size), Decimal(price))
+            return False
 
     def _place_limit_order(self, orderBook, qoute):
         """
@@ -113,13 +182,13 @@ class Trader(Random_agent):
             process_order if no such order exists in order tree.
             Otherwise, modify the existing limit order.
         """
-
-        trades, order_in_book = [],[]
+        trades, order_in_book = [], None
         order_id, order = self._get_order_ID(orderBook, qoute)
-        if order_id == -1:  # no such order exist
+        # No such order exist.
+        if order_id == -1:  
             trades, order_in_book = orderBook.process_order(qoute, False, False)
         else:
-            trades, order_in_book = self.__modify_limit_order(orderBook, order_id, order, qoute)
+            trades, order_in_book = self.__modify_limit_order(orderBook, order_id, qoute)
 
         return trades, order_in_book
 
@@ -128,28 +197,28 @@ class Trader(Random_agent):
         Note:
             __modify_limit_order if order exists in order tree.
         """
-
         order_id, order = self._get_order_ID(orderBook, qoute)
         if order_id == -1:  # not found
-            trades, order_in_book = [],[]
+            trades, order_in_book = [], None
         else:
-            trades, order_in_book = self.__modify_limit_order(orderBook, order_id, order, qoute)
+            trades, order_in_book = self.__modify_limit_order(orderBook, order_id, qoute)
 
         return trades, order_in_book
 
-    def __modify_limit_order(self, orderBook, order_id, order, qoute):
+    def __modify_limit_order(self, orderBook, order_id, qoute):
         """
-        Note:
-            Handle cash transfer accordingly before modifying order then,
-            modify_order in LOB.
         """
-
         qoute['type'] = 'limit'
         qoute['quantity'] = Decimal(qoute['quantity'])
-        self.acc.modify_cash_transfer(qoute, order)
         orderBook.modify_order(order_id, qoute)
 
-        return [],[]
+        # Update LOB_recs in this trader's account.
+        for rec in self.acc.LOB_recs:
+            if rec['order_id'] == order_id:
+                rec['quantity'] == qoute['quantity']
+                break
+
+        return [], None
 
     def _cancel_limit_order(self, orderBook, qoute):
         """
@@ -157,14 +226,18 @@ class Trader(Random_agent):
             If order is found in LOB,
             handle cash transfer accordingly after cancel_order in LOB.
         """
-
         order_id, order = self._get_order_ID(orderBook, qoute)
         if order_id == -1:  # not found
-            trades, order_in_book = [],[]
+            trades, order_in_book = [], None
         else:
             orderBook.cancel_order(qoute['side'], order_id)
-            self.acc.cancel_cash_transfer(order)
-            trades, order_in_book = [],[]
+            trades, order_in_book = [], None
+
+            # Update LOB_recs in this trader's account.
+            for rec in self.acc.LOB_recs:
+                if rec['order_id'] == order_id:
+                    self.acc.LOB_recs.remove(rec)
+                    break
 
         return trades, order_in_book
 
@@ -178,7 +251,6 @@ class Trader(Random_agent):
             If no such order in order tree, return
                 -1, None.
         """
-
         order_map = self._find_orderTree(orderBook, qoute)
         for order_ID, order in order_map.items():
             if order.price == qoute['price'] and order.trade_id == qoute['trade_id']:
@@ -192,54 +264,9 @@ class Trader(Random_agent):
 
         returns: Either the bid or ask tree or None.
         """
-
         if qoute['side'] == 'bid':
             return orderBook.bids.order_map
         elif qoute['side'] == 'ask':
             return orderBook.asks.order_map
         else:
             return None
-
-    def _process_trades(self, trades, agents):
-        """
-        Process trades for the init_party & counter_party.
-
-        Notes:
-            It's possible that the init_party is also the counter_party.
-        """
-
-        for i, trade in enumerate(trades):
-            trade_val = Decimal(trade.get('quantity')) * trade.get('price')
-
-            # init_party is not counter_party
-            if trade.get('counter_party').get('ID') != trade.get('init_party').get('ID'):
-                counter_party = self._process_counter_party(agents, trade)
-                self.acc.process_acc(trade, 'init_party')
-
-                #self.acc.print_both_accs("\nAffected accounts_0:\n", i, counter_party, init_party=self)
-
-            else: # init_party is also counter_party, balance out limit order in LOB with mkt order.
-                self.acc.init_is_counter_cash_transfer(trade_val)
-
-                #self.acc.print_both_accs("\nAffected accounts (init_party = counter_party)_0:\n", i, counter_party=self, init_party=self)
-
-            #print('trades:', trades)
-
-        return 0
-
-    def _process_counter_party(self, agents, trade):
-        """
-        Find & return the counter_party.
-
-        return:
-            agent: A trader object.
-        """
-
-        agent = None
-        for counter_party in agents: # search for counter_party
-            if counter_party.ID == trade.get('counter_party').get('ID'):
-                counter_party.acc.process_acc(trade, 'counter_party')
-                agent = counter_party
-                break
-
-        return agent

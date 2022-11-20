@@ -100,23 +100,27 @@ class OrderBook(object):
                 transaction_record['party2'] = [quote['trade_id'], 'bid', None, None]
             """
             if side == 'bid': # counter_party's side
-                transaction_record['counter_party'] = {'ID': counter_party,
-                                                'side': 'bid',
-                                                'order_id': head_order.order_id,
-                                                'new_book_quantity': new_book_quantity}
-                transaction_record['init_party'] = {'ID': quote['trade_id'],
-                                                'side': 'ask',
-                                                'order_id': None,
-                                                'new_book_quantity': None}
+                transaction_record['counter_party'] = {
+                    'ID': counter_party,
+                    'side': 'bid',
+                    'order_id': head_order.order_id,
+                    'new_book_quantity': new_book_quantity}
+                transaction_record['init_party'] = {
+                    'ID': quote['trade_id'],
+                    'side': 'ask',
+                    'order_id': None,
+                    'new_book_quantity': None}
             else:
-                transaction_record['counter_party'] = {'ID': counter_party,
-                                                'side': 'ask',
-                                                'order_id': head_order.order_id,
-                                                'new_book_quantity': new_book_quantity}
-                transaction_record['init_party'] = {'ID': quote['trade_id'],
-                                                'side': 'bid',
-                                                'order_id': None,
-                                                'new_book_quantity': None}
+                transaction_record['counter_party'] = {
+                    'ID': counter_party,
+                    'side': 'ask',
+                    'order_id': head_order.order_id,
+                    'new_book_quantity': new_book_quantity}
+                transaction_record['init_party'] = {
+                    'ID': quote['trade_id'],
+                    'side': 'bid',
+                    'order_id': None,
+                    'new_book_quantity': None}
 
             self.tape.append(transaction_record)
             trades.append(transaction_record) # appending indicates a trade done, order filled
@@ -258,25 +262,27 @@ class OrderBook(object):
                 tempfile.write('%s' % value)
 
         tempfile.write("\n***tape***\n")
-        tempfile.write('Q' +
-        " @ " + '$' +
-        " (" + 't' +
-        ") " + 'c' +
-        "/" + 'i' +
-        " " + 'side' +
-        "\n")
+        tempfile.write(
+            'Q' +
+            " @ " + '$' +
+            " (" + 't' +
+            ") " + 'c' +
+            "/" + 'i' +
+            " " + 'side' +
+            "\n")
         if self.tape != None and len(self.tape) > 0:
             num = 0
             for entry in reversed(self.tape):
                 if num < self.tape_display_length: # get last num of entries
                     #tempfile.write(str(entry['quantity']) + " @ " + str(entry['price']) + " (" + str(entry['timestamp']) + ") " + str(entry['party1'][0]) + "/" + str(entry['party2'][0]) + "\n")
-                    tempfile.write(str(entry['quantity']) +
-                    " @ " + str(entry['price']) +
-                    " (" + str(entry['timestamp']) +
-                    ") " + str(entry['counter_party']['ID']) +
-                    "/" + str(entry['init_party']['ID']) +
-                    " " + str(entry['init_party']['side']) +
-                    "\n")
+                    tempfile.write(
+                        str(entry['quantity']) +
+                        " @ " + str(entry['price']) +
+                        " (" + str(entry['timestamp']) +
+                        ") " + str(entry['counter_party']['ID']) +
+                        "/" + str(entry['init_party']['ID']) +
+                        " " + str(entry['init_party']['side']) +
+                        "\n")
                     num += 1
                 else:
                     break

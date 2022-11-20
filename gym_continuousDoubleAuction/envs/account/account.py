@@ -1,44 +1,145 @@
+import numpy as np
+
 from decimal import Decimal
-
-from .cash_processor import Cash_Processor
-from .calculate import Calculate
-
 from tabulate import tabulate
 
-class Account(Calculate, Cash_Processor):
+class Account():
     def __init__(self, ID, cash=0):
         self.ID = ID
-        self.cash = Decimal(cash)
-        # nav is used to calculate P&L & r per t step
-        self.cash_on_hold = Decimal(0) # cash deducted for placing order = cash - value of live order in LOB
-        self.position_val = Decimal(0) # value of net_position
-        # nav is used to calculate P&L & r per t step
-        self.init_nav = Decimal(cash) # starting nav @t = 0
-        self.nav = Decimal(cash) # nav @t (nav @ end of a single t-step)
-        self.prev_nav = Decimal(cash) # nav @t-1
-        # assuming only one ticker (1 type of contract)
-        self.net_position = 0 # number of contracts currently holding long (positive) or short (negative)
-        self.VWAP = Decimal(0) # VWAP
-        self.profit = Decimal(0) # profit @ each trade(tick) within a single t step
-        self.total_profit = Decimal(0) # profit at the end of a single t-step
+        # Cash (capital)
+        self.init_cash = Decimal(cash)
+        self.cash = self.init_cash
+        # Cash deducted for placing order.
+        self.cash_on_hold = Decimal(0)
+        # Current position, long (positive) or short (negative).
+        self.net_pos = 0 
+        self.prev_pos = 0
+        self.pos_val = Decimal(0) 
+        self.trade_val = Decimal(0) 
+        self.profit = Decimal(0) 
+
+        # [
+        #   {'step':0, 'tick':0:, 'type':'bid', 'size':10, 'price':5}, 
+        #   {'step':0, 'tick':3:, 'type':'bid', 'size':2, 'price':7},
+        #   {'step':3, 'tick':2:, 'type':'ask', 'size':6, 'price':4},
+        # ]
+        self.trade_recs = []
+        # [
+        #   {'step':0, 'tick':0:, 'size':10, 'price':5, 'order_ID':1}, 
+        #   {'step':0, 'tick':3:, 'size':-2, 'price':7, 'order_ID':2}, 
+        #   {'step':3, 'tick':2:, 'size':-6, 'price':4, 'order_ID':5}, 
+        # ]
+        self.LOB_recs = []
+
+        # nav = cash - cash_on_hold + (net_pos * last_price)
+        self.nav =self.init_cash
+        self.prev_nav = self.nav
+        # Length of trade_recs.
         self.num_trades = 0
+        # reward = nav or reward = nav / num_trades.
         self.reward = 0
 
-    def reset_acc(self, ID, cash=0):
-        self.ID = ID
-        self.cash = Decimal(cash)
-        # nav is used to calculate P&L & r per t step
-        self.cash_on_hold = Decimal(0) # cash deducted for placing order = cash - value of live order in LOB
-        self.position_val = Decimal(0) # value of net_position
-        # nav is used to calculate P&L & r per t step
-        self.init_nav = Decimal(cash) # starting nav @t = 0
-        self.nav = Decimal(cash) # nav @t (nav @ end of a single t-step)
-        self.prev_nav = Decimal(cash) # nav @t-1
-        # assuming only one ticker (1 type of contract)
-        self.net_position = 0 # number of contracts currently holding long (positive) or short (negative)
-        self.VWAP = Decimal(0) # VWAP
-        self.profit = Decimal(0) # profit @ each trade(tick) within a single t step
-        self.total_profit = Decimal(0) # profit at the end of a single t-step
+    def _cal_val(self):
+        """
+        Compute total trade value that belongs to the trader after a new trade occured.
+        """
+        vals = []
+        for rec in self.trade_recs:
+            val = rec['price'] * Decimal(rec['quantity'])
+            # Trade value is negative when long as in goods are recieved & cash paid out.
+            if rec['side'] == 'bid':
+                val = val * -1
+
+            vals.append(val)
+        
+        return np.sum(vals)
+
+    def _cal_costs(self):
+        """
+        Compute total costs in LOB that belong to the trader after a new trade occured.
+        """
+        costs = []
+        for rec in self.LOB_recs:
+            # Cost is always positive regardless of side.
+            cost = rec['price'] * Decimal(rec['quantity'])
+            # if rec['side'] == 'bid':
+            #     cost = cost * -1
+            costs.append(cost)
+
+        return np.sum(costs)
+
+    def _cal_net_pos(self):
+        """
+        Compute net position that belongs to the trader.
+        """
+        qtys = []
+        for rec in self.trade_recs:
+            qty = rec['quantity']
+            # Trade value is negative when long as in goods are recieved & cash paid out.
+            if rec['side'] == 'ask':
+                qty *= -1
+
+            qtys.append(int(qty))
+        
+        return np.sum(qtys)
+
+    def _update_cash(self):
+        self.cash = self.init_cash - Decimal(self._update_cash_on_hold()) + self._update_trade_val()
+
+    def _update_cash_on_hold(self):      
+        self.cash_on_hold = Decimal(self._cal_costs())
+
+        return self.cash_on_hold
+
+    def _update_trade_val(self):
+        self.trade_val = Decimal(self._cal_val())
+
+        return self.trade_val
+
+    def _update_net_pos(self):
+        self.prev_pos = self.net_pos
+        self.net_pos = self._cal_net_pos()
+
+    def _update_pos_val(self, price):
+        # self.pos_val = self.net_pos * price
+        self.pos_val = Decimal(float(self.net_pos)) * price
+
+        return self.pos_val
+
+    def _update_profit(self, price):
+        print(price)
+
+        trade_val = np.abs(self.trade_val)
+        pos_val = np.abs(self._update_pos_val(price))
+        self.profit = pos_val - trade_val
+        if self.net_pos < 0:
+            self.profit = self.profit * -1
+
+    def _update_nav(self, price):
+        self.prev_nav = self.nav
+
+        self._update_profit(price)
+
+        self.nav = self.cash + self.cash_on_hold - self.trade_val + self.profit
+
+    def update_acc(self, price):
+        self._update_cash()
+        self._update_net_pos()
+        self._update_nav(price)
+        self.num_trades = len(self.trade_recs)
+
+        # print(self.ID, self.cash, self.cash_on_hold, self.pos_val, self.net_pos, self.prev_nav, self.nav)
+
+    def reset_acc(self, cash=0):
+        self.cash = self.init_cash
+        self.cash_on_hold = Decimal(0) 
+        self.net_pos = 0 
+        self.prev_pos = 0
+        self.pos_val = Decimal(0) 
+        self.trade_val = Decimal(0) 
+        self.profit = Decimal(0) 
+        self.nav = self.init_cash
+        self.prev_nav = self.nav
         self.num_trades = 0
         self.reward = 0
 
@@ -47,135 +148,36 @@ class Account(Calculate, Cash_Processor):
         acc['ID'] = [self.ID]
         acc['cash'] = [self.cash]
         acc['cash_on_hold'] = [self.cash_on_hold]
-        acc['position_val'] = [self.position_val]
+        acc['net_pos'] = [self.net_pos]
+        acc['pos_val'] = [self.pos_val]
+        acc['trade_val'] = [self.trade_val]
         acc['prev_nav'] = [self.prev_nav]
         acc['nav'] = [self.nav]
-        acc['net_position'] = [self.net_position]
-        acc['VWAP'] = [self.VWAP]
-        acc['profit'] = [self.profit]
-        acc['total_profit'] = [self.total_profit]
         acc['num_trades'] = [self.num_trades]
+        acc['reward'] = [self.reward]
+        # acc['trade_recs'] = [self.trade_recs]
+        # acc['LOB_recs'] = [self.LOB_recs]
 
         print(msg, tabulate(acc, headers="keys"))
+
         return 0
 
-    def print_both_accs(self, msg, curr_step_trade_ID, counter_party, init_party):
-        """
-        Print accounts of both counter_party & init_party.
-        """
+    # def print_both_accs(self, msg, curr_step_trade_ID, counter_party, init_party):
+    #     """
+    #     Print accounts of both counter_party & init_party.
+    #     """
+    #     acc = {}
+    #     acc['seq_Trade_ID'] = [curr_step_trade_ID, curr_step_trade_ID]
+    #     acc['party'] = ["counter", "init"]
+    #     acc['ID'] = [counter_party.acc.ID, init_party.acc.ID]
+    #     acc['cash'] = [counter_party.acc.cash, init_party.acc.cash]
+    #     acc['cash_on_hold'] = [counter_party.acc.cash_on_hold, init_party.acc.cash_on_hold]
+    #     acc['net_position'] = [counter_party.acc.net_pos, init_party.acc.net_pos]
+    #     acc['position_val'] = [counter_party.acc.pos_val, init_party.acc.pos_val]
+    #     acc['prev_nav'] = [counter_party.acc.prev_nav, init_party.acc.prev_nav]
+    #     acc['nav'] = [counter_party.acc.nav, init_party.acc.nav]
+    #     acc['num_trades'] = [counter_party.acc.num_trades, init_party.acc.num_trades]
 
-        acc = {}
-        acc['seq_Trade_ID'] = [curr_step_trade_ID, curr_step_trade_ID]
-        acc['party'] = ["counter", "init"]
-        acc['ID'] = [counter_party.acc.ID, init_party.acc.ID]
-        acc['cash'] = [counter_party.acc.cash, init_party.acc.cash]
-        acc['cash_on_hold'] = [counter_party.acc.cash_on_hold, init_party.acc.cash_on_hold]
-        acc['position_val'] = [counter_party.acc.position_val, init_party.acc.position_val]
-        acc['prev_nav'] = [counter_party.acc.prev_nav, init_party.acc.prev_nav]
-        acc['nav'] = [counter_party.acc.nav, init_party.acc.nav]
-        acc['net_position'] = [counter_party.acc.net_position, init_party.acc.net_position]
-        acc['VWAP'] = [counter_party.acc.VWAP, init_party.acc.VWAP]
-        acc['profit'] = [counter_party.acc.profit, init_party.acc.profit]
-        acc['total_profit'] = [counter_party.acc.total_profit, init_party.acc.total_profit]
-        acc['num_trades'] = [counter_party.acc.num_trades, init_party.acc.num_trades]
+    #     print(msg, tabulate(acc, headers="keys"))
 
-        print(msg, tabulate(acc, headers="keys"))
-        return 0
-
-    def _size_increase(self, trade, position, party, trade_val):
-        total_size = abs(self.net_position) + Decimal(trade.get('quantity'))
-        # VWAP
-        self.VWAP = (abs(self.net_position) * self.VWAP + trade_val) / total_size
-        raw_val = total_size * self.VWAP # value acquired with VWAP
-        mkt_val = total_size * trade.get('price')
-        self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
-        self.size_increase_cash_transfer(party, trade_val)
-        return 0
-
-    def _covered(self, trade, position):
-        """
-        Entire position covered, net position = 0
-        """
-
-        raw_val = abs(self.net_position) * self.VWAP # value acquired with VWAP
-        mkt_val = abs(self.net_position) * trade.get('price')
-        self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
-        self.size_zero_cash_transfer(mkt_val)
-        # reset to 0
-        self.position_val = 0
-        self.VWAP = 0
-        return mkt_val
-
-    def _size_decrease(self, trade, position, party, trade_val):
-        size_left = abs(self.net_position) - Decimal(trade.get('quantity'))
-        if size_left > 0:
-            self.VWAP = (abs(self.net_position) * self.VWAP - trade_val) / size_left
-            raw_val = size_left * self.VWAP # value acquired with VWAP
-            mkt_val = size_left * trade.get('price')
-            self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
-        else: # size_left == 0
-            mkt_val = self._covered(trade, position)
-        self.size_decrease_cash_transfer(party, trade_val)
-        return 0
-
-    def _covered_side_chg(self, trade, position, party):
-        mkt_val = self._covered(trade, position)
-        self.size_decrease_cash_transfer(party, mkt_val)
-        # deal with remaining size that cause position change
-        new_size = Decimal(trade.get('quantity')) - abs(self.net_position)
-        self.position_val = new_size * trade.get('price') # traded value
-        self.VWAP = trade.get('price')
-        self.size_increase_cash_transfer(party, self.position_val)
-        return 0
-
-    def _neutral(self, trade_val, trade, party):
-        self.position_val += trade_val
-        self.VWAP = trade.get('price')
-        self.size_increase_cash_transfer(party, trade_val)
-
-    def _net_long(self, trade_val, trade, party):
-        if trade.get(party).get('side') == 'bid':
-            self._size_increase(trade, 'long', party, trade_val)
-        else: # ask
-            if self.net_position >= trade.get('quantity'): # still long or neutral
-                self._size_decrease(trade, 'long', party, trade_val)
-            else: # net_position changed to short
-                self._covered_side_chg(trade, 'long', party)
-
-    def _net_short(self, trade_val, trade, party):
-        if trade.get(party).get('side') == 'ask':
-            self._size_increase(trade, 'short', party, trade_val)
-        else: # bid
-            if abs(self.net_position) >= trade.get('quantity'): # still short or neutral
-                self._size_decrease(trade, 'short', party, trade_val)
-            else: # net_position changed to long
-                self._covered_side_chg(trade, 'short', party)
-
-    def _update_net_position(self, side, trade_quantity):
-        if self.net_position >= 0: # long or neutral
-            if side == 'bid':
-                #self.net_position += trade_quantity
-                self.net_position = Decimal(self.net_position) + Decimal(trade_quantity)
-            else:
-                #self.net_position += -trade_quantity
-                self.net_position = Decimal(self.net_position) - Decimal(trade_quantity)
-        else: # short
-            if side == 'ask':
-                #self.net_position += -trade_quantity
-                self.net_position = Decimal(self.net_position) - Decimal(trade_quantity)
-            else:
-                #self.net_position += trade_quantity
-                self.net_position = Decimal(self.net_position) + Decimal(trade_quantity)
-        return 0
-
-    def process_acc(self, trade, party):
-        self.num_trades += 1
-        trade_val = Decimal(trade.get('quantity')) * trade.get('price')
-        if self.net_position > 0: #long
-            self._net_long(trade_val, trade, party)
-        elif self.net_position < 0: # short
-            self._net_short(trade_val, trade, party)
-        else: # neutral
-            self._neutral(trade_val, trade, party)
-        self._update_net_position(trade.get(party).get('side'), trade.get('quantity'))
-        return 0
+    #     return 0

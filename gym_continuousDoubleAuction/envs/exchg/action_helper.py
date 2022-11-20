@@ -63,7 +63,7 @@ class Action_Helper():
 
         return shuffle(actions, random_state=seed) # seed for reproducible behavior
 
-    def do_actions(self, actions):
+    def do_actions(self, actions, step):
         """
         Process actions for all agents.
 
@@ -86,7 +86,7 @@ class Action_Helper():
             size = action.get("size")
             price = action.get("price")
             trader = self.agents[ID]
-            self.trades, self.order_in_book = trader.place_order(ord_type, side, size, price, self.LOB, self.agents)
+            self.trades, self.order_in_book = trader.place_order(ord_type, side, size, price, self.LOB, self.agents, step)
             seq_trades.append(self.trades)
             seq_order_in_book.append(self.order_in_book)
 
