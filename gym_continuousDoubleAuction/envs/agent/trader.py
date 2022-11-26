@@ -43,11 +43,9 @@ class Trader(Random_agent):
                 if trades != []:
                     self._proc_init_party(agents, trades, step)
 
-
-                    # for agent in agents:
-                    #     # Update agent account.
-                    #     agent.acc.update_acc(trades[-1]['price'])
-
+                for agent in agents:
+                    # Update agent account.
+                    agent.acc.update_acc(price)
 
             # Not enough cash to place order.
             else:
@@ -85,16 +83,7 @@ class Trader(Random_agent):
             }
             self.acc.trade_recs.append(init_d)
             self._proc_counter_party(agents, trade, step)
-
-            # # Update trader's acc.
-            # self.acc.update_acc(trade['price'])
-
             
-        for agent in agents:
-            # Update agent account.
-            agent.acc.update_acc(trade['price'])
-
-
     def _proc_counter_party(self, agents, trade, step):
         # Process the counter parties of this trader (at this point, init & counter party could be same trader).
         counter_d = {
@@ -111,10 +100,6 @@ class Trader(Random_agent):
                 agent.acc.trade_recs.append(counter_d)
                 # Update LOB rec for agent.
                 self.__proc_counter_party(agent, trade)
-
-                # # Update agent account.
-                # agent.acc.update_acc(trade['price'])
-
                 break         
 
     def __proc_counter_party(self, agent, trade):
@@ -167,13 +152,9 @@ class Trader(Random_agent):
 
         Return: boolean.
         """
-        # Traverse LOB to find cost of all limit orders of this trader at this tick time.
-        # This cost if the cash_on_hold at this tick time.
-        # if self.acc.cash - self.acc.cash_on_hold >= Decimal(size) * Decimal(price):
-        if self.acc.nav > 0:
+        if self.acc.cash >= Decimal(size) * Decimal(price):
             return True
         else:
-            print(self.acc.nav, self.acc.cash, self.acc.cash_on_hold, self.acc.pos_val, self.acc.net_pos, Decimal(size), Decimal(price))
             return False
 
     def _place_limit_order(self, orderBook, qoute):
@@ -207,6 +188,7 @@ class Trader(Random_agent):
 
     def __modify_limit_order(self, orderBook, order_id, qoute):
         """
+        Modify quantity.
         """
         qoute['type'] = 'limit'
         qoute['quantity'] = Decimal(qoute['quantity'])
@@ -237,7 +219,7 @@ class Trader(Random_agent):
             for rec in self.acc.LOB_recs:
                 if rec['order_id'] == order_id:
                     self.acc.LOB_recs.remove(rec)
-                    break
+                    break            
 
         return trades, order_in_book
 

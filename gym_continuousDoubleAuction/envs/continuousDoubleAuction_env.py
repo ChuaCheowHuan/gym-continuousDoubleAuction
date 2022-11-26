@@ -118,40 +118,11 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
     def _render(self):
         print('\n************************************************** t_step = {} **************************************************\n'.format(self.t_step))
 
-        # self.print_table("Model actions:\n", self.model_actions)
-        # self.print_table("Formatted actions acceptable by LOB:\n", self.LOB_actions)
-        # self.print_table("Shuffled action queueing sequence for LOB executions:\n", self.shuffled_actions)
-        # self.model_actions = None
-        # self.LOB_actions = None
-        # self.shuffled_actions = None
-
-        # #print('\nnext_states:\n', self.next_states)
-        # print('\nrewards:\n', self.rewards)
-        # print('\ndones:\n', self.dones)
-        # print('\ninfos:\n', self.infos)
-
-        # self.print_table("\nagg LOB @ t-1\n", self.agg_LOB)
-        # self.print_table("\nagg LOB @ t\n", self.agg_LOB_aft)
-
-        # print('\nLOB:\n', self.LOB) # print entire LOB with tape
-
-        # self.print_trades_all_seq(self.seq_trades)
-        # self.seq_trades = []
-        # self.print_order_in_book_all_seq(self.seq_order_in_book)
-        # self.seq_order_in_book = []
-
-        # #print("mark_to_mkt profit@t:")
-        # #self.mark_to_mkt() # mark to market
-        # self.print_mark_to_mkt("mark_to_mkt profit@t:")
-
-        # self.print_accs("\nAccounts:\n")
-        # print('\ntotal_sys_profit = {}; total_sys_nav = {}\n'.format(self.total_sys_profit(), self.total_sys_nav()))
-
         sum = 0
         for agent in self.agents:
             sum += agent.acc.nav
             # agent.acc.print_acc("")
-            print(f'ID:{agent.ID}, nav:{agent.acc.nav}, cash:{agent.acc.cash}, cash_on_hold:{agent.acc.cash_on_hold}, trade_val:{agent.acc.trade_val}, pos_val:{agent.acc.pos_val}, net_pos:{agent.acc.net_pos}, profit:{agent.acc.profit}')
+            print(f'ID:{agent.ID}, nav:{agent.acc.nav}, cash:{agent.acc.cash}, order_costs:{agent.acc.order_costs}, qty_long:{agent.acc.qty_long}, qty_short:{agent.acc.qty_short}')
             # print(f'trade_recs:{agent.acc.trade_recs}')
             # print(f'LOB_recs:{agent.acc.LOB_recs}')
 
