@@ -50,14 +50,14 @@ class CustomModel_1(TFModelV2):
         )
         self.inputs = tf.keras.layers.Input(shape=obs_space.shape, name="observations")
         layer_1 = tf.keras.layers.Dense(
-            128,
+            32,
             name="my_layer1",
             activation=tf.nn.relu,
             kernel_initializer=normc_initializer(1.0),
         )(self.inputs)
         layer_out = tf.keras.layers.Dense(
             num_outputs,
-            name="my_out_mu",
+            name="mu",
             activation=tf.nn.softmax,
             kernel_initializer=normc_initializer(0.01),
         )(layer_1)

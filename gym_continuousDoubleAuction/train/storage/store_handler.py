@@ -3,7 +3,7 @@ import ray
 #from gym_continuousDoubleAuction.train.helper.helper import str_to_arr
 
 # Decorator's arguments should be read from config file.
-@ray.remote(num_cpus=0.25, num_gpus=0)
+@ray.remote(num_cpus=0.25, num_gpus=0.0)
 class storage():
     """
     A remote object running as a ray detached actor on a separate process.
@@ -18,6 +18,9 @@ class storage():
         """
         Global storage.
         """
+
+        print("create_storage")
+
         storage = {}
         for i in range(self.num_agents):
             storage[self.prefix + str(i)] = {"step": {"obs": [],
@@ -89,3 +92,7 @@ class storage():
                 ask_price = np.vstack((ask_price, ask_price_row))
 
         return np.transpose(bid_size), np.transpose(bid_price), np.transpose(ask_size), np.transpose(ask_price)     # shape(depth_lvl, steps)
+
+    def reset(self, num_agents):
+        store = self.create_storage(num_agents)
+        self.set_storage(store)

@@ -39,15 +39,25 @@ def log_g_store(log_g_store_dir, num_agents, experiment_id):
 
     file_name = str(experiment_id)
 
-    tmp_dict = ray.get(g_store.create_storage.remote(num_agents)) 
+    tmp_dict = ray.get(g_store.create_storage.remote(num_agents))
 
     for agt_key, _ in store.items():
-               
-        tmp_dict[agt_key]["step"]["obs"] = store[str(agt_key)]["step"]["obs"][-1]
+        
+        # print(f"agt_key: {agt_key}")
+        # print(f"len(store[agt_key]['step']['NAV']): {len(store[agt_key]['step']['NAV'])}")
+        # print(f"store[agt_key]['step']['NAV']: {store[agt_key]['step']['NAV'][-1][-1]}")
+        # # print(f"store[agt_key]['step']['NAV']: {store[agt_key]['step']['NAV'][-2][-1]}")
+        # print(f"len(store[agt_key]['eps']['NAV']): {len(store[agt_key]['eps']['NAV'])}")
+        # print(f"store[agt_key]['eps']['NAV']: {store[agt_key]['eps']['NAV'][-1]}")
+
+        # tmp_dict[agt_key]["step"]["obs"] = store[str(agt_key)]["step"]["obs"][-1]
+        tmp_dict[agt_key]["step"]["obs"] = store[agt_key]["step"]["obs"][-1]
+
         tmp_dict[agt_key]["step"]["act"] = store[agt_key]["step"]["act"][-1] 
         tmp_dict[agt_key]["step"]["reward"] = store[agt_key]["step"]["reward"][-1] 
         tmp_dict[agt_key]["step"]["NAV"] = store[agt_key]["step"]["NAV"][-1] 
         tmp_dict[agt_key]["step"]["num_trades"] = store[agt_key]["step"]["num_trades"][-1]
+        
         tmp_dict[agt_key]["eps"]["policy_reward"] = store[agt_key]["eps"]["policy_reward"]
         tmp_dict[agt_key]["eps"]["reward"] = store[agt_key]["eps"]["reward"]
         tmp_dict[agt_key]["eps"]["NAV"] = store[agt_key]["eps"]["NAV"] 
@@ -56,7 +66,7 @@ def log_g_store(log_g_store_dir, num_agents, experiment_id):
     #with open(write_dir + file_name + '.dat', 'w') as outfile:
     #   json.dump(tmp_dict, outfile, indent=3) # write to file in json format:
     with gzip.GzipFile(log_g_store_dir + file_name + '.gzip', 'w') as fout:
-        fout.write(json.dumps(tmp_dict, cls=NpEncoder).encode('utf-8'))
+        fout.write(json.dumps(tmp_dict, cls=NpEncoder).encode('utf-8'))    
 
 def load_g_store(log_g_store_dir, num_agents, experiment_id):
     """
@@ -68,6 +78,7 @@ def load_g_store(log_g_store_dir, num_agents, experiment_id):
     for file_name in os.listdir(log_g_store_dir):
         print(file_name)
         if file_name.endswith(str(experiment_id) + '.gzip'):
+            print(f"file_name:{file_name}")
 
             #with open(os.path.join(log_g_store_dir, file_name)) as json_file:
             #    data = json.load(json_file)

@@ -49,7 +49,7 @@ class Trader(Random_agent):
 
             # Not enough cash to place order.
             else:
-                print(f'Order NOT approved for trader ID: {self.ID}')
+                # print(f'Order NOT approved for trader ID: {self.ID}')
                 trades, order_in_book = [], None
 
         return trades, order_in_book
