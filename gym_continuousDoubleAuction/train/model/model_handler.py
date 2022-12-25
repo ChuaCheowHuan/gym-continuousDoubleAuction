@@ -42,31 +42,52 @@ class CustomModel_1_0(TFModelV2):
         return output, last_layer
 
 class CustomModel_1(TFModelV2):
-    """Custom model for policy gradient algorithms."""
+    """
+    Custom model for policy gradient algorithms.
+
+    https://github.com/ray-project/ray/blob/master/rllib/examples/custom_keras_model.py
+    """
 
     def __init__(self, obs_space, action_space, num_outputs, model_config, name):
         super(MyKerasModel, self).__init__(
             obs_space, action_space, num_outputs, model_config, name
         )
         self.inputs = tf.keras.layers.Input(shape=obs_space.shape, name="observations")
+
+        HIDDEN = 512
+        CELL_SIZE = 256
+
+        lstm = tf.keras.layers.LSTM(CELL_SIZE)(self.inputs)
+
         layer_1 = tf.keras.layers.Dense(
-            32,
-            name="my_layer1",
+            HIDDEN,
+            name="layer1",
             activation=tf.nn.relu,
             kernel_initializer=normc_initializer(1.0),
-        )(self.inputs)
+        # )(self.inputs)
+        )(lstm)
+
+        layer_2 = tf.keras.layers.Dense(
+            HIDDEN,
+            name="layer2",
+            activation=tf.nn.relu,
+            kernel_initializer=normc_initializer(1.0),
+        )(layer_1)
+
         layer_out = tf.keras.layers.Dense(
             num_outputs,
-            name="mu",
+            name="actions_out",
             activation=tf.nn.softmax,
             kernel_initializer=normc_initializer(0.01),
-        )(layer_1)
+        )(layer_2)
+
         value_out = tf.keras.layers.Dense(
             1,
             name="value_out",
             activation=None,
             kernel_initializer=normc_initializer(0.01),
         )(layer_1)
+
         self.base_model = tf.keras.Model(self.inputs, [layer_out, value_out])
 
     def forward(self, input_dict, state, seq_lens):
