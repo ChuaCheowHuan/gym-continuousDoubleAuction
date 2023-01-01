@@ -1,6 +1,5 @@
 import random
 import numpy as np
-import pandas as pd
 
 from decimal import Decimal
 
@@ -30,7 +29,7 @@ class Trader(Random_agent):
             trades, order_in_book = [], None
         else:
             # Normal execution.
-            if self._order_approved(size, price):
+            if self._order_approved(size, price):   # REVISIT: price is -1 for market order.
                 order = self._create_order(ord_type, side, size, price)
                 trades, order_in_book = self._place_order(order, LOB)
 
@@ -43,9 +42,10 @@ class Trader(Random_agent):
                 if trades != []:
                     self._proc_init_party(agents, trades, step)
 
+             
                 for agent in agents:
                     # Update agent account.
-                    agent.acc.update_acc(price)
+                    agent.acc.update_acc(ord_type, order_in_book, trades)
 
             # Not enough cash to place order.
             else:
@@ -57,6 +57,7 @@ class Trader(Random_agent):
     def _place_order(self, order, LOB):
         if order['type'] == 'market':
             trades, order_in_book = LOB.process_order(order, False, False)
+            print(f'market {self.ID} {order}')
         elif order['type'] == 'limit':
             trades, order_in_book = self._place_limit_order(LOB, order)
         elif order['type'] == 'modify':
@@ -146,6 +147,7 @@ class Trader(Random_agent):
 
         return order
 
+    # REVISIT: if price is -1 for market order.
     def _order_approved(self, size, price):
         """
         Conditions for order approval.

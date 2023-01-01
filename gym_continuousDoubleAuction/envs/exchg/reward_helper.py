@@ -1,17 +1,22 @@
 import numpy as np
-import pandas as pd
 
 class Reward_Helper(object):
 
-    def set_reward(self, rewards, trader):
+    def set_reward(self, rewards, trader, price):
         """
         reward per t step
         reward = nav@t+1 - nav@t
         """
+        # print(price)
+        # print(type(price))
+        trader.acc.cmp_step_nav(price)
+
         # # maximize NAV
         # rewards[trader.ID] = float(trader.acc.nav)
 
-        NAV_chg = float(trader.acc.nav - trader.acc.prev_nav)
+        NAV_chg = float(trader.acc.step_nav - trader.acc.prev_step_nav)
+
+        # print(f"{trader.ID} {trader.acc.step_nav} {trader.acc.prev_step_nav} {NAV_chg}")
 
         rewards[trader.ID] = NAV_chg
 

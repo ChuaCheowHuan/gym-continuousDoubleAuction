@@ -17,19 +17,29 @@ def _process_list(init_cash, agt_id, step_or_eps, data_key):
     g_store = ray.get_actor("g_store")
     store = ray.get(g_store.get_storage.remote())
     l = store[agt_id][step_or_eps][data_key]
+
+    # print(f"before agt_id:{agt_id}, l:{l}")
+
     if step_or_eps == "step":
         l = [item for sublist in l for item in sublist]
+    
+
+        print(f"after agt_id:{agt_id}, l:{l}")
+
 
     if data_key == "reward":
-        l = np.cumsum(l)
-        #l = l
+        # l = np.cumsum(l)
+        pass
     elif data_key == "NAV":
-        l = [val - init_cash for val in l]         # cumulative returns
-        l = np.cumsum(l)
+        # l = [val - init_cash for val in l]         # cumulative returns
+        # l = [init_cash - val for val in l]         # cumulative returns
+        # l = np.cumsum(l)
+        # l = -1 * l
+        pass
     elif data_key == "num_trades":
         #l = pd.Series(l).rolling(window=_window_size(l)).mean()
-        l = np.cumsum(l)
-        #l = l
+        # l = np.cumsum(l)
+        pass
     else:
         l = []
 

@@ -119,14 +119,20 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
         print('\n************************************************** t_step = {} **************************************************\n'.format(self.t_step))
 
         sum = 0
+        step_sum = 0
         for agent in self.agents:
             sum += agent.acc.nav
+            step_sum += agent.acc.step_nav
             # agent.acc.print_acc("")
-            print(f'ID:{agent.ID}, nav:{agent.acc.nav}, cash:{agent.acc.cash}, order_costs:{agent.acc.order_costs}, qty_long:{agent.acc.qty_long}, qty_short:{agent.acc.qty_short}')
+            print(f'ID:{agent.ID}, step_nav:{agent.acc.step_nav}, nav:{agent.acc.nav}, cash:{agent.acc.cash}, order_costs:{agent.acc.order_costs}, qty_long:{agent.acc.qty_long}, qty_short:{agent.acc.qty_short}')
             # print(f'trade_recs:{agent.acc.trade_recs}')
             # print(f'LOB_recs:{agent.acc.LOB_recs}')
 
         print(f'sum:{sum}')
+        print(f'step_sum:{step_sum}')
+        if len(self.LOB.tape) > 0:
+            last_price = self.LOB.tape[-1].get('price')
+            print(f"last_price: {last_price}")
 
     def close(self):
         pass

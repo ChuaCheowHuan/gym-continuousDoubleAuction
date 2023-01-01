@@ -12,7 +12,8 @@ class Info_Helper(object):
             infos: Dictionary of dictionaries.
         """
         infos[trader.ID] = {"reward": trader.acc.reward,
-                            "NAV": str(trader.acc.nav),
+                            # "NAV": str(trader.acc.nav),
+                            "NAV": str(trader.acc.step_nav),
                             "num_trades": trader.acc.num_trades,
                             }
 

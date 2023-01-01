@@ -64,7 +64,15 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         next_states, rewards, dones, infos = {},{},{},{}
         for trader in self.agents:
             next_states = self.set_next_state(next_states, trader, state_input) # dict of tuple of tuples
-            rewards = self.set_reward(rewards, trader)
+
+            # rewards = self.set_reward(rewards, trader)
+            if len(self.LOB.tape) > 0:
+                last_price = self.LOB.tape[-1].get('price')
+                # print(f"last_price: {last_price}")
+                rewards = self.set_reward(rewards, trader, last_price)
+            else:
+                rewards = self.set_reward(rewards, trader, 0)
+
             dones = self.set_done(dones, trader)
             infos = self.set_info(infos, trader)
 

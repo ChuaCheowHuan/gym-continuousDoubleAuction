@@ -76,7 +76,7 @@ def load_g_store(log_g_store_dir, num_agents, experiment_id):
     tmp_dict = ray.get(g_store.create_storage.remote(num_agents)) 
 
     for file_name in os.listdir(log_g_store_dir):
-        print(file_name)
+        # print(file_name)
         if file_name.endswith(str(experiment_id) + '.gzip'):
             print(f"file_name:{file_name}")
 
