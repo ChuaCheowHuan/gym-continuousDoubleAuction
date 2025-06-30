@@ -1,17 +1,42 @@
 FROM rayproject/ray:latest-gpu
 
+RUN whoami
+
 # (Optional) if your image doesn't already have it
 # COPY requirements_compiled.txt /home/ray/requirements_compiled.txt
 
-# Upgrade pip & install packages with constraints file
-RUN pip install --upgrade pip setuptools wheel \
-    && pip install --no-cache-dir \
-        tensorflow torch gymnasium jupyterlab notebook \
-        -c /home/ray/requirements_compiled.txt
+USER root
 
 # Setup workspace
 RUN mkdir -p /workspace/code && chmod -R a+rwX /workspace
 WORKDIR /workspace/code
+
+# First copy the constraints file
+# COPY requirements_compiled.txt /home/ray/requirements_compiled.txt
+
+# Install dependencies
+RUN pip install --upgrade pip setuptools wheel && \
+    #
+    # Install TensorFlow with GPU support (from PyPI + optional NGC fallback)
+    #
+    pip install tensorflow[and-cuda] && \
+    #
+    # Install PyTorch from the custom index
+    #
+    pip install --no-cache-dir \
+        torch \
+        torchvision \
+        torchaudio \
+        --extra-index-url https://download.pytorch.org/whl/cu126  && \
+    #
+    # Install remaining packages from default PyPI
+    #
+    pip install --no-cache-dir \
+        gymnasium \
+        jupyterlab \
+        notebook \
+        gputil \
+        -c /home/ray/requirements_compiled.txt
 
 EXPOSE 8888
 
