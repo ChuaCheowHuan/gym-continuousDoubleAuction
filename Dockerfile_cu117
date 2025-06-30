@@ -37,6 +37,8 @@ RUN pip install ray[rllib]==2.35.0
 # Install NumPy (compatible with TensorFlow, PyTorch, and Ray)
 RUN pip install numpy==1.23.5
 
+USER root
+
 # Step 8: Create a workspace directory
 RUN mkdir -p /workspace/code && chmod -R 777 /workspace
 WORKDIR /workspace/code
