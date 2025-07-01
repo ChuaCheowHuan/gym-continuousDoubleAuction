@@ -1,5 +1,11 @@
-# Step 1: Use a base image with CUDA 11.7 support
-FROM nvidia/cuda:11.7.1-base-ubuntu22.04
+# Step 1: Use a base image with CUDA 12.6 support
+FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04
+
+# USER root
+
+# Step 8: Create a workspace directory
+RUN mkdir -p /workspace/code && chmod -R 777 /workspace
+WORKDIR /workspace/code
 
 # Step 2: Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -22,26 +28,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --upgrade pip setuptools wheel \
     && pip install jupyterlab notebook
 
-# Step 5: Install TensorFlow 2.10.0 with GPU support
-RUN pip install tensorflow==2.10.0
-
-# Step 6: Install PyTorch 2.0.0 with CUDA 11.7 support
-RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu117
+# Step 6: Install PyTorch 2.7.1 with CUDA 12.6 support
+RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 
 # Install gymnasium (gym deprecated)
 RUN pip install --no-cache-dir gymnasium
 
-# Step 7: Install Ray 2.35.0 with CUDA 11.7 support
-RUN pip install ray[rllib]==2.35.0
-
-# Install NumPy (compatible with TensorFlow, PyTorch, and Ray)
-RUN pip install numpy==1.23.5
-
-USER root
-
-# Step 8: Create a workspace directory
-RUN mkdir -p /workspace/code && chmod -R 777 /workspace
-WORKDIR /workspace/code
+# Step 7: Install Ray[rllib] 2.47.1
+RUN pip install ray[rllib]==2.47.1
 
 # Step 9: Expose the Jupyter Notebook port
 EXPOSE 8888

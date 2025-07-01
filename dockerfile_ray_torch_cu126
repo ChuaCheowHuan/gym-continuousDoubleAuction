@@ -19,7 +19,7 @@ RUN pip install --upgrade pip setuptools wheel && \
     #
     # Install TensorFlow with GPU support (from PyPI + optional NGC fallback)
     #
-    pip install tensorflow[and-cuda] && \
+    # pip install tensorflow[and-cuda] && \
     #
     # Install PyTorch from the custom index
     #

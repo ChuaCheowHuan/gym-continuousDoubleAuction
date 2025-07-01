@@ -1,0 +1,26 @@
+# Use official TensorFlow GPU + Jupyter image
+FROM tensorflow/tensorflow:latest-gpu-jupyter
+
+# Switch to root for installing additional packages
+# USER root
+
+# Create workspace directory
+RUN mkdir -p /workspace/code && chmod -R 777 /workspace
+WORKDIR /workspace/code
+
+# Expose Jupyter port
+EXPOSE 8888
+
+# # Install system dependencies (if needed)
+# RUN apt-get update && \
+#     apt-get install -y --no-install-recommends \
+#         build-essential \
+#         git && \
+#     apt-get clean && \
+#     rm -rf /var/lib/apt/lists/*
+
+# Install Python packages
+RUN pip install --no-cache-dir ray[rllib] numpy pandas scikit-learn matplotlib seaborn
+
+# Keep the default CMD unless overriding
+CMD ["jupyter", "notebook", "--ip=0.0.0.0", "--port=8888", "--allow-root", "--no-browser"]
