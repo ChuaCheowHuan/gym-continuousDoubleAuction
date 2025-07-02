@@ -1,5 +1,6 @@
 # Step 1: Use a base image with CUDA 12.3 support
-FROM nvidia/cuda:12.3.2-cudnn9-runtime-ubuntu22.04
+# FROM nvidia/cuda:12.3.2-cudnn9-runtime-ubuntu22.04
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
 
 # USER root
 
@@ -29,7 +30,7 @@ RUN pip install --upgrade pip setuptools wheel \
     && pip install jupyterlab notebook
 
 # Step 5: Install TensorFlow 2.19 with GPU support
-RUN pip install tensorflow[and-cuda]
+RUN pip install tensorflow=2.12
 
 # Install gymnasium (gym deprecated)
 RUN pip install --no-cache-dir gymnasium
