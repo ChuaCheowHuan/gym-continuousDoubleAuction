@@ -1,0 +1,35 @@
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PYTHONUNBUFFERED=1
+
+RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.edge.kernel.org/ubuntu/|g' /etc/apt/sources.list && \
+    sed -i 's|http://security.ubuntu.com/ubuntu|http://mirrors.edge.kernel.org/ubuntu|g' /etc/apt/sources.list && \
+    apt-get -o Acquire::ForceIPv4=true update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        curl \
+        git \
+        libgl1-mesa-glx \
+        libglib2.0-0 \
+        wget \
+        python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install \
+        jupyterlab notebook \
+        tensorflow==2.10 \
+        gputil \
+        gymnasium==0.28.1 \
+        ray[rllib]==2.35 \
+        numpy==1.25
+        
+RUN mkdir -p /workspace/code && chmod -R 777 /workspace
+WORKDIR /workspace/code
+
+EXPOSE 8888
+
+CMD ["jupyter", "notebook", "--ip=0.0.0.0", "--port=8888", "--allow-root", "--no-browser"]

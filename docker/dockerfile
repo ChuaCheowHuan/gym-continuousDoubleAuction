@@ -1,4 +1,4 @@
-FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+FROM nvidia/cuda:12.6.0-cudnn-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -18,14 +18,19 @@ RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.edge.kernel.org/u
         python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --upgrade pip setuptools wheel && \
-    pip install \
-        jupyterlab notebook \
-        tensorflow==2.10 \
-        gymnasium \
-        ray[rllib]==2.35 \
-        numpy==1.25
-
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir \
+        torch \
+        torchvision \
+        torchaudio \
+        --extra-index-url https://download.pytorch.org/whl/cu126 && \
+    pip install --no-cache-dir \
+        jupyterlab \
+        notebook \
+        gputil \
+        gymnasium==1.0.0 \
+        ray[rllib]==2.47.1
+        
 RUN mkdir -p /workspace/code && chmod -R 777 /workspace
 WORKDIR /workspace/code
 
