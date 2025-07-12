@@ -1,11 +1,9 @@
 import numpy as np
 import pandas as pd
 
-# import gym
-import gymnasium as gym
-
-from gymnasium import error, spaces, utils
-from gymnasium.utils import seeding
+import gym
+from gym import error, spaces, utils
+from gym.utils import seeding
 
 import ray
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
@@ -17,8 +15,7 @@ from .agent.trader import Trader
 from tabulate import tabulate
 
 # The exchange environment
-# class continuousDoubleAuctionEnv(Exchg_Helper, gym.Env, MultiAgentEnv):
-class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
+class continuousDoubleAuctionEnv(Exchg_Helper, gym.Env, MultiAgentEnv):
 
     metadata = {'render.modes': ['human']}
 

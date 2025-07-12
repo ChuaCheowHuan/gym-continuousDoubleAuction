@@ -1,7 +1,8 @@
 import numpy as np
 import random
+from gym import spaces
 
-from gymnasium import spaces
+from gym import spaces
 from sklearn.utils import shuffle
 
 class Action_Helper():

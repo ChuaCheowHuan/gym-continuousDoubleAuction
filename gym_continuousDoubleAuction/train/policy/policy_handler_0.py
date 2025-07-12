@@ -1,4 +1,5 @@
 from ray.rllib.policy.policy import Policy
+from ray.rllib.agents.ppo.ppo_tf_policy import PPOTFPolicy
 
 def make_RandomPolicy(_seed):
 

@@ -1,61 +1,74 @@
-from ray.rllib.models.tf.tf_modelv2 import TFModelV2
-from ray.rllib.models.tf.fcnet_v2 import FullyConnectedNetwork
-from ray.rllib.models import Model  # deprecated and should not be used.
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-class CustomModel_1(Model):
-    """
-    Sample custom model with LSTM.
+from ray.rllib.core.rl_module.rl_module import RLModuleConfig
+from ray.rllib.core.rl_module.torch.torch_rl_module import TorchRLModule
+from ray.rllib.utils.typing import SampleBatchType
 
-    Still working but deprecated and should not be used.
-    Need to update this class.
-    see: https://ray.readthedocs.io/en/latest/rllib-models.html
-    """
 
-    def _lstm(self, Inputs, cell_size):
-        s = tf.expand_dims(Inputs, axis=1, name='time_major')  # [time_step, feature] => [time_step, batch, feature]
-        lstm_cell = tf.nn.rnn_cell.LSTMCell(cell_size)
-        self.init_state = lstm_cell.zero_state(batch_size=1, dtype=tf.float32)
-        # time_major means [time_step, batch, feature] while batch major means [batch, time_step, feature]
-        outputs, self.final_state = tf.nn.dynamic_rnn(cell=lstm_cell, inputs=s, initial_state=self.init_state, time_major=True)
-        lstm_out = tf.reshape(outputs, [-1, cell_size], name='flatten_rnn_outputs')  # joined state representation
-        return lstm_out
+class CustomLSTMRLModuleConfig(RLModuleConfig):
+    def __init__(self, observation_space, action_space, **kwargs):
+        super().__init__(observation_space=observation_space, action_space=action_space, **kwargs)
 
-    """
-    def _build_layers_v2(self, input_dict, num_outputs, options):
-        hidden = 512
-        cell_size = 256
-        #S = input_dict["obs"]
-        S = tf.layers.flatten(input_dict["obs"])
-        with tf.variable_scope(tf.VariableScope(tf.AUTO_REUSE, "shared"),
-                               reuse=tf.AUTO_REUSE,
-                               auxiliary_name_scope=False):
-            last_layer = tf.layers.dense(S, hidden, activation=tf.nn.relu, name="fc1")
-        last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc2")
-        last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc3")
 
-        last_layer = self._lstm(last_layer, cell_size)
+class CustomLSTMRLModule(TorchRLModule):
+    def __init__(self, config: CustomLSTMRLModuleConfig):
+        super().__init__(config)
 
-        output = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softmax, name="mu")
+        obs_dim = config.observation_space.shape[0]
+        action_dim = config.action_space.n  # for discrete
 
-        return output, last_layer
-    """
+        self.hidden_size = 512
+        self.lstm_hidden_size = 256
 
-    def _build_layers_v2(self, input_dict, num_outputs, options):
-        hidden = 512
-        cell_size = 256
+        # Fully connected layers before LSTM
+        self.fc1 = nn.Linear(obs_dim, self.hidden_size)
+        self.fc2 = nn.Linear(self.hidden_size, self.hidden_size)
+        self.fc3 = nn.Linear(self.hidden_size, self.hidden_size)
 
-        S = input_dict["obs"]
-        last_layer = tf.layers.flatten(S)
+        # LSTM
+        self.lstm = nn.LSTM(input_size=self.hidden_size, hidden_size=self.lstm_hidden_size, batch_first=True)
 
-        last_layer = self._lstm(last_layer, cell_size)
+        # Post-LSTM dense layers
+        self.post_fc1 = nn.Linear(self.lstm_hidden_size, self.hidden_size)
+        self.post_fc2 = nn.Linear(self.hidden_size, self.hidden_size)
+        self.post_fc3 = nn.Linear(self.hidden_size, self.hidden_size)
 
-        with tf.variable_scope(tf.VariableScope(tf.AUTO_REUSE, "shared"),
-                               reuse=tf.AUTO_REUSE,
-                               auxiliary_name_scope=False):
-            last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc1")
-        last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc2")
-        last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc3")
+        # Output layer (assuming policy logits for discrete)
+        self.output = nn.Linear(self.hidden_size, action_dim)
 
-        output = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softmax, name="mu")
+    def forward_inference(self, batch: SampleBatchType, **kwargs):
+        return self._forward(batch)
 
-        return output, last_layer
+    def forward_exploration(self, batch: SampleBatchType, **kwargs):
+        return self._forward(batch)
+
+    def forward_train(self, batch: SampleBatchType, **kwargs):
+        return self._forward(batch)
+
+    def _forward(self, batch):
+        x = batch["obs"]
+        if len(x.shape) == 1:
+            x = x.unsqueeze(0)  # [1, obs_dim]
+
+        # Fully connected before LSTM
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
+
+        # Prepare for LSTM: needs [batch, seq_len, feature]
+        x = x.unsqueeze(1)  # add seq_len=1 -> [batch, seq=1, feature]
+
+        # Pass through LSTM
+        lstm_out, (h_n, c_n) = self.lstm(x)  # lstm_out: [batch, seq, lstm_hidden]
+        lstm_out = lstm_out[:, -1, :]  # take last output in sequence
+
+        # Post-LSTM dense layers
+        x = F.relu(self.post_fc1(lstm_out))
+        x = F.relu(self.post_fc2(x))
+        x = F.relu(self.post_fc3(x))
+
+        logits = self.output(x)
+
+        return {"logits": logits}
