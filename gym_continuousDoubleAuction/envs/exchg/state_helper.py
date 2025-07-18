@@ -12,7 +12,7 @@ class State_Helper(object):
         """
 
         states = {}
-        for trader in self.agents:
+        for trader in self.traders:
             states[trader.ID] = self.set_agg_LOB()
 
         return states

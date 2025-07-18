@@ -1,11 +1,7 @@
 import numpy as np
 import pandas as pd
 
-# import gym
-import gymnasium as gym
-
-from gymnasium import error, spaces, utils
-from gymnasium.utils import seeding
+from gymnasium import spaces, utils, error
 
 import ray
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
@@ -39,7 +35,9 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
         self.is_render = is_render
 
         # list of agents or traders
-        self.agents = [Trader(ID, init_cash) for ID in range(0, num_of_agents)]
+        self.traders = [Trader(ID, init_cash) for ID in range(0, num_of_agents)]
+
+        self.agents = self.possible_agents = [f"agent_{i}" for i in range(num_of_agents)]
 
         # observation space per agent:
         # array([[ 1.,  0., -1.,  0.,  0.,  0.,  0.,  0.,  0.,  0.],
@@ -50,10 +48,14 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
         neg_inf = float('-inf')
         obs_row = 4
         obs_col = 10
-        self.observation_space = spaces.Box(low=neg_inf, high=inf, shape=(obs_row,obs_col))
+        # self.observation_space = spaces.Box(low=neg_inf, high=inf, shape=(obs_row,obs_col))
+        self.observation_spaces = {
+            f"agent_{i}": spaces.Box(low=neg_inf, high=inf, shape=(obs_row, obs_col), dtype=np.float32)
+            for i in range(num_of_agents)
+        }
 
         # order per agent: {'ID': 0, 'type': 'market', 'side': 'bid', 'size': 1, 'price': 8}
-        self.action_space = self.act_space()
+        self.action_space = self.act_space(num_of_agents)
 
     # reset
     def reset(self):

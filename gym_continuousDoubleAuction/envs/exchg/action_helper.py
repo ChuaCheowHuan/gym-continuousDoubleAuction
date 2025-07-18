@@ -19,20 +19,50 @@ class Action_Helper():
         self.min_tick = 1 # price tick
         self.max_price = 101
 
-    def act_space(self):
-        '''
-        The action space.
+    # def act_space(self):
+    #     '''
+    #     The action space.
 
-        Example for 1 agent:
-            model_out: [0, 3, array([0.47555637], dtype=float32), array([0.5383144], dtype=float32), 5]
+    #     Example for 1 agent:
+    #         model_out: [0, 3, array([0.47555637], dtype=float32), array([0.5383144], dtype=float32), 5]
+    #     '''
+
+    #     return spaces.Tuple((spaces.Discrete(3), # side: none, bid, ask (0 to 2)
+    #                          spaces.Discrete(4), # type: market, limit, modify, cancel (0 to 3)
+    #                          spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32), # array of mean for size selection
+    #                          spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32), # array of sigma for size selection
+    #                          spaces.Discrete(12), # price: based on mkt depth from 0 to 11
+    #                         ))
+    def act_space(self, num_agents):
+        '''
+        The action space for multiple agents, returned as a dictionary.
+
+        Each agent has its own action tuple:
+            - side: Discrete(3) -> 0: none, 1: bid, 2: ask
+            - type: Discrete(4) -> 0: market, 1: limit, 2: modify, 3: cancel
+            - mean: Box(-1.0, 1.0) -> for size selection
+            - sigma: Box(0.0, 1.0) -> for size selection
+            - price: Discrete(12) -> from 0 to 11 (based on market depth)
+
+        Args:
+            num_agents (int): Number of agents.
+
+        Returns:
+            gym.spaces.Dict: Dictionary mapping agent IDs to their action spaces.
         '''
 
-        return spaces.Tuple((spaces.Discrete(3), # side: none, bid, ask (0 to 2)
-                             spaces.Discrete(4), # type: market, limit, modify, cancel (0 to 3)
-                             spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32), # array of mean for size selection
-                             spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32), # array of sigma for size selection
-                             spaces.Discrete(12), # price: based on mkt depth from 0 to 11
-                            ))
+        agent_space = spaces.Tuple((
+            spaces.Discrete(3),  # side
+            spaces.Discrete(4),  # type
+            spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),  # mean
+            spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),  # sigma
+            spaces.Discrete(12),  # price
+        ))
+
+        # Create a dictionary mapping for all agents
+        space_dict = {f'agent_{i}': agent_space for i in range(num_agents)}
+
+        return spaces.Dict(space_dict)
 
     def set_actions(self, model_outs):
         """
@@ -84,8 +114,8 @@ class Action_Helper():
             side = action.get("side")
             size = action.get("size")
             price = action.get("price")
-            trader = self.agents[ID]
-            self.trades, self.order_in_book = trader.place_order(type, side, size, price, self.LOB, self.agents)
+            trader = self.traders[ID]
+            self.trades, self.order_in_book = trader.place_order(type, side, size, price, self.LOB, self.traders)
             seq_trades.append(self.trades)
             seq_order_in_book.append(self.order_in_book)
 

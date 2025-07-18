@@ -34,7 +34,7 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         Reset traders accounts.
         """
 
-        for trader in self.agents:
+        for trader in self.traders:
             trader.acc.reset_acc(trader.ID, self.init_cash)
 
     def mark_to_mkt(self):
@@ -44,7 +44,7 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
 
         if len(self.LOB.tape) > 0:
             mkt_price = self.LOB.tape[-1].get('price') # last price from tape
-            for trader in self.agents:
+            for trader in self.traders:
                 trader.acc.mark_to_mkt(trader.ID, mkt_price)
         return 0
 
@@ -60,7 +60,7 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         """
 
         next_states, rewards, dones, infos = {},{},{},{}
-        for trader in self.agents:
+        for trader in self.traders:
             next_states = self.set_next_state(next_states, trader, state_input) # dict of tuple of tuples
             rewards = self.set_reward(rewards, trader)
             dones = self.set_done(dones, trader)
@@ -158,7 +158,7 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         """
 
         print(msg)
-        for trader in self.agents:
+        for trader in self.traders:
             print('ID: {}; profit: {}'.format(trader.ID, trader.acc.profit))
 
         return 0
@@ -182,7 +182,7 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         total_profit_list = []
         num_trades_list = []
 
-        for trader in self.agents:
+        for trader in self.traders:
             ID_list.append(trader.acc.ID)
             cash_list.append(trader.acc.cash)
             cash_on_hold_list.append(trader.acc.cash_on_hold)
@@ -217,7 +217,7 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         """
 
         sum = 0
-        for trader in self.agents:
+        for trader in self.traders:
             sum += trader.acc.total_profit
         return sum
 
@@ -227,6 +227,6 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         """
 
         sum = 0
-        for trader in self.agents:
+        for trader in self.traders:
             sum += trader.acc.nav
         return sum

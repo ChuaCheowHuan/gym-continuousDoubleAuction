@@ -29,7 +29,7 @@ class Done_Helper(object):
             dones: A dictionary.
         """
 
-        dones["__all__"] = len(self.done_set) == len(self.agents) # set dones["__all__"] to 1 if length are equal
+        dones["__all__"] = len(self.done_set) == len(self.traders) # set dones["__all__"] to 1 if length are equal
         if self.t_step > self.max_step-1:
             dones["__all__"] = 1
 
