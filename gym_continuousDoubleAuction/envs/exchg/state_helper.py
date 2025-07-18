@@ -2,6 +2,20 @@ import numpy as np
 
 class State_Helper(object):
 
+    # # reset traders LOB observations/states
+    # def reset_traders_agg_LOB(self):
+    #     """
+    #     Set observation state for all traders.
+
+    #     https://github.com/ray-project/ray/blob/master/doc/source/rllib-env.rst
+    #     May not need to have all traders(agents) in this state(obs) dict.
+    #     """
+
+    #     states = {}
+    #     for trader in self.traders:
+    #         states[trader.ID] = self.set_agg_LOB()
+
+    #     return states
     # reset traders LOB observations/states
     def reset_traders_agg_LOB(self):
         """
@@ -10,13 +24,10 @@ class State_Helper(object):
         https://github.com/ray-project/ray/blob/master/doc/source/rllib-env.rst
         May not need to have all traders(agents) in this state(obs) dict.
         """
-
-        states = {}
-        for trader in self.traders:
-            states[trader.ID] = self.set_agg_LOB()
-
+        states = {f'agent_{i}': self.set_agg_LOB() for i in range(len(self.traders))}
+        
         return states
-
+        
     def prep_next_state(self):
         """
         Return:

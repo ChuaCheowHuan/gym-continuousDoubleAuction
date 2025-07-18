@@ -54,6 +54,8 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
             for i in range(num_of_agents)
         }
 
+        print(self.observation_spaces)
+
         # order per agent: {'ID': 0, 'type': 'market', 'side': 'bid', 'size': 1, 'price': 8}
         self.action_space = self.act_space(num_of_agents)
 
@@ -82,7 +84,7 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
 
         self.reset_traders_acc()
 
-        return self.reset_traders_agg_LOB()
+        return self.reset_traders_agg_LOB(), {}
 
     # actions is a list of actions from all agents (traders) at t step
     # each action is a list of (ID, type, side, size, price)
