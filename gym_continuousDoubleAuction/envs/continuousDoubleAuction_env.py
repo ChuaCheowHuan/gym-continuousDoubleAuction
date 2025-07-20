@@ -19,17 +19,36 @@ class continuousDoubleAuctionEnv(
 
     metadata = {'render.modes': ['human']}
 
-    def __init__(
-            self, num_of_agents=2, 
-            init_cash=0, 
-            tick_size=1, 
-            tape_display_length=10, 
-            max_step=100, 
-            is_render=True):
+    # def __init__(
+    #         self, 
+    #         num_of_agents=2, 
+    #         init_cash=0, 
+    #         tick_size=1, 
+    #         tape_display_length=10, 
+    #         max_step=100, 
+    #         is_render=True):
+    #     super(continuousDoubleAuctionEnv, self).__init__(
+    #         init_cash, 
+    #         tick_size, 
+    #         tape_display_length)
+    def __init__(self, config=None):
+        # Handle config parameter for RLlib compatibility
+        config = config or {}
+        
+        # Extract parameters from config with defaults
+        self.num_of_agents = config.get("num_of_agents", 2)
+        init_cash = config.get("init_cash", 0)
+        tick_size = config.get("tick_size", 1)
+        tape_display_length = config.get("tape_display_length", 10)
+        self.max_step = config.get("max_step", 100)
+        is_render = config.get("is_render", True)
+        
+        # Initialize parent classes
         super(continuousDoubleAuctionEnv, self).__init__(
             init_cash, 
             tick_size, 
-            tape_display_length)
+            tape_display_length
+        )
 
         self.next_states = {}
         self.rewards = {}
@@ -41,15 +60,15 @@ class continuousDoubleAuctionEnv(
         # step when actions by all traders are executed, not tick time
         # within a step, multiple trades(ticks) could happened
         self.t_step = 0
-        self.max_step = max_step
+        # self.max_step = max_step
 
         self.is_render = is_render
 
         # list of agents or traders
-        self.traders = [Trader(ID, init_cash) for ID in range(0, num_of_agents)]
+        self.traders = [Trader(ID, init_cash) for ID in range(0, self.num_of_agents)]
 
         # Updated agent naming to be consistent with new API
-        self._agent_ids = set([f"agent_{i}" for i in range(num_of_agents)])
+        self._agent_ids = set([f"agent_{i}" for i in range(self.num_of_agents)])
         self.agents = list(self._agent_ids)
         self.possible_agents = list(self._agent_ids)
        
@@ -57,7 +76,7 @@ class continuousDoubleAuctionEnv(
         neg_inf = float('-inf')
         obs_row = 4
         obs_col = 10       
-        self.observation_space = {f"agent_{i}": gym.spaces.Box(low=neg_inf, high=inf, shape=(obs_row * obs_col,), dtype=np.float32) for i in range(num_of_agents)}
+        self.observation_space = {f"agent_{i}": gym.spaces.Box(low=neg_inf, high=inf, shape=(obs_row * obs_col,), dtype=np.float32) for i in range(self.num_of_agents)}
 
         act_space = gym.spaces.Tuple((
             gym.spaces.Discrete(3),  # side
@@ -66,7 +85,7 @@ class continuousDoubleAuctionEnv(
             gym.spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),    # sigma
             gym.spaces.Discrete(12),  # price
         ))         
-        self.action_space = {f"agent_{i}": act_space for i in range(num_of_agents)}
+        self.action_space = {f"agent_{i}": act_space for i in range(self.num_of_agents)}
     
     # def get_observation_space(self, agent_id):
     #     """
