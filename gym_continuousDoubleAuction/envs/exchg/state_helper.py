@@ -57,7 +57,8 @@ class State_Helper(object):
             next_states: Dictionary of states for each trader.
         """
 
-        next_states[trader.ID] = state_input
+        # next_states[trader.ID] = state_input
+        next_states[f'agent_{trader.ID}'] = state_input
 
         return next_states
 
@@ -72,7 +73,6 @@ class State_Helper(object):
             SortedDict object has key & value, key is price, value is an
             OrderList object.
         """
-
         k_rows = 10
         bid_price_list = np.zeros(k_rows)
         bid_size_list = np.zeros(k_rows)
@@ -106,8 +106,11 @@ class State_Helper(object):
                     num += 1
                 else:
                     break
-        return [bid_size_list, bid_price_list, ask_size_list, ask_price_list] # list of np.arrays
-
+        
+        # return [bid_size_list, bid_price_list, ask_size_list, ask_price_list] # list of np.arrays
+        flattened = np.concatenate([bid_size_list, bid_price_list, ask_size_list, ask_price_list])
+        return flattened
+    
     def state_diff(self, agg_LOB, agg_LOB_aft):
         """
         Argument:

@@ -62,7 +62,8 @@ class Action_Helper():
         # Create a dictionary mapping for all agents
         space_dict = {f'agent_{i}': agent_space for i in range(num_agents)}
 
-        return spaces.Dict(space_dict)
+        # return spaces.Dict(space_dict)
+        return space_dict
 
     def set_actions(self, model_outs):
         """
