@@ -9,7 +9,10 @@ from ray.rllib.utils.typing import SampleBatchType
 # Custom LSTM RLModule Configuration
 class CustomLSTMRLModuleConfig(RLModuleConfig):
     def __init__(self, observation_space, action_space, **kwargs):
-        super().__init__(observation_space=observation_space, action_space=action_space, **kwargs)
+        super().__init__(
+            observation_space=observation_space, 
+            action_space=action_space, 
+            **kwargs)
 
 # Custom LSTM RLModule
 class CustomLSTMRLModule(TorchRLModule):
@@ -28,7 +31,10 @@ class CustomLSTMRLModule(TorchRLModule):
         self.fc3 = nn.Linear(self.hidden_size, self.hidden_size)
         
         # LSTM
-        self.lstm = nn.LSTM(input_size=self.hidden_size, hidden_size=self.lstm_hidden_size, batch_first=True)
+        self.lstm = nn.LSTM(
+            input_size=self.hidden_size,
+            hidden_size=self.lstm_hidden_size, 
+            batch_first=True)
         
         # Post-LSTM dense layers
         self.post_fc1 = nn.Linear(self.lstm_hidden_size, self.hidden_size)
