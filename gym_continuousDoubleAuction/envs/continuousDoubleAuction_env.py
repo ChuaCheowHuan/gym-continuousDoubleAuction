@@ -76,17 +76,31 @@ class continuousDoubleAuctionEnv(
         neg_inf = float('-inf')
         obs_row = 4
         obs_col = 10       
-        self.observation_space = {f"agent_{i}": gym.spaces.Box(low=neg_inf, high=inf, shape=(obs_row * obs_col,), dtype=np.float32) for i in range(self.num_of_agents)}
+        self.observation_space = {
+            f"agent_{i}": gym.spaces.Box(
+                # low=neg_inf, 
+                # high=inf, 
+                low=-1, 
+                high=1,                 
+                # shape=(obs_row * obs_col,), 
+                shape=(4,), 
+                dtype=np.float32
+            ) for i in range(self.num_of_agents)
+        }
 
-        act_space = gym.spaces.Tuple((
-            gym.spaces.Discrete(3),  # side
-            gym.spaces.Discrete(4),  # type
-            gym.spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),   # mean
-            gym.spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),    # sigma
-            gym.spaces.Discrete(12),  # price
-        ))         
-        self.action_space = {f"agent_{i}": act_space for i in range(self.num_of_agents)}
+        # act_space = gym.spaces.Tuple((
+        #     gym.spaces.Discrete(3),  # side
+        #     gym.spaces.Discrete(4),  # type
+        #     gym.spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),   # mean
+        #     gym.spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),    # sigma
+        #     gym.spaces.Discrete(12),  # price
+        # ))         
+        act_space = gym.spaces.Discrete(3)
+        self.action_space = {
+            f"agent_{i}": act_space for i in range(self.num_of_agents)
+        }
     
+    # Override from RLlib
     # def get_observation_space(self, agent_id):
     #     """
     #     observation space per agent:
