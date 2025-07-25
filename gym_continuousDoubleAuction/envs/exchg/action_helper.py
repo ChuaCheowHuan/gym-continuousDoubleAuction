@@ -6,7 +6,7 @@ from sklearn.utils import shuffle
 
 class Action_Helper():
     def __init__(self):
-        super(Action_Helper, self).__init__()
+        super().__init__()
 
         self.min_size = 1
         self.mkt_max_size = 100

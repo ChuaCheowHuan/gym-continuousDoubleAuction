@@ -1,61 +1,24 @@
 import numpy as np
 from ray.rllib.policy.policy import Policy, PolicySpec
 from ray.rllib.algorithms.ppo import PPOConfig
-
-def make_RandomPolicy(seed):
-    """Factory function to create a RandomPolicy class with a given seed."""
+  
+# Custom Random Policy
+class RandomPolicy:
+    def __init__(self, observation_space, action_space, config):
+        self.action_space = action_space
+        
+    def compute_actions(self, obs_batch, state_batches=None, **kwargs):
+        actions = [self.action_space.sample() for _ in range(len(obs_batch))]
+        return actions, [], {}
     
-    class RandomPolicy(Policy):
-        """
-        A hand-coded policy that returns random actions in the env (doesn't learn).
-        Compatible with Ray 2.4+ RLlib API.
-        """
-        
-        def __init__(self, observation_space, action_space, config):
-            # Call parent constructor with required parameters
-            super().__init__(observation_space, action_space, config)
-            self.observation_space = observation_space
-            self.action_space = action_space
-            # Set seed for reproducible random actions
-            if hasattr(self.action_space, 'seed'):
-                self.action_space.seed(seed)
-            else:
-                # Fallback for action spaces that don't support seeding
-                np.random.seed(seed)
-        
-        def compute_actions(self,
-                          obs_batch,
-                          state_batches=None,
-                          prev_action_batch=None,
-                          prev_reward_batch=None,
-                          info_batch=None,
-                          episodes=None,
-                          **kwargs):
-            """Compute actions on a batch of observations."""
-            # Sample random actions for each observation in the batch
-            actions = [self.action_space.sample() for _ in obs_batch]
-            return actions, [], {}
-        
-        def learn_on_batch(self, samples):
-            """No learning for random policy."""
-            # Return empty stats dict (required in newer versions)
-            return {}
-        
-        def get_weights(self):
-            """Return empty weights (no parameters to return)."""
-            return {}
-        
-        def set_weights(self, weights):
-            """No weights to set for random policy."""
-            pass
-            
-        def compute_single_action(self, obs, state=None, prev_action=None, 
-                                prev_reward=None, info=None, **kwargs):
-            """Compute a single action (required method in newer API)."""
-            return self.action_space.sample(), [], {}
-
-    return RandomPolicy
-
+    def learn_on_batch(self, samples):
+        return {}  # Random policy doesn't learn
+    
+    def get_weights(self):
+        return {}  # No weights for random policy
+    
+    def set_weights(self, weights):
+        pass  # No weights to set
 
 def create_multi_agent_config(obs_space, act_space, num_agents, num_trained_agents):
     """
@@ -88,7 +51,7 @@ def create_multi_agent_config(obs_space, act_space, num_agents, num_trained_agen
     # Set up random agents
     for i in range(num_trained_agents, num_agents):
         policies[f"policy_{i}"] = PolicySpec(
-            make_RandomPolicy(i),  # Use random policy with seed
+            RandomPolicy,  # Use random policy with seed
             observation_space=obs_space, 
             action_space=act_space, 
             # {}

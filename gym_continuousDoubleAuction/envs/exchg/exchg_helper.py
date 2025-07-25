@@ -13,7 +13,7 @@ from tabulate import tabulate
 
 class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info_Helper):
     def __init__(self, init_cash=0, tick_size=1, tape_display_length=10):
-        super(Exchg_Helper, self).__init__()
+        super().__init__()
 
         self.LOB = OrderBook(tick_size, tape_display_length) # limit order book
         self.agg_LOB = {} # aggregated or consolidated LOB

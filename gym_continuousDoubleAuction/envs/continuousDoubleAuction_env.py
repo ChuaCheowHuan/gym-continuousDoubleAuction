@@ -19,32 +19,20 @@ class continuousDoubleAuctionEnv(
 
     metadata = {'render.modes': ['human']}
 
-    # def __init__(
-    #         self, 
-    #         num_of_agents=2, 
-    #         init_cash=0, 
-    #         tick_size=1, 
-    #         tape_display_length=10, 
-    #         max_step=100, 
-    #         is_render=True):
-    #     super(continuousDoubleAuctionEnv, self).__init__(
-    #         init_cash, 
-    #         tick_size, 
-    #         tape_display_length)
-    def __init__(self, config=None):
+    def __init__(self, config=None):      
         # Handle config parameter for RLlib compatibility
         config = config or {}
         
         # Extract parameters from config with defaults
-        self.num_of_agents = config.get("num_of_agents", 2)
+        self.num_of_agents = config.get("num_of_agents", 5)
         init_cash = config.get("init_cash", 0)
         tick_size = config.get("tick_size", 1)
         tape_display_length = config.get("tape_display_length", 10)
         self.max_step = config.get("max_step", 100)
         is_render = config.get("is_render", True)
-        
+
         # Initialize parent classes
-        super(continuousDoubleAuctionEnv, self).__init__(
+        super().__init__(
             init_cash, 
             tick_size, 
             tape_display_length
