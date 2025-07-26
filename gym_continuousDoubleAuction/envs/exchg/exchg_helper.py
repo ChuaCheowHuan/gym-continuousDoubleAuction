@@ -66,7 +66,7 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
             dones = self.set_done(dones, trader)
             infos = self.set_info(infos, trader)
 
-        dones, truncateds = self.set_all_done(dones)
+        dones, truncateds = self.set_all_done(dones, truncateds)
 
         return next_states, rewards, dones, truncateds, infos
 

@@ -6,20 +6,20 @@ from ray.rllib.algorithms.ppo import PPOConfig
 class RandomPolicy:
     def __init__(self, observation_space, action_space, config):
         self.action_space = action_space
-        
+
     def compute_actions(self, obs_batch, state_batches=None, **kwargs):
         actions = [self.action_space.sample() for _ in range(len(obs_batch))]
         return actions, [], {}
-    
+
     def learn_on_batch(self, samples):
         return {}  # Random policy doesn't learn
-    
+
     def get_weights(self):
         return {}  # No weights for random policy
-    
+
     def set_weights(self, weights):
         pass  # No weights to set
-
+    
 def create_multi_agent_config(obs_space, act_space, num_agents, num_trained_agents):
     """
     Create multi-agent configuration using Ray 2.4+ API.

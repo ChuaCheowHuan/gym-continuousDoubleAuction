@@ -1,120 +1,54 @@
 import torch
-
-from ray.rllib.core.columns import Columns
+import torch.nn as nn
+from ray.rllib.core.rl_module.rl_module import RLModule
 from ray.rllib.core.rl_module.torch import TorchRLModule
 
+# Custom RLModule for PyTorch
+class CustomRLModule(RLModule):
+    def __init__(self, config):
+        super().__init__(config)
+        self.obs_dim = config.observation_space.shape[0]
+        self.num_actions = config.action_space.n
 
-class CustomModel(TorchRLModule):
-    """A simple VPG (vanilla policy gradient)-style RLModule for testing purposes.
-
-    Use this as a minimum, bare-bones example implementation of a custom TorchRLModule.
-    """
-
-    def setup(self):
-        """Use this method to create all the model components that you require.
-
-        Feel free to access the following useful properties in this class:
-        - `self.model_config`: The config dict for this RLModule class,
-        which should contain flexible settings, for example: {"hiddens": [256, 256]}.
-        - `self.observation|action_space`: The observation and action space that
-        this RLModule is subject to. Note that the observation space might not be the
-        exact space from your env, but that it might have already gone through
-        preprocessing through a connector pipeline (for example, flattening,
-        frame-stacking, mean/std-filtering, etc..).
-        - `self.inference_only`: If True, this model should be built only for inference
-        purposes, in which case you may want to exclude any components that are not used
-        for computing actions, for example a value function branch.
-        """
-        input_dim = self.observation_space.shape[0]
-        hidden_dim = self.model_config["hidden_dim"]
-        # hidden_dim = [64,64]
-        output_dim = self.action_space.n
-
-        self._policy_net = torch.nn.Sequential(
-            torch.nn.Linear(input_dim, hidden_dim),
-            torch.nn.ReLU(),
-            torch.nn.Linear(hidden_dim, output_dim),
+        # Define a simple neural network
+        self.network = nn.Sequential(
+            nn.Linear(self.obs_dim, 8),
+            nn.ReLU(),
+            nn.Linear(8, 4),
+            nn.ReLU(),
+            nn.Linear(4, self.num_actions)
         )
 
-    def _forward(self, batch, **kwargs):
-        # Push the observations from the batch through our `self._policy_net`.
-        action_logits = self._policy_net(batch[Columns.OBS])
-        # Return parameters for the (default) action distribution, which is
-        # `TorchCategorical` (due to our action space being `gym.spaces.Discrete`).
-        return {Columns.ACTION_DIST_INPUTS: action_logits}
+        # Value head for PPO
+        self.value_branch = nn.Linear(8, 1)
+        self._last_value = None
 
-        # If you need more granularity between the different forward behaviors during
-        # the different phases of the module's lifecycle, implement three different
-        # forward methods. Thereby, it is recommended to put the inference and
-        # exploration versions inside a `with torch.no_grad()` context for better
-        # performance.
-        # def _forward_train(self, batch):
-        #    ...
-        #
-        # def _forward_inference(self, batch):
-        #    with torch.no_grad():
-        #        return self._forward_train(batch)
-        #
-        # def _forward_exploration(self, batch):
-        #    with torch.no_grad():
-        #        return self._forward_train(batch)
+    def forward_train(self, batch, **kwargs):
+        obs = batch["obs"].float()
+        features = self.network[:-1](obs)  # Get features before final layer
+        action_logits = self.network[-1](features)
+        self._last_value = self.value_branch(features).squeeze(-1)
+        return {"action_dist_inputs": action_logits}
 
+    def forward_inference(self, batch, **kwargs):
+        obs = batch["obs"].float()
+        features = self.network[:-1](obs)
+        action_logits = self.network[-1](features)
+        return {"action_dist_inputs": action_logits}
 
+    def forward_exploration(self, batch, **kwargs):
+        return self.forward_inference(batch, **kwargs)
 
-# import torch
-# import torch.nn as nn
-# import torch.nn.functional as F
+    def get_state(self):
+        return {}  # No recurrent state in this model
 
-# from ray.rllib.core.rl_module.rl_module import RLModuleConfig
-# from ray.rllib.core.rl_module.torch.torch_rl_module import TorchRLModule
-# from ray.rllib.utils.typing import SampleBatchType
+    def set_state(self, state):
+        pass  # No state to set
 
-# # Custom RLModule for PyTorch
-# class CustomLSTMRLModule(TorchRLModule):
-#     def __init__(self, config):
-#         super().__init__(config)
-#         self.obs_dim = config.observation_space.shape[0]
-#         self.num_actions = config.action_space.n
-        
-#         # Define a simple neural network
-#         self.network = nn.Sequential(
-#             nn.Linear(self.obs_dim, 64),
-#             nn.ReLU(),
-#             nn.Linear(64, 32),
-#             nn.ReLU(),
-#             nn.Linear(32, self.num_actions)
-#         )
-        
-#         # Value head for PPO
-#         self.value_branch = nn.Linear(32, 1)
-#         self._last_value = None
-        
-#     def forward_train(self, batch, **kwargs):
-#         obs = batch["obs"].float()
-#         features = self.network[:-1](obs)  # Get features before final layer
-#         action_logits = self.network[-1](features)
-#         self._last_value = self.value_branch(features).squeeze(-1)
-#         return {"action_dist_inputs": action_logits}
-    
-#     def forward_inference(self, batch, **kwargs):
-#         obs = batch["obs"].float()
-#         features = self.network[:-1](obs)
-#         action_logits = self.network[-1](features)
-#         return {"action_dist_inputs": action_logits}
-    
-#     def forward_exploration(self, batch, **kwargs):
-#         return self.forward_inference(batch, **kwargs)
-    
-#     def get_state(self):
-#         return {}  # No recurrent state in this model
-    
-#     def set_state(self, state):
-#         pass  # No state to set
-    
-#     def get_train_action_dist_cls(self):
-#         from ray.rllib.models.torch.torch_distributions import TorchCategorical
-#         return TorchCategorical
-    
-#     def get_inference_action_dist_cls(self):
-#         from ray.rllib.models.torch.torch_distributions import TorchCategorical
-#         return TorchCategorical
+    def get_train_action_dist_cls(self):
+        from ray.rllib.models.torch.torch_distributions import TorchCategorical
+        return TorchCategorical
+
+    def get_inference_action_dist_cls(self):
+        from ray.rllib.models.torch.torch_distributions import TorchCategorical
+        return TorchCategorical

@@ -88,6 +88,21 @@ class continuousDoubleAuctionEnv(
             f"agent_{i}": act_space for i in range(self.num_of_agents)
         }
     
+    def get_action_space(self, agent_id):
+        # Return the actual action space, not a dictionary
+
+        print(f'get_action_space, agent_id: {agent_id}')
+        print(f'get_action_space, self.action_space[agent_id]: {self.action_space[agent_id]}')
+
+        return self.action_space[agent_id]
+
+    def get_observation_space(self, agent_id):
+
+        # print(f'get_observation_space, agent_id: {agent_id}')
+        # print(f'get_observation_space, self.observation_spaces[agent_id]: {self.observation_spaces[agent_id]}')
+
+        return self.observation_space[agent_id]
+        
     # Override from RLlib
     # def get_observation_space(self, agent_id):
     #     """
@@ -154,6 +169,8 @@ class continuousDoubleAuctionEnv(
 
         # Return observations and info dict (new format)
         observations = self.reset_traders_agg_LOB()
+        print(f'reset (observations): {observations}')
+
         infos = {agent_id: {} for agent_id in self._agent_ids}
         
         return observations, infos

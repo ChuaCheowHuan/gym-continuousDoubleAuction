@@ -17,7 +17,7 @@ class Done_Helper(object):
 
         return terminateds
 
-    def set_all_done(self, terminateds, truncateds):
+    def set_all_done(self, terminateds):
         """
         Updates the 'terminateds' dictionary by setting the "__all__" key to 1 
         if all agents are done or the maximum episode step has been reached.
