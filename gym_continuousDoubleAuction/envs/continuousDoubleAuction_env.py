@@ -68,8 +68,8 @@ class continuousDoubleAuctionEnv(
             f"agent_{i}": gym.spaces.Box(
                 # low=neg_inf, 
                 # high=inf, 
-                low=-1, 
-                high=1,                 
+                low=-np.inf,
+                high=np.inf,                
                 # shape=(obs_row * obs_col,), 
                 shape=(40,), 
                 dtype=np.float32
