@@ -40,7 +40,7 @@ class Done_Helper(object):
 
         # Set "__all__" to 1 if either condition is met
         # terminateds["__all__"] = 1 if all_agents_done or episode_timed_out else 0
-        terminateds["__all__"] = 1 if all_agents_done else 0
-        truncateds["__all__"] = 1 if episode_timed_out else 0
+        terminateds["__all__"] = True if all_agents_done else False
+        truncateds["__all__"] = True if episode_timed_out else False
 
         return terminateds, truncateds

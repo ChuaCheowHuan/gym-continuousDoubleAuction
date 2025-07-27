@@ -71,7 +71,7 @@ class continuousDoubleAuctionEnv(
                 low=-1, 
                 high=1,                 
                 # shape=(obs_row * obs_col,), 
-                shape=(4,), 
+                shape=(40,), 
                 dtype=np.float32
             ) for i in range(self.num_of_agents)
         }
@@ -233,6 +233,9 @@ class continuousDoubleAuctionEnv(
 
         self.render()
         self.t_step += 1
+
+        print(f'step: self.terminateds {self.terminateds}')
+        print(f'step: self.truncateds {self.truncateds}')
 
         # Return 5 values as required by new API
         return self.next_states, self.rewards, self.terminateds, self.truncateds, self.infos
