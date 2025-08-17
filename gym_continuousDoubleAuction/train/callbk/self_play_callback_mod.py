@@ -12,12 +12,12 @@ class SelfPlayCallback(RLlibCallback):
         super().__init__()
         # 0=RandomPolicy, 1=1st main policy snapshot,
         # 2=2nd main policy snapshot, etc..
-        self.current_opponent = 0
+        # self.current_opponent = 0
 
-        self.win_rate_threshold = win_rate_threshold
+        # self.win_rate_threshold = win_rate_threshold
 
-        # Report the matchup counters (who played against whom?).
-        self._matching_stats = defaultdict(int)
+        # # Report the matchup counters (who played against whom?).
+        # self._matching_stats = defaultdict(int)
 
     def on_episode_end(
         self,
