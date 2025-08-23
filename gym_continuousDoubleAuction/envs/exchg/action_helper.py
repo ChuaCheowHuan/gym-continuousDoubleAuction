@@ -107,14 +107,25 @@ class Action_Helper():
                                of unfilled limit orders leftover by the actions.
         """
 
+
+        print(f'do_actions -> actions: {actions}')
+
+
         seq_trades = []
         seq_order_in_book = []
         for action in actions:
-            ID = action.get("ID")
+            ID_str = action.get("ID")
             type = action.get("type")
             side = action.get("side")
             size = action.get("size")
             price = action.get("price")
+
+
+
+            ID = int(ID_str.split('_')[1])
+            
+
+
             trader = self.traders[ID]
             self.trades, self.order_in_book = trader.place_order(type, side, size, price, self.LOB, self.traders)
             seq_trades.append(self.trades)
@@ -133,10 +144,16 @@ class Action_Helper():
         Returns:
             act: The action of an agent acceptable by the LOB.
         """
+        
+        
+        
+        print(f'model_out: {model_out}')
+
+
 
         # Assign model output for a single action to their respective fields.
         side = model_out[0]
-        type = model_out[1]
+        ord_type = model_out[1]
         size_mean = model_out[2]
         size_sigma = model_out[3]
         price_code = model_out[4]
@@ -144,7 +161,7 @@ class Action_Helper():
         act = {}
         act["ID"] = ID
         act["side"] = self._set_side(side)
-        act["type"] = self._set_type(type)
+        act["type"] = self._set_type(ord_type)
 
         size = self._set_size(act["type"], self.mkt_size_mean_mul, self.limit_size_mean_mul, size_mean, size_sigma)
         act["size"] = (size + self.min_size) * 1.0 # +self.min_size as size can't be 0, *1 for float
@@ -203,7 +220,8 @@ class Action_Helper():
         else:
             sample = np.random.normal(limit_size_mean_mul * mean, sigma, 1)
 
-        return np.asscalar(np.rint(np.abs(sample)))
+        # return np.asscalar(np.rint(np.abs(sample)))
+        return np.rint(np.abs(sample)).item()
 
     def _set_price(self, min_tick, max_price, side, price_code):
         """
@@ -230,7 +248,14 @@ class Action_Helper():
 
         if side == 'bid':
             # agg_LOB is [bid_size_list, bid_price_list, ask_size_list, ask_price_list] # list of np.arrays
-            price_array = self.agg_LOB[1] # bid prices
+            
+            
+            
+            # price_array = self.agg_LOB[1] # bid prices
+            price_array = np.array(self.agg_LOB).reshape(4, 10)[0]
+            
+
+            
             if price_code == 0: # lower by 1 tick or equal to lowest bid
                 set_price = self._lower(min_tick, max_price, min(price_array)) # price_array[9] is the lowest bid
             elif price_code == 11: # 1 tick higher than the highest bid
@@ -238,7 +263,14 @@ class Action_Helper():
             else: # price_code between 1 to 10
                 set_price = self._within_price_slot(min_tick, side, max_price, price_code, price_array)
         else: # 'ask' side is negative on agg_LOB for both size & price
-            price_array = self.agg_LOB[3] # ask prices
+            
+            
+            
+            # price_array = self.agg_LOB[3] # ask prices
+            price_array = np.array(self.agg_LOB).reshape(4, 10)[3]
+
+
+
             if price_code == 0: # 1 tick higher than the highest ask
                 set_price = self._higher(min_tick, max_price, abs(min(price_array))) # price_array[9] is the highest ask
             elif price_code == 11: # lower by 1 tick or equal to lowest ask
@@ -307,6 +339,13 @@ class Action_Helper():
         """
 
         set_price = min_tick
+
+
+
+        print(f'price_array:{price_array}')
+
+
+
         for i, price in enumerate(price_array):
             if price_code == i+1: # price_code is between 1 to 10 while i starts from 0
                 if price == 0:

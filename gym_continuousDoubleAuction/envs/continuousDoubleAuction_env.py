@@ -213,18 +213,31 @@ class continuousDoubleAuctionEnv(
         #self.print_table("Model actions:\n", actions)
 
         self.next_states, self.rewards, self.terminateds, self.truncateds, self.infos = {}, {}, {}, {}, {}
-        # self.agg_LOB = self.set_agg_LOB() # LOB state at t before processing LOB
 
-        # actions = self.set_actions(actions) # format actions from nn output to be acceptable by LOB
-        # self.LOB_actions = actions
-        # #self.print_table("Formatted actions acceptable by LOB:\n", actions)
 
-        # actions = self.rand_exec_seq(actions, None) # randomized traders execution sequence
-        # self.shuffled_actions = actions
-        # #self.print_table("Shuffled action queueing sequence for LOB executions:\n", actions)
 
-        # self.seq_trades, self.seq_order_in_book = self.do_actions(actions) # Begin processing LOB
-        # self.mark_to_mkt() # mark to market
+        self.agg_LOB = self.set_agg_LOB() # LOB state at t before processing LOB
+
+        print(actions)
+        # {
+        # 'agent_3': (np.int32(0), np.int32(3), array([0.7106466], dtype=float32), array([0.21718845], dtype=float32), np.int32(7)), 
+        # 'agent_1': (np.int32(2), np.int32(1), array([-0.37776113], dtype=float32), array([0.45237976], dtype=float32), np.int32(11)), 
+        # 'agent_0': (np.int32(2), np.int32(3), array([0.26284337], dtype=float32), array([0.6805017], dtype=float32), np.int32(4)), 
+        # 'agent_2': (np.int32(0), np.int32(0), array([0.45744383], dtype=float32), array([0.19705606], dtype=float32), np.int32(7))
+        # }
+
+        actions = self.set_actions(actions) # format actions from nn output to be acceptable by LOB
+        self.LOB_actions = actions
+        #self.print_table("Formatted actions acceptable by LOB:\n", actions)
+
+        actions = self.rand_exec_seq(actions, None) # randomized traders execution sequence
+        self.shuffled_actions = actions
+        #self.print_table("Shuffled action queueing sequence for LOB executions:\n", actions)
+
+        self.seq_trades, self.seq_order_in_book = self.do_actions(actions) # Begin processing LOB
+        self.mark_to_mkt() # mark to market
+
+
 
         # after processing LOB
         state_input = self.prep_next_state()
@@ -234,8 +247,8 @@ class continuousDoubleAuctionEnv(
         self.render()
         self.t_step += 1
 
-        print(f'step: self.terminateds {self.terminateds}')
-        print(f'step: self.truncateds {self.truncateds}')
+        # print(f'step: self.terminateds {self.terminateds}')
+        # print(f'step: self.truncateds {self.truncateds}')
 
         # Return 5 values as required by new API
         return self.next_states, self.rewards, self.terminateds, self.truncateds, self.infos

@@ -72,7 +72,13 @@ class Cash_Processor(object):
         """
 
         order_val = (order.price) * (order.quantity)
-        qoute_val = Decimal(qoute['price']) * (qoute['quantity'])
+
+
+
+        qoute_val = Decimal(str(qoute['price'])) * qoute['quantity']
+        
+        
+        
         if order_val >= qoute_val: # reducing size
             diff = order_val - qoute_val
             # deduct from cash_on_hold, return to cash

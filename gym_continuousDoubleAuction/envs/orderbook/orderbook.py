@@ -42,7 +42,14 @@ class OrderBook(object):
         if order_type == 'market':
             trades = self.process_market_order(quote, verbose)
         elif order_type == 'limit':
-            quote['price'] = Decimal(quote['price'])
+            
+            
+            
+            # quote['price'] = Decimal(quote['price'])
+            quote['price'] = Decimal(str(quote['price']))
+
+
+
             trades, order_in_book = self.process_limit_order(quote, from_data, verbose)
         else:
             sys.exit("order_type for process_order() is neither 'market' or 'limit'")
