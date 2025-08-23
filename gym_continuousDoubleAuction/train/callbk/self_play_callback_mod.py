@@ -1,7 +1,9 @@
 from collections import defaultdict
 
 import numpy as np
+import json
 import pprint
+import pickle
 
 from ray.rllib.callbacks.callbacks import RLlibCallback
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
@@ -22,6 +24,7 @@ class SelfPlayCallback(RLlibCallback):
         # self._matching_stats = defaultdict(int)
 
         self.ID = None
+        self.store = None
 
     def on_episode_start(
         self,
@@ -60,6 +63,7 @@ class SelfPlayCallback(RLlibCallback):
         """
         print('on_episode_start')
         self.ID = episode.id_
+        self.store = []
 
     def on_episode_step(
         self,
@@ -100,6 +104,19 @@ class SelfPlayCallback(RLlibCallback):
         print('on_episode_step')
 
         self.ID = episode.id_
+        last_obs = episode.get_observations(-1)
+        last_act = episode.get_actions(-1)
+        last_reward = episode.get_rewards(-1)
+        last_info = episode.get_infos(-1)
+        step_data = {
+            'episode_id': self.ID,
+            'obs': last_obs,
+            'act': last_act,
+            'reward': last_reward,
+            'info': last_info, 
+
+        }
+        self.store.append(step_data)
 
     def on_episode_end(
         self,
@@ -123,17 +140,34 @@ class SelfPlayCallback(RLlibCallback):
         #         reduce="mean",
         #         window=100,
         #     )
-        last_obs = episode.get_observations(-1)
-        last_act = episode.get_actions(-1)
-        last_reward = episode.get_rewards(-1)
-        last_info = episode.get_infos(-1)
+
+        # last_obs = episode.get_observations(-1)
+        # last_act = episode.get_actions(-1)
+        # last_reward = episode.get_rewards(-1)
+        # last_info = episode.get_infos(-1)
 
         print(f'on_episode_end:{episode}')
 
-        print(f'last_obs:{last_obs}')  
-        print(f'last_act:{last_act}')        
-        print(f'last_reward:{last_reward}')        
-        print(f'last_info:{last_info}')        
+        # print(f'last_obs:{last_obs}')  
+        # print(f'last_act:{last_act}')        
+        # print(f'last_reward:{last_reward}')        
+        # print(f'last_info:{last_info}')     
+
+        # print(self.store)
+
+        # Save the data
+        # with open('episode_data_' + episode.id_ + '.json', 'w') as f:
+        #     json.dump(self.store, f, indent=4)
+
+        # Save the data
+        with open('episode_data/' + str(episode.id_) + '.pkl', 'wb') as f:
+            pickle.dump(self.store, f)
+
+        # # Load later
+        # with open('episode_data.pkl', 'rb') as f:
+        #     loaded_store = pickle.load(f)
+
+        self.store = None   
 
     def on_train_result(self, *, algorithm, metrics_logger=None, result, **kwargs):
         # win_rate = result[ENV_RUNNER_RESULTS]["win_rate"]
