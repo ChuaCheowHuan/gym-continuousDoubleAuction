@@ -4,6 +4,7 @@ import numpy as np
 import json
 import pprint
 import pickle
+import os
 
 from ray.rllib.callbacks.callbacks import RLlibCallback
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
@@ -159,6 +160,8 @@ class SelfPlayCallback(RLlibCallback):
         # with open('episode_data_' + episode.id_ + '.json', 'w') as f:
         #     json.dump(self.store, f, indent=4)
 
+
+        os.makedirs('episode_data', exist_ok=True)
         # Save the data
         with open('episode_data/' + str(episode.id_) + '.pkl', 'wb') as f:
             pickle.dump(self.store, f)
