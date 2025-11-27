@@ -108,7 +108,7 @@ class Action_Helper():
         """
 
 
-        print(f'do_actions -> actions: {actions}')
+        # print(f'do_actions -> actions: {actions}')
 
 
         seq_trades = []
@@ -147,7 +147,7 @@ class Action_Helper():
         
         
         
-        print(f'model_out: {model_out}')
+        # print(f'model_out: {model_out}')
 
 
 
@@ -342,7 +342,7 @@ class Action_Helper():
 
 
 
-        print(f'price_array:{price_array}')
+        # print(f'price_array:{price_array}')
 
 
 

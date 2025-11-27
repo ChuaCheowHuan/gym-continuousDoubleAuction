@@ -111,7 +111,7 @@ class State_Helper(object):
         flattened = np.concatenate([bid_size_list, bid_price_list, ask_size_list, ask_price_list])
         flattened = flattened.astype(np.float32)
 
-        print(f'set_agg_LOB:flattened: {flattened}')
+        # print(f'set_agg_LOB:flattened: {flattened}')
 
         return flattened
     

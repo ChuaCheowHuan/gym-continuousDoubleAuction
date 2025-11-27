@@ -28,7 +28,7 @@ class continuousDoubleAuctionEnv(
         init_cash = config.get("init_cash", 0)
         tick_size = config.get("tick_size", 1)
         tape_display_length = config.get("tape_display_length", 10)
-        self.max_step = config.get("max_step", 100)
+        self.max_step = config.get("max_step", 64)
         is_render = config.get("is_render", True)
 
         # Initialize parent classes
@@ -91,8 +91,8 @@ class continuousDoubleAuctionEnv(
     def get_action_space(self, agent_id):
         # Return the actual action space, not a dictionary
 
-        print(f'get_action_space, agent_id: {agent_id}')
-        print(f'get_action_space, self.action_space[agent_id]: {self.action_space[agent_id]}')
+        # print(f'get_action_space, agent_id: {agent_id}')
+        # print(f'get_action_space, self.action_space[agent_id]: {self.action_space[agent_id]}')
 
         return self.action_space[agent_id]
 
@@ -169,7 +169,7 @@ class continuousDoubleAuctionEnv(
 
         # Return observations and info dict (new format)
         observations = self.reset_traders_agg_LOB()
-        print(f'reset (observations): {observations}')
+        # print(f'reset (observations): {observations}')
 
         infos = {agent_id: {} for agent_id in self._agent_ids}
         
@@ -218,7 +218,7 @@ class continuousDoubleAuctionEnv(
 
         self.agg_LOB = self.set_agg_LOB() # LOB state at t before processing LOB
 
-        print(actions)
+        # print(actions)
         # {
         # 'agent_3': (np.int32(0), np.int32(3), array([0.7106466], dtype=float32), array([0.21718845], dtype=float32), np.int32(7)), 
         # 'agent_1': (np.int32(2), np.int32(1), array([-0.37776113], dtype=float32), array([0.45237976], dtype=float32), np.int32(11)), 

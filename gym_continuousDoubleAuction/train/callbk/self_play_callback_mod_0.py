@@ -12,8 +12,8 @@ from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
 
 
 class SelfPlayCallback(RLlibCallback):
-    def __init__(self, win_rate_threshold):
-    # def __init__(self):
+    # def __init__(self, win_rate_threshold):
+    def __init__(self):
         super().__init__()
         # 0=RandomPolicy, 1=1st main policy snapshot,
         # 2=2nd main policy snapshot, etc..
