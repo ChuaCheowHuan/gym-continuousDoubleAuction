@@ -212,7 +212,11 @@ class MinimalLeagueCallback(RLlibCallback):
             pickle.dump(self.store, f)
 
         # # Load later
-        
+        # with open('episode_data.pkl', 'rb') as f:
+        #     loaded_store = pickle.load(f)
+
+        self.store = None   
+
     def on_train_result(self, *, algorithm, metrics_logger=None, result, **kwargs):
         """
         Called after each training iteration.
@@ -228,47 +232,28 @@ class MinimalLeagueCallback(RLlibCallback):
         if algorithm.iteration % self.check_every_n_iters != 0:
             return
         
-        # STEP 1: Initialize trainable policies
-        if not self._initialize_trainable_policies(algorithm):
-            return
-
-        # STEP 2: Extract agent performance metrics
-        agent_returns = self._get_agent_returns(result, algorithm)
-        if not agent_returns:
-            return
-        
-        # STEP 3: Calculate performance threshold
-        threshold = self._calculate_threshold(agent_returns)
-        if threshold is None:
-            return
-
-        # STEP 4 & 5: Evaluate each trainable policy and update league
-        self._evaluate_and_update_league(algorithm, agent_returns, threshold)
-        
-        # STEP 6: Add league statistics to results for logging
-        result['league_size'] = self.league_size
-        
-        print(f"\n{'='*80}\n")
-
-    def _initialize_trainable_policies(self, algorithm):
-        """Initialize trainable policies from algorithm config if not already done."""
+        # ===================================================================
+        # STEP 1: Initialize trainable policies from algorithm config
+        # ===================================================================
+        # This happens once on first call to get which policies are being trained
         if not self.trainable_policies:
             if hasattr(algorithm.config, 'policies_to_train'):
                 self.trainable_policies = set(algorithm.config.policies_to_train)
                 print(f"Trainable policies initialized: {self.trainable_policies}")
             else:
                 print("Warning: Could not get policies_to_train from config")
-                return False
-        return True
-
-    def _get_agent_returns(self, result, algorithm):
-        """Extract agent performance metrics from training results."""
+                return
+        
+        # ===================================================================
+        # STEP 2: Extract agent performance metrics from training results
+        # ===================================================================
+        # Get the aggregated returns (mean over all episodes this iteration)
         env_runner_results = result.get(ENV_RUNNER_RESULTS, {})
         agent_returns = env_runner_results.get('agent_episode_returns_mean', {})
         
         if not agent_returns:
             print(f"Iter={algorithm.iteration}: No agent returns found in results")
-            return None
+            return
         
         # Store returns for tracking
         self.agent_returns = agent_returns
@@ -277,66 +262,102 @@ class MinimalLeagueCallback(RLlibCallback):
         print(f"Iteration {algorithm.iteration} - League Evaluation")
         print(f"{'='*80}")
         print(f"Agent returns: {agent_returns}")
-        return agent_returns
-
-    def _calculate_threshold(self, agent_returns):
-        """Calculate performance threshold based on configured mode."""
+        
+        # ===================================================================
+        # STEP 3: Calculate performance threshold
+        # ===================================================================
+        # Two modes:
+        # 1. Absolute threshold: Fixed value (legacy, for positive rewards)
+        # 2. Relative threshold: Dynamic based on current performance (recommended)
+        
         if self.use_relative_threshold:
-            return self._calculate_relative_threshold(agent_returns)
-        else:
-            print(f"\n--- Absolute Threshold Mode ---")
-            print(f"Fixed threshold: {self.return_threshold:.2f}")
-            return self.return_threshold
-
-    def _calculate_relative_threshold(self, agent_returns):
-        """Calculate relative threshold based on baseline performance."""
-        trainable_returns = [
-            ret for agent_id, ret in agent_returns.items()
-            if agent_id.replace('agent_', 'policy_') in self.trainable_policies
-        ]
-        
-        if not trainable_returns:
-            print("No trainable agent returns found")
-            return None
-        
-        # Use mean as baseline
-        baseline = np.mean(trainable_returns)
-        
-        if baseline < 0:
-            # Negative returns: reduce magnitude by improvement percentage
-            threshold = baseline * (1 - self.relative_improvement)
-        else:
-            # Positive returns: increase by improvement percentage
-            threshold = baseline * (1 + self.relative_improvement)
-        
-        print(f"\n--- Relative Threshold Mode ---")
-        print(f"Baseline (mean of trainable): {baseline:.2f}")
-        print(f"Required improvement: {self.relative_improvement*100:.0f}%")
-        print(f"Calculated threshold: {threshold:.2f}")
-        
-        if baseline < 0:
-            improvement_needed = baseline - threshold
-            print(f"  → Agents must achieve at least {improvement_needed:.2f} less loss")
-            print(f"  → Example: {threshold:.2f} or better (less negative)")
-        else:
-            improvement_needed = threshold - baseline
-            print(f"  → Agents must achieve at least {improvement_needed:.2f} more reward")
-            print(f"  → Example: {threshold:.2f} or better")
+            # ---------------------------------------------------------------
+            # RELATIVE THRESHOLD CALCULATION
+            # ---------------------------------------------------------------
+            # Calculate baseline performance from all trainable agents
+            # This is the "average" performance we expect
             
-        return threshold
-
-    def _evaluate_and_update_league(self, algorithm, agent_returns, threshold):
-        """Evaluate policies and add to league if they qualify."""
+            trainable_returns = [
+                ret for agent_id, ret in agent_returns.items()
+                if agent_id.replace('agent_', 'policy_') in self.trainable_policies
+            ]
+            
+            if not trainable_returns:
+                print("No trainable agent returns found")
+                return
+            
+            # Use mean as baseline (could also use median for robustness)
+            baseline = np.mean(trainable_returns)
+            
+            # Calculate relative threshold
+            # The key insight: For NEGATIVE numbers, "better" means "less negative"
+            # 
+            # Example with negative returns (trading environment):
+            #   baseline = -100 (average loss)
+            #   relative_improvement = 0.15 (require 15% better)
+            #   
+            #   For negative baseline:
+            #     threshold = -100 * (1 - 0.15) = -100 * 0.85 = -85
+            #     Agent needs return > -85 (i.e., less negative than -85)
+            #     This means -80, -70, -60 all qualify (15% less negative)
+            #
+            # Example with positive returns (game-playing environment):
+            #   baseline = 100 (average score)
+            #   relative_improvement = 0.15
+            #   
+            #   For positive baseline:
+            #     threshold = 100 * (1 + 0.15) = 100 * 1.15 = 115
+            #     Agent needs return > 115 (i.e., 15% higher score)
+            #
+            if baseline < 0:
+                # Negative returns: reduce magnitude by improvement percentage
+                # Example: -100 * (1 - 0.15) = -85 (15% less negative)
+                threshold = baseline * (1 - self.relative_improvement)
+            else:
+                # Positive returns: increase by improvement percentage  
+                # Example: 100 * (1 + 0.15) = 115 (15% higher)
+                threshold = baseline * (1 + self.relative_improvement)
+            
+            print(f"\n--- Relative Threshold Mode ---")
+            print(f"Baseline (mean of trainable): {baseline:.2f}")
+            print(f"Required improvement: {self.relative_improvement*100:.0f}%")
+            print(f"Calculated threshold: {threshold:.2f}")
+            
+            # Interpretation help for user
+            if baseline < 0:
+                improvement_needed = baseline - threshold  # Will be positive
+                print(f"  → Agents must achieve at least {improvement_needed:.2f} less loss")
+                print(f"  → Example: {threshold:.2f} or better (less negative)")
+            else:
+                improvement_needed = threshold - baseline
+                print(f"  → Agents must achieve at least {improvement_needed:.2f} more reward")
+                print(f"  → Example: {threshold:.2f} or better")
+        
+        else:
+            # ---------------------------------------------------------------
+            # ABSOLUTE THRESHOLD (Legacy mode)
+            # ---------------------------------------------------------------
+            threshold = self.return_threshold
+            print(f"\n--- Absolute Threshold Mode ---")
+            print(f"Fixed threshold: {threshold:.2f}")
+        
+        # ===================================================================
+        # STEP 4: Evaluate each trainable policy against threshold
+        # ===================================================================
         print(f"\n--- Policy Evaluation ---")
         
         for agent_id, mean_return in agent_returns.items():
+            # Map agent to policy (agent_0 → policy_0)
             policy_id = agent_id.replace('agent_', 'policy_')
             
+            # Skip non-trainable policies (they don't get added to league)
             if policy_id not in self.trainable_policies:
                 continue
             
+            # Calculate how much better/worse than threshold
             diff = mean_return - threshold
             diff_pct = (diff / abs(threshold) * 100) if threshold != 0 else 0
+            
             status = "✓ EXCEEDS" if mean_return > threshold else "✗ below"
             
             print(
@@ -346,49 +367,64 @@ class MinimalLeagueCallback(RLlibCallback):
                 f"{status}"
             )
             
+            # ===================================================================
+            # STEP 5: Add to league if threshold exceeded
+            # ===================================================================
             if mean_return > threshold:
-                self._add_policy_to_league(algorithm, policy_id, mean_return)
-
-    def _add_policy_to_league(self, algorithm, policy_id, mean_return):
-        """Create a frozen snapshot of the policy and add it to the league."""
-        print(f"\n  → {policy_id} qualifies for league!")
-        
-        league_id = f"league_{len(self.league_opponents)}"
-        
-        try:
-            policy_module = algorithm.get_module(policy_id)
-            
-            algorithm.add_module(
-                module_id=league_id,
-                module_spec=RLModuleSpec.from_module(policy_module),
-            )
-            
-            algorithm.set_state(
-                {
-                    "learner_group": {
-                        "learner": {
-                            "rl_module": {
-                                league_id: policy_module.get_state(),
+                print(f"\n  → {policy_id} qualifies for league!")
+                
+                # Create unique league opponent ID
+                league_id = f"league_{len(self.league_opponents)}"
+                
+                try:
+                    # Get the policy module (neural network)
+                    policy_module = algorithm.get_module(policy_id)
+                    
+                    # Add new frozen module to the algorithm
+                    # This creates a copy of the policy but doesn't train it
+                    algorithm.add_module(
+                        module_id=league_id,
+                        module_spec=RLModuleSpec.from_module(policy_module),
+                    )
+                    
+                    # Copy the weights from the successful policy
+                    # This ensures the league opponent has the exact same strategy
+                    algorithm.set_state(
+                        {
+                            "learner_group": {
+                                "learner": {
+                                    "rl_module": {
+                                        league_id: policy_module.get_state(),
+                                    }
+                                }
                             }
                         }
-                    }
-                }
-            )
-            
-            self.league_opponents.append(league_id)
-            self.league_size = len(self.league_opponents)
-            
-            print(f"  → League opponent '{league_id}' created successfully!")
-            print(f"  → Current league size: {self.league_size}")
-            print(f"  → Snapshot of {policy_id} with return {mean_return:.2f}")
-            
-            self._update_policy_mapping(algorithm)
-            
-        except Exception as e:
-            print(f"  → ✗ Error creating league opponent: {e}")
-            import traceback
-            traceback.print_exc()
-
+                    )
+                    
+                    # Add to league opponents list (frozen, won't be trained)
+                    self.league_opponents.append(league_id)
+                    self.league_size = len(self.league_opponents)
+                    
+                    print(f"  → League opponent '{league_id}' created successfully!")
+                    print(f"  → Current league size: {self.league_size}")
+                    print(f"  → Snapshot of {policy_id} with return {mean_return:.2f}")
+                    
+                    # Update policy mapping to include new league opponent
+                    self._update_policy_mapping(algorithm)
+                    
+                except Exception as e:
+                    print(f"  → ✗ Error creating league opponent: {e}")
+                    import traceback
+                    traceback.print_exc()
+        
+        # ===================================================================
+        # STEP 6: Add league statistics to results for logging
+        # ===================================================================
+        result['league_size'] = self.league_size
+        # result['num_league_opponents'] = len(self.league_opponents)
+        
+        print(f"\n{'='*80}\n")
+        
     def _update_policy_mapping(self, algorithm):
         """
         Update the policy mapping function to randomly assign agents to
