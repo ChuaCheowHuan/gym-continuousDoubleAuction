@@ -55,7 +55,9 @@ class Trader(Random_agent):
 
         else: # not enough cash to place order
             #print('Invalid order: order value > cash available.', self.ID)
-            print("\nOrder NOT approved: -ve NAV for trader_ID {}.\n".format(self.ID))
+            
+            # print("\nOrder NOT approved: -ve NAV for trader_ID {}.\n".format(self.ID))
+
             return trades, order_in_book
 
     def _order_approved(self, cash, size, price):
