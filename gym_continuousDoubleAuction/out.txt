@@ -1,0 +1,964 @@
+2025-11-29 04:26:26,099	WARNING deprecation.py:50 -- DeprecationWarning: `build` has been deprecated. Use `AlgorithmConfig.build_algo` instead. This will raise an error in the future!
+2025-11-29 04:26:26,100	WARNING algorithm_config.py:5014 -- You are running PPO on the new API stack! This is the new default behavior for this algorithm. If you don't want to use the new API stack, set `config.api_stack(enable_rl_module_and_learner=False,enable_env_runner_and_connector_v2=False)`. For a detailed migration guide, see here: https://docs.ray.io/en/master/rllib/new-api-stack-migration-guide.html
+================================================================================
+DEBUG: train_batch_size = 512
+DEBUG: Expected episodes per iter = 4
+================================================================================
+League callback: Using RELATIVE threshold (15% improvement)
+League callback: Using RELATIVE threshold (15% improvement)
+/usr/local/lib/python3.10/dist-packages/ray/rllib/algorithms/algorithm.py:520: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+`UnifiedLogger` will be removed in Ray 2.7.
+  return UnifiedLogger(config, logdir, loggers=None)
+/usr/local/lib/python3.10/dist-packages/ray/tune/logger/unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `JsonLogger interface is deprecated in favor of the `ray.tune.json.JsonLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+/usr/local/lib/python3.10/dist-packages/ray/tune/logger/unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `CSVLogger interface is deprecated in favor of the `ray.tune.csv.CSVLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+/usr/local/lib/python3.10/dist-packages/ray/tune/logger/unified.py:53: RayDeprecationWarning: This API is deprecated and may be removed in future Ray releases. You could suppress this warning by setting env variable PYTHONWARNINGS="ignore::DeprecationWarning"
+The `TBXLogger interface is deprecated in favor of the `ray.tune.tensorboardx.TBXLoggerCallback` interface and will be removed in Ray 2.7.
+  self._loggers.append(cls(self.config, self.logdir, self.trial))
+2025-11-29 04:26:26,322	INFO connector_pipeline_v2.py:272 -- Added AddObservationsFromEpisodesToBatch to the end of EnvToModulePipeline.
+2025-11-29 04:26:26,332	INFO connector_pipeline_v2.py:272 -- Added AddTimeDimToBatchAndZeroPad to the end of EnvToModulePipeline.
+2025-11-29 04:26:26,341	INFO connector_pipeline_v2.py:272 -- Added AddStatesFromEpisodesToBatch to the end of EnvToModulePipeline.
+2025-11-29 04:26:26,358	INFO connector_pipeline_v2.py:272 -- Added AgentToModuleMapping to the end of EnvToModulePipeline.
+2025-11-29 04:26:26,367	INFO connector_pipeline_v2.py:272 -- Added BatchIndividualItems to the end of EnvToModulePipeline.
+2025-11-29 04:26:26,377	INFO connector_pipeline_v2.py:272 -- Added NumpyToTensor to the end of EnvToModulePipeline.
+2025-11-29 04:26:26,379	WARNING deprecation.py:50 -- DeprecationWarning: `RLModule(config=[RLModuleConfig object])` has been deprecated. Use `RLModule(observation_space=.., action_space=.., inference_only=.., model_config=.., catalog_class=..)` instead. This will raise an error in the future!
+2025-11-29 04:26:26,392	INFO connector_pipeline_v2.py:258 -- Added RemoveSingleTsTimeRankFromBatch to the beginning of ModuleToEnvPipeline.
+2025-11-29 04:26:26,392	INFO connector_pipeline_v2.py:258 -- Added ModuleToAgentUnmapping to the beginning of ModuleToEnvPipeline.
+2025-11-29 04:26:26,393	INFO connector_pipeline_v2.py:258 -- Added UnBatchToIndividualItems to the beginning of ModuleToEnvPipeline.
+2025-11-29 04:26:26,393	INFO connector_pipeline_v2.py:258 -- Added TensorToNumpy to the beginning of ModuleToEnvPipeline.
+2025-11-29 04:26:26,393	INFO connector_pipeline_v2.py:258 -- Added GetActions to the beginning of ModuleToEnvPipeline.
+2025-11-29 04:26:26,407	INFO connector_pipeline_v2.py:272 -- Added NormalizeAndClipActions to the end of ModuleToEnvPipeline.
+2025-11-29 04:26:26,408	INFO connector_pipeline_v2.py:272 -- Added ListifyDataForVectorEnv to the end of ModuleToEnvPipeline.
+2025-11-29 04:26:26,409	INFO env_runner_group.py:320 -- Inferred observation/action spaces from remote worker (local worker has no env): {'__env__': (None, None), '__env_single__': (Dict('agent_0': Box(-inf, inf, (40,), float32), 'agent_1': Box(-inf, inf, (40,), float32), 'agent_2': Box(-inf, inf, (40,), float32), 'agent_3': Box(-inf, inf, (40,), float32)), Dict('agent_0': Tuple(Discrete(3), Discrete(4), Box(-1.0, 1.0, (1,), float32), Box(0.0, 1.0, (1,), float32), Discrete(12)), 'agent_1': Tuple(Discrete(3), Discrete(4), Box(-1.0, 1.0, (1,), float32), Box(0.0, 1.0, (1,), float32), Discrete(12)), 'agent_2': Tuple(Discrete(3), Discrete(4), Box(-1.0, 1.0, (1,), float32), Box(0.0, 1.0, (1,), float32), Discrete(12)), 'agent_3': Tuple(Discrete(3), Discrete(4), Box(-1.0, 1.0, (1,), float32), Box(0.0, 1.0, (1,), float32), Discrete(12)))), 'policy_0': (Box(-inf, inf, (40,), float32), Tuple(Discrete(3), Discrete(4), Box(-1.0, 1.0, (1,), float32), Box(0.0, 1.0, (1,), float32), Discrete(12))), 'policy_1': (Box(-inf, inf, (40,), float32), Tuple(Discrete(3), Discrete(4), Box(-1.0, 1.0, (1,), float32), Box(0.0, 1.0, (1,), float32), Discrete(12))), 'policy_2': (Box(-inf, inf, (40,), float32), Tuple(Discrete(3), Discrete(4), Box(-1.0, 1.0, (1,), float32), Box(0.0, 1.0, (1,), float32), Discrete(12))), 'policy_3': (Box(-inf, inf, (40,), float32), Tuple(Discrete(3), Discrete(4), Box(-1.0, 1.0, (1,), float32), Box(0.0, 1.0, (1,), float32), Discrete(12)))}
+2025-11-29 04:26:26,443	INFO connector_pipeline_v2.py:272 -- Added AddObservationsFromEpisodesToBatch to the end of LearnerConnectorPipeline.
+2025-11-29 04:26:26,443	INFO connector_pipeline_v2.py:272 -- Added AddColumnsFromEpisodesToTrainBatch to the end of LearnerConnectorPipeline.
+2025-11-29 04:26:26,453	INFO connector_pipeline_v2.py:272 -- Added AddTimeDimToBatchAndZeroPad to the end of LearnerConnectorPipeline.
+2025-11-29 04:26:26,463	INFO connector_pipeline_v2.py:272 -- Added AddStatesFromEpisodesToBatch to the end of LearnerConnectorPipeline.
+2025-11-29 04:26:26,472	INFO connector_pipeline_v2.py:272 -- Added AgentToModuleMapping to the end of LearnerConnectorPipeline.
+2025-11-29 04:26:26,481	INFO connector_pipeline_v2.py:272 -- Added BatchIndividualItems to the end of LearnerConnectorPipeline.
+2025-11-29 04:26:26,490	INFO connector_pipeline_v2.py:272 -- Added NumpyToTensor to the end of LearnerConnectorPipeline.
+2025-11-29 04:26:27,465	INFO connector_pipeline_v2.py:258 -- Added AddOneTsToEpisodesAndTruncate to the beginning of LearnerConnectorPipeline.
+2025-11-29 04:26:27,500	INFO connector_pipeline_v2.py:272 -- Added GeneralAdvantageEstimation to the end of LearnerConnectorPipeline.
+================================================================================
+ACTUAL CONFIG train_batch_size: 512
+ACTUAL CONFIG num_env_runners: 0
+ACTUAL CONFIG num_envs_per_env_runner: 1
+================================================================================
+Trainable policies initialized: {'policy_0', 'policy_1'}
+
+================================================================================
+Iteration 1 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -42786851.63666559, 'agent_1': -11247594.928145984, 'agent_2': -47048220.92928579, 'agent_3': -16754404.153440041}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -27017223.28
+Required improvement: 15%
+Calculated threshold: -22964639.79
+  → Agents must achieve at least -4052583.49 less loss
+  → Example: -22964639.79 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -42786851.64 | threshold: -22964639.79 | diff: -19822211.85 ( -86.3%) | NAV:    980115.20 | ✗ below threshold or NAV < START_CAP
+policy_1: -11247594.93 | threshold: -22964639.79 | diff: +11717044.86 ( +51.0%) | NAV:    959566.51 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 1 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 2 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -32217110.117994793, 'agent_1': -21683880.376708526, 'agent_2': -50947379.164359204, 'agent_3': -29350241.195151903}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -26950495.25
+Required improvement: 15%
+Calculated threshold: -22907920.96
+  → Agents must achieve at least -4042574.29 less loss
+  → Example: -22907920.96 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -32217110.12 | threshold: -22907920.96 | diff: -9309189.16 ( -40.6%) | NAV:    981156.40 | ✗ below threshold or NAV < START_CAP
+policy_1: -21683880.38 | threshold: -22907920.96 | diff: +1224040.58 (  +5.3%) | NAV:    968302.03 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 2 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 3 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -25235759.32893537, 'agent_1': -19493269.896624215, 'agent_2': -38553734.52823312, 'agent_3': -27502117.54131981}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -22364514.61
+Required improvement: 15%
+Calculated threshold: -19009837.42
+  → Agents must achieve at least -3354677.19 less loss
+  → Example: -19009837.42 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -25235759.33 | threshold: -19009837.42 | diff: -6225921.91 ( -32.8%) | NAV:    984309.38 | ✗ below threshold or NAV < START_CAP
+policy_1: -19493269.90 | threshold: -19009837.42 | diff: -483432.48 (  -2.5%) | NAV:    964642.09 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 3 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 4 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -26705816.53552548, 'agent_1': -18653321.693660114, 'agent_2': -32774078.4019984, 'agent_3': -26202410.078423563}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -22679569.11
+Required improvement: 15%
+Calculated threshold: -19277633.75
+  → Agents must achieve at least -3401935.37 less loss
+  → Example: -19277633.75 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -26705816.54 | threshold: -19277633.75 | diff: -7428182.79 ( -38.5%) | NAV:    984408.69 | ✗ below threshold or NAV < START_CAP
+policy_1: -18653321.69 | threshold: -19277633.75 | diff: +624312.05 (  +3.2%) | NAV:    966451.06 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 4 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 5 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -22991614.654660933, 'agent_1': -18040394.02663817, 'agent_2': -27578601.52396296, 'agent_3': -24202390.509392634}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -20516004.34
+Required improvement: 15%
+Calculated threshold: -17438603.69
+  → Agents must achieve at least -3077400.65 less loss
+  → Example: -17438603.69 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -22991614.65 | threshold: -17438603.69 | diff: -5553010.97 ( -31.8%) | NAV:    989807.83 | ✗ below threshold or NAV < START_CAP
+policy_1: -18040394.03 | threshold: -17438603.69 | diff: -601790.34 (  -3.5%) | NAV:    961271.15 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 5 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 6 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -23854091.49874527, 'agent_1': -21490492.77360503, 'agent_2': -29529575.632617332, 'agent_3': -27870702.8483672}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -22672292.14
+Required improvement: 15%
+Calculated threshold: -19271448.32
+  → Agents must achieve at least -3400843.82 less loss
+  → Example: -19271448.32 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -23854091.50 | threshold: -19271448.32 | diff: -4582643.18 ( -23.8%) | NAV:    983292.73 | ✗ below threshold or NAV < START_CAP
+policy_1: -21490492.77 | threshold: -19271448.32 | diff: -2219044.46 ( -11.5%) | NAV:    963070.60 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 6 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+Order NOT approved: -ve NAV for trader_ID 3.
+
+
+Order NOT approved: -ve NAV for trader_ID 3.
+
+
+Order NOT approved: -ve NAV for trader_ID 3.
+
+
+================================================================================
+Iteration 7 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -29119684.58012359, 'agent_1': -22915813.395043943, 'agent_2': -38735768.78490476, 'agent_3': -37531301.13793338}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -26017748.99
+Required improvement: 15%
+Calculated threshold: -22115086.64
+  → Agents must achieve at least -3902662.35 less loss
+  → Example: -22115086.64 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -29119684.58 | threshold: -22115086.64 | diff: -7004597.94 ( -31.7%) | NAV:    981583.24 | ✗ below threshold or NAV < START_CAP
+policy_1: -22915813.40 | threshold: -22115086.64 | diff: -800726.76 (  -3.6%) | NAV:    971157.74 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 7 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+================================================================================
+Iteration 8 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -26503760.295478776, 'agent_1': -24745158.910951827, 'agent_2': -37116281.013223946, 'agent_3': -34440248.342839405}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -25624459.60
+Required improvement: 15%
+Calculated threshold: -21780790.66
+  → Agents must achieve at least -3843668.94 less loss
+  → Example: -21780790.66 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -26503760.30 | threshold: -21780790.66 | diff: -4722969.63 ( -21.7%) | NAV:    983466.64 | ✗ below threshold or NAV < START_CAP
+policy_1: -24745158.91 | threshold: -21780790.66 | diff: -2964368.25 ( -13.6%) | NAV:    961070.19 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 8 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 9 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -25602014.727275293, 'agent_1': -25882332.204015158, 'agent_2': -37296232.927731074, 'agent_3': -35776872.0736678}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -25742173.47
+Required improvement: 15%
+Calculated threshold: -21880847.45
+  → Agents must achieve at least -3861326.02 less loss
+  → Example: -21880847.45 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -25602014.73 | threshold: -21880847.45 | diff: -3721167.28 ( -17.0%) | NAV:    991541.71 | ✗ below threshold or NAV < START_CAP
+policy_1: -25882332.20 | threshold: -21880847.45 | diff: -4001484.76 ( -18.3%) | NAV:    954325.88 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 9 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+Order NOT approved: -ve NAV for trader_ID 1.
+
+
+================================================================================
+Iteration 10 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -26750274.969721794, 'agent_1': -31157211.596891202, 'agent_2': -38421871.210674785, 'agent_3': -35940819.50494815}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -28953743.28
+Required improvement: 15%
+Calculated threshold: -24610681.79
+  → Agents must achieve at least -4343061.49 less loss
+  → Example: -24610681.79 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -26750274.97 | threshold: -24610681.79 | diff: -2139593.18 (  -8.7%) | NAV:    990666.35 | ✗ below threshold or NAV < START_CAP
+policy_1: -31157211.60 | threshold: -24610681.79 | diff: -6546529.81 ( -26.6%) | NAV:    952974.10 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 10 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 11 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -25837477.44828348, 'agent_1': -32544393.67701626, 'agent_2': -36443270.69841005, 'agent_3': -35433297.36439007}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -29190935.56
+Required improvement: 15%
+Calculated threshold: -24812295.23
+  → Agents must achieve at least -4378640.33 less loss
+  → Example: -24812295.23 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -25837477.45 | threshold: -24812295.23 | diff: -1025182.22 (  -4.1%) | NAV:    988142.01 | ✗ below threshold or NAV < START_CAP
+policy_1: -32544393.68 | threshold: -24812295.23 | diff: -7732098.45 ( -31.2%) | NAV:    952245.60 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 11 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+Order NOT approved: -ve NAV for trader_ID 2.
+
+
+Order NOT approved: -ve NAV for trader_ID 2.
+
+
+Order NOT approved: -ve NAV for trader_ID 2.
+
+
+Order NOT approved: -ve NAV for trader_ID 2.
+
+
+Order NOT approved: -ve NAV for trader_ID 2.
+
+
+================================================================================
+Iteration 12 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -28960439.198023867, 'agent_1': -32693085.899155997, 'agent_2': -39566405.8771558, 'agent_3': -34627501.98995387}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -30826762.55
+Required improvement: 15%
+Calculated threshold: -26202748.17
+  → Agents must achieve at least -4624014.38 less loss
+  → Example: -26202748.17 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -28960439.20 | threshold: -26202748.17 | diff: -2757691.03 ( -10.5%) | NAV:    985077.67 | ✗ below threshold or NAV < START_CAP
+policy_1: -32693085.90 | threshold: -26202748.17 | diff: -6490337.73 ( -24.8%) | NAV:    952138.83 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 12 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+Order NOT approved: -ve NAV for trader_ID 3.
+
+
+================================================================================
+Iteration 13 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -28602654.967675082, 'agent_1': -30950047.751486186, 'agent_2': -37584030.94355498, 'agent_3': -34227923.28393121}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -29776351.36
+Required improvement: 15%
+Calculated threshold: -25309898.66
+  → Agents must achieve at least -4466452.70 less loss
+  → Example: -25309898.66 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -28602654.97 | threshold: -25309898.66 | diff: -3292756.31 ( -13.0%) | NAV:    987082.04 | ✗ below threshold or NAV < START_CAP
+policy_1: -30950047.75 | threshold: -25309898.66 | diff: -5640149.10 ( -22.3%) | NAV:    956017.20 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 13 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 14 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -29682830.858538542, 'agent_1': -30701004.098871022, 'agent_2': -36099562.54834086, 'agent_3': -33638993.69246084}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -30191917.48
+Required improvement: 15%
+Calculated threshold: -25663129.86
+  → Agents must achieve at least -4528787.62 less loss
+  → Example: -25663129.86 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -29682830.86 | threshold: -25663129.86 | diff: -4019701.00 ( -15.7%) | NAV:    982094.58 | ✗ below threshold or NAV < START_CAP
+policy_1: -30701004.10 | threshold: -25663129.86 | diff: -5037874.24 ( -19.6%) | NAV:    960015.64 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 14 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 15 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -28762927.418432273, 'agent_1': -31014741.73947068, 'agent_2': -34781125.38053098, 'agent_3': -35505611.44995281}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -29888834.58
+Required improvement: 15%
+Calculated threshold: -25405509.39
+  → Agents must achieve at least -4483325.19 less loss
+  → Example: -25405509.39 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -28762927.42 | threshold: -25405509.39 | diff: -3357418.03 ( -13.2%) | NAV:    986587.67 | ✗ below threshold or NAV < START_CAP
+policy_1: -31014741.74 | threshold: -25405509.39 | diff: -5609232.35 ( -22.1%) | NAV:    961084.36 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 15 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 16 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -27407127.56529538, 'agent_1': -30263669.554474633, 'agent_2': -33655223.06342693, 'agent_3': -34631278.580988094}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -28835398.56
+Required improvement: 15%
+Calculated threshold: -24510088.78
+  → Agents must achieve at least -4325309.78 less loss
+  → Example: -24510088.78 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -27407127.57 | threshold: -24510088.78 | diff: -2897038.79 ( -11.8%) | NAV:    991018.44 | ✗ below threshold or NAV < START_CAP
+policy_1: -30263669.55 | threshold: -24510088.78 | diff: -5753580.78 ( -23.5%) | NAV:    965024.20 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 16 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 17 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -27237200.228542563, 'agent_1': -29675565.714733098, 'agent_2': -33087109.63841604, 'agent_3': -34655195.8554779}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -28456382.97
+Required improvement: 15%
+Calculated threshold: -24187925.53
+  → Agents must achieve at least -4268457.45 less loss
+  → Example: -24187925.53 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -27237200.23 | threshold: -24187925.53 | diff: -3049274.70 ( -12.6%) | NAV:    986123.03 | ✗ below threshold or NAV < START_CAP
+policy_1: -29675565.71 | threshold: -24187925.53 | diff: -5487640.19 ( -22.7%) | NAV:    968990.21 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 17 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 18 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -25972578.043188505, 'agent_1': -28536918.048080415, 'agent_2': -32180655.191837218, 'agent_3': -33662814.00986424}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -27254748.05
+Required improvement: 15%
+Calculated threshold: -23166535.84
+  → Agents must achieve at least -4088212.21 less loss
+  → Example: -23166535.84 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -25972578.04 | threshold: -23166535.84 | diff: -2806042.20 ( -12.1%) | NAV:    987206.99 | ✗ below threshold or NAV < START_CAP
+policy_1: -28536918.05 | threshold: -23166535.84 | diff: -5370382.21 ( -23.2%) | NAV:    970792.60 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 18 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 19 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -25194995.379431736, 'agent_1': -28085692.85055324, 'agent_2': -31309696.36373609, 'agent_3': -33120329.289215922}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -26640344.11
+Required improvement: 15%
+Calculated threshold: -22644292.50
+  → Agents must achieve at least -3996051.62 less loss
+  → Example: -22644292.50 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -25194995.38 | threshold: -22644292.50 | diff: -2550702.88 ( -11.3%) | NAV:    988367.31 | ✗ below threshold or NAV < START_CAP
+policy_1: -28085692.85 | threshold: -22644292.50 | diff: -5441400.35 ( -24.0%) | NAV:    974527.79 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 19 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 20 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -24576457.604514018, 'agent_1': -27458777.223225825, 'agent_2': -33227666.577255163, 'agent_3': -34881054.12574133}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -26017617.41
+Required improvement: 15%
+Calculated threshold: -22114974.80
+  → Agents must achieve at least -3902642.61 less loss
+  → Example: -22114974.80 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -24576457.60 | threshold: -22114974.80 | diff: -2461482.80 ( -11.1%) | NAV:    983807.64 | ✗ below threshold or NAV < START_CAP
+policy_1: -27458777.22 | threshold: -22114974.80 | diff: -5343802.42 ( -24.2%) | NAV:    976999.57 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 20 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 21 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -23695916.15625488, 'agent_1': -27070246.467280608, 'agent_2': -33040910.09110179, 'agent_3': -34229064.6269384}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -25383081.31
+Required improvement: 15%
+Calculated threshold: -21575619.12
+  → Agents must achieve at least -3807462.20 less loss
+  → Example: -21575619.12 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -23695916.16 | threshold: -21575619.12 | diff: -2120297.04 (  -9.8%) | NAV:    984800.97 | ✗ below threshold or NAV < START_CAP
+policy_1: -27070246.47 | threshold: -21575619.12 | diff: -5494627.35 ( -25.5%) | NAV:    977855.50 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 21 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+Order NOT approved: -ve NAV for trader_ID 3.
+
+
+================================================================================
+Iteration 22 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -24412231.8480934, 'agent_1': -26284412.03942847, 'agent_2': -32955830.112714615, 'agent_3': -34626594.37816573}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -25348321.94
+Required improvement: 15%
+Calculated threshold: -21546073.65
+  → Agents must achieve at least -3802248.29 less loss
+  → Example: -21546073.65 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -24412231.85 | threshold: -21546073.65 | diff: -2866158.20 ( -13.3%) | NAV:    985391.18 | ✗ below threshold or NAV < START_CAP
+policy_1: -26284412.04 | threshold: -21546073.65 | diff: -4738338.39 ( -22.0%) | NAV:    983592.60 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 22 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 23 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -23756242.866180196, 'agent_1': -26293485.186465174, 'agent_2': -33103550.940135527, 'agent_3': -34657163.01245899}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -25024864.03
+Required improvement: 15%
+Calculated threshold: -21271134.42
+  → Agents must achieve at least -3753729.60 less loss
+  → Example: -21271134.42 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -23756242.87 | threshold: -21271134.42 | diff: -2485108.44 ( -11.7%) | NAV:    988068.09 | ✗ below threshold or NAV < START_CAP
+policy_1: -26293485.19 | threshold: -21271134.42 | diff: -5022350.76 ( -23.6%) | NAV:    983509.24 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 23 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+Order NOT approved: -ve NAV for trader_ID 0.
+
+
+Order NOT approved: -ve NAV for trader_ID 0.
+
+
+Order NOT approved: -ve NAV for trader_ID 0.
+
+
+Order NOT approved: -ve NAV for trader_ID 0.
+
+
+================================================================================
+Iteration 24 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -23755960.943020128, 'agent_1': -26200942.872217078, 'agent_2': -32302903.367737483, 'agent_3': -34358113.25485434}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -24978451.91
+Required improvement: 15%
+Calculated threshold: -21231684.12
+  → Agents must achieve at least -3746767.79 less loss
+  → Example: -21231684.12 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -23755960.94 | threshold: -21231684.12 | diff: -2524276.82 ( -11.9%) | NAV:    988193.11 | ✗ below threshold or NAV < START_CAP
+policy_1: -26200942.87 | threshold: -21231684.12 | diff: -4969258.75 ( -23.4%) | NAV:    984066.10 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 24 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 25 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -23031456.072095267, 'agent_1': -25343841.85546451, 'agent_2': -31211624.30189164, 'agent_3': -33575107.37395922}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -24187648.96
+Required improvement: 15%
+Calculated threshold: -20559501.62
+  → Agents must achieve at least -3628147.34 less loss
+  → Example: -20559501.62 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -23031456.07 | threshold: -20559501.62 | diff: -2471954.45 ( -12.0%) | NAV:    988721.41 | ✗ below threshold or NAV < START_CAP
+policy_1: -25343841.86 | threshold: -20559501.62 | diff: -4784340.24 ( -23.3%) | NAV:    985884.28 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 25 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 26 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -21840765.843151774, 'agent_1': -24940245.9535324, 'agent_2': -30233175.83188801, 'agent_3': -33255425.685002293}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -23390505.90
+Required improvement: 15%
+Calculated threshold: -19881930.01
+  → Agents must achieve at least -3508575.88 less loss
+  → Example: -19881930.01 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -21840765.84 | threshold: -19881930.01 | diff: -1958835.83 (  -9.9%) | NAV:    988597.39 | ✗ below threshold or NAV < START_CAP
+policy_1: -24940245.95 | threshold: -19881930.01 | diff: -5058315.94 ( -25.4%) | NAV:    983606.85 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 26 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 27 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -21272521.779202435, 'agent_1': -24451748.479804486, 'agent_2': -28513803.924329866, 'agent_3': -32817137.56513809}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -22862135.13
+Required improvement: 15%
+Calculated threshold: -19432814.86
+  → Agents must achieve at least -3429320.27 less loss
+  → Example: -19432814.86 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -21272521.78 | threshold: -19432814.86 | diff: -1839706.92 (  -9.5%) | NAV:    989171.90 | ✗ below threshold or NAV < START_CAP
+policy_1: -24451748.48 | threshold: -19432814.86 | diff: -5018933.62 ( -25.8%) | NAV:    985360.09 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 27 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 28 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -20964997.840945538, 'agent_1': -24090092.99820699, 'agent_2': -28337807.641426217, 'agent_3': -32203388.36268284}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -22527545.42
+Required improvement: 15%
+Calculated threshold: -19148413.61
+  → Agents must achieve at least -3379131.81 less loss
+  → Example: -19148413.61 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -20964997.84 | threshold: -19148413.61 | diff: -1816584.23 (  -9.5%) | NAV:    991038.97 | ✗ below threshold or NAV < START_CAP
+policy_1: -24090093.00 | threshold: -19148413.61 | diff: -4941679.39 ( -25.8%) | NAV:    983389.41 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 28 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 29 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -20117394.796176687, 'agent_1': -24119566.201109663, 'agent_2': -28855587.912612375, 'agent_3': -32746864.790850367}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -22118480.50
+Required improvement: 15%
+Calculated threshold: -18800708.42
+  → Agents must achieve at least -3317772.07 less loss
+  → Example: -18800708.42 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -20117394.80 | threshold: -18800708.42 | diff: -1316686.37 (  -7.0%) | NAV:    992718.53 | ✗ below threshold or NAV < START_CAP
+policy_1: -24119566.20 | threshold: -18800708.42 | diff: -5318857.78 ( -28.3%) | NAV:    980707.16 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 29 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 30 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -20106989.679357108, 'agent_1': -23965076.16408818, 'agent_2': -30114768.134280227, 'agent_3': -33419323.52027178}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -22036032.92
+Required improvement: 15%
+Calculated threshold: -18730627.98
+  → Agents must achieve at least -3305404.94 less loss
+  → Example: -18730627.98 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -20106989.68 | threshold: -18730627.98 | diff: -1376361.70 (  -7.3%) | NAV:    998010.41 | ✗ below threshold or NAV < START_CAP
+policy_1: -23965076.16 | threshold: -18730627.98 | diff: -5234448.18 ( -27.9%) | NAV:    982870.66 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 30 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 31 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -19406293.489033345, 'agent_1': -22708831.06212072, 'agent_2': -28937535.45901397, 'agent_3': -32005800.8057582}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -21057562.28
+Required improvement: 15%
+Calculated threshold: -17898927.93
+  → Agents must achieve at least -3158634.34 less loss
+  → Example: -17898927.93 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -19406293.49 | threshold: -17898927.93 | diff: -1507365.55 (  -8.4%) | NAV:    998475.68 | ✗ below threshold or NAV < START_CAP
+policy_1: -22708831.06 | threshold: -17898927.93 | diff: -4809903.13 ( -26.9%) | NAV:    983770.45 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 31 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A
+
+================================================================================
+Iteration 32 - League Evaluation
+================================================================================
+Agent returns: {'agent_0': -17318361.206202663, 'agent_1': -21669750.55187724, 'agent_2': -25939924.123871543, 'agent_3': -28540044.725929093}
+
+--- Relative Threshold Mode ---
+Baseline (mean of trainable): -19494055.88
+Required improvement: 15%
+Calculated threshold: -16569947.50
+  → Agents must achieve at least -2924108.38 less loss
+  → Example: -16569947.50 or better (less negative)
+
+--- Policy Evaluation ---
+policy_0: -17318361.21 | threshold: -16569947.50 | diff: -748413.71 (  -4.5%) | NAV:    998267.84 | ✗ below threshold or NAV < START_CAP
+policy_1: -21669750.55 | threshold: -16569947.50 | diff: -5099803.05 ( -30.8%) | NAV:    983758.13 | ✗ below threshold or NAV < START_CAP
+
+================================================================================
+
+
+=== Iteration 32 ===
+num_env_steps_sampled: 512
+num_agent_steps_sampled: {'agent_0': 512, 'agent_1': 512, 'agent_2': 512, 'agent_3': 512}
+num_env_steps_trained: N/A
+num_agent_steps_trained: N/A

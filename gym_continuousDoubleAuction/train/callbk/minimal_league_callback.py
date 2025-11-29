@@ -120,7 +120,7 @@ class MinimalLeagueCallback(RLlibCallback):
                 is a MultiRLModule.
             kwargs: Forward compatibility placeholder.
         """
-        print(f'on_episode_start:{episode}')
+        # print(f'on_episode_start:{episode}')
         
         self.ID = episode.id_
         self.store = []
@@ -161,7 +161,7 @@ class MinimalLeagueCallback(RLlibCallback):
                 is a MultiRLModule.
             kwargs: Forward compatibility placeholder.
         """
-        print(f'on_episode_step:{episode}')
+        # print(f'on_episode_step:{episode}')
 
         self.ID = episode.id_
         last_obs = episode.get_observations(-1)
@@ -190,7 +190,7 @@ class MinimalLeagueCallback(RLlibCallback):
         **kwargs,
     ) -> None:
 
-        print(f'on_episode_end:{episode}')
+        # print(f'on_episode_end:{episode}')
 
         # last_obs = episode.get_observations(-1)
         # last_act = episode.get_actions(-1)
@@ -203,6 +203,20 @@ class MinimalLeagueCallback(RLlibCallback):
 
         # print(self.store)
 
+        # Extract final NAV from last step's infos
+        last_infos = episode.get_infos(-1)
+    
+        # Log NAV for each agent as custom metrics
+        for agent_id, info in last_infos.items():
+            if 'NAV' in info:
+                nav_value = float(info['NAV'])  # Convert from string
+                # Log to metrics_logger for aggregation
+                metrics_logger.log_value(
+                    f"{agent_id}_final_nav", 
+                    nav_value,
+                    reduce="mean"  # Will average across episodes
+                )
+
         os.makedirs('episode_data', exist_ok=True)
         # Save the data
         # with open('episode_data_' + episode.id_ + '.json', 'w') as f:
@@ -211,7 +225,7 @@ class MinimalLeagueCallback(RLlibCallback):
         with open('episode_data/' + str(episode.id_) + '.pkl', 'wb') as f:
             pickle.dump(self.store, f)
 
-        # # Load later
+        # # Load later somewhere else when charting is required.
         
     def on_train_result(self, *, algorithm, metrics_logger=None, result, **kwargs):
         """
@@ -236,6 +250,8 @@ class MinimalLeagueCallback(RLlibCallback):
         agent_returns = self._get_agent_returns(result, algorithm)
         if not agent_returns:
             return
+
+        agent_navs = self._get_agent_navs(result, algorithm)
         
         # STEP 3: Calculate performance threshold
         threshold = self._calculate_threshold(agent_returns)
@@ -243,7 +259,7 @@ class MinimalLeagueCallback(RLlibCallback):
             return
 
         # STEP 4 & 5: Evaluate each trainable policy and update league
-        self._evaluate_and_update_league(algorithm, agent_returns, threshold)
+        self._evaluate_and_update_league(algorithm, agent_returns, threshold, agent_navs)
         
         # STEP 6: Add league statistics to results for logging
         result['league_size'] = self.league_size
@@ -278,6 +294,22 @@ class MinimalLeagueCallback(RLlibCallback):
         print(f"{'='*80}")
         print(f"Agent returns: {agent_returns}")
         return agent_returns
+
+    def _get_agent_navs(self, result, algorithm):
+        """Extract final NAV metrics from training results."""
+        env_runner_results = result.get(ENV_RUNNER_RESULTS, {})
+        
+        agent_navs = {}
+        for agent_id in self.trainable_policies:
+            # Map policy_0 -> agent_0
+            agent_key = agent_id.replace('policy_', 'agent_')
+            nav_key = f"{agent_key}_final_nav"
+            
+            if nav_key in env_runner_results:
+                agent_navs[agent_key] = env_runner_results[nav_key]
+        
+        return agent_navs
+        # Returns: {'agent_0': 5000000.0, 'agent_1': -2000000.0, ...}
 
     def _calculate_threshold(self, agent_returns):
         """Calculate performance threshold based on configured mode."""
@@ -325,7 +357,7 @@ class MinimalLeagueCallback(RLlibCallback):
             
         return threshold
 
-    def _evaluate_and_update_league(self, algorithm, agent_returns, threshold):
+    def _evaluate_and_update_league(self, algorithm, agent_returns, threshold, agent_navs):
         """Evaluate policies and add to league if they qualify."""
         print(f"\n--- Policy Evaluation ---")
         
@@ -335,19 +367,49 @@ class MinimalLeagueCallback(RLlibCallback):
             if policy_id not in self.trainable_policies:
                 continue
             
-            diff = mean_return - threshold
-            diff_pct = (diff / abs(threshold) * 100) if threshold != 0 else 0
-            status = "✓ EXCEEDS" if mean_return > threshold else "✗ below"
+            # diff = mean_return - threshold
+            # diff_pct = (diff / abs(threshold) * 100) if threshold != 0 else 0
+            # status = "✓ EXCEEDS" if mean_return > threshold and agent_navs.get(agent_id, 0) > 0 else "✗ below"
             
-            print(
-                f"{policy_id}: {mean_return:>8.2f} | "
-                f"threshold: {threshold:>8.2f} | "
-                f"diff: {diff:>+8.2f} ({diff_pct:>+6.1f}%) | "
-                f"{status}"
-            )
+            # print(
+            #     f"{policy_id}: {mean_return:>8.2f} | "
+            #     f"threshold: {threshold:>8.2f} | "
+            #     f"diff: {diff:>+8.2f} ({diff_pct:>+6.1f}%) | "
+            #     f"{status}"
+            # )
             
-            if mean_return > threshold:
+            qualifies = self._policy_qualifies_for_league(agent_id, mean_return, threshold, agent_navs)
+
+            # if mean_return > threshold and agent_navs[agent_id] > 0:
+            if qualifies:                
                 self._add_policy_to_league(algorithm, policy_id, mean_return)
+
+            self._print_policy_evaluation(policy_id, mean_return, threshold, agent_navs, qualifies)
+
+    def _policy_qualifies_for_league(self, agent_id, mean_return, threshold, agent_navs):
+        """Check if a policy meets all criteria for league admission."""
+        START_CAP = 1000000
+        return (
+            mean_return > threshold and 
+            agent_navs.get(agent_id, 0) > START_CAP
+        )
+
+    def _print_policy_evaluation(self, policy_id, mean_return, threshold, agent_navs, qualifies):
+        """Format policy evaluation metrics for display."""
+        diff = mean_return - threshold
+        diff_pct = (diff / abs(threshold) * 100) if threshold != 0 else 0
+        status = "✓ EXCEEDS THREASHOLD AND NAV > START_CAP" if qualifies else "✗ below threshold or NAV < START_CAP"
+        
+        agent_id = policy_id.replace('policy_', 'agent_')
+        nav = agent_navs.get(agent_id, 0)
+        
+        print(
+            f"{policy_id}: {mean_return:>8.2f} | "
+            f"threshold: {threshold:>8.2f} | "
+            f"diff: {diff:>+8.2f} ({diff_pct:>+6.1f}%) | "
+            f"NAV: {nav:>12.2f} | "  # Add NAV to output
+            f"{status}"
+        )
 
     def _add_policy_to_league(self, algorithm, policy_id, mean_return):
         """Create a frozen snapshot of the policy and add it to the league."""
