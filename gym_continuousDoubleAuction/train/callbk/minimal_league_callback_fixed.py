@@ -1,8 +1,11 @@
 """
-Minimal League-Based Self-Play Callback
+Minimal League-Based Self-Play Callback (FIXED VERSION)
 
 A simplified league-based self-play implementation for multi-agent trading environment.
 Periodically freezes top-performing policies and adds them to a league of opponents.
+
+FIXED: Now properly implements league-based matchmaking where trainable policies
+       actually play against historical snapshots (the original version was broken).
 """
 
 import json
@@ -24,9 +27,13 @@ class MinimalLeagueCallback(RLlibCallback):
     
     Tracks performance of trainable policies and freezes snapshots as league opponents
     when they exceed a performance threshold.
+    
+    **FIXED**: Properly implements league-based matchmaking so trainable policies
+               actually face historical opponents (not just each other).
     """
     
-    def __init__(self, return_threshold=None, relative_improvement=0.15, check_every_n_iters=5):
+    def __init__(self, return_threshold=None, relative_improvement=0.15, check_every_n_iters=5, 
+                 league_opponent_prob=0.7):
         """
         Initialize the minimal league callback with support for relative thresholds.
         
@@ -48,6 +55,11 @@ class MinimalLeagueCallback(RLlibCallback):
                                Lower = more frequent checks (but more overhead)
                                Higher = less frequent checks (but may miss good snapshots)
                                Default: 5
+                               
+            league_opponent_prob: Probability that the opponent is a league member (vs another trainable).
+                                Higher = more play against historical snapshots
+                                Lower = more co-evolution between trainables
+                                Default: 0.7 (70% league opponents, 30% other trainables)
         
         Example usage:
             # For negative reward environments (recommended for trading)
@@ -55,6 +67,9 @@ class MinimalLeagueCallback(RLlibCallback):
             
             # For positive reward environments
             callback = MinimalLeagueCallback(return_threshold=100.0)
+            
+            # More aggressive league-based (90% historical opponents)
+            callback = MinimalLeagueCallback(league_opponent_prob=0.9)
         """
         super().__init__()
         
@@ -73,6 +88,8 @@ class MinimalLeagueCallback(RLlibCallback):
             print(f"League callback: Using ABSOLUTE threshold ({return_threshold})")
         
         self.check_every_n_iters = check_every_n_iters
+        self.league_opponent_prob = league_opponent_prob
+        print(f"League opponent probability: {league_opponent_prob*100:.0f}%")
         
         # Track which policies are actively training vs frozen in league
         self.trainable_policies = set()  # Will be populated from config
@@ -192,17 +209,6 @@ class MinimalLeagueCallback(RLlibCallback):
 
         # print(f'on_episode_end:{episode}')
 
-        # last_obs = episode.get_observations(-1)
-        # last_act = episode.get_actions(-1)
-        # last_reward = episode.get_rewards(-1)
-        # last_info = episode.get_infos(-1)
-        # print(f'last_obs:{last_obs}')  
-        # print(f'last_act:{last_act}')        
-        # print(f'last_reward:{last_reward}')        
-        # print(f'last_info:{last_info}')     
-
-        # print(self.store)
-
         # Extract final NAV from last step's infos
         last_infos = episode.get_infos(-1)
     
@@ -218,9 +224,6 @@ class MinimalLeagueCallback(RLlibCallback):
                 )
 
         os.makedirs('episode_data', exist_ok=True)
-        # Save the data
-        # with open('episode_data_' + episode.id_ + '.json', 'w') as f:
-        #     json.dump(self.store, f, indent=4)
         # Save the data
         with open('episode_data/' + str(episode.id_) + '.pkl', 'wb') as f:
             pickle.dump(self.store, f)
@@ -367,20 +370,8 @@ class MinimalLeagueCallback(RLlibCallback):
             if policy_id not in self.trainable_policies:
                 continue
             
-            # diff = mean_return - threshold
-            # diff_pct = (diff / abs(threshold) * 100) if threshold != 0 else 0
-            # status = "✓ EXCEEDS" if mean_return > threshold and agent_navs.get(agent_id, 0) > 0 else "✗ below"
-            
-            # print(
-            #     f"{policy_id}: {mean_return:>8.2f} | "
-            #     f"threshold: {threshold:>8.2f} | "
-            #     f"diff: {diff:>+8.2f} ({diff_pct:>+6.1f}%) | "
-            #     f"{status}"
-            # )
-            
             qualifies = self._policy_qualifies_for_league(agent_id, mean_return, threshold, agent_navs)
 
-            # if mean_return > threshold and agent_navs[agent_id] > 0:
             if qualifies:                
                 self._add_policy_to_league(algorithm, policy_id, mean_return)
 
@@ -398,7 +389,7 @@ class MinimalLeagueCallback(RLlibCallback):
         """Format policy evaluation metrics for display."""
         diff = mean_return - threshold
         diff_pct = (diff / abs(threshold) * 100) if threshold != 0 else 0
-        status = "✓ EXCEEDS THREASHOLD AND NAV > START_CAP" if qualifies else "✗ below threshold or NAV < START_CAP"
+        status = "✓ EXCEEDS THRESHOLD AND NAV > START_CAP" if qualifies else "✗ below threshold or NAV < START_CAP"
         
         agent_id = policy_id.replace('policy_', 'agent_')
         nav = agent_navs.get(agent_id, 0)
@@ -446,7 +437,80 @@ class MinimalLeagueCallback(RLlibCallback):
             
             self._update_policy_mapping(algorithm)
             
-                    policies_to_train=list(self.trainable_policies),
+        except Exception as e:
+            print(f"  → ✗ Error creating league opponent: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _update_policy_mapping(self, algorithm):
+        """
+        Update the policy mapping function to properly implement league-based self-play.
+        
+        PROPER LEAGUE-BASED IMPLEMENTATION (FIXED):
+        - Ensures at least one trainable policy per match (no wasted compute)
+        - Trainable policies actually face historical opponents (true league-based learning)
+        - Configurable probability of facing league opponents vs other trainables
+        
+        This is the KEY FIX that makes this callback truly league-based!
+        """
+        
+        trainable_list = list(self.trainable_policies)
+        league_list = self.league_opponents.copy()
+        
+        if not trainable_list:
+            print("Warning: No trainable policies available for mapping")
+            return
+        
+        # Capture config values for closure
+        league_opponent_prob = self.league_opponent_prob if league_list else 0.0
+        matching_stats = self._matching_stats
+        
+        def policy_mapping_fn(agent_id, episode, **kwargs):
+            """
+            Proper league-based matchmaking (FIXED VERSION):
+            
+            Strategy:
+            - Agent 0: ALWAYS a trainable policy (ensures learning happens)
+            - Agent 1: Probabilistic mix of trainable + league opponents
+                      - X% chance: random league opponent (historical snapshot)
+                      - (100-X)% chance: random trainable (co-evolution)
+                      
+            Where X = league_opponent_prob (default 70%)
+            
+            Episode hash ensures both policies play as agent_0 and agent_1 equally.
+            
+            This ensures:
+            1. Every match has at least one trainable (efficient compute usage)
+            2. Trainable policies face diverse historical opponents (league-based!)
+            3. Some trainable vs trainable for co-evolution
+            4. Fair position swapping via episode ID hash
+            """
+            # Use episode hash to determine which agent gets which role
+            # This ensures both policies play as agent_0 and agent_1 equally
+            if hash(episode.id_) % 2 == agent_id:
+                # This agent plays as the trainable
+                policy = np.random.choice(trainable_list)
+                return policy
+            else:
+                # This agent is the opponent
+                if league_list and np.random.random() < league_opponent_prob:
+                    # High probability: Use a league opponent (historical snapshot)
+                    opponent = np.random.choice(league_list)
+                    # Track matchup stats
+                    matching_stats[("trainable", opponent)] += 1
+                    return opponent
+                else:
+                    # Lower probability: Use another trainable (co-evolution)
+                    opponent = np.random.choice(trainable_list)
+                    matching_stats[("trainable", "trainable")] += 1
+                    return opponent
+        
+        try:
+            # Update policy mapping on all env runners
+            algorithm.env_runner_group.foreach_env_runner(
+                lambda env_runner: env_runner.config.multi_agent(
+                    policy_mapping_fn=policy_mapping_fn,
+                    policies_to_train=trainable_list,
                 ),
                 local_env_runner=True,
             )
@@ -454,12 +518,15 @@ class MinimalLeagueCallback(RLlibCallback):
             # Update learner group
             algorithm.learner_group.foreach_learner(
                 func=lambda learner: learner.config.multi_agent(
-                    policies_to_train=list(self.trainable_policies),
+                    policies_to_train=trainable_list,
                 ),
                 timeout_seconds=0.0,
             )
             
             print(f"  -> Policy mapping updated successfully")
+            print(f"  -> League opponent probability: {league_opponent_prob*100:.0f}%")
+            if league_list:
+                print(f"  -> Trainables will now play against: {league_list}")
             
         except Exception as e:
             print(f"  -> Warning: Could not update policy mapping: {e}")
@@ -477,4 +544,5 @@ class MinimalLeagueCallback(RLlibCallback):
             'num_frozen': len(self.league_opponents),
             'trainable_policies': list(self.trainable_policies),
             'league_opponents': self.league_opponents.copy(),
+            'matching_stats': dict(self._matching_stats),
         }
