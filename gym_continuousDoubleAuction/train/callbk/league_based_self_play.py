@@ -467,41 +467,41 @@ class LeagueBasedSelfPlayCallback(RLlibCallback):
         
         def policy_mapping_fn(agent_id, episode, **kwargs):
             """
-            Proper league-based matchmaking (FIXED VERSION):
+            Proper league-based matchmaking for n agents, k trainable.
             
             Strategy:
-            - Agent 0: ALWAYS a trainable policy (ensures learning happens)
-            - Agent 1: Probabilistic mix of trainable + league opponents
-                      - X% chance: random league opponent (historical snapshot)
-                      - (100-X)% chance: random trainable (co-evolution)
-                      
-            Where X = league_opponent_prob (default 70%)
-            
-            Episode hash ensures both policies play as agent_0 and agent_1 equally.
-            
-            This ensures:
-            1. Every match has at least one trainable (efficient compute usage)
-            2. Trainable policies face diverse historical opponents (league-based!)
-            3. Some trainable vs trainable for co-evolution
-            4. Fair position swapping via episode ID hash
+            - Each agent has a probability to be trainable or opponent
+            - Ensures at least some agents are trainable per episode
+            - Opponents are sampled from league (historical) or trainable (co-evolution)
             """
-            # Use episode hash to determine which agent gets which role
-            # This ensures both policies play as agent_0 and agent_1 equally
-            if hash(episode.id_) % 2 == agent_id:
-                # This agent plays as the trainable
-                policy = np.random.choice(trainable_list)
+            
+            # Extract agent number from agent_id string (e.g., "agent_0" -> 0)
+            agent_num = int(agent_id.split('_')[-1])
+            
+            # Use episode hash to ensure diverse matchmaking across episodes
+            episode_seed = abs(hash(episode.id_))
+            
+            # Deterministic pseudo-random based on episode + agent
+            # This ensures consistent matchmaking within an episode
+            rng_seed = (episode_seed + agent_num) % (2**32)
+            rng = np.random.RandomState(rng_seed)
+            
+            # Decide if this agent should be a trainable or opponent
+            # Use agent_num to ensure different agents get different roles
+            if (episode_seed + agent_num) % 2 == 0:
+                # This agent is a trainable policy
+                policy = rng.choice(trainable_list)
                 return policy
             else:
-                # This agent is the opponent
-                if league_list and np.random.random() < league_opponent_prob:
-                    # High probability: Use a league opponent (historical snapshot)
-                    opponent = np.random.choice(league_list)
-                    # Track matchup stats
+                # This agent is an opponent (league or trainable)
+                if league_list and rng.random() < league_opponent_prob:
+                    # Play against historical league opponent
+                    opponent = rng.choice(league_list)
                     matching_stats[("trainable", opponent)] += 1
                     return opponent
                 else:
-                    # Lower probability: Use another trainable (co-evolution)
-                    opponent = np.random.choice(trainable_list)
+                    # Play against another trainable (co-evolution)
+                    opponent = rng.choice(trainable_list)
                     matching_stats[("trainable", "trainable")] += 1
                     return opponent
         
