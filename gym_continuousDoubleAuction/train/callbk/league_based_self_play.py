@@ -21,7 +21,7 @@ from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
 
 
-class MinimalLeagueCallback(RLlibCallback):
+class LeagueBasedSelfPlayCallback(RLlibCallback):
     """
     Minimal league-based self-play callback for multi-agent environments.
     
