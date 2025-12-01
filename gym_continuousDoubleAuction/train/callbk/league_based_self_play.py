@@ -26,31 +26,21 @@ class LeagueBasedSelfPlayCallback(RLlibCallback):
     Minimal league-based self-play callback for multi-agent environments.
     
     Tracks performance of trainable policies and freezes snapshots as league opponents
-    when they exceed a performance threshold.
+    when they achieve the maximum episode mean return among trainable policies.
     
     **FIXED**: Properly implements league-based matchmaking so trainable policies
                actually face historical opponents (not just each other).
     """
     
-    def __init__(self, return_threshold=None, relative_improvement=0.15, check_every_n_iters=5, 
-                 league_opponent_prob=0.7):
+    def __init__(self, check_every_n_iters=5, league_opponent_prob=0.7):
         """
-        Initialize the minimal league callback with support for relative thresholds.
+        Initialize the minimal league callback.
         
-        IMPORTANT: For zero-sum trading environments where returns are typically NEGATIVE,
-        use relative_improvement instead of absolute return_threshold.
+        League membership condition:
+        - Policy must be trainable
+        - Policy must have the maximum episode mean return among ALL trainable policies
         
         Args:
-            return_threshold: (Optional) Absolute episode return threshold. 
-                            Use this ONLY if returns are positive (e.g., >100).
-                            Set to None to use relative_improvement instead.
-                            
-            relative_improvement: Percentage improvement required over baseline to add to league.
-                                Example: 0.15 means agent must be 15% better than average.
-                                - For negative returns: baseline=-100 → threshold=-85 (15% less negative)
-                                - For positive returns: baseline=100 → threshold=115 (15% more positive)
-                                Default: 0.15 (15% improvement)
-                                
             check_every_n_iters: Check for league updates every N training iterations.
                                Lower = more frequent checks (but more overhead)
                                Higher = less frequent checks (but may miss good snapshots)
@@ -62,33 +52,17 @@ class LeagueBasedSelfPlayCallback(RLlibCallback):
                                 Default: 0.7 (70% league opponents, 30% other trainables)
         
         Example usage:
-            # For negative reward environments (recommended for trading)
-            callback = MinimalLeagueCallback(relative_improvement=0.15)
-            
-            # For positive reward environments
-            callback = MinimalLeagueCallback(return_threshold=100.0)
+            # Standard configuration
+            callback = LeagueBasedSelfPlayCallback(check_every_n_iters=5)
             
             # More aggressive league-based (90% historical opponents)
-            callback = MinimalLeagueCallback(league_opponent_prob=0.9)
+            callback = LeagueBasedSelfPlayCallback(league_opponent_prob=0.9)
         """
         super().__init__()
         
-        # Determine which threshold mode to use
-        if return_threshold is None:
-            # Use relative threshold (recommended for zero-sum games)
-            self.use_relative_threshold = True
-            self.relative_improvement = relative_improvement
-            self.return_threshold = None
-            print(f"League callback: Using RELATIVE threshold ({relative_improvement*100:.0f}% improvement)")
-        else:
-            # Use absolute threshold (legacy mode)
-            self.use_relative_threshold = False
-            self.return_threshold = return_threshold
-            self.relative_improvement = None
-            print(f"League callback: Using ABSOLUTE threshold ({return_threshold})")
-        
         self.check_every_n_iters = check_every_n_iters
         self.league_opponent_prob = league_opponent_prob
+        print(f"League callback: Adding policy with MAX return among trainables")
         print(f"League opponent probability: {league_opponent_prob*100:.0f}%")
         
         # Track which policies are actively training vs frozen in league
@@ -113,32 +87,7 @@ class LeagueBasedSelfPlayCallback(RLlibCallback):
         rl_module,
         **kwargs,
     ) -> None:
-        """Callback run right after an Episode has been started.
-
-        This method gets called after a SingleAgentEpisode or MultiAgentEpisode instance
-        has been reset with a call to `env.reset()` by the EnvRunner.
-
-        1) Single-/MultiAgentEpisode created: `on_episode_created()` is called.
-        2) Respective sub-environment (gym.Env) is `reset()`.
-        3) Single-/MultiAgentEpisode starts: This callback is called.
-        4) Stepping through sub-environment/episode commences.
-
-        Args:
-            episode: The just started (after `env.reset()`) SingleAgentEpisode or
-                MultiAgentEpisode object.
-            env_runner: Reference to the EnvRunner running the env and episode.
-            metrics_logger: The MetricsLogger object inside the `env_runner`. Can be
-                used to log custom metrics during env/episode stepping.
-            env: The gym.Env or gym.vector.Env object running the started episode.
-            env_index: The index of the sub-environment that is about to be reset
-                (within the vector of sub-environments of the BaseEnv).
-            rl_module: The RLModule used to compute actions for stepping the env. In
-                single-agent mode, this is a simple RLModule, in multi-agent mode, this
-                is a MultiRLModule.
-            kwargs: Forward compatibility placeholder.
-        """
-        # print(f'on_episode_start:{episode}')
-        
+        """Callback run right after an Episode has been started."""
         self.ID = episode.id_
         self.store = []
 
@@ -153,33 +102,7 @@ class LeagueBasedSelfPlayCallback(RLlibCallback):
         rl_module,
         **kwargs,
     ) -> None:
-        """Called on each episode step (after the action(s) has/have been logged).
-
-        Note that on the new API stack, this callback is also called after the final
-        step of an episode, meaning when terminated/truncated are returned as True
-        from the `env.step()` call, but is still provided with the non-numpy'ized
-        episode object (meaning the data has NOT been converted to numpy arrays yet).
-
-        The exact time of the call of this callback is after `env.step([action])` and
-        also after the results of this step (observation, reward, terminated, truncated,
-        infos) have been logged to the given `episode` object.
-
-        Args:
-            episode: The just stepped SingleAgentEpisode or MultiAgentEpisode object
-                (after `env.step()` and after returned obs, rewards, etc.. have been
-                logged to the episode object).
-            env_runner: Reference to the EnvRunner running the env and episode.
-            metrics_logger: The MetricsLogger object inside the `env_runner`. Can be
-                used to log custom metrics during env/episode stepping.
-            env: The gym.Env or gym.vector.Env object running the started episode.
-            env_index: The index of the sub-environment that has just been stepped.
-            rl_module: The RLModule used to compute actions for stepping the env. In
-                single-agent mode, this is a simple RLModule, in multi-agent mode, this
-                is a MultiRLModule.
-            kwargs: Forward compatibility placeholder.
-        """
-        # print(f'on_episode_step:{episode}')
-
+        """Called on each episode step (after the action(s) has/have been logged)."""
         self.ID = episode.id_
         last_obs = episode.get_observations(-1)
         last_act = episode.get_actions(-1)
@@ -191,7 +114,6 @@ class LeagueBasedSelfPlayCallback(RLlibCallback):
             'act': last_act,
             'reward': last_reward,
             'info': last_info, 
-
         }
         self.store.append(step_data)
 
@@ -206,9 +128,7 @@ class LeagueBasedSelfPlayCallback(RLlibCallback):
         rl_module,
         **kwargs,
     ) -> None:
-
-        # print(f'on_episode_end:{episode}')
-
+        """Called when an episode ends."""
         # Extract final NAV from last step's infos
         last_infos = episode.get_infos(-1)
     
@@ -227,18 +147,13 @@ class LeagueBasedSelfPlayCallback(RLlibCallback):
         # Save the data
         with open('episode_data/' + str(episode.id_) + '.pkl', 'wb') as f:
             pickle.dump(self.store, f)
-
-        # # Load later somewhere else when charting is required.
         
     def on_train_result(self, *, algorithm, metrics_logger=None, result, **kwargs):
         """
         Called after each training iteration.
         
-        Checks if any trainable policy has exceeded the performance threshold,
+        Checks if any trainable policy has the maximum episode mean return,
         and if so, creates a frozen snapshot and adds it to the league.
-        
-        For zero-sum trading environments where returns are NEGATIVE, this uses
-        relative performance comparison instead of absolute thresholds.
         """
         
         # Only check every N iterations to avoid too frequent league updates
@@ -249,22 +164,23 @@ class LeagueBasedSelfPlayCallback(RLlibCallback):
         if not self._initialize_trainable_policies(algorithm):
             return
 
-        # STEP 2: Extract agent performance metrics
-        agent_returns = self._get_agent_returns(result, algorithm)
-        if not agent_returns:
+        # STEP 2: Extract agent performance metrics and aggregate by policy
+        policy_returns = self._get_agent_returns(result, algorithm)
+        if not policy_returns:
             return
 
         agent_navs = self._get_agent_navs(result, algorithm)
         
-        # STEP 3: Calculate performance threshold
-        threshold = self._calculate_threshold(agent_returns)
-        if threshold is None:
+        # STEP 3: Find the trainable policy with maximum return
+        max_trainable_return, max_trainable_policy = self._find_max_trainable_policy(policy_returns)
+        if max_trainable_policy is None:
             return
 
-        # STEP 4 & 5: Evaluate each trainable policy and update league
-        self._evaluate_and_update_league(algorithm, agent_returns, threshold, agent_navs)
+        # STEP 4: Add the max policy to league and print evaluation
+        self._evaluate_and_update_league(algorithm, policy_returns, agent_navs, 
+                                        max_trainable_return, max_trainable_policy)
         
-        # STEP 6: Add league statistics to results for logging
+        # STEP 5: Add league statistics to results for logging
         result['league_size'] = self.league_size
         
         print(f"\n{'='*80}\n")
@@ -281,7 +197,7 @@ class LeagueBasedSelfPlayCallback(RLlibCallback):
         return True
 
     def _get_agent_returns(self, result, algorithm):
-        """Extract agent performance metrics from training results."""
+        """Extract agent performance metrics and aggregate by policy."""
         env_runner_results = result.get(ENV_RUNNER_RESULTS, {})
         agent_returns = env_runner_results.get('agent_episode_returns_mean', {})
         
@@ -289,14 +205,19 @@ class LeagueBasedSelfPlayCallback(RLlibCallback):
             print(f"Iter={algorithm.iteration}: No agent returns found in results")
             return None
         
-        # Store returns for tracking
+        # Store raw agent returns for reference
         self.agent_returns = agent_returns
+        
+        # Aggregate returns by policy
+        policy_returns = self._aggregate_returns_by_policy(result, algorithm)
         
         print(f"\n{'='*80}")
         print(f"Iteration {algorithm.iteration} - League Evaluation")
         print(f"{'='*80}")
         print(f"Agent returns: {agent_returns}")
-        return agent_returns
+        print(f"Policy returns (aggregated): {policy_returns}")
+        
+        return policy_returns
 
     def _get_agent_navs(self, result, algorithm):
         """Extract final NAV metrics from training results."""
@@ -312,99 +233,117 @@ class LeagueBasedSelfPlayCallback(RLlibCallback):
                 agent_navs[agent_key] = env_runner_results[nav_key]
         
         return agent_navs
-        # Returns: {'agent_0': 5000000.0, 'agent_1': -2000000.0, ...}
 
-    def _calculate_threshold(self, agent_returns):
-        """Calculate performance threshold based on configured mode."""
-        if self.use_relative_threshold:
-            return self._calculate_relative_threshold(agent_returns)
-        else:
-            print(f"\n--- Absolute Threshold Mode ---")
-            print(f"Fixed threshold: {self.return_threshold:.2f}")
-            return self.return_threshold
+    def _aggregate_returns_by_policy(self, result, algorithm):
+        """
+        Aggregate agent returns by their assigned policy.
+        
+        Multiple agents can use the same policy, so we need to aggregate their returns
+        to get the true policy performance.
+        
+        Since agent-to-policy mapping is dynamic (determined by policy_mapping_fn),
+        we need to track actual mappings from episodes.
+        
+        Args:
+            result: Training result dictionary
+            algorithm: The RLlib algorithm instance
+            
+        Returns:
+            Dict mapping policy_id to mean return across all agents using that policy
+        """
+        # RLlib tracks policy returns directly in the metrics
+        # Look for 'module_episode_returns_mean' which groups by policy/module
+        env_runner_results = result.get(ENV_RUNNER_RESULTS, {})
+        
+        # Try to get policy-level returns directly
+        policy_returns = env_runner_results.get('module_episode_returns_mean', {})
+        
+        if policy_returns:
+            print(f"Using direct policy returns from module_episode_returns_mean")
+            return policy_returns
+        
+        # Fallback: If direct policy returns aren't available, we need to track
+        # the mapping ourselves. This requires the policy_mapping_fn to be deterministic
+        # or we need to log the actual mapping during episodes.
+        print("Warning: module_episode_returns_mean not found in results")
+        print("Available keys in env_runner_results:", list(env_runner_results.keys()))
+        
+        # As a last resort, return agent returns with a warning
+        # The calling code should handle this case
+        return {}
 
-    def _calculate_relative_threshold(self, agent_returns):
-        """Calculate relative threshold based on baseline performance."""
-        trainable_returns = [
-            ret for agent_id, ret in agent_returns.items()
-            if agent_id.replace('agent_', 'policy_') in self.trainable_policies
-        ]
+    def _find_max_trainable_policy(self, policy_returns):
+        """
+        Find the trainable policy with maximum episode mean return.
+        
+        Args:
+            policy_returns: Dict mapping policy_id to aggregated mean return
+        
+        Returns:
+            tuple: (max_return, max_policy_id) or (None, None) if no trainable policies found
+        """
+        # Filter to only trainable policies
+        trainable_returns = {
+            policy_id: return_val 
+            for policy_id, return_val in policy_returns.items()
+            if policy_id in self.trainable_policies
+        }
         
         if not trainable_returns:
-            print("No trainable agent returns found")
-            return None
+            print("No trainable policy returns found")
+            return None, None
         
-        # Use mean as baseline
-        baseline = np.mean(trainable_returns)
+        # Find the policy with maximum return
+        max_policy_id = max(trainable_returns, key=trainable_returns.get)
+        max_return = trainable_returns[max_policy_id]
         
-        if baseline < 0:
-            # Negative returns: reduce magnitude by improvement percentage
-            threshold = baseline * (1 - self.relative_improvement)
-        else:
-            # Positive returns: increase by improvement percentage
-            threshold = baseline * (1 + self.relative_improvement)
+        print(f"\n--- Max Trainable Policy ---")
+        print(f"Policy: {max_policy_id}")
+        print(f"Return: {max_return:.2f}")
         
-        print(f"\n--- Relative Threshold Mode ---")
-        print(f"Baseline (mean of trainable): {baseline:.2f}")
-        print(f"Required improvement: {self.relative_improvement*100:.0f}%")
-        print(f"Calculated threshold: {threshold:.2f}")
-        
-        if baseline < 0:
-            improvement_needed = baseline - threshold
-            print(f"  → Agents must achieve at least {improvement_needed:.2f} less loss")
-            print(f"  → Example: {threshold:.2f} or better (less negative)")
-        else:
-            improvement_needed = threshold - baseline
-            print(f"  → Agents must achieve at least {improvement_needed:.2f} more reward")
-            print(f"  → Example: {threshold:.2f} or better")
-            
-        return threshold
+        return max_return, max_policy_id
 
-    def _evaluate_and_update_league(self, algorithm, agent_returns, threshold, agent_navs):
-        """Evaluate policies and add to league if they qualify."""
+    def _evaluate_and_update_league(self, algorithm, policy_returns, agent_navs, 
+                                   max_trainable_return, max_trainable_policy):
+        """Evaluate policies and add the max trainable policy to league."""
         print(f"\n--- Policy Evaluation ---")
         
-        for agent_id, mean_return in agent_returns.items():
-            policy_id = agent_id.replace('agent_', 'policy_')
-            
+        # Add the max policy to league
+        self._add_policy_to_league(algorithm, max_trainable_policy, max_trainable_return)
+        
+        # Print evaluation for all trainable policies
+        for policy_id, mean_return in policy_returns.items():
             if policy_id not in self.trainable_policies:
                 continue
             
-            qualifies = self._policy_qualifies_for_league(agent_id, mean_return, threshold, agent_navs)
+            # Only the max trainable policy qualifies
+            qualifies = (policy_id == max_trainable_policy)
+            self._print_policy_evaluation(policy_id, mean_return, agent_navs, 
+                                         qualifies, max_trainable_return)
 
-            if qualifies:                
-                self._add_policy_to_league(algorithm, policy_id, mean_return)
-
-            self._print_policy_evaluation(policy_id, mean_return, threshold, agent_navs, qualifies)
-
-    def _policy_qualifies_for_league(self, agent_id, mean_return, threshold, agent_navs):
-        """Check if a policy meets all criteria for league admission."""
-        START_CAP = 1000000
-        return (
-            mean_return > threshold and 
-            agent_navs.get(agent_id, 0) > START_CAP
-        )
-
-    def _print_policy_evaluation(self, policy_id, mean_return, threshold, agent_navs, qualifies):
+    def _print_policy_evaluation(self, policy_id, mean_return, agent_navs, 
+                                qualifies, max_return):
         """Format policy evaluation metrics for display."""
-        diff = mean_return - threshold
-        diff_pct = (diff / abs(threshold) * 100) if threshold != 0 else 0
-        status = "✓ EXCEEDS THRESHOLD AND NAV > START_CAP" if qualifies else "✗ below threshold or NAV < START_CAP"
+        diff = mean_return - max_return
+        
+        is_max = abs(diff) < 1e-5
+        max_str = " (MAX)" if is_max else ""
+        
+        status = "✓ ADDED TO LEAGUE" if qualifies else "✗ not max"
         
         agent_id = policy_id.replace('policy_', 'agent_')
         nav = agent_navs.get(agent_id, 0)
         
         print(
-            f"{policy_id}: {mean_return:>8.2f} | "
-            f"threshold: {threshold:>8.2f} | "
-            f"diff: {diff:>+8.2f} ({diff_pct:>+6.1f}%) | "
-            f"NAV: {nav:>12.2f} | "  # Add NAV to output
+            f"{policy_id}: {mean_return:>8.2f}{max_str} | "
+            f"diff from max: {diff:>+8.2f} | "
+            f"NAV: {nav:>12.2f} | "
             f"{status}"
         )
 
     def _add_policy_to_league(self, algorithm, policy_id, mean_return):
         """Create a frozen snapshot of the policy and add it to the league."""
-        print(f"\n  → {policy_id} qualifies for league!")
+        print(f"\n  → {policy_id} qualifies for league (MAX return among trainables)!")
         
         league_id = f"league_{len(self.league_opponents)}"
         
@@ -488,22 +427,26 @@ class LeagueBasedSelfPlayCallback(RLlibCallback):
             
             # Decide if this agent should be a trainable or opponent
             # Use agent_num to ensure different agents get different roles
+            selected_policy = None
+            
             if (episode_seed + agent_num) % 2 == 0:
                 # This agent is a trainable policy
-                policy = rng.choice(trainable_list)
-                return policy
+                selected_policy = rng.choice(trainable_list)
             else:
                 # This agent is an opponent (league or trainable)
                 if league_list and rng.random() < league_opponent_prob:
                     # Play against historical league opponent
-                    opponent = rng.choice(league_list)
-                    matching_stats[("trainable", opponent)] += 1
-                    return opponent
+                    selected_policy = rng.choice(league_list)
+                    matching_stats[("trainable", selected_policy)] += 1
                 else:
                     # Play against another trainable (co-evolution)
-                    opponent = rng.choice(trainable_list)
+                    selected_policy = rng.choice(trainable_list)
                     matching_stats[("trainable", "trainable")] += 1
-                    return opponent
+            
+            # Log the mapping so we can see who is playing against whom
+            print(f"Policy Map: {agent_id} -> {selected_policy} (Ep: {episode.id_})")
+            
+            return selected_policy
         
         try:
             # Update policy mapping on all env runners
