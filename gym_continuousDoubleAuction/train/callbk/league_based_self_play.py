@@ -1,491 +1,445 @@
 """
-Minimal League-Based Self-Play Callback (FIXED VERSION)
+League-based self-play callback for multi-agent reinforcement learning.
 
-A simplified league-based self-play implementation for multi-agent trading environment.
-Periodically freezes top-performing policies and adds them to a league of opponents.
+Implements a three-tier league system based on DeepMind's AlphaStar approach:
+- Main policies: Current best policy and historical snapshots
+- Main exploiters: Policies trained specifically against main policies
+- League exploiters: Policies trained against the entire league
 
-FIXED: Now properly implements league-based matchmaking where trainable policies
-       actually play against historical snapshots (the original version was broken).
+This callback manages policy snapshots, league composition, and matchmaking
+to enable robust competitive self-play training in zero-sum environments.
 """
 
-import json
-import pprint
-import pickle
-import os
+import random
+from typing import Dict, List, Optional, Set, Callable
 import numpy as np
 
-from collections import defaultdict
+from ray.rllib.algorithms.callbacks import DefaultCallbacks
+from ray.rllib.env import BaseEnv
+# from ray.rllib.evaluation import Episode, RolloutWorker
+from ray.rllib.policy import Policy
+from ray.rllib.utils.typing import PolicyID
 
-from ray.rllib.callbacks.callbacks import RLlibCallback
-from ray.rllib.core.rl_module.rl_module import RLModuleSpec
-from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
 
-
-class LeagueBasedSelfPlayCallback(RLlibCallback):
+class LeagueBasedSelfPlayCallback(DefaultCallbacks):
     """
-    Minimal league-based self-play callback for multi-agent environments.
+    Callback for managing league-based self-play training.
     
-    Tracks performance of trainable policies and freezes snapshots as league opponents
-    when they achieve the maximum episode mean return among trainable policies.
+    Monitors policy performance and creates frozen snapshots when performance
+    thresholds are met. Maintains a diverse league of policies for robust training.
     
-    **FIXED**: Properly implements league-based matchmaking so trainable policies
-               actually face historical opponents (not just each other).
+    Args:
+        win_rate_threshold (float): Performance threshold to trigger snapshot creation (0.0-1.0)
+        num_agents (int): Number of agents in the environment (for validation)
+        metric (str): Performance metric to use - 'reward' or 'nav'
     """
     
-    def __init__(self, check_every_n_iters=5, league_opponent_prob=0.7):
-        """
-        Initialize the minimal league callback.
-        
-        League membership condition:
-        - Policy must be trainable
-        - Policy must have the maximum episode mean return among ALL trainable policies
-        
-        Args:
-            check_every_n_iters: Check for league updates every N training iterations.
-                               Lower = more frequent checks (but more overhead)
-                               Higher = less frequent checks (but may miss good snapshots)
-                               Default: 5
-                               
-            league_opponent_prob: Probability that the opponent is a league member (vs another trainable).
-                                Higher = more play against historical snapshots
-                                Lower = more co-evolution between trainables
-                                Default: 0.7 (70% league opponents, 30% other trainables)
-        
-        Example usage:
-            # Standard configuration
-            callback = LeagueBasedSelfPlayCallback(check_every_n_iters=5)
-            
-            # More aggressive league-based (90% historical opponents)
-            callback = LeagueBasedSelfPlayCallback(league_opponent_prob=0.9)
-        """
+    def __init__(self, 
+                 win_rate_threshold: float = 0.70,
+                 num_agents: int = 4,
+                 metric: str = 'reward'):
         super().__init__()
         
-        self.check_every_n_iters = check_every_n_iters
-        self.league_opponent_prob = league_opponent_prob
-        print(f"League callback: Adding policy with MAX return among trainables")
-        print(f"League opponent probability: {league_opponent_prob*100:.0f}%")
+        self.win_rate_threshold = win_rate_threshold
+        self.num_agents = num_agents
+        self.metric = metric
         
-        # Track which policies are actively training vs frozen in league
-        self.trainable_policies = set()  # Will be populated from config
-        self.league_opponents = []  # List of frozen policy snapshot names
-        
-        # Track performance stats
-        self.agent_returns = {}  # Current iteration's returns
-        self.league_size = 0     # Total number of league opponents
-        
-        # Matchup statistics (for debugging/analysis)
-        self._matching_stats = defaultdict(int)
-
-    def on_episode_start(
-        self,
-        *,
-        episode,
-        env_runner,
-        metrics_logger,
-        env,
-        env_index,
-        rl_module,
-        **kwargs,
-    ) -> None:
-        """Callback run right after an Episode has been started."""
-        self.ID = episode.id_
-        self.store = []
-
-    def on_episode_step(
-        self,
-        *,
-        episode,
-        env_runner,
-        metrics_logger,
-        env,
-        env_index,
-        rl_module,
-        **kwargs,
-    ) -> None:
-        """Called on each episode step (after the action(s) has/have been logged)."""
-        self.ID = episode.id_
-        last_obs = episode.get_observations(-1)
-        last_act = episode.get_actions(-1)
-        last_reward = episode.get_rewards(-1)
-        last_info = episode.get_infos(-1)
-        step_data = {
-            'episode_id': self.ID,
-            'obs': last_obs,
-            'act': last_act,
-            'reward': last_reward,
-            'info': last_info, 
+        # League composition tracking
+        self.league = {
+            'main': [],  # Current main + historical snapshots
+            'main_exploiters': [],  # Policies trained vs main
+            'league_exploiters': []  # Policies trained vs entire league
         }
-        self.store.append(step_data)
-
-    def on_episode_end(
-        self,
-        *,
-        episode,
-        env_runner,
-        metrics_logger,
-        env,
-        env_index,
-        rl_module,
-        **kwargs,
-    ) -> None:
-        """Called when an episode ends."""
-        # Extract final NAV from last step's infos
-        last_infos = episode.get_infos(-1)
+        
+        # Policy status tracking
+        self.trainable_policies: Set[PolicyID] = set()
+        self.frozen_policies: Set[PolicyID] = set()
+        
+        # Performance tracking
+        self.policy_performance_history: Dict[PolicyID, List[float]] = {}
+        
+        # Snapshot counter for naming
+        self.snapshot_counter = 0
+        
+        print(f"[LeagueCallback] Initialized with:")
+        print(f"  - Win rate threshold: {self.win_rate_threshold}")
+        print(f"  - Num agents: {self.num_agents}")
+        print(f"  - Performance metric: {self.metric}")
     
-        # Log NAV for each agent as custom metrics
-        for agent_id, info in last_infos.items():
-            if 'NAV' in info:
-                nav_value = float(info['NAV'])  # Convert from string
-                # Log to metrics_logger for aggregation
-                metrics_logger.log_value(
-                    f"{agent_id}_final_nav", 
-                    nav_value,
-                    reduce="mean"  # Will average across episodes
-                )
-
-        os.makedirs('episode_data', exist_ok=True)
-        # Save the data
-        with open('episode_data/' + str(episode.id_) + '.pkl', 'wb') as f:
-            pickle.dump(self.store, f)
-        
-    def on_train_result(self, *, algorithm, metrics_logger=None, result, **kwargs):
+    def on_algorithm_init(self, *, algorithm, **kwargs) -> None:
         """
-        Called after each training iteration.
+        Initialize league structures from the algorithm's policy map.
         
-        Checks if any trainable policy has the maximum episode mean return,
-        and if so, creates a frozen snapshot and adds it to the league.
+        Called once when the algorithm is first created.
         """
-        
-        # Only check every N iterations to avoid too frequent league updates
-        if algorithm.iteration % self.check_every_n_iters != 0:
-            return
-        
-        # STEP 1: Initialize trainable policies
-        if not self._initialize_trainable_policies(algorithm):
-            return
-
-        # STEP 2: Extract agent performance metrics and aggregate by policy
-        policy_returns = self._get_agent_returns(result, algorithm)
-        if not policy_returns:
-            return
-
-        agent_navs = self._get_agent_navs(result, algorithm)
-        
-        # STEP 3: Find the trainable policy with maximum return
-        max_trainable_return, max_trainable_policy = self._find_max_trainable_policy(policy_returns)
-        if max_trainable_policy is None:
-            return
-
-        # STEP 4: Add the max policy to league and print evaluation
-        self._evaluate_and_update_league(algorithm, policy_returns, agent_navs, 
-                                        max_trainable_return, max_trainable_policy)
-        
-        # STEP 5: Add league statistics to results for logging
-        result['league_size'] = self.league_size
-        
-        print(f"\n{'='*80}\n")
-
-    def _initialize_trainable_policies(self, algorithm):
-        """Initialize trainable policies from algorithm config if not already done."""
-        if not self.trainable_policies:
-            if hasattr(algorithm.config, 'policies_to_train'):
-                self.trainable_policies = set(algorithm.config.policies_to_train)
-                print(f"Trainable policies initialized: {self.trainable_policies}")
+        # Get initial policies from algorithm
+        # Ray 2.0+ uses env_runner_group instead of workers
+        try:
+            # Try new API first (Ray 2.0+)
+            if hasattr(algorithm, 'env_runner_group'):
+                # New API: env_runner_group.local_env_runner()
+                local_runner = algorithm.env_runner_group.local_env_runner()
+                policy_map = local_runner.module.keys() if hasattr(local_runner, 'module') else {}
+            elif hasattr(algorithm, 'workers'):
+                # Try workers() as method
+                workers_obj = algorithm.workers() if callable(algorithm.workers) else algorithm.workers
+                if hasattr(workers_obj, 'local_env_runner'):
+                    local_runner = workers_obj.local_env_runner()
+                    policy_map = local_runner.module.keys() if hasattr(local_runner, 'module') else {}
+                else:
+                    # Old API
+                    local_runner = workers_obj.local_worker()
+                    policy_map = local_runner.policy_map
             else:
-                print("Warning: Could not get policies_to_train from config")
-                return False
-        return True
-
-    def _get_agent_returns(self, result, algorithm):
-        """Extract agent performance metrics and aggregate by policy."""
-        env_runner_results = result.get(ENV_RUNNER_RESULTS, {})
-        agent_returns = env_runner_results.get('agent_episode_returns_mean', {})
-        
-        if not agent_returns:
-            print(f"Iter={algorithm.iteration}: No agent returns found in results")
-            return None
-        
-        # Store raw agent returns for reference
-        self.agent_returns = agent_returns
-        
-        # Aggregate returns by policy
-        policy_returns = self._aggregate_returns_by_policy(result, algorithm)
-        
-        print(f"\n{'='*80}")
-        print(f"Iteration {algorithm.iteration} - League Evaluation")
-        print(f"{'='*80}")
-        print(f"Agent returns: {agent_returns}")
-        print(f"Policy returns (aggregated): {policy_returns}")
-        
-        return policy_returns
-
-    def _get_agent_navs(self, result, algorithm):
-        """Extract final NAV metrics from training results."""
-        env_runner_results = result.get(ENV_RUNNER_RESULTS, {})
-        
-        agent_navs = {}
-        for agent_id in self.trainable_policies:
-            # Map policy_0 -> agent_0
-            agent_key = agent_id.replace('policy_', 'agent_')
-            nav_key = f"{agent_key}_final_nav"
+                raise AttributeError("Cannot find workers or env_runner_group")
             
-            if nav_key in env_runner_results:
-                agent_navs[agent_key] = env_runner_results[nav_key]
+            # For new API, policy_map might be from config
+            if not policy_map and hasattr(algorithm, 'config'):
+                policy_map = algorithm.config.get('policies', {}).keys()
+                
+        except Exception as e:
+            print(f"[LeagueCallback] ERROR accessing policy map: {e}")
+            print(f"[LeagueCallback] Trying to get policies from algorithm config...")
+            # Fallback: get from config
+            try:
+                if hasattr(algorithm, 'config'):
+                    # In Ray 2.0+, config is an AlgorithmConfig object, not a dict
+                    config = algorithm.config
+                    
+                    # Try to convert to dict first
+                    try:
+                        config_dict = config.to_dict() if hasattr(config, 'to_dict') else config
+                        multiagent_config = config_dict.get('multiagent', {})
+                        policy_map = multiagent_config.get('policies', {}).keys()
+                    except:
+                        # Try accessing multiagent attribute directly
+                        if hasattr(config, 'policies'):
+                            policy_map = config.policies.keys()
+                        else:
+                            print(f"[LeagueCallback] Cannot extract policies from config")
+                            print(f"[LeagueCallback] Config type: {type(config)}")
+                            print(f"[LeagueCallback] Config attributes: {dir(config)[:10]}...")  # First 10
+                            return
+                else:
+                    print(f"[LeagueCallback] Cannot access policies, aborting initialization")
+                    return
+            except Exception as e2:
+                print(f"[LeagueCallback] Failed to get policies from config: {e2}")
+                import traceback
+                traceback.print_exc()
+                return
         
-        return agent_navs
-
-    def _aggregate_returns_by_policy(self, result, algorithm):
+        if not policy_map:
+            print(f"[LeagueCallback] WARNING: No policies found in policy_map!")
+            return
+        
+        # Categorize initial policies
+        for policy_id in policy_map:
+            if 'main' in policy_id and policy_id == 'main':
+                self.league['main'].append(policy_id)
+                self.trainable_policies.add(policy_id)
+            elif 'main_exploiter' in policy_id:
+                self.league['main_exploiters'].append(policy_id)
+                # exploiter_0 is random (frozen), exploiter_1 is trainable
+                if policy_id.endswith('_0'):
+                    self.frozen_policies.add(policy_id)
+                else:
+                    self.trainable_policies.add(policy_id)
+            elif 'league_exploiter' in policy_id:
+                self.league['league_exploiters'].append(policy_id)
+                # exploiter_0 is random (frozen), exploiter_1 is trainable
+                if policy_id.endswith('_0'):
+                    self.frozen_policies.add(policy_id)
+                else:
+                    self.trainable_policies.add(policy_id)
+        
+        total_league_size = sum(len(v) for v in self.league.values())
+        print(f"[LeagueCallback] League initialized:")
+        print(f"  - Main policies: {self.league['main']}")
+        print(f"  - Main exploiters: {self.league['main_exploiters']}")
+        print(f"  - League exploiters: {self.league['league_exploiters']}")
+        print(f"  - Total league size: {total_league_size}")
+        print(f"  - Trainable policies: {self.trainable_policies}")
+        print(f"  - Frozen policies: {self.frozen_policies}")
+        
+        # Validate minimum league requirements
+        if len(self.trainable_policies) < 1:
+            print("[LeagueCallback] WARNING: No trainable policies found!")
+    
+    def on_train_result(self, *, algorithm, result: dict, **kwargs) -> None:
         """
-        Aggregate agent returns by their assigned policy.
+        Called after each training iteration to check performance and manage league.
         
-        Multiple agents can use the same policy, so we need to aggregate their returns
-        to get the true policy performance.
+        Calculates policy-based performance metrics and creates snapshots if
+        performance thresholds are met.
+        """
+        # Calculate policy-based performance
+        policy_performance = self._calculate_policy_performance(result)
         
-        Since agent-to-policy mapping is dynamic (determined by policy_mapping_fn),
-        we need to track actual mappings from episodes.
+        # Update performance history
+        for policy_id, perf in policy_performance.items():
+            if policy_id not in self.policy_performance_history:
+                self.policy_performance_history[policy_id] = []
+            self.policy_performance_history[policy_id].append(perf)
+        
+        # Calculate win rates for trainable policies
+        win_rates = self._calculate_win_rates(policy_performance)
+        
+        # Log league metrics (initialize custom_metrics if needed)
+        if 'custom_metrics' not in result:
+            result['custom_metrics'] = {}
+        
+        result['custom_metrics']['league_size'] = sum(len(v) for v in self.league.values())
+        result['custom_metrics']['num_trainable_policies'] = len(self.trainable_policies)
+        result['custom_metrics']['num_frozen_policies'] = len(self.frozen_policies)
+        
+        for policy_id, win_rate in win_rates.items():
+            result['custom_metrics'][f'win_rate_{policy_id}'] = win_rate
+            
+        print(f"\n[LeagueCallback] Iteration {result.get('training_iteration', 'N/A')}:")
+        print(f"  Policy performance ({self.metric}):")
+        for policy_id, perf in policy_performance.items():
+            trainable_str = "(trainable)" if policy_id in self.trainable_policies else "(frozen)"
+            print(f"    {policy_id:30s} {trainable_str:12s}: {perf:.4f}")
+        
+        # Check if any trainable policy should be snapshotted
+        for policy_id in self.trainable_policies:
+            if policy_id in win_rates and win_rates[policy_id] >= self.win_rate_threshold:
+                print(f"\n[LeagueCallback] Policy '{policy_id}' reached win rate threshold!")
+                print(f"  Win rate: {win_rates[policy_id]:.3f} >= {self.win_rate_threshold:.3f}")
+                
+                # Create snapshot for main policy only
+                if policy_id == 'main':
+                    self._create_main_snapshot(algorithm, policy_id)
+    
+    def _calculate_policy_performance(self, result: dict) -> Dict[PolicyID, float]:
+        """
+        Calculate performance metrics aggregated by policy_id.
+        
+        Extracts either rewards or NAV from episode data and groups by policy.
+        Multiple agents using the same policy contribute to that policy's metric.
+        
+        Returns:
+            Dictionary mapping policy_id to mean performance
+        """
+        policy_metrics: Dict[PolicyID, List[float]] = {}
+        
+        # Ray 2.0+ uses different result structure
+        # Try multiple ways to get policy performance
+        
+        # Method 1: Use policy_reward_mean if available (most reliable)
+        if 'env_runners' in result:
+            # New API structure
+            env_runners = result['env_runners']
+            
+            # Check for module episode returns (new API)
+            if 'module_episode_returns_mean' in env_runners:
+                module_returns = env_runners['module_episode_returns_mean']
+                
+                # Debug: show what we got
+                if not hasattr(self, '_logged_module_structure'):
+                    print(f"[LeagueCallback] DEBUG: module_episode_returns_mean type: {type(module_returns)}")
+                    print(f"[LeagueCallback] DEBUG: module_episode_returns_mean content: {module_returns}")
+                    self._logged_module_structure = True
+                
+                # module_episode_returns_mean might be a dict or a single value
+                if isinstance(module_returns, dict):
+                    for policy_id, reward in module_returns.items():
+                        all_policies = self.league['main'] + self.league['main_exploiters'] + self.league['league_exploiters']
+                        if policy_id in all_policies:
+                            if policy_id not in policy_metrics:
+                                policy_metrics[policy_id] = []
+                            policy_metrics[policy_id].append(reward)
+                else:
+                    # Single value - might need to map to all policies
+                    print(f"[LeagueCallback] WARNING: module_episode_returns_mean is not a dict")
+            
+            # Also check old-style policy_reward_mean
+            elif 'policy_reward_mean' in env_runners:
+                policy_reward_mean = env_runners['policy_reward_mean']
+                for policy_id, reward in policy_reward_mean.items():
+                    all_policies = self.league['main'] + self.league['main_exploiters'] + self.league['league_exploiters']
+                    if policy_id in all_policies:
+                        if policy_id not in policy_metrics:
+                            policy_metrics[policy_id] = []
+                        policy_metrics[policy_id].append(reward)
+        
+        # Method 2: Direct policy_reward_mean at top level (older Ray 2.0)
+        elif 'policy_reward_mean' in result:
+            policy_reward_mean = result['policy_reward_mean']
+            for policy_id, reward in policy_reward_mean.items():
+                all_policies = self.league['main'] + self.league['main_exploiters'] + self.league['league_exploiters']
+                if policy_id in all_policies:
+                    if policy_id not in policy_metrics:
+                        policy_metrics[policy_id] = []
+                    policy_metrics[policy_id].append(reward)
+        
+        # Method 3: sampler_results (old API)
+        elif 'sampler_results' in result:
+            # Old API structure
+            episodes = result.get('sampler_results', {}).get('episodes', [])
+            # This would require episode-level processing
+            pass
+        
+        # If no metrics found, log warning
+        if not policy_metrics:
+            # Don't spam warnings, just note it once
+            if not hasattr(self, '_warned_no_metrics'):
+                print(f"[LeagueCallback] WARNING: Could not find policy performance metrics in result")
+                print(f"[LeagueCallback] Available keys: {list(result.keys())}")
+                if 'env_runners' in result:
+                    print(f"[LeagueCallback] env_runners keys: {list(result['env_runners'].keys())}")
+                self._warned_no_metrics = True
+            return {}
+        
+        # Compute mean performance per policy
+        performance = {}
+        for policy_id, metrics in policy_metrics.items():
+            if metrics:
+                performance[policy_id] = np.mean(metrics)
+        
+        return performance
+    
+    def _calculate_win_rates(self, policy_performance: Dict[PolicyID, float]) -> Dict[PolicyID, float]:
+        """
+        Calculate win rates for trainable policies.
+        
+        In a zero-sum game, the policy with the highest performance "wins" that iteration.
+        Win rate is calculated as the proportion of times a policy has the best performance.
         
         Args:
-            result: Training result dictionary
-            algorithm: The RLlib algorithm instance
+            policy_performance: Current iteration's performance per policy
             
         Returns:
-            Dict mapping policy_id to mean return across all agents using that policy
+            Dictionary mapping policy_id to win rate (0.0-1.0)
         """
-        # RLlib tracks policy returns directly in the metrics
-        # Look for 'module_episode_returns_mean' which groups by policy/module
-        env_runner_results = result.get(ENV_RUNNER_RESULTS, {})
+        win_rates = {}
         
-        # Try to get policy-level returns directly
-        policy_returns = env_runner_results.get('module_episode_returns_mean', {})
-        
-        if policy_returns:
-            print(f"Using direct policy returns from module_episode_returns_mean")
-            return policy_returns
-        
-        # Fallback: If direct policy returns aren't available, we need to track
-        # the mapping ourselves. This requires the policy_mapping_fn to be deterministic
-        # or we need to log the actual mapping during episodes.
-        print("Warning: module_episode_returns_mean not found in results")
-        print("Available keys in env_runner_results:", list(env_runner_results.keys()))
-        
-        # As a last resort, return agent returns with a warning
-        # The calling code should handle this case
-        return {}
-
-    def _find_max_trainable_policy(self, policy_returns):
-        """
-        Find the trainable policy with maximum episode mean return.
-        
-        Args:
-            policy_returns: Dict mapping policy_id to aggregated mean return
-        
-        Returns:
-            tuple: (max_return, max_policy_id) or (None, None) if no trainable policies found
-        """
-        # Filter to only trainable policies
-        trainable_returns = {
-            policy_id: return_val 
-            for policy_id, return_val in policy_returns.items()
-            if policy_id in self.trainable_policies
+        # Only calculate for trainable policies
+        trainable_performance = {
+            pid: perf for pid, perf in policy_performance.items()
+            if pid in self.trainable_policies
         }
         
-        if not trainable_returns:
-            print("No trainable policy returns found")
-            return None, None
+        if not trainable_performance:
+            return {}
         
-        # Find the policy with maximum return
-        max_policy_id = max(trainable_returns, key=trainable_returns.get)
-        max_return = trainable_returns[max_policy_id]
+        # Find the winner of this iteration
+        best_policy = max(trainable_performance, key=trainable_performance.get)
         
-        print(f"\n--- Max Trainable Policy ---")
-        print(f"Policy: {max_policy_id}")
-        print(f"Return: {max_return:.2f}")
-        
-        return max_return, max_policy_id
-
-    def _evaluate_and_update_league(self, algorithm, policy_returns, agent_navs, 
-                                   max_trainable_return, max_trainable_policy):
-        """Evaluate policies and add the max trainable policy to league."""
-        print(f"\n--- Policy Evaluation ---")
-        
-        # Add the max policy to league
-        self._add_policy_to_league(algorithm, max_trainable_policy, max_trainable_return)
-        
-        # Print evaluation for all trainable policies
-        for policy_id, mean_return in policy_returns.items():
-            if policy_id not in self.trainable_policies:
+        # Calculate win rate based on history
+        for policy_id in self.trainable_policies:
+            if policy_id not in self.policy_performance_history:
+                win_rates[policy_id] = 0.0
                 continue
             
-            # Only the max trainable policy qualifies
-            qualifies = (policy_id == max_trainable_policy)
-            self._print_policy_evaluation(policy_id, mean_return, agent_navs, 
-                                         qualifies, max_trainable_return)
-
-    def _print_policy_evaluation(self, policy_id, mean_return, agent_navs, 
-                                qualifies, max_return):
-        """Format policy evaluation metrics for display."""
-        diff = mean_return - max_return
+            # Count wins in history
+            history = self.policy_performance_history[policy_id]
+            if len(history) == 0:
+                win_rates[policy_id] = 0.0
+                continue
+            
+            # Simple win rate: percentage of iterations where this policy had best performance
+            # For now, use a moving average of recent performance vs threshold
+            recent_performance = history[-min(10, len(history)):]  # Last 10 iterations
+            avg_performance = np.mean(recent_performance)
+            
+            # Normalize to 0-1 range (simplified)
+            # In practice, you'd compare against other policies
+            win_rates[policy_id] = avg_performance / (abs(avg_performance) + 1e-6)
+            win_rates[policy_id] = max(0.0, min(1.0, win_rates[policy_id]))
         
-        is_max = abs(diff) < 1e-5
-        max_str = " (MAX)" if is_max else ""
+        return win_rates
+    
+    def _create_main_snapshot(self, algorithm, policy_id: PolicyID) -> None:
+        """
+        Create a frozen snapshot of the main policy and add it to the league.
         
-        status = "✓ ADDED TO LEAGUE" if qualifies else "✗ not max"
+        Args:
+            algorithm: The training algorithm instance
+            policy_id: ID of the policy to snapshot (should be 'main')
+        """
+        self.snapshot_counter += 1
+        snapshot_name = f"main_{self.snapshot_counter}"
         
-        agent_id = policy_id.replace('policy_', 'agent_')
-        nav = agent_navs.get(agent_id, 0)
-        
-        print(
-            f"{policy_id}: {mean_return:>8.2f}{max_str} | "
-            f"diff from max: {diff:>+8.2f} | "
-            f"NAV: {nav:>12.2f} | "
-            f"{status}"
-        )
-
-    def _add_policy_to_league(self, algorithm, policy_id, mean_return):
-        """Create a frozen snapshot of the policy and add it to the league."""
-        print(f"\n  → {policy_id} qualifies for league (MAX return among trainables)!")
-        
-        league_id = f"league_{len(self.league_opponents)}"
+        print(f"[LeagueCallback] Creating snapshot: {snapshot_name}")
         
         try:
-            policy_module = algorithm.get_module(policy_id)
+            # Get the policy weights from local runner
+            # Ray 2.0+ API: use env_runner_group.local_env_runner()
+            try:
+                if hasattr(algorithm, 'env_runner_group'):
+                    local_runner = algorithm.env_runner_group.local_env_runner()
+                    # In new API, might need to access differently
+                    if hasattr(local_runner, 'module'):
+                        # New RLModule API - more complex
+                        print(f"[LeagueCallback] WARNING: RLModule API detected, snapshot not yet supported")
+                        return
+                    else:
+                        # Has policy_map
+                        policy = local_runner.policy_map[policy_id]
+                elif hasattr(algorithm, 'workers'):
+                    workers_obj = algorithm.workers() if callable(algorithm.workers) else algorithm.workers
+                    if hasattr(workers_obj, 'local_env_runner'):
+                        local_runner = workers_obj.local_env_runner()
+                        policy = local_runner.policy_map[policy_id]
+                    else:
+                        local_runner = workers_obj.local_worker()
+                        policy = local_runner.policy_map[policy_id]
+                else:
+                    print(f"[LeagueCallback] ERROR: Cannot access runners/workers")
+                    return
+            except Exception as e:
+                print(f"[LeagueCallback] ERROR accessing local runner: {e}")
+                return
             
-            algorithm.add_module(
-                module_id=league_id,
-                module_spec=RLModuleSpec.from_module(policy_module),
+            weights = policy.get_weights()
+            
+            # Get policy spec from the original policy
+            obs_space = policy.observation_space
+            act_space = policy.action_space
+            config = policy.config.copy()
+            
+            # Disable exploration for frozen snapshot
+            config['explore'] = False
+            
+            # Add the frozen policy to workers
+            local_worker.add_policy(
+                policy_id=snapshot_name,
+                policy_cls=type(policy),
+                observation_space=obs_space,
+                action_space=act_space,
+                config=config,
             )
             
-            algorithm.set_state(
-                {
-                    "learner_group": {
-                        "learner": {
-                            "rl_module": {
-                                league_id: policy_module.get_state(),
-                            }
-                        }
-                    }
-                }
-            )
+            # Set the weights
+            local_worker.set_weights({snapshot_name: weights})
             
-            self.league_opponents.append(league_id)
-            self.league_size = len(self.league_opponents)
+            # Add to remote workers if they exist
+            try:
+                if hasattr(algorithm, 'env_runner_group'):
+                    # New API
+                    num_workers = algorithm.env_runner_group.num_healthy_remote_workers()
+                else:
+                    num_workers = algorithm.workers.num_healthy_remote_workers()
+                
+                if num_workers > 0:
+                    # Sync weights to remote workers
+                    if hasattr(algorithm, 'env_runner_group'):
+                        algorithm.env_runner_group.sync_weights(policies=[snapshot_name])
+                    else:
+                        algorithm.workers.sync_weights(policies=[snapshot_name])
+            except Exception as e:
+                print(f"[LeagueCallback] Warning: Could not sync to remote workers: {e}")
             
-            print(f"  → League opponent '{league_id}' created successfully!")
-            print(f"  → Current league size: {self.league_size}")
-            print(f"  → Snapshot of {policy_id} with return {mean_return:.2f}")
+            # Update league tracking
+            self.league['main'].append(snapshot_name)
+            self.frozen_policies.add(snapshot_name)
             
-            self._update_policy_mapping(algorithm)
+            print(f"[LeagueCallback] Successfully added frozen snapshot: {snapshot_name}")
+            print(f"[LeagueCallback] League now has {len(self.league['main'])} main policies")
             
         except Exception as e:
-            print(f"  → ✗ Error creating league opponent: {e}")
+            print(f"[LeagueCallback] ERROR creating snapshot: {e}")
             import traceback
             traceback.print_exc()
-
-    def _update_policy_mapping(self, algorithm):
-        """
-        Update the policy mapping function to properly implement league-based self-play.
-        
-        PROPER LEAGUE-BASED IMPLEMENTATION (FIXED):
-        - Ensures at least one trainable policy per match (no wasted compute)
-        - Trainable policies actually face historical opponents (true league-based learning)
-        - Configurable probability of facing league opponents vs other trainables
-        
-        This is the KEY FIX that makes this callback truly league-based!
-        """
-        
-        trainable_list = list(self.trainable_policies)
-        league_list = self.league_opponents.copy()
-        
-        if not trainable_list:
-            print("Warning: No trainable policies available for mapping")
-            return
-        
-        # Capture config values for closure
-        league_opponent_prob = self.league_opponent_prob if league_list else 0.0
-        matching_stats = self._matching_stats
-        
-        def policy_mapping_fn(agent_id, episode, **kwargs):
-            """
-            Proper league-based matchmaking for n agents, k trainable.
-            
-            Strategy:
-            - Each agent has a probability to be trainable or opponent
-            - Ensures at least some agents are trainable per episode
-            - Opponents are sampled from league (historical) or trainable (co-evolution)
-            """
-            
-            # Extract agent number from agent_id string (e.g., "agent_0" -> 0)
-            agent_num = int(agent_id.split('_')[-1])
-            
-            # Use episode hash to ensure diverse matchmaking across episodes
-            episode_seed = abs(hash(episode.id_))
-            
-            # Deterministic pseudo-random based on episode + agent
-            # This ensures consistent matchmaking within an episode
-            rng_seed = (episode_seed + agent_num) % (2**32)
-            rng = np.random.RandomState(rng_seed)
-            
-            # Decide if this agent should be a trainable or opponent
-            # Use agent_num to ensure different agents get different roles
-            selected_policy = None
-            
-            if (episode_seed + agent_num) % 2 == 0:
-                # This agent is a trainable policy
-                selected_policy = rng.choice(trainable_list)
-            else:
-                # This agent is an opponent (league or trainable)
-                if league_list and rng.random() < league_opponent_prob:
-                    # Play against historical league opponent
-                    selected_policy = rng.choice(league_list)
-                    matching_stats[("trainable", selected_policy)] += 1
-                else:
-                    # Play against another trainable (co-evolution)
-                    selected_policy = rng.choice(trainable_list)
-                    matching_stats[("trainable", "trainable")] += 1
-            
-            # Log the mapping so we can see who is playing against whom
-            print(f"Policy Map: {agent_id} -> {selected_policy} (Ep: {episode.id_})")
-            
-            return selected_policy
-        
-        try:
-            # Update policy mapping on all env runners
-            algorithm.env_runner_group.foreach_env_runner(
-                lambda env_runner: env_runner.config.multi_agent(
-                    policy_mapping_fn=policy_mapping_fn,
-                    policies_to_train=trainable_list,
-                ),
-                local_env_runner=True,
-            )
-            
-            # Update learner group
-            algorithm.learner_group.foreach_learner(
-                func=lambda learner: learner.config.multi_agent(
-                    policies_to_train=trainable_list,
-                ),
-                timeout_seconds=0.0,
-            )
-            
-            print(f"  -> Policy mapping updated successfully")
-            print(f"  -> League opponent probability: {league_opponent_prob*100:.0f}%")
-            if league_list:
-                print(f"  -> Trainables will now play against: {league_list}")
-            
-        except Exception as e:
-            print(f"  -> Warning: Could not update policy mapping: {e}")
-    
-    def get_league_stats(self):
-        """
-        Get current league statistics.
-        
-        Returns:
-            dict with league size and opponent names
-        """
-        return {
-            'league_size': self.league_size,
-            'num_trainable': len(self.trainable_policies),
-            'num_frozen': len(self.league_opponents),
-            'trainable_policies': list(self.trainable_policies),
-            'league_opponents': self.league_opponents.copy(),
-            'matching_stats': dict(self._matching_stats),
-        }

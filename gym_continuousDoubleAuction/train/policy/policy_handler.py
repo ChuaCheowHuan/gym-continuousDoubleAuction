@@ -165,3 +165,95 @@ def policy_mapping_fn(agent_id, episode, **kwargs):
 
 # if __name__ == "__main__":
 #     example_usage()
+
+# ============================================================================
+# League-based self-play helper functions
+# ============================================================================
+
+def create_league_policy_spec(obs_space, act_space, model_name="model_disc"):
+    '''
+    Create a frozen policy spec for a league opponent.
+    
+    League policies are non-trainable snapshots with exploration disabled.
+    
+    Args:
+        obs_space: Observation space for the policy
+        act_space: Action space for the policy
+        model_name: Name of the custom model to use
+        
+    Returns:
+        PolicySpec for a frozen league opponent
+    '''
+    return PolicySpec(
+        policy_class=None,  # Use default PPO policy
+        observation_space=obs_space,
+        action_space=act_space,
+        config={
+            'model': {
+                'custom_model': model_name
+            },
+            'explore': False,  # Disable exploration for frozen policies
+        }
+    )
+
+
+def add_league_policy_to_algorithm(algorithm, snapshot_name, snapshot_weights, 
+                                   obs_space, act_space):
+    '''
+    Dynamically add a league opponent policy to a running algorithm.
+    
+    Args:
+        algorithm: The training algorithm instance
+        snapshot_name: Name for the new league policy
+        snapshot_weights: Policy weights to load
+        obs_space: Observation space
+        act_space: Action space
+        
+    Returns:
+        True if successful, False otherwise
+    '''
+    try:
+        # Create policy spec for league opponent
+        league_spec = create_league_policy_spec(obs_space, act_space)
+        
+        # Add the policy to the algorithm
+        # Note: In RLlib 2.4+, we need to add it to workers
+        worker = algorithm.workers.local_worker()
+        
+        # Add policy to local worker
+        worker.add_policy(
+            policy_id=snapshot_name,
+            policy_cls=league_spec.policy_class,
+            observation_space=league_spec.observation_space,
+            action_space=league_spec.action_space,
+            config=league_spec.config,
+        )
+        
+        # Set the weights
+        worker.set_policy_weights(snapshot_name, snapshot_weights)
+        
+        # Also add to remote workers
+        if algorithm.workers.num_healthy_remote_workers() > 0:
+            algorithm.workers.foreach_worker(
+                lambda w: w.add_policy(
+                    policy_id=snapshot_name,
+                    policy_cls=league_spec.policy_class,
+                    observation_space=league_spec.observation_space,
+                    action_space=league_spec.action_space,
+                    config=league_spec.config,
+                ) if not w.policy_map.get(snapshot_name) else None
+            )
+            
+            # Set weights on remote workers
+            algorithm.workers.foreach_worker(
+                lambda w: w.set_policy_weights(snapshot_name, snapshot_weights)
+            )
+        
+            algorithm.workers.sync_weights(policies=[snapshot_name])
+        
+        print(f'[PolicyHandler] Created frozen snapshot: {snapshot_name} from {policy_id}')
+        return True
+        
+    except Exception as e:
+        print(f'[PolicyHandler] ERROR creating snapshot: {e}')
+        return False
