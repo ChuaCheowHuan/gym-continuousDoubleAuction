@@ -249,11 +249,9 @@ def add_league_policy_to_algorithm(algorithm, snapshot_name, snapshot_weights,
                 lambda w: w.set_policy_weights(snapshot_name, snapshot_weights)
             )
         
-            algorithm.workers.sync_weights(policies=[snapshot_name])
-        
-        print(f'[PolicyHandler] Created frozen snapshot: {snapshot_name} from {policy_id}')
+        print(f'[PolicyHandler] Successfully added league policy: {snapshot_name}')
         return True
         
     except Exception as e:
-        print(f'[PolicyHandler] ERROR creating snapshot: {e}')
+        print(f'[PolicyHandler] Error adding league policy {snapshot_name}: {e}')
         return False

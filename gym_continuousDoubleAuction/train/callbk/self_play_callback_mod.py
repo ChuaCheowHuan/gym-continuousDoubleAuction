@@ -12,20 +12,30 @@ from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
 
 
 class SelfPlayCallback(RLlibCallback):
-    def __init__(self, win_rate_threshold):
-    # def __init__(self):
+    def __init__(self, std_dev_multiplier=0.1, max_champions=4):
+        """
+        Initialize league-based self-play callback.
+        
+        Args:
+            std_dev_multiplier: Number of standard deviations above mean to trigger snapshot
+            max_champions: Maximum number of champions to maintain (rolling window)
+        """
         super().__init__()
-        # 0=RandomPolicy, 1=1st main policy snapshot,
-        # 2=2nd main policy snapshot, etc..
-        # self.current_opponent = 0
-
-        # self.win_rate_threshold = win_rate_threshold
-
-        # # Report the matchup counters (who played against whom?).
-        # self._matching_stats = defaultdict(int)
-
+        
+        # Champion snapshotting configuration
+        self.std_dev_multiplier = std_dev_multiplier
+        self.max_champions = max_champions
+        self.min_iterations_between_champions = 2
+        
+        # Champion tracking state
+        self.champion_count = 0
+        self.champion_history = []  # List of dicts with champion metadata
+        self.available_modules = ["policy_0", "policy_1", "policy_2", "policy_3"]
+        
+        # Episode data storage (unchanged)
         self.ID = None
         self.store = None
+
 
     def on_episode_start(
         self,
@@ -38,31 +48,30 @@ class SelfPlayCallback(RLlibCallback):
         rl_module,
         **kwargs,
     ) -> None:
-        """Callback run right after an Episode has been started.
-
-        This method gets called after a SingleAgentEpisode or MultiAgentEpisode instance
-        has been reset with a call to `env.reset()` by the EnvRunner.
-
-        1) Single-/MultiAgentEpisode created: `on_episode_created()` is called.
-        2) Respective sub-environment (gym.Env) is `reset()`.
-        3) Single-/MultiAgentEpisode starts: This callback is called.
-        4) Stepping through sub-environment/episode commences.
-
-        Args:
-            episode: The just started (after `env.reset()`) SingleAgentEpisode or
-                MultiAgentEpisode object.
-            env_runner: Reference to the EnvRunner running the env and episode.
-            metrics_logger: The MetricsLogger object inside the `env_runner`. Can be
-                used to log custom metrics during env/episode stepping.
-            env: The gym.Env or gym.vector.Env object running the started episode.
-            env_index: The index of the sub-environment that is about to be reset
-                (within the vector of sub-environments of the BaseEnv).
-            rl_module: The RLModule used to compute actions for stepping the env. In
-                single-agent mode, this is a simple RLModule, in multi-agent mode, this
-                is a MultiRLModule.
-            kwargs: Forward compatibility placeholder.
-        """
-        print('on_episode_start')
+        """Callback run right after an Episode has been started."""
+        print(f"\n{'='*40}")
+        print(f"Episode {episode.id_} Started - Policy Map:")
+        
+        # replicate mapping logic to display what will happen
+        candidates = self.available_modules[2:]
+        
+        for i in range(4):
+            agent_id = f"agent_{i}"
+            if i < 2:
+                policy = f"policy_{i}"
+            else:
+                if not candidates:
+                    policy = f"policy_{i}"
+                else:
+                    # Logic must match get_mapping_fn exactly
+                    # Note: currently assigns same opponent to all fixed agents
+                    idx = (hash(episode.id_) + i) % len(candidates)
+                    policy = candidates[idx]
+            
+            print(f"  {agent_id} -> {policy}")
+            
+        print(f"{'='*40}\n")
+            
         self.ID = episode.id_
         self.store = []
 
@@ -102,7 +111,7 @@ class SelfPlayCallback(RLlibCallback):
                 is a MultiRLModule.
             kwargs: Forward compatibility placeholder.
         """
-        print('on_episode_step')
+        # print('on_episode_step')
 
         self.ID = episode.id_
         last_obs = episode.get_observations(-1)
@@ -173,124 +182,232 @@ class SelfPlayCallback(RLlibCallback):
         self.store = None   
 
     def on_train_result(self, *, algorithm, metrics_logger=None, result, **kwargs):
-        # win_rate = result[ENV_RUNNER_RESULTS]["win_rate"]
-        # print(f"Iter={algorithm.iteration} win-rate={win_rate} -> ", end="")
-        # # If win rate is good -> Snapshot current policy and play against
-        # # it next, keeping the snapshot fixed and only improving the "main"
-        # # policy.
-        # if win_rate > self.win_rate_threshold:
-        #     self.current_opponent += 1
-        #     new_module_id = f"main_v{self.current_opponent}"
-        #     print(f"adding new opponent to the mix ({new_module_id}).")
-
-        #     # Re-define the mapping function, such that "main" is forced
-        #     # to play against any of the previously played modules
-        #     # (excluding "random").
-        #     def agent_to_module_mapping_fn(agent_id, episode, **kwargs):
-        #         # agent_id = [0|1] -> policy depends on episode ID
-        #         # This way, we make sure that both modules sometimes play
-        #         # (start player) and sometimes agent1 (player to move 2nd).
-        #         opponent = "main_v{}".format(
-        #             np.random.choice(list(range(1, self.current_opponent + 1)))
-        #         )
-        #         if hash(episode.id_) % 2 == agent_id:
-        #             self._matching_stats[("main", opponent)] += 1
-        #             return "main"
-        #         else:
-        #             return opponent
-
-        #     main_module = algorithm.get_module("main")
-        #     algorithm.add_module(
-        #         module_id=new_module_id,
-        #         module_spec=RLModuleSpec.from_module(main_module),
-        #         new_agent_to_module_mapping_fn=agent_to_module_mapping_fn,
-        #     )
-        #     # TODO (sven): Maybe we should move this convenience step back into
-        #     #  `Algorithm.add_module()`? Would be less explicit, but also easier.
-        #     algorithm.set_state(
-        #         {
-        #             "learner_group": {
-        #                 "learner": {
-        #                     "rl_module": {
-        #                         new_module_id: main_module.get_state(),
-        #                     }
-        #                 }
-        #             }
-        #         }
-        #     )
-        # else:
-        #     print("not good enough; will keep learning ...")
-
-        # # +2 = main + random
-        # result["league_size"] = self.current_opponent + 2
-
-        # print(f"Matchups:\n{self._matching_stats}")
-        policy_0_module = algorithm.get_module("policy_0")
-        policy_1_module = algorithm.get_module("policy_1")
-        policy_2_module = algorithm.get_module("policy_2")
-        policy_3_module = algorithm.get_module("policy_3")
-
-        print(f'on_train_result:{result}')
-        pprint.pprint(result, indent=4, width=40, depth=3)
-        print(f'algorithm:{algorithm}')
+        """
+        Callback after each training iteration.
         
-        print(f'agent_0_module:{policy_0_module}')        
-        print(f'agent_1_module:{policy_1_module}')
-        print(f'agent_2_module:{policy_2_module}')
-        print(f'agent_3_module:{policy_3_module}')
+        Uses relative ranking based on POLICY returns to identify champions.
+        snapshots created when return > mean + std_dev_multiplier * std.
+        """
+        # Get POLICY returns (not agent returns)
+        # Check standard locations for policy rewards
+        if 'policy_reward_mean' in result['env_runners']:
+            policy_returns = result['env_runners']['policy_reward_mean']
+        elif 'custom_metrics' in result['env_runners']: # Fallback
+            policy_returns = {k: v for k,v in result['env_runners']['custom_metrics'].items() if 'policy' in k}
+        else:
+             # Fallback to aggregation from agent returns if simple mapping
+            # This is less accurate if multiple agents share policy, but works for 1:1
+            print("Warning: policy_reward_mean not found, falling back to agent returns")
+            policy_returns = {}
+            agent_returns = result['env_runners']['agent_episode_returns_mean']
+            for agent_id, ret in agent_returns.items():
+                # Map agent_X -> policy_X
+                policy_id = f"policy_{agent_id.split('_')[1]}"
+                policy_returns[policy_id] = ret
 
-        # Access agent_episode_returns_mean
-        agent_returns = result['env_runners']['agent_episode_returns_mean']
+        iteration = result['training_iteration']
+        
+        # Filter mostly interesting policies (exclude extremely sparse ones if any)
+        # and calculate league statistics
+        valid_returns = [v for v in policy_returns.values() if v is not None]
+        
+        if not valid_returns:
+            print("No valid policy returns found this iteration.")
+            return
 
-        # Find the agent with max return
-        best_agent = max(agent_returns, key=agent_returns.get)
-        max_value = agent_returns[best_agent]        
-        print(f"Top-performing agent: {best_agent} with return {max_value}")
-
-        if max_value < 0:
-
-
-
-            # Hard coded to test copying weights
-            best_agent = 'agent_0'
-
-
-
-            agent_id = int(best_agent.split('_')[1])
-            best_policy = 'policy_' + str(agent_id)
+        league_mean = np.mean(valid_returns)
+        league_std = np.std(valid_returns)
+        
+        # Determine dynamic threshold
+        # If std is 0 (all same), effectively requires > mean
+        threshold = league_mean + (self.std_dev_multiplier * league_std)
+        
+        print(f"\n{'='*80}")
+        print(f"Iteration {iteration} League Stats:")
+        print(f"Mean: {league_mean:.2f} | Std: {league_std:.2f} | Threshold: {threshold:.2f}")
+        print(f"Policy Returns: {policy_returns}")
+        
+        # Check trainable policies for champion status
+        trainable_policies = ["policy_0", "policy_1"]
+        
+        best_candidate = None
+        best_return = -float('inf')
+        
+        for pid in trainable_policies:
+            if pid in policy_returns:
+                p_ret = policy_returns[pid]
+                if p_ret > best_return:
+                    best_return = p_ret
+                    best_candidate = pid
+        
+        print(f"Best Trainable: {best_candidate} ({best_return:.2f})")
+        print(f"{'='*80}\n")
+        
+        # Check relative performance trigger
+        if best_candidate and best_return > threshold:
+            # Also check if it's better than previous champion (optional but good for progress)
+            # best_historical = max([c['return'] for c in self.champion_history]) if self.champion_history else -float('inf')
             
-
-
-            # Hard coded to test copying weights
-            trainable_list = [0,1]
+            if self._should_create_champion(best_return, iteration):
+                 # Pass policy ID directly
+                self._create_champion_snapshot_from_policy(algorithm, best_candidate, best_return, iteration)
+        
+        # Log metrics
+        if metrics_logger:
+            metrics_logger.log_value("league_size", 2 + self.champion_count, window=1)
+            metrics_logger.log_value("league_mean_return", league_mean, window=10)
+            metrics_logger.log_value("league_std_return", league_std, window=10)
+    
+    def _should_create_champion(self, return_value, iteration):
+        """
+        Decide if we should create a champion snapshot.
+        
+        Args:
+            return_value: The return value of the best policy
+            iteration: Current training iteration
             
-
+        Returns:
+            True if champion should be created, False otherwise
+        """
+        # Don't snapshot too frequently
+        if self.champion_history:
+            last_champion_iter = self.champion_history[-1]['iteration']
+            if iteration - last_champion_iter < self.min_iterations_between_champions:
+                print(f"Skipping champion creation: only {iteration - last_champion_iter} iterations "
+                      f"since last champion (min: {self.min_iterations_between_champions})")
+                return False
+        
+        # Check if we need to remove old champion first (rolling window)
+        if self.champion_count >= self.max_champions:
+            print(f"Max champions ({self.max_champions}) reached, will remove oldest")
+            self._remove_oldest_champion()
+        
+        return True
+    
+    def _create_champion_snapshot_from_policy(self, algorithm, policy_id, return_value, iteration):
+        """
+        Create a frozen champion snapshot of the best policy.
+        
+        Args:
+            algorithm: The training algorithm instance
+            policy_id: ID of the policy to snapshot
+            return_value: Performance metric that triggered snapshotting
+            iteration: Current training iteration
+        """
+        # Create unique champion name
+        champion_id = f"champion_{self.champion_count + 1}"
+        
+        print(f"\n{'*'*80}")
+        print(f"🏆 CREATING CHAMPION SNAPSHOT 🏆")
+        print(f"Champion ID: {champion_id}")
+        print(f"Source Policy: {policy_id}")
+        print(f"Return: {return_value:.2f}")
+        print(f"Iteration: {iteration}")
+        print(f"{'*'*80}\n")
+        
+        try:
+            # Get the source module
+            source_module = algorithm.get_module(policy_id)
             
-            # Check if best policy is trainable            
-            if agent_id in trainable_list:
-                # Copy to all other trainable policies (excluding the best policy itself)
-                for target_id in trainable_list:
-                    if target_id != agent_id:  # Ensure best and target are different
-                        target_policy = 'policy_' + str(target_id)
-                        
-                        best_module = algorithm.get_module(best_policy)
-                        target_module = algorithm.get_module(target_policy)
-                        
-                        def set_weights(algorithm, target_policy, best_module):
-                            # Copy weights
-                            algorithm.set_state(
-                                {
-                                    "learner_group": {
-                                        "learner": {
-                                            "rl_module": {
-                                                target_policy: best_module.get_state(),
-                                            }
-                                        }
-                                    }
-                                }
-                            )
-                        
-                        set_weights(algorithm, target_policy, best_module)
-                        print(f"Copied weights from {best_policy} to {target_policy}")
-            else:
-                print(f"Skipping weight copy: {best_policy} is not trainable")
+            # Create module spec for the champion (frozen, no exploration)
+            from ray.rllib.core.rl_module.rl_module import RLModuleSpec
+            champion_spec = RLModuleSpec.from_module(source_module)
+            
+            # Add the champion module to the algorithm
+            algorithm.add_module(
+                module_id=champion_id,
+                module_spec=champion_spec,
+            )
+            
+            # Copy weights from source to champion
+            algorithm.set_state({
+                "learner_group": {
+                    "learner": {
+                        "rl_module": {
+                            champion_id: source_module.get_state(),
+                        }
+                    }
+                }
+            })
+            
+            # Record champion metadata
+            champion_info = {
+                'id': champion_id,
+                'source_policy': policy_id,
+                'iteration': iteration,
+                'return': return_value,
+            }
+            self.champion_history.append(champion_info)
+            self.champion_count += 1
+            
+            # Update available modules for matchmaking
+            self.available_modules.append(champion_id)
+            
+            print(f"✓ Champion {champion_id} created successfully!")
+            print(f"✓ League size now: {2 + self.champion_count} "
+                  f"(2 trainable + {self.champion_count} champions)")
+            print(f"✓ Active champions: {[c['id'] for c in self.champion_history]}\n")
+            
+        except Exception as e:
+            print(f"✗ Error creating champion {champion_id}: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _remove_oldest_champion(self):
+        """
+        Remove the oldest champion to maintain rolling window.
+        
+        Note: RLlib 2.4+ doesn't provide a clean way to remove modules,
+        so we remove from tracking but module remains in memory.
+        """
+        if not self.champion_history:
+            return
+        
+        # Get oldest champion
+        oldest = self.champion_history.pop(0)
+        champion_id = oldest['id']
+        
+        print(f"\n⚠️  Removing oldest champion: {champion_id} "
+              f"(from iteration {oldest['iteration']}, return={oldest['return']:.2f})")
+        
+        # Remove from available modules (won't be assigned to agents anymore)
+        if champion_id in self.available_modules:
+            self.available_modules.remove(champion_id)
+        
+        self.champion_count -= 1
+        
+        print(f"✓ Champion removed. Active champions: {[c['id'] for c in self.champion_history]}\n")
+    
+    @classmethod
+    def get_mapping_fn(cls, callback_instance):
+        """
+        Create an agent-to-module mapping function that includes champions.
+        
+        Args:
+            callback_instance: Instance of SelfPlayCallback with champion tracking
+            
+        Returns:
+            Mapping function for use in multi_agent config
+        """
+        def agent_to_module_mapping_fn(agent_id, episode, **kwargs):
+            """Assign agents to modules including dynamic champions."""
+            agent_num = int(agent_id.split("_")[1])
+            
+            # Trainable policies always assigned to their respective agents
+            if agent_num < 2:
+                return f"policy_{agent_num}"
+            
+            # For agent_2 and agent_3, assign from champions and random policies
+            # Skip the first 2 (policy_0, policy_1 which are trainable)
+            candidates = callback_instance.available_modules[2:]
+            
+            if not candidates:
+                # Fallback if no champions yet
+                return f"policy_{agent_num}"
+            
+            # Use episode hash AND agent_num for deterministic but varied assignment
+            # This ensures agent_2 and agent_3 can get different opponents
+            idx = (hash(episode.id_) + agent_num) % len(candidates)
+            return candidates[idx]
+        
+        return agent_to_module_mapping_fn
