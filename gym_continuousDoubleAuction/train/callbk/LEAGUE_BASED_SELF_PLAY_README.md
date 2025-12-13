@@ -38,10 +38,13 @@ This implementation extends the competitive self-play training with **champion s
 from gym_continuousDoubleAuction.train.callbk.self_play_callback_mod import SelfPlayCallback
 from ray.rllib.algorithms.ppo import PPOConfig
 
-# Create callback with custom thresholds
+# Create callback with generalized configuration
 callback = SelfPlayCallback(
+    num_trainable_policies=2,   # Number of learning agents (k)
+    num_random_policies=2,      # Number of initial fixed/random agents (m)
     std_dev_multiplier=2.0,     # Snapshot when return > mean + 2*std
     max_champions=5,            # Keep last 5 champions (rolling window)
+    min_iterations_between_champions=10 # Minimum cooldown between snapshots
 )
 
 config = (
@@ -50,8 +53,9 @@ config = (
     .callbacks(lambda: callback)
     .multi_agent(
         policies={...},
+        # CRITICAL: Use the dynamic mapper from the callback!
         policy_mapping_fn=SelfPlayCallback.get_mapping_fn(callback),
-        policies_to_train=["policy_0", "policy_1"],
+        policies_to_train=["policy_0", "policy_1"], # First k policies
     )
 )
 
@@ -70,6 +74,8 @@ python gym_continuousDoubleAuction/train/callbk/example_league_based_training.py
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
+| `num_trainable_policies` | 2 | Number of trainable policies (Agents 0 to k-1) |
+| `num_random_policies` | 2 | Number of initial random/fixed policies (Agents k to n-1) |
 | `std_dev_multiplier` | 2.0 | Multiplier for relative ranking (`mean + N * std`) |
 | `max_champions` | 5 | Maximum champions in league (rolling window) |
 | `min_iterations_between_champions` | 10 | Minimum iterations between champion snapshots |
@@ -102,20 +108,16 @@ A policy with return -500 is "exceptional" relative to the mean.
 
 ```
 Iteration 1-20:
-  Agents: [policy_0, policy_1, random, random]
-  - Both trainable policies compete independently
+  Agents: [policy_0...policy_k-1] (Trainable) + [policy_k...policy_n-1] (Initial Opponents)
+  - Trainable policies compete independently
   
 Iteration 21 (policy_0 return > mean + 2*std):
-  Create champion_1 (frozen snapshot of policy_0)
-  Agents: [policy_0, policy_1, random, champion_1]
+  Create champion_1 (frozen snapshot)
+  Agents: [Trainable Policies] + [Initial Opponents + champion_1]
   
-Iteration 40 (policy_1 achieves exceptional relative return):
-  Create champion_2 (frozen snapshot of policy_1)
-  Agents: [policy_0, policy_1, champion_1, champion_2]
-  
-Iteration 60+:
-  Rolling window maintains last 5 champions
-  Old champions phased out, new ones added
+Iteration 40+:
+  Pool grows as champions are added
+  Opponent agents (k...n-1) rotate through pool
 ```
 
 ### League Evolution
@@ -178,10 +180,13 @@ The callback logs:
 **Cause:** One policy dominates  
 **Fix:** Adjust learning rates or lower threshold
 
-### Issue: Champions not appearing in episodes
+### Issue: Champions not appearing in episodes (Agents always play same policy)
+**Cause:** Using static `policy_mapping_fn` from `policy_handler.py` instead of dynamic one.
+**Fix:** Must use `policy_mapping_fn=SelfPlayCallback.get_mapping_fn(callback)` in config.
 
-**Cause:** Mapping function not using `get_mapping_fn`  
-**Fix:** Ensure using `SelfPlayCallback.get_mapping_fn(callback)`
+### Issue: Module ID collision error
+**Cause:** Reusing champion names after removal.
+**Fix:** Fixed in latest version via monotonic ID counter (ensure you have latest code).
 
 ### Issue: Memory issues
 
@@ -194,18 +199,28 @@ The callback logs:
 
 1. **Performance Check**: Compare agent returns to threshold
 2. **Cooldown Check**: Ensure min iterations elapsed since last champion
-3. **Rolling Window**: Remove oldest if at max capacity
-4. **Module Creation**: Use `algorithm.add_module()` with `RLModuleSpec.from_module()`
+3. **Rolling Window**: Remove oldest if at max capacity (from active list)
+4. **ID Generation**: Use monotonic counter (e.g. `champion_15`) to prevent naming collisions
+5. **Module Creation**: Use `algorithm.add_module()` with `RLModuleSpec.from_module()`
 5. **Weight Copy**: Use `algorithm.set_state()` to copy weights
 6. **Update Tracking**: Add to `champion_history` and `available_modules`
 
 ### Agent-to-Module Mapping
 
 ```python
-agent_0 → policy_0 (trainable)
-agent_1 → policy_1 (trainable)
-agent_2 → random OR champion (rotates via episode hash)
-agent_3 → random OR champion (rotates via episode hash)
+# 1. Trainable Agents (0 to k-1)
+# Always play their own policy to ensure stable learning
+agent_0 → policy_0
+...
+agent_k-1 → policy_k-1
+
+# 2. Opponent Agents (k to n-1)
+# Assigned from pool: [Initial Randoms + Active Champions]
+# Selection is probabilistic per episode:
+index = (hash(episode_id) + agent_num) % len(pool)
+
+# Ensures deterministic but varied opponents.
+# Agent 2 and Agent 3 (if m >= 2) will likely face different opponents.
 ```
 
 ## Migration from Old Approach
