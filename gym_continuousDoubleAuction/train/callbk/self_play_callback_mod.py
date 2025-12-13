@@ -12,25 +12,42 @@ from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
 
 
 class SelfPlayCallback(RLlibCallback):
-    def __init__(self, std_dev_multiplier=0.1, max_champions=4):
+    def __init__(
+        self, 
+        num_trainable_policies=2, 
+        num_random_policies=2, 
+        std_dev_multiplier=2.0, 
+        max_champions=2, 
+        min_iterations_between_champions=2,
+    ):
         """
-        Initialize league-based self-play callback.
+        Initialize league-based self-play callback with generalized agent configuration.
         
         Args:
+            num_trainable_policies (k): Number of policies that learn (Agents 0 to k-1)
+            num_random_policies (m): Number of initial fixed/random policies (Agents k to n-1)
             std_dev_multiplier: Number of standard deviations above mean to trigger snapshot
             max_champions: Maximum number of champions to maintain (rolling window)
+            
+        Total Agents n = k + m
         """
         super().__init__()
+        
+        self.num_trainable = num_trainable_policies
+        self.num_random = num_random_policies
         
         # Champion snapshotting configuration
         self.std_dev_multiplier = std_dev_multiplier
         self.max_champions = max_champions
-        self.min_iterations_between_champions = 2
+        self.min_iterations_between_champions = min_iterations_between_champions
         
         # Champion tracking state
         self.champion_count = 0
+        self.champion_id_counter = 0  # Monotonic counter for unique IDs
         self.champion_history = []  # List of dicts with champion metadata
-        self.available_modules = ["policy_0", "policy_1", "policy_2", "policy_3"]
+        
+        # Initialize available modules: [policy_0...policy_k-1] + [policy_k...policy_n-1]
+        self.available_modules = [f"policy_{i}" for i in range(self.num_trainable + self.num_random)]
         
         # Episode data storage (unchanged)
         self.ID = None
@@ -53,13 +70,18 @@ class SelfPlayCallback(RLlibCallback):
         print(f"Episode {episode.id_} Started - Policy Map:")
         
         # replicate mapping logic to display what will happen
-        candidates = self.available_modules[2:]
+        # Available modules contains: [0..k-1 (Trainable), k..n-1 (Random), Champions...]
+        # Opponent pool starts after the trainable policies
+        candidates = self.available_modules[self.num_trainable:]
+        total_agents = self.num_trainable + self.num_random
         
-        for i in range(4):
+        for i in range(total_agents):
             agent_id = f"agent_{i}"
-            if i < 2:
+            if i < self.num_trainable:
+                # Trainable agents always map to their own policy
                 policy = f"policy_{i}"
             else:
+                # Random/League agents map to pool
                 if not candidates:
                     policy = f"policy_{i}"
                 else:
@@ -228,7 +250,7 @@ class SelfPlayCallback(RLlibCallback):
         print(f"Policy Returns: {policy_returns}")
         
         # Check trainable policies for champion status
-        trainable_policies = ["policy_0", "policy_1"]
+        trainable_policies = [f"policy_{i}" for i in range(self.num_trainable)]
         
         best_candidate = None
         best_return = -float('inf')
@@ -294,8 +316,9 @@ class SelfPlayCallback(RLlibCallback):
             return_value: Performance metric that triggered snapshotting
             iteration: Current training iteration
         """
-        # Create unique champion name
-        champion_id = f"champion_{self.champion_count + 1}"
+        # Create unique champion name using monotonic counter
+        self.champion_id_counter += 1
+        champion_id = f"champion_{self.champion_id_counter}"
         
         print(f"\n{'*'*80}")
         print(f"🏆 CREATING CHAMPION SNAPSHOT 🏆")
@@ -394,20 +417,21 @@ class SelfPlayCallback(RLlibCallback):
             agent_num = int(agent_id.split("_")[1])
             
             # Trainable policies always assigned to their respective agents
-            if agent_num < 2:
+            if agent_num < callback_instance.num_trainable:
                 return f"policy_{agent_num}"
             
-            # For agent_2 and agent_3, assign from champions and random policies
-            # Skip the first 2 (policy_0, policy_1 which are trainable)
-            candidates = callback_instance.available_modules[2:]
-            print(f"candidates: {candidates}")
-            
+            # For random/league agents, assign from pool (champions + original randoms)
+            # The pool starts AFTER the trainable policies
+            # Pool = available_modules[k:] 
+            candidates = callback_instance.available_modules[callback_instance.num_trainable:]
+            print(f"\nCandidates: {candidates}")
+
             if not candidates:
                 # Fallback if no champions yet
                 return f"policy_{agent_num}"
             
             # Use episode hash AND agent_num for deterministic but varied assignment
-            # This ensures agent_2 and agent_3 can get different opponents
+            # This ensures opponent agents can get different opponents
             idx = (hash(episode.id_) + agent_num) % len(candidates)
             return candidates[idx]
         
