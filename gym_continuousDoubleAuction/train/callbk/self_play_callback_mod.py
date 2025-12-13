@@ -400,6 +400,7 @@ class SelfPlayCallback(RLlibCallback):
             # For agent_2 and agent_3, assign from champions and random policies
             # Skip the first 2 (policy_0, policy_1 which are trainable)
             candidates = callback_instance.available_modules[2:]
+            print(f"candidates: {candidates}")
             
             if not candidates:
                 # Fallback if no champions yet
