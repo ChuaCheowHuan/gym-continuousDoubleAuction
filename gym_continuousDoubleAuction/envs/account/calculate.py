@@ -4,8 +4,11 @@ class Calculate(object):
 
     def cal_nav(self):
         """
-        The trader's cash, cash_on_hold & his holding's value (position_val) at
-        this current t step.
+        Calculate Net Asset Value (NAV) for the current time step.
+        
+        NAV = Cash + Cash on Hold (Collateral) + Position Value (Mark-to-Market).
+        In a zero-sum MARL context, this represents the total wealth of the agent.
+        Conservation of value implies Sum(NAV_all_agents) is constant (excluding trading fees if any).
         """
 
         self.nav =  self.cash + self.cash_on_hold + self.position_val
@@ -13,7 +16,10 @@ class Calculate(object):
 
     def cal_total_profit(self):
         """
-        The current NAV at t step minus the initial NAV at the start of the trading session.
+        Calculate cumulative profit/loss since the start of the episode.
+        
+        Total Profit = Current NAV - Initial NAV.
+        This is the primary reward signal in many RL implementations.
         """
 
         self.total_profit = self.nav - self.init_nav
@@ -21,7 +27,15 @@ class Calculate(object):
 
     def cal_profit(self, position, mkt_val, raw_val):
         """
-        The profit or loss from current holdings (position_val).
+        Calculate unrealized profit/loss for the current position based on market value.
+        
+        Args:
+            position (str): 'long' or 'short'.
+            mkt_val (Decimal): Current Market Value of the position.
+            raw_val (Decimal): Cost Basis (VWAP * Quantity).
+            
+        Returns:
+            Decimal: Profit or Loss.
         """
 
         if position == 'long':
@@ -32,11 +46,17 @@ class Calculate(object):
 
     def mark_to_mkt(self, ID, mkt_price):
         """
-        Update acc for a trader with last price in most recent entry of tape.
-
-        note:
-            net_position > 0 for long.
-            net_position < 0 for short.
+        Mark the account to market using the latest trade price.
+        
+        Updates:
+            self.profit: Unrealized PnL for the current step.
+            self.position_val: Updated position value (Cost Basis + Unrealized PnL).
+            self.nav: Updated Net Asset Value.
+            
+        Note:
+            In this system, 'Net Position' acts as the primary state variable.
+            Long: Profit = (Price - VWAP) * Q
+            Short: Profit = (VWAP - Price) * Q
         """
 
         price_diff = (self.VWAP - mkt_price, mkt_price - self.VWAP)[self.net_position >= 0] # (on_false, on_true)[condition]
