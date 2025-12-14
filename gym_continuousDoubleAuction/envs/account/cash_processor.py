@@ -104,3 +104,19 @@ class Cash_Processor(object):
         self.cash_on_hold -= order_val
         self.cash += order_val
         return 0
+
+    def realize_pnl_cash_transfer(self, party, cash_release, margin_release=0):
+        """
+        Update cash after a position close (partial or full).
+        
+        Args:
+            party (str): 'init_party' or 'counter_party'
+            cash_release (Decimal): Total cash to return to 'cash' (Principal + PnL)
+            margin_release (Decimal): Amount to release from 'cash_on_hold' (only for counter_party limit orders)
+        """
+        if party == 'init_party':
+            self.cash += cash_release
+        else: # counter_party
+            self.cash_on_hold -= margin_release
+            self.cash += cash_release
+        return 0

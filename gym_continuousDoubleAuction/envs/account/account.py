@@ -107,15 +107,76 @@ class Account(Calculate, Cash_Processor):
         return mkt_val
 
     def _size_decrease(self, trade, position, party, trade_val):
-        size_left = abs(self.net_position) - Decimal(trade.get('quantity'))
+        """
+        Handle partial fill / size decrease.
+        VWAP should NOT change on partial close (FIFO/Average Cost assumption).
+        """
+        quantity = Decimal(trade.get('quantity'))
+        size_left = abs(self.net_position) - quantity
+        
+        # 1. Calculate Realized PnL & Cash Release
+        # Cost Basis of the portion being closed
+        cost_basis = quantity * self.VWAP
+        
+        if position == 'long':
+            # Long Close: We sold @ Price.
+            # Cash In = Trade Value (Price * Q)
+            # PnL = Trade Value - Cost Basis
+            cash_release = trade_val 
+            # realized_pnl = trade_val - cost_basis (implicit in NAV check)
+            
+        else: # short
+            # Short Cover: We bought @ Price.
+            # We posted 'Cost Basis' (Entry Value) as collateral (roughly, or exactly if 100% margin).
+            # Actually, we rely on the fact that 'Cash' was deducted by Entry Value.
+            # So to reverse it: We get back Entry Value (Principal) + PnL.
+            # PnL = Entry Value - Trade Value (Exit Cost).
+            # Cash In = Entry Value + (Entry Value - Trade Value) = 2*Entry - Exit.
+            cash_release = (Decimal(2) * cost_basis) - trade_val
+            
+        # 2. Update Cash
+        # If counter_party limit order, we also need to release 'cash_on_hold' corresponding to trade_val?
+        # No, 'size_decrease' implies we are reducing an EXISTING position.
+        # If I am 'counter_party', I *placed* a limit order to CLOSE.
+        # If I placed a Limit Sell (to exit Long): My shares are locked? No, only Cash is locked in this system?
+        # This system only locks CASH for BUY orders. Does it lock SHARES for sell orders?
+        # looking at order_in_book_init_party:
+        # "If there are new unfilled orders ... reduce his cash & increase his cash_on_hold"
+        # It calculates val = price * quantity.
+        # It seems it ONLY locks Cash. It doesn't seem to verify Share availability for Sells?
+        # (The system allows naked shorting? No, process_acc checks net_position).
+        # Assuming only Cash is locked for OPENING orders (Buys or Short Sells).
+        # If I am Closing a Short (Buying), I *did* place a Buy Order?
+        # If I am Counter Party (Limit Buy to cover): I put Cash on Hold.
+        # So I need to release that Cash on Hold.
+        
+        # If I am counter_party, I placed a Limit Order.
+        # If that Limit Order was to BUY (Cover Short):
+        # I locked 'LimitPrice * Q' in Cash On Hold.
+        # I need to release that.
+        # And I need to get the 'Cash Flow' from the trade.
+        
+        margin_release = 0
+        if party != 'init_party': # counter_party
+             margin_release = trade_val # The amount I reserved for this trade
+             
+        self.realize_pnl_cash_transfer(party, cash_release, margin_release)
+
+        # 3. Update Position Stats
         if size_left > 0:
-            self.VWAP = (abs(self.net_position) * self.VWAP - trade_val) / size_left
-            raw_val = size_left * self.VWAP # value acquired with VWAP
+            raw_val = size_left * self.VWAP
             mkt_val = size_left * trade.get('price')
+            
+            # Recalculate 'profit' for the remaining portion (Mark to Market)
             self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
+            
         else: # size_left == 0
-            mkt_val = self._covered(trade, position)
-        self.size_decrease_cash_transfer(party, trade_val)
+            # _covered was only handling cash transfer and reset. 
+            # We already handled cash transfer via realize_pnl_cash_transfer.
+            # So just reset stats.
+            self.position_val = 0
+            self.VWAP = 0
+            
         return 0
 
     def _covered_side_chg(self, trade, position, party):
