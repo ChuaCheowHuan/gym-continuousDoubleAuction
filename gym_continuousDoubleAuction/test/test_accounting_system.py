@@ -224,5 +224,73 @@ class TestAccountingSystem(unittest.TestCase):
         self.assertEqual(self.acc.nav, Decimal(950))
         self.assertEqual(self.acc.net_position, 0)
 
+    def test_position_flip_short_to_long(self):
+        """
+        Test flipping from Net Short to Net Long in a single trade.
+        Scenario: Short 2 @ 100. Buy 4 @ 100.
+        Result should be: Net Long 2 @ 100.
+        """
+        # 1. Open Short: 2 @ 100
+        # Cash: 1000 - 200 = 800. Pos: -2. VWAP: 100.
+        trade_short = {
+            'price': Decimal(100),
+            'quantity': Decimal(2),
+            'init_party': {'side': 'ask', 'ID': self.trader_id},
+            'counter_party': {'ID': 'Other'}
+        }
+        self.acc.process_acc(trade_short, 'init_party')
+        self.assertEqual(self.acc.cash, Decimal(800))
+        self.assertEqual(self.acc.net_position, -2)
+
+        # 2. Execute Flip: Buy 4 @ 100
+        # This checks _net_short -> _covered_side_chg -> _covered logic
+        trade_flip = {
+            'price': Decimal(100),
+            'quantity': Decimal(4),
+            'init_party': {'side': 'bid', 'ID': self.trader_id},
+            'counter_party': {'ID': 'Other'}
+        }
+        self.acc.process_acc(trade_flip, 'init_party')
+        
+        # EXPECTED STATE (Logic):
+        # A. Cover 2 Short @ 100 (Cost 200, Value 200). PnL = 0.
+        #    Cash Return = Collateral(200) + PnL(0) = 200.
+        #    Intermediate Cash = 800 + 200 = 1000.
+        # B. Open Long 2 @ 100 (Cost 200).
+        #    Cash Paid = 200.
+        #    Final Cash = 1000 - 200 = 800.
+        
+        self.assertEqual(self.acc.net_position, 2)
+        self.assertEqual(self.acc.position_val, Decimal(200)) # 2 * 100
+        self.assertEqual(self.acc.cash, Decimal(800), "Cash should be 800 after flipping Short 2 to Long 2 at same price")
+        self.assertEqual(self.acc.nav, Decimal(1000))
+
+    def test_self_execution(self):
+        """
+        Test 'Liquidity Trap' where agent matches with themselves.
+        Scenario: Agent has Limit Buy 1 @ 10 in book (Collateral 10).
+        Agent sends Limit Sell 1 @ 10 (or Market Sell).
+        Result: Execution triggers `init_is_counter`. 
+        Held cash (10) should be released. No PnL.
+        """
+        # 1. Place Limit Buy 1 @ 10
+        order_buy = {'price': Decimal(10), 'quantity': Decimal(1), 'type': 'limit', 'side': 'bid', 'trade_id': self.trader_id}
+        self.acc.order_in_book_init_party(order_buy)
+        self.assertEqual(self.acc.cash_on_hold, Decimal(10))
+        self.assertEqual(self.acc.cash, Decimal(990))
+
+        # 2. Match with Self (Sell 1 @ 10)
+        # Note: In real engine, this is handled by `_process_trades`. 
+        # Here we simulate the specific call `init_is_counter_cash_transfer`
+        
+        trade_val = Decimal(10)
+        self.acc.init_is_counter_cash_transfer(trade_val)
+        
+        # Expectation: Cash on hold released. 
+        # Net effect: 990 + 10 = 1000. 
+        # Position unchanged (Buying from self = 0 net change).
+        self.assertEqual(self.acc.cash_on_hold, Decimal(0))
+        self.assertEqual(self.acc.cash, Decimal(1000))
+
 if __name__ == '__main__':
     unittest.main()
