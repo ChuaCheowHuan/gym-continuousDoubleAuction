@@ -4,27 +4,18 @@ class Cash_Processor(object):
     """
     Handles the cash & cash_on_hold for the trader's account.
 
-    Context:
-        In this League-Based MARL environment, agents trade in a Zero-Sum setting.
-        To ensure solvency and prevent leverage, the system enforces a 100% Margin Requirement.
-    
-    Mechanics:
-        - When an order is placed (Buy or Short Sell), the full value (Price * Quantity) 
-          is moved from 'Cash' to 'Cash on Hold' (Collateral).
-        - This prevents the agent from re-using the same funds for multiple orders ("Double Spending").
-        - Funds remain locked until the order is Executed (Trade) or Cancelled.
+    note:
+        When the trader places an order, certain amount of cash
+        (the order's value) is placed on hold so that his amount of cash will
+        decrease accordingly.
+        This is to prevent the trader having the ability to keep placing orders
+        as if he has an unlimited amount of cash.
     """
 
     def order_in_book_init_party(self, order_in_book):
         """
-        Lock collateral for a new order placed by the agent.
-        
-        Args:
-            order_in_book (dict): The order details (price, quantity).
-            
-        Effect:
-            Reduces 'cash' and increases 'cash_on_hold' by the full order value.
-            This enforces the 100% margin requirement.
+        If there are new unfilled orders for this trader(init_party),
+        reduce his cash & increase his cash_on_hold.
         """
 
         # if there's order_in_book for init_party (party2)
@@ -38,17 +29,6 @@ class Cash_Processor(object):
         return 0
 
     def size_increase_cash_transfer(self, party, trade_val):
-        """
-        Handle cash flow when a position size increases (Open/Add).
-        
-        Args:
-            party (str): 'init_party' (Aggressor) or 'counter_party' (Maker).
-            trade_val (Decimal): Value of the trade (Price * Quantity).
-            
-        Effect:
-            - Init Party: Cash was free, now deducted (paid).
-            - Counter Party: Cash was already on hold (locked limit order), now deducted (used).
-        """
         if party == 'init_party':
             self.cash -= trade_val # initial order cash reduction
         else: #counter_party
@@ -56,17 +36,6 @@ class Cash_Processor(object):
         return 0
 
     def size_decrease_cash_transfer(self, party, trade_val):
-        """
-        Handle cash flow when a position size decreases (Close/Reduce).
-        
-        Args:
-            party (str): 'init_party' or 'counter_party'.
-            trade_val (Decimal): Value of the trade.
-            
-        Effect:
-            - Returns the cash value of the trade to the agent.
-            - Note: For logic involving PnL realization, see `realize_pnl_cash_transfer`.
-        """
         if party == 'init_party':
             self.cash += trade_val # portion covered goes back to cash
         else: #counter_party
@@ -77,10 +46,7 @@ class Cash_Processor(object):
 
     def size_zero_cash_transfer(self, trade_val):
         """
-        Adjust cash when a position is fully closed (Net Position = 0).
-        
-        This handles the final cash settlement, adding the entire position value 
-        (Cost Basis + PnL) back to cash, ensuring the trade value isn't double-counted.
+        add position_val back to cash minus trade_val, trade_val is handled in size_decrease_cash_transfer
         """
 
         self.cash += self.position_val - trade_val
@@ -88,11 +54,7 @@ class Cash_Processor(object):
 
     def init_is_counter_cash_transfer(self, trade_val):
         """
-        Handle the edge case where an agent trades against themselves.
-        
-        Effect:
-            Just unlocks the cash_on_hold. No net change in wealth 
-            (Wealth transfer from self to self).
+        init_party is also counter_party.
         """
 
         self.cash_on_hold -= trade_val
@@ -101,16 +63,21 @@ class Cash_Processor(object):
 
     def modify_cash_transfer(self, qoute, order):
         """
-        Adjust collateral when an existing order in the LOB is modified.
-        
-        Logic:
-            - If size increases: Lock additional collateral.
-            - If size decreases: Release excess collateral back to cash.
+        Update account of trader accordingly if his orders in LOB changes.
+
+        note:
+            Changes in LOB orders refer to changes in size.
+            If size decrease, deduct from cash_on_hold, return to cash.
+            If size increase, deduct from cash, add to cash_on_hold.
         """
 
         order_val = (order.price) * (order.quantity)
 
+
+
         qoute_val = Decimal(str(qoute['price'])) * qoute['quantity']
+        
+        
         
         if order_val >= qoute_val: # reducing size
             diff = order_val - qoute_val
@@ -126,33 +93,14 @@ class Cash_Processor(object):
 
     def cancel_cash_transfer(self, order):
         """
-        Release collateral when an order is cancelled.
-        
-        Effect:
-            Moves the full order value from 'cash_on_hold' back to 'cash'.
+        Update account of trader accordingly if his order in LOB is cancelled.
+
+        note:
+            deduct from cash_on_hold, return to cash.
         """
 
         order_val = (order.price) * (order.quantity)
         # deduct from cash_on_hold, return to cash
         self.cash_on_hold -= order_val
         self.cash += order_val
-        return 0
-
-    def realize_pnl_cash_transfer(self, party, cash_release, margin_release=0):
-        """
-        Execute explicit cash transfer for Realized PnL events (e.g. Partial Fills).
-        
-        Crucial for Short Covers and Partial Closes where:
-        Cash Return = Principal (Collateral) + Realized Profit (or minus Loss).
-        
-        Args:
-            party (str): 'init_party' or 'counter_party'
-            cash_release (Decimal): Total amount to credit to 'cash'.
-            margin_release (Decimal): Amount to unblock from 'cash_on_hold'.
-        """
-        if party == 'init_party':
-            self.cash += cash_release
-        else: # counter_party
-            self.cash_on_hold -= margin_release
-            self.cash += cash_release
         return 0
