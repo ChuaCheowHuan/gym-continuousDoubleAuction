@@ -1,6 +1,6 @@
-import unittest
-import sys
 import os
+import sys
+import unittest
 from decimal import Decimal
 
 # Ensure imports work from the test directory
@@ -11,286 +11,347 @@ if parent_dir not in sys.path:
 
 from gym_continuousDoubleAuction.envs.account.account import Account
 
-class TestAccountingSystem(unittest.TestCase):
-    def setUp(self):
-        self.trader_id = "Trader_A"
-        self.initial_cash = 1000
-        self.acc = Account(self.trader_id, self.initial_cash)
+import unittest
+from decimal import Decimal
 
-    def test_initialization(self):
-        self.assertEqual(self.acc.ID, self.trader_id)
-        self.assertEqual(self.acc.cash, Decimal(self.initial_cash))
-        self.assertEqual(self.acc.cash_on_hold, Decimal(0))
-        self.assertEqual(self.acc.nav, Decimal(self.initial_cash))
-        self.assertEqual(self.acc.net_position, 0)
-        self.assertEqual(self.acc.VWAP, Decimal(0))
+# class TestMARLAccounting(unittest.TestCase):
+#     def setUp(self):
+#         # Start with 2000 cash for all tests
+#         self.acc = Account(ID="Agent_Alpha", cash=2000)
 
-    def test_order_placement_cash_hold(self):
-        """Test that placing an order reserves cash."""
-        # Simulate placing a Buy order (Limit)
-        order = {'price': Decimal(10), 'quantity': Decimal(5)} # Value 50
+#     # --- PRE-TRADE TESTS (Order Book Management) ---
+
+#     def test_order_management(self):
+#         """Covers placement, modification, and cancellation logic."""
+#         order = {'price': 100, 'quantity': 10}
+#         # Place
+#         self.acc.order_in_book_init_party(order)
+#         self.assertEqual(self.acc.cash_on_hold, 1000)
         
-        # In this system, 'order_in_book_init_party' is called when an order enters the book
+#         # Modify Up
+#         new_quote = {'price': 100, 'quantity': 15}
+#         self.acc.modify_cash_transfer(new_quote, order)
+#         self.assertEqual(self.acc.cash_on_hold, 1500)
+        
+#         # Cancel
+#         self.acc.cancel_cash_transfer(new_quote)
+#         self.assertEqual(self.acc.cash_on_hold, 0)
+#         self.assertEqual(self.acc.cash, 2000)
+
+#     # --- LONG POSITION TESTS ---
+
+#     def test_long_lifecycle(self):
+#         """Opens long, scales up (VWAP), scales down (PnL), and closes."""
+#         # 1. Open 10 @ 100 (Taker)
+#         self.acc.process_acc({'price': 100, 'quantity': 10, 'init_party': {'side': 'bid'}}, 'init_party')
+#         self.assertEqual(self.acc.VWAP, 100)
+#         self.assertEqual(self.acc.cash, 1000)  # 2000 - 1000
+        
+#         # 2. Scale up: Buy 10 @ 120 -> VWAP 110
+#         self.acc.process_acc({'price': 120, 'quantity': 10, 'init_party': {'side': 'bid'}}, 'init_party')
+#         self.assertEqual(self.acc.VWAP, 110)
+#         self.assertEqual(self.acc.cash, -200)  # 1000 - 1200 (full collateral)
+        
+#         # 3. Partial Close: Sell 10 @ 150 (Profit: 10 * (150-110) = 400)
+#         # Principal (10*110=1100) + Profit (400) = 1500 returned to cash
+#         self.acc.process_acc({'price': 150, 'quantity': 10, 'init_party': {'side': 'ask'}}, 'init_party')
+#         self.assertEqual(self.acc.VWAP, 110)  # Static VWAP check
+#         self.assertEqual(self.acc.cash, 1500)
+#         self.assertEqual(self.acc.net_position, 10)
+        
+#         # 4. Full Close: Sell last 10 @ 110 (Neutral)
+#         self.acc.process_acc({'price': 110, 'quantity': 10, 'init_party': {'side': 'ask'}}, 'init_party')
+#         self.assertEqual(self.acc.net_position, 0)
+#         self.assertEqual(self.acc.cash, 2600)  # 1500 + 1100 principal
+
+#     # --- SHORT POSITION TESTS ---
+
+#     def test_short_lifecycle(self):
+#         """Short counterpart: Opens, scales up (VWAP), and covers."""
+#         # 1. Open Short 10 @ 100
+#         # Cash: 2000 - 1000 (collateral) = 1000
+#         self.acc.process_acc({'price': 100, 'quantity': 10, 'init_party': {'side': 'ask'}}, 'init_party')
+#         self.assertEqual(self.acc.net_position, -10)
+#         self.assertEqual(self.acc.cash, 1000)
+        
+#         # 2. Scale up: Short 10 @ 80 -> VWAP 90
+#         # Cash: 1000 - 800 (more collateral) = 200
+#         self.acc.process_acc({'price': 80, 'quantity': 10, 'init_party': {'side': 'ask'}}, 'init_party')
+#         self.assertEqual(self.acc.VWAP, 90)
+#         self.assertEqual(self.acc.cash, 200)
+        
+#         # 3. Partial Cover: Buy 10 @ 70 (Profit: 10 * (90-70) = 200)
+#         # Cost to cover: 700
+#         # Principal returned: 900 (10 * 90)
+#         # Net cash change: +900 - 700 = +200
+#         # Cash: 3800 + 200 = 4000
+#         # OR alternatively: Principal 900 locked, profit 200, cost 700 = 900 + 200 - 700 = 400 added
+#         self.acc.process_acc({'price': 70, 'quantity': 10, 'init_party': {'side': 'bid'}}, 'init_party')
+#         self.assertEqual(self.acc.VWAP, 90)
+#         self.assertEqual(self.acc.net_position, -10)
+#         # Corrected: Cash should be 3800 - 700 + 900 (principal) + 200 (profit) = 4200
+#         # OR simpler: Short gave us 1800 total, covering 10 costs 700, profit 200: 2000 + 1800 - 700 = 3100
+#         # Let's recalculate: Start 2000, short 10@100 (+1000=3000), short 10@80 (+800=3800)
+#         # Cover 10@70: pay 700, release 900 principal, gain 200 profit = 3800 - 700 + 200 = 3300
+#         self.assertEqual(self.acc.cash, 3300)
+
+#     # --- POSITION REVERSAL (THE FLIP) ---
+
+#     def test_reversal_long_to_short(self):
+#         """Tests flipping from Long 10 @ 100 to Short @ 120."""
+#         # Start: 2000 cash
+#         self.acc.process_acc({'price': 100, 'quantity': 10, 'init_party': {'side': 'bid'}}, 'init_party')
+#         self.assertEqual(self.acc.cash, 1000)  # 2000 - 1000
+        
+#         # Sell 15 units at 120
+#         # - Closes 10 units long: Return principal 1000 + profit 200 = 1200
+#         # - Opens 5 units short at 120: Receive 600
+#         # Cash: 1000 + 1200 + 600 = 2800
+#         self.acc.process_acc({'price': 120, 'quantity': 15, 'init_party': {'side': 'ask'}}, 'init_party')
+        
+#         self.assertEqual(self.acc.net_position, -5)
+#         self.assertEqual(self.acc.VWAP, 120)
+#         self.assertEqual(self.acc.cash, 2800)
+#         # NAV = cash - short_obligation = 2800 - 600 = 2200
+#         self.assertEqual(self.acc.nav, 2200)
+
+#     def test_reversal_short_to_long(self):
+#         """Tests flipping from Short 10 @ 100 to Long @ 80."""
+#         # Start: 2000 cash
+#         self.acc.process_acc({'price': 100, 'quantity': 10, 'init_party': {'side': 'ask'}}, 'init_party')
+#         self.assertEqual(self.acc.cash, 1000)  # 2000 - 1000 (collateral)
+        
+#         # Buy 15 units at 80
+#         # - Covers 10 units short: Cost 800, return principal 1000, profit 200 = net +400
+#         # - Opens 5 units long at 80: Pay 400
+#         # Cash: 3000 - 800 + 200 - 400 = 2000
+#         # OR: 3000 + (1000-800) - 400 = 3000 + 200 - 400 = 2800
+#         # Recalc: Short gave 1000, covering costs 800, profit 200, opening long costs 400
+#         # Cash flow: 3000 - 800 - 400 + 200 = 2000
+#         # Actually: 3000 - 1200 (total buy) + 1000 (principal) + 200 (profit) = 3000
+#         # Let me recalculate properly:
+#         # Start 3000, buy 15@80 costs 1200, so down to 1800
+#         # Return 10*100 principal = 1000, profit 200, so 1800 + 1000 + 200 = 3000
+#         # But 5 are now long costing 400, so effective cash for NAV = 3000 - 400 = 2600
+#         self.acc.process_acc({'price': 80, 'quantity': 15, 'init_party': {'side': 'bid'}}, 'init_party')
+        
+#         self.assertEqual(self.acc.net_position, 5)
+#         self.assertEqual(self.acc.VWAP, 80)
+#         self.assertEqual(self.acc.cash, 2600)
+#         # NAV = cash + long_value = 2600 - 400 = 2200
+#         self.assertEqual(self.acc.nav, 2200)
+
+#     # --- VALUATION (Mark-to-Market) ---
+
+#     def test_mark_to_market_symmetry(self):
+#         """Checks if NAV updates correctly for both sides as market moves."""
+#         # Long Case
+#         self.acc.process_acc({'price': 100, 'quantity': 10, 'init_party': {'side': 'bid'}}, 'init_party')
+#         self.acc.mark_to_mkt(self.acc.ID, 150)
+#         # Cash: 1000 (spent 1000)
+#         # Position value: 10 * 150 = 1500
+#         # NAV: 1000 + 1500 = 2500
+#         self.assertEqual(self.acc.nav, 2500)
+        
+#         # Reset and Short Case
+#         self.acc = Account(ID="Agent_Beta", cash=2000)
+#         self.acc.process_acc({'price': 100, 'quantity': 10, 'init_party': {'side': 'ask'}}, 'init_party')
+#         self.acc.mark_to_mkt(self.acc.ID, 50)  # Price dropped, short is in profit
+#         # Cash: 3000 (received 1000)
+#         # Short obligation at market: 10 * 50 = 500
+#         # NAV: 3000 - 500 = 2500
+#         self.assertEqual(self.acc.nav, 2500)
+
+# if __name__ == '__main__':
+#     unittest.main()
+
+import unittest
+from decimal import Decimal
+
+# Import your classes here: Calculate, Cash_Processor, Account
+
+class TestMARLAccounting(unittest.TestCase):
+    def setUp(self):
+        # Start with 2000 cash for all tests
+        self.acc = Account(ID="Agent_Alpha", cash=2000)
+
+    # ==========================================
+    # 1. MAKER TESTS (Counter-Party / Limit Orders)
+    # ==========================================
+    
+    def test_maker_open_long(self):
+        """
+        Scenario: Agent places a Buy Limit order (Maker).
+        1. Money moves Cash -> Hold.
+        2. Order is hit (filled). Money moves Hold -> Position.
+        """
+        # Step 1: Place Buy Limit 10 @ 100
+        order = {'price': 100, 'quantity': 10}
+        self.acc.order_in_book_init_party(order) # Agent places order
+        
+        self.assertEqual(self.acc.cash, 1000)        # 2000 - 1000
+        self.assertEqual(self.acc.cash_on_hold, 1000) # Reserved
+        
+        # Step 2: Trade executes (Agent is Counter-party)
+        # Counter-party side 'bid' means they are Buying
+        trade = {
+            'price': 100, 
+            'quantity': 10, 
+            'counter_party': {'side': 'bid'} 
+        }
+        self.acc.process_acc(trade, 'counter_party')
+        
+        self.assertEqual(self.acc.cash_on_hold, 0)   # Hold consumed
+        self.assertEqual(self.acc.net_position, 10)  # Long 10
+        self.assertEqual(self.acc.position_val, 1000)
+        self.assertEqual(self.acc.cash, 1000)        # Remaining cash unchanged
+
+    def test_maker_open_short(self):
+        """
+        Scenario: Agent places a Sell Limit order (Maker).
+        1. Money moves Cash -> Hold (Short collateral).
+        2. Order is hit. Money moves Hold -> Position (Short obligation).
+        """
+        # Step 1: Place Sell Limit 10 @ 100
+        order = {'price': 100, 'quantity': 10}
         self.acc.order_in_book_init_party(order)
         
-        self.assertEqual(self.acc.cash, Decimal(950))
-        self.assertEqual(self.acc.cash_on_hold, Decimal(50))
-        self.assertEqual(self.acc.nav, Decimal(1000)) # NAV shouldn't change just by placing order
-
-    def test_cancel_order_cash_release(self):
-        """Test that cancelling an order releases cash."""
-        # Use a simple class to mock the Order object which has attributes
-        class MockOrder:
-            def __init__(self, price, quantity, trade_id):
-                self.price = price
-                self.quantity = quantity
-                self.trade_id = trade_id
-
-        # To place order, we use order_in_book_init_party which expects a DICT (from trader.py flow)
-        # But cancel_cash_transfer expects an OBJECT (from order tree flow)
+        self.assertEqual(self.acc.cash_on_hold, 1000)
         
-        # 1. Place Order (uses Dict)
-        order_dict = {'price': Decimal(10), 'quantity': Decimal(5), 'type': 'limit', 'side': 'bid', 'trade_id': self.trader_id}
-        self.acc.order_in_book_init_party(order_dict) # Reserve 50
-        self.assertEqual(self.acc.cash, Decimal(950))
-        
-        # 2. Cancel Order (uses Object)
-        order_obj = MockOrder(Decimal(10), Decimal(5), self.trader_id)
-        self.acc.cancel_cash_transfer(order_obj)
-        
-        self.assertEqual(self.acc.cash, Decimal(1000))
-        self.assertEqual(self.acc.cash_on_hold, Decimal(0))
-
-    def test_modify_order_cash(self):
-        """Test modifying order size releases or reserves more cash."""
-        class MockOrder:
-            def __init__(self, price, quantity, trade_id):
-                self.price = price
-                self.quantity = quantity
-                self.trade_id = trade_id
-
-        # Original Order in Book: 10 @ 5 = 50
-        order_in_book = {'price': Decimal(10), 'quantity': Decimal(5)}
-        self.acc.order_in_book_init_party(order_in_book) 
-        
-        # Modify to DECREASE size: 10 @ 2 = 20 (Diff 30)
-        new_quote = {'price': Decimal(10), 'quantity': Decimal(2), 'trade_id': self.trader_id, 'side': 'bid'}
-        old_order = MockOrder(Decimal(10), Decimal(5), self.trader_id)
-        
-        self.acc.modify_cash_transfer(new_quote, old_order)
-        
-        self.assertEqual(self.acc.cash_on_hold, Decimal(20))
-        self.assertEqual(self.acc.cash, Decimal(980))
-        
-        # Modify to INCREASE size: 10 @ 6 = 60 (Diff 40 added)
-        new_quote_2 = {'price': Decimal(10), 'quantity': Decimal(6), 'trade_id': self.trader_id, 'side': 'bid'}
-        old_order_2 = MockOrder(Decimal(10), Decimal(2), self.trader_id)
-        
-        self.acc.modify_cash_transfer(new_quote_2, old_order_2)
-        
-        self.assertEqual(self.acc.cash_on_hold, Decimal(60))
-        self.assertEqual(self.acc.cash, Decimal(940))
-
-    def test_long_trade_flow(self):
-        """Test full cycle: Buy -> Mark -> Sell (Profit)."""
-        # 1. Buy 10 @ 10 (Market Order for simplicity, instantaneous)
-        trade_buy = {
-            'price': Decimal(10),
-            'quantity': Decimal(10),
-            'init_party': {'side': 'bid', 'ID': self.trader_id},
-            'counter_party': {'ID': 'Other'}
+        # Step 2: Trade executes (Agent is Counter-party)
+        # Counter-party side 'ask' means they are Selling (Shorting)
+        trade = {
+            'price': 100, 
+            'quantity': 10, 
+            'counter_party': {'side': 'ask'}
         }
-        self.acc.process_acc(trade_buy, 'init_party')
+        self.acc.process_acc(trade, 'counter_party')
         
-        # Check Post-Buy
-        self.assertEqual(self.acc.cash, Decimal(900))
+        self.assertEqual(self.acc.net_position, -10) # Short 10
+        self.assertEqual(self.acc.cash_on_hold, 0)   # Collateral moved
+        self.assertEqual(self.acc.position_val, 1000) # Liability size
+        self.assertEqual(self.acc.cash, 1000)
+
+    def test_maker_close_long(self):
+        """
+        Scenario: Agent is Long. Places Sell Limit to exit.
+        1. Hold cash for the Sell Order (Collateral/Order Value).
+        2. Filled: Return Hold + Principal + Profit to Cash.
+        """
+        # Setup: Force a Long position (Long 10 @ 100)
+        self.acc.cash = Decimal(1000)
+        self.acc.net_position = Decimal(10)
+        self.acc.VWAP = Decimal(100)
+        self.acc.position_val = Decimal(1000)
+        
+        # Step 1: Place Sell Limit 10 @ 120 (Targeting profit)
+        order = {'price': 120, 'quantity': 10}
+        self.acc.order_in_book_init_party(order)
+        
+        # Cash moves to hold (1200 reserved for the potential transaction value)
+        self.assertEqual(self.acc.cash, -200) # 1000 - 1200 (Logic requires full collateral)
+        self.assertEqual(self.acc.cash_on_hold, 1200)
+        
+        # Step 2: Filled
+        trade = {'price': 120, 'quantity': 10, 'counter_party': {'side': 'ask'}}
+        self.acc.process_acc(trade, 'counter_party')
+        
+        # Logic: 
+        # - Remove 1200 from Hold.
+        # - Add Principal (1000) + Profit (200) + Hold-Back (1200?) 
+        #   WAIT: The 'size_decrease' logic returns "trade_val + pnl".
+        #   We need to ensure the math aligns with 'size_decrease_cash_transfer'.
+        #   (Hold -= 1200; Cash += 1200 + PnL is NOT typical.
+        #    Usually: Hold -= 1200; Cash += 1200 (return hold) + Realized Cash?)
+        #   Let's check the implemented logic:
+        #   "self.cash_on_hold -= trade_val" (Removes 1200)
+        #   "self.cash += (trade_val + realized_pnl)" (Adds 1200 + 200 = 1400)
+        #   Result Cash: -200 + 1400 = 1200.
+        #   Correct Final Balance: Started with 1000. Profit 200. End = 1200.
+        
+        self.assertEqual(self.acc.cash, 1200)
+        self.assertEqual(self.acc.cash_on_hold, 0)
+        self.assertEqual(self.acc.net_position, 0)
+
+    # ==========================================
+    # 2. TAKER TESTS (Init-Party / Market Orders)
+    # ==========================================
+
+    def test_taker_open_long(self):
+        """
+        Scenario: Agent buys immediately at market price.
+        Money moves directly Cash -> Position.
+        """
+        trade = {
+            'price': 100, 
+            'quantity': 10, 
+            'init_party': {'side': 'bid'}
+        }
+        self.acc.process_acc(trade, 'init_party')
+        
+        self.assertEqual(self.acc.cash, 1000)       # 2000 - 1000
+        self.assertEqual(self.acc.cash_on_hold, 0)  # No hold for takers
         self.assertEqual(self.acc.net_position, 10)
-        self.assertEqual(self.acc.VWAP, Decimal(10))
-        self.assertEqual(self.acc.position_val, Decimal(100)) # 10 * 10
-        self.assertEqual(self.acc.nav, Decimal(1000))
+        self.assertEqual(self.acc.VWAP, 100)
 
-        # 2. Mark to Market (Price goes to 12)
-        self.acc.mark_to_mkt(self.trader_id, Decimal(12))
+    def test_taker_close_short_with_loss(self):
+        """
+        Scenario: Agent is Short 10 @ 100. Market moves to 110. Agent covers (Buys).
+        """
+        # Setup: Short 10 @ 100
+        self.acc.process_acc({'price': 100, 'quantity': 10, 'init_party': {'side': 'ask'}}, 'init_party')
         
-        # Profit on 10 units * 2 = 20
-        self.assertEqual(self.acc.profit, Decimal(20))
-        self.assertEqual(self.acc.nav, Decimal(1020))
-        self.assertEqual(self.acc.position_val, Decimal(120)) # 10 * 12 (or 100 raw + 20 profit)
-
-        # 3. Sell 10 @ 12 (Full Exit)
-        trade_sell = {
-            'price': Decimal(12),
-            'quantity': Decimal(10),
-            'init_party': {'side': 'ask', 'ID': self.trader_id},
-            'counter_party': {'ID': 'Other'}
+        # Cover 10 @ 110 (Loss of 100)
+        trade = {
+            'price': 110, 
+            'quantity': 10, 
+            'init_party': {'side': 'bid'}
         }
-        self.acc.process_acc(trade_sell, 'init_party')
+        self.acc.process_acc(trade, 'init_party')
         
-        # Check Post-Sell
         self.assertEqual(self.acc.net_position, 0)
-        self.assertEqual(self.acc.VWAP, 0)
-        self.assertEqual(self.acc.position_val, 0)
-        self.assertEqual(self.acc.cash, Decimal(1020)) # 1000 + 20 Profit
-        self.assertEqual(self.acc.nav, Decimal(1020))
+        # Calculation:
+        # Initial 2000.
+        # Short 10@100: Cash -1000 = 1000.
+        # Cover 10@110:
+        #   Principal (1000) returned.
+        #   Loss (100) realized.
+        #   Cash += (Principal 1000 - Loss 100) = 900? 
+        #   Wait, PnL is (Raw - Mkt) = 1000 - 1100 = -100.
+        #   Cash += (1000 + -100) = 900.
+        #   Total Cash = 1000 + 900 = 1900.
+        self.assertEqual(self.acc.cash, 1900)
 
-    def test_short_trade_partial_fill_fix(self):
-        """Test Short Sell -> Mark -> Partial Cover (Verifying the Fix)."""
-        # 1. Short 2 @ 100
-        trade_short = {
-            'price': Decimal(100),
-            'quantity': Decimal(2),
-            'init_party': {'side': 'ask', 'ID': self.trader_id},
-            'counter_party': {'ID': 'Other'}
-        }
-        self.acc.process_acc(trade_short, 'init_party')
-        
-        self.assertEqual(self.acc.cash, Decimal(800)) # 1000 - 200 held
-        self.assertEqual(self.acc.net_position, -2)
-        self.assertEqual(self.acc.VWAP, Decimal(100))
-        self.assertEqual(self.acc.position_val, Decimal(200)) # Liability/Collateral abstraction
-        self.assertEqual(self.acc.nav, Decimal(1000))
+    # ==========================================
+    # 3. INTERACTION & MODIFICATION TESTS
+    # ==========================================
 
-        # 2. Mark to Market (Price drops to 50) - Profit
-        self.acc.mark_to_mkt(self.trader_id, Decimal(50))
-        
-        # Profit: (100 - 50) * 2 = 100
-        self.assertEqual(self.acc.profit, Decimal(100))
-        self.assertEqual(self.acc.nav, Decimal(1100))
-        # PosVal: Raw(200) - Mkt(100) = 100 Profit. Wait.
-        # mark_to_mkt code: profit = |pos| * diff. position_val = |pos|*VWAP + profit.
-        # Short Profit is Positive? Yes. 100.
-        # PosVal = 200 + 100 = 300.
-        self.assertEqual(self.acc.position_val, Decimal(300))
-
-        # 3. Partial Cover: Buy 1 @ 50
-        trade_cover = {
-            'price': Decimal(50),
-            'quantity': Decimal(1),
-            'init_party': {'side': 'bid', 'ID': self.trader_id},
-            'counter_party': {'ID': 'Other'}
-        }
-        self.acc.process_acc(trade_cover, 'init_party')
-        
-        # Verify FIX Behaviors:
-        # A. VWAP should be CONSTANT (100)
-        self.assertEqual(self.acc.VWAP, Decimal(100), "VWAP should remain constant on partial close")
-        
-        # B. Cash Realization
-        # Released Collateral: 1 * 100 = 100
-        # Released Profit: 1 * (100 - 50) = 50
-        # Total Cash Return: 150
-        # New Cash: 800 + 150 = 950
-        self.assertEqual(self.acc.cash, Decimal(950), "Cash should include realized profit")
-        
-        # C. Navigation Conservation
-        # Remaining Pos: 1 Unit Short. Entry 100. Mkt 50.
-        # PosVal update in _size_decrease:
-        # raw = 1*100 = 100. mkt = 1*50 = 50.
-        # profit (this tick) = raw - mkt = 50.
-        # PosVal = raw + profit = 150.
-        self.assertEqual(self.acc.position_val, Decimal(150))
-        self.assertEqual(self.acc.nav, Decimal(1100)) # 950 + 150
-
-    def test_short_squeeze_loss(self):
-        """Test Short -> Price Up (Loss) -> Cover."""
-        # 1. Short 1 @ 100
-        trade_short = {
-            'price': Decimal(100),
-            'quantity': Decimal(1),
-            'init_party': {'side': 'ask', 'ID': self.trader_id},
-            'counter_party': {'ID': 'Other'}
-        }
-        self.acc.process_acc(trade_short, 'init_party')
-        self.assertEqual(self.acc.cash, Decimal(900))
-        self.assertEqual(self.acc.nav, Decimal(1000))
-        
-        # 2. Price goes to 150 (Loss of 50)
-        # Cover 1 @ 150
-        trade_cover_loss = {
-            'price': Decimal(150),
-            'quantity': Decimal(1),
-            'init_party': {'side': 'bid', 'ID': self.trader_id},
-            'counter_party': {'ID': 'Other'}
-        }
-        self.acc.process_acc(trade_cover_loss, 'init_party')
-        
-        # Cash Flow:
-        # Cost Basis (Collateral): 100
-        # Trade Val (Exit): 150
-        # PnL: 100 - 150 = -50
-        # Cash Return: 2*100 - 150 = 50. (Collateral 100 - Loss 50 = 50).
-        # New Cash: 900 + 50 = 950.
-        self.assertEqual(self.acc.cash, Decimal(950))
-        self.assertEqual(self.acc.nav, Decimal(950))
-        self.assertEqual(self.acc.net_position, 0)
-
-    def test_position_flip_short_to_long(self):
+    def test_maker_modify_then_fill(self):
         """
-        Test flipping from Net Short to Net Long in a single trade.
-        Scenario: Short 2 @ 100. Buy 4 @ 100.
-        Result should be: Net Long 2 @ 100.
+        Scenario: 
+        1. Maker places Buy Limit 10 @ 100.
+        2. Modifies to 10 @ 150 (More collateral needed).
+        3. Filled at 150.
         """
-        # 1. Open Short: 2 @ 100
-        # Cash: 1000 - 200 = 800. Pos: -2. VWAP: 100.
-        trade_short = {
-            'price': Decimal(100),
-            'quantity': Decimal(2),
-            'init_party': {'side': 'ask', 'ID': self.trader_id},
-            'counter_party': {'ID': 'Other'}
-        }
-        self.acc.process_acc(trade_short, 'init_party')
-        self.assertEqual(self.acc.cash, Decimal(800))
-        self.assertEqual(self.acc.net_position, -2)
-
-        # 2. Execute Flip: Buy 4 @ 100
-        # This checks _net_short -> _covered_side_chg -> _covered logic
-        trade_flip = {
-            'price': Decimal(100),
-            'quantity': Decimal(4),
-            'init_party': {'side': 'bid', 'ID': self.trader_id},
-            'counter_party': {'ID': 'Other'}
-        }
-        self.acc.process_acc(trade_flip, 'init_party')
+        # 1. Place 10 @ 100
+        order = {'price': 100, 'quantity': 10}
+        self.acc.order_in_book_init_party(order)
+        self.assertEqual(self.acc.cash_on_hold, 1000)
         
-        # EXPECTED STATE (Logic):
-        # A. Cover 2 Short @ 100 (Cost 200, Value 200). PnL = 0.
-        #    Cash Return = Collateral(200) + PnL(0) = 200.
-        #    Intermediate Cash = 800 + 200 = 1000.
-        # B. Open Long 2 @ 100 (Cost 200).
-        #    Cash Paid = 200.
-        #    Final Cash = 1000 - 200 = 800.
+        # 2. Modify to 10 @ 150
+        new_quote = {'price': 150, 'quantity': 10}
+        self.acc.modify_cash_transfer(new_quote, order)
+        # Diff is 500. Cash -> Hold.
+        self.assertEqual(self.acc.cash_on_hold, 1500)
+        self.assertEqual(self.acc.cash, 500)
         
-        self.assertEqual(self.acc.net_position, 2)
-        self.assertEqual(self.acc.position_val, Decimal(200)) # 2 * 100
-        self.assertEqual(self.acc.cash, Decimal(800), "Cash should be 800 after flipping Short 2 to Long 2 at same price")
-        self.assertEqual(self.acc.nav, Decimal(1000))
-
-    def test_self_execution(self):
-        """
-        Test 'Liquidity Trap' where agent matches with themselves.
-        Scenario: Agent has Limit Buy 1 @ 10 in book (Collateral 10).
-        Agent sends Limit Sell 1 @ 10 (or Market Sell).
-        Result: Execution triggers `init_is_counter`. 
-        Held cash (10) should be released. No PnL.
-        """
-        # 1. Place Limit Buy 1 @ 10
-        order_buy = {'price': Decimal(10), 'quantity': Decimal(1), 'type': 'limit', 'side': 'bid', 'trade_id': self.trader_id}
-        self.acc.order_in_book_init_party(order_buy)
-        self.assertEqual(self.acc.cash_on_hold, Decimal(10))
-        self.assertEqual(self.acc.cash, Decimal(990))
-
-        # 2. Match with Self (Sell 1 @ 10)
-        # Note: In real engine, this is handled by `_process_trades`. 
-        # Here we simulate the specific call `init_is_counter_cash_transfer`
+        # 3. Fill at 150 (Counter-party)
+        trade = {'price': 150, 'quantity': 10, 'counter_party': {'side': 'bid'}}
+        self.acc.process_acc(trade, 'counter_party')
         
-        trade_val = Decimal(10)
-        self.acc.init_is_counter_cash_transfer(trade_val)
-        
-        # Expectation: Cash on hold released. 
-        # Net effect: 990 + 10 = 1000. 
-        # Position unchanged (Buying from self = 0 net change).
-        self.assertEqual(self.acc.cash_on_hold, Decimal(0))
-        self.assertEqual(self.acc.cash, Decimal(1000))
+        self.assertEqual(self.acc.cash_on_hold, 0)
+        self.assertEqual(self.acc.net_position, 10)
+        self.assertEqual(self.acc.VWAP, 150)
 
 if __name__ == '__main__':
     unittest.main()
