@@ -1,0 +1,39 @@
+FROM nvidia/cuda:12.6.0-cudnn-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PYTHONUNBUFFERED=1
+
+RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.edge.kernel.org/ubuntu/|g' /etc/apt/sources.list && \
+    sed -i 's|http://security.ubuntu.com/ubuntu|http://mirrors.edge.kernel.org/ubuntu|g' /etc/apt/sources.list && \
+    apt-get -o Acquire::ForceIPv4=true update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        curl \
+        git \
+        libgl1-mesa-glx \
+        libglib2.0-0 \
+        wget \
+        python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir \
+        torch \
+        torchvision \
+        torchaudio \
+        --extra-index-url https://download.pytorch.org/whl/cu126 && \
+    pip install --no-cache-dir \
+        jupyterlab \
+        notebook \
+        gputil \
+        gymnasium==1.0.0 \
+        ray[rllib]==2.47.1
+        
+RUN mkdir -p /workspace/code && chmod -R 777 /workspace
+WORKDIR /workspace/code
+
+EXPOSE 8888
+
+CMD ["jupyter", "notebook", "--ip=0.0.0.0", "--port=8888", "--allow-root", "--no-browser"]

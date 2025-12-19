@@ -1,0 +1,2 @@
+[gym.envs]
+continuousDoubleAuction-v0 = gym_continuousDoubleAuction:YourEnvClass

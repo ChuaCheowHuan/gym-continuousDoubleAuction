@@ -1,0 +1,15 @@
+#**/*.egg-info
+**/__pycache__
+.pytest_cache
+**/*.pyc
+.ipynb_checkpoints
+.cache
+.DS_Store
+.dat
+**/chkpt
+**/ray_results
+**/my_tmp
+**/eps
+**/last_eps_steps
+venv
+gym_continuousDoubleAuction/episode_data
