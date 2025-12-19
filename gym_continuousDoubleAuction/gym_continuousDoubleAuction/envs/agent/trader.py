@@ -50,7 +50,7 @@ class Trader(Random_agent):
             if trades != []: # if trades took placed in this order
                 self._process_trades(trades, agents)
 
-            self.acc.order_in_book_init_party(order_in_book) # if there's any unfilled
+            self.acc.order_in_book_passive_party(order_in_book) # if there's any unfilled
             return trades, order_in_book
 
         else: # not enough cash to place order
