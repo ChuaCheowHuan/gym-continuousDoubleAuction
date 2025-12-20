@@ -65,6 +65,7 @@ class TestAccounting(unittest.TestCase):
         # Verification
         self.assertEqual(self.trader_A.acc.cash, Decimal(1000), "Cash should return to original")
         self.assertEqual(self.trader_A.acc.cash_on_hold, Decimal(0), "Cash on hold should be zero")
+        self.assertEqual(self.trader_A.acc.cal_nav(), Decimal(1000), "NAV should remain constant")
         
         # --- Short Cancellation ---
         order_b = {'type': 'limit', 'side': 'ask', 'quantity': 1, 'price': 100, 'trade_id': 2}
@@ -76,6 +77,7 @@ class TestAccounting(unittest.TestCase):
         # Verification
         self.assertEqual(self.trader_B.acc.cash, Decimal(1000), "Cash should return to original")
         self.assertEqual(self.trader_B.acc.cash_on_hold, Decimal(0), "Cash on hold should be zero")
+        self.assertEqual(self.trader_B.acc.cal_nav(), Decimal(1000), "NAV should remain constant")
 
     def test_market_short_matching(self):
         """Test Case 3: Market Short Matching (Walkthrough Scenario)"""
@@ -91,11 +93,13 @@ class TestAccounting(unittest.TestCase):
         self.assertEqual(self.trader_A.acc.position_val, Decimal(100), "Position value set")
         self.assertEqual(self.trader_A.acc.net_position, 1, "Net long position")
         self.assertEqual(self.trader_A.acc.cash, Decimal(900), "Cash remains decreased")
+        self.assertEqual(self.trader_A.acc.cal_nav(), Decimal(1000), "NAV must apply: 900+0+100=1000")
         
         # --- Verify Agent B (Short, Aggressor) ---
         self.assertEqual(self.trader_B.acc.cash, Decimal(900), "Cash paid immediately")
         self.assertEqual(self.trader_B.acc.position_val, Decimal(100), "Short position value")
         self.assertEqual(self.trader_B.acc.net_position, -1, "Net short position")
+        self.assertEqual(self.trader_B.acc.cal_nav(), Decimal(1000), "NAV must apply: 900+0+100=1000")
 
     def test_market_long_matching(self):
         """Test Case 4: Market Long Matching"""
@@ -110,11 +114,13 @@ class TestAccounting(unittest.TestCase):
         self.assertEqual(self.trader_A.acc.cash_on_hold, Decimal(0), "Hold released")
         self.assertEqual(self.trader_A.acc.position_val, Decimal(100), "Short position value")
         self.assertEqual(self.trader_A.acc.net_position, -1, "Net short position")
+        self.assertEqual(self.trader_A.acc.cal_nav(), Decimal(1000), "NAV must apply: 900+0+100=1000")
         
         # --- Verify Agent B (Long, Aggressor) ---
         self.assertEqual(self.trader_B.acc.cash, Decimal(900), "Cash paid")
         self.assertEqual(self.trader_B.acc.position_val, Decimal(100), "Long position value")
         self.assertEqual(self.trader_B.acc.net_position, 1, "Net long position")
+        self.assertEqual(self.trader_B.acc.cal_nav(), Decimal(1000), "NAV must apply: 900+0+100=1000")
 
     def test_partial_fill(self):
         """Test Case 5: Partial Fill"""
@@ -134,6 +140,7 @@ class TestAccounting(unittest.TestCase):
         self.assertEqual(self.trader_A.acc.cash_on_hold, Decimal(100))
         self.assertEqual(self.trader_A.acc.position_val, Decimal(100))
         self.assertEqual(self.trader_A.acc.net_position, 1)
+        self.assertEqual(self.trader_A.acc.cal_nav(), Decimal(1000), "NAV must apply")
 
     def test_mark_to_market_long(self):
         """Test Case 6: Mark to Market (Long)"""
@@ -206,6 +213,7 @@ class TestAccounting(unittest.TestCase):
         self.assertEqual(self.trader_A.acc.cash, Decimal(1000))
         self.assertEqual(len(self.order_book.bids), 0)
         self.assertEqual(len(self.order_book.tape), 0)
+        self.assertEqual(self.trader_A.acc.cal_nav(), Decimal(1000), "NAV must remain constant")
 
     def test_position_flip_long_to_short_aggressor(self):
         """Test Case 10a: Position Flip Long -> Short (Aggressor)"""
@@ -223,12 +231,13 @@ class TestAccounting(unittest.TestCase):
         
         # Verify A: Net -1
         self.assertEqual(self.trader_A.acc.net_position, -1)
-        self.assertEqual(self.trader_A.acc.position_val, Decimal(100)) # Value of the 1 short
+        self.assertEqual(self.trader_A.acc.position_val, Decimal(100), "Value of new short")
         # Cash flow:
         # Started 900.
         # Sold 1 (closing long): +100 cash. Cash=1000.
         # Sold 1 (opening short): -100 cash (margin). Cash=900.
         self.assertEqual(self.trader_A.acc.cash, Decimal(900))
+        self.assertEqual(self.trader_A.acc.cal_nav(), Decimal(1000), "NAV must remain constant")
 
 if __name__ == '__main__':
     unittest.main()
