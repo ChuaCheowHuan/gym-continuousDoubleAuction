@@ -239,5 +239,37 @@ class TestAccounting(unittest.TestCase):
         self.assertEqual(self.trader_A.acc.cash, Decimal(900))
         self.assertEqual(self.trader_A.acc.cal_nav(), Decimal(1000), "NAV must remain constant")
 
+    def test_position_flip_short_to_long_aggressor(self):
+        """Test Case 10b: Position Flip Short -> Long (Aggressor)"""
+        # Setup: A Short 1 @ 100
+        # To simulate a short, cash is reduced (margin) and position_val is set
+        self.trader_A.acc.cash = Decimal(900)
+        self.trader_A.acc.net_position = -1
+        self.trader_A.acc.position_val = Decimal(100)
+        self.trader_A.acc.VWAP = Decimal(100)
+        
+        # B places Limit Sell 2 @ 100 (Liquidity)
+        self.trader_B.place_order('limit', 'ask', 2, 100, self.order_book, self.agents)
+        
+        # A Market Buys 2
+        self.trader_A.place_order('market', 'bid', 2, 100, self.order_book, self.agents)
+        
+        # Verify A: Net +1
+        self.assertEqual(self.trader_A.acc.net_position, 1)
+        self.assertEqual(self.trader_A.acc.position_val, Decimal(100), "Value of new long")
+        
+        # Cash flow:
+        # Started 900.
+        # Covered Short (-1 to 0): 
+        #   - mkt_val = 100.
+        #   - size_zero_cash_transfer: cash += (pos_val - trade_val) = 100 - 100 = 0.
+        #   - size_decrease_cash_transfer: cash += mkt_val = 100.
+        #   - Cash -> 900 + 100 = 1000.
+        # Opened Long (0 to +1):
+        #   - size_increase_cash_transfer: cash -= 100.
+        #   - Cash -> 1000 - 100 = 900.
+        self.assertEqual(self.trader_A.acc.cash, Decimal(900))
+        self.assertEqual(self.trader_A.acc.cal_nav(), Decimal(1000), "NAV must remain constant")
+
 if __name__ == '__main__':
     unittest.main()
