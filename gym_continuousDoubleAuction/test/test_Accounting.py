@@ -216,7 +216,7 @@ class TestAccounting(unittest.TestCase):
         self.assertEqual(self.trader_A.acc.cal_nav(), Decimal(1000), "NAV must remain constant")
 
     def test_position_flip_long_to_short_aggressor(self):
-        """Test Case 10a: Position Flip Long -> Short (Aggressor)"""
+        """Test Case 10: Position Flip Long -> Short (Aggressor)"""
         # Setup: A Long 1 @ 100
         self.trader_A.acc.cash = Decimal(900)
         self.trader_A.acc.net_position = 1
@@ -240,7 +240,7 @@ class TestAccounting(unittest.TestCase):
         self.assertEqual(self.trader_A.acc.cal_nav(), Decimal(1000), "NAV must remain constant")
 
     def test_position_flip_short_to_long_aggressor(self):
-        """Test Case 10b: Position Flip Short -> Long (Aggressor)"""
+        """Test Case 11: Position Flip Short -> Long (Aggressor)"""
         # Setup: A Short 1 @ 100
         # To simulate a short, cash is reduced (margin) and position_val is set
         self.trader_A.acc.cash = Decimal(900)
@@ -270,6 +270,56 @@ class TestAccounting(unittest.TestCase):
         #   - Cash -> 1000 - 100 = 900.
         self.assertEqual(self.trader_A.acc.cash, Decimal(900))
         self.assertEqual(self.trader_A.acc.cal_nav(), Decimal(1000), "NAV must remain constant")
+
+    def test_position_flip_long_to_short_passive(self):
+        """Test Case 12: Position Flip Long -> Short (Passive)"""
+        # Setup: A Long 1 @ 100
+        self.trader_A.acc.cash = Decimal(900)
+        self.trader_A.acc.net_position = 1
+        self.trader_A.acc.position_val = Decimal(100)
+        self.trader_A.acc.VWAP = Decimal(100)
+        
+        # A places Limit Sell 2 @ 100 (Sits in book, waiting)
+        # Note: System locks cash for limit orders regardless of whether they are closing positions
+        self.trader_A.place_order('limit', 'ask', 2, 100, self.order_book, self.agents)
+        
+        # Check Intermediate State (Cash Lock)
+        # 900 - 200 = 700 Cash. 200 Hold.
+        self.assertEqual(self.trader_A.acc.cash, Decimal(700), "Cash locked for limit sell")
+        self.assertEqual(self.trader_A.acc.cash_on_hold, Decimal(200), "Hold increased")
+
+        # B places Limit Buy 2 @ 100 (Crosses A - Acts as Aggressor Limit Order)
+        self.trader_B.place_order('limit', 'bid', 2, 100, self.order_book, self.agents)
+        
+        # Verify A: Net -1
+        self.assertEqual(self.trader_A.acc.net_position, -1)
+        self.assertEqual(self.trader_A.acc.position_val, Decimal(100)) 
+        self.assertEqual(self.trader_A.acc.cash, Decimal(900), "Cash returned after trade")
+        self.assertEqual(self.trader_A.acc.cal_nav(), Decimal(1000), "NAV must remain constant")
+
+    def test_position_flip_short_to_long_passive(self):
+        """Test Case 13: Position Flip Short -> Long (Passive)"""
+        # Setup: A Short 1 @ 100
+        self.trader_A.acc.cash = Decimal(900)
+        self.trader_A.acc.net_position = -1
+        self.trader_A.acc.position_val = Decimal(100)
+        self.trader_A.acc.VWAP = Decimal(100)
+        
+        # A places Limit Buy 2 @ 100 (Sits in book)
+        self.trader_A.place_order('limit', 'bid', 2, 100, self.order_book, self.agents)
+        
+        # Check Intermediate
+        self.assertEqual(self.trader_A.acc.cash, Decimal(700))
+        self.assertEqual(self.trader_A.acc.cash_on_hold, Decimal(200))
+        
+        # B places Limit Sell 2 @ 100 (Crosses A)
+        self.trader_B.place_order('limit', 'ask', 2, 100, self.order_book, self.agents)
+        
+        # Verify A: Net +1
+        self.assertEqual(self.trader_A.acc.net_position, 1)
+        self.assertEqual(self.trader_A.acc.position_val, Decimal(100))
+        self.assertEqual(self.trader_A.acc.cash, Decimal(900))
+        self.assertEqual(self.trader_A.acc.cal_nav(), Decimal(1000))
 
 if __name__ == '__main__':
     unittest.main()
