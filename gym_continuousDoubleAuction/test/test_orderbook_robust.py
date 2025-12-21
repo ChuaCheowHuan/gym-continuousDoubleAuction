@@ -177,12 +177,11 @@ class TestOrderBookIntegration(unittest.TestCase):
         self.ob.modify_order(order_id, {'side': 'bid', 'quantity': Decimal('5'), 'price': Decimal('100'), 'timestamp': 101})
         self.assertEqual(self.get_real_volume('bid'), Decimal('5'))
 
-    @unittest.expectedFailure
     def test_modify_order_price_change(self):
         """
         Verify behavior when an order's price is updated.
-        IMPORTANT: This is a known failing area in the current codebase (double-decrement bug).
-        The test is marked as expectedFailure to document this.
+        Ensures that the order is correctly moved from one price level to another
+        without causing double-deletion or data corruption.
         """
         # 1. Place an order at 100
         bid = {'type': 'limit', 'side': 'bid', 'quantity': Decimal('10'), 'price': Decimal('100'), 'trade_id': 'B1'}

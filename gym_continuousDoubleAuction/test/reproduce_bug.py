@@ -1,4 +1,3 @@
-
 import unittest
 import sys
 import numpy as np
@@ -38,6 +37,7 @@ def reproduce_bug():
         'side': 'bid', 
         'quantity': Decimal('10'), 
         'price': Decimal('101'), 
+        # 'trade_id': 'B1',
         'timestamp': 2
     }
     
