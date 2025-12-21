@@ -75,6 +75,10 @@ class OrderBook(object):
                 #new_book_quantity = head_order.quantity - quantity_to_trade
                 new_book_quantity = head_order.quantity - Decimal(quantity_to_trade)
                 head_order.update_quantity(new_book_quantity, head_order.timestamp)
+                if side == 'bid':
+                    self.bids.volume -= Decimal(traded_quantity)
+                else:
+                    self.asks.volume -= Decimal(traded_quantity)
                 quantity_to_trade = 0
             elif quantity_to_trade == head_order.quantity:
                 traded_quantity = quantity_to_trade
