@@ -204,17 +204,45 @@ class OrderBook(object):
             self.time = time
         else:
             self.update_time()
+
         side = order_update['side']
         order_update['order_id'] = order_id
         order_update['timestamp'] = self.time
+
+        # To ensure the matching engine is triggered, we remove the existing order
+        # and re-process it as a new limit order with the updated parameters.
         if side == 'bid':
-            if self.bids.order_exists(order_update['order_id']):
-                self.bids.update_order(order_update)
+            if self.bids.order_exists(order_id):
+                order = self.bids.get_order(order_id)
+                trade_id = order.trade_id
+                self.bids.remove_order_by_id(order_id)
+            else:
+                return None, None
         elif side == 'ask':
-            if self.asks.order_exists(order_update['order_id']):
-                self.asks.update_order(order_update)
+            if self.asks.order_exists(order_id):
+                order = self.asks.get_order(order_id)
+                trade_id = order.trade_id
+                self.asks.remove_order_by_id(order_id)
+            else:
+                return None, None
         else:
             sys.exit('modify_order() given neither "bid" nor "ask"')
+
+        # Prepare the quote for re-processing.
+        # We use Decimal(str(...)) to ensure precision consistent with process_order.
+        quote = {
+            'type': 'limit',
+            'side': side,
+            'quantity': Decimal(str(order_update['quantity'])),
+            'price': Decimal(str(order_update['price'])),
+            'trade_id': trade_id,
+            'timestamp': self.time,
+            'order_id': order_id
+        }
+
+        # process_limit_order will handle matching and updating the tape.
+        # from_data=True ensures we keep the same order_id.
+        return self.process_limit_order(quote, from_data=True, verbose=False)
 
     # def get_volume_at_price(self, side, price):
     #     price = Decimal(price)
