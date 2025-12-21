@@ -212,20 +212,20 @@ class OrderBook(object):
         else:
             sys.exit('modify_order() given neither "bid" nor "ask"')
 
-    def get_volume_at_price(self, side, price):
-        price = Decimal(price)
-        if side == 'bid':
-            volume = 0
-            if self.bids.price_exists(price):
-                volume = self.bids.get_price(price).volume
-            return volume
-        elif side == 'ask':
-            volume = 0
-            if self.asks.price_exists(price):
-                volume = self.asks.get_price(price).volume
-            return volume
-        else:
-            sys.exit('get_volume_at_price() given neither "bid" nor "ask"')
+    # def get_volume_at_price(self, side, price):
+    #     price = Decimal(price)
+    #     if side == 'bid':
+    #         volume = 0
+    #         if self.bids.price_exists(price):
+    #             volume = self.bids.get_price(price).volume
+    #         return volume
+    #     elif side == 'ask':
+    #         volume = 0
+    #         if self.asks.price_exists(price):
+    #             volume = self.asks.get_price(price).volume
+    #         return volume
+    #     else:
+    #         sys.exit('get_volume_at_price() given neither "bid" nor "ask"')
 
     def get_best_bid(self):
         return self.bids.max_price()
