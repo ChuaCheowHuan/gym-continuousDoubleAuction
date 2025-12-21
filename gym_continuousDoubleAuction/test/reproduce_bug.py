@@ -1,4 +1,13 @@
+
+import unittest
+import sys
+import numpy as np
 from decimal import Decimal
+
+# Add parent directory to path to import modules
+if "../" not in sys.path:
+    sys.path.append("../")
+    
 from gym_continuousDoubleAuction.envs.orderbook.orderbook import OrderBook
 
 def reproduce_bug():
