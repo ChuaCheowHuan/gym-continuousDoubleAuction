@@ -27,6 +27,7 @@ class Order(object):
         return self.prev_order
 
     def update_quantity(self, new_quantity, new_timestamp):
+        new_quantity = Decimal(new_quantity)
         if new_quantity > self.quantity and self.order_list.tail_order != self:
             # check to see that the order is not the last order in list and the quantity is more
             self.order_list.move_to_tail(self) # move to the end

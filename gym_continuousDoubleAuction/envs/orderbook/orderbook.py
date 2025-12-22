@@ -200,6 +200,11 @@ class OrderBook(object):
             sys.exit('cancel_order() given neither "bid" nor "ask"')
 
     def modify_order(self, order_id, order_update, time=None):
+
+        print("\n--- Modifying Order ---")
+        print("Order ID:", order_id)
+        print("Order Update:", order_update)
+
         if time:
             self.time = time
         else:
@@ -225,8 +230,13 @@ class OrderBook(object):
 
         original_price = original_order.price
         original_quantity = original_order.quantity
-        new_price = Decimal(str(order_update['price']))
-        new_quantity = Decimal(str(order_update['quantity']))
+        
+        # Ensure price and quantity are Decimals for type-safety in underlying logic
+        order_update['price'] = Decimal(str(order_update['price']))
+        order_update['quantity'] = Decimal(str(order_update['quantity']))
+        
+        new_price = order_update['price']
+        new_quantity = order_update['quantity']
 
         # Scenario 4: Quantity decrease at same price -> Keep priority
         if new_price == original_price and new_quantity <= original_quantity:
