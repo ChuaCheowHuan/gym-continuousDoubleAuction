@@ -147,11 +147,15 @@ class Trader(Random_agent):
         """
 
         qoute['type'] = 'limit'
-        qoute['quantity'] = Decimal(qoute['quantity'])
-        self.acc.modify_cash_transfer(qoute, order)
-        orderBook.modify_order(order_id, qoute)
+        # qoute['quantity'] = Decimal(qoute['quantity']) # already handled in caller or orderbook
 
-        return [],[]
+        # "Undo" the old order's accounting to prepare for the modified order.
+        self.acc.cancel_cash_transfer(order)
+
+        # modify_order now returns trades and the updated order residue.
+        trades, order_in_book = orderBook.modify_order(order_id, qoute)
+
+        return trades, order_in_book
 
     def _cancel_limit_order(self, orderBook, qoute):
         """
@@ -183,8 +187,11 @@ class Trader(Random_agent):
 
         order_map = self._find_orderTree(orderBook, qoute)
         for order_ID, order in order_map.items():
-            if order.price == qoute['price'] and order.trade_id == qoute['trade_id']:
-                return order_ID, order # order already exist
+            if order.trade_id == qoute['trade_id']:
+                # If modifying, we want the order regardless of its current price.
+                # If placing (limit), we only match if it's the exact same price.
+                if qoute.get('type') == 'modify' or order.price == qoute['price']:
+                    return order_ID, order # order already exist
 
         return -1, None # no such order in order tree.
 

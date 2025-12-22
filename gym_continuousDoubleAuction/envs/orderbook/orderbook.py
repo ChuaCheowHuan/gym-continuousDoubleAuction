@@ -204,17 +204,52 @@ class OrderBook(object):
             self.time = time
         else:
             self.update_time()
+
         side = order_update['side']
         order_update['order_id'] = order_id
         order_update['timestamp'] = self.time
+
+        # Find the existing order to compare parameters
         if side == 'bid':
-            if self.bids.order_exists(order_update['order_id']):
-                self.bids.update_order(order_update)
+            if not self.bids.order_exists(order_id):
+                return [], None
+            original_order = self.bids.get_order(order_id)
+            tree = self.bids
         elif side == 'ask':
-            if self.asks.order_exists(order_update['order_id']):
-                self.asks.update_order(order_update)
+            if not self.asks.order_exists(order_id):
+                return [], None
+            original_order = self.asks.get_order(order_id)
+            tree = self.asks
         else:
             sys.exit('modify_order() given neither "bid" nor "ask"')
+
+        original_price = original_order.price
+        original_quantity = original_order.quantity
+        new_price = Decimal(str(order_update['price']))
+        new_quantity = Decimal(str(order_update['quantity']))
+
+        # Scenario 4: Quantity decrease at same price -> Keep priority
+        if new_price == original_price and new_quantity <= original_quantity:
+            tree.update_order(order_update)
+            return [], order_update
+
+        # All other scenarios: Remove and re-process to ensure matching and correct priority
+        trade_id = original_order.trade_id
+        tree.remove_order_by_id(order_id)
+
+        # Prepare quote for re-processing
+        quote = {
+            'type': 'limit',
+            'side': side,
+            'quantity': new_quantity,
+            'price': new_price,
+            'trade_id': trade_id,
+            'timestamp': self.time,
+            'order_id': order_id
+        }
+
+        # process_limit_order handles matching and returns trades, order_in_book
+        return self.process_limit_order(quote, from_data=True, verbose=False)
 
     # def modify_order(self, order_id, order_update, time=None):
     #     if time:

@@ -1,6 +1,6 @@
 # Walkthrough - Orderbook Mechanism Unit Test Explanation
 
-This document provides a clear, step-by-step explanation of the unit tests implemented in `test_orderbook_robust.py`. These tests validate the core logic of the Continuous Double Auction (CDA) orderbook mechanism.
+This document provides a clear, step-by-step explanation of the unit tests implemented in `test_orderbook.py`. These tests validate the core logic of the Continuous Double Auction (CDA) orderbook mechanism.
 
 ---
 
