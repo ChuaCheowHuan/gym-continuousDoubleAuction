@@ -5,7 +5,7 @@ This script demonstrates how to configure and run training with the updated
 SelfPlayCallback that creates frozen champion snapshots instead of copying weights.
 """
 
-from gym_continuousDoubleAuction.train.callbk.self_play_callback_mod import SelfPlayCallback
+from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import SelfPlayCallback
 from gym_continuousDoubleAuction.train.policy.policy_handler import (
     create_multi_agent_config, 
     RandomPolicy

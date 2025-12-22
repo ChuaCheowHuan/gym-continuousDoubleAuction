@@ -22,7 +22,7 @@ This implementation extends the competitive self-play training with **champion s
 
 ### Modified Files
 
-1. **`self_play_callback_mod.py`**
+1. **`league_based_self_play_callback.py`**
    - Extended `__init__` with champion configuration
    - Replaced weight copying with champion snapshotting in `on_train_result`
    - Added `_create_champion_snapshot()` - creates frozen module copies
@@ -35,7 +35,7 @@ This implementation extends the competitive self-play training with **champion s
 ### Basic Configuration
 
 ```python
-from gym_continuousDoubleAuction.train.callbk.self_play_callback_mod import SelfPlayCallback
+from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import SelfPlayCallback
 from ray.rllib.algorithms.ppo import PPOConfig
 
 # Create callback with generalized configuration
@@ -229,7 +229,7 @@ index = (hash(episode_id) + agent_num) % len(pool)
 
 Keep old callback as backup:
 ```bash
-cp self_play_callback_mod.py self_play_callback_mod_old.py
+cp league_based_self_play_callback.py league_based_self_play_callback_old.py
 # Use new version in training
 ```
 
