@@ -150,6 +150,59 @@ class SelfPlayCallback(RLlibCallback):
         }
         self.store.append(step_data)
 
+    # def on_episode_end(
+    #     self,
+    #     *,
+    #     episode,
+    #     env_runner,
+    #     metrics_logger,
+    #     env,
+    #     env_index,
+    #     rl_module,
+    #     **kwargs,
+    # ) -> None:
+    #     # # Compute the win rate for this episode and log it with a window of 100.
+    #     # main_agent = 0 if episode.module_for(0) == "main" else 1
+    #     # rewards = episode.get_rewards()
+    #     # if main_agent in rewards:
+    #     #     main_won = rewards[main_agent][-1] == 1.0
+    #     #     metrics_logger.log_value(
+    #     #         "win_rate",
+    #     #         main_won,
+    #     #         reduce="mean",
+    #     #         window=100,
+    #     #     )
+
+    #     # last_obs = episode.get_observations(-1)
+    #     # last_act = episode.get_actions(-1)
+    #     # last_reward = episode.get_rewards(-1)
+    #     # last_info = episode.get_infos(-1)
+
+    #     print(f'on_episode_end:{episode}')
+
+    #     # print(f'last_obs:{last_obs}')  
+    #     # print(f'last_act:{last_act}')        
+    #     # print(f'last_reward:{last_reward}')        
+    #     # print(f'last_info:{last_info}')     
+
+    #     # print(self.store)
+
+    #     # Save the data
+    #     # with open('episode_data_' + episode.id_ + '.json', 'w') as f:
+    #     #     json.dump(self.store, f, indent=4)
+
+
+    #     os.makedirs('episode_data', exist_ok=True)
+    #     # Save the data
+    #     with open('episode_data/' + str(episode.id_) + '.pkl', 'wb') as f:
+    #         pickle.dump(self.store, f)
+
+    #     # # Load later
+    #     # with open('episode_data.pkl', 'rb') as f:
+    #     #     loaded_store = pickle.load(f)
+
+    #     self.store = None   
+
     def on_episode_end(
         self,
         *,
@@ -172,7 +225,6 @@ class SelfPlayCallback(RLlibCallback):
         #         reduce="mean",
         #         window=100,
         #     )
-
         # last_obs = episode.get_observations(-1)
         # last_act = episode.get_actions(-1)
         # last_reward = episode.get_rewards(-1)
@@ -191,7 +243,6 @@ class SelfPlayCallback(RLlibCallback):
         # with open('episode_data_' + episode.id_ + '.json', 'w') as f:
         #     json.dump(self.store, f, indent=4)
 
-
         os.makedirs('episode_data', exist_ok=True)
         # Save the data
         with open('episode_data/' + str(episode.id_) + '.pkl', 'wb') as f:
@@ -202,6 +253,56 @@ class SelfPlayCallback(RLlibCallback):
         #     loaded_store = pickle.load(f)
 
         self.store = None   
+
+        # Try to get parameters from different possible sources
+        init_cash = 0
+        num_agents = self.num_trainable + self.num_random
+        
+        # 1. Try env_runner.config
+        if hasattr(env_runner, "config"):
+            env_config = getattr(env_runner.config, "env_config", {})
+            init_cash = env_config.get("init_cash", init_cash)
+            num_agents = env_config.get("num_of_agents", num_agents)
+        
+        # 2. Try env object directly or via unwrapped
+        if hasattr(env, "unwrapped"):
+            env_obj = env.unwrapped
+            if hasattr(env_obj, "init_cash"):
+                init_cash = env_obj.init_cash
+            if hasattr(env_obj, "num_of_agents"):
+                num_agents = env_obj.num_of_agents
+        elif hasattr(env, "init_cash"):
+            init_cash = env.init_cash
+            num_agents = getattr(env, "num_of_agents", num_agents)
+
+        total_initial_cash = float(init_cash) * num_agents
+
+        print(f"DEBUG: env type: {type(env)}")
+        print(f"DEBUG: env_runner type: {type(env_runner)}")
+        print(f"DEBUG: init_cash derived: {init_cash}")
+        print(f"DEBUG: num_agents derived: {num_agents}")
+        print(f"DEBUG: total_initial_cash: {total_initial_cash}")
+
+        last_info = episode.get_infos(-1)
+        
+        print(f"\n{'='*20} Episode {episode.id_} NAV Verification {'='*20}")
+        total_nav = 0.0
+        for i in range(num_agents):
+            agent_key = f"agent_{i}"
+            if agent_key in last_info:
+                nav_str = last_info[agent_key].get("NAV", "0")
+                nav = float(nav_str)
+                total_nav += nav
+                print(f"  {agent_key} NAV: {nav:,.2f}")
+        
+        print(f"  Total NAV: {total_nav:,.2f}")
+        print(f"  Expected Total Initial Cash: {total_initial_cash:,.2f}")
+        
+        if abs(total_nav - total_initial_cash) < 1e-6:
+            print("  Verification: SUCCESS (Total NAV matches initial cash)")
+        else:
+            print(f"  Verification: FAILED (Difference: {total_nav - total_initial_cash:,.2f})")
+        print(f"{'='*60}\n")
 
     def on_train_result(self, *, algorithm, metrics_logger=None, result, **kwargs):
         """
