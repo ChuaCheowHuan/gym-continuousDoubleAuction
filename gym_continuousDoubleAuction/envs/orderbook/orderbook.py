@@ -201,10 +201,6 @@ class OrderBook(object):
 
     def modify_order(self, order_id, order_update, time=None):
 
-        print("\n--- Modifying Order ---")
-        print("Order ID:", order_id)
-        print("Order Update:", order_update)
-
         if time:
             self.time = time
         else:
