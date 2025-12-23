@@ -267,7 +267,7 @@ class Action_Helper():
             
             
             # price_array = self.agg_LOB[3] # ask prices
-            price_array = np.array(self.agg_LOB).reshape(4, 10)[3]
+            price_array = np.array(self.agg_LOB).reshape(4, 10)[2]
 
 
 

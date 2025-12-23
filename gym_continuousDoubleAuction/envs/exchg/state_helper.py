@@ -108,7 +108,8 @@ class State_Helper(object):
                     break
         
         # return [bid_size_list, bid_price_list, ask_size_list, ask_price_list] # list of np.arrays
-        flattened = np.concatenate([bid_size_list, bid_price_list, ask_size_list, ask_price_list])
+        # flattened = np.concatenate([bid_size_list, bid_price_list, ask_size_list, ask_price_list])
+        flattened = np.concatenate([bid_price_list, bid_size_list, ask_price_list, ask_size_list])        
         flattened = flattened.astype(np.float32)
 
         # print(f'set_agg_LOB:flattened: {flattened}')
