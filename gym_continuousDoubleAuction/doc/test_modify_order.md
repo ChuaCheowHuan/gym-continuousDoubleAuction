@@ -97,7 +97,7 @@ The following examples assume a starting state of **$10,000 Cash** and **0 Posit
 Two scripts are provided to verify the fix:
 
 1.  **`repro_orderbook_crossed_book.py`**: Verifies that a price-crossing modification no longer leaves the book in a crossed state.
-2.  **`test_modify_order.py`**: A comprehensive suite that mathematically verifies all 6 accounting scenarios for both the initiator and the counter-party.
+2.  **`test_modify_order.py`**: A comprehensive `unittest` suite that mathematically verifies all 6 accounting scenarios for both the initiator and the counter-party.
 
 ### Running Tests
 ```bash

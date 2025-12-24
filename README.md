@@ -567,4 +567,4 @@ If you use this software in your research, please cite the appropriate version:
 
 You can also view and export citations in various formats using the **"Cite this repository"** button on the top-right of this page.
 
-For version 1.0.0, see: https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction
+For version 1.0.0 (original), see: https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction
