@@ -558,3 +558,13 @@ TERMINATED trials:
 ![sum_imb](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/sum_imb.png)
 
 ---
+
+## 📌 How to Cite
+
+If you use this software in your research, please cite the appropriate version:
+
+> Chua Cheow Huan. (2020). *gym-continuousDoubleAuction* (Version 1.0.0) [Computer software].
+
+You can also view and export citations in various formats using the **"Cite this repository"** button on the top-right of this page.
+
+For version 1.0.0 (original version released in 2020), see: https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction
