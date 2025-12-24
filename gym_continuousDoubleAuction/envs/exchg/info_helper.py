@@ -2,18 +2,21 @@ class Info_Helper(object):
 
     def set_info(self, infos, trader):
         """
-        Set infos dictionary.
+        Update the infos dictionary with the latest data from the trader.
 
-        Argument:
-            infos: Dictionary of dictionaries.
-            trader: A trader object.
+        Args:
+            infos (dict): Dictionary of agent information.
+            trader (object): A trader object with an account containing reward, nav, and num_trades.
 
         Returns:
-            infos: Dictionary of dictionaries.
+            dict: Updated infos dictionary.
         """
-        infos[trader.ID] = {"reward": trader.acc.reward,
-                            "NAV": str(trader.acc.nav),
-                            "num_trades": trader.acc.num_trades,
-                            }
+        agent_key = f'agent_{trader.ID}'
+        
+        infos[agent_key] = {
+            "reward": trader.acc.reward,
+            "NAV": str(trader.acc.nav),
+            "num_trades": trader.acc.num_trades
+        }
 
         return infos

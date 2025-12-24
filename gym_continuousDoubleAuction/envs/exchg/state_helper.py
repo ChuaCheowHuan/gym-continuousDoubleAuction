@@ -2,6 +2,20 @@ import numpy as np
 
 class State_Helper(object):
 
+    # # reset traders LOB observations/states
+    # def reset_traders_agg_LOB(self):
+    #     """
+    #     Set observation state for all traders.
+
+    #     https://github.com/ray-project/ray/blob/master/doc/source/rllib-env.rst
+    #     May not need to have all traders(agents) in this state(obs) dict.
+    #     """
+
+    #     states = {}
+    #     for trader in self.traders:
+    #         states[trader.ID] = self.set_agg_LOB()
+
+    #     return states
     # reset traders LOB observations/states
     def reset_traders_agg_LOB(self):
         """
@@ -10,13 +24,10 @@ class State_Helper(object):
         https://github.com/ray-project/ray/blob/master/doc/source/rllib-env.rst
         May not need to have all traders(agents) in this state(obs) dict.
         """
-
-        states = {}
-        for trader in self.agents:
-            states[trader.ID] = self.set_agg_LOB()
-
+        states = {f'agent_{i}': self.set_agg_LOB() for i in range(len(self.traders))}
+        
         return states
-
+        
     def prep_next_state(self):
         """
         Return:
@@ -46,7 +57,8 @@ class State_Helper(object):
             next_states: Dictionary of states for each trader.
         """
 
-        next_states[trader.ID] = state_input
+        # next_states[trader.ID] = state_input
+        next_states[f'agent_{trader.ID}'] = state_input
 
         return next_states
 
@@ -61,7 +73,6 @@ class State_Helper(object):
             SortedDict object has key & value, key is price, value is an
             OrderList object.
         """
-
         k_rows = 10
         bid_price_list = np.zeros(k_rows)
         bid_size_list = np.zeros(k_rows)
@@ -95,8 +106,16 @@ class State_Helper(object):
                     num += 1
                 else:
                     break
-        return [bid_size_list, bid_price_list, ask_size_list, ask_price_list] # list of np.arrays
+        
+        # return [bid_size_list, bid_price_list, ask_size_list, ask_price_list] # list of np.arrays
+        # flattened = np.concatenate([bid_size_list, bid_price_list, ask_size_list, ask_price_list])
+        flattened = np.concatenate([bid_price_list, bid_size_list, ask_price_list, ask_size_list])        
+        flattened = flattened.astype(np.float32)
 
+        # print(f'set_agg_LOB:flattened: {flattened}')
+
+        return flattened
+    
     def state_diff(self, agg_LOB, agg_LOB_aft):
         """
         Argument:

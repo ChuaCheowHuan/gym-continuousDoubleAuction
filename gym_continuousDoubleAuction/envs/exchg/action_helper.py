@@ -1,13 +1,12 @@
 import numpy as np
 import random
-from gym import spaces
 
-from gym import spaces
+from gymnasium import spaces
 from sklearn.utils import shuffle
 
 class Action_Helper():
     def __init__(self):
-        super(Action_Helper, self).__init__()
+        super().__init__()
 
         self.min_size = 1
         self.mkt_max_size = 100
@@ -19,21 +18,53 @@ class Action_Helper():
         # for random price generation
         self.min_tick = 1 # price tick
         self.max_price = 101
+        self.last_price = 100.0 # Default anchor (will be overwritten by env.reset)
 
-    def act_space(self):
+    # def act_space(self):
+    #     '''
+    #     The action space.
+
+    #     Example for 1 agent:
+    #         model_out: [0, 3, array([0.47555637], dtype=float32), array([0.5383144], dtype=float32), 5]
+    #     '''
+
+    #     return spaces.Tuple((spaces.Discrete(3), # side: none, bid, ask (0 to 2)
+    #                          spaces.Discrete(4), # type: market, limit, modify, cancel (0 to 3)
+    #                          spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32), # array of mean for size selection
+    #                          spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32), # array of sigma for size selection
+    #                          spaces.Discrete(12), # price: based on mkt depth from 0 to 11
+    #                         ))
+    def act_space(self, num_agents):
         '''
-        The action space.
+        The action space for multiple agents, returned as a dictionary.
 
-        Example for 1 agent:
-            model_out: [0, 3, array([0.47555637], dtype=float32), array([0.5383144], dtype=float32), 5]
+        Each agent has its own action Dict:
+            - category: Discrete(9) -> 0: None, 1: Buy Mkt, 2: Buy Lmt, 3: Buy Mod, 4: Buy Can,
+                                     5: Sell Mkt, 6: Sell Lmt, 7: Sell Mod, 8: Sell Can
+            - size_mean: Box(-1.0, 1.0)
+            - size_sigma: Box(0.0, 1.0)
+            - price: Discrete(10) -> levels 1 to 10
+            - price_offset: Discrete(3) -> 0: Passive (-1 tick), 1: Join (0 tick), 2: Aggressive (+1 tick)
+
+        Args:
+            num_agents (int): Number of agents.
+
+        Returns:
+            dict: Dictionary mapping agent IDs to their action spaces.
         '''
 
-        return spaces.Tuple((spaces.Discrete(3), # side: none, bid, ask (0 to 2)
-                             spaces.Discrete(4), # type: market, limit, modify, cancel (0 to 3)
-                             spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32), # array of mean for size selection
-                             spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32), # array of sigma for size selection
-                             spaces.Discrete(12), # price: based on mkt depth from 0 to 11
-                            ))
+        agent_space = spaces.Dict({
+            "category": spaces.Discrete(9),
+            "size_mean": spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),
+            "size_sigma": spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),
+            "price": spaces.Discrete(10),
+            "price_offset": spaces.Discrete(3),
+        })
+
+        # Create a dictionary mapping for all agents
+        space_dict = {f'agent_{i}': agent_space for i in range(num_agents)}
+
+        return space_dict
 
     def set_actions(self, model_outs):
         """
@@ -49,7 +80,8 @@ class Action_Helper():
         acts = []
         for key, value in model_outs.items():
             act = self._set_action_mkt_depth(key, value)
-            acts.append(act)
+            if act.get("side") is not None:
+                acts.append(act)
 
         return acts
 
@@ -77,16 +109,27 @@ class Action_Helper():
                                of unfilled limit orders leftover by the actions.
         """
 
+
+        # print(f'do_actions -> actions: {actions}')
+
+
         seq_trades = []
         seq_order_in_book = []
         for action in actions:
-            ID = action.get("ID")
+            ID_str = action.get("ID")
             type = action.get("type")
             side = action.get("side")
             size = action.get("size")
             price = action.get("price")
-            trader = self.agents[ID]
-            self.trades, self.order_in_book = trader.place_order(type, side, size, price, self.LOB, self.agents)
+
+
+
+            ID = int(ID_str.split('_')[1])
+            
+
+
+            trader = self.traders[ID]
+            self.trades, self.order_in_book = trader.place_order(type, side, size, price, self.LOB, self.traders)
             seq_trades.append(self.trades)
             seq_order_in_book.append(self.order_in_book)
 
@@ -97,38 +140,44 @@ class Action_Helper():
         Sets the action of each agent from the model.
 
         Arguments:
-            ID: agent ID, int.
-            model_out: An action for a single agent from the model .
+            ID: agent ID, str.
+            model_out: An action Dict for a single agent from the model.
 
         Returns:
             act: The action of an agent acceptable by the LOB.
         """
 
-        # Assign model output for a single action to their respective fields.
-        side = model_out[0]
-        type = model_out[1]
-        size_mean = model_out[2]
-        size_sigma = model_out[3]
-        price_code = model_out[4]
+        category = model_out["category"]
+        size_mean = model_out["size_mean"]
+        size_sigma = model_out["size_sigma"]
+        price_code = model_out.get("price", 0)
+        price_offset = model_out.get("price_offset", 1) # Default to Join (1)
 
         act = {}
         act["ID"] = ID
-        act["side"] = self._set_side(side)
-        act["type"] = self._set_type(type)
+        
+        # Mapping Category to Side and Type
+        # 0: None, 1: Buy Mkt, 2: Buy Lmt, 3: Buy Mod, 4: Buy Can,
+        # 5: Sell Mkt, 6: Sell Lmt, 7: Sell Mod, 8: Sell Can
+        if category == 0:
+            act["side"] = None
+            act["type"] = 'market' # Default to market for 'None' category, though it won't execute
+        elif 1 <= category <= 4:
+            act["side"] = 'bid'
+            types = {1: 'market', 2: 'limit', 3: 'modify', 4: 'cancel'}
+            act["type"] = types[category]
+        else: # 5 <= category <= 8
+            act["side"] = 'ask'
+            types = {5: 'market', 6: 'limit', 7: 'modify', 8: 'cancel'}
+            act["type"] = types[category]
 
         size = self._set_size(act["type"], self.mkt_size_mean_mul, self.limit_size_mean_mul, size_mean, size_sigma)
         act["size"] = (size + self.min_size) * 1.0 # +self.min_size as size can't be 0, *1 for float
 
         if act["type"] == 'market':
             act["price"] = -1.0 # -1.0 to indicate market price
-        elif act["type"] == 'limit':
-            act["price"] = self._set_price(self.min_tick, self.max_price, act["side"], price_code)
-        elif act["type"] == 'modify':
-            act["price"] = self._set_price(self.min_tick, self.max_price, act["side"], price_code)
-        elif act["type"] == 'cancel':
-            act["price"] = self._set_price(self.min_tick, self.max_price, act["side"], price_code)
         else:
-            act["price"] = 0
+            act["price"] = self._set_price(self.min_tick, self.max_price, act["side"], price_code, price_offset)
 
         return act
 
@@ -173,128 +222,65 @@ class Action_Helper():
         else:
             sample = np.random.normal(limit_size_mean_mul * mean, sigma, 1)
 
-        return np.asscalar(np.rint(np.abs(sample)))
+        # return np.asscalar(np.rint(np.abs(sample)))
+        return np.rint(np.abs(sample)).item()
 
-    def _set_price(self, min_tick, max_price, side, price_code):
+    def _set_price(self, min_tick, max_price, side, price_code, price_offset=1):
         """
-        Set price according to price_code 0 to 11 where price_code 1 to 10
-        correspond to a price slot in agg_LOB (mkt depth table) on one side
-        (bid or ask).
-
-        If order is on the bid side, 0 & 11 are the border cases where they
-        could be 1 tick lower than the lowest bid or 1 tick higher than highest
-        bid respectively.
-
-        If order is on the ask side, 0 & 11 are the border cases where they
-        could be 1 tick higher than the highest ask or 1 tick lower than the
-        lowest ask respectively.
-
-        Arguments:
-            min_tick: Minimum price tick, a real number.
-            side: 'bid' or 'ask'.
-            price_code: 0 to 11, representing the the market depth.
+        Set price according to price_code (0-9, representing levels 1-10) 
+        and price_offset (0-2).
+        
+        price_offset:
+            0: Passive (-1 tick from base)
+            1: Join (0 tick from base)
+            2: Aggressive (+1 tick from base)
 
         Returns:
             set_price: Price, a real number.
         """
 
-        if side == 'bid':
-            # agg_LOB is [bid_size_list, bid_price_list, ask_size_list, ask_price_list] # list of np.arrays
-            price_array = self.agg_LOB[1] # bid prices
-            if price_code == 0: # lower by 1 tick or equal to lowest bid
-                set_price = self._lower(min_tick, max_price, min(price_array)) # price_array[9] is the lowest bid
-            elif price_code == 11: # 1 tick higher than the highest bid
-                set_price = self._higher(min_tick, max_price, max(price_array)) # price_array[0] is the highest bid
-            else: # price_code between 1 to 10
-                set_price = self._within_price_slot(min_tick, side, max_price, price_code, price_array)
-        else: # 'ask' side is negative on agg_LOB for both size & price
-            price_array = self.agg_LOB[3] # ask prices
-            if price_code == 0: # 1 tick higher than the highest ask
-                set_price = self._higher(min_tick, max_price, abs(min(price_array))) # price_array[9] is the highest ask
-            elif price_code == 11: # lower by 1 tick or equal to lowest ask
-                set_price = self._lower(min_tick, max_price, abs(max(price_array))) # price_array[0] is the lowest ask
-            else: # price_code between 1 to 10
-                set_price = self._within_price_slot(min_tick, side, max_price, price_code, price_array)
+        best_bid = self.LOB.get_best_bid()
+        best_ask = self.LOB.get_best_ask()
 
-        return set_price * 1.0
+        # Deterministic Reference Price (always use last_price as requested)
+        ref_price = self.last_price
+        offset_multiplier = price_offset - 1 # maps (0,1,2) to (-1,0,1)
+
+        # level_index: 0 to 9 representing levels 1 to 10
+        level_idx = price_code 
+
+        if side == 'bid':
+            price_array = np.array(self.agg_LOB).reshape(4, 10)[0] # bid prices
+            p = price_array[level_idx]
+            
+            # If level is empty, use ghost logic relative to ref_price
+            base_price = (ref_price - (level_idx + 1) * min_tick) if p == 0 else abs(p)
+            
+            # Apply offset: Bid +1 is aggressive, Bid -1 is passive
+            set_price = base_price + (offset_multiplier * min_tick)
+
+        else: # 'ask'
+            price_array = np.array(self.agg_LOB).reshape(4, 10)[2] # ask prices
+            p = abs(price_array[level_idx])
+            
+            # If level is empty, use ghost logic relative to ref_price
+            base_price = (ref_price + (level_idx + 1) * min_tick) if p == 0 else p
+            
+            # Apply offset: Ask -1 is aggressive, Ask +1 is passive
+            set_price = base_price - (offset_multiplier * min_tick)
+
+        # Final safety checks
+        set_price = max(min_tick, set_price)
+        return float(set_price)
 
     def _higher(self, min_tick, max_price, price):
         """
-        Sets the price of the order to 1 tick higher or to a random price.
-
-        Arguments:
-            min_tick: Minimum price tick, a real number.
-            max_price: Maximum price, a real number.
-            price: Real number.
-
-        Returns:
-            set_price: Price, a real number.
+        Sets the price of the order to 1 tick higher.
         """
-
-        if price == 0:
-            set_price = random.randrange(min_tick, max_price, min_tick)
-        else:
-            set_price = price + min_tick # one tick higher
-
-        return set_price
+        return price + min_tick
 
     def _lower(self, min_tick, max_price, price):
         """
-        Sets the price of the order to 1 tick lower or to a random price.
-
-        Arguments:
-            min_tick: Minimum price tick, a real number.
-            max_price: Maximum price, a real number.
-            price: Real number.
-
-        Returns:
-            set_price: Price, a real number.
+        Sets the price of the order to 1 tick lower, ensuring it's not below min_tick.
         """
-
-        if price == 0:
-            set_price = random.randrange(min_tick, max_price, min_tick)
-        elif price == min_tick: # prevent -ve price
-            set_price = min_tick
-        else:
-            set_price = price - min_tick # one tick lower
-
-        return set_price
-
-    def _within_price_slot(self, min_tick, side, max_price, price_code, price_array):
-        """
-        Sets the price of the order to a random price or depending on the side,
-        1 tick higher or lower.
-
-        Arguments:
-            min_tick: Minimum price tick, a real number.
-            side: 'bid' or 'ask'
-            max_price: Maximum price, a real number.
-            price_code: 0 to 11, representing the the market depth.
-            price_array: The bid or ask prices in the market depth.
-
-        Returns:
-            set_price: Price, a real number.
-        """
-
-        set_price = min_tick
-        for i, price in enumerate(price_array):
-            if price_code == i+1: # price_code is between 1 to 10 while i starts from 0
-                if price == 0:
-                    set_price = random.randrange(min_tick, max_price, min_tick)
-
-
-                else: # Is there a better way to do this?
-                    #set_price = abs(price)
-
-                    if(side == 'bid'):
-                        set_price = abs(price) + min_tick
-                    else:
-                        if price == min_tick: # prevent -ve price
-                            set_price = min_tick
-                        else:
-                            set_price = abs(price) - min_tick
-
-
-                break
-
-        return set_price
+        return max(min_tick, price - min_tick)

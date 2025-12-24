@@ -29,9 +29,19 @@ setup(name='gym_foo',
       install_requires=['gym']  # And any other dependencies foo needs
 )
 """
-from setuptools import setup
+from setuptools import setup, find_packages
 
-setup(name='gym_continuousDoubleAuction',
-      version='0.0.1',
-      install_requires=['gym']  # And any other dependencies foo needs
+setup(
+    name='gym_continuousDoubleAuction',
+    version='0.0.1',
+    packages=['gym_continuousDoubleAuction'],  # Only this package
+    install_requires=[
+        # 'gym',
+        'gymnasium'
+    ],  # And any other dependencies foo needs
+    entry_points={
+        'gym.envs': [
+            'continuousDoubleAuction-v0 = gym_continuousDoubleAuction:YourEnvClass',
+        ],
+    },    
 )

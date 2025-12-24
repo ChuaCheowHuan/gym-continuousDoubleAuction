@@ -50,12 +50,14 @@ class Trader(Random_agent):
             if trades != []: # if trades took placed in this order
                 self._process_trades(trades, agents)
 
-            self.acc.order_in_book_init_party(order_in_book) # if there's any unfilled
+            self.acc.order_in_book_passive_party(order_in_book) # if there's any unfilled
             return trades, order_in_book
 
         else: # not enough cash to place order
             #print('Invalid order: order value > cash available.', self.ID)
-            print("\nOrder NOT approved: -ve NAV for trader_ID {}.\n".format(self.ID))
+            
+            # print("\nOrder NOT approved: -ve NAV for trader_ID {}.\n".format(self.ID))
+
             return trades, order_in_book
 
     def _order_approved(self, cash, size, price):
@@ -145,11 +147,15 @@ class Trader(Random_agent):
         """
 
         qoute['type'] = 'limit'
-        qoute['quantity'] = Decimal(qoute['quantity'])
-        self.acc.modify_cash_transfer(qoute, order)
-        orderBook.modify_order(order_id, qoute)
+        # qoute['quantity'] = Decimal(qoute['quantity']) # already handled in caller or orderbook
 
-        return [],[]
+        # "Undo" the old order's accounting to prepare for the modified order.
+        self.acc.cancel_cash_transfer(order)
+
+        # modify_order now returns trades and the updated order residue.
+        trades, order_in_book = orderBook.modify_order(order_id, qoute)
+
+        return trades, order_in_book
 
     def _cancel_limit_order(self, orderBook, qoute):
         """
@@ -180,11 +186,28 @@ class Trader(Random_agent):
         """
 
         order_map = self._find_orderTree(orderBook, qoute)
-        for order_ID, order in order_map.items():
-            if order.price == qoute['price'] and order.trade_id == qoute['trade_id']:
-                return order_ID, order # order already exist
+        if order_map is None:
+            return -1, None
 
-        return -1, None # no such order in order tree.
+        matching_orders = []
+        for order_ID, order in order_map.items():
+            if order.trade_id == qoute['trade_id']:
+                matching_orders.append((order_ID, order))
+
+        if not matching_orders:
+            return -1, None
+
+        if qoute.get('type') == 'modify':
+            # FIFO logic: find the oldest existing order (smallest timestamp)
+            return min(matching_orders, key=lambda x: x[1].timestamp)
+        
+        # For 'cancel' or 'limit', we match the specific price
+        target_price = qoute.get('price')
+        for order_ID, order in matching_orders:
+            if order.price == target_price:
+                return order_ID, order
+
+        return -1, None # no matching order found for this price
 
     def _find_orderTree(self, orderBook, qoute):
         """

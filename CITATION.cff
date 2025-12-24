@@ -3,8 +3,8 @@ message: "If you use this software in your work, please cite it as follows."
 authors:
   - family-names: Chua
     given-names: Cheow Huan
-    title: gym-continuousDoubleAuction
-version: 1.0.0
-date-released: 2020-07-22
-repository-code: https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction
+title: "gym-continuousDoubleAuction"
+version: 2.0.0
+date-released: 2025-12-24
+repository-code: https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/
 license: MIT

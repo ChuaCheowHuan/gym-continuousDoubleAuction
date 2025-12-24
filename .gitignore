@@ -13,3 +13,5 @@
 **/last_eps_steps
 venv
 gym_continuousDoubleAuction/episode_data
+gym_continuousDoubleAuction/*.txt
+gym_continuousDoubleAuction/*.json

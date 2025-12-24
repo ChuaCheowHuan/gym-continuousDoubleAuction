@@ -1,61 +1,54 @@
-from ray.rllib.models.tf.tf_modelv2 import TFModelV2
-from ray.rllib.models.tf.fcnet_v2 import FullyConnectedNetwork
-from ray.rllib.models import Model  # deprecated and should not be used.
+import torch
+import torch.nn as nn
+from ray.rllib.core.rl_module.rl_module import RLModule
+from ray.rllib.core.rl_module.torch import TorchRLModule
 
-class CustomModel_1(Model):
-    """
-    Sample custom model with LSTM.
+# Custom RLModule for PyTorch
+class CustomRLModule(RLModule):
+    def __init__(self, config):
+        super().__init__(config)
+        self.obs_dim = config.observation_space.shape[0]
+        self.num_actions = config.action_space.n
 
-    Still working but deprecated and should not be used.
-    Need to update this class.
-    see: https://ray.readthedocs.io/en/latest/rllib-models.html
-    """
+        # Define a simple neural network
+        self.network = nn.Sequential(
+            nn.Linear(self.obs_dim, 8),
+            nn.ReLU(),
+            nn.Linear(8, 4),
+            nn.ReLU(),
+            nn.Linear(4, self.num_actions)
+        )
 
-    def _lstm(self, Inputs, cell_size):
-        s = tf.expand_dims(Inputs, axis=1, name='time_major')  # [time_step, feature] => [time_step, batch, feature]
-        lstm_cell = tf.nn.rnn_cell.LSTMCell(cell_size)
-        self.init_state = lstm_cell.zero_state(batch_size=1, dtype=tf.float32)
-        # time_major means [time_step, batch, feature] while batch major means [batch, time_step, feature]
-        outputs, self.final_state = tf.nn.dynamic_rnn(cell=lstm_cell, inputs=s, initial_state=self.init_state, time_major=True)
-        lstm_out = tf.reshape(outputs, [-1, cell_size], name='flatten_rnn_outputs')  # joined state representation
-        return lstm_out
+        # Value head for PPO
+        self.value_branch = nn.Linear(8, 1)
+        self._last_value = None
 
-    """
-    def _build_layers_v2(self, input_dict, num_outputs, options):
-        hidden = 512
-        cell_size = 256
-        #S = input_dict["obs"]
-        S = tf.layers.flatten(input_dict["obs"])
-        with tf.variable_scope(tf.VariableScope(tf.AUTO_REUSE, "shared"),
-                               reuse=tf.AUTO_REUSE,
-                               auxiliary_name_scope=False):
-            last_layer = tf.layers.dense(S, hidden, activation=tf.nn.relu, name="fc1")
-        last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc2")
-        last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc3")
+    def forward_train(self, batch, **kwargs):
+        obs = batch["obs"].float()
+        features = self.network[:-1](obs)  # Get features before final layer
+        action_logits = self.network[-1](features)
+        self._last_value = self.value_branch(features).squeeze(-1)
+        return {"action_dist_inputs": action_logits}
 
-        last_layer = self._lstm(last_layer, cell_size)
+    def forward_inference(self, batch, **kwargs):
+        obs = batch["obs"].float()
+        features = self.network[:-1](obs)
+        action_logits = self.network[-1](features)
+        return {"action_dist_inputs": action_logits}
 
-        output = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softmax, name="mu")
+    def forward_exploration(self, batch, **kwargs):
+        return self.forward_inference(batch, **kwargs)
 
-        return output, last_layer
-    """
+    def get_state(self):
+        return {}  # No recurrent state in this model
 
-    def _build_layers_v2(self, input_dict, num_outputs, options):
-        hidden = 512
-        cell_size = 256
+    def set_state(self, state):
+        pass  # No state to set
 
-        S = input_dict["obs"]
-        last_layer = tf.layers.flatten(S)
+    def get_train_action_dist_cls(self):
+        from ray.rllib.models.torch.torch_distributions import TorchCategorical
+        return TorchCategorical
 
-        last_layer = self._lstm(last_layer, cell_size)
-
-        with tf.variable_scope(tf.VariableScope(tf.AUTO_REUSE, "shared"),
-                               reuse=tf.AUTO_REUSE,
-                               auxiliary_name_scope=False):
-            last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc1")
-        last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc2")
-        last_layer = tf.layers.dense(last_layer, hidden, activation=tf.nn.relu, name="fc3")
-
-        output = tf.layers.dense(last_layer, num_outputs, activation=tf.nn.softmax, name="mu")
-
-        return output, last_layer
+    def get_inference_action_dist_cls(self):
+        from ray.rllib.models.torch.torch_distributions import TorchCategorical
+        return TorchCategorical

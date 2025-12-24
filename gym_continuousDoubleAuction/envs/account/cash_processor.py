@@ -12,13 +12,13 @@ class Cash_Processor(object):
         as if he has an unlimited amount of cash.
     """
 
-    def order_in_book_init_party(self, order_in_book):
+    def order_in_book_passive_party(self, order_in_book):
         """
-        If there are new unfilled orders for this trader(init_party),
+        If there are new unfilled orders for this trader(passive party),
         reduce his cash & increase his cash_on_hold.
         """
 
-        # if there's order_in_book for init_party (party2)
+        # if there's order_in_book for passive party (party2)
         if order_in_book != None and order_in_book != []: # there are new unfilled orders
             order_in_book_val = order_in_book.get('price') * Decimal(order_in_book.get('quantity'))
             self.cash -= order_in_book_val # reduce cash
@@ -72,7 +72,13 @@ class Cash_Processor(object):
         """
 
         order_val = (order.price) * (order.quantity)
-        qoute_val = Decimal(qoute['price']) * (qoute['quantity'])
+
+
+
+        qoute_val = Decimal(str(qoute['price'])) * qoute['quantity']
+        
+        
+        
         if order_val >= qoute_val: # reducing size
             diff = order_val - qoute_val
             # deduct from cash_on_hold, return to cash

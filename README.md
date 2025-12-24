@@ -1,8 +1,12 @@
-[![Build Status](https://travis-ci.com/ChuaCheowHuan/gym-continuousDoubleAuction.svg?branch=master)](https://travis-ci.com/ChuaCheowHuan/gym-continuousDoubleAuction)
+# Changes from original_v1 to Current Version 2 (update 20251224)
+
+This repository has undergone significant modernization since the `original_v1` branch (the original release from 2020).
+
+For a detailed breakdown of codebase modernizations, please refer to the [change.md](gym_continuousDoubleAuction/doc/change.md) document.
 
 ---
 
-# Contents:
+# Below are the information for the `original_v1` branch (released more than 5 years ago):
 1) [Update](#update)
 2) [Purpose of this repository](#purpose-of-this-repository)
 3) [Example](#example)
@@ -19,6 +23,10 @@
 12) [Reward](#Reward)
 13) [Making sense of the render output](#making-sense-of-the-render-output)
 14) [Generated LOB](#generated-lob)
+
+---
+
+[![Build Status](https://travis-ci.com/ChuaCheowHuan/gym-continuousDoubleAuction.svg?branch=master)](https://travis-ci.com/ChuaCheowHuan/gym-continuousDoubleAuction)
 
 ---
 
@@ -563,8 +571,8 @@ TERMINATED trials:
 
 If you use this software in your research, please cite the appropriate version:
 
-> Chua Cheow Huan. (2020). *gym-continuousDoubleAuction* (Version 1.0.0) [Computer software].
+> Chua Cheow Huan. (2025). *gym-continuousDoubleAuction* (Version 2.0.0) [Computer software].
 
 You can also view and export citations in various formats using the **"Cite this repository"** button on the top-right of this page.
 
-For version 1.0.0 (original version released in 2020), see: https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction
+For version 1.0.0 (original version released in 2020), see: https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/tree/original_v1
