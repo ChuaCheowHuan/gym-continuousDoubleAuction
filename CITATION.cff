@@ -3,8 +3,8 @@ message: "If you use this software in your work, please cite it as follows."
 authors:
   - family-names: Chua
     given-names: Cheow Huan
-    title: gym-continuousDoubleAuction
+title: "gym-continuousDoubleAuction"
 version: 2.0.0
-date-released: 2025
+date-released: 2025-01-01
 repository-code: https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/tree/refine_models
-license: MIT  
+license: MIT
