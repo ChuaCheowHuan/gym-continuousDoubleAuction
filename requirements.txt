@@ -108,7 +108,7 @@ python-json-logger==3.3.0
 pytz==2025.2
 PyYAML==6.0.2
 pyzmq==27.0.0
-ray==2.48.0
+ray==2.52.1
 referencing==0.36.2
 requests==2.32.4
 rfc3339-validator==0.1.4
