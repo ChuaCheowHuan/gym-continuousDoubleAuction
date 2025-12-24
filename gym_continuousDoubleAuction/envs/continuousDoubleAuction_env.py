@@ -77,17 +77,8 @@ class continuousDoubleAuctionEnv(
             ) for i in range(self.num_of_agents)
         }
 
-        act_space = gym.spaces.Tuple((
-            gym.spaces.Discrete(3),  # side
-            gym.spaces.Discrete(4),  # type
-            gym.spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),   # mean
-            gym.spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),    # sigma
-            gym.spaces.Discrete(12),  # price
-        ))         
-        # act_space = gym.spaces.Discrete(3)
-        self.action_space = {
-            f"agent_{i}": act_space for i in range(self.num_of_agents)
-        }
+        # Updated action space to use the new Compact Flat structure
+        self.action_space = self.act_space(self.num_of_agents)
     
     def get_action_space(self, agent_id):
         # Return the actual action space, not a dictionary

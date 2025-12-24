@@ -38,32 +38,30 @@ class Action_Helper():
         '''
         The action space for multiple agents, returned as a dictionary.
 
-        Each agent has its own action tuple:
-            - side: Discrete(3) -> 0: none, 1: bid, 2: ask
-            - type: Discrete(4) -> 0: market, 1: limit, 2: modify, 3: cancel
-            - mean: Box(-1.0, 1.0) -> for size selection
-            - sigma: Box(0.0, 1.0) -> for size selection
-            - price: Discrete(12) -> from 0 to 11 (based on market depth)
+        Each agent has its own action Dict:
+            - category: Discrete(9) -> 0: None, 1: Buy Mkt, 2: Buy Lmt, 3: Buy Mod, 4: Buy Can,
+                                     5: Sell Mkt, 6: Sell Lmt, 7: Sell Mod, 8: Sell Can
+            - size_mean: Box(-1.0, 1.0)
+            - size_sigma: Box(0.0, 1.0)
+            - price: Discrete(12)
 
         Args:
             num_agents (int): Number of agents.
 
         Returns:
-            gym.spaces.Dict: Dictionary mapping agent IDs to their action spaces.
+            dict: Dictionary mapping agent IDs to their action spaces.
         '''
 
-        agent_space = spaces.Tuple((
-            spaces.Discrete(3),  # side
-            spaces.Discrete(4),  # type
-            spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),  # mean
-            spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),  # sigma
-            spaces.Discrete(12),  # price
-        ))
+        agent_space = spaces.Dict({
+            "category": spaces.Discrete(9),
+            "size_mean": spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),
+            "size_sigma": spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),
+            "price": spaces.Discrete(12),
+        })
 
         # Create a dictionary mapping for all agents
         space_dict = {f'agent_{i}': agent_space for i in range(num_agents)}
 
-        # return spaces.Dict(space_dict)
         return space_dict
 
     def set_actions(self, model_outs):
@@ -139,44 +137,43 @@ class Action_Helper():
         Sets the action of each agent from the model.
 
         Arguments:
-            ID: agent ID, int.
-            model_out: An action for a single agent from the model .
+            ID: agent ID, str.
+            model_out: An action Dict for a single agent from the model.
 
         Returns:
             act: The action of an agent acceptable by the LOB.
         """
-        
-        
-        
-        # print(f'model_out: {model_out}')
 
-
-
-        # Assign model output for a single action to their respective fields.
-        side = model_out[0]
-        ord_type = model_out[1]
-        size_mean = model_out[2]
-        size_sigma = model_out[3]
-        price_code = model_out[4]
+        category = model_out["category"]
+        size_mean = model_out["size_mean"]
+        size_sigma = model_out["size_sigma"]
+        price_code = model_out["price"]
 
         act = {}
         act["ID"] = ID
-        act["side"] = self._set_side(side)
-        act["type"] = self._set_type(ord_type)
+        
+        # Mapping Category to Side and Type
+        # 0: None, 1: Buy Mkt, 2: Buy Lmt, 3: Buy Mod, 4: Buy Can,
+        # 5: Sell Mkt, 6: Sell Lmt, 7: Sell Mod, 8: Sell Can
+        if category == 0:
+            act["side"] = None
+            act["type"] = 'market' # Default to market for 'None' category, though it won't execute
+        elif 1 <= category <= 4:
+            act["side"] = 'bid'
+            types = {1: 'market', 2: 'limit', 3: 'modify', 4: 'cancel'}
+            act["type"] = types[category]
+        else: # 5 <= category <= 8
+            act["side"] = 'ask'
+            types = {5: 'market', 6: 'limit', 7: 'modify', 8: 'cancel'}
+            act["type"] = types[category]
 
         size = self._set_size(act["type"], self.mkt_size_mean_mul, self.limit_size_mean_mul, size_mean, size_sigma)
         act["size"] = (size + self.min_size) * 1.0 # +self.min_size as size can't be 0, *1 for float
 
         if act["type"] == 'market':
             act["price"] = -1.0 # -1.0 to indicate market price
-        elif act["type"] == 'limit':
-            act["price"] = self._set_price(self.min_tick, self.max_price, act["side"], price_code)
-        elif act["type"] == 'modify':
-            act["price"] = self._set_price(self.min_tick, self.max_price, act["side"], price_code)
-        elif act["type"] == 'cancel':
-            act["price"] = self._set_price(self.min_tick, self.max_price, act["side"], price_code)
         else:
-            act["price"] = 0
+            act["price"] = self._set_price(self.min_tick, self.max_price, act["side"], price_code)
 
         return act
 

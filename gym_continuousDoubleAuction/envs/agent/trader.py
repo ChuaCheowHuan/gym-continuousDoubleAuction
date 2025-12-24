@@ -186,14 +186,28 @@ class Trader(Random_agent):
         """
 
         order_map = self._find_orderTree(orderBook, qoute)
+        if order_map is None:
+            return -1, None
+
+        matching_orders = []
         for order_ID, order in order_map.items():
             if order.trade_id == qoute['trade_id']:
-                # If modifying, we want the order regardless of its current price.
-                # If placing (limit), we only match if it's the exact same price.
-                if qoute.get('type') == 'modify' or order.price == qoute['price']:
-                    return order_ID, order # order already exist
+                matching_orders.append((order_ID, order))
 
-        return -1, None # no such order in order tree.
+        if not matching_orders:
+            return -1, None
+
+        if qoute.get('type') == 'modify':
+            # FIFO logic: find the oldest existing order (smallest timestamp)
+            return min(matching_orders, key=lambda x: x[1].timestamp)
+        
+        # For 'cancel' or 'limit', we match the specific price
+        target_price = qoute.get('price')
+        for order_ID, order in matching_orders:
+            if order.price == target_price:
+                return order_ID, order
+
+        return -1, None # no matching order found for this price
 
     def _find_orderTree(self, orderBook, qoute):
         """

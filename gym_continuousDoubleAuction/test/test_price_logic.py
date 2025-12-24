@@ -25,29 +25,43 @@ def test_price_logic():
     # price_code 1 is mapping to loop index i=0 in _set_price refactor if I used 1-indexed codes
     # wait, my refactor used price_code 1-10.
     
-    # actions per agent: (side, type, size_mean, size_sigma, price_code)
-    # agent_0: side=1 (bid), type=1 (limit), size=1, price_code=1
+    # Updated actions per agent: Dict format
+    # category: 1 (Buy Mkt), 2 (Buy Lmt), etc.
+    # agents: (side, type, size_mean, size_sigma, price_code)
+    
+    # agent_0: category=2 (Buy Lmt), size=1, price_code=1
     actions = {
-        'agent_0': (1, 1, np.array([0.0], dtype=np.float32), np.array([0.0], dtype=np.float32), 1)
+        'agent_0': {
+            'category': 2,
+            'size_mean': np.array([0.0], dtype=np.float32),
+            'size_sigma': np.array([0.0], dtype=np.float32),
+            'price': 1
+        }
     }
     
-    # We need to manually call set_actions or step and check the LOB_actions
     env.step(actions)
     
     lob_action = env.LOB_actions[0]
     expected_price = last_price - (1 * env.min_tick)
-    print(f"Agent 0 Bid Price (code 1): {lob_action['price']}, Expected: {expected_price}")
-    assert abs(lob_action['price'] - expected_price) < 1e-5, f"Ghost price mismatch: {lob_action['price']} != {expected_price}"
+    print(f"Agent 0 Bid Price (category 2, code 1): {lob_action['price']}, Expected: {expected_price}")
+    assert abs(lob_action['price'] - expected_price) < 1e-5, f"Ghost price mismatch"
+    assert lob_action['side'] == 'bid', "Side mismatch"
+    assert lob_action['type'] == 'limit', "Type mismatch"
     
-    # Check aggressive bid (code 11)
+    # Check aggressive bid (category 1, Buy Mkt)
     actions = {
-        'agent_1': (1, 1, np.array([0.0], dtype=np.float32), np.array([0.0], dtype=np.float32), 11)
+        'agent_1': {
+            'category': 1,
+            'size_mean': np.array([0.0], dtype=np.float32),
+            'size_sigma': np.array([0.0], dtype=np.float32),
+            'price': 11 # should be ignored for market orders
+        }
     }
     env.step(actions)
     lob_action = env.LOB_actions[0]
-    expected_price_agg = last_price + env.min_tick
-    print(f"Agent 1 Aggressive Bid (code 11): {lob_action['price']}, Expected: {expected_price_agg}")
-    assert abs(lob_action['price'] - expected_price_agg) < 1e-5, f"Aggressive price mismatch"
+    print(f"Agent 1 Buy Market: type={lob_action['type']}, price={lob_action['price']}")
+    assert lob_action['type'] == 'market', "Type mismatch"
+    assert lob_action['price'] == -1.0, "Market price should be -1.0"
 
     # Simulate a trade to check last_price update
     # Place a sell limit at 150
