@@ -6,13 +6,15 @@ To eliminate the "random lottery" effect caused by an empty Order Book (LOB), we
 
 When the environment resets and the order book is completely empty, there is no "market price" to reference. To solve this:
 
-*   **Configurable Anchor**: Add an `initial_price` parameter to the environment configuration (e.g., in `continuousDoubleAuctionEnv.__init__`).
+*   **Configurable Range**: Add `initial_price_min` and `initial_price_max` parameters to the environment configuration.
 *   **Persistent State**: The environment should maintain a `self.last_price` variable.
-*   **Initialization**: At $t=0$, `self.last_price` is set to the `initial_price`.
+*   **Initialization**: At $t=0$, `self.last_price` is set to a value sampled uniformly from the range `[initial_price_min, initial_price_max]`.
 *   **Implementation**:
     ```python
     # In continuousDoubleAuctionEnv.reset()
-    self.last_price = self.config.get("initial_price", 100.0)
+    low = self.config.get("initial_price_min", 10.0)
+    high = self.config.get("initial_price_max", 100.0)
+    self.last_price = np.random.uniform(low, high)
     ```
 
 ## 2. Determining Prices for Empty Levels
