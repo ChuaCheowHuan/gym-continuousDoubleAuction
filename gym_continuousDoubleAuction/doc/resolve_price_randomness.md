@@ -27,8 +27,7 @@ Even if a level has zero volume, it still has a **deterministic price coordinate
 **Logic for Price Code $i$ (where $i \in [1, 10]$):**
 
 1.  **Reference Price ($P_{ref}$)**:
-    - If the book has a spread: $P_{ref} = \frac{BestBid + BestAsk}{2}$ (Mid-Price).
-    - If the book is empty on one or both sides: $P_{ref} = self.last_price$.
+    - Always use `self.last_price` as the reference anchor (which is the last traded price or the initial random price).
 
 2.  **Deterministic Calculation**:
     - **If Buying (Bid side)**: $Price_i = P_{ref} - (i \times TickSize)$

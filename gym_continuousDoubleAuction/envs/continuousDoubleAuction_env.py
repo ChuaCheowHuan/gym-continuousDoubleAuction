@@ -21,7 +21,8 @@ class continuousDoubleAuctionEnv(
 
     def __init__(self, config=None):      
         # Handle config parameter for RLlib compatibility
-        config = config or {}
+        self.config = config or {}
+        config = self.config
         
         # Extract parameters from config with defaults
         self.num_of_agents = config.get("num_of_agents", 5)
@@ -164,6 +165,11 @@ class continuousDoubleAuctionEnv(
         self.shuffled_actions = None
 
         self.t_step = 0
+
+        # Establish initial price anchor
+        low = self.config.get("initial_price_min", 10)
+        high = self.config.get("initial_price_max", 100)
+        self.last_price = float(np.random.randint(low, high + 1))
 
         self.reset_traders_acc()
 

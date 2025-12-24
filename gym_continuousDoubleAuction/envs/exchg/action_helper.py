@@ -18,6 +18,7 @@ class Action_Helper():
         # for random price generation
         self.min_tick = 1 # price tick
         self.max_price = 101
+        self.last_price = 100.0 # Default anchor (will be overwritten by env.reset)
 
     # def act_space(self):
     #     '''
@@ -246,124 +247,67 @@ class Action_Helper():
             set_price: Price, a real number.
         """
 
+        best_bid = self.LOB.get_best_bid()
+        best_ask = self.LOB.get_best_ask()
+
+        # Deterministic Reference Price (always use last_price as requested)
+        ref_price = self.last_price
+
         if side == 'bid':
-            # agg_LOB is [bid_size_list, bid_price_list, ask_size_list, ask_price_list] # list of np.arrays
+            price_array = np.array(self.agg_LOB).reshape(4, 10)[0] # bid prices
             
-            
-            
-            # price_array = self.agg_LOB[1] # bid prices
-            price_array = np.array(self.agg_LOB).reshape(4, 10)[0]
-            
+            if price_code == 0: # passive
+                worst_bid = min(price_array)
+                if worst_bid == 0:
+                    set_price = ref_price - (11 * min_tick)
+                else:
+                    set_price = worst_bid - min_tick
+            elif price_code == 11: # aggressive
+                best_bid_val = max(price_array)
+                if best_bid_val == 0:
+                    set_price = ref_price + min_tick
+                else:
+                    set_price = best_bid_val + min_tick
+            else: # 1-10
+                p = price_array[price_code - 1]
+                if p == 0:
+                    set_price = ref_price - (price_code * min_tick)
+                else:
+                    set_price = abs(p) + min_tick
+        else: # 'ask'
+            price_array = np.array(self.agg_LOB).reshape(4, 10)[2] # ask prices
 
-            
-            if price_code == 0: # lower by 1 tick or equal to lowest bid
-                set_price = self._lower(min_tick, max_price, min(price_array)) # price_array[9] is the lowest bid
-            elif price_code == 11: # 1 tick higher than the highest bid
-                set_price = self._higher(min_tick, max_price, max(price_array)) # price_array[0] is the highest bid
-            else: # price_code between 1 to 10
-                set_price = self._within_price_slot(min_tick, side, max_price, price_code, price_array)
-        else: # 'ask' side is negative on agg_LOB for both size & price
-            
-            
-            
-            # price_array = self.agg_LOB[3] # ask prices
-            price_array = np.array(self.agg_LOB).reshape(4, 10)[2]
+            if price_code == 0: # passive
+                worst_ask = abs(min(price_array))
+                if worst_ask == 0:
+                    set_price = ref_price + (11 * min_tick)
+                else:
+                    set_price = worst_ask + min_tick
+            elif price_code == 11: # aggressive
+                best_ask_val = abs(max(price_array))
+                if best_ask_val == 0:
+                    set_price = ref_price - min_tick
+                else:
+                    set_price = best_ask_val - min_tick
+            else: # 1-10
+                p = abs(price_array[price_code - 1])
+                if p == 0:
+                    set_price = ref_price + (price_code * min_tick)
+                else:
+                    set_price = p - min_tick
 
-
-
-            if price_code == 0: # 1 tick higher than the highest ask
-                set_price = self._higher(min_tick, max_price, abs(min(price_array))) # price_array[9] is the highest ask
-            elif price_code == 11: # lower by 1 tick or equal to lowest ask
-                set_price = self._lower(min_tick, max_price, abs(max(price_array))) # price_array[0] is the lowest ask
-            else: # price_code between 1 to 10
-                set_price = self._within_price_slot(min_tick, side, max_price, price_code, price_array)
-
-        return set_price * 1.0
+        # Final safety checks
+        set_price = max(min_tick, set_price)
+        return float(set_price)
 
     def _higher(self, min_tick, max_price, price):
         """
-        Sets the price of the order to 1 tick higher or to a random price.
-
-        Arguments:
-            min_tick: Minimum price tick, a real number.
-            max_price: Maximum price, a real number.
-            price: Real number.
-
-        Returns:
-            set_price: Price, a real number.
+        Sets the price of the order to 1 tick higher.
         """
-
-        if price == 0:
-            set_price = random.randrange(min_tick, max_price, min_tick)
-        else:
-            set_price = price + min_tick # one tick higher
-
-        return set_price
+        return price + min_tick
 
     def _lower(self, min_tick, max_price, price):
         """
-        Sets the price of the order to 1 tick lower or to a random price.
-
-        Arguments:
-            min_tick: Minimum price tick, a real number.
-            max_price: Maximum price, a real number.
-            price: Real number.
-
-        Returns:
-            set_price: Price, a real number.
+        Sets the price of the order to 1 tick lower, ensuring it's not below min_tick.
         """
-
-        if price == 0:
-            set_price = random.randrange(min_tick, max_price, min_tick)
-        elif price == min_tick: # prevent -ve price
-            set_price = min_tick
-        else:
-            set_price = price - min_tick # one tick lower
-
-        return set_price
-
-    def _within_price_slot(self, min_tick, side, max_price, price_code, price_array):
-        """
-        Sets the price of the order to a random price or depending on the side,
-        1 tick higher or lower.
-
-        Arguments:
-            min_tick: Minimum price tick, a real number.
-            side: 'bid' or 'ask'
-            max_price: Maximum price, a real number.
-            price_code: 0 to 11, representing the the market depth.
-            price_array: The bid or ask prices in the market depth.
-
-        Returns:
-            set_price: Price, a real number.
-        """
-
-        set_price = min_tick
-
-
-
-        # print(f'price_array:{price_array}')
-
-
-
-        for i, price in enumerate(price_array):
-            if price_code == i+1: # price_code is between 1 to 10 while i starts from 0
-                if price == 0:
-                    set_price = random.randrange(min_tick, max_price, min_tick)
-
-
-                else: # Is there a better way to do this?
-                    #set_price = abs(price)
-
-                    if(side == 'bid'):
-                        set_price = abs(price) + min_tick
-                    else:
-                        if price == min_tick: # prevent -ve price
-                            set_price = min_tick
-                        else:
-                            set_price = abs(price) - min_tick
-
-
-                break
-
-        return set_price
+        return max(min_tick, price - min_tick)
