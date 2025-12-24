@@ -6,7 +6,7 @@ For a detailed breakdown of codebase modernizations, please refer to the [change
 
 ---
 
-# Contents for the `original_v1` branch (released more than 5 years ago):
+# Below are the information for the `original_v1` branch (released more than 5 years ago):
 1) [Update](#update)
 2) [Purpose of this repository](#purpose-of-this-repository)
 3) [Example](#example)
