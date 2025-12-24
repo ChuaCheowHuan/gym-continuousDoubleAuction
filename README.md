@@ -563,8 +563,8 @@ TERMINATED trials:
 
 If you use this software in your research, please cite the appropriate version:
 
-> Chua Cheow Huan. (2020). *gym-continuousDoubleAuction* (Version 1.0.0) [Computer software].
+> Chua Cheow Huan. (2025). *gym-continuousDoubleAuction* (Version 2.0.0) [Computer software].
 
 You can also view and export citations in various formats using the **"Cite this repository"** button on the top-right of this page.
 
-For version 1.0.0 (original), see: https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction
+For version 1.0.0 (original version released in 2020), see: https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/original_v1

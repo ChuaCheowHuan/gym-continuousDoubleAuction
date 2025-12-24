@@ -4,7 +4,7 @@ authors:
   - family-names: Chua
     given-names: Cheow Huan
     title: gym-continuousDoubleAuction
-version: 1.0.0
-date-released: 2020-07-22
-repository-code: https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction
+version: 2.0.0
+date-released: 2025
+repository-code: https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/refine_models
 license: MIT  
