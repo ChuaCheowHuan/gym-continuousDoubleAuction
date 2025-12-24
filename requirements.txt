@@ -26,7 +26,7 @@ executing==2.2.0
 Farama-Notifications==0.0.4
 fastjsonschema==2.21.1
 filelock==3.18.0
-fonttools==4.60.1
+fonttools==4.60.2
 fqdn==1.5.1
 fsspec==2025.5.1
 GPUtil==1.4.0
