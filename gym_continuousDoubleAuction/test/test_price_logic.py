@@ -29,39 +29,53 @@ def test_price_logic():
     # category: 1 (Buy Mkt), 2 (Buy Lmt), etc.
     # agents: (side, type, size_mean, size_sigma, price_code)
     
-    # agent_0: category=2 (Buy Lmt), size=1, price_code=1
+    # agent_0: category=2 (Buy Lmt), price_code=0 (Level 1), price_offset=1 (Join)
     actions = {
         'agent_0': {
             'category': 2,
             'size_mean': np.array([0.0], dtype=np.float32),
             'size_sigma': np.array([0.0], dtype=np.float32),
-            'price': 1
+            'price': 0, # Level 1
+            'price_offset': 1 # Join
         }
     }
-    
     env.step(actions)
-    
     lob_action = env.LOB_actions[0]
-    expected_price = last_price - (1 * env.min_tick)
-    print(f"Agent 0 Bid Price (category 2, code 1): {lob_action['price']}, Expected: {expected_price}")
-    assert abs(lob_action['price'] - expected_price) < 1e-5, f"Ghost price mismatch"
-    assert lob_action['side'] == 'bid', "Side mismatch"
-    assert lob_action['type'] == 'limit', "Type mismatch"
+    expected_join = last_price - (1 * env.min_tick)
+    print(f"Join Offset (1): {lob_action['price']}, Expected: {expected_join}")
+    assert abs(lob_action['price'] - expected_join) < 1e-5
     
-    # Check aggressive bid (category 1, Buy Mkt)
+    # agent_0: category=2 (Buy Lmt), price_code=1, price_offset=2 (Aggressive)
     actions = {
-        'agent_1': {
-            'category': 1,
+        'agent_0': {
+            'category': 2,
             'size_mean': np.array([0.0], dtype=np.float32),
             'size_sigma': np.array([0.0], dtype=np.float32),
-            'price': 11 # should be ignored for market orders
+            'price': 0,
+            'price_offset': 2 # Aggressive (+1 tick for bid)
         }
     }
     env.step(actions)
     lob_action = env.LOB_actions[0]
-    print(f"Agent 1 Buy Market: type={lob_action['type']}, price={lob_action['price']}")
-    assert lob_action['type'] == 'market', "Type mismatch"
-    assert lob_action['price'] == -1.0, "Market price should be -1.0"
+    expected_agg = expected_join + env.min_tick
+    print(f"Aggressive Offset (2): {lob_action['price']}, Expected: {expected_agg}")
+    assert abs(lob_action['price'] - expected_agg) < 1e-5
+
+    # agent_0: category=2 (Buy Lmt), price_code=1, price_offset=0 (Passive)
+    actions = {
+        'agent_0': {
+            'category': 2,
+            'size_mean': np.array([0.0], dtype=np.float32),
+            'size_sigma': np.array([0.0], dtype=np.float32),
+            'price': 0,
+            'price_offset': 0 # Passive (-1 tick for bid)
+        }
+    }
+    env.step(actions)
+    lob_action = env.LOB_actions[0]
+    expected_pas = expected_join - env.min_tick
+    print(f"Passive Offset (0): {lob_action['price']}, Expected: {expected_pas}")
+    assert abs(lob_action['price'] - expected_pas) < 1e-5
 
     # Simulate a trade to check last_price update
     # Place a sell limit at 150

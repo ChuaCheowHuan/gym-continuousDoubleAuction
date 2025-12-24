@@ -10,34 +10,31 @@ The action space for each agent is a `gym.spaces.Dict` with the following compon
 | `category` | `Discrete(9)` | The primary trade action (combines side and type). |
 | `size_mean` | `Box(-1.0, 1.0)` | Mean for size sampling (original logic). |
 | `size_sigma` | `Box(0.0, 1.0)` | Sigma for size sampling (original logic). |
-| `price` | `Discrete(12)` | Relative price level (0-11). |
+| `price` | `Discrete(10)` | Market depth level index (0-9 for levels 1-10). |
+| `price_offset` | `Discrete(3)` | Position relative to level (0: Passive, 1: Join, 2: Aggressive). |
 
 ## 2. Action Categories (`category`)
 The `category` field collapses the previous "Side" and "Type" hierarchy:
 
 - **0: Neutral** – No action taken.
-- **1: Buy Market** – Buy at best available price.
-- **2: Buy Limit** – Place a buy order at the chosen price level.
-- **3: Buy Modify** – Move the oldest existing buy order to a new price.
-- **4: Buy Cancel** – Cancel a buy order at the specific price level.
-- **5: Sell Market** – Sell at best available price.
-- **6: Sell Limit** – Place a sell order at the chosen price level.
-- **7: Sell Modify** – Move the oldest existing sell order to a new price.
-- **8: Sell Cancel** – Cancel a sell order at the specific price level.
+- **1-4: Buy Actions** – 1: Market, 2: Limit, 3: Modify, 4: Cancel.
+- **5-8: Sell Actions** – 5: Market, 6: Limit, 7: Modify, 8: Cancel.
 
-## 3. Deterministic Price Anchor ("Ghost Levels")
-To ensure that price codes (0-11) always have a consistent economic meaning even when the Order Book is thin or empty, the environment uses a deterministic anchoring system:
+## 3. Deterministic Price Anchoring
+- **Initial Anchor**: Episode starts with `last_price` sampled as an integer from `[initial_price_min, initial_price_max]`.
+- **Dynamic Anchor**: `last_price` updates to the **Last Traded Price** from the LOB tape after every trade.
+- **Ghost Levels**: If a targeted book level is empty, the price is anchored to `last_price` using deterministic offsets (Bid: `Anchor - (Level * Tick)`, Ask: `Anchor + (Level * Tick)`).
 
-- **Initial Anchor**: At the start of an episode ($t=0$), an `initial_price` is sampled as an **integer** from a configurable range (`initial_price_min` to `initial_price_max`).
-- **Dynamic Anchor**: The anchor updates to the **Last Traded Price** whenever a trade occurs on the tape.
-- **Mapping**: If a price level in the book is empty, the price is calculated as an offset from this anchor:
-  - **Bids**: `Anchor - (LevelIndex * TickSize)`
-  - **Asks**: `Anchor + (LevelIndex * TickSize)`
+## 4. Relative Price Offsets
+- **0: Passive**: 1 tick worse than the level price.
+- **1: Join**: Exactly the level price.
+- **2: Aggressive**: 1 tick better than the level price (undercut/better).
 
-## 4. Multi-Order Targeting
-When an agent has multiple orders in the book:
+*Note: The previous price codes 0 and 11 (passive/aggressive boundaries) were removed as they are now redundant with the level/offset combinations.*
+
+## 5. Multi-Order Targeting
 - **Modify**: Uses **FIFO** logic, targeting the agent's **oldest existing order** on that side.
-- **Cancel**: Matches the specific **Price Level** targeted by the `price` field.
+- **Cancel**: Matches the specific **Price Level** targeted by the combination of `price` and `price_offset`.
 
 ---
-*Note: This design eliminates the previous "Empty Book Randomness" flaw where thin books triggered completely random price generation.*
+*This design ensures that every action combination has a stable and distinct economic meaning.*

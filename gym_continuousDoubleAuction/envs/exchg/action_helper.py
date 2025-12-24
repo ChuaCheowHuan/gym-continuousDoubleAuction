@@ -43,7 +43,8 @@ class Action_Helper():
                                      5: Sell Mkt, 6: Sell Lmt, 7: Sell Mod, 8: Sell Can
             - size_mean: Box(-1.0, 1.0)
             - size_sigma: Box(0.0, 1.0)
-            - price: Discrete(12)
+            - price: Discrete(10) -> levels 1 to 10
+            - price_offset: Discrete(3) -> 0: Passive (-1 tick), 1: Join (0 tick), 2: Aggressive (+1 tick)
 
         Args:
             num_agents (int): Number of agents.
@@ -56,7 +57,8 @@ class Action_Helper():
             "category": spaces.Discrete(9),
             "size_mean": spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),
             "size_sigma": spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),
-            "price": spaces.Discrete(12),
+            "price": spaces.Discrete(10),
+            "price_offset": spaces.Discrete(3),
         })
 
         # Create a dictionary mapping for all agents
@@ -78,7 +80,8 @@ class Action_Helper():
         acts = []
         for key, value in model_outs.items():
             act = self._set_action_mkt_depth(key, value)
-            acts.append(act)
+            if act.get("side") is not None:
+                acts.append(act)
 
         return acts
 
@@ -147,7 +150,8 @@ class Action_Helper():
         category = model_out["category"]
         size_mean = model_out["size_mean"]
         size_sigma = model_out["size_sigma"]
-        price_code = model_out["price"]
+        price_code = model_out.get("price", 0)
+        price_offset = model_out.get("price_offset", 1) # Default to Join (1)
 
         act = {}
         act["ID"] = ID
@@ -173,7 +177,7 @@ class Action_Helper():
         if act["type"] == 'market':
             act["price"] = -1.0 # -1.0 to indicate market price
         else:
-            act["price"] = self._set_price(self.min_tick, self.max_price, act["side"], price_code)
+            act["price"] = self._set_price(self.min_tick, self.max_price, act["side"], price_code, price_offset)
 
         return act
 
@@ -221,24 +225,15 @@ class Action_Helper():
         # return np.asscalar(np.rint(np.abs(sample)))
         return np.rint(np.abs(sample)).item()
 
-    def _set_price(self, min_tick, max_price, side, price_code):
+    def _set_price(self, min_tick, max_price, side, price_code, price_offset=1):
         """
-        Set price according to price_code 0 to 11 where price_code 1 to 10
-        correspond to a price slot in agg_LOB (mkt depth table) on one side
-        (bid or ask).
-
-        If order is on the bid side, 0 & 11 are the border cases where they
-        could be 1 tick lower than the lowest bid or 1 tick higher than highest
-        bid respectively.
-
-        If order is on the ask side, 0 & 11 are the border cases where they
-        could be 1 tick higher than the highest ask or 1 tick lower than the
-        lowest ask respectively.
-
-        Arguments:
-            min_tick: Minimum price tick, a real number.
-            side: 'bid' or 'ask'.
-            price_code: 0 to 11, representing the the market depth.
+        Set price according to price_code (0-9, representing levels 1-10) 
+        and price_offset (0-2).
+        
+        price_offset:
+            0: Passive (-1 tick from base)
+            1: Join (0 tick from base)
+            2: Aggressive (+1 tick from base)
 
         Returns:
             set_price: Price, a real number.
@@ -249,49 +244,30 @@ class Action_Helper():
 
         # Deterministic Reference Price (always use last_price as requested)
         ref_price = self.last_price
+        offset_multiplier = price_offset - 1 # maps (0,1,2) to (-1,0,1)
+
+        # level_index: 0 to 9 representing levels 1 to 10
+        level_idx = price_code 
 
         if side == 'bid':
             price_array = np.array(self.agg_LOB).reshape(4, 10)[0] # bid prices
+            p = price_array[level_idx]
             
-            if price_code == 0: # passive
-                worst_bid = min(price_array)
-                if worst_bid == 0:
-                    set_price = ref_price - (11 * min_tick)
-                else:
-                    set_price = worst_bid - min_tick
-            elif price_code == 11: # aggressive
-                best_bid_val = max(price_array)
-                if best_bid_val == 0:
-                    set_price = ref_price + min_tick
-                else:
-                    set_price = best_bid_val + min_tick
-            else: # 1-10
-                p = price_array[price_code - 1]
-                if p == 0:
-                    set_price = ref_price - (price_code * min_tick)
-                else:
-                    set_price = abs(p) + min_tick
+            # If level is empty, use ghost logic relative to ref_price
+            base_price = (ref_price - (level_idx + 1) * min_tick) if p == 0 else abs(p)
+            
+            # Apply offset: Bid +1 is aggressive, Bid -1 is passive
+            set_price = base_price + (offset_multiplier * min_tick)
+
         else: # 'ask'
             price_array = np.array(self.agg_LOB).reshape(4, 10)[2] # ask prices
-
-            if price_code == 0: # passive
-                worst_ask = abs(min(price_array))
-                if worst_ask == 0:
-                    set_price = ref_price + (11 * min_tick)
-                else:
-                    set_price = worst_ask + min_tick
-            elif price_code == 11: # aggressive
-                best_ask_val = abs(max(price_array))
-                if best_ask_val == 0:
-                    set_price = ref_price - min_tick
-                else:
-                    set_price = best_ask_val - min_tick
-            else: # 1-10
-                p = abs(price_array[price_code - 1])
-                if p == 0:
-                    set_price = ref_price + (price_code * min_tick)
-                else:
-                    set_price = p - min_tick
+            p = abs(price_array[level_idx])
+            
+            # If level is empty, use ghost logic relative to ref_price
+            base_price = (ref_price + (level_idx + 1) * min_tick) if p == 0 else p
+            
+            # Apply offset: Ask -1 is aggressive, Ask +1 is passive
+            set_price = base_price - (offset_multiplier * min_tick)
 
         # Final safety checks
         set_price = max(min_tick, set_price)
