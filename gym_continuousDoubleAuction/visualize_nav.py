@@ -48,20 +48,16 @@ def visualize_nav(json_path='latest_episode_data.json'):
     for agent_id in sorted_agents:
         nav_history = agent_navs[agent_id]
         if nav_history:
-            # Calculate cumulative NAV change (profit relative to start of episode)
-            initial_nav = nav_history[0]
-            cumulative_nav = [n - initial_nav for n in nav_history]
-            plt.plot(cumulative_nav, label=agent_id, linewidth=1.5)
+            plt.plot(nav_history, label=agent_id, linewidth=1.5)
 
-    plt.title('Agent Cumulative NAV Change (Profit) Over Time')
+    plt.title('Agent Net Asset Value (NAV) Over Time')
     plt.xlabel('Step')
-    plt.ylabel('Cumulative Change (Profit)')
-    plt.axhline(y=0, color='black', linestyle='-', alpha=0.3) # Zero line for reference
+    plt.ylabel('NAV')
     plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.grid(True, linestyle='--', alpha=0.7)
     plt.tight_layout()
 
-    output_file = 'cumulative_nav_visualization.png'
+    output_file = 'nav_visualization.png'
     plt.savefig(output_file)
     print(f"Visualization saved to {output_file}")
     plt.show()
