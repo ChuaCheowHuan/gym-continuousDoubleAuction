@@ -40,15 +40,20 @@ def visualize_nav(json_path='latest_episode_data.json'):
         return
 
     # Plotting
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(20, 10))
     
-    # Sort agent IDs to ensure consistent legend order
+    # Sort agent IDs to ensure consistent legend and linestyle order
     sorted_agents = sorted(agent_navs.keys())
     
-    for agent_id in sorted_agents:
+    # Define linestyles to distinguish lines
+    linestyles = ['-', '--', '-.', ':', (0, (3, 5, 1, 5, 1, 5)), (0, (5, 10)), (0, (1, 10))]
+    
+    for i, agent_id in enumerate(sorted_agents):
         nav_history = agent_navs[agent_id]
         if nav_history:
-            plt.plot(nav_history, label=agent_id, linewidth=1.5)
+            # Cycle through linestyles
+            style = linestyles[i % len(linestyles)]
+            plt.plot(nav_history, label=agent_id, linewidth=2.0, linestyle=style)
 
     plt.title('Agent Net Asset Value (NAV) Over Time')
     plt.xlabel('Step')

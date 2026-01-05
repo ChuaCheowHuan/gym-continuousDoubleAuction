@@ -31,7 +31,7 @@ def visualize_rewards(json_path='latest_episode_data.json'):
         return
 
     # Plotting
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(20, 10))
     
     # Sort agent IDs to ensure consistent legend order
     sorted_agents = sorted(agent_rewards.keys())
