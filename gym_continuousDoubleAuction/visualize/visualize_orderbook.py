@@ -76,8 +76,10 @@ def visualize_episode_data(json_path='visualize/latest_episode_data.json', agent
     total_bid_size = np.sum(bid_sizes, axis=1)
     total_ask_size = np.sum(ask_sizes, axis=1)
     
-    ax2.fill_between(range(len(total_bid_size)), total_bid_size, color='green', alpha=0.3, label='Total Bid Size')
-    ax2.fill_between(range(len(total_ask_size)), total_ask_size, color='red', alpha=0.3, label='Total Ask Size')
+    # ax2.fill_between(range(len(total_bid_size)), total_bid_size, color='green', alpha=0.3, label='Total Bid Size')
+    # ax2.fill_between(range(len(total_ask_size)), total_ask_size, color='red', alpha=0.3, label='Total Ask Size')
+    ax2.plot(range(len(total_bid_size)), total_bid_size, color='green', alpha=0.3, label='Total Bid Size')
+    ax2.plot(range(len(total_ask_size)), total_ask_size, color='red', alpha=0.3, label='Total Ask Size')
     ax2.set_ylabel('Total Size (Volume)')
     ax2.set_xlabel('Step')
     ax2.set_title('Orderbook Cumulative Size Changes')
