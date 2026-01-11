@@ -34,7 +34,7 @@ class Trader(Random_agent):
             return trades, order_in_book
 
         # normal execution
-        if self._order_approved(self.acc.cash, size, price):
+        if self._order_approved(side, size, price, LOB):
             order = self._create_order(type, side, size, price)
             if order['type'] == 'market':
                 trades, order_in_book = LOB.process_order(order, False, False)
@@ -60,18 +60,50 @@ class Trader(Random_agent):
 
             return trades, order_in_book
 
-    def _order_approved(self, cash, size, price):
+    def _order_approved(self, side, size, price, LOB):
         """
-        Conditions for order approval.
+        Conditions for order approval. Handles:
+        1. NAV positivity.
+        2. Position flips (Long -> Short, Short -> Long). Only the "opening" 
+           portion of an order requires a cash check.
+        3. Market order price estimation.
+        4. Decimal precision.
 
         Return: boolean.
         """
-
-        #if self.acc.cash >= size * price and self.acc.nav > 0:
-        if self.acc.nav > 0:
-            return True
-        else:
+        if self.acc.nav <= 0:
             return False
+
+        # Determine how much of the order is "opening" a new/larger position
+        net_pos = float(self.acc.net_position)
+        
+        # Scenario 1: Order is on the same side as current position (Increasing)
+        if (side == 'bid' and net_pos >= 0) or (side == 'ask' and net_pos <= 0):
+            opening_size = size
+        # Scenario 2: Order is on the opposite side (Decreasing or Flipping)
+        else:
+            opening_size = max(0, size - abs(net_pos))
+
+        # If we are only closing/decreasing a position, no cash check is needed
+        if opening_size <= 0:
+            return True
+
+        # Opening/Increasing portion requires cash check
+        # For market orders, use best available price as estimate
+        if price == -1.0:
+            if side == 'bid':
+                est_price = LOB.get_best_ask() or (LOB.tape[-1]['price'] if LOB.tape else 1)
+            else:
+                est_price = LOB.get_best_bid() or (LOB.tape[-1]['price'] if LOB.tape else 1)
+        else:
+            est_price = price
+
+        order_val = Decimal(str(opening_size)) * Decimal(str(est_price))
+        
+        if self.acc.cash >= order_val:
+            return True
+        
+        return False
 
     def _create_order(self, type, side, size, price):
         """
