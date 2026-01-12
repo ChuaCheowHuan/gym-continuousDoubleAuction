@@ -36,6 +36,11 @@ class Trader(Random_agent):
         # normal execution
         if self._order_approved(side, size, price, LOB):
             order = self._create_order(type, side, size, price)
+
+            # Option B: Flag only Market and Limit orders for entry penalty
+            if order.get('type') in ['market', 'limit']:
+                self.acc.order_step_placed = 1
+
             if order['type'] == 'market':
                 trades, order_in_book = LOB.process_order(order, False, False)
             elif order['type'] == 'limit':

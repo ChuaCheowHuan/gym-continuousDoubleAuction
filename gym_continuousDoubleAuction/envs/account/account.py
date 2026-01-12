@@ -24,6 +24,12 @@ class Account(Calculate, Cash_Processor):
         self.num_trades = 0
         self.reward = 0
 
+        # New metrics for improved reward function
+        self.max_nav = Decimal(cash) # peak nav seen so far
+        self.num_trades_step = 0 # trades in current environment step
+        self.num_passive_fills_step = 0 # passive executions in current step
+        self.order_step_placed = 0 # 1 if a Market/Limit order was placed this step
+
     def reset_acc(self, ID, cash=0):
         self.ID = ID
         self.cash = Decimal(cash)
@@ -41,6 +47,12 @@ class Account(Calculate, Cash_Processor):
         self.total_profit = Decimal(0) # profit at the end of a single t-step
         self.num_trades = 0
         self.reward = 0
+
+        # New metrics for improved reward function
+        self.max_nav = Decimal(cash)
+        self.num_trades_step = 0
+        self.num_passive_fills_step = 0
+        self.order_step_placed = 0
 
     def print_acc(self, msg):
         acc = {}
@@ -170,6 +182,12 @@ class Account(Calculate, Cash_Processor):
 
     def process_acc(self, trade, party):
         self.num_trades += 1
+        self.num_trades_step += 1
+        
+        # Track passive fills for reward bonus
+        if party == 'counter_party':
+            self.num_passive_fills_step += 1
+
         trade_val = Decimal(trade.get('quantity')) * trade.get('price')
         if self.net_position > 0: #long
             self._net_long(trade_val, trade, party)
