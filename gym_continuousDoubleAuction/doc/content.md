@@ -25,3 +25,4 @@ Welcome to the documentation for the `gym-continuousDoubleAuction` environment. 
 *   **[Crossed Book Invariant](test_orderbook_crossed_book.md)**: Verifies that the order book maintains the fundamental invariant that the best bid price remains below the best ask price after modifications.
 *   **[Double Delete Regression](test_orderbook_double_delete_order.md)**: Technical documentation of the regression test ensuring order modifications don't cause internal logic errors.
 *   **[Volume Synchronization](test_orderbook_volume_sync.md)**: Verifies that cached total volume statistics in the OrderTree remain synchronized with the actual sum of order volumes.
+*   **[League-Based Self-Play Testing](league_based_self_play_testing.md)**: Documentation of unit tests for the champion selection logic and probabilistic mapping.

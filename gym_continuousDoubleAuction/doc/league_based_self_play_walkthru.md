@@ -19,7 +19,6 @@ This implementation extends the competitive self-play training with **champion s
 - Exceptional performers snapshotted as frozen `champion_N` modules
 - Champions added to league as tough opponents
 - Rolling window maintains last 5 champions
-- **Probabilistic Selection**: Weighted mapping favors champions over baselines
 
 ### Modified Files
 
@@ -178,30 +177,6 @@ The callback logs:
 - `league_size`: Total policies in league
 - `best_return`: Best agent return (10-iteration window)
 - `champion_count`: Number of active champions
-- `original_opponent_weight`: Priority weight for baseline opponents
-- `champion_weight`: Priority weight for champion opponents
-
-## Verification & Testing
-
-To ensure the mapping logic is both correct and stable, a dedicated verification suite is provided.
-
-### 1. Statistical Mapping Test
-The script `test_probabilistic_mapping.py` validates the selection distribution.
-
-**What it tests:**
-- **Weighted Selection**: Verifies champions are picked significantly more often than baselines when weights differ.
-- **Normalization**: Ensures raw weights (e.g., 9:1) are correctly converted to target percentages (e.g., ~90%).
-- **Policy Identification**: Confirms the code correctly distinguishes between `policy_X` and `champion_X`.
-
-**Running the test:**
-```powershell
-python gym_continuousDoubleAuction/test/test_probabilistic_mapping.py
-```
-
-### 2. Determinism Verification
-The selection uses `np.random.RandomState(abs(hash(episode_id)) + agent_num)`.
-- **Purpose**: Ensures that all workers in a distributed training run agree on the opponent for a specific episode.
-- **Robustness**: Prevents "drifting" where an agent faces different opponents during the same episode across different rollout workers.
 
 ## Troubleshooting
 
@@ -278,14 +253,3 @@ cp league_based_self_play_callback.py league_based_self_play_callback_old.py
 2. Monitor for 100 iterations
 3. Adjust thresholds based on performance
 4. Compare final results with baseline
-
-## Next Steps
-
-1. **Test on your environment** - Run `example_league_based_training.py`
-2. **Tune thresholds** - Adjust based on your return distributions
-3. **Monitor diversity** - Track if policy_0 and policy_1 diverge
-4. **Compare performance** - Baseline vs league-based after 500+ iterations
-
-## Questions?
-
-Refer to `implementation_plan.md` for detailed technical specifications.
