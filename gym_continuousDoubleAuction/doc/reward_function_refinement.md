@@ -62,3 +62,38 @@ Run tests using:
 ```bash
 python gym_continuousDoubleAuction/test/test_reward_logic.py
 ```
+
+---
+
+## Hyperparameter Tuning Guide
+
+Determining "objective" values for these scalars requires aligning them with the environment's financial scale (Tick size, Batch size, Initial Cash).
+
+### 1. Conviction Threshold (Order Penalty)
+The `order_penalty` defines the "minimum expected profit" required to move.
+- **Formula**: `order_penalty = (Avg_Expected_Profit_Per_Share) * (Min_Trade_Size)`
+- **Rule of Thumb**: If the agent should only enter for a 2-tick move on 10 shares (0.01 tick):
+    - `0.01 * 2 * 10 = 0.20`
+- **Recommended Range**: `0.01% to 0.1%` of the average capital deployed per trade.
+
+### 2. Asymmetric Loss Aversion (`loss_multiplier`)
+In Prospect Theory, humans typically value losses ~2x more than gains.
+- **Conservative**: `1.5`
+- **Standard**: `2.0`
+- **Result**: Multipliers >1.0 create a "gravity" toward neutral positions, discouraging high-variance gambling.
+
+### 3. Drawdown Matching
+The `drawdown_penalty` should be scaled so that being in a "deep" drawdown (e.g., 5%) provides a negative pressure equivalent to several steps of "normal" profit.
+- **Calculation**: 
+    1. Estimate `Avg_Daily_Profit`.
+    2. Set `drawdown_penalty` such that `Penalty(5% Drawdown) = 2.0 * Avg_Daily_Profit`.
+- **Warning**: If this scalar is too high, the agent will become "catatonic" once a drawdown begins.
+
+### 4. Component Balance Check
+During training, monitor the "Contribution" of each reward part. Ideally:
+- **NAV Change**: ~70% of total variance.
+- **Penalties**: ~20% of total variance.
+- **Bonuses**: ~10% of total variance.
+
+> [!TIP]
+> **Acceptable Scaling**: Instead of hardcoding `0.1`, use relative values like `0.0001 * trader.acc.init_nav`. This makes your hyperparameters invariant to the absolute cash level of the simulation.
