@@ -132,7 +132,7 @@ tomli==2.2.1
 torch==2.7.1+cu126
 torchaudio==2.7.1+cu126
 torchvision==0.22.1+cu126
-tornado==6.5.1
+tornado==6.5.5
 traitlets==5.14.3
 triton==3.3.1
 types-python-dateutil==2.9.0.20250516
