@@ -9,6 +9,8 @@ class Calculate(object):
         """
 
         self.nav =  self.cash + self.cash_on_hold + self.position_val
+        if self.nav > self.max_nav:
+            self.max_nav = self.nav
         return self.nav
 
     def cal_total_profit(self):

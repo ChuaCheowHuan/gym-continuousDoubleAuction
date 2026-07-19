@@ -44,7 +44,9 @@ callback = SelfPlayCallback(
     num_random_policies=2,      # Number of initial fixed/random agents (m)
     std_dev_multiplier=2.0,     # Snapshot when return > mean + 2*std
     max_champions=5,            # Keep last 5 champions (rolling window)
-    min_iterations_between_champions=10 # Minimum cooldown between snapshots
+    min_iterations_between_champions=10, # Minimum cooldown between snapshots
+    original_opponent_weight=1.0, # Baseline priority
+    champion_weight=3.0          # Favor champions 3:1 over originals
 )
 
 config = (
@@ -79,6 +81,8 @@ python gym_continuousDoubleAuction/train/callbk/example_league_based_training.py
 | `std_dev_multiplier` | 2.0 | Multiplier for relative ranking (`mean + N * std`) |
 | `max_champions` | 5 | Maximum champions in league (rolling window) |
 | `min_iterations_between_champions` | 10 | Minimum iterations between champion snapshots |
+| `original_opponent_weight` | 1.0 | Selection priority for original fixed policies |
+| `champion_weight` | 3.0 | Selection priority for dynamic champions |
 
 ### Tuning Guidelines
 
@@ -101,6 +105,12 @@ A policy with return -500 is "exceptional" relative to the mean.
 - Too short (1-2) → Same policy snapshotted repeatedly  
 - Too long (50+) → Miss intermediate strategies
 - **Recommended:** 10-20 iterations
+
+**`champion_weight` & `original_opponent_weight`:**
+- **Goal**: Focus training on the most difficult current opponents.
+- **Extreme Bias (e.g., 10:1)**: Agents rarely face baselines; may develop "blind spots" to simple strategies.
+- **Low Bias (e.g., 1:1)**: Training time is split equally, slowing down progress against elite strategies.
+- **Recommended**: 3:1 to 5:1 (Favor champions, but keep baselines relevant).
 
 ## How It Works
 
@@ -216,11 +226,15 @@ agent_k-1 → policy_k-1
 
 # 2. Opponent Agents (k to n-1)
 # Assigned from pool: [Initial Randoms + Active Champions]
-# Selection is probabilistic per episode:
-index = (hash(episode_id) + agent_num) % len(pool)
+# Selection is probabilistic per episode based on weights:
+# Pool = [policy_2, policy_3, champion_1]
+# Weights = [1.0, 1.0, 3.0] -> Probs = [20%, 20%, 60%]
 
-# Ensures deterministic but varied opponents.
-# Agent 2 and Agent 3 (if m >= 2) will likely face different opponents.
+seed = (abs(hash(episode_id)) + agent_num) % (2**32)
+rng = np.random.RandomState(seed)
+policy = rng.choice(pool, p=probs)
+
+# Ensures deterministic but varied opponents focused on champions.
 ```
 
 ## Migration from Old Approach
@@ -239,14 +253,3 @@ cp league_based_self_play_callback.py league_based_self_play_callback_old.py
 2. Monitor for 100 iterations
 3. Adjust thresholds based on performance
 4. Compare final results with baseline
-
-## Next Steps
-
-1. **Test on your environment** - Run `example_league_based_training.py`
-2. **Tune thresholds** - Adjust based on your return distributions
-3. **Monitor diversity** - Track if policy_0 and policy_1 diverge
-4. **Compare performance** - Baseline vs league-based after 500+ iterations
-
-## Questions?
-
-Refer to `implementation_plan.md` for detailed technical specifications.

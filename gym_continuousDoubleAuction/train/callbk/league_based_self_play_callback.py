@@ -19,6 +19,8 @@ class SelfPlayCallback(RLlibCallback):
         std_dev_multiplier=2.0, 
         max_champions=2, 
         min_iterations_between_champions=2,
+        original_opponent_weight=1.0,
+        champion_weight=3.0,
     ):
         """
         Initialize league-based self-play callback with generalized agent configuration.
@@ -28,6 +30,9 @@ class SelfPlayCallback(RLlibCallback):
             num_random_policies (m): Number of initial fixed/random policies (Agents k to n-1)
             std_dev_multiplier: Number of standard deviations above mean to trigger snapshot
             max_champions: Maximum number of champions to maintain (rolling window)
+            min_iterations_between_champions: Cooldown iterations between snapshots
+            original_opponent_weight: Priority weight for original fixed policies (Agents k to n-1)
+            champion_weight: Priority weight for frozen champion policies
             
         Total Agents n = k + m
         """
@@ -40,6 +45,10 @@ class SelfPlayCallback(RLlibCallback):
         self.std_dev_multiplier = std_dev_multiplier
         self.max_champions = max_champions
         self.min_iterations_between_champions = min_iterations_between_champions
+
+        # Probabilistic selection configuration
+        self.original_opponent_weight = original_opponent_weight
+        self.champion_weight = champion_weight
         
         # Champion tracking state
         self.champion_count = 0
@@ -525,15 +534,33 @@ class SelfPlayCallback(RLlibCallback):
             # The pool starts AFTER the trainable policies
             # Pool = available_modules[k:] 
             candidates = callback_instance.available_modules[callback_instance.num_trainable:]
-            print(f"\nCandidates: {candidates}")
+            print(f"Candidates: {candidates}")
 
             if not candidates:
                 # Fallback if no champions yet
                 return f"policy_{agent_num}"
             
-            # Use episode hash AND agent_num for deterministic but varied assignment
-            # This ensures opponent agents can get different opponents
-            idx = (hash(episode.id_) + agent_num) % len(candidates)
-            return candidates[idx]
+            # Calculate weights for candidates
+            weights = []
+            for c in candidates:
+                if c.startswith("policy_"):
+                    # Original fixed/random policies
+                    weights.append(callback_instance.original_opponent_weight)
+                elif c.startswith("champion_"):
+                    # Dynamic champion snapshots
+                    weights.append(callback_instance.champion_weight)
+                else:
+                    weights.append(1.0) # Fallback
+            
+            # Normalize to probabilities
+            weights = np.array(weights)
+            probs = weights / weights.sum()
+            
+            # Use episode hash AND agent_num for deterministic selection
+            # We use a local RandomState to avoid affecting global randomness
+            # hash can be negative, so we use abs() and ensure it fits in 32-bit uint for seed
+            seed = (abs(hash(episode.id_)) + agent_num) % (2**32)
+            rng = np.random.RandomState(seed)
+            return rng.choice(candidates, p=probs)
         
         return agent_to_module_mapping_fn
