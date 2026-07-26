@@ -5,9 +5,7 @@ from gymnasium import spaces
 from sklearn.utils import shuffle
 
 class Action_Helper():
-    def __init__(self):
-        super().__init__()
-
+    def __init__(self, **kwargs):
         self.min_size = 1
         self.mkt_max_size = 100
         self.N = 10
@@ -19,6 +17,8 @@ class Action_Helper():
         self.min_tick = 1 # price tick
         self.max_price = 101
         self.last_price = 100.0 # Default anchor (will be overwritten by env.reset)
+
+        super().__init__()
 
     # def act_space(self):
     #     '''

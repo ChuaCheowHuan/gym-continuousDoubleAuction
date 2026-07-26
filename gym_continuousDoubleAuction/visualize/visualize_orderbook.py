@@ -39,11 +39,12 @@ def visualize_episode_data(json_path='visualize/latest_episode_data.json', agent
         # [20:30] Ask Prices (negated)
         # [30:40] Ask Sizes (negated)
         agent_obs = np.array(obs[agent_id])
+        latest_snapshot = agent_obs[-40:]
         
-        b_p = agent_obs[0:10]
-        b_s = agent_obs[10:20]
-        a_p = -agent_obs[20:30] # Negated in env, restore to positive
-        a_s = -agent_obs[30:40] # Negated in env, restore to positive
+        b_p = latest_snapshot[0:10]
+        b_s = latest_snapshot[10:20]
+        a_p = -latest_snapshot[20:30] # Negated in env, restore to positive
+        a_s = -latest_snapshot[30:40] # Negated in env, restore to positive
         
         bid_prices.append(b_p)
         bid_sizes.append(b_s)

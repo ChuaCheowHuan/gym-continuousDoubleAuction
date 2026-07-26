@@ -15,3 +15,5 @@ venv
 gym_continuousDoubleAuction/episode_data
 gym_continuousDoubleAuction/*.txt
 gym_continuousDoubleAuction/*.json
+gym_continuousDoubleAuction/visualize/latest_episode_data.json
+gym_continuousDoubleAuction/visualize/latest_episode_data.txt
