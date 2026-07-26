@@ -1,47 +1,41 @@
 import numpy as np
+from collections import deque
 
 class State_Helper(object):
 
-    # # reset traders LOB observations/states
-    # def reset_traders_agg_LOB(self):
-    #     """
-    #     Set observation state for all traders.
+    def __init__(self, n_hist=4, **kwargs):
+        self.n_hist = n_hist
+        self.obs_history = deque(maxlen=self.n_hist)
+        super().__init__()
 
-    #     https://github.com/ray-project/ray/blob/master/doc/source/rllib-env.rst
-    #     May not need to have all traders(agents) in this state(obs) dict.
-    #     """
-
-    #     states = {}
-    #     for trader in self.traders:
-    #         states[trader.ID] = self.set_agg_LOB()
-
-    #     return states
     # reset traders LOB observations/states
     def reset_traders_agg_LOB(self):
         """
-        Set observation state for all traders.
-
-        https://github.com/ray-project/ray/blob/master/doc/source/rllib-env.rst
-        May not need to have all traders(agents) in this state(obs) dict.
+        Set observation state for all traders with temporal history window.
+        Populates shared obs_history deque with n_hist copies of the initial LOB snapshot.
         """
-        states = {f'agent_{i}': self.set_agg_LOB() for i in range(len(self.traders))}
+        init_obs = self.set_agg_LOB()
+        n_hist = getattr(self, 'n_hist', 4)
+        self.obs_history = deque([init_obs] * n_hist, maxlen=n_hist)
+
+        stacked_obs = np.concatenate(list(self.obs_history), axis=0).astype(np.float32)
+        states = {f'agent_{i}': stacked_obs for i in range(len(self.traders))}
         
         return states
         
     def prep_next_state(self):
         """
         Return:
-            state_diff: The state of the aggregated LOB  after all actions are
-                        executed.
+            stacked_obs: The temporal stacked state of the aggregated LOB after all actions are executed.
         """
 
         self.agg_LOB_aft = self.set_agg_LOB() # LOB state at t+1 after processing LOB
 
-        # ********** state_diff should be used in obs preprocessing, not here **********
-        #state_diff = self.state_diff(self.agg_LOB, self.agg_LOB_aft)
-        state_diff = self.agg_LOB_aft
+        self.obs_history.append(self.agg_LOB_aft)
 
-        return state_diff
+        stacked_obs = np.concatenate(list(self.obs_history), axis=0).astype(np.float32)
+
+        return stacked_obs
 
     def set_next_state(self, next_states, trader, state_input):
         """

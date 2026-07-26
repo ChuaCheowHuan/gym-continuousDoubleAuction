@@ -12,8 +12,8 @@ from ..agent.trader import Trader
 from tabulate import tabulate
 
 class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info_Helper):
-    def __init__(self, init_cash=0, tick_size=1, tape_display_length=10):
-        super().__init__()
+    def __init__(self, init_cash=0, tick_size=1, tape_display_length=10, n_hist=4):
+        super().__init__(n_hist=n_hist)
 
         self.LOB = OrderBook(tick_size, tape_display_length) # limit order book
         self.agg_LOB = {} # aggregated or consolidated LOB
@@ -79,9 +79,17 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
     def print_table(self, msg, data):
         """
         Tabulate data for display.
+        If data is a 1D numpy array (flat LOB snapshot of length 40),
+        reshape it into a 4-column table: [bid_price, bid_size, ask_price, ask_size].
         """
-
-        print(msg, tabulate(data))
+        import numpy as np
+        if isinstance(data, np.ndarray) and data.ndim == 1:
+            k = len(data) // 4
+            reshaped = data.reshape(4, k).T  # shape (k, 4): each row is one price level
+            headers = ["bid_price", "bid_size", "ask_price", "ask_size"]
+            print(msg, tabulate(reshaped, headers=headers))
+        else:
+            print(msg, tabulate(data))
         return 0
 
     def print_order_in_book_all_seq(self, all_order_in_book):

@@ -31,12 +31,14 @@ class continuousDoubleAuctionEnv(
         tape_display_length = config.get("tape_display_length", 10)
         self.max_step = config.get("max_step", 64)
         is_render = config.get("is_render", True)
+        self.n_hist = config.get("n_hist", 4)
 
         # Initialize parent classes
         super().__init__(
             init_cash, 
             tick_size, 
-            tape_display_length
+            tape_display_length,
+            n_hist=self.n_hist
         )
 
         self.next_states = {}
@@ -72,7 +74,7 @@ class continuousDoubleAuctionEnv(
                 low=-np.inf,
                 high=np.inf,                
                 # shape=(obs_row * obs_col,), 
-                shape=(40,), 
+                shape=(self.n_hist * obs_row * obs_col,), 
                 dtype=np.float32
             ) for i in range(self.num_of_agents)
         }
