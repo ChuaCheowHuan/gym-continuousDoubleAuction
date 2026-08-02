@@ -17,6 +17,7 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
 
         self.LOB = OrderBook(tick_size, tape_display_length) # limit order book
         self.agg_LOB = {} # aggregated or consolidated LOB
+        self.agg_LOB_raw = {} # unnormalized raw aggregated LOB
         self.agg_LOB_aft = {} # aggregated or consolidated LOB after processing orders
 
         self.seq_trades = [] # list of trade lists

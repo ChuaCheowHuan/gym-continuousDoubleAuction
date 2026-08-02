@@ -26,8 +26,10 @@ Welcome to the documentation for the `gym-continuousDoubleAuction` environment. 
 *   **[Double Delete Regression](test_orderbook_double_delete_order.md)**: Technical documentation of the regression test ensuring order modifications don't cause internal logic errors.
 *   **[Volume Synchronization](test_orderbook_volume_sync.md)**: Verifies that cached total volume statistics in the OrderTree remain synchronized with the actual sum of order volumes.
 *   **[League-Based Self-Play Testing](league_based_self_play_testing.md)**: Documentation of unit tests for the champion selection logic and probabilistic mapping.
+*   **[Observation Normalization Tests](test_obs_normalization.md)**: Step-by-step explanation of 12 unit tests validating midpoint price normalization, sqrt volume scaling, sign preservation, division-by-zero safety guards, and action price unnormalization via `agg_LOB_raw`.
 
 ## Implementation Changes
 
 *   **[Temporal Observation History Stacking](CHANGES_temporal_obs_history.md)**: Documents the implementation of a sliding-window temporal observation mechanism. Instead of returning a single orderbook snapshot, the environment now returns the last *N* sequential snapshots as a flat 1D vector of shape `(N × 40,)`. Covers the motivation, all file changes, cooperative multiple inheritance fixes across `State_Helper`, `Action_Helper`, and `Exchg_Helper`, the `print_table` render fix, and the full `unittest`-based test suite.
+*   **[Orderbook Observation Normalization](CHANGES_obs_normalization.md)**: Documents the mathematical formulation and implementation of midpoint-based price normalization ($\frac{M - P_{bid}}{M}$, $-\frac{|P_{ask}| - M}{M}$), square-root volume scaling ($\pm\sqrt{V}$), sign preservation, zero-division safeguards, and action price unnormalization via `self.agg_LOB_raw`.
 *   **[Logging Analysis](logging_analysis.md)**: Audit of the current training logging implementation — what metrics are captured, where data is stored, and recommendations for additional metrics to improve observability and experiment reproducibility.

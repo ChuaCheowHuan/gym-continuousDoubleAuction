@@ -40,4 +40,11 @@ The core engine is now shielded by a rigorous testing suite:
 
 ## 6. Enhanced Documentation
 Deep-dive documentation have been added:
-- **Expanded `/doc` folder**: Includes detailed explanations of the new action space, accounting logic, and orderbook mechanics.
+- **Expanded `/doc` folder**: Includes detailed explanations of the new action space, accounting logic, temporal history stacking, and observation normalization.
+
+## 7. Observation Normalization & Action Unnormalization
+The environment observation representation and action resolution pipeline have been upgraded:
+- **Midpoint Price Normalization**: Scaled price depth levels relative to the Level 1 Midpoint Price ($M = \frac{P_{bid, 1} + |P_{ask, 1}|}{2}$). Bid prices are normalized to $\frac{M - P_{bid}}{M} \ge 0$, and ask prices to $-\left(\frac{|P_{ask}| - M}{M}\right) \le 0$ (preserving observation sign convention).
+- **Square-Root Volume Scaling**: Volumes are transformed via $\pm\sqrt{\text{volume}}$ to stabilize variance.
+- **Unnormalized Action Mapping**: Agent discrete price selection (levels 0-9) resolves unnormalized market prices from `self.agg_LOB_raw` when submitting orders into the actual LOB.
+

@@ -101,12 +101,36 @@ class State_Helper(object):
                 else:
                     break
         
-        # return [bid_size_list, bid_price_list, ask_size_list, ask_price_list] # list of np.arrays
-        # flattened = np.concatenate([bid_size_list, bid_price_list, ask_size_list, ask_price_list])
-        flattened = np.concatenate([bid_price_list, bid_size_list, ask_price_list, ask_size_list])        
-        flattened = flattened.astype(np.float32)
+        # Raw unnormalized snapshot
+        flattened_raw = np.concatenate([bid_price_list, bid_size_list, ask_price_list, ask_size_list]).astype(np.float32)
+        self.agg_LOB_raw = flattened_raw
 
-        # print(f'set_agg_LOB:flattened: {flattened}')
+        # Calculate Level 1 midpoint price M
+        l1_bid = bid_price_list[0] if bid_price_list[0] > 0 else 0.0
+        l1_ask = abs(ask_price_list[0]) if ask_price_list[0] != 0 else 0.0
+
+        if l1_bid > 0 and l1_ask > 0:
+            M = (l1_bid + l1_ask) / 2.0
+        elif l1_bid > 0:
+            M = l1_bid
+        elif l1_ask > 0:
+            M = l1_ask
+        else:
+            M = float(getattr(self, 'last_price', 100.0))
+            if M <= 0:
+                M = 100.0
+
+        # Apply price normalization using symmetric midpoint distance:
+        # norm_P_bid = (M - P_bid) / M (non-negative)
+        # norm_P_ask = -((abs(P_ask) - M) / M) (negated to maintain negative ask observation sign convention)
+        norm_bid_price = np.where(bid_price_list > 0, (M - bid_price_list) / M, 0.0)
+        norm_ask_price = np.where(ask_price_list != 0, -((np.abs(ask_price_list) - M) / M), 0.0)
+
+        # Apply volume normalization (sqrt) maintaining observation signs
+        norm_bid_size = np.where(bid_size_list > 0, np.sqrt(bid_size_list), 0.0)
+        norm_ask_size = np.where(ask_size_list != 0, -np.sqrt(np.abs(ask_size_list)), 0.0)
+
+        flattened = np.concatenate([norm_bid_price, norm_bid_size, norm_ask_price, norm_ask_size]).astype(np.float32)
 
         return flattened
     

@@ -141,6 +141,7 @@ class continuousDoubleAuctionEnv(
         self.LOB = OrderBook(1, self.tape_display_length) # new limit order book
         #self.LOB = OrderBook(0.25, self.tape_display_length) # new limit order book
         self.agg_LOB = {}
+        self.agg_LOB_raw = {}
         self.agg_LOB_aft = {}
 
         self.next_states = {}

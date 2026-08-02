@@ -176,14 +176,22 @@ way.
 
 # Observation space:
 
-Each obs is a snapshot in each environment step.
+Each observation is a flat 1D vector of shape `(n_hist * 40,)` (default shape `(160,)` for `n_hist = 4`), representing a sliding temporal history window of the last *N* sequential orderbook snapshots.
 
+Each 40-element snapshot segment is organized as:
 ```
-obs = [array([1026., 2883., 1258., 1263., 3392., 1300., 1950., 1894., 2401., 4241.],          # bid size list
-       array([64., 63., 62., 61., 60., 59., 58., 57., 56., 55.]),                             # bid price list
-       array([ -519., -2108.,  -215., -1094., -1687., -2667., -3440., -2902., -1440 -3078.]), # ask size list
-       array([-65., -66., -67., -68., -69., -70., -71., -72., -73., -74.])]                   # ask price list
+snapshot = [
+    normalized_bid_prices (10), # (M - P_bid) / M  (>= 0)
+    normalized_bid_sizes  (10), #  sqrt(V_bid)      (>= 0)
+    normalized_ask_prices (10), # -(|P_ask| - M) / M (<= 0)
+    normalized_ask_sizes  (10)  # -sqrt(V_ask)      (<= 0)
+]
 ```
+where $M = \frac{P_{bid, 1} + |P_{ask, 1}|}{2}$ is the Level 1 Midpoint Price.
+
+*Note: While agents observe normalized LOB snapshots, their discrete price level choices (0–9) map to actual unnormalized orderbook prices in `self.agg_LOB_raw` when submitting orders into the market.*
+
+For a detailed mathematical description of observation normalization, see [CHANGES_obs_normalization.md](gym_continuousDoubleAuction/doc/CHANGES_obs_normalization.md). For temporal history stacking details, see [CHANGES_temporal_obs_history.md](gym_continuousDoubleAuction/doc/CHANGES_temporal_obs_history.md).
 
 ---
 
