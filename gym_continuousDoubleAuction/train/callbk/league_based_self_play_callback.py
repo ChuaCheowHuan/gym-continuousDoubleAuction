@@ -110,13 +110,22 @@ class SelfPlayCallback(RLlibCallback):
         print(f"\n{'='*40}")
         print(f"Episode {episode.id_} Started - Policy Map:")
 
-        # Report the mapping by CALLING the real mapping function, rather than
-        # re-deriving it. The previous version reimplemented the selection as an
-        # unweighted `(hash(episode.id_) + i) % len(candidates)`, while the
-        # actual mapping fn does a weighted `rng.choice`. The two disagree, so
-        # this log was reporting opponents that were not the ones being played -
-        # exactly the log you would use to check whether champions are in play.
-        mapping_fn = self.get_mapping_fn(self)
+        # Report the mapping by CALLING the mapping function this EnvRunner is
+        # actually using, taken from its own config.
+        #
+        # Two reasons not to derive it from `self`. First, the original version
+        # reimplemented selection as an unweighted
+        # `(hash(episode.id_) + i) % len(candidates)` while the real mapping fn
+        # does a weighted `rng.choice`, so the log named opponents that were not
+        # the ones playing. Second, and still true after that was fixed: with
+        # `num_env_runners > 0` each remote runner holds its own pickled copy of
+        # this callback, frozen at worker construction and never updated, so
+        # `self.available_modules` out here contains no champions at all. The
+        # runner's `config.policy_mapping_fn`, by contrast, is refreshed by
+        # `add_module`/`remove_module`, so it is the authoritative one.
+        mapping_fn = getattr(env_runner.config, "policy_mapping_fn", None)
+        if mapping_fn is None:
+            mapping_fn = self.get_mapping_fn(self)
         for i in range(self.num_trainable + self.num_random):
             agent_id = f"agent_{i}"
             print(f"  {agent_id} -> {mapping_fn(agent_id, episode)}")
@@ -403,6 +412,18 @@ class SelfPlayCallback(RLlibCallback):
 
             champion_spec = RLModuleSpec.from_module(source_module)
 
+            # Put the champion into the matchmaking pool BEFORE add_module.
+            #
+            # Ordering is load-bearing. `new_agent_to_module_mapping_fn` below
+            # closes over `self`, and `add_module` pickles that closure to ship
+            # it to the remote EnvRunners. Pickling snapshots
+            # `self.available_modules` as it is at that moment - so appending
+            # after the call leaves every remote runner's mapping fn exactly one
+            # champion behind, permanently. (With num_env_runners > 0 sampling
+            # happens on the remote runners, so that is the mapping that
+            # actually decides who plays, not the driver's.)
+            self.available_modules.append(champion_id)
+
             # Add the champion everywhere (Learners + EnvRunners), and update
             # the agent->module mapping fn at the same time.
             #
@@ -464,7 +485,8 @@ class SelfPlayCallback(RLlibCallback):
                     local_env_runner=True,
                 )
 
-            # Record champion metadata
+            # Record champion metadata. (`available_modules` was updated before
+            # `add_module` above - see the comment there.)
             champion_info = {
                 'id': champion_id,
                 'source_policy': source_policy_id,
@@ -473,10 +495,7 @@ class SelfPlayCallback(RLlibCallback):
             }
             self.champion_history.append(champion_info)
             self.champion_count += 1
-            
-            # Update available modules for matchmaking
-            self.available_modules.append(champion_id)
-            
+
             print(f"✓ Champion {champion_id} created successfully!")
             print(f"✓ League size now: "
                   f"{self.num_trainable + self.num_random + self.champion_count} "
@@ -485,6 +504,10 @@ class SelfPlayCallback(RLlibCallback):
             print(f"✓ Active champions: {[c['id'] for c in self.champion_history]}\n")
             
         except Exception as e:
+            # Roll the pool entry back so matchmaking can never select a module
+            # that failed to be created.
+            if champion_id in self.available_modules:
+                self.available_modules.remove(champion_id)
             print(f"✗ Error creating champion {champion_id}: {e}")
             import traceback
             traceback.print_exc()
