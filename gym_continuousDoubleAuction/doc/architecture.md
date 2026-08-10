@@ -146,8 +146,9 @@ and champion snapshotting. Full description in [self_play_league.md](self_play_l
 
 Around it:
 
-- [`policy_handler.py`](../train/policy/policy_handler.py) — PPO specs for the first *k* agents, a
-  `RandomPolicy` for the rest.
+- [`policy_handler.py`](../train/policy/policy_handler.py) — builds the `MultiRLModuleSpec`: default
+  PPO modules for the first *k* agents, a frozen `RandomRLModule` for the rest.
+- [`train.py`](../train/train.py) — `TrainConfig` + the training loop; the CLI and notebook entry point.
 - [`store_handler.py`](../train/storage/store_handler.py) — a Ray detached actor as a global metric
   store.
 - [`log_handler.py`](../train/logger/log_handler.py) — gzipped JSON dumps.

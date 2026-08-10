@@ -55,18 +55,42 @@ executed before seeing the next LOB snapshot).
 ---
 
 # Example:
-The example is available in this Jupyter notebook implemented with
-RLlib: `CDA_NSP.ipynb`. This notebook is tested in Colab.
+Training lives in `gym_continuousDoubleAuction/train/train.py` and can be run
+headless:
 
-This example uses two trained agents & N random agents. All agents compete with
+```
+$ python -m gym_continuousDoubleAuction.train.train --iters 16 --agents 8
+$ python -m gym_continuousDoubleAuction.train.train --help
+```
+
+`CDA_NSP.ipynb` is a thin notebook driver over the same module and is tested in
+Colab. Training behaviour is configured through `TrainConfig` in `train.py`, not
+in the notebook.
+
+This example uses two trained agents & N opponents. All agents compete with
 one another in this zero-sum environment, irregardless of whether they're
 trained or random.
 
-**competitive self-play**
+**league-based self-play**
 
-The policy weights of the winning trained agent(trader) is used to replace the
-policy weights of the other trained agents after each training iteration.
-Winning here is defined as having the highest reward per training iteration.
+Agents `0..k-1` are the learners, each with its own PPO policy. The remaining
+agent slots are filled each episode by drawing from an opponent pool:
+
+* **baseline opponents** - frozen, uniformly-random policies (`RandomRLModule`),
+  weight `original_opponent_weight`;
+* **champions** - frozen snapshots of a learner taken when its return exceeds
+  `mean + std_dev_multiplier * std` of the league, weight `champion_weight`
+  (higher, so champions are played more often than baselines), kept in a rolling
+  window of `max_champions`.
+
+See `gym_continuousDoubleAuction/train/callbk/league_based_self_play_callback.py`
+and `doc/self_play_league.md`.
+
+> **Note:** earlier versions of this README described a *competitive self-play*
+> scheme in which the winning trained agent's weights replaced those of the
+> other trained agents each iteration. That mechanism (`train/weight/`) was
+> superseded by the league callback above and has been removed - the two are
+> redundant, and the league already ranks the learners to pick a champion.
 
 The reward function requires the agents to maximize profit while minimizing
 number of trades made in an episode (trading session). As the number of trades
@@ -95,30 +119,52 @@ $ tensorboard --logdir ~/ray_results
 **Other ways** to run this environment:
 
 By using the python `CDA_env_rand.py` script which is basically running a
-CDA simulator with dummy (non-learning) random agents.
+CDA simulator with dummy (non-learning) random agents:
+
+```
+$ python gym_continuousDoubleAuction/CDA_env_rand.py --steps 1000 --agents 4
+```
 
 ---
 
 # Dependencies:
 
-1) tensorFlow
-2) ray[rllib]
-3) pandas
-4) sortedcontainers
-5) sklearn
+1) ray[rllib] 2.56.1
+2) gymnasium 1.2.2
+3) torch 2.13
+4) pandas, numpy, scipy, scikit-learn
+5) sortedcontainers, tabulate
 
-For a full list of dependencies & versions, see `requirements.txt` in this
-repository.
+`requirements.txt` lists the direct dependencies; `requirements-lock.txt` pins
+the fully-resolved set that this repository's test suite is verified against.
+
+> **Note:** `ray[rllib]` hard-pins `gymnasium==1.2.2`. Do not upgrade gymnasium
+> independently of Ray - a newer gymnasium is incompatible with this Ray release.
+
+RLlib's **new API stack** (RLModule / Learner / EnvRunner) is used throughout.
+TensorFlow is no longer a dependency; the framework is torch only.
 
 ---
 
 # Installation:
-The environment is installable via pip.
 ```
 $ cd gym-continuousDoubleAuction
 
+# Pick the torch build for your machine first:
+#   CPU:  pip install torch==2.13.0 --extra-index-url https://download.pytorch.org/whl/cpu
+#   CUDA: pip install torch==2.13.0 --extra-index-url https://download.pytorch.org/whl/cu128
+
+$ pip install -r requirements.txt
 $ pip install -e .
 ```
+
+Run the tests:
+```
+$ pip install -e ".[dev]"
+$ python -m pytest gym_continuousDoubleAuction/test -q
+```
+
+A GPU training image is provided at `docker/ml/dockerfile_ray_torch`.
 
 ---
 
@@ -476,6 +522,12 @@ total_sys_profit = -9E-21; total_sys_nav = 3999999.999999999999999999991
 ---
 
 **Sample output results** for final training iteration:
+
+> **Note:** the sample output below is from a 2019 run on a much older RLlib and
+> is kept for historical illustration only. The result keys shown (`hist_stats`,
+> `policy_reward_mean`, `episodes_this_iter`, `custom_metrics`) belong to the old
+> API stack and no longer exist. On the current stack, per-module returns are in
+> `result[ENV_RUNNER_RESULTS]["module_episode_returns_mean"]`, keyed by ModuleID.
 
 1) The episode_reward is zero (zero sum game) for each episode.
 ```

@@ -1,0 +1,47 @@
+name: tests
+
+# Replaces the old .travis.yml, which pinned Python 3.7.7 and ran two scripts
+# that no longer exist (gym_continuousDoubleAuction/test/test_OrderBook.py and
+# test_cda_nsp.py).
+
+on:
+  push:
+    branches: [master, update_lib]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install (CPU torch)
+        run: |
+          python -m pip install --upgrade pip
+          # CPU wheel index keeps CI installs small; the GPU build differs only
+          # in the nvidia-* runtime packages.
+          pip install torch==2.13.0 --extra-index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
+          pip install -e ".[dev]"
+
+      - name: Env + order book unit tests
+        run: python -m pytest gym_continuousDoubleAuction/test -q
+
+      - name: Random-agent env smoke run
+        run: python gym_continuousDoubleAuction/CDA_env_rand.py
+
+      - name: RLlib integration - build, train, and verify self-play wiring
+        # This is the test that would have caught the silently-ignored
+        # RandomPolicy and the champion weights never reaching the EnvRunners.
+        run: python -m pytest gym_continuousDoubleAuction/test/integration -q

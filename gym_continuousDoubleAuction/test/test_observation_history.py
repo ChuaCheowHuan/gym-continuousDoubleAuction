@@ -12,7 +12,7 @@ class TestObservationHistory(unittest.TestCase):
         
         # Default n_hist is 4, each snapshot has SNAPSHOT_DIM features
         for agent_id in env.agents:
-            self.assertEqual(env.observation_space[agent_id].shape, (4 * SNAPSHOT_DIM,))
+            self.assertEqual(env.observation_spaces[agent_id].shape, (4 * SNAPSHOT_DIM,))
             self.assertEqual(obs[agent_id].shape, (4 * SNAPSHOT_DIM,))
 
     def test_configurable_n_hist(self):
@@ -21,7 +21,7 @@ class TestObservationHistory(unittest.TestCase):
             obs, infos = env.reset()
             expected_shape = (n_hist * SNAPSHOT_DIM,)
             for agent_id in env.agents:
-                self.assertEqual(env.observation_space[agent_id].shape, expected_shape)
+                self.assertEqual(env.observation_spaces[agent_id].shape, expected_shape)
                 self.assertEqual(obs[agent_id].shape, expected_shape)
 
     def test_reset_padding_identical_copies(self):
@@ -46,7 +46,7 @@ class TestObservationHistory(unittest.TestCase):
         
         # Take a few steps with sample actions
         for step_i in range(n_hist + 2):
-            actions = {agent_id: env.action_space[agent_id].sample() for agent_id in env.agents}
+            actions = {agent_id: env.action_spaces[agent_id].sample() for agent_id in env.agents}
             obs_t, rewards, terminateds, truncateds, infos = env.step(actions)
             
             agent_obs = obs_t["agent_0"]
@@ -68,7 +68,7 @@ class TestObservationHistory(unittest.TestCase):
             np.testing.assert_array_equal(obs[agent_id], agent_0_obs)
             
         # Check step uniformity across agents
-        actions = {agent_id: env.action_space[agent_id].sample() for agent_id in env.agents}
+        actions = {agent_id: env.action_spaces[agent_id].sample() for agent_id in env.agents}
         obs_next, _, _, _, _ = env.step(actions)
         
         agent_0_next_obs = obs_next["agent_0"]

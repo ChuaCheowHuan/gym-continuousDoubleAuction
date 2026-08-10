@@ -59,39 +59,43 @@ class continuousDoubleAuctionEnv(
         # list of agents or traders
         self.traders = [Trader(ID, init_cash) for ID in range(0, self.num_of_agents)]
 
-        # Updated agent naming to be consistent with new API
-        self._agent_ids = set([f"agent_{i}" for i in range(self.num_of_agents)])
-        self.agents = list(self._agent_ids)
-        self.possible_agents = list(self._agent_ids)
-       
+        # Agent IDs. `agents` / `possible_agents` are built from a sorted list
+        # rather than from the set, because iteration order of a set of strings
+        # is not stable across processes (PYTHONHASHSEED). RLlib zips these
+        # against per-agent spaces on the EnvRunners, so an unstable order can
+        # silently mismatch agents to spaces in a multi-process run.
+        agent_ids = [f"agent_{i}" for i in range(self.num_of_agents)]
+        self._agent_ids = set(agent_ids)
+        self.agents = list(agent_ids)
+        self.possible_agents = list(agent_ids)
+
         # Each snapshot is SNAPSHOT_DIM floats (40 book features + 2 market scalars);
         # n_hist of them are stacked into one flat observation.
-        self.observation_space = {
-            f"agent_{i}": gym.spaces.Box(
+        #
+        # NOTE: these are the *plural* attributes (`observation_spaces` /
+        # `action_spaces`) that RLlib's new API stack reads. The singular
+        # `observation_space` / `action_space` on MultiAgentEnv are marked
+        # @OldAPIStack in Ray 2.56 and mean something different (the space of a
+        # single agent, not a per-agent dict).
+        self.observation_spaces = {
+            agent_id: gym.spaces.Box(
                 low=-np.inf,
                 high=np.inf,
                 shape=(self.n_hist * SNAPSHOT_DIM,),
                 dtype=np.float32
-            ) for i in range(self.num_of_agents)
+            ) for agent_id in agent_ids
         }
 
         # Updated action space to use the new Compact Flat structure
-        self.action_space = self.act_space(self.num_of_agents)
-    
+        self.action_spaces = self.act_space(self.num_of_agents)
+
     def get_action_space(self, agent_id):
-        # Return the actual action space, not a dictionary
-
-        # print(f'get_action_space, agent_id: {agent_id}')
-        # print(f'get_action_space, self.action_space[agent_id]: {self.action_space[agent_id]}')
-
-        return self.action_space[agent_id]
+        """Action space for a single agent (not the per-agent dict)."""
+        return self.action_spaces[agent_id]
 
     def get_observation_space(self, agent_id):
-
-        # print(f'get_observation_space, agent_id: {agent_id}')
-        # print(f'get_observation_space, self.observation_spaces[agent_id]: {self.observation_spaces[agent_id]}')
-
-        return self.observation_space[agent_id]
+        """Observation space for a single agent (not the per-agent dict)."""
+        return self.observation_spaces[agent_id]
         
     # Override from RLlib
     # def get_observation_space(self, agent_id):

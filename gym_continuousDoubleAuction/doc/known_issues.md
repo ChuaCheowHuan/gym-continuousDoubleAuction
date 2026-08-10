@@ -121,42 +121,65 @@ runs at all depends on which mixin happens to lack an `__init__`. Composition
 
 ## 3. Implementation bugs (verified)
 
-### 3.1 `custom_model: "model_disc"` is never registered
+### 3.1 `custom_model: "model_disc"` is never registered — RESOLVED
 
-Referenced in [`policy_handler.py`](../train/policy/policy_handler.py),
-[`league_policies.py`](../train/policy/league_policies.py), and
-[`example_league_based_training.py`](../train/callbk/example_league_based_training.py). There is no
-`register_custom_model` call anywhere in the repository. Every training entry point using these
-configs fails at build time.
+Resolved in the Ray 2.56.1 upgrade. `custom_model` / `ModelCatalog` are not read at
+all on the new API stack, so the indirection was removed rather than repaired.
+Trainable modules use RLlib's default PPO module configured via
+`DefaultModelConfig`; `league_policies.py` and `example_league_based_training.py`
+were deleted.
 
-### 3.2 The training code straddles two incompatible RLlib API stacks
+### 3.2 The training code straddles two incompatible RLlib API stacks — RESOLVED
 
-- `PolicySpec` + `custom_model` (old stack) in [`policy_handler.py`](../train/policy/policy_handler.py)
-- `algorithm.get_module` / `add_module` / `RLModuleSpec` (new stack) in the league callback
-- both in the same script in
-  [`example_league_based_training.py`](../train/callbk/example_league_based_training.py)
+Resolved. The training layer is now entirely new-API-stack. `PolicySpec` wiring
+was replaced by `MultiRLModuleSpec` in
+[`policy_handler.py`](../train/policy/policy_handler.py); the broken
+`CustomRLModule` (which read `config.action_space.n` against a `Dict` space) was
+removed; `weight_handler.py` and `callbk_handler.py` were deleted as dead
+old-stack code.
 
-Additionally [`model_handler.py`](../train/model/model_handler.py) does `config.action_space.n` —
-the action space is a `Dict`, which has no `.n`.
-[`weight_handler.py`](../train/weight/weight_handler.py) reads `result["hist_stats"]` and
-[`callbk_handler.py`](../train/callbk/callbk_handler.py) reads `episode.user_data` — both removed
-from modern RLlib.
+Note the failure mode here was worse than "does not run": RLlib accepted the
+old-stack `policies` dict without error and silently substituted
+`DefaultPPOTorchRLModule` for every declared `RandomPolicy`, so the baseline
+opponents were frozen randomly-initialised networks rather than random samplers.
+`test/integration/test_league_wiring.py` now asserts the module classes.
 
-The env is modernized; the training layer around it is a stratigraphy of three eras, and it is not
-clear that any single path through it runs.
+### 3.3 Champion selection likely reads a key that does not exist — RESOLVED
 
-### 3.3 Champion selection likely reads a key that does not exist, with a wrong fallback
+Confirmed and resolved. Neither `policy_reward_mean` nor `custom_metrics` exists
+in `result[ENV_RUNNER_RESULTS]` on the new stack, so the mis-attributing
+`agent_X → policy_X` fallback was the branch that ran. The callback now reads
+`module_episode_returns_mean`, which is already keyed by real ModuleID
+(`champion_*` included), so no remapping is needed.
 
-The league callback looks for `result['env_runners']['policy_reward_mean']` — an old-stack key. The
-fallback maps `agent_X → policy_X`, which is precisely the assumption league play breaks: `agent_2`
-may be playing `champion_1`. The fallback therefore attributes a champion's return to `policy_2`.
-Champion promotion is driven by mis-attributed numbers.
+### 3.4 The printed policy map is computed by different logic than the real one — RESOLVED
 
-### 3.4 The printed policy map is computed by different logic than the real one
+Resolved. `on_episode_start` now calls `get_mapping_fn` rather than
+reimplementing selection, so the log reports the opponents actually played.
+Selection also seeds from `zlib.crc32` instead of the builtin `hash()`, which is
+salted per process and made the documented determinism hold only within a single
+interpreter.
 
-`on_episode_start` uses `(hash(episode.id_) + i) % len(candidates)`; the actual mapping uses a
-weighted `RandomState.choice`. The debug output telling you who played whom is wrong. A code comment
-flags the divergence instead of fixing it.
+### 3.5 Champion snapshots never reached the EnvRunners — RESOLVED
+
+Found during the Ray 2.56.1 upgrade; not in the original audit.
+
+`_create_champion_snapshot_from_policy` called `add_module` and then `set_state`.
+`add_module` syncs weights to the EnvRunners internally, but that happens *before*
+the snapshot's weights are copied in, and PPO's per-iteration sync passes
+`policies=modules_to_update`, which by design never contains a frozen champion.
+The champion acting in the environment therefore stayed at its random
+initialisation for the entire run while the trained snapshot sat unused in the
+LearnerGroup.
+
+Combined with 3.2, this meant the opponent pool was randomly-initialised networks
+end to end: no self-play was taking place at all.
+
+The callback now force-pushes champion state to the EnvRunners. This cannot go
+via `sync_weights()` — that path carries the LearnerGroup's `WEIGHTS_SEQ_NO`, and
+`EnvRunner.set_state` applies incoming module state only when the sequence number
+is 0 or strictly ahead. Between two training updates the number is unchanged, so
+such a sync is dropped silently.
 
 ### 3.5 Seeding is entirely non-functional
 
@@ -222,15 +245,19 @@ pushing `float()` parsing onto every consumer — which the league callback then
 - **CI is doubly dead.** `.travis.yml` targets a defunct service, pins Python 3.7.7, and runs
   `test_OrderBook.py` and `test_cda_nsp.py` — neither file exists. There is no `.github/`. The
   README still shows the Travis badge. The ~89 `unittest` cases are real work that nothing enforces.
-- **`setup.py` is broken for non-editable installs.** `packages=['gym_continuousDoubleAuction']`
-  omits every subpackage (`envs`, `train`, `envs.orderbook`, …), and `entry_points` still says
-  `YourEnvClass`. Only `pip install -e .` works, by accident.
-- **Stale entry points shipped as if current.** [`CDA_env_rand.py`](../CDA_env_rand.py) uses the
-  pre-config positional constructor and iterates `e.agents` as trader objects;
-  [`random_agent.py`](../envs/agent/random_agent.py) emits the old 5-tuple action. Both are dead on
-  arrival against the current API, and the README recommends the former as a way to run the project.
-- **Dead and duplicated modules.** `policy_handler.py` vs `policy_handler_0.py`, `weight_handler.py`
-  (superseded by the league callback), `callbk_handler.py`, `state_diff`, `analyze_unused.py`
+- ~~**`setup.py` is broken for non-editable installs.**~~ RESOLVED: now uses
+  `find_packages()` with real `install_requires` and extras; the bogus `YourEnvClass`
+  entry point is gone and the missing `__init__.py` files were added, so the tests no
+  longer need `PYTHONPATH`.
+- **Stale entry points shipped as if current.** PARTIALLY RESOLVED:
+  [`CDA_env_rand.py`](../CDA_env_rand.py) is fixed — it now takes a config dict, keys actions by
+  agent ID, samples from the env's own action space, and is exercised in CI.
+  [`random_agent.py`](../envs/agent/random_agent.py) still emits the old 5-tuple action from
+  `select_random_action`; it is now unreferenced (nothing calls it) but has not been removed,
+  because `Trader` still inherits from `Random_agent`.
+- **Dead and duplicated modules.** MOSTLY RESOLVED: `policy_handler_0.py`, `weight_handler.py`,
+  `callbk_handler.py`, `league_policies.py` and `example_league_based_training.py` were deleted,
+  as were the duplicate/TF dockerfiles. Still outstanding: `state_diff`, `analyze_unused.py`
   shipped inside the package, `CODEOWNER` *and* `CODEOWNERS`. Large commented-out blocks (old `step`,
   old action space, old `modify_order`) preserved inline rather than in git history — which is what
   git history is for.

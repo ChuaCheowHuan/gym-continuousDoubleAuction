@@ -336,7 +336,7 @@ class TestObsNormalization(unittest.TestCase):
 
         for step in range(10):
             actions = {
-                agent_id: env.action_space[agent_id].sample()
+                agent_id: env.action_spaces[agent_id].sample()
                 for agent_id in env.agents
             }
             env.step(actions)

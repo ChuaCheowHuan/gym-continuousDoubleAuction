@@ -58,7 +58,7 @@ class TestObsMarketFeatures(unittest.TestCase):
             obs, _ = env.reset()
             expected = (n_hist * SNAPSHOT_DIM,)
             for agent_id in env.agents:
-                self.assertEqual(env.observation_space[agent_id].shape, expected)
+                self.assertEqual(env.observation_spaces[agent_id].shape, expected)
                 self.assertEqual(obs[agent_id].shape, expected)
 
     def test_agg_LOB_raw_still_book_sized(self):
@@ -220,7 +220,7 @@ class TestObsMarketFeatures(unittest.TestCase):
                                           "is_render": False, "max_step": 32})
         obs, _ = env.reset()
         for _ in range(20):
-            actions = {a: env.action_space[a].sample() for a in env.agents}
+            actions = {a: env.action_spaces[a].sample() for a in env.agents}
             obs, _, _, _, _ = env.step(actions)
             for agent_id, vector in obs.items():
                 self.assertTrue(np.isfinite(vector).all(),

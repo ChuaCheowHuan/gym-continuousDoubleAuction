@@ -123,3 +123,77 @@ The `/doc` folder was expanded with deep dives on the action space, accounting, 
 and observation normalization, then **restructured** (this revision) into eleven topic-based
 documents indexed by [README_v2.md](README_v2.md), replacing the previous mix of per-test
 walkthroughs, dated analysis snapshots, plans, and implementation reports.
+
+## Ray 2.56.1 upgrade + new API stack migration
+
+Dependency upgrade from ray 2.48.0 / gymnasium 1.0.0 / torch 2.7.1 to
+ray 2.56.1 / gymnasium 1.2.2 / torch 2.13 / pandas 3.0 / numpy 2.5, plus the
+RLlib new-API-stack migration that the upgrade required.
+
+### Self-play correctness fixes
+
+Three defects meant no self-play was actually taking place. All are now covered
+by `test/integration/test_league_wiring.py`.
+
+* **Baseline opponents were not random.** They were declared as
+  `PolicySpec(RandomPolicy, ...)`, but the new API stack reads only the *keys*
+  of `multi_agent(policies=...)` and fills `module_class` from the algorithm
+  default, so every opponent was built as `DefaultPPOTorchRLModule` and frozen
+  at its random initialisation. Module classes are now declared through
+  `MultiRLModuleSpec`, and the baselines use a real `RandomRLModule`.
+* **Champion snapshots never reached the EnvRunners.** `add_module` syncs
+  weights before the snapshot's weights are copied in, and PPO's per-iteration
+  sync only covers modules that produced losses - never a frozen champion. The
+  champion *playing in the environment* therefore stayed randomly initialised
+  while the trained copy sat unused in the LearnerGroup. The callback now
+  force-pushes the champion state to the EnvRunners. Note this cannot go
+  through `sync_weights()`, which carries a `WEIGHTS_SEQ_NO` the runner already
+  has and is dropped silently.
+* **Champion trigger read dead metric keys.** `policy_reward_mean` and
+  `custom_metrics` are old-API-stack only. The fallback remapped
+  `agent_X -> policy_X`, which is wrong for opponent slots since those play
+  whichever module the pool assigned. Now reads `module_episode_returns_mean`,
+  already keyed by real ModuleID.
+
+### Other callback fixes
+
+* Evicted champions are now dropped via `Algorithm.remove_module` instead of
+  being left in memory for the run's lifetime.
+* `add_module`/`remove_module` now pass `new_agent_to_module_mapping_fn`, so
+  champions are selectable when `num_env_runners > 0` (remote workers hold a
+  pickled copy of the callback frozen at construction).
+* Per-episode step data is keyed by episode ID; previously one shared list was
+  corrupted, and crashed with `None.append`, under `num_envs_per_env_runner > 1`.
+* The episode-start "Policy Map" log now calls the real mapping function
+  instead of a divergent reimplementation, so it reports the actual opponents.
+* Opponent selection seeds from `zlib.crc32` rather than the builtin `hash()`,
+  which is salted per process and made the documented determinism hold only
+  within a single interpreter.
+
+### Removed
+
+* `train/weight/` (`cp_weight` et al) - superseded by the league callback, which
+  already ranks learners; the two schemes are redundant. Was dead code reading
+  `result["hist_stats"]`, which no longer exists.
+* `train/policy/policy_handler_0.py` - imported `ray.rllib.agents.ppo`, deleted
+  in Ray 2.0.
+* `train/callbk/callbk_handler.py`, `train/policy/league_policies.py`,
+  `train/callbk/example_league_based_training.py` - dead old-stack code.
+* `CustomRLModule` - never instantiated (ModelCatalog is not read on the new
+  stack) and would have crashed on this env's `Dict` action space.
+* `docker/ml/dockerfile` (duplicate), `dockerfile_ray_tf` + `test_rrlib_tf.ipynb`
+  (TF cannot run the new API stack), `.travis.yml` (replaced by GitHub Actions).
+
+### Other
+
+* Env exposes `observation_spaces`/`action_spaces` (new stack) instead of the
+  `@OldAPIStack` singular attributes; agent ordering is now stable across
+  processes.
+* Training extracted from `CDA_NSP.ipynb` into `train/train.py` with a
+  `TrainConfig` dataclass and CLI; the notebook is now a thin driver.
+* GPU count falls back to CPU when `torch.cuda.is_available()` is False
+  (was hardcoded `0.75`, which hard-failed on CPU machines).
+* `setup.py` uses `find_packages()` with real `install_requires` and extras;
+  missing `__init__.py` files added, so tests no longer need `PYTHONPATH`.
+* `CDA_env_rand.py` fixed - it had been broken independently of this upgrade
+  (positional constructor args, iterating agent IDs as Trader objects).
