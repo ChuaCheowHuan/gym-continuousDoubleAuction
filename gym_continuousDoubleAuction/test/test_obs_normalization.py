@@ -3,6 +3,7 @@ import numpy as np
 from decimal import Decimal
 
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import continuousDoubleAuctionEnv
+from gym_continuousDoubleAuction.envs.exchg.state_helper import BOOK_DIM, SNAPSHOT_DIM
 
 
 class TestObsNormalization(unittest.TestCase):
@@ -49,8 +50,8 @@ class TestObsNormalization(unittest.TestCase):
         return env.step(action)
 
     def _get_snapshot(self, obs, agent_id="agent_0"):
-        """Extract the most recent 40-element snapshot from a stacked observation."""
-        return obs[agent_id][-40:]
+        """Extract the most recent snapshot (book block + scalars) from a stacked observation."""
+        return obs[agent_id][-SNAPSHOT_DIM:]
 
     # ------------------------------------------------------------------
     # 1. agg_LOB_raw is always populated after reset and step
@@ -86,14 +87,18 @@ class TestObsNormalization(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_obs_signs_empty_book(self):
-        """With an empty book after reset, all observation values should be 0.0."""
+        """With an empty book after reset, the book block should be all 0.0."""
         env = self._make_env()
         obs, _ = env.reset()
         snap = self._get_snapshot(obs)
         np.testing.assert_array_equal(
-            snap, np.zeros(40, dtype=np.float32),
-            err_msg="Empty book snapshot should be all zeros"
+            snap[:BOOK_DIM], np.zeros(BOOK_DIM, dtype=np.float32),
+            err_msg="Empty book block should be all zeros"
         )
+        # The market scalars are not part of the book block: log_mid falls back to
+        # last_price and the spread sentinel is 0.0 (no two-sided market).
+        self.assertAlmostEqual(float(snap[BOOK_DIM]), float(np.log(env.last_price)), places=5)
+        self.assertEqual(float(snap[BOOK_DIM + 1]), 0.0)
 
     def test_bid_obs_non_negative_with_orders(self):
         """After placing bid orders, bid price & size features must be >= 0."""
@@ -270,9 +275,12 @@ class TestObsNormalization(unittest.TestCase):
                          "NaN found in observation with empty book")
         self.assertFalse(np.any(np.isinf(snap)),
                          "Inf found in observation with empty book")
-        # Empty book → all zeros
-        np.testing.assert_array_equal(snap, np.zeros(40, dtype=np.float32),
-                                      err_msg="Empty book should produce all-zero snapshot")
+        # Empty book → all zeros in the book block
+        np.testing.assert_array_equal(snap[:BOOK_DIM], np.zeros(BOOK_DIM, dtype=np.float32),
+                                      err_msg="Empty book should produce an all-zero book block")
+        # M falls back to last_price (50.0), and there is no two-sided spread
+        self.assertAlmostEqual(float(snap[BOOK_DIM]), float(np.log(50.0)), places=5)
+        self.assertEqual(float(snap[BOOK_DIM + 1]), 0.0)
 
     def test_zero_last_price_fallback(self):
         """

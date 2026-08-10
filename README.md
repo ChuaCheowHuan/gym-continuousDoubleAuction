@@ -176,18 +176,27 @@ way.
 
 # Observation space:
 
-Each observation is a flat 1D vector of shape `(n_hist * 40,)` (default shape `(160,)` for `n_hist = 4`), representing a sliding temporal history window of the last *N* sequential orderbook snapshots.
+Each observation is a flat 1D vector of shape `(n_hist * 42,)` (default shape `(168,)` for `n_hist = 4`), representing a sliding temporal history window of the last *N* sequential orderbook snapshots.
 
-Each 40-element snapshot segment is organized as:
+Each 42-element snapshot segment is organized as:
 ```
 snapshot = [
     normalized_bid_prices (10), # (M - P_bid) / M  (>= 0)
     normalized_bid_sizes  (10), #  sqrt(V_bid)      (>= 0)
     normalized_ask_prices (10), # -(|P_ask| - M) / M (<= 0)
-    normalized_ask_sizes  (10)  # -sqrt(V_ask)      (<= 0)
+    normalized_ask_sizes  (10), # -sqrt(V_ask)      (<= 0)
+    log_mid                (1), #  log(M)
+    log1p_spread_ticks     (1)  #  log1p(spread / min_tick), 0.0 if not two-sided
 ]
 ```
 where $M = \frac{P_{bid, 1} + |P_{ask, 1}|}{2}$ is the Level 1 Midpoint Price.
+
+The two trailing scalars are market-level features carried by every frame in the stack:
+
+- **`log_mid`** restores the price anchor that midpoint normalization discards. Without it, a market at price 10 and one at price 100 produce identical observations even though `min_tick` is absolute and therefore worth 10x more in the former.
+- **`log1p_spread_ticks`** reports the bid-ask spread in the same tick units the action space quotes in. A resting book can never be locked or crossed, so a two-sided book always has a spread of at least 1 tick (`log1p(1) = 0.693`), leaving `0.0` as an unambiguous sentinel for "no two-sided market".
+
+See [CHANGES_obs_market_features.md](gym_continuousDoubleAuction/doc/CHANGES_obs_market_features.md) for details.
 
 *Note: While agents observe normalized LOB snapshots, their discrete price level choices (0–9) map to actual unnormalized orderbook prices in `self.agg_LOB_raw` when submitting orders into the market.*
 

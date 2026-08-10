@@ -1,6 +1,17 @@
 import numpy as np
 from collections import deque
 
+# Layout of a single observation snapshot.
+# The book block is 4 stacked rows of K_ROWS price levels:
+#   [bid_price, bid_size, ask_price, ask_size]
+# followed by EXTRA_DIM market-level scalars:
+#   [log_mid, log1p_spread_ticks]
+K_ROWS = 10
+BOOK_DIM = 4 * K_ROWS
+EXTRA_DIM = 2
+SNAPSHOT_DIM = BOOK_DIM + EXTRA_DIM
+
+
 class State_Helper(object):
 
     def __init__(self, n_hist=4, **kwargs):
@@ -67,7 +78,7 @@ class State_Helper(object):
             SortedDict object has key & value, key is price, value is an
             OrderList object.
         """
-        k_rows = 10
+        k_rows = K_ROWS
         bid_price_list = np.zeros(k_rows)
         bid_size_list = np.zeros(k_rows)
         ask_price_list = np.zeros(k_rows)
@@ -130,7 +141,32 @@ class State_Helper(object):
         norm_bid_size = np.where(bid_size_list > 0, np.sqrt(bid_size_list), 0.0)
         norm_ask_size = np.where(ask_size_list != 0, -np.sqrt(np.abs(ask_size_list)), 0.0)
 
-        flattened = np.concatenate([norm_bid_price, norm_bid_size, norm_ask_price, norm_ask_size]).astype(np.float32)
+        # Market-level scalars appended after the book block.
+        #
+        # log_mid restores the price anchor that midpoint normalization discards:
+        # without it a market at price 10 and one at price 100 are indistinguishable,
+        # even though min_tick is absolute and so worth 10x more in the former.
+        # M is guaranteed > 0 by the fallback chain above, so log() is always defined.
+        log_mid = np.log(M)
+
+        # log1p_spread_ticks measures the spread in the same tick units the action
+        # space quotes in (min_tick), not the tick_size config, which is dropped on
+        # reset. A resting book can never be locked or crossed (a bid at or above the
+        # best ask is filled on arrival), so a two-sided book always has a spread of
+        # at least 1 tick and therefore log1p >= log1p(1) = 0.693. That leaves 0.0 as
+        # an unambiguous sentinel for "no two-sided market".
+        if l1_bid > 0 and l1_ask > 0:
+            min_tick = getattr(self, 'min_tick', 1)
+            if min_tick <= 0:
+                min_tick = 1
+            spread_ticks = (l1_ask - l1_bid) / min_tick
+            log1p_spread_ticks = np.log1p(max(0.0, spread_ticks))
+        else:
+            log1p_spread_ticks = 0.0
+
+        extras = np.array([log_mid, log1p_spread_ticks])
+
+        flattened = np.concatenate([norm_bid_price, norm_bid_size, norm_ask_price, norm_ask_size, extras]).astype(np.float32)
 
         return flattened
     

@@ -235,7 +235,7 @@ serialization, pushing `float()` parsing onto every consumer — which the callb
 
 - **CI is doubly dead.** `.travis.yml` targets a defunct service, pins Python 3.7.7, and runs
   `test_OrderBook.py` and `test_cda_nsp.py` — neither file exists. There is no `.github/`. The
-  README still shows the Travis badge. The 39 `unittest` cases are real work that nothing enforces.
+  README still shows the Travis badge. The 72 `unittest` cases are real work that nothing enforces.
 - **`setup.py` is broken for non-editable installs.** `packages=['gym_continuousDoubleAuction']`
   omits every subpackage (`envs`, `train`, `envs.orderbook`, ...), and `entry_points` still says
   `YourEnvClass`. Only `pip install -e .` works, by accident.
@@ -265,7 +265,7 @@ Worth stating, since the list above is long.
   invariant is real and checked.
 - Position-flip handling (`_covered_side_chg`) is the case most toy exchanges get wrong, and it has
   four dedicated tests.
-- The 39 unit tests cover genuinely tricky ground — crossed books, volume sync, modify-order
+- The 72 unit tests cover genuinely tricky ground — crossed books, volume sync, modify-order
   priority semantics.
 - Temporal stacking, and the raw/normalized book split (`agg_LOB_raw` for action resolution,
   normalized for observation), are both correct instincts.
