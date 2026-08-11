@@ -214,5 +214,146 @@ class TestLeagueWiring(unittest.TestCase):
             self.assertIs(type(module_id), str)
 
 
+class TestLeagueWiringRemoteEnvRunners(unittest.TestCase):
+    """The same wiring, but with sampling on a REMOTE EnvRunner.
+
+    `num_env_runners > 0` is a different code path in every way that matters
+    here: sampling moves off the driver, and each remote worker unpickles its
+    own copy of the callback that the driver never updates again. Two bugs hid
+    in exactly this gap, so it gets its own coverage rather than relying on the
+    in-process case above.
+    """
+
+    NUM_ENV_RUNNERS = 1
+
+    @classmethod
+    def setUpClass(cls):
+        ray.init(
+            ignore_reinit_error=True,
+            include_dashboard=False,
+            log_to_driver=False,
+            num_cpus=4,
+        )
+        cfg = TrainConfig(
+            **{
+                **TEST_CFG,
+                "num_env_runners": cls.NUM_ENV_RUNNERS,
+                "num_cpus_per_env_runner": 0.5,
+            }
+        )
+        ppo, cls.callback = build_config(cfg)
+        cls.cfg = cfg
+        cls.algo = ppo.build_algo()
+        cls.algo.train()
+
+        cls.source_pid = trainable_policy_ids(cfg.num_trained_agents)[0]
+        cls.callback._create_champion_snapshot_from_policy(
+            cls.algo, cls.source_pid, return_value=0.0, iteration=1
+        )
+        cls.champion_id = cls.callback.champion_history[-1]["id"]
+
+        # The probe is defined HERE, nested, and closes only over plain values.
+        #
+        # Two traps, both of which make the remote call die and get the
+        # EnvRunner marked unhealthy - after which `foreach_env_runner` returns
+        # [] and every assertion below passes vacuously over an empty list
+        # (which is why `test_sampling_actually_happens_remotely` exists):
+        #
+        #   * Closing over `cls` drags the unittest class along with it.
+        #   * A module-level helper is pickled by REFERENCE, and pytest imports
+        #     this file as top-level `test_league_wiring`, a name the worker
+        #     process cannot import. A nested function is pickled by value.
+        champion_id = cls.champion_id
+        num_agents = cfg.num_agents
+        num_trained = cfg.num_trained_agents
+
+        def probe(env_runner, n_draws=200):
+            """Runs INSIDE the remote EnvRunner actor."""
+            module = env_runner.module
+            has_champion = champion_id in module
+            state = dict(module[champion_id].get_state()) if has_champion else {}
+
+            # Read the mapping the runner actually uses, not one derived from
+            # the callback - the point of this probe is that they can disagree.
+            map_fn = env_runner.config.policy_mapping_fn
+
+            class _Ep:
+                def __init__(self, i):
+                    self.id_ = f"probe-episode-{i}"
+
+            drawn = set()
+            for i in range(n_draws):
+                ep = _Ep(i)
+                for a in range(num_trained, num_agents):
+                    drawn.add(map_fn(f"agent_{a}", ep))
+
+            return has_champion, state, drawn
+
+        cls.remote_probes = cls.algo.env_runner_group.foreach_env_runner(
+            probe, local_env_runner=False
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.algo.stop()
+        ray.shutdown()
+
+    def test_sampling_actually_happens_remotely(self):
+        """Guard the premise: if there are no remote runners, this whole class
+        silently degrades into a duplicate of the in-process tests."""
+        self.assertEqual(
+            self.algo.env_runner_group.num_healthy_remote_workers(),
+            self.NUM_ENV_RUNNERS,
+        )
+        self.assertEqual(len(self.remote_probes), self.NUM_ENV_RUNNERS)
+
+    def test_champion_module_exists_on_remote_runners(self):
+        for i, (has_champion, _state, _drawn) in enumerate(self.remote_probes):
+            self.assertTrue(
+                has_champion,
+                f"remote runner {i} has no module {self.champion_id}",
+            )
+
+    def test_champion_weights_reach_remote_runners(self):
+        """The weight force-push must cross the process boundary."""
+        trained = _state_as_numpy(
+            self.algo.learner_group._learner.module[self.source_pid].get_state()
+        )
+
+        for i, (_has, state, _drawn) in enumerate(self.remote_probes):
+            on_runner = _state_as_numpy(state)
+            shared = sorted(set(trained) & set(on_runner))
+            self.assertTrue(shared, f"remote runner {i}: no shared parameters")
+
+            mismatched = [
+                k for k in shared if not np.allclose(trained[k], on_runner[k])
+            ]
+            self.assertEqual(
+                mismatched,
+                [],
+                f"remote runner {i}: champion differs from the trained policy "
+                f"for {len(mismatched)}/{len(shared)} parameters. The champion "
+                f"sampling episodes is not the snapshot.",
+            )
+
+    def test_remote_mapping_fn_can_draw_the_champion(self):
+        """The champion must be selectable by the mapping the runner uses.
+
+        Regression guard for pool membership being published late: because
+        `add_module` pickles the mapping fn (and with it a snapshot of
+        `available_modules`) to ship it to the workers, appending the champion
+        after that call left remote runners permanently one champion behind. A
+        run with a single champion left them with none at all - which is what
+        this asserts against.
+        """
+        for i, (_has, _state, drawn) in enumerate(self.remote_probes):
+            self.assertIn(
+                self.champion_id,
+                drawn,
+                f"remote runner {i} never draws {self.champion_id}; it sees "
+                f"only {sorted(drawn)}. Champions are not entering play.",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
