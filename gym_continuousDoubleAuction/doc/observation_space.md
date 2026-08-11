@@ -122,7 +122,7 @@ top of book actually present in the observation.
 
 **`min_tick`, not `tick_size` — deliberate.** `self.tick_size` is never stored and `reset()`
 hardcodes `OrderBook(1, ...)`, so the `tick_size` config is silently discarded
-([known_issues.md](known_issues.md) §3.6). `Action_Helper.min_tick` (= 1) is the tick the action
+([known_issues.md](known_issues.md) §3.7). `Action_Helper.min_tick` (= 1) is the tick the action
 space actually quotes in, so this choice makes observation units match action units.
 
 **The `0.0` sentinel is unambiguous.** A resting book can never be locked or crossed — any bid

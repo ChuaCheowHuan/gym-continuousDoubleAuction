@@ -181,7 +181,7 @@ via `sync_weights()` — that path carries the LearnerGroup's `WEIGHTS_SEQ_NO`, 
 is 0 or strictly ahead. Between two training updates the number is unchanged, so
 such a sync is dropped silently.
 
-### 3.5 Seeding is entirely non-functional
+### 3.6 Seeding is entirely non-functional
 
 `reset(seed=...)` forwards to `MultiAgentEnv.reset`, which seeds `self._np_random` — which nothing
 uses. The env draws from global `np.random` (initial price, order sizes) and
@@ -193,7 +193,7 @@ this is disqualifying — none of the README's generated-LOB figures can be rege
 Relatedly, the league mapping's "deterministic selection" uses `hash(episode.id_)` on a string.
 Python salts string hashes per process, so matchmaking differs across workers and across runs.
 
-### 3.6 `tick_size` config is silently discarded
+### 3.7 `tick_size` config is silently discarded
 
 [`exchg_helper.py`](../envs/exchg/exchg_helper.py) uses it for the initial book, but `reset()`
 hardcodes `OrderBook(1, ...)` and `self.tick_size` is never assigned anywhere.
@@ -203,13 +203,13 @@ hardcodes `OrderBook(1, ...)` and `self.tick_size` is never assigned anywhere.
 This is why `log1p_spread_ticks` is deliberately computed against `min_tick` rather than `tick_size`
 — see [observation_space.md](observation_space.md) §3.2.
 
-### 3.7 `sys.exit()` inside the matching engine
+### 3.8 `sys.exit()` inside the matching engine
 
 [`orderbook.py`](../envs/orderbook/orderbook.py) calls `sys.exit()` on several bad-input paths. A
 library killing the interpreter takes down an RLlib rollout worker with a bare exit code and no
 traceback. These should be exceptions.
 
-### 3.8 Unbounded per-episode disk writes and monotonic league memory growth
+### 3.9 Unbounded per-episode disk writes and monotonic league memory growth
 
 `on_episode_step` accumulates every step's obs/act/reward/info in memory, and `on_episode_end`
 pickles the lot to `episode_data/<id>.pkl` **unconditionally** — every episode, every worker, no cap,
@@ -219,7 +219,7 @@ no flag. A 100-iteration run writes thousands of files. `episode_data/` is also 
 `_remove_oldest_champion` never frees the removed module (acknowledged in a code comment), so league
 memory grows monotonically.
 
-### 3.9 `observation_space` / `action_space` are plain dicts, not Spaces
+### 3.10 `observation_space` / `action_space` are plain dicts, not Spaces
 
 [`continuousDoubleAuction_env.py`](../envs/continuousDoubleAuction_env.py) assigns
 `{agent_id: Box}`. Modern RLlib expects `observation_spaces` / `action_spaces`, or a
@@ -227,13 +227,13 @@ memory grows monotonically.
 `self.agents = list(self._agent_ids)` also derives agent order from a `set` of salted-hash strings —
 nondeterministic ordering across processes.
 
-### 3.10 Rendering has side effects
+### 3.11 Rendering has side effects
 
 `_render` nulls `model_actions` / `LOB_actions` / `shuffled_actions` and clears `seq_trades`.
 Toggling `is_render` therefore changes state evolution. It also defaults to `True`, printing the
 full book, tape, and every account on every step.
 
-### 3.11 `Info_Helper` returns NAV as a string
+### 3.12 `Info_Helper` returns NAV as a string
 
 [`info_helper.py`](../envs/exchg/info_helper.py) stringifies NAV to dodge `Decimal` serialization,
 pushing `float()` parsing onto every consumer — which the league callback then does.
@@ -467,7 +467,7 @@ training stack — is where the defects concentrate.
 1. **Put private state in the observation** — net position, cash, NAV, drawdown, and the agent's own
    resting orders. Nothing else on this list matters until the MDP is well-posed (§1.1).
 2. **Make seeding work** — one `np.random.Generator` on the env, threaded through size sampling,
-   initial price, and `rand_exec_seq`. Without it no result is checkable (§3.5).
+   initial price, and `rand_exec_seq`. Without it no result is checkable (§3.6).
 3. **Rework the reward** — normalize by `init_cash`, make drawdown a *delta* not a level, drop or
    drastically rescale the hand-tuned constants (§2.1, §2.2).
 4. **Pick one RLlib API stack** and delete the other; register `model_disc` or stop referencing it.

@@ -155,7 +155,7 @@ episodes.
 
 > **Caveat:** Python salts string hashes per process, so `hash(episode.id_)` differs across workers
 > and across runs — this mapping is *not* reproducible in the way the comment implies. See
-> [known_issues.md](known_issues.md) §3.5.
+> [known_issues.md](known_issues.md) §3.6.
 
 ---
 

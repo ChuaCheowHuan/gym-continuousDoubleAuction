@@ -341,4 +341,4 @@ Honest accounting of what the suite does **not** cover:
   completes an iteration.
 - **Edge cases in league matchmaking** — empty pools and zero weights are untested.
 - **Reproducibility is untested because it does not work** — see
-  [known_issues.md](known_issues.md) §3.5.
+  [known_issues.md](known_issues.md) §3.6.

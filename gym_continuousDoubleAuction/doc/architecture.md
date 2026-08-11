@@ -164,7 +164,7 @@ Passed as an `env_config` dict to `continuousDoubleAuctionEnv`:
 |---|---|---|
 | `num_of_agents` | 5 | Number of traders |
 | `init_cash` | 0 | Starting cash per trader |
-| `tick_size` | 1 | Book tick size — **silently discarded after the first reset**, see [known_issues.md](known_issues.md) §3.6 |
+| `tick_size` | 1 | Book tick size — **silently discarded after the first reset**, see [known_issues.md](known_issues.md) §3.7 |
 | `tape_display_length` | 10 | Tape rows kept for display |
 | `max_step` | 64 | Steps before truncation |
 | `is_render` | `True` | Print book, tape, and accounts every step — turn off for training |
