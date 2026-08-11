@@ -20,6 +20,7 @@ import unittest
 import numpy as np
 import ray
 import torch
+from ray.rllib.core import COMPONENT_LEARNER, COMPONENT_RL_MODULE
 from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
 
 from gym_continuousDoubleAuction.train.model.model_handler import RandomRLModule
@@ -43,6 +44,17 @@ TEST_CFG = dict(
     episode_data_dir=None,
     log_level="ERROR",
 )
+
+
+def _learner_module_state(algo, module_id):
+    """Full module state from the LearnerGroup, local or remote.
+
+    Deliberately not `learner_group._learner.module[...]`: that private
+    attribute is None whenever num_learners > 0.
+    """
+    return algo.learner_group.get_state(
+        components=f"{COMPONENT_LEARNER}/{COMPONENT_RL_MODULE}/{module_id}",
+    )[COMPONENT_LEARNER][COMPONENT_RL_MODULE][module_id]
 
 
 def _state_as_numpy(state):
@@ -143,7 +155,7 @@ class TestLeagueWiring(unittest.TestCase):
         unused in the LearnerGroup.
         """
         trained = _state_as_numpy(
-            self.algo.learner_group._learner.module[self.source_pid].get_state()
+            _learner_module_state(self.algo, self.source_pid)
         )
         on_runner = _state_as_numpy(
             self.algo.env_runner.module[self.champion_id].get_state()
@@ -317,7 +329,7 @@ class TestLeagueWiringRemoteEnvRunners(unittest.TestCase):
     def test_champion_weights_reach_remote_runners(self):
         """The weight force-push must cross the process boundary."""
         trained = _state_as_numpy(
-            self.algo.learner_group._learner.module[self.source_pid].get_state()
+            _learner_module_state(self.algo, self.source_pid)
         )
 
         for i, (_has, state, _drawn) in enumerate(self.remote_probes):
@@ -353,6 +365,71 @@ class TestLeagueWiringRemoteEnvRunners(unittest.TestCase):
                 f"remote runner {i} never draws {self.champion_id}; it sees "
                 f"only {sorted(drawn)}. Champions are not entering play.",
             )
+
+
+class TestLeagueWiringRemoteLearner(unittest.TestCase):
+    """Champion snapshotting with num_learners > 0 (a remote LearnerGroup).
+
+    Regression guard: the snapshot used to read `learner_group._learner`, which
+    is only populated when the LearnerGroup is local. With num_learners > 0 it
+    is None, so every snapshot attempt raised, the broad except swallowed it,
+    and the league stayed permanently empty while printing one error per
+    iteration - a silent degradation, not a crash.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        ray.init(
+            ignore_reinit_error=True,
+            include_dashboard=False,
+            log_to_driver=False,
+            num_cpus=4,
+        )
+        cfg = TrainConfig(**{**TEST_CFG, "num_learners": 1})
+        ppo, cls.callback = build_config(cfg)
+        cls.cfg = cfg
+        cls.algo = ppo.build_algo()
+        cls.algo.train()
+        cls.source_pid = trainable_policy_ids(cfg.num_trained_agents)[0]
+        cls.callback._create_champion_snapshot_from_policy(
+            cls.algo, cls.source_pid, return_value=0.0, iteration=1
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.algo.stop()
+        ray.shutdown()
+
+    def test_learner_group_is_actually_remote(self):
+        """Guard the premise, or this class duplicates the local-learner tests."""
+        self.assertFalse(self.algo.learner_group.is_local)
+
+    def test_champion_is_created_with_a_remote_learner(self):
+        self.assertTrue(
+            self.callback.champion_history,
+            "no champion was created with num_learners > 0",
+        )
+
+    def test_champion_weights_match_with_a_remote_learner(self):
+        champion_id = self.callback.champion_history[-1]["id"]
+        trained = _state_as_numpy(
+            _learner_module_state(self.algo, self.source_pid)
+        )
+        on_runner = _state_as_numpy(
+            self.algo.env_runner.module[champion_id].get_state()
+        )
+        shared = sorted(set(trained) & set(on_runner))
+        self.assertTrue(shared, "champion and source share no parameters")
+
+        mismatched = [
+            k for k in shared if not np.allclose(trained[k], on_runner[k])
+        ]
+        self.assertEqual(
+            mismatched,
+            [],
+            f"champion differs from the trained policy for "
+            f"{len(mismatched)}/{len(shared)} parameters",
+        )
 
 
 if __name__ == "__main__":

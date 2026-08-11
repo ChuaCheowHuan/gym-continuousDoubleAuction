@@ -403,14 +403,32 @@ class SelfPlayCallback(RLlibCallback):
         print(f"{'*'*80}\n")
         
         try:
-            # Get the source module. Read it from the LearnerGroup, not from
+            # Take the snapshot from the LearnerGroup, not from
             # `algorithm.get_module()`: the latter returns the EnvRunner's
             # inference-only copy, which omits the value-function head. We want
             # the full module state so the snapshot is complete.
-            source_module = algorithm.learner_group._learner.module[source_policy_id]
-            source_state = source_module.get_state()
+            #
+            # Read it through `get_state` rather than `learner_group._learner`.
+            # That private attribute is only populated when the LearnerGroup is
+            # local (`num_learners=0`); with `num_learners > 0` it is None, so
+            # touching it raised on every snapshot attempt and - swallowed by
+            # the except below - left the league permanently empty while
+            # printing an error per iteration. `get_state` works either way.
+            source_state = algorithm.learner_group.get_state(
+                components=(
+                    f"{COMPONENT_LEARNER}/{COMPONENT_RL_MODULE}/{source_policy_id}"
+                ),
+            )[COMPONENT_LEARNER][COMPONENT_RL_MODULE][source_policy_id]
 
-            champion_spec = RLModuleSpec.from_module(source_module)
+            # The spec only needs the module's shape, not its weights, so it can
+            # come from the local EnvRunner copy (always present, even when
+            # sampling happens remotely). `inference_only=False` keeps the
+            # champion's structure identical to the source module on the
+            # Learner, so the state loaded above applies cleanly.
+            champion_spec = RLModuleSpec.from_module(
+                algorithm.env_runner.module[source_policy_id]
+            )
+            champion_spec.inference_only = False
 
             # Put the champion into the matchmaking pool BEFORE add_module.
             #
