@@ -165,7 +165,6 @@ remaining high-impact issues are.
 | `python -m pytest gym_continuousDoubleAuction/test -q` | 90 unit tests |
 | `python -m pytest gym_continuousDoubleAuction/test/integration -q` | 13 RLlib wiring integration tests |
 | `CDA_NSP.ipynb` | Notebook driver; imports `TrainConfig` / `train` from `train.py` |
-| `test.ipynb` | Runs individual test files via `%run` |
 | `visualize.ipynb` | Runs the `visualize/` scripts against the latest episode pickle |
 
 Installation:

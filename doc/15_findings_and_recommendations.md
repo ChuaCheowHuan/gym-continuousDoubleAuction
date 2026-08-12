@@ -339,7 +339,7 @@ quote" has no fixed meaning across steps.
 | S4-15 | `Box(-inf, inf)` observation bounds, though every quantity is boundable; disables RLlib observation filters and space-based sanity checks |
 | S4-16 | `test_shared_history_multi_agent_uniformity` encodes S1-2 as a requirement and must be deleted when private state is added |
 | S4-17 | The sign convention on ask blocks is redundant (side is already encoded by block position) and prevents natural weight sharing between the two sides |
-| S4-18 | Duplicate `CODEOWNER` and `CODEOWNERS` files at the repo root; `analyze_unused.py` ships inside the package and is itself unreferenced |
+| S4-18 | Duplicate `CODEOWNER` and `CODEOWNERS` files at the repo root |
 | S4-19 | No env/observation version recorded in checkpoints, so an observation-layout change invalidates old checkpoints silently |
 
 ---

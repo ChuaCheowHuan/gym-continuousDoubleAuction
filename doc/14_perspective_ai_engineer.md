@@ -271,7 +271,6 @@ Full inventory in [10_testing.md](10_testing.md). Engineering-relevant summary:
 | `OrderBook.__str__0`, `Order.__str__0`, `OrderList.to_str` | superseded |
 | `OrderBook.get_volume_at_price` | commented out |
 | `envs/orderbook/test/example.py`, `genOrders.py` (353 LOC) | standalone scripts, not collected by pytest |
-| `analyze_unused.py` | a dead-code detector, itself unreferenced (except from a commented-out notebook cell) |
 | ~200 LOC of commented-out code | e.g. `continuousDoubleAuction_env.py:100-133, 178-207`, `orderbook.py:260-318`, `action_helper.py:23-36` |
 | `CODEOWNER` **and** `CODEOWNERS` | duplicate files at the repo root |
 

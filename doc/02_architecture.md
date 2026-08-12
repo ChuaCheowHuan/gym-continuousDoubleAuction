@@ -44,7 +44,6 @@ Four layers, each in its own package:
 gym_continuousDoubleAuction/
 ├── __init__.py                       gymnasium register("continuousDoubleAuction-v0")
 ├── CDA_env_rand.py                   random-agent smoke driver (CI stage 2)
-├── analyze_unused.py                 dead-code detector, itself unreferenced
 ├── envs/
 │   ├── continuousDoubleAuction_env.py   MultiAgentEnv: reset / step / render
 │   ├── exchg/                           the "exchange" mixin family
