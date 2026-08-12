@@ -225,9 +225,13 @@ them.
 A second, independent analysis was then produced in `doc_new/` — eight documents derived
 exclusively from source code, with executed verification.
 
-**This folder (`doc_new_2/`) merges both sets**, resolving fifteen points of disagreement against
-the source tree and re-running every behavioural probe. The reconciliation table is in
-[README.md](README.md#reconciliation-of-the-two-source-sets). Both source folders are left in
-place and unmodified, as is the top-level `README.md` — which still links to
-`gym_continuousDoubleAuction/doc/change.md` and the three `CHANGES_*.md` redirect shims, so those
-files must stay where they are.
+**This folder merges both sets**, resolving fifteen points of disagreement against the source
+tree and re-running every behavioural probe. It was originally created as `doc_new_2/` alongside
+the two source folders; once complete, both `gym_continuousDoubleAuction/doc/` and `doc_new/`
+were deleted and `doc_new_2/` was renamed to `doc/`, taking their place at the repository root.
+The reconciliation table is in [README.md](README.md#reconciliation-of-the-two-source-sets).
+
+The top-level `README.md` was not part of this restructuring and still links to
+`gym_continuousDoubleAuction/doc/change.md` and the three `CHANGES_*.md` redirect shims — those
+paths are now broken, since the folder they pointed into no longer exists. Fixing the top-level
+`README.md` is follow-up work, not something this merge did.

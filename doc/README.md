@@ -1,9 +1,15 @@
 # `gym-continuousDoubleAuction` — Consolidated Documentation
 
-This folder merges the two previous documentation sets — `gym_continuousDoubleAuction/doc/`
+This folder merges two previous documentation sets — `gym_continuousDoubleAuction/doc/`
 (17 files: 12 topic documents, an index, and 4 redirect shims) and `doc_new/` (8 analysis
-files) — into one structured set. Both source folders are left untouched, as is the top-level
-`README.md` and all code.
+files) — into one structured set, then took their place at the repository root as `doc/`. Both
+source folders have since been deleted; they are referred to below only as the historical inputs
+to this merge. The top-level `README.md` and all code were left untouched by the merge itself.
+
+> **Note.** The root `README.md` still links into `gym_continuousDoubleAuction/doc/` (e.g.
+> `change.md`, the three `CHANGES_*.md` shims) — those paths no longer exist now that the old
+> `doc/` folder has been removed. Updating the root README was out of scope for this merge; see
+> [17_changelog.md](17_changelog.md#9-documentation).
 
 **Merge rules applied.** Where the two sets disagreed, `doc_new/` content took priority, but
 every disputed claim was re-checked against the source tree and, where behavioural, re-executed.
