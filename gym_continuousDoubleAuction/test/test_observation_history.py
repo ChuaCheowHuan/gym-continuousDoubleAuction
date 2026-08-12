@@ -3,25 +3,8 @@ from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import continu
 from gym_continuousDoubleAuction.envs.exchg.state_helper import SNAPSHOT_DIM
 
 class TestObservationHistory:
-
-    def test_default_n_hist_observation_space(self):
-        env = continuousDoubleAuctionEnv()
-        assert hasattr(env, 'mkt_size_mean_mul')
-        obs, infos = env.reset()
-
-        # Default n_hist is 4, each snapshot has SNAPSHOT_DIM features
-        for agent_id in env.agents:
-            assert env.observation_spaces[agent_id].shape == (4 * SNAPSHOT_DIM,)
-            assert obs[agent_id].shape == (4 * SNAPSHOT_DIM,)
-
-    def test_configurable_n_hist(self):
-        for n_hist in [1, 2, 6, 10]:
-            env = continuousDoubleAuctionEnv(config={"n_hist": n_hist})
-            obs, infos = env.reset()
-            expected_shape = (n_hist * SNAPSHOT_DIM,)
-            for agent_id in env.agents:
-                assert env.observation_spaces[agent_id].shape == expected_shape
-                assert obs[agent_id].shape == expected_shape
+    # Observation-space shape across n_hist values (including the default 4)
+    # is covered by test_obs_market_features.py::test_observation_shape_across_n_hist.
 
     def test_reset_padding_identical_copies(self):
         n_hist = 4
