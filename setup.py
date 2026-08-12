@@ -34,7 +34,9 @@ setup(
         # import. The RL training stack (ray[rllib], torch) lives in
         # requirements.txt so the env stays usable without it.
         "gymnasium==1.2.2",
-        "numpy>=2.5,<3",
+        # See requirements.txt for why the floor is 2.2, not 2.5: numpy has no
+        # 3.10 wheels from 2.3.0 onward, and no 3.11 wheels from 2.5.0 onward.
+        "numpy>=2.2,<3",
         "pandas>=3.0,<4",
         "sortedcontainers>=2.4",
         "tabulate>=0.10",

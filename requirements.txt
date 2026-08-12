@@ -22,7 +22,12 @@ gymnasium==1.2.2
 torch>=2.13.0,<3
 
 # --- Numerics / data ----------------------------------------------------------
-numpy>=2.5,<3
+# Floor is 2.2, not 2.5: numpy dropped Python 3.10 wheels at 2.3.0 and Python
+# 3.11 wheels at 2.5.0, so a >=2.5 floor makes this file uninstallable on the
+# CI matrix's 3.11 job (and on 3.10). 2.2 is the newest version that still
+# ships wheels for all of 3.10/3.11/3.12; pip resolves the newest compatible
+# release per interpreter (2.2.x on 3.10, 2.4.x on 3.11, 2.5.x+ on 3.12+).
+numpy>=2.2,<3
 pandas>=3.0,<4
 scipy>=1.18,<2
 scikit-learn>=1.9,<2
