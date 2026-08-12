@@ -7,7 +7,9 @@
 #     pip install -r requirements.txt
 #     pip install -e .
 #
-# Python 3.10-3.14 (Ray 2.56 supports this range; developed on 3.12).
+# Python 3.12 (the only version CI tests; developed on 3.12). Ray 2.56
+# supports a wider 3.10-3.14 range in principle, but this repo does not
+# verify it - see setup.py's python_requires.
 
 # --- RL stack -----------------------------------------------------------------
 # Ray 2.56.x hard-pins gymnasium==1.2.2. Do NOT bump gymnasium independently:
@@ -23,10 +25,11 @@ torch>=2.13.0,<3
 
 # --- Numerics / data ----------------------------------------------------------
 # Floor is 2.2, not 2.5: numpy dropped Python 3.10 wheels at 2.3.0 and Python
-# 3.11 wheels at 2.5.0, so a >=2.5 floor makes this file uninstallable on the
-# CI matrix's 3.11 job (and on 3.10). 2.2 is the newest version that still
-# ships wheels for all of 3.10/3.11/3.12; pip resolves the newest compatible
-# release per interpreter (2.2.x on 3.10, 2.4.x on 3.11, 2.5.x+ on 3.12+).
+# 3.11 wheels at 2.5.0. CI only tests 3.12 now (see the note above), where
+# >=2.5 would resolve fine either way, but this file is installed directly by
+# `pip install -r requirements.txt` without going through setup.py's
+# python_requires gate - so a >=2.5 floor would still silently break anyone
+# who runs it on 3.10/3.11 despite the declared support range.
 numpy>=2.2,<3
 pandas>=3.0,<4
 scipy>=1.18,<2

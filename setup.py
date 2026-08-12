@@ -28,7 +28,10 @@ setup(
         "for reinforcement learning, with RLlib league-based self-play."
     ),
     packages=find_packages(exclude=["*test", "*test.*", "test.*", "test"]),
-    python_requires=">=3.10",
+    # Only 3.12 is CI-tested (see .github/workflows/tests.yml). >=3.10 is not
+    # claimed: numpy stopped shipping 3.10/3.11 wheels partway through its 2.x
+    # series, which is exactly what broke the old 3.11 CI job.
+    python_requires=">=3.12",
     install_requires=[
         # Kept deliberately narrow: these are what the *environment* needs to
         # import. The RL training stack (ray[rllib], torch) lives in
