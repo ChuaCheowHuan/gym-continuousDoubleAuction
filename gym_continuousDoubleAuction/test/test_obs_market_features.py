@@ -1,5 +1,5 @@
-import unittest
 import numpy as np
+import pytest
 
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import continuousDoubleAuctionEnv
 from gym_continuousDoubleAuction.envs.exchg.state_helper import (
@@ -10,7 +10,7 @@ LOG_MID_IDX = BOOK_DIM
 LOG1P_SPREAD_IDX = BOOK_DIM + 1
 
 
-class TestObsMarketFeatures(unittest.TestCase):
+class TestObsMarketFeatures:
     """
     Tests for the two market-level scalars appended to each observation snapshot:
       - log_mid             = log(M), the Level 1 midpoint anchor
@@ -48,8 +48,8 @@ class TestObsMarketFeatures(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_snapshot_dim_is_book_plus_extras(self):
-        self.assertEqual(SNAPSHOT_DIM, BOOK_DIM + EXTRA_DIM)
-        self.assertEqual(EXTRA_DIM, 2)
+        assert SNAPSHOT_DIM == BOOK_DIM + EXTRA_DIM
+        assert EXTRA_DIM == 2
 
     def test_observation_shape_across_n_hist(self):
         for n_hist in [1, 2, 4, 6, 10]:
@@ -58,16 +58,16 @@ class TestObsMarketFeatures(unittest.TestCase):
             obs, _ = env.reset()
             expected = (n_hist * SNAPSHOT_DIM,)
             for agent_id in env.agents:
-                self.assertEqual(env.observation_spaces[agent_id].shape, expected)
-                self.assertEqual(obs[agent_id].shape, expected)
+                assert env.observation_spaces[agent_id].shape == expected
+                assert obs[agent_id].shape == expected
 
     def test_agg_LOB_raw_still_book_sized(self):
         """The raw book used for action pricing must NOT gain the extra scalars."""
         env = self._make_env()
-        self.assertEqual(env.agg_LOB_raw.shape, (BOOK_DIM,))
+        assert env.agg_LOB_raw.shape == (BOOK_DIM,)
         self._insert(env, 'bid', 99, 10)
         env.set_agg_LOB()
-        self.assertEqual(env.agg_LOB_raw.shape, (BOOK_DIM,))
+        assert env.agg_LOB_raw.shape == (BOOK_DIM,)
 
     # ------------------------------------------------------------------
     # 2. log_mid correctness
@@ -80,28 +80,28 @@ class TestObsMarketFeatures(unittest.TestCase):
 
         snap = env.set_agg_LOB()
         expected_M = (98 + 102) / 2.0
-        self.assertAlmostEqual(float(snap[LOG_MID_IDX]), float(np.log(expected_M)), places=5)
+        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(expected_M)), abs=1e-5)
 
     def test_log_mid_bid_only_book(self):
         env = self._make_env()
         self._insert(env, 'bid', 47, 10)
 
         snap = env.set_agg_LOB()
-        self.assertAlmostEqual(float(snap[LOG_MID_IDX]), float(np.log(47.0)), places=5)
+        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(47.0)), abs=1e-5)
 
     def test_log_mid_ask_only_book(self):
         env = self._make_env()
         self._insert(env, 'ask', 63, 10)
 
         snap = env.set_agg_LOB()
-        self.assertAlmostEqual(float(snap[LOG_MID_IDX]), float(np.log(63.0)), places=5)
+        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(63.0)), abs=1e-5)
 
     def test_log_mid_empty_book_uses_last_price(self):
         env = self._make_env()
         env.last_price = 37.0
 
         snap = env.set_agg_LOB()
-        self.assertAlmostEqual(float(snap[LOG_MID_IDX]), float(np.log(37.0)), places=5)
+        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(37.0)), abs=1e-5)
 
     def test_log_mid_survives_non_positive_last_price(self):
         """M defaults to 100.0 when last_price is bad; log must stay finite."""
@@ -109,8 +109,8 @@ class TestObsMarketFeatures(unittest.TestCase):
         env.last_price = 0.0
 
         snap = env.set_agg_LOB()
-        self.assertAlmostEqual(float(snap[LOG_MID_IDX]), float(np.log(100.0)), places=5)
-        self.assertTrue(np.isfinite(snap).all())
+        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(100.0)), abs=1e-5)
+        assert np.isfinite(snap).all()
 
     # ------------------------------------------------------------------
     # 3. log1p_spread_ticks correctness
@@ -123,7 +123,7 @@ class TestObsMarketFeatures(unittest.TestCase):
 
         snap = env.set_agg_LOB()
         expected = np.log1p((102 - 98) / env.min_tick)
-        self.assertAlmostEqual(float(snap[LOG1P_SPREAD_IDX]), float(expected), places=5)
+        assert float(snap[LOG1P_SPREAD_IDX]) == pytest.approx(float(expected), abs=1e-5)
 
     def test_log1p_spread_one_tick(self):
         """The tightest possible resting book maps to log1p(1) = 0.693..."""
@@ -132,7 +132,7 @@ class TestObsMarketFeatures(unittest.TestCase):
         self._insert(env, 'ask', 101, 10)
 
         snap = env.set_agg_LOB()
-        self.assertAlmostEqual(float(snap[LOG1P_SPREAD_IDX]), float(np.log1p(1.0)), places=5)
+        assert float(snap[LOG1P_SPREAD_IDX]) == pytest.approx(float(np.log1p(1.0)), abs=1e-5)
 
     def test_log1p_spread_is_monotonic_in_spread(self):
         values = []
@@ -142,8 +142,8 @@ class TestObsMarketFeatures(unittest.TestCase):
             self._insert(env, 'ask', ask, 10)
             values.append(float(env.set_agg_LOB()[LOG1P_SPREAD_IDX]))
 
-        self.assertEqual(values, sorted(values))
-        self.assertTrue(all(np.isfinite(values)))
+        assert values == sorted(values)
+        assert all(np.isfinite(values))
 
     # ------------------------------------------------------------------
     # 4. Sentinel semantics
@@ -154,13 +154,13 @@ class TestObsMarketFeatures(unittest.TestCase):
             env = self._make_env()
             self._insert(env, side, price, 10)
             snap = env.set_agg_LOB()
-            self.assertEqual(float(snap[LOG1P_SPREAD_IDX]), 0.0,
-                             msg=f"one-sided ({side}) book must use the 0.0 sentinel")
+            assert float(snap[LOG1P_SPREAD_IDX]) == 0.0, \
+                f"one-sided ({side}) book must use the 0.0 sentinel"
 
     def test_spread_sentinel_is_zero_on_empty_book(self):
         env = self._make_env()
         snap = env.set_agg_LOB()
-        self.assertEqual(float(snap[LOG1P_SPREAD_IDX]), 0.0)
+        assert float(snap[LOG1P_SPREAD_IDX]) == 0.0
 
     def test_sentinel_is_separable_from_every_real_spread(self):
         """
@@ -174,8 +174,8 @@ class TestObsMarketFeatures(unittest.TestCase):
             self._insert(env, 'bid', 100, 10)
             self._insert(env, 'ask', ask, 10)
             value = float(env.set_agg_LOB()[LOG1P_SPREAD_IDX])
-            self.assertGreaterEqual(value, floor)
-            self.assertGreater(value, 0.0)
+            assert value >= floor
+            assert value > 0.0
 
     # ------------------------------------------------------------------
     # 5. Placement within the stacked observation
@@ -192,9 +192,9 @@ class TestObsMarketFeatures(unittest.TestCase):
 
         for k in range(n_hist):
             frame = stacked[k * SNAPSHOT_DIM:(k + 1) * SNAPSHOT_DIM]
-            self.assertEqual(frame.shape, (SNAPSHOT_DIM,))
-            self.assertAlmostEqual(float(frame[LOG_MID_IDX]), expected_log_mid, places=5)
-            self.assertEqual(float(frame[LOG1P_SPREAD_IDX]), 0.0)
+            assert frame.shape == (SNAPSHOT_DIM,)
+            assert float(frame[LOG_MID_IDX]) == pytest.approx(expected_log_mid, abs=1e-5)
+            assert float(frame[LOG1P_SPREAD_IDX]) == 0.0
 
     def test_book_block_slicing_unaffected(self):
         """Appending at the end must leave the existing block offsets valid."""
@@ -206,10 +206,10 @@ class TestObsMarketFeatures(unittest.TestCase):
         bid_prices, bid_sizes = snap[0:10], snap[10:20]
         ask_prices, ask_sizes = snap[20:30], snap[30:40]
 
-        self.assertTrue(np.all(bid_prices >= 0))
-        self.assertTrue(np.all(bid_sizes >= 0))
-        self.assertTrue(np.all(ask_prices <= 0))
-        self.assertTrue(np.all(ask_sizes <= 0))
+        assert np.all(bid_prices >= 0)
+        assert np.all(bid_sizes >= 0)
+        assert np.all(ask_prices <= 0)
+        assert np.all(ask_sizes <= 0)
 
     # ------------------------------------------------------------------
     # 6. Rollout safety
@@ -223,10 +223,5 @@ class TestObsMarketFeatures(unittest.TestCase):
             actions = {a: env.action_spaces[a].sample() for a in env.agents}
             obs, _, _, _, _ = env.step(actions)
             for agent_id, vector in obs.items():
-                self.assertTrue(np.isfinite(vector).all(),
-                                msg=f"non-finite observation for {agent_id}")
-                self.assertEqual(vector.shape, (env.n_hist * SNAPSHOT_DIM,))
-
-
-if __name__ == "__main__":
-    unittest.main()
+                assert np.isfinite(vector).all(), f"non-finite observation for {agent_id}"
+                assert vector.shape == (env.n_hist * SNAPSHOT_DIM,)

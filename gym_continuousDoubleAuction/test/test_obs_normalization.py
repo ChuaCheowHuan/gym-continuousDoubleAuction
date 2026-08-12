@@ -1,12 +1,12 @@
-import unittest
 import numpy as np
+import pytest
 from decimal import Decimal
 
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import continuousDoubleAuctionEnv
 from gym_continuousDoubleAuction.envs.exchg.state_helper import BOOK_DIM, SNAPSHOT_DIM
 
 
-class TestObsNormalization(unittest.TestCase):
+class TestObsNormalization:
     """
     Tests for LOB observation normalization (set_agg_LOB):
       - Midpoint-based symmetric price normalization
@@ -61,11 +61,10 @@ class TestObsNormalization(unittest.TestCase):
         """self.agg_LOB_raw must be a numpy array of shape (40,) after reset."""
         env = self._make_env()
         env.reset()
-        self.assertTrue(hasattr(env, "agg_LOB_raw"),
-                        "agg_LOB_raw attribute missing after reset")
+        assert hasattr(env, "agg_LOB_raw"), "agg_LOB_raw attribute missing after reset"
         raw = env.agg_LOB_raw
-        self.assertIsInstance(raw, np.ndarray)
-        self.assertEqual(raw.shape, (40,))
+        assert isinstance(raw, np.ndarray)
+        assert raw.shape == (40,)
 
     def test_agg_LOB_raw_updated_after_step(self):
         """agg_LOB_raw must be updated (and remain shape (40,)) after each step."""
@@ -77,10 +76,10 @@ class TestObsNormalization(unittest.TestCase):
         self._place_limit(env, "agent_0", category=2, level=0, offset=1)
 
         raw_after = env.agg_LOB_raw
-        self.assertEqual(raw_after.shape, (40,))
+        assert raw_after.shape == (40,)
         # Raw should now be non-zero in bid price slot
-        self.assertFalse(np.array_equal(raw_before, raw_after),
-                         "agg_LOB_raw did not change after placing an order")
+        assert not np.array_equal(raw_before, raw_after), \
+            "agg_LOB_raw did not change after placing an order"
 
     # ------------------------------------------------------------------
     # 2. Sign preservation in the normalized observation
@@ -97,8 +96,8 @@ class TestObsNormalization(unittest.TestCase):
         )
         # The market scalars are not part of the book block: log_mid falls back to
         # last_price and the spread sentinel is 0.0 (no two-sided market).
-        self.assertAlmostEqual(float(snap[BOOK_DIM]), float(np.log(env.last_price)), places=5)
-        self.assertEqual(float(snap[BOOK_DIM + 1]), 0.0)
+        assert float(snap[BOOK_DIM]) == pytest.approx(float(np.log(env.last_price)), abs=1e-5)
+        assert float(snap[BOOK_DIM + 1]) == 0.0
 
     def test_bid_obs_non_negative_with_orders(self):
         """After placing bid orders, bid price & size features must be >= 0."""
@@ -115,10 +114,8 @@ class TestObsNormalization(unittest.TestCase):
         bid_prices = snap[0:10]
         bid_sizes  = snap[10:20]
 
-        self.assertTrue(np.all(bid_prices >= 0),
-                        f"Bid prices in obs must be >= 0, got {bid_prices}")
-        self.assertTrue(np.all(bid_sizes >= 0),
-                        f"Bid sizes in obs must be >= 0, got {bid_sizes}")
+        assert np.all(bid_prices >= 0), f"Bid prices in obs must be >= 0, got {bid_prices}"
+        assert np.all(bid_sizes >= 0), f"Bid sizes in obs must be >= 0, got {bid_sizes}"
 
     def test_ask_obs_non_positive_with_orders(self):
         """After placing ask orders, ask price & size features must be <= 0."""
@@ -135,10 +132,8 @@ class TestObsNormalization(unittest.TestCase):
         ask_prices = snap[20:30]
         ask_sizes  = snap[30:40]
 
-        self.assertTrue(np.all(ask_prices <= 0),
-                        f"Ask prices in obs must be <= 0, got {ask_prices}")
-        self.assertTrue(np.all(ask_sizes <= 0),
-                        f"Ask sizes in obs must be <= 0, got {ask_sizes}")
+        assert np.all(ask_prices <= 0), f"Ask prices in obs must be <= 0, got {ask_prices}"
+        assert np.all(ask_sizes <= 0), f"Ask sizes in obs must be <= 0, got {ask_sizes}"
 
     # ------------------------------------------------------------------
     # 3. Midpoint price normalization correctness
@@ -172,7 +167,7 @@ class TestObsNormalization(unittest.TestCase):
 
         # Only proceed if both sides were actually placed
         if P_bid_1 == 0 or P_ask_1 == 0:
-            self.skipTest("Orders did not populate both book sides; skip normalization check.")
+            pytest.skip("Orders did not populate both book sides; skip normalization check.")
 
         M = (P_bid_1 + P_ask_1) / 2.0
 
@@ -185,10 +180,10 @@ class TestObsNormalization(unittest.TestCase):
         actual_norm_bid = snap[0]    # first bid price slot
         actual_norm_ask = snap[20]   # first ask price slot
 
-        self.assertAlmostEqual(float(actual_norm_bid), expected_norm_bid, places=5,
-                               msg="Normalized bid price does not match expected")
-        self.assertAlmostEqual(float(actual_norm_ask), expected_norm_ask, places=5,
-                               msg="Normalized ask price does not match expected")
+        assert float(actual_norm_bid) == pytest.approx(expected_norm_bid, abs=1e-5), \
+            "Normalized bid price does not match expected"
+        assert float(actual_norm_ask) == pytest.approx(expected_norm_ask, abs=1e-5), \
+            "Normalized ask price does not match expected"
 
     def test_level1_bid_ask_symmetric_distance(self):
         """
@@ -211,14 +206,14 @@ class TestObsNormalization(unittest.TestCase):
         P_ask_1 = abs(raw[20])
 
         if P_bid_1 == 0 or P_ask_1 == 0:
-            self.skipTest("Could not populate both book sides.")
+            pytest.skip("Could not populate both book sides.")
 
         snap = self._get_snapshot(obs_step)
         norm_bid_mag = abs(float(snap[0]))
         norm_ask_mag = abs(float(snap[20]))
 
-        self.assertAlmostEqual(norm_bid_mag, norm_ask_mag, places=5,
-                               msg="Level-1 bid and ask normalized distances should be symmetric")
+        assert norm_bid_mag == pytest.approx(norm_ask_mag, abs=1e-5), \
+            "Level-1 bid and ask normalized distances should be symmetric"
 
     # ------------------------------------------------------------------
     # 4. Volume normalization correctness (sqrt)
@@ -248,11 +243,11 @@ class TestObsNormalization(unittest.TestCase):
         norm_ask_size_l1 = float(snap[30])
 
         if raw_bid_size_l1 > 0:
-            self.assertAlmostEqual(norm_bid_size_l1, np.sqrt(raw_bid_size_l1), places=4,
-                                   msg="Bid size not sqrt-normalized")
+            assert norm_bid_size_l1 == pytest.approx(np.sqrt(raw_bid_size_l1), abs=1e-4), \
+                "Bid size not sqrt-normalized"
         if raw_ask_size_l1 > 0:
-            self.assertAlmostEqual(norm_ask_size_l1, -np.sqrt(raw_ask_size_l1), places=4,
-                                   msg="Ask size not sqrt-normalized (should be negative)")
+            assert norm_ask_size_l1 == pytest.approx(-np.sqrt(raw_ask_size_l1), abs=1e-4), \
+                "Ask size not sqrt-normalized (should be negative)"
 
     # ------------------------------------------------------------------
     # 5. Division-by-zero safety: empty book fallback to last_price
@@ -271,16 +266,14 @@ class TestObsNormalization(unittest.TestCase):
         # Manually call set_agg_LOB with no orders in book
         snap = env.set_agg_LOB()
 
-        self.assertFalse(np.any(np.isnan(snap)),
-                         "NaN found in observation with empty book")
-        self.assertFalse(np.any(np.isinf(snap)),
-                         "Inf found in observation with empty book")
+        assert not np.any(np.isnan(snap)), "NaN found in observation with empty book"
+        assert not np.any(np.isinf(snap)), "Inf found in observation with empty book"
         # Empty book → all zeros in the book block
         np.testing.assert_array_equal(snap[:BOOK_DIM], np.zeros(BOOK_DIM, dtype=np.float32),
                                       err_msg="Empty book should produce an all-zero book block")
         # M falls back to last_price (50.0), and there is no two-sided spread
-        self.assertAlmostEqual(float(snap[BOOK_DIM]), float(np.log(50.0)), places=5)
-        self.assertEqual(float(snap[BOOK_DIM + 1]), 0.0)
+        assert float(snap[BOOK_DIM]) == pytest.approx(float(np.log(50.0)), abs=1e-5)
+        assert float(snap[BOOK_DIM + 1]) == 0.0
 
     def test_zero_last_price_fallback(self):
         """
@@ -293,8 +286,8 @@ class TestObsNormalization(unittest.TestCase):
 
         snap = env.set_agg_LOB()
 
-        self.assertFalse(np.any(np.isnan(snap)), "NaN with last_price=0")
-        self.assertFalse(np.any(np.isinf(snap)), "Inf with last_price=0")
+        assert not np.any(np.isnan(snap)), "NaN with last_price=0"
+        assert not np.any(np.isinf(snap)), "Inf with last_price=0"
 
     # ------------------------------------------------------------------
     # 6. Action price unnormalization: _set_price() uses agg_LOB_raw
@@ -324,8 +317,8 @@ class TestObsNormalization(unittest.TestCase):
         raw_bid_l1 = env.agg_LOB_raw[0]  # bid_prices[0] (raw, positive)
 
         # Resolved action price == raw level price + offset(Join=0)
-        self.assertAlmostEqual(resolved_price, float(raw_bid_l1), places=4,
-                               msg="Action price should equal unnormalized raw level price")
+        assert resolved_price == pytest.approx(float(raw_bid_l1), abs=1e-4), \
+            "Action price should equal unnormalized raw level price"
 
     def test_action_price_is_positive(self):
         """
@@ -343,9 +336,4 @@ class TestObsNormalization(unittest.TestCase):
             for act in env.LOB_actions:
                 price = act.get("price", -1.0)
                 if price != -1.0:   # -1.0 is the sentinel for market orders
-                    self.assertGreater(price, 0,
-                        msg=f"Action price {price} is not positive at step {step}")
-
-
-if __name__ == "__main__":
-    unittest.main()
+                    assert price > 0, f"Action price {price} is not positive at step {step}"

@@ -15,8 +15,6 @@ what was asked. Three such bugs existed before this suite:
 
 Each test below fails loudly if any of those regress.
 """
-import unittest
-
 import numpy as np
 import ray
 import torch
@@ -66,9 +64,9 @@ def _state_as_numpy(state):
     return out
 
 
-class TestLeagueWiring(unittest.TestCase):
+class TestLeagueWiring:
     @classmethod
-    def setUpClass(cls):
+    def setup_class(cls):
         ray.init(
             ignore_reinit_error=True,
             include_dashboard=False,
@@ -81,8 +79,7 @@ class TestLeagueWiring(unittest.TestCase):
         cls.algo = ppo.build_algo()
 
         # One training iteration, then one champion, created up-front so every
-        # test sees the same state regardless of unittest's alphabetical
-        # method ordering.
+        # test sees the same state regardless of test method ordering.
         cls.train_result = cls.algo.train()
         cls.source_pid = trainable_policy_ids(cfg.num_trained_agents)[0]
         cls.callback._create_champion_snapshot_from_policy(
@@ -91,7 +88,7 @@ class TestLeagueWiring(unittest.TestCase):
         cls.champion_id = cls.callback.champion_history[-1]["id"]
 
     @classmethod
-    def tearDownClass(cls):
+    def teardown_class(cls):
         cls.algo.stop()
         ray.shutdown()
 
@@ -108,18 +105,14 @@ class TestLeagueWiring(unittest.TestCase):
         for pid in baseline_policy_ids(
             self.cfg.num_agents, self.cfg.num_trained_agents
         ):
-            self.assertIsInstance(
-                modules[pid],
-                RandomRLModule,
-                f"{pid} should be a RandomRLModule, got {type(modules[pid]).__name__}",
-            )
+            assert isinstance(
+                modules[pid], RandomRLModule
+            ), f"{pid} should be a RandomRLModule, got {type(modules[pid]).__name__}"
 
         for pid in trainable_policy_ids(self.cfg.num_trained_agents):
-            self.assertNotIsInstance(
-                modules[pid],
-                RandomRLModule,
-                f"{pid} is trainable and must not be a RandomRLModule",
-            )
+            assert not isinstance(
+                modules[pid], RandomRLModule
+            ), f"{pid} is trainable and must not be a RandomRLModule"
 
     def test_baselines_excluded_from_training(self):
         """RandomRLModule._forward_train raises, so it must not be trained."""
@@ -127,21 +120,21 @@ class TestLeagueWiring(unittest.TestCase):
         for pid in baseline_policy_ids(
             self.cfg.num_agents, self.cfg.num_trained_agents
         ):
-            self.assertNotIn(pid, to_train)
+            assert pid not in to_train
         for pid in trainable_policy_ids(self.cfg.num_trained_agents):
-            self.assertIn(pid, to_train)
+            assert pid in to_train
 
     def test_module_returns_metric_key_exists(self):
         """The champion trigger depends on this exact key being present."""
         env_runners = self.train_result.get(ENV_RUNNER_RESULTS, {})
 
-        self.assertIn("module_episode_returns_mean", env_runners)
+        assert "module_episode_returns_mean" in env_runners
         returns = env_runners["module_episode_returns_mean"]
-        self.assertTrue(returns, "module_episode_returns_mean is empty")
+        assert returns, "module_episode_returns_mean is empty"
 
         # Keyed by real ModuleID, which is what makes remapping unnecessary.
         for pid in trainable_policy_ids(self.cfg.num_trained_agents):
-            self.assertIn(pid, returns)
+            assert pid in returns
 
     def test_champion_weights_reach_the_env_runner(self):
         """A champion snapshot must actually carry the trained weights.
@@ -162,26 +155,24 @@ class TestLeagueWiring(unittest.TestCase):
         )
 
         shared = sorted(set(trained) & set(on_runner))
-        self.assertTrue(shared, "champion and source share no parameters")
+        assert shared, "champion and source share no parameters"
 
         mismatched = [
             k for k in shared if not np.allclose(trained[k], on_runner[k])
         ]
-        self.assertEqual(
-            mismatched,
-            [],
+        assert mismatched == [], (
             f"Champion on the EnvRunner does not match the trained policy for "
             f"{len(mismatched)}/{len(shared)} parameters: {mismatched}. "
-            f"The champion playing in the environment is not the snapshot.",
+            f"The champion playing in the environment is not the snapshot."
         )
 
     def test_champion_enters_the_opponent_pool(self):
         """After snapshotting, the mapping fn must be able to select it."""
         champion_ids = [c["id"] for c in self.callback.champion_history]
-        self.assertTrue(champion_ids, "no champion was created")
+        assert champion_ids, "no champion was created"
 
         for cid in champion_ids:
-            self.assertIn(cid, self.callback.available_modules)
+            assert cid in self.callback.available_modules
 
         # Opponent slots can draw a champion; trainable slots never do.
         mapping_fn = self.callback.get_mapping_fn(self.callback)
@@ -190,14 +181,14 @@ class TestLeagueWiring(unittest.TestCase):
             id_ = "deterministic-episode-id"
 
         for i in range(self.cfg.num_trained_agents):
-            self.assertEqual(mapping_fn(f"agent_{i}", _Ep()), f"policy_{i}")
+            assert mapping_fn(f"agent_{i}", _Ep()) == f"policy_{i}"
 
         drawn = {
             mapping_fn(f"agent_{i}", _Ep())
             for i in range(self.cfg.num_trained_agents, self.cfg.num_agents)
         }
         pool = set(self.callback.available_modules[self.cfg.num_trained_agents:])
-        self.assertTrue(drawn.issubset(pool), f"{drawn} not within pool {pool}")
+        assert drawn.issubset(pool), f"{drawn} not within pool {pool}"
 
     def test_mapping_fn_is_deterministic_across_processes(self):
         """Selection must not depend on PYTHONHASHSEED.
@@ -219,14 +210,14 @@ class TestLeagueWiring(unittest.TestCase):
             mapping_fn(f"agent_{i}", _Ep())
             for i in range(self.cfg.num_trained_agents, self.cfg.num_agents)
         ]
-        self.assertEqual(first, again)
+        assert first == again
 
         # And every result is a plain str, not np.str_.
         for module_id in first:
-            self.assertIs(type(module_id), str)
+            assert type(module_id) is str
 
 
-class TestLeagueWiringRemoteEnvRunners(unittest.TestCase):
+class TestLeagueWiringRemoteEnvRunners:
     """The same wiring, but with sampling on a REMOTE EnvRunner.
 
     `num_env_runners > 0` is a different code path in every way that matters
@@ -239,7 +230,7 @@ class TestLeagueWiringRemoteEnvRunners(unittest.TestCase):
     NUM_ENV_RUNNERS = 1
 
     @classmethod
-    def setUpClass(cls):
+    def setup_class(cls):
         ray.init(
             ignore_reinit_error=True,
             include_dashboard=False,
@@ -271,7 +262,7 @@ class TestLeagueWiringRemoteEnvRunners(unittest.TestCase):
         # [] and every assertion below passes vacuously over an empty list
         # (which is why `test_sampling_actually_happens_remotely` exists):
         #
-        #   * Closing over `cls` drags the unittest class along with it.
+        #   * Closing over `cls` drags the test class along with it.
         #   * A module-level helper is pickled by REFERENCE, and pytest imports
         #     this file as top-level `test_league_wiring`, a name the worker
         #     process cannot import. A nested function is pickled by value.
@@ -306,25 +297,22 @@ class TestLeagueWiringRemoteEnvRunners(unittest.TestCase):
         )
 
     @classmethod
-    def tearDownClass(cls):
+    def teardown_class(cls):
         cls.algo.stop()
         ray.shutdown()
 
     def test_sampling_actually_happens_remotely(self):
         """Guard the premise: if there are no remote runners, this whole class
         silently degrades into a duplicate of the in-process tests."""
-        self.assertEqual(
-            self.algo.env_runner_group.num_healthy_remote_workers(),
-            self.NUM_ENV_RUNNERS,
+        assert (
+            self.algo.env_runner_group.num_healthy_remote_workers()
+            == self.NUM_ENV_RUNNERS
         )
-        self.assertEqual(len(self.remote_probes), self.NUM_ENV_RUNNERS)
+        assert len(self.remote_probes) == self.NUM_ENV_RUNNERS
 
     def test_champion_module_exists_on_remote_runners(self):
         for i, (has_champion, _state, _drawn) in enumerate(self.remote_probes):
-            self.assertTrue(
-                has_champion,
-                f"remote runner {i} has no module {self.champion_id}",
-            )
+            assert has_champion, f"remote runner {i} has no module {self.champion_id}"
 
     def test_champion_weights_reach_remote_runners(self):
         """The weight force-push must cross the process boundary."""
@@ -335,17 +323,15 @@ class TestLeagueWiringRemoteEnvRunners(unittest.TestCase):
         for i, (_has, state, _drawn) in enumerate(self.remote_probes):
             on_runner = _state_as_numpy(state)
             shared = sorted(set(trained) & set(on_runner))
-            self.assertTrue(shared, f"remote runner {i}: no shared parameters")
+            assert shared, f"remote runner {i}: no shared parameters"
 
             mismatched = [
                 k for k in shared if not np.allclose(trained[k], on_runner[k])
             ]
-            self.assertEqual(
-                mismatched,
-                [],
+            assert mismatched == [], (
                 f"remote runner {i}: champion differs from the trained policy "
                 f"for {len(mismatched)}/{len(shared)} parameters. The champion "
-                f"sampling episodes is not the snapshot.",
+                f"sampling episodes is not the snapshot."
             )
 
     def test_remote_mapping_fn_can_draw_the_champion(self):
@@ -359,15 +345,13 @@ class TestLeagueWiringRemoteEnvRunners(unittest.TestCase):
         this asserts against.
         """
         for i, (_has, _state, drawn) in enumerate(self.remote_probes):
-            self.assertIn(
-                self.champion_id,
-                drawn,
+            assert self.champion_id in drawn, (
                 f"remote runner {i} never draws {self.champion_id}; it sees "
-                f"only {sorted(drawn)}. Champions are not entering play.",
+                f"only {sorted(drawn)}. Champions are not entering play."
             )
 
 
-class TestLeagueWiringRemoteLearner(unittest.TestCase):
+class TestLeagueWiringRemoteLearner:
     """Champion snapshotting with num_learners > 0 (a remote LearnerGroup).
 
     Regression guard: the snapshot used to read `learner_group._learner`, which
@@ -378,7 +362,7 @@ class TestLeagueWiringRemoteLearner(unittest.TestCase):
     """
 
     @classmethod
-    def setUpClass(cls):
+    def setup_class(cls):
         ray.init(
             ignore_reinit_error=True,
             include_dashboard=False,
@@ -396,19 +380,16 @@ class TestLeagueWiringRemoteLearner(unittest.TestCase):
         )
 
     @classmethod
-    def tearDownClass(cls):
+    def teardown_class(cls):
         cls.algo.stop()
         ray.shutdown()
 
     def test_learner_group_is_actually_remote(self):
         """Guard the premise, or this class duplicates the local-learner tests."""
-        self.assertFalse(self.algo.learner_group.is_local)
+        assert not self.algo.learner_group.is_local
 
     def test_champion_is_created_with_a_remote_learner(self):
-        self.assertTrue(
-            self.callback.champion_history,
-            "no champion was created with num_learners > 0",
-        )
+        assert self.callback.champion_history, "no champion was created with num_learners > 0"
 
     def test_champion_weights_match_with_a_remote_learner(self):
         champion_id = self.callback.champion_history[-1]["id"]
@@ -419,18 +400,12 @@ class TestLeagueWiringRemoteLearner(unittest.TestCase):
             self.algo.env_runner.module[champion_id].get_state()
         )
         shared = sorted(set(trained) & set(on_runner))
-        self.assertTrue(shared, "champion and source share no parameters")
+        assert shared, "champion and source share no parameters"
 
         mismatched = [
             k for k in shared if not np.allclose(trained[k], on_runner[k])
         ]
-        self.assertEqual(
-            mismatched,
-            [],
+        assert mismatched == [], (
             f"champion differs from the trained policy for "
-            f"{len(mismatched)}/{len(shared)} parameters",
+            f"{len(mismatched)}/{len(shared)} parameters"
         )
-
-
-if __name__ == "__main__":
-    unittest.main()

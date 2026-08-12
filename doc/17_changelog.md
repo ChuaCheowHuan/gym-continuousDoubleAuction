@@ -235,3 +235,20 @@ The top-level `README.md` was not part of this restructuring and still links to
 `gym_continuousDoubleAuction/doc/change.md` and the three `CHANGES_*.md` redirect shims — those
 paths are now broken, since the folder they pointed into no longer exists. Fixing the top-level
 `README.md` is follow-up work, not something this merge did.
+
+## 10. Test suite: unittest → pytest
+
+The entire test suite (90 unit tests across 13 files, plus the 13-test RLlib integration file)
+was converted from `unittest.TestCase` to plain pytest-native classes: `self.assertX(...)` calls
+became `assert` statements, `setUp` / `tearDown` / `setUpClass` / `tearDownClass` became pytest's
+built-in xunit-style `setup_method` / `teardown_method` / `setup_class` / `teardown_class` hooks
+(no decorator needed — pytest recognises these names on any class), and `self.assertAlmostEqual`
+became `pytest.approx`. `test_probabilistic_mapping.py` needed no changes — it was already a
+bare pytest-style function.
+
+One behavioural consequence: every file previously ended with
+`if __name__ == "__main__": unittest.main()`, which let a test file be run directly
+(`python test_foo.py`) or via a notebook's `%run`. That block is gone, since pytest doesn't need
+it and it would have called `unittest.main()` against classes that no longer inherit
+`TestCase`. Running a file directly, or `python -m unittest discover`, now does nothing — `pytest`
+is required. See [10_testing.md](10_testing.md) §0.

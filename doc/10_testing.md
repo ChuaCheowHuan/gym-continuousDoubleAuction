@@ -11,8 +11,10 @@ Related: [03_matching_engine.md](03_matching_engine.md), [04_accounting.md](04_a
 
 ## 0. Running the suite
 
-Every suite uses the standard-library `unittest` module — **no pytest-specific constructs** — so
-tests run directly from a notebook via `%run` as well as under pytest.
+Every suite is pytest-native: plain classes (no `unittest.TestCase`), `assert` statements instead
+of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` / `setup_class` /
+`teardown_class`) instead of `setUp` / `setUpClass` / `tearDownClass`. Converted from a
+`unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
 # everything (90 unit tests)
@@ -25,18 +27,23 @@ python -m pytest gym_continuousDoubleAuction/test -q \
 # RLlib wiring (13 tests, builds real Algorithms — minutes, not seconds)
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 
-# unittest discovery
-python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py" -v
-
 # a single file
-python gym_continuousDoubleAuction/test/test_orderbook_new.py
+python -m pytest gym_continuousDoubleAuction/test/test_orderbook_new.py -v
 ```
 
-Or from `test.ipynb`:
+**pytest is now required to run any of this**, not just a convenient runner. Two things that used
+to work no longer do, because there is no `unittest.main()` call left to trigger them:
 
-```python
-%run ../gym_continuousDoubleAuction/test/test_observation_history.py
-```
+- `python gym_continuousDoubleAuction/test/test_orderbook_new.py` — exits immediately with no
+  output; it only *defines* the test classes now.
+- `%run ../gym_continuousDoubleAuction/test/test_observation_history.py` from a notebook — same
+  no-op. Use `%run -m pytest -- ../gym_continuousDoubleAuction/test/test_observation_history.py`
+  (or a shell cell) instead.
+
+`python -m unittest discover` also no longer finds anything here — `unittest`'s loader only
+collects `TestCase` subclasses, and none of these classes are one any more. **[verified]**:
+`python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
+`Ran 0 tests`.
 
 **[verified]** — `90 passed`.
 
@@ -318,9 +325,11 @@ The suite instantiates a bare `Reward_Helper()` with a `MockTrader`, which works
 (episode-end NAV conservation, both directions) are described in
 [08_self_play_league.md](08_self_play_league.md) §9.
 
-Note `test_probabilistic_mapping.py` is a bare function with asserts rather than a
-`unittest.TestCase`; it collects under pytest but does not run under the notebook's `%run` path
-the same way.
+Note `test_probabilistic_mapping.py` is a bare module-level function rather than a class — it was
+already pytest-native before the rest of the suite was converted, and needed no changes. It
+collects the same way as everything else under `pytest`, but — like every file in this suite now
+— running it directly (`python test_probabilistic_mapping.py`, or `%run` from a notebook) does
+nothing, since there is no `unittest.main()` call left anywhere to trigger execution. See §0.
 
 ### 6.2 `integration/test_league_wiring.py` — 3 classes, 13 tests
 

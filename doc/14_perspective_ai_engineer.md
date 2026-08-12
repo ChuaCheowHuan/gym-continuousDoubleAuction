@@ -251,7 +251,6 @@ Full inventory in [10_testing.md](10_testing.md). Engineering-relevant summary:
 | **No learning-signal assertion** | Nothing checks `vf_explained_var`, `vf_loss` saturation, or that returns improve. This is exactly how the frozen critic went unnoticed. |
 | **No coverage measurement** | No `pytest-cov`, no threshold. |
 | **`test_accounting.py::test_insufficient_funds` is an empty `pass`** with a 15-line comment debating what the behaviour should be — a TODO shipped as a test. |
-| **`test_probabilistic_mapping.py` is a bare function with asserts**, not a `unittest.TestCase`; it collects under pytest but does not run under the notebook's `%run` path the same way. |
 | **No property-based tests** | The order book is an ideal Hypothesis target: "tree volume == Σ level volumes", "no crossed book", "Σ NAV == Σ initial cash" hold for *any* order sequence. |
 | **No performance regression test** | Nothing catches a 10× slowdown in the matching engine. |
 

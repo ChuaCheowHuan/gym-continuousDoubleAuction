@@ -1,4 +1,3 @@
-import unittest
 import sys
 import os
 from unittest.mock import MagicMock
@@ -13,7 +12,7 @@ class MockEpisode:
     def __init__(self, id, last_info):
         self.id_ = id
         self.last_info = last_info
-    
+
     def get_infos(self, index):
         if index == -1:
             return self.last_info
@@ -24,8 +23,8 @@ class MockEnv:
         self.init_cash = init_cash
         self.num_of_agents = num_of_agents
 
-class TestNAVCallback(unittest.TestCase):
-    def setUp(self):
+class TestNAVCallback:
+    def setup_method(self):
         self.callback = SelfPlayCallback(num_trainable_policies=2, num_random_policies=2)
         self.init_cash = 1000000
         self.num_agents = 4
@@ -45,7 +44,7 @@ class TestNAVCallback(unittest.TestCase):
             f"agent_{i}": {"NAV": str(float(self.init_cash))} for i in range(self.num_agents)
         }
         mock_episode = MockEpisode("test_ep_success", mock_info)
-        
+
         # This shouldn't raise any errors and should print SUCCESS
         self.callback.on_episode_end(
             episode=mock_episode,
@@ -64,7 +63,7 @@ class TestNAVCallback(unittest.TestCase):
             f"agent_{i}": {"NAV": str(float(self.init_cash - 1000))} for i in range(self.num_agents)
         }
         mock_episode_fail = MockEpisode("test_ep_failure", mock_info_fail)
-        
+
         # This shouldn't raise any errors and should print FAILED
         self.callback.on_episode_end(
             episode=mock_episode_fail,
@@ -74,6 +73,3 @@ class TestNAVCallback(unittest.TestCase):
             env_index=0,
             rl_module=None
         )
-
-if __name__ == "__main__":
-    unittest.main()
