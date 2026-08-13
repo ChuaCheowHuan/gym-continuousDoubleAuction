@@ -1,8 +1,12 @@
 import numpy as np
 import random
 
+from decimal import Decimal, ROUND_HALF_UP
+
 from gymnasium import spaces
 from sklearn.utils import shuffle
+
+from .state_helper import K_ROWS, DEFAULT_PRICE_ANCHOR
 
 class Action_Helper():
     def __init__(self, min_size=1, mkt_max_size=100, limit_size_multiple=10,
@@ -29,7 +33,7 @@ class Action_Helper():
         # hardcoded 1 that happened to agree with the configured tick_size, so
         # setting tick_size had no effect on the prices agents can quote.
         self.min_tick = tick_size # price tick
-        self.last_price = 100.0 # Default anchor (will be overwritten by env.reset)
+        self.last_price = DEFAULT_PRICE_ANCHOR # Default anchor (will be overwritten by env.reset)
 
         super().__init__(**kwargs)
 
@@ -56,7 +60,7 @@ class Action_Helper():
                                      5: Sell Mkt, 6: Sell Lmt, 7: Sell Mod, 8: Sell Can
             - size_mean: Box(-1.0, 1.0)
             - size_sigma: Box(0.0, 1.0)
-            - price: Discrete(10) -> levels 1 to 10
+            - price: Discrete(K_ROWS) -> book levels 1 to K_ROWS
             - price_offset: Discrete(3) -> 0: Passive (-1 tick), 1: Join (0 tick), 2: Aggressive (+1 tick)
 
         Args:
@@ -70,7 +74,9 @@ class Action_Helper():
             "category": spaces.Discrete(9),
             "size_mean": spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),
             "size_sigma": spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),
-            "price": spaces.Discrete(10),
+            # One code per book level, so this is K_ROWS - the same depth the
+            # observation exposes and the same depth _set_price indexes into.
+            "price": spaces.Discrete(K_ROWS),
             "price_offset": spaces.Discrete(3),
         })
 
@@ -266,7 +272,7 @@ class Action_Helper():
         agg_LOB_source = getattr(self, 'agg_LOB_raw', self.agg_LOB)
 
         if side == 'bid':
-            price_array = np.array(agg_LOB_source).reshape(4, 10)[0] # raw bid prices
+            price_array = np.array(agg_LOB_source).reshape(4, K_ROWS)[0] # raw bid prices
             p = price_array[level_idx]
             
             # If level is empty, use ghost logic relative to ref_price
@@ -276,7 +282,7 @@ class Action_Helper():
             set_price = base_price + (offset_multiplier * min_tick)
 
         else: # 'ask'
-            price_array = np.array(agg_LOB_source).reshape(4, 10)[2] # raw ask prices
+            price_array = np.array(agg_LOB_source).reshape(4, K_ROWS)[2] # raw ask prices
             p = abs(price_array[level_idx])
             
             # If level is empty, use ghost logic relative to ref_price
@@ -286,8 +292,31 @@ class Action_Helper():
             set_price = base_price - (offset_multiplier * min_tick)
 
         # Final safety checks
-        set_price = max(min_tick, set_price)
+        set_price = max(min_tick, self._quantize_price(set_price, min_tick))
         return float(set_price)
+
+    def _quantize_price(self, price, min_tick):
+        """
+        Snap a price onto the tick grid.
+
+        Prices here are built as `anchor +/- k * min_tick` in floating point, so
+        they are already on the grid for binary-exact ticks (1, 0.5, 0.25). They
+        are not for anything else: `37 - 3 * 0.1` is 36.699999999999996, and
+        OrderBook stores prices as `Decimal(str(price))`, which preserves that
+        noise verbatim. Two orders meant for one level would then land on two
+        keys in the price map and the book would silently fragment.
+
+        Rounding in Decimal rather than float avoids reintroducing the error.
+        """
+        tick = Decimal(str(min_tick))
+        if tick <= 0:
+            return price
+
+        quantized = (Decimal(str(price)) / tick).quantize(
+            Decimal(1), rounding=ROUND_HALF_UP
+        ) * tick
+
+        return float(quantized)
 
     def _higher(self, min_tick, price):
         """

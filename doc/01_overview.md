@@ -108,7 +108,7 @@ other. The environment is a valid *game*; framing it as a market simulator overr
 | Episode length | 4,096 env steps (`max_step = 1024 * 4`) | [`train.py:54`](../gym_continuousDoubleAuction/train/train.py#L54) |
 | Initial cash | 1,000,000 per agent | [`train.py:51`](../gym_continuousDoubleAuction/train/train.py#L51) |
 | Initial price anchor | `randint(10, 100)` inclusive, per episode | [`continuousDoubleAuction_env.py:164-166`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py#L164-L166) |
-| Tick | 1.0, fixed (`min_tick`) | [`action_helper.py:17`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py#L17) |
+| Tick | 1.0 by default, from the `tick_size` config key (`min_tick`) | [`action_helper.py`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py), [18_configuration.md](18_configuration.md) §3 |
 | Instrument | a single unnamed contract, no expiry, no carry | [`account.py:19-20`](../gym_continuousDoubleAuction/envs/account/account.py#L19-L20) |
 | Observation | 168 floats (4 stacked snapshots × 42), identical for every agent | [`state_helper.py:9-13`](../gym_continuousDoubleAuction/envs/exchg/state_helper.py#L9-L13) |
 | Action | `Dict{category:9, size_mean:Box, size_sigma:Box, price:10, price_offset:3}` | [`action_helper.py:56-66`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py#L56-L66) |

@@ -278,13 +278,25 @@ Passed as an `env_config` dict to `continuousDoubleAuctionEnv`
 |---|---|---|---|
 | `num_of_agents` | 5 | 8 | Number of traders |
 | `init_cash` | 0 | 1,000,000 | Starting cash per trader |
-| `tick_size` | 1 | 1 | Book tick — **silently discarded after the first reset**, see §2.7 |
+| `tick_size` | 1 | 1 | Price tick the action space quotes on, see §2.7 |
 | `tape_display_length` | 10 | 10 | Tape rows kept for display |
 | `max_step` | 64 | 4,096 | Steps before truncation |
 | `is_render` | `True` | `False` | Print book, tape and accounts every step |
 | `n_hist` | 4 | 4 | Observation history window |
 | `initial_price_min` | 10 | *not passed* | Lower bound of the per-episode price anchor |
 | `initial_price_max` | 100 | *not passed* | Upper bound of the per-episode price anchor |
+| `min_size` | 1 | 1 | Smallest order size, and the offset added to every sampled size |
+| `mkt_max_size` | 100 | 100 | Upper bound on market order size |
+| `limit_size_multiple` | 10 | 10 | Limit orders may be this many times larger than market orders |
+| `order_penalty` | 0.1 | 0.1 | Reward: per order placed this step |
+| `trade_penalty` | 0.05 | 0.05 | Reward: per trade filled this step |
+| `drawdown_penalty` | 0.2 | 0.2 | Reward: per unit of NAV below the running peak |
+| `passive_bonus` | 0.1 | 0.1 | Reward: per passive fill this step |
+| `loss_multiplier` | 1.5 | 1.5 | Reward: extra weight on negative NAV changes |
+
+The sizing and reward keys were hardcoded literals until they were promoted to config; see
+[18_configuration.md](18_configuration.md) §2 for what each one feeds and how the mixin chain
+forwards them.
 
 Two consequences worth flagging:
 
@@ -296,23 +308,31 @@ Two consequences worth flagging:
   ([`train.py:108-117`](../gym_continuousDoubleAuction/train/train.py#L108-L117)), so training
   always gets the wide `[10, 100]` range. Only the unit tests narrow it.
 
-### 2.7 `tick_size` is discarded
+### 2.7 `tick_size` is the tick — resolved
 
-**[verified]**:
+`tick_size` reaches `Action_Helper.min_tick`, the tick every price is constructed on. `OrderBook`
+no longer takes a tick at all.
+
+**This section previously documented a defect**, verified as:
 
 ```
 config tick_size=0.25 | LOB.tick_size before reset=0.25 | after reset=1
                       | action min_tick=1 | env has a self.tick_size attribute: False
 ```
 
-`Exchg_Helper.__init__` passes the configured tick to the *initial* `OrderBook`, but `reset()`
-hardcodes `OrderBook(1, ...)`
-([`continuousDoubleAuction_env.py:141`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py#L141)),
-and the env never stores `self.tick_size` at all. `Action_Helper.min_tick = 1` is a second,
-independent hardcoded tick.
+The configured tick went to an `OrderBook` argument that was stored and never read, and `reset()`
+then rebuilt the book as `OrderBook(1, ...)` regardless. `Action_Helper.min_tick = 1` was a
+second, independent hardcoded tick, and it was the one that actually drove prices — so setting
+`tick_size` did nothing. Both defaults were 1, so consolidating them onto the single
+`Action_Helper.min_tick` changed no behaviour at default config.
 
-This is why `log1p_spread_ticks` is deliberately computed against `min_tick` rather than
-`tick_size` — see [05_observation_space.md](05_observation_space.md) §3.2.
+The book remains deliberately tick-agnostic, because the action layer is the only price producer
+and emits on-grid prices by construction. See [18_configuration.md](18_configuration.md) §3 for
+the reasoning and for the `Decimal` quantization that keeps non-binary ticks (0.1, 0.3) from
+fragmenting the price map.
+
+`log1p_spread_ticks` is still computed against `min_tick` — now simply because that *is* the
+configured tick. See [05_observation_space.md](05_observation_space.md) §3.2.
 
 ---
 

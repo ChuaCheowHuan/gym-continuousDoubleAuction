@@ -252,3 +252,50 @@ One behavioural consequence: every file previously ended with
 it and it would have called `unittest.main()` against classes that no longer inherit
 `TestCase`. Running a file directly, or `python -m unittest discover`, now does nothing — `pytest`
 is required. See [10_testing.md](10_testing.md) §0.
+
+## 11. Configuration surface: `config/`, and knobs that were literals
+
+Previously the project's parameters lived in three places with no map between them: the
+`env_config` dict, the `TrainConfig` dataclass, and a scattering of hardcoded literals. Some of
+the literals mattered a great deal — the five reward coefficients among them.
+
+**`config/`** was added at the repository root: four JSON files inventorying the configuration
+surfaces (`env_config.json`, `train_config.json`, `cli_defaults.json`, `tunable_constants.json`).
+They are documentation, not a loader — nothing reads them at runtime. Each carries `_source` keys
+naming the module its values come from, since JSON has no comments.
+See [18_configuration.md](18_configuration.md).
+
+**Promoted to config**, each with the wiring that makes the key real:
+
+- The five reward coefficients (`order_penalty`, `trade_penalty`, `drawdown_penalty`,
+  `passive_bonus`, `loss_multiplier`), from literals inside `Reward_Helper.set_reward` to
+  `env_config` keys. See [07_reward_function.md](07_reward_function.md) §2.
+- Order sizing (`min_size`, `mkt_max_size`, `limit_size_multiple` — the last previously the
+  single-letter `Action_Helper.N`), likewise to `env_config` keys.
+- `fcnet_activation` and `vf_share_layers`, from literals in `model_handler` to `TrainConfig`
+  fields, next to the `fcnet_hiddens` field that was already there.
+
+These reach their consumers through the mixin `__init__` chain. `State_Helper.__init__` called
+`super().__init__()` with no arguments, which would have silently swallowed every new key; it now
+forwards `**kwargs`.
+
+**`tick_size` consolidated.** It was two independent values: a hardcoded `Action_Helper.min_tick`
+that drove prices, and an `OrderBook` argument that was stored, never read, and discarded anyway
+when `reset()` rebuilt the book as `OrderBook(1, ...)`. `tick_size` now sets `min_tick`, and
+`OrderBook` takes no tick — the action layer is the only price producer and emits on-grid prices
+by construction. `_set_price` quantizes with `Decimal`, so ticks that are not binary-exact (0.1,
+0.3) cannot fragment the price map. Both defaults were 1, so behaviour at default config is
+unchanged. Resolves S3-4 in [15_findings_and_recommendations.md](15_findings_and_recommendations.md).
+
+**Book depth de-duplicated.** `K_ROWS`, the action space's `price: Discrete(10)`, and two literal
+`.reshape(4, 10)` calls in `action_helper` were four copies of one number. All now derive from
+`K_ROWS`. Depth is still not an `env_config` key — that needs `SNAPSHOT_DIM` to become
+per-instance — but changing it is now a one-line edit rather than a four-site one.
+
+**`max_price` deleted.** It was stored on `Action_Helper`, passed into `_set_price`, and read by
+nothing; `_higher` / `_lower` carried it as an unused parameter and have no callers at all. No
+behaviour change. Closes half of S4-3.
+
+The two `100.0` price-anchor fallbacks became one `DEFAULT_PRICE_ANCHOR` constant. `TestTickGrid`
+in `test_new_action_space.py` covers the consolidated tick, the quantization, and the
+depth/action-space agreement.

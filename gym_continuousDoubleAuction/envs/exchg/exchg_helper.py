@@ -15,11 +15,11 @@ from tabulate import tabulate
 class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info_Helper):
     def __init__(self, init_cash=0, tick_size=1, tape_display_length=10, n_hist=4,
                  **kwargs):
-        # tick_size goes on to Action_Helper as well: it is the tick the action
-        # space quotes on, not just a property of the book.
+        # tick_size is consumed by Action_Helper, which is the only producer of
+        # prices. The book itself is tick-agnostic - see OrderBook.__init__.
         super().__init__(n_hist=n_hist, tick_size=tick_size, **kwargs)
 
-        self.LOB = OrderBook(tick_size, tape_display_length) # limit order book
+        self.LOB = OrderBook(tape_display_length) # limit order book
         self.agg_LOB = {} # aggregated or consolidated LOB
         self.agg_LOB_raw = {} # unnormalized raw aggregated LOB
         self.agg_LOB_aft = {} # aggregated or consolidated LOB after processing orders

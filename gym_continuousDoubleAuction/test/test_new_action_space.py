@@ -145,3 +145,68 @@ class TestActionSpaceRobust:
         obs, rewards, term, trunc, info = self.env.step(action)
         # Category 0 results in side=None, which is filtered out before LOB_actions is populated in CDA_env
         assert len(self.env.LOB_actions) == 0, "Neutral action should not produce LOB actions"
+
+
+class TestTickGrid:
+    """The `tick_size` env config key is the one definition of the price tick.
+
+    It used to exist twice: a hardcoded `min_tick = 1` in Action_Helper, which
+    actually drove prices, and an `OrderBook` argument that was stored and never
+    read. Setting `tick_size` therefore did nothing. These cover the consolidated
+    behaviour.
+    """
+
+    def _env(self, tick_size, anchor=37):
+        env = continuousDoubleAuctionEnv({
+            "num_of_agents": 2,
+            "init_cash": 100000,
+            "tick_size": tick_size,
+            "initial_price_min": anchor,
+            "initial_price_max": anchor,
+            "is_render": False,
+        })
+        env.reset()
+        return env
+
+    def test_tick_size_config_reaches_action_layer(self):
+        """min_tick comes from config, and the ghost ladder is spaced by it."""
+        env = self._env(0.25)
+        assert env.min_tick == 0.25
+
+        anchor = env.last_price
+        for level in range(5):
+            price = env._set_price(env.min_tick, 'bid', level, 1)
+            assert price == pytest.approx(anchor - (level + 1) * 0.25, abs=1e-9)
+
+    def test_prices_stay_on_grid_for_non_binary_ticks(self):
+        """A 0.1 tick must not leak float noise into the book's price keys.
+
+        `37 - 3 * 0.1` is 36.699999999999996 in floating point, and OrderBook
+        stores prices as Decimal(str(price)), so without quantization two orders
+        meant for one level would occupy two price-map keys.
+        """
+        env = self._env(0.1)
+        from decimal import Decimal
+
+        for level in range(10):
+            for side in ('bid', 'ask'):
+                price = env._set_price(env.min_tick, side, level, 1)
+                # Exactly representable as a 1-decimal-place Decimal, i.e. on grid.
+                stored = Decimal(str(price))
+                assert stored == stored.quantize(Decimal('0.1')), (
+                    f"{side} level {level} off grid: {price!r}"
+                )
+
+    def test_orderbook_takes_no_tick_size(self):
+        """The book is tick-agnostic; the tick lives in the action layer."""
+        from gym_continuousDoubleAuction.envs.orderbook.orderbook import OrderBook
+
+        book = OrderBook()
+        assert not hasattr(book, "tick_size")
+
+    def test_action_price_levels_match_book_depth(self):
+        """price codes index book levels, so the two depths cannot drift apart."""
+        from gym_continuousDoubleAuction.envs.exchg.state_helper import K_ROWS
+
+        env = self._env(1)
+        assert env.action_spaces['agent_0']['price'].n == K_ROWS
