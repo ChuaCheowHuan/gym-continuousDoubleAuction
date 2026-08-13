@@ -259,10 +259,21 @@ Previously the project's parameters lived in three places with no map between th
 `env_config` dict, the `TrainConfig` dataclass, and a scattering of hardcoded literals. Some of
 the literals mattered a great deal — the five reward coefficients among them.
 
-**`config/`** was added at the repository root: four JSON files inventorying the configuration
-surfaces (`env_config.json`, `train_config.json`, `cli_defaults.json`, `tunable_constants.json`).
-They are documentation, not a loader — nothing reads them at runtime. Each carries `_source` keys
-naming the module its values come from, since JSON has no comments.
+**`config/`** was added at the repository root, initially as four JSON files inventorying the
+configuration surfaces. `env_config.json` has since been **merged into `train_config.json`**, whose
+`environment` group is what `TrainConfig.env_config` forwards to the env, leaving three files.
+Each carries `_source` keys naming the module its values come from, since JSON has no comments.
+
+`train_config.json` is now a **real input**, loaded by `TrainConfig.from_json(path)` or
+`--config`. Precedence is dataclass defaults → file → explicit flags, which required every flag to
+declare `argparse.SUPPRESS` as its default so an unset flag cannot overwrite a value from the
+file. Unknown keys raise; while the files were purely descriptive a misspelled key had no symptom.
+`--config` is also the only way to reach fields with no flag, `num_learners` among them.
+`cli_defaults.json` and `tunable_constants.json` remain descriptive.
+
+The merge added `TrainConfig` fields for `initial_price_min` / `initial_price_max`, which `reset()`
+read but no training run could set. One key changes name across the env boundary — the field is
+`num_agents`, the env receives `num_of_agents` — and is covered by a test.
 See [18_configuration.md](18_configuration.md).
 
 **Promoted to config**, each with the wiring that makes the key real:

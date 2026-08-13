@@ -18,6 +18,8 @@ From a notebook:
 from __future__ import annotations
 
 import argparse
+import dataclasses
+import json
 import os
 from dataclasses import dataclass, field
 from typing import List, Optional
@@ -54,6 +56,13 @@ class TrainConfig:
     max_step: int = 1024 * 4
     is_render: bool = False
     n_hist: int = 4
+
+    # Bounds of the per-episode price anchor, drawn as randint(min, max) in
+    # reset(). These were readable by the env but had no TrainConfig field, so
+    # training runs could not narrow the range - the relative tick therefore
+    # varied 10x across episodes with no way to control it. See doc/15 S3-4.
+    initial_price_min: int = 10
+    initial_price_max: int = 100
 
     # Order sizing. limit orders may be limit_size_multiple x larger than
     # market orders.
@@ -115,6 +124,47 @@ class TrainConfig:
     log_level: str = "WARN"
     seed: Optional[int] = None
 
+    @classmethod
+    def from_json(cls, path: str) -> "TrainConfig":
+        """Build a TrainConfig from a JSON file such as `config/train_config.json`.
+
+        The file is grouped (`environment`, `rollouts`, `ppo`, ...) while this
+        dataclass is flat, so groups are flattened one level. Keys beginning
+        with `_` are documentation (`_source`, `_description`, `_note`) and are
+        skipped at every level.
+
+        Unknown keys raise rather than being ignored. Silently dropping a
+        renamed or misspelled key is the failure mode this loader exists to
+        remove - the file used to be purely descriptive, so a typo in it had no
+        symptom at all.
+
+        Note the one name change across the boundary: the field here is
+        `num_agents`, and `env_config` forwards it to the env as
+        `num_of_agents`.
+        """
+        with open(path) as fh:
+            raw = json.load(fh)
+
+        flat: dict = {}
+        for key, value in raw.items():
+            if key.startswith("_"):
+                continue
+            if isinstance(value, dict):
+                for sub_key, sub_value in value.items():
+                    if not sub_key.startswith("_"):
+                        flat[sub_key] = sub_value
+            else:
+                flat[key] = value
+
+        known = {f.name for f in dataclasses.fields(cls)}
+        unknown = sorted(set(flat) - known)
+        if unknown:
+            raise ValueError(
+                f"{path}: unknown config keys {unknown}. "
+                f"Valid keys: {sorted(known)}"
+            )
+        return cls(**flat)
+
     @property
     def train_batch_size(self) -> int:
         return self.max_step * self.num_episodes_per_iter
@@ -133,6 +183,8 @@ class TrainConfig:
             "max_step": self.max_step,
             "is_render": self.is_render,
             "n_hist": self.n_hist,
+            "initial_price_min": self.initial_price_min,
+            "initial_price_max": self.initial_price_max,
             "min_size": self.min_size,
             "mkt_max_size": self.mkt_max_size,
             "limit_size_multiple": self.limit_size_multiple,
@@ -303,29 +355,52 @@ def _print_iteration(i: int, total: int, result: dict) -> None:
 
 
 def _parse_args(argv=None) -> TrainConfig:
+    """Resolve a TrainConfig from the command line.
+
+    Precedence is dataclass defaults -> `--config` file -> explicit flags.
+
+    Every flag below defaults to `argparse.SUPPRESS`, so an unset flag is
+    absent from the namespace entirely. That distinction is what makes the
+    precedence work: with ordinary argparse defaults, `--config` could set
+    `num_agents=4` and an unpassed `--agents` would immediately overwrite it
+    with 8. The suppressed defaults are identical to the dataclass defaults, so
+    behaviour without `--config` is unchanged.
+    """
     p = argparse.ArgumentParser(description=__doc__.split("\n")[1])
-    p.add_argument("--agents", type=int, default=8, dest="num_agents")
-    p.add_argument("--trained-agents", type=int, default=2, dest="num_trained_agents")
-    p.add_argument("--iters", type=int, default=16, dest="num_iters")
-    p.add_argument("--max-step", type=int, default=1024 * 4)
-    p.add_argument("--env-runners", type=int, default=0, dest="num_env_runners")
-    p.add_argument("--envs-per-runner", type=int, default=1, dest="num_envs_per_env_runner")
-    p.add_argument("--gpus-per-learner", type=float, default=0.75, dest="num_gpus_per_learner")
-    p.add_argument("--restore", action="store_true", dest="is_restore")
-    p.add_argument("--log-base-dir", type=str, default="results")
-    p.add_argument("--log-level", type=str, default="WARN")
-    p.add_argument("--seed", type=int, default=None)
+    p.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="JSON config file, e.g. config/train_config.json. Flags override it.",
+    )
+    p.add_argument("--agents", type=int, dest="num_agents", default=argparse.SUPPRESS)
+    p.add_argument("--trained-agents", type=int, dest="num_trained_agents", default=argparse.SUPPRESS)
+    p.add_argument("--iters", type=int, dest="num_iters", default=argparse.SUPPRESS)
+    p.add_argument("--max-step", type=int, default=argparse.SUPPRESS)
+    p.add_argument("--env-runners", type=int, dest="num_env_runners", default=argparse.SUPPRESS)
+    p.add_argument("--envs-per-runner", type=int, dest="num_envs_per_env_runner", default=argparse.SUPPRESS)
+    p.add_argument("--gpus-per-learner", type=float, dest="num_gpus_per_learner", default=argparse.SUPPRESS)
+    p.add_argument("--restore", action="store_true", dest="is_restore", default=argparse.SUPPRESS)
+    p.add_argument("--log-base-dir", type=str, default=argparse.SUPPRESS)
+    p.add_argument("--log-level", type=str, default=argparse.SUPPRESS)
+    p.add_argument("--seed", type=int, default=argparse.SUPPRESS)
     p.add_argument(
         "--no-episode-data",
         action="store_true",
+        default=argparse.SUPPRESS,
         help="Disable per-episode step pickles (large I/O at long episodes).",
     )
     args = p.parse_args(argv)
 
-    kwargs = {k: v for k, v in vars(args).items() if k != "no_episode_data"}
-    if args.no_episode_data:
-        kwargs["episode_data_dir"] = None
-    return TrainConfig(**kwargs)
+    overrides = {
+        k: v for k, v in vars(args).items()
+        if k not in ("config", "no_episode_data")
+    }
+    if getattr(args, "no_episode_data", False):
+        overrides["episode_data_dir"] = None
+
+    base = TrainConfig.from_json(args.config) if args.config else TrainConfig()
+    return dataclasses.replace(base, **overrides)
 
 
 def main(argv=None) -> None:

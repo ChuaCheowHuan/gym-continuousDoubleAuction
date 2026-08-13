@@ -1,5 +1,5 @@
 {
-  "_description": "Constants that materially change behaviour but have no config path - they are hardcoded in the modules named by each _source key. Values here mirror the source as of this commit; changing this file alone has no effect until the corresponding module reads from it. Entries that became real config keys have moved to env_config.json / train_config.json.",
+  "_description": "Constants that materially change behaviour but have no config path - they are hardcoded in the modules named by each _source key. Values here mirror the source as of this commit; changing this file alone has no effect until the corresponding module reads from it. Entries that became real config keys have moved to train_config.json.",
 
   "action_space": {
     "_source": "gym_continuousDoubleAuction/envs/exchg/action_helper.py (Action_Helper.act_space)",
@@ -15,7 +15,7 @@
 
   "observation_layout": {
     "_source": "gym_continuousDoubleAuction/envs/exchg/state_helper.py (module constants)",
-    "_note": "K_ROWS is now the single definition of book depth: the action space is Discrete(K_ROWS) and _set_price reshapes against K_ROWS, where both were literal 10s. Promoting depth to env_config.json is a further step and not done - SNAPSHOT_DIM is a module constant the observation space is built from, so per-run depth means making it per-instance and threading it through State_Helper. Only worth it if depth needs to vary per run.",
+    "_note": "K_ROWS is now the single definition of book depth: the action space is Discrete(K_ROWS) and _set_price reshapes against K_ROWS, where both were literal 10s. Promoting depth to a config key is a further step and not done - SNAPSHOT_DIM is a module constant the observation space is built from, so per-run depth means making it per-instance and threading it through State_Helper. Only worth it if depth needs to vary per run.",
     "K_ROWS": 10,
     "BOOK_DIM": 40,
     "EXTRA_DIM": 2,

@@ -1,9 +1,11 @@
 {
   "_source": "gym_continuousDoubleAuction/train/train.py (_parse_args) and gym_continuousDoubleAuction/CDA_env_rand.py (main)",
-  "_description": "Command-line flags exposed by the two entry points, with their argparse defaults and the TrainConfig/function field each maps to.",
+  "_description": "Command-line flags exposed by the two entry points, and the TrainConfig/function field each maps to. Descriptive only - this file is not loaded by anything.",
+  "_note": "train.py flags declare argparse.SUPPRESS as their default, so an unset flag is absent from the namespace rather than carrying a default value. The `default` shown per flag is therefore the TrainConfig field default that applies when the flag is omitted, not an argparse default. This is what makes --config work: precedence is dataclass defaults -> --config file -> explicit flags.",
 
   "train": {
     "_module": "python -m gym_continuousDoubleAuction.train.train",
+    "--config": { "dest": "config", "type": "str", "default": null, "effect": "load TrainConfig.from_json(path); explicit flags still override it" },
     "--agents": { "dest": "num_agents", "type": "int", "default": 8 },
     "--trained-agents": { "dest": "num_trained_agents", "type": "int", "default": 2 },
     "--iters": { "dest": "num_iters", "type": "int", "default": 16 },

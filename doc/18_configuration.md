@@ -2,32 +2,68 @@
 
 Every knob in the project, where it lives, and which ones are still hardcoded.
 
-The `config/` folder at the repository root holds four JSON files that mirror the configuration
-surfaces described here. **They are an inventory, not a loader** — nothing reads them at runtime.
-Editing `config/env_config.json` does not change a run; it records what the keys are and what
-their defaults mean. Configuration is applied in Python, via the `env_config` dict or
-`TrainConfig`.
+The `config/` folder at the repository root holds three JSON files. **One of them is a real
+input**: `train_config.json` is loaded by `TrainConfig.from_json`. The other two are inventories —
+they record what exists and nothing reads them at runtime.
 
-JSON has no comment syntax, so each file (and each group inside `tunable_constants.json`) carries
-a `_source` key naming the module the values come from, and a `_description`. Loaders should skip
-any key beginning with `_`.
+JSON has no comment syntax, so each file (and each group inside it) carries a `_source` key naming
+the module the values come from, and a `_description`. The loader skips any key beginning with
+`_`, at every level.
 
 ---
 
-## 1. The four surfaces
+## 1. The three surfaces
 
 | File | Surface | Applied by |
 |---|---|---|
-| [`config/env_config.json`](../config/env_config.json) | Keys read from the `env_config` dict | `continuousDoubleAuctionEnv(config)` |
-| [`config/train_config.json`](../config/train_config.json) | `TrainConfig` dataclass fields | `train.TrainConfig(...)` |
-| [`config/cli_defaults.json`](../config/cli_defaults.json) | Command-line flags of the two entry points | `argparse` |
+| [`config/train_config.json`](../config/train_config.json) | `TrainConfig` fields, **including the env keys** | `TrainConfig.from_json(path)` / `--config` |
+| [`config/cli_defaults.json`](../config/cli_defaults.json) | Command-line flags of the two entry points | descriptive only |
 | [`config/tunable_constants.json`](../config/tunable_constants.json) | Constants with **no** config path | source edit only |
+
+### 1.1 Loading it
+
+```bash
+python -m gym_continuousDoubleAuction.train.train --config config/train_config.json --iters 4
+```
+
+```python
+cfg = TrainConfig.from_json("config/train_config.json")
+env = continuousDoubleAuctionEnv(cfg.env_config)
+```
+
+Precedence is **dataclass defaults → `--config` file → explicit flags**. Every flag declares
+`argparse.SUPPRESS` as its default so an unset flag is absent from the namespace rather than
+carrying a value; otherwise an unpassed `--agents` would overwrite `num_agents` from the file with
+argparse's own default. `--config` is also the only way to reach fields with no flag, such as
+`num_learners` and the reward coefficients.
+
+Unknown keys raise rather than being ignored. That check is the point of the loader: while the
+file was purely descriptive, a misspelled or renamed key had no symptom at all.
+
+### 1.2 `env_config.json` was merged into it
+
+The `environment` group of `train_config.json` is what `TrainConfig.env_config` forwards to the
+env, so the env keys and the run settings live in one file. Three things to know about the merge:
+
+- **One key changes name across the boundary.** The field is `num_agents`; the env receives
+  `num_of_agents`. Writing `num_of_agents` in the file is rejected.
+- **`num_trained_agents` sits in the `environment` group but is not forwarded** — it configures
+  the policy/module wiring, not the env.
+- **The env keeps its own fallbacks** for direct construction without RLlib
+  (`num_of_agents=5`, `init_cash=0`, `max_step=64`, `is_render=true`). These deliberately differ
+  from the training defaults; they are the values that apply when a key is absent from an
+  `env_config` dict you build by hand.
+
+`initial_price_min` / `initial_price_max` gained `TrainConfig` fields as part of the merge. They
+were readable by `reset()` but had no field, so training runs could not narrow the price-anchor
+range at all.
 
 ---
 
 ## 2. Environment config
 
-Passed as an `env_config` dict to `continuousDoubleAuctionEnv`. See
+The `environment` group of `train_config.json`, forwarded as an `env_config` dict to
+`continuousDoubleAuctionEnv` by `TrainConfig.env_config`. See
 [02_architecture.md](02_architecture.md) §2.6 for the table of the original seven keys and their
 `TrainConfig` counterparts.
 
@@ -137,8 +173,8 @@ configuration across two files. `vf_share_layers` defaults to `False` deliberate
 train against non-stationary league opponents, where sharing a trunk between policy and value
 tends to destabilise the value estimate.
 
-**Gap.** `initial_price_min` / `initial_price_max` are read by `reset()` but have no `TrainConfig`
-field, so training runs cannot narrow the price-anchor range.
+`num_learners`, the reward coefficients and the sizing knobs have no CLI flag, so `--config` is
+the only way to set them outside the Python API.
 
 ---
 
