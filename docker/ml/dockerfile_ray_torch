@@ -3,9 +3,15 @@
 # Build:
 #   docker build -f docker/ml/dockerfile_ray_torch -t cda-ray-torch .
 #
-# Run (GPU):
+# Run (GPU), with your working tree mounted over the baked-in copy:
 #   docker run --gpus all -it --rm -p 8888:8888 --shm-size=2g \
 #       -v "$PWD":/workspace/code cda-ray-torch
+#   (PowerShell: -v "${PWD}:/workspace/code")
+#
+# Run the source as built, no mount:
+#   docker run --gpus all -it --rm -p 8888:8888 --shm-size=2g cda-ray-torch
+#
+# Either way the package is already importable - no `pip install -e .` needed.
 #
 # NOTE on --shm-size: Ray's object store uses /dev/shm. Docker's 64MB default
 # makes Ray fall back to /tmp and warn about degraded performance. Give it at
@@ -60,7 +66,24 @@ RUN pip install \
         jupyterlab \
         notebook
 
-RUN mkdir -p /workspace/code && chmod -R 777 /workspace
+# The project itself, installed editable. Two things follow from that:
+#
+#   * The image is self-contained - `docker run` with no -v works, using the
+#     source as of build time.
+#   * The editable install records the *path* /workspace/code, so bind-mounting
+#     your working tree there at run time shadows the baked copy and imports
+#     resolve against your live edits instead. Mount the repo ROOT, not its
+#     parent, or the recorded path stops pointing at a package tree.
+#
+# This is the last layer on purpose: every source edit invalidates it, and the
+# expensive apt/torch/ray layers above stay cached.
+#
+# --no-deps because everything in setup.py's install_requires is already
+# installed above at versions chosen to match this CUDA build. Letting pip
+# re-resolve here risks quietly swapping one of them.
+COPY . /workspace/code
+RUN pip install --no-deps -e /workspace/code && \
+    chmod -R 777 /workspace
 WORKDIR /workspace/code
 
 EXPOSE 8888
