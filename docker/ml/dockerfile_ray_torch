@@ -26,7 +26,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LC_ALL=C.UTF-8 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_BREAK_SYSTEM_PACKAGES=1
+    VIRTUAL_ENV=/opt/venv \
+    PATH=/opt/venv/bin:$PATH
 
 RUN apt-get -o Acquire::ForceIPv4=true update && \
     apt-get install -y --no-install-recommends \
@@ -40,7 +41,19 @@ RUN apt-get -o Acquire::ForceIPv4=true update && \
         python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --upgrade pip setuptools wheel
+# Everything below installs into this venv, not Ubuntu's system Python.
+#
+# 24.04 marks the system Python externally-managed (PEP 668). The escape hatch
+# (PIP_BREAK_SYSTEM_PACKAGES) is not enough on its own: apt's pip ships without
+# a RECORD file, so `pip install --upgrade pip` fails with "Cannot uninstall
+# pip 24.0, RECORD file not found". A venv sidesteps the whole problem and
+# keeps our pins from colliding with distro packages.
+#
+# PATH puts /opt/venv/bin first (see ENV above), so plain `pip`, `python`, and
+# `jupyter` resolve here - including in the CMD below and in any shell you open
+# with `docker exec`.
+RUN python3 -m venv /opt/venv && \
+    pip install --upgrade pip setuptools wheel
 
 # torch first, from the CUDA wheel index, so the CPU wheel is not pulled in as a
 # transitive dependency of ray[rllib] later.
