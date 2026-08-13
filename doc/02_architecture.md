@@ -21,7 +21,7 @@ For what each layer does in detail, follow the links into
 | Plotting | `matplotlib` | ≥3.11 | offline scripts in `visualize/` |
 | Packaging | setuptools | | `install_requires` + `[rllib]` / `[plot]` / `[dev]` extras |
 | CI | GitHub Actions | matrix 3.11 / 3.12 | unit tests → random smoke run → RLlib integration |
-| Containers | Docker | CUDA 12.8 + cu128 torch wheels | `docker/ml/dockerfile_ray_torch` |
+| Containers | Docker | CUDA 12.8 + cu128 torch wheels | `docker/ml/dockerfile_ray_torch`; see [19_docker.md](19_docker.md) |
 
 ---
 
