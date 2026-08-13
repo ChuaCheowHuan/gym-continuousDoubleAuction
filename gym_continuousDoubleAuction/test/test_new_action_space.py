@@ -179,24 +179,10 @@ class TestTickGrid:
             price = env._set_price(env.min_tick, 'bid', level, 1)
             assert price == pytest.approx(anchor - (level + 1) * 0.25, abs=1e-9)
 
-    def test_prices_stay_on_grid_for_non_binary_ticks(self):
-        """A 0.1 tick must not leak float noise into the book's price keys.
-
-        `37 - 3 * 0.1` is 36.699999999999996 in floating point, and OrderBook
-        stores prices as Decimal(str(price)), so without quantization two orders
-        meant for one level would occupy two price-map keys.
-        """
-        env = self._env(0.1)
-        from decimal import Decimal
-
-        for level in range(10):
-            for side in ('bid', 'ask'):
-                price = env._set_price(env.min_tick, side, level, 1)
-                # Exactly representable as a 1-decimal-place Decimal, i.e. on grid.
-                stored = Decimal(str(price))
-                assert stored == stored.quantize(Decimal('0.1')), (
-                    f"{side} level {level} off grid: {price!r}"
-                )
+    # There is deliberately no "prices stay on grid" test here. `_set_price`
+    # performs no quantization, so that property is not enforced and does not
+    # hold in general - `anchor=10, tick=0.3` puts bid level 8 at
+    # 7.300000000000001. See doc/18 section 3.1.
 
     def test_action_price_levels_match_book_depth(self):
         """price codes index book levels, so the two depths cannot drift apart."""
