@@ -29,13 +29,13 @@
   },
 
   "rollouts": {
-    "num_env_runners": 2,
+    "num_env_runners": 0,
     "num_envs_per_env_runner": 2,
     "num_cpus_per_env_runner": 0.25
   },
 
   "learner": {
-    "num_learners": 2,
+    "num_learners": 0,
     "num_gpus_per_learner": 0.25
   },
 
