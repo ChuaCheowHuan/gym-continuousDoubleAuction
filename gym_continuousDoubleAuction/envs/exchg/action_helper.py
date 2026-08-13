@@ -4,11 +4,30 @@ import random
 from gymnasium import spaces
 from sklearn.utils import shuffle
 
-from .state_helper import K_ROWS
+from ...config_loader import constant, constants, env_default
+from .state_helper import BOOK_ROW_ORDER
+
+# Side/type decoding of the `category` action code. This table is the
+# definition: `category_n` in config/tunable_constants.json is checked against
+# it at construction, so the two cannot silently disagree.
+_CATEGORY_MAP = {
+    0: (None, 'market'),   # no action ('market' is inert, nothing is placed)
+    1: ('bid', 'market'),
+    2: ('bid', 'limit'),
+    3: ('bid', 'modify'),
+    4: ('bid', 'cancel'),
+    5: ('ask', 'market'),
+    6: ('ask', 'limit'),
+    7: ('ask', 'modify'),
+    8: ('ask', 'cancel'),
+}
+
 
 class Action_Helper():
-    def __init__(self, min_size=1, mkt_max_size=100, limit_size_multiple=10,
-                 tick_size=1, **kwargs):
+    def __init__(self, min_size=env_default("min_size"),
+                 mkt_max_size=env_default("mkt_max_size"),
+                 limit_size_multiple=env_default("limit_size_multiple"),
+                 tick_size=env_default("tick_size"), **kwargs):
         """
         Arguments:
             min_size: Smallest order size; also the offset added to every
@@ -17,6 +36,9 @@ class Action_Helper():
             limit_size_multiple: Limit orders may be this many times larger
                                  than market orders.
             tick_size: Price tick. Order prices are built on this grid.
+
+        Defaults come from `config/env_defaults.json`; the env always passes
+        all four explicitly, so they apply only to a bare Action_Helper.
         """
         self.min_size = min_size
         self.mkt_max_size = mkt_max_size
@@ -25,15 +47,45 @@ class Action_Helper():
         self.mkt_size_mean_mul = (self.mkt_max_size - self.min_size) / 2 # multiplier for mean size of mkt orders
         self.limit_size_mean_mul = (self.limit_max_size - self.min_size) / 2 # multiplier for mean size of non mkt orders
 
+        # Action space shape, from config/tunable_constants.json.
+        self._act = constants("action_space")
+        self._validate_action_space()
+
         # for random price generation
         #
         # `min_tick` is the `tick_size` env config key. It used to be a second,
         # hardcoded 1 that happened to agree with the configured tick_size, so
         # setting tick_size had no effect on the prices agents can quote.
         self.min_tick = tick_size # price tick
-        self.last_price = 100.0 # Default anchor (will be overwritten by env.reset)
+        # Default anchor, overwritten by env.reset.
+        self.last_price = float(
+            constant("price_anchor_fallbacks", "action_helper_last_price")
+        )
 
         super().__init__(**kwargs)
+
+    def _validate_action_space(self):
+        """Fail loudly when the configured action space contradicts the code.
+
+        `category_n` and `price_offset_n` are not free parameters: the first is
+        the size of `_CATEGORY_MAP`, the second has to be odd so that a middle
+        'join' code exists. Previously these numbers lived only in the JSON as
+        documentation, so a change to either was a silent no-op.
+        """
+        category_n = self._act["category_n"]
+        if category_n != len(_CATEGORY_MAP):
+            raise ValueError(
+                f"tunable_constants.json: action_space.category_n={category_n} "
+                f"but the side/type mapping defines {len(_CATEGORY_MAP)} "
+                f"categories. Change _CATEGORY_MAP in action_helper.py to match."
+            )
+        price_offset_n = self._act["price_offset_n"]
+        if price_offset_n < 1 or price_offset_n % 2 == 0:
+            raise ValueError(
+                f"tunable_constants.json: action_space.price_offset_n="
+                f"{price_offset_n} must be a positive odd number, so that the "
+                f"neutral 'join' offset is the middle code."
+            )
 
     # def act_space(self):
     #     '''
@@ -53,13 +105,17 @@ class Action_Helper():
         '''
         The action space for multiple agents, returned as a dictionary.
 
+        Every cardinality and bound below comes from
+        `config/tunable_constants.json` -> action_space, except the price code,
+        whose cardinality is observation_layout.k_rows.
+
         Each agent has its own action Dict:
-            - category: Discrete(9) -> 0: None, 1: Buy Mkt, 2: Buy Lmt, 3: Buy Mod, 4: Buy Can,
+            - category: Discrete(category_n) -> 0: None, 1: Buy Mkt, 2: Buy Lmt, 3: Buy Mod, 4: Buy Can,
                                      5: Sell Mkt, 6: Sell Lmt, 7: Sell Mod, 8: Sell Can
-            - size_mean: Box(-1.0, 1.0)
-            - size_sigma: Box(0.0, 1.0)
-            - price: Discrete(K_ROWS) -> book levels 1 to K_ROWS
-            - price_offset: Discrete(3) -> 0: Passive (-1 tick), 1: Join (0 tick), 2: Aggressive (+1 tick)
+            - size_mean: Box(size_mean_low, size_mean_high)
+            - size_sigma: Box(size_sigma_low, size_sigma_high)
+            - price: Discrete(k_rows) -> book levels 1 to k_rows
+            - price_offset: Discrete(price_offset_n) -> 0: Passive (-1 tick), 1: Join (0 tick), 2: Aggressive (+1 tick)
 
         Args:
             num_agents (int): Number of agents.
@@ -69,13 +125,17 @@ class Action_Helper():
         '''
 
         agent_space = spaces.Dict({
-            "category": spaces.Discrete(9),
-            "size_mean": spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),
-            "size_sigma": spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),
-            # One code per book level, so this is K_ROWS - the same depth the
+            "category": spaces.Discrete(self._act["category_n"]),
+            "size_mean": spaces.Box(
+                low=self._act["size_mean_low"], high=self._act["size_mean_high"],
+                shape=(1,), dtype=np.float32),
+            "size_sigma": spaces.Box(
+                low=self._act["size_sigma_low"], high=self._act["size_sigma_high"],
+                shape=(1,), dtype=np.float32),
+            # One code per book level, so this is k_rows - the same depth the
             # observation exposes and the same depth _set_price indexes into.
-            "price": spaces.Discrete(K_ROWS),
-            "price_offset": spaces.Discrete(3),
+            "price": spaces.Discrete(self.k_rows),
+            "price_offset": spaces.Discrete(self._act["price_offset_n"]),
         })
 
         # Create a dictionary mapping for all agents
@@ -168,25 +228,16 @@ class Action_Helper():
         size_mean = model_out["size_mean"]
         size_sigma = model_out["size_sigma"]
         price_code = model_out.get("price", 0)
-        price_offset = model_out.get("price_offset", 1) # Default to Join (1)
+        # Default to the neutral 'join' offset, which is the middle code.
+        price_offset = model_out.get("price_offset", self._neutral_price_offset())
 
         act = {}
         act["ID"] = ID
-        
+
         # Mapping Category to Side and Type
         # 0: None, 1: Buy Mkt, 2: Buy Lmt, 3: Buy Mod, 4: Buy Can,
         # 5: Sell Mkt, 6: Sell Lmt, 7: Sell Mod, 8: Sell Can
-        if category == 0:
-            act["side"] = None
-            act["type"] = 'market' # Default to market for 'None' category, though it won't execute
-        elif 1 <= category <= 4:
-            act["side"] = 'bid'
-            types = {1: 'market', 2: 'limit', 3: 'modify', 4: 'cancel'}
-            act["type"] = types[category]
-        else: # 5 <= category <= 8
-            act["side"] = 'ask'
-            types = {5: 'market', 6: 'limit', 7: 'modify', 8: 'cancel'}
-            act["type"] = types[category]
+        act["side"], act["type"] = _CATEGORY_MAP[int(category)]
 
         size = self._set_size(act["type"], self.mkt_size_mean_mul, self.limit_size_mean_mul, size_mean, size_sigma)
         act["size"] = (size + self.min_size) * 1.0 # +self.min_size as size can't be 0, *1 for float
@@ -197,6 +248,10 @@ class Action_Helper():
             act["price"] = self._set_price(self.min_tick, act["side"], price_code, price_offset)
 
         return act
+
+    def _neutral_price_offset(self):
+        """The 'join' offset code: the middle of the price_offset codes."""
+        return self._act["price_offset_n"] // 2
 
     def _set_side(self, side):
         if side == 0:
@@ -242,15 +297,18 @@ class Action_Helper():
         # return np.asscalar(np.rint(np.abs(sample)))
         return np.rint(np.abs(sample)).item()
 
-    def _set_price(self, min_tick, side, price_code, price_offset=1):
+    def _set_price(self, min_tick, side, price_code, price_offset=None):
         """
-        Set price according to price_code (0-9, representing levels 1-10) 
-        and price_offset (0-2).
-        
-        price_offset:
+        Set price according to price_code (a book level, 0 to k_rows - 1) and
+        price_offset (0 to price_offset_n - 1).
+
+        price_offset, for the default price_offset_n of 3:
             0: Passive (-1 tick from base)
             1: Join (0 tick from base)
             2: Aggressive (+1 tick from base)
+
+        The neutral code is the middle one, so a wider price_offset_n extends
+        the range symmetrically: with 5 codes the offsets run -2..+2 ticks.
 
         Returns:
             set_price: Price, a real number.
@@ -261,16 +319,20 @@ class Action_Helper():
 
         # Deterministic Reference Price (always use last_price as requested)
         ref_price = self.last_price
-        offset_multiplier = price_offset - 1 # maps (0,1,2) to (-1,0,1)
+        if price_offset is None:
+            price_offset = self._neutral_price_offset()
+        # maps (0, 1, 2) to (-1, 0, +1) for the default price_offset_n of 3
+        offset_multiplier = price_offset - self._neutral_price_offset()
 
-        # level_index: 0 to 9 representing levels 1 to 10
-        level_idx = price_code 
+        # level_idx: 0 to k_rows - 1, representing book levels 1 to k_rows
+        level_idx = price_code
 
         # Use unnormalized raw prices array for action price calculation
         agg_LOB_source = getattr(self, 'agg_LOB_raw', self.agg_LOB)
+        book = np.array(agg_LOB_source).reshape(self.book_rows, self.k_rows)
 
         if side == 'bid':
-            price_array = np.array(agg_LOB_source).reshape(4, K_ROWS)[0] # raw bid prices
+            price_array = book[BOOK_ROW_ORDER.index("bid_price")] # raw bid prices
             p = price_array[level_idx]
             
             # If level is empty, use ghost logic relative to ref_price
@@ -280,7 +342,7 @@ class Action_Helper():
             set_price = base_price + (offset_multiplier * min_tick)
 
         else: # 'ask'
-            price_array = np.array(agg_LOB_source).reshape(4, K_ROWS)[2] # raw ask prices
+            price_array = book[BOOK_ROW_ORDER.index("ask_price")] # raw ask prices
             p = abs(price_array[level_idx])
             
             # If level is empty, use ghost logic relative to ref_price

@@ -314,4 +314,50 @@ behaviour change. Closes half of S4-3.
 
 `TestTickGrid` in `test_new_action_space.py` covers the tick reaching the action layer and the
 depth/action-space agreement. Its assertion that `OrderBook` carries no tick was removed with the
-revert described above. The two `100.0` price-anchor fallbacks remain two separate literals.
+revert described above.
+
+## 12. `config/` became the only place values live
+
+Section 11 left the project with one real input file and two descriptive inventories, and with
+values still written twice — once in JSON, once as a Python default. That duplication had already
+produced a live discrepancy: the `TrainConfig` dataclass said `num_cpus_per_env_runner = 1.0` and
+`num_gpus_per_learner = 0.75`, while `train_config.json` said `0.25` and `0.25`. A run without
+`--config` used the dataclass pair, so editing the file did nothing unless you also remembered the
+flag.
+
+The rule is now that **no module holds a literal copy of a configured value**. Python declares the
+schema; `config/` holds every value.
+
+**[`config_loader.py`](../gym_continuousDoubleAuction/config_loader.py)** was added as the single
+entry point. A missing key raises — naming the file, the group and the keys that do exist — rather
+than resolving to a default written in Python. `$CDA_CONFIG_DIR` repoints it at another config
+tree, which is what makes the no-literals claim testable.
+
+**All four files are now inputs.** `env_defaults.json` was added to hold the env's standalone
+fallbacks, which deliberately differ from the training values and had been literals in
+`continuousDoubleAuctionEnv.__init__`. `tunable_constants.json` and `cli_defaults.json` stopped
+being inventories and became live. `train_config.json` is no longer opt-in: `TrainConfig()` reads
+it, so `--config` now means "run against a *different* file" rather than "actually use the config".
+
+**Structural constants became real.** `k_rows`, `book_rows` and `extra_dim` moved to config and
+onto the env instance, so the observation space is built from `self.snapshot_dim` and book depth is
+genuinely changeable — the refactor §11 deferred. `category_n` and `price_offset_n` moved too, and
+are now **validated against the code that decodes them**: `category_n` against the `_CATEGORY_MAP`
+table that replaced the hardwired `if`/`elif` chain, `price_offset_n` against the requirement that
+it be odd. The offset is computed as `price_offset - price_offset_n // 2` instead of a literal
+`- 1`, so widening it to 5 codes extends the range to ±2 ticks and works. A structural value the
+code cannot honour now raises at env construction instead of being silently ignored.
+
+**The two `100.0` price-anchor fallbacks are one value.** So are the plot figure sizes, the
+visualizer paths, the `policy_` / `champion_` prefixes, and the `RAY_DEBUG_DISABLE_MEMORY_MONITOR`
+setting. `reset()` builds the book with the configured `tick_size` rather than a literal `1`.
+
+**Still hardcoded, deliberately:** `OrderBook`'s inert `tick_size` default of `0.0001`, because
+`envs/orderbook/` remains off-limits. It is the one exception, recorded as such in
+`tunable_constants.json`.
+
+[`test_config_sources.py`](../gym_continuousDoubleAuction/test/test_config_sources.py) proves the
+property rather than asserting current values: it copies `config/`, edits a value, points
+`$CDA_CONFIG_DIR` at the copy, and checks the change reaches the observation space, the action
+space, the env fallbacks and `TrainConfig`. A literal left behind would keep the old value and fail.
+See [18_configuration.md](18_configuration.md).

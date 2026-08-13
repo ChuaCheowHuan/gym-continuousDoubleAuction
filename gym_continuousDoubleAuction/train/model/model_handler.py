@@ -32,6 +32,8 @@ from ray.rllib.core.rl_module.rl_module import RLModule
 from ray.rllib.utils.annotations import override
 from ray.rllib.utils.spaces.space_utils import batch as batch_func
 
+from gym_continuousDoubleAuction.config_loader import group
+
 
 class RandomRLModule(RLModule):
     """A uniformly-random, non-trainable policy.
@@ -75,23 +77,35 @@ class RandomRLModule(RLModule):
         """No-op, for parity with TorchRLModule's compile hook."""
 
 
-def default_model_config(fcnet_hiddens=None, fcnet_activation="tanh",
-                         vf_share_layers=False):
+def default_model_config(fcnet_hiddens=None, fcnet_activation=None,
+                         vf_share_layers=None):
     """Network config for the trainable PPO modules.
 
     Args:
-        fcnet_hiddens: Hidden layer sizes. Defaults to [256, 256].
+        fcnet_hiddens: Hidden layer sizes.
         fcnet_activation: Activation for the hidden layers.
-        vf_share_layers: Whether policy and value share a trunk. The default is
+        vf_share_layers: Whether policy and value share a trunk. Configured
             False because the learners train against non-stationary opponents
             (the league), where sharing a trunk between policy and value tends
             to destabilise the value estimate.
 
+    Any argument left as None is read from the `ppo` group of
+    `config/train_config.json` - the same group TrainConfig reads, so a call
+    that goes through TrainConfig and a bare call agree by construction.
+
     Returns:
         A `DefaultModelConfig` for `RLModuleSpec(model_config=...)`.
     """
+    ppo = group("train_config.json", "ppo")
+    if fcnet_hiddens is None:
+        fcnet_hiddens = ppo["fcnet_hiddens"]
+    if fcnet_activation is None:
+        fcnet_activation = ppo["fcnet_activation"]
+    if vf_share_layers is None:
+        vf_share_layers = ppo["vf_share_layers"]
+
     return DefaultModelConfig(
-        fcnet_hiddens=list(fcnet_hiddens) if fcnet_hiddens else [256, 256],
+        fcnet_hiddens=list(fcnet_hiddens),
         fcnet_activation=fcnet_activation,
         vf_share_layers=vf_share_layers,
     )

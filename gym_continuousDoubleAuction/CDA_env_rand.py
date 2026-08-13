@@ -22,23 +22,41 @@ the action space changes again.
 import argparse
 import sys
 
+from gym_continuousDoubleAuction.config_loader import cli_default
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
     continuousDoubleAuctionEnv,
 )
 
 
-def run_random(num_agents=4, max_step=1000, init_cash=1_000_000, is_render=False,
+def _cli(key):
+    """A default for this script, from `config/cli_defaults.json`."""
+    return cli_default("cda_env_rand", key)
+
+
+def run_random(num_agents=None, max_step=None, init_cash=None, is_render=None,
                seed=None):
     """Step the env with random actions until it terminates or runs out of steps.
+
+    Any argument left as None is read from `config/cli_defaults.json` ->
+    cda_env_rand. Keys this script does not set at all - tick_size,
+    tape_display_length, the sizing and reward coefficients - fall back to
+    `config/env_defaults.json` inside the env.
 
     Returns:
         The number of steps actually taken.
     """
+    if num_agents is None:
+        num_agents = _cli("num_agents")
+    if max_step is None:
+        max_step = _cli("max_step")
+    if init_cash is None:
+        init_cash = _cli("init_cash")
+    if is_render is None:
+        is_render = _cli("is_render")
+
     env = continuousDoubleAuctionEnv({
         "num_of_agents": num_agents,
         "init_cash": init_cash,
-        "tick_size": 1,
-        "tape_display_length": 10,
         "max_step": max_step,
         "is_render": is_render,
     })
@@ -65,11 +83,12 @@ def run_random(num_agents=4, max_step=1000, init_cash=1_000_000, is_render=False
 
 def main(argv=None):
     p = argparse.ArgumentParser(description="Random-agent CDA simulation.")
-    p.add_argument("--agents", type=int, default=4)
-    p.add_argument("--steps", type=int, default=1000)
-    p.add_argument("--init-cash", type=int, default=1_000_000)
-    p.add_argument("--render", action="store_true")
-    p.add_argument("--seed", type=int, default=None)
+    # Defaults come from config/cli_defaults.json -> cda_env_rand.
+    p.add_argument("--agents", type=int, default=_cli("num_agents"))
+    p.add_argument("--steps", type=int, default=_cli("max_step"))
+    p.add_argument("--init-cash", type=int, default=_cli("init_cash"))
+    p.add_argument("--render", action="store_true", default=_cli("is_render"))
+    p.add_argument("--seed", type=int, default=_cli("seed"))
     args = p.parse_args(argv)
 
     steps = run_random(

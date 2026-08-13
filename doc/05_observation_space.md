@@ -28,17 +28,23 @@ observation = n_hist frames concatenated, flat 1-D float32
 ```
 
 Widths are defined once, in
-[`state_helper.py:9-13`](../gym_continuousDoubleAuction/envs/exchg/state_helper.py#L9-L13):
+[`config/tunable_constants.json`](../config/tunable_constants.json) under `observation_layout`:
 
-```python
-K_ROWS = 10
-BOOK_DIM = 4 * K_ROWS                  # 40
-EXTRA_DIM = 2                          # log_mid, log1p_spread_ticks
-SNAPSHOT_DIM = BOOK_DIM + EXTRA_DIM    # 42
+```jsonc
+"k_rows": 10,      // book depth, price levels per side
+"book_rows": 4,    // bid_price, bid_size, ask_price, ask_size
+"extra_dim": 2     // log_mid, log1p_spread_ticks
 ```
 
-**Never hardcode 40, 42, 160, or 168.** Import `SNAPSHOT_DIM` (and `BOOK_DIM` when you
-specifically mean the book block). The `[-40:]` slicing that predated `EXTRA_DIM` failed
+`book_dim` (= `book_rows × k_rows` = 40) and `snapshot_dim` (= 42) are **derived** in
+`state_helper`, not stored, so they cannot disagree with `k_rows`. Inside the env, use the
+instance attributes `self.k_rows` / `self.book_dim` / `self.snapshot_dim`, which
+`State_Helper.__init__` sets from the config. The module-level `K_ROWS` / `BOOK_DIM` /
+`SNAPSHOT_DIM` names read the same config at import and exist for consumers with no env instance —
+the visualizers and the tests. See [18_configuration.md](18_configuration.md) §4.1.
+
+**Never hardcode 40, 42, 160, or 168.** Use `self.snapshot_dim`, or import `SNAPSHOT_DIM` (and
+`BOOK_DIM` when you specifically mean the book block). The `[-40:]` slicing that predated `EXTRA_DIM` failed
 *silently* rather than loudly when the width changed — it returned the last 38 book values plus
 2 scalars, misaligning every block slice by 2 while still passing several assertions.
 

@@ -1,0 +1,28 @@
+{
+  "_source": "gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py (__init__ and reset)",
+  "_description": "Fallbacks applied when the env is constructed with a config dict that omits a key - a bare continuousDoubleAuctionEnv({}), a test fixture, or an RLlib env_config that only sets a few keys. Read through config_loader.env_default; the env holds no literal for any of them.",
+  "_note": "These are STANDALONE defaults and deliberately differ from the training defaults in train_config.json: a bare env is small (num_of_agents 5, max_step 64) and renders, a training env is large and silent. Keys here use the env-side spelling: num_of_agents, not the TrainConfig field name num_agents. TrainConfig.env_config always supplies every key below, so a training run never reaches these.",
+
+  "environment": {
+    "num_of_agents": 5,
+    "init_cash": 0,
+    "tick_size": 1,
+    "tape_display_length": 10,
+    "max_step": 64,
+    "is_render": true,
+    "n_hist": 4,
+
+    "initial_price_min": 10,
+    "initial_price_max": 100,
+
+    "min_size": 1,
+    "mkt_max_size": 100,
+    "limit_size_multiple": 10,
+
+    "order_penalty": 0.1,
+    "trade_penalty": 0.05,
+    "drawdown_penalty": 0.2,
+    "passive_bonus": 0.1,
+    "loss_multiplier": 1.5
+  }
+}

@@ -33,16 +33,19 @@ the only thing the new stack actually reads.
 from ray.rllib.core.rl_module.multi_rl_module import MultiRLModuleSpec
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 
+from gym_continuousDoubleAuction.config_loader import constants
 from gym_continuousDoubleAuction.train.model.model_handler import (
     RandomRLModule,
     default_model_config,
 )
 
-# Module ID conventions. The callback relies on these prefixes to tell baseline
+# Module ID conventions, from config/tunable_constants.json ->
+# module_id_prefixes. The callback relies on these prefixes to tell baseline
 # opponents (weight `original_opponent_weight`) from champion snapshots
 # (weight `champion_weight`) when sampling the opponent pool.
-POLICY_PREFIX = "policy_"
-CHAMPION_PREFIX = "champion_"
+_PREFIXES = constants("module_id_prefixes")
+POLICY_PREFIX = _PREFIXES["policy_prefix"]
+CHAMPION_PREFIX = _PREFIXES["champion_prefix"]
 
 
 def policy_id(i):

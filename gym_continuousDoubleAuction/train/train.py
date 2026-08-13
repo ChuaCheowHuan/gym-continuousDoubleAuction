@@ -30,6 +30,11 @@ from ray import tune
 from ray.rllib.algorithms.algorithm import Algorithm
 from ray.rllib.algorithms.ppo import PPOConfig
 
+from gym_continuousDoubleAuction.config_loader import (
+    constants,
+    flat as flat_config,
+    flatten,
+)
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
     continuousDoubleAuctionEnv,
 )
@@ -42,91 +47,126 @@ from gym_continuousDoubleAuction.train.policy.policy_handler import (
 
 ENV_NAME = "continuousDoubleAuction-v0"
 
+#: The file every TrainConfig default is read from.
+TRAIN_CONFIG_FILE = "train_config.json"
+
+
+def _default(key: str):
+    """A dataclass default read from `config/train_config.json`.
+
+    The value is fetched when a TrainConfig is instantiated, not when this
+    module is imported, so a config tree swapped in via `$CDA_CONFIG_DIR` takes
+    effect without re-importing. A key missing from the file raises: the
+    dataclass declares the schema, the file supplies every value in it, and a
+    literal written here would be a second source that can disagree.
+    """
+
+    def factory():
+        values = flat_config(TRAIN_CONFIG_FILE)
+        if key not in values:
+            raise KeyError(
+                f"{TRAIN_CONFIG_FILE} is missing the key {key!r}, which "
+                f"TrainConfig has no default for. Keys found: {sorted(values)}."
+            )
+        return values[key]
+
+    return field(default_factory=factory)
+
 
 @dataclass
 class TrainConfig:
-    """All training knobs in one place (was scattered across notebook cells)."""
+    """All training knobs in one place.
+
+    This dataclass is the *schema*: it names every knob, its type, and what it
+    does. It holds no values - each field's default is read from
+    `config/train_config.json` by `_default`, so editing that file changes what
+    a run does, with no second copy in Python to keep in step.
+    """
 
     # --- Environment ---------------------------------------------------------
-    num_agents: int = 8
-    num_trained_agents: int = 2
-    init_cash: int = 1_000_000
-    tick_size: int = 1
-    tape_display_length: int = 10
-    max_step: int = 1024 * 4
-    is_render: bool = False
-    n_hist: int = 4
+    num_agents: int = _default("num_agents")
+    num_trained_agents: int = _default("num_trained_agents")
+    init_cash: int = _default("init_cash")
+    tick_size: int = _default("tick_size")
+    tape_display_length: int = _default("tape_display_length")
+    max_step: int = _default("max_step")
+    is_render: bool = _default("is_render")
+    n_hist: int = _default("n_hist")
 
     # Bounds of the per-episode price anchor, drawn as randint(min, max) in
     # reset(). These were readable by the env but had no TrainConfig field, so
     # training runs could not narrow the range - the relative tick therefore
     # varied 10x across episodes with no way to control it. See doc/15 S3-4.
-    initial_price_min: int = 10
-    initial_price_max: int = 100
+    initial_price_min: int = _default("initial_price_min")
+    initial_price_max: int = _default("initial_price_max")
 
     # Order sizing. limit orders may be limit_size_multiple x larger than
     # market orders.
-    min_size: int = 1
-    mkt_max_size: int = 100
-    limit_size_multiple: int = 10
+    min_size: int = _default("min_size")
+    mkt_max_size: int = _default("mkt_max_size")
+    limit_size_multiple: int = _default("limit_size_multiple")
 
     # Reward coefficients. Previously hardcoded in Reward_Helper.set_reward,
     # which made them the least reachable knobs in the project despite being
     # the ones most worth sweeping.
-    order_penalty: float = 0.1
-    trade_penalty: float = 0.05
-    drawdown_penalty: float = 0.2
-    passive_bonus: float = 0.1
-    loss_multiplier: float = 1.5
+    order_penalty: float = _default("order_penalty")
+    trade_penalty: float = _default("trade_penalty")
+    drawdown_penalty: float = _default("drawdown_penalty")
+    passive_bonus: float = _default("passive_bonus")
+    loss_multiplier: float = _default("loss_multiplier")
 
     # --- Rollouts ------------------------------------------------------------
-    # 0 keeps sampling in the driver process, which is the right default for a
+    # 0 keeps sampling in the driver process, which is the right setting for a
     # CPU dev box and for tests. Raise it for real training runs.
-    num_env_runners: int = 0
-    num_envs_per_env_runner: int = 1
-    num_cpus_per_env_runner: float = 1.0
+    num_env_runners: int = _default("num_env_runners")
+    num_envs_per_env_runner: int = _default("num_envs_per_env_runner")
+    num_cpus_per_env_runner: float = _default("num_cpus_per_env_runner")
 
     # --- Learner -------------------------------------------------------------
-    num_learners: int = 0
+    num_learners: int = _default("num_learners")
     # Fraction of a GPU per learner. Ignored (forced to 0) when CUDA is not
-    # available - the notebook used to hardcode 0.75, which hard-fails on any
-    # CPU-only machine.
-    num_gpus_per_learner: float = 0.75
+    # available, so a non-zero value here does not hard-fail a CPU-only machine.
+    num_gpus_per_learner: float = _default("num_gpus_per_learner")
 
     # --- PPO -----------------------------------------------------------------
-    num_episodes_per_iter: int = 4
-    num_epochs: int = 4
-    lr: float = 5e-5
-    fcnet_hiddens: List[int] = field(default_factory=lambda: [256, 256])
-    fcnet_activation: str = "tanh"
+    num_episodes_per_iter: int = _default("num_episodes_per_iter")
+    num_epochs: int = _default("num_epochs")
+    lr: float = _default("lr")
+    fcnet_hiddens: List[int] = _default("fcnet_hiddens")
+    fcnet_activation: str = _default("fcnet_activation")
     # False keeps policy and value on separate trunks, which matters against
     # the non-stationary league opponents - see model_handler.
-    vf_share_layers: bool = False
+    vf_share_layers: bool = _default("vf_share_layers")
     # PPO requires minibatch_size <= train_batch_size_per_learner. RLlib's
     # default is 128, which is larger than the batch of a short-episode test
     # run, so this is exposed rather than left implicit.
-    minibatch_size: Optional[int] = None
+    minibatch_size: Optional[int] = _default("minibatch_size")
 
     # --- League self-play ----------------------------------------------------
-    std_dev_multiplier: float = 0.1
-    max_champions: int = 8
-    min_iterations_between_champions: int = 2
-    original_opponent_weight: float = 1.0
-    champion_weight: float = 3.0
-    # None disables the per-episode step pickles (a lot of I/O at max_step=4096).
-    episode_data_dir: Optional[str] = "episode_data"
+    std_dev_multiplier: float = _default("std_dev_multiplier")
+    max_champions: int = _default("max_champions")
+    min_iterations_between_champions: int = _default("min_iterations_between_champions")
+    original_opponent_weight: float = _default("original_opponent_weight")
+    champion_weight: float = _default("champion_weight")
+    # null disables the per-episode step pickles (a lot of I/O at long episodes).
+    episode_data_dir: Optional[str] = _default("episode_data_dir")
 
     # --- Run / checkpointing -------------------------------------------------
-    num_iters: int = 16
-    chkpt_freq: int = 2
-    log_base_dir: str = "results"
-    is_restore: bool = False
-    log_level: str = "WARN"
-    seed: Optional[int] = None
+    num_iters: int = _default("num_iters")
+    chkpt_freq: int = _default("chkpt_freq")
+    log_base_dir: str = _default("log_base_dir")
+    is_restore: bool = _default("is_restore")
+    log_level: str = _default("log_level")
+    seed: Optional[int] = _default("seed")
 
     @classmethod
     def from_json(cls, path: str) -> "TrainConfig":
-        """Build a TrainConfig from a JSON file such as `config/train_config.json`.
+        """Build a TrainConfig from an arbitrary JSON file.
+
+        `config/train_config.json` is already the source of every default, so
+        this is for running against a *different* file - a sweep variant, or a
+        config saved alongside a past run. Keys the other file omits fall back
+        to the checked-in one.
 
         The file is grouped (`environment`, `rollouts`, `ppo`, ...) while this
         dataclass is flat, so groups are flattened one level. Keys beginning
@@ -135,8 +175,7 @@ class TrainConfig:
 
         Unknown keys raise rather than being ignored. Silently dropping a
         renamed or misspelled key is the failure mode this loader exists to
-        remove - the file used to be purely descriptive, so a typo in it had no
-        symptom at all.
+        remove.
 
         Note the one name change across the boundary: the field here is
         `num_agents`, and `env_config` forwards it to the env as
@@ -145,25 +184,16 @@ class TrainConfig:
         with open(path) as fh:
             raw = json.load(fh)
 
-        flat: dict = {}
-        for key, value in raw.items():
-            if key.startswith("_"):
-                continue
-            if isinstance(value, dict):
-                for sub_key, sub_value in value.items():
-                    if not sub_key.startswith("_"):
-                        flat[sub_key] = sub_value
-            else:
-                flat[key] = value
+        values = flatten(raw, path)
 
         known = {f.name for f in dataclasses.fields(cls)}
-        unknown = sorted(set(flat) - known)
+        unknown = sorted(set(values) - known)
         if unknown:
             raise ValueError(
                 f"{path}: unknown config keys {unknown}. "
                 f"Valid keys: {sorted(known)}"
             )
-        return cls(**flat)
+        return cls(**values)
 
     @property
     def train_batch_size(self) -> int:
@@ -357,21 +387,25 @@ def _print_iteration(i: int, total: int, result: dict) -> None:
 def _parse_args(argv=None) -> TrainConfig:
     """Resolve a TrainConfig from the command line.
 
-    Precedence is dataclass defaults -> `--config` file -> explicit flags.
+    Precedence is `config/train_config.json` -> `--config <other file>` ->
+    explicit flags.
 
     Every flag below defaults to `argparse.SUPPRESS`, so an unset flag is
     absent from the namespace entirely. That distinction is what makes the
-    precedence work: with ordinary argparse defaults, `--config` could set
-    `num_agents=4` and an unpassed `--agents` would immediately overwrite it
-    with 8. The suppressed defaults are identical to the dataclass defaults, so
-    behaviour without `--config` is unchanged.
+    precedence work: with ordinary argparse defaults, the config file could set
+    `num_agents=4` and an unpassed `--agents` would immediately overwrite it.
+    It is also why no flag carries a default value of its own - an argparse
+    default would be exactly the hardcoded value `train_config.json` exists to
+    hold.
     """
     p = argparse.ArgumentParser(description=__doc__.split("\n")[1])
     p.add_argument(
         "--config",
         type=str,
         default=None,
-        help="JSON config file, e.g. config/train_config.json. Flags override it.",
+        help="Alternative JSON config file. config/train_config.json already "
+             "supplies every default; pass this to run against a different "
+             "file. Flags override it.",
     )
     p.add_argument("--agents", type=int, dest="num_agents", default=argparse.SUPPRESS)
     p.add_argument("--trained-agents", type=int, dest="num_trained_agents", default=argparse.SUPPRESS)
@@ -406,7 +440,10 @@ def _parse_args(argv=None) -> TrainConfig:
 def main(argv=None) -> None:
     cfg = _parse_args(argv)
 
-    os.environ.setdefault("RAY_DEBUG_DISABLE_MEMORY_MONITOR", "True")
+    # setdefault, so a value already exported in the shell wins over the file.
+    for name, val in constants("runtime_env_vars").items():
+        os.environ.setdefault(name, str(val))
+
     ray.init(ignore_reinit_error=True, include_dashboard=False)
     try:
         train(cfg)

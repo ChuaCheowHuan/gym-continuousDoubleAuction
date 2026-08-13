@@ -1,31 +1,15 @@
 {
-  "_source": "gym_continuousDoubleAuction/train/train.py (_parse_args) and gym_continuousDoubleAuction/CDA_env_rand.py (main)",
-  "_description": "Command-line flags exposed by the two entry points, and the TrainConfig/function field each maps to. Descriptive only - this file is not loaded by anything.",
-  "_note": "train.py flags declare argparse.SUPPRESS as their default, so an unset flag is absent from the namespace rather than carrying a default value. The `default` shown per flag is therefore the TrainConfig field default that applies when the flag is omitted, not an argparse default. This is what makes --config work: precedence is dataclass defaults -> --config file -> explicit flags.",
-
-  "train": {
-    "_module": "python -m gym_continuousDoubleAuction.train.train",
-    "--config": { "dest": "config", "type": "str", "default": null, "effect": "load TrainConfig.from_json(path); explicit flags still override it" },
-    "--agents": { "dest": "num_agents", "type": "int", "default": 8 },
-    "--trained-agents": { "dest": "num_trained_agents", "type": "int", "default": 2 },
-    "--iters": { "dest": "num_iters", "type": "int", "default": 16 },
-    "--max-step": { "dest": "max_step", "type": "int", "default": 4096 },
-    "--env-runners": { "dest": "num_env_runners", "type": "int", "default": 0 },
-    "--envs-per-runner": { "dest": "num_envs_per_env_runner", "type": "int", "default": 1 },
-    "--gpus-per-learner": { "dest": "num_gpus_per_learner", "type": "float", "default": 0.75 },
-    "--restore": { "dest": "is_restore", "type": "flag", "default": false },
-    "--log-base-dir": { "dest": "log_base_dir", "type": "str", "default": "results" },
-    "--log-level": { "dest": "log_level", "type": "str", "default": "WARN" },
-    "--seed": { "dest": "seed", "type": "int", "default": null },
-    "--no-episode-data": { "dest": "episode_data_dir", "type": "flag", "default": false, "effect": "sets episode_data_dir to null" }
-  },
+  "_source": "gym_continuousDoubleAuction/CDA_env_rand.py (main) and gym_continuousDoubleAuction/train/train.py (_parse_args)",
+  "_description": "Defaults for command-line flags that have no other config home. Read through config_loader.cli_default; neither entry point holds a literal default.",
+  "_note": "train.py is deliberately absent. Its flags declare argparse.SUPPRESS as their default, so an unset flag is absent from the namespace entirely and the value comes from TrainConfig - whose defaults are train_config.json. Duplicating them here would create a second set that can disagree. Precedence for train.py is: train_config.json -> --config <other file> -> explicit flags.",
 
   "cda_env_rand": {
     "_module": "python -m gym_continuousDoubleAuction.CDA_env_rand",
-    "--agents": { "dest": "num_agents", "type": "int", "default": 4 },
-    "--steps": { "dest": "max_step", "type": "int", "default": 1000 },
-    "--init-cash": { "dest": "init_cash", "type": "int", "default": 1000000 },
-    "--render": { "dest": "is_render", "type": "flag", "default": false },
-    "--seed": { "dest": "seed", "type": "int", "default": null }
+    "_note": "Standalone random-agent simulation. It builds an env config directly rather than going through TrainConfig, so these are its own defaults; every env key it does not set falls back to env_defaults.json.",
+    "num_agents": 4,
+    "max_step": 1000,
+    "init_cash": 1000000,
+    "is_render": false,
+    "seed": null
   }
 }

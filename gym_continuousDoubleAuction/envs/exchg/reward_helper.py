@@ -1,10 +1,15 @@
 import numpy as np
 import pandas as pd
 
+from ...config_loader import env_default
+
 class Reward_Helper(object):
 
-    def __init__(self, order_penalty=0.1, trade_penalty=0.05,
-                 drawdown_penalty=0.2, passive_bonus=0.1, loss_multiplier=1.5,
+    def __init__(self, order_penalty=env_default("order_penalty"),
+                 trade_penalty=env_default("trade_penalty"),
+                 drawdown_penalty=env_default("drawdown_penalty"),
+                 passive_bonus=env_default("passive_bonus"),
+                 loss_multiplier=env_default("loss_multiplier"),
                  **kwargs):
         """
         Coefficients of the reward formula in `set_reward`.
@@ -15,6 +20,9 @@ class Reward_Helper(object):
             drawdown_penalty: Per unit of NAV below the running peak.
             passive_bonus: Per passive (liquidity-providing) fill this step.
             loss_multiplier: Extra weight on negative NAV changes.
+
+        Defaults come from `config/env_defaults.json`. A training run sets all
+        five from `train_config.json` via `TrainConfig.env_config`.
         """
         self.order_penalty = order_penalty
         self.trade_penalty = trade_penalty

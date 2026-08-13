@@ -3,12 +3,23 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 
+from gym_continuousDoubleAuction.config_loader import constant
 from gym_continuousDoubleAuction.envs.exchg.state_helper import SNAPSHOT_DIM
 
-def visualize_episode_data(json_path='visualize/latest_episode_data.json', agent_id='agent_0'):
+def visualize_episode_data(json_path=None, agent_id=None):
     """
     Visualizes price and size changes for the orderbook from episode data.
+
+    Defaults come from config/tunable_constants.json -> visualize_paths.
+    SNAPSHOT_DIM is the observation layout from the same file; this reads a
+    pickled observation rather than a live env, so it uses the module-level
+    value instead of an instance attribute.
     """
+    if json_path is None:
+        json_path = constant("visualize_paths", "nav_json_path")
+    if agent_id is None:
+        agent_id = constant("visualize_paths", "default_agent_id")
+
     if not os.path.exists(json_path):
         print(f"Error: {json_path} not found.")
         return

@@ -1,22 +1,63 @@
 import numpy as np
 from collections import deque
 
-# Layout of a single observation snapshot.
-# The book block is 4 stacked rows of K_ROWS price levels:
+from ...config_loader import constant, constants, env_default
+
+# Layout of a single observation snapshot, from
+# `config/tunable_constants.json` -> observation_layout.
+#
+# The book block is `book_rows` stacked rows of `k_rows` price levels:
 #   [bid_price, bid_size, ask_price, ask_size]
-# followed by EXTRA_DIM market-level scalars:
+# followed by `extra_dim` market-level scalars:
 #   [log_mid, log1p_spread_ticks]
-K_ROWS = 10
-BOOK_DIM = 4 * K_ROWS
-EXTRA_DIM = 2
+#
+# These module-level names are the layout as it was at import time, kept for
+# standalone consumers that have no env instance to ask - the visualizers,
+# which read a pickled observation, and the tests. Runtime code inside the env
+# uses the per-instance attributes set in `__init__` instead, so that a config
+# tree swapped in via `$CDA_CONFIG_DIR` takes effect on the next env built
+# rather than only on the next interpreter.
+def _layout():
+    """(k_rows, book_rows, extra_dim) from config."""
+    layout = constants("observation_layout")
+    return layout["k_rows"], layout["book_rows"], layout["extra_dim"]
+
+
+K_ROWS, BOOK_ROWS, EXTRA_DIM = _layout()
+BOOK_DIM = BOOK_ROWS * K_ROWS
 SNAPSHOT_DIM = BOOK_DIM + EXTRA_DIM
+
+#: Order in which `set_agg_LOB` concatenates the book rows. This is the
+#: definition of the book block's layout, and what `book_rows` is checked
+#: against - it lets consumers name a row instead of indexing a magic number.
+BOOK_ROW_ORDER = ("bid_price", "bid_size", "ask_price", "ask_size")
 
 
 class State_Helper(object):
 
-    def __init__(self, n_hist=4, **kwargs):
+    def __init__(self, n_hist=env_default("n_hist"), **kwargs):
         self.n_hist = n_hist
         self.obs_history = deque(maxlen=self.n_hist)
+
+        # Observation layout as instance state. book_dim and snapshot_dim are
+        # derived here and nowhere else - they are not config keys, because a
+        # stored copy could disagree with k_rows.
+        self.k_rows, self.book_rows, self.extra_dim = _layout()
+        if self.book_rows != len(BOOK_ROW_ORDER):
+            raise ValueError(
+                f"tunable_constants.json: observation_layout.book_rows="
+                f"{self.book_rows} but set_agg_LOB builds "
+                f"{len(BOOK_ROW_ORDER)} rows {BOOK_ROW_ORDER}. Change "
+                f"set_agg_LOB and BOOK_ROW_ORDER to match."
+            )
+        self.book_dim = self.book_rows * self.k_rows
+        self.snapshot_dim = self.book_dim + self.extra_dim
+
+        # Used when the book has no two-sided market and last_price is unusable.
+        self.midpoint_fallback = float(
+            constant("price_anchor_fallbacks", "state_helper_midpoint")
+        )
+
         # kwargs is forwarded, not swallowed: the sizing and reward knobs are
         # consumed further along the MRO (Action_Helper, Reward_Helper).
         super().__init__(**kwargs)
@@ -28,7 +69,7 @@ class State_Helper(object):
         Populates shared obs_history deque with n_hist copies of the initial LOB snapshot.
         """
         init_obs = self.set_agg_LOB()
-        n_hist = getattr(self, 'n_hist', 4)
+        n_hist = self.n_hist
         self.obs_history = deque([init_obs] * n_hist, maxlen=n_hist)
 
         stacked_obs = np.concatenate(list(self.obs_history), axis=0).astype(np.float32)
@@ -80,7 +121,7 @@ class State_Helper(object):
             SortedDict object has key & value, key is price, value is an
             OrderList object.
         """
-        k_rows = K_ROWS
+        k_rows = self.k_rows
         bid_price_list = np.zeros(k_rows)
         bid_size_list = np.zeros(k_rows)
         ask_price_list = np.zeros(k_rows)
@@ -129,9 +170,9 @@ class State_Helper(object):
         elif l1_ask > 0:
             M = l1_ask
         else:
-            M = float(getattr(self, 'last_price', 100.0))
+            M = float(getattr(self, 'last_price', self.midpoint_fallback))
             if M <= 0:
-                M = 100.0
+                M = self.midpoint_fallback
 
         # Apply price normalization using symmetric midpoint distance:
         # norm_P_bid = (M - P_bid) / M (non-negative)
@@ -158,9 +199,9 @@ class State_Helper(object):
         # at least 1 tick and therefore log1p >= log1p(1) = 0.693. That leaves 0.0 as
         # an unambiguous sentinel for "no two-sided market".
         if l1_bid > 0 and l1_ask > 0:
-            min_tick = getattr(self, 'min_tick', 1)
+            min_tick = getattr(self, 'min_tick', env_default("tick_size"))
             if min_tick <= 0:
-                min_tick = 1
+                min_tick = env_default("tick_size")
             spread_ticks = (l1_ask - l1_bid) / min_tick
             log1p_spread_ticks = np.log1p(max(0.0, spread_ticks))
         else:

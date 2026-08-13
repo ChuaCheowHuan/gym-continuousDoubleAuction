@@ -8,8 +8,8 @@ from ray.rllib.env.multi_agent_env import MultiAgentEnv
 
 from .orderbook.orderbook import OrderBook
 from .exchg.exchg_helper import Exchg_Helper
-from .exchg.state_helper import SNAPSHOT_DIM
 from .agent.trader import Trader
+from ..config_loader import env_default
 
 from tabulate import tabulate
 
@@ -23,28 +23,30 @@ class continuousDoubleAuctionEnv(
     def __init__(self, config=None):      
         # Handle config parameter for RLlib compatibility
         self.config = config or {}
-        config = self.config
-        
-        # Extract parameters from config with defaults
-        self.num_of_agents = config.get("num_of_agents", 5)
-        init_cash = config.get("init_cash", 0)
-        tick_size = config.get("tick_size", 1)
-        tape_display_length = config.get("tape_display_length", 10)
-        self.max_step = config.get("max_step", 64)
-        is_render = config.get("is_render", True)
-        self.n_hist = config.get("n_hist", 4)
+
+        # Every key below falls back to config/env_defaults.json when the
+        # caller omits it. There are no literal defaults here: a training run
+        # supplies all of them from train_config.json via TrainConfig.env_config,
+        # and a bare env picks up the standalone defaults from the JSON.
+        self.num_of_agents = self._cfg("num_of_agents")
+        init_cash = self._cfg("init_cash")
+        tick_size = self._cfg("tick_size")
+        tape_display_length = self._cfg("tape_display_length")
+        self.max_step = self._cfg("max_step")
+        is_render = self._cfg("is_render")
+        self.n_hist = self._cfg("n_hist")
 
         # Order sizing, consumed by Action_Helper.
-        min_size = config.get("min_size", 1)
-        mkt_max_size = config.get("mkt_max_size", 100)
-        limit_size_multiple = config.get("limit_size_multiple", 10)
+        min_size = self._cfg("min_size")
+        mkt_max_size = self._cfg("mkt_max_size")
+        limit_size_multiple = self._cfg("limit_size_multiple")
 
         # Reward coefficients, consumed by Reward_Helper.
-        order_penalty = config.get("order_penalty", 0.1)
-        trade_penalty = config.get("trade_penalty", 0.05)
-        drawdown_penalty = config.get("drawdown_penalty", 0.2)
-        passive_bonus = config.get("passive_bonus", 0.1)
-        loss_multiplier = config.get("loss_multiplier", 1.5)
+        order_penalty = self._cfg("order_penalty")
+        trade_penalty = self._cfg("trade_penalty")
+        drawdown_penalty = self._cfg("drawdown_penalty")
+        passive_bonus = self._cfg("passive_bonus")
+        loss_multiplier = self._cfg("loss_multiplier")
 
         # Initialize parent classes
         super().__init__(
@@ -89,8 +91,11 @@ class continuousDoubleAuctionEnv(
         self.agents = list(agent_ids)
         self.possible_agents = list(agent_ids)
 
-        # Each snapshot is SNAPSHOT_DIM floats (40 book features + 2 market scalars);
-        # n_hist of them are stacked into one flat observation.
+        # Each snapshot is self.snapshot_dim floats (book_rows * k_rows book
+        # features + extra_dim market scalars, all from
+        # config/tunable_constants.json -> observation_layout, and set on the
+        # instance by State_Helper); n_hist of them are stacked into one flat
+        # observation.
         #
         # NOTE: these are the *plural* attributes (`observation_spaces` /
         # `action_spaces`) that RLlib's new API stack reads. The singular
@@ -101,13 +106,23 @@ class continuousDoubleAuctionEnv(
             agent_id: gym.spaces.Box(
                 low=-np.inf,
                 high=np.inf,
-                shape=(self.n_hist * SNAPSHOT_DIM,),
+                shape=(self.n_hist * self.snapshot_dim,),
                 dtype=np.float32
             ) for agent_id in agent_ids
         }
 
         # Updated action space to use the new Compact Flat structure
         self.action_spaces = self.act_space(self.num_of_agents)
+
+    def _cfg(self, key):
+        """One env config value, falling back to `config/env_defaults.json`.
+
+        Written as an explicit membership test rather than `dict.get(key,
+        default)` so the fallback is only looked up when it is actually needed,
+        and so a missing key raises from the loader - naming the file and the
+        keys it does define - instead of resolving to a literal written here.
+        """
+        return self.config[key] if key in self.config else env_default(key)
 
     def get_action_space(self, agent_id):
         """Action space for a single agent (not the per-agent dict)."""
@@ -158,8 +173,12 @@ class continuousDoubleAuctionEnv(
         if hasattr(super(), 'reset'):
             super().reset(seed=seed)
 
-        self.LOB = OrderBook(1, self.tape_display_length) # new limit order book
-        #self.LOB = OrderBook(0.25, self.tape_display_length) # new limit order book
+        # Same tick the book was built with in Exchg_Helper, from the tick_size
+        # config key. This used to be a literal 1, which disagreed with any
+        # other configured tick_size - harmlessly, since OrderBook stores
+        # tick_size without ever reading it, but there is no reason to keep a
+        # second value here.
+        self.LOB = OrderBook(self.tick_size, self.tape_display_length) # new limit order book
         self.agg_LOB = {}
         self.agg_LOB_raw = {}
         self.agg_LOB_aft = {}
@@ -181,8 +200,8 @@ class continuousDoubleAuctionEnv(
         self.t_step = 0
 
         # Establish initial price anchor
-        low = self.config.get("initial_price_min", 10)
-        high = self.config.get("initial_price_max", 100)
+        low = self._cfg("initial_price_min")
+        high = self._cfg("initial_price_max")
         self.last_price = float(np.random.randint(low, high + 1))
 
         self.reset_traders_acc()

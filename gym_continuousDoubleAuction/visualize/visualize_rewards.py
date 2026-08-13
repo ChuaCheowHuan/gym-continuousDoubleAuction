@@ -4,10 +4,17 @@ import os
 from collections import defaultdict
 import numpy as np
 
-def visualize_rewards(json_path='visualize/latest_episode_data.json'):
+from gym_continuousDoubleAuction.config_loader import constant
+
+def visualize_rewards(json_path=None):
     """
     Plots the cumulative rewards for each agent from the episode data JSON file.
+
+    The default path comes from config/tunable_constants.json -> visualize_paths.
     """
+    if json_path is None:
+        json_path = constant("visualize_paths", "nav_json_path")
+
     if not os.path.exists(json_path):
         print(f"Error: {json_path} not found.")
         return

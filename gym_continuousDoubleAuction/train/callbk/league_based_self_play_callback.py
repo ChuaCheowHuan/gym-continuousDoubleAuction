@@ -14,6 +14,7 @@ from ray.rllib.core import (
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
 
+from gym_continuousDoubleAuction.config_loader import env_default, group
 from gym_continuousDoubleAuction.train.policy.policy_handler import (
     CHAMPION_PREFIX,
     POLICY_PREFIX,
@@ -27,16 +28,18 @@ MODULE_EPISODE_RETURNS_MEAN = "module_episode_returns_mean"
 
 
 class SelfPlayCallback(RLlibCallback):
+    _DISABLED = object()  # distinguishes "not passed" from an explicit None
+
     def __init__(
-        self, 
-        num_trainable_policies=2, 
-        num_random_policies=2, 
-        std_dev_multiplier=2.0, 
-        max_champions=2, 
-        min_iterations_between_champions=2,
-        original_opponent_weight=1.0,
-        champion_weight=3.0,
-        episode_data_dir="episode_data",
+        self,
+        num_trainable_policies=None,
+        num_random_policies=None,
+        std_dev_multiplier=None,
+        max_champions=None,
+        min_iterations_between_champions=None,
+        original_opponent_weight=None,
+        champion_weight=None,
+        episode_data_dir=_DISABLED,
     ):
         """
         Initialize league-based self-play callback with generalized agent configuration.
@@ -55,9 +58,37 @@ class SelfPlayCallback(RLlibCallback):
                 reward and info, which at a few thousand steps per episode is a
                 substantial amount of I/O and memory during training.
 
+        Any argument left as None is read from `config/train_config.json`: the
+        league knobs from its `league_self_play` group, and the two policy
+        counts derived from `num_agents` / `num_trained_agents`. `train.py`
+        passes all of them explicitly, so the config lookup is what a direct
+        instantiation gets. `episode_data_dir` uses a private sentinel rather
+        than None because None is a meaningful value for it - it disables the
+        pickles.
+
         Total Agents n = k + m
         """
         super().__init__()
+
+        league = group("train_config.json", "league_self_play")
+        env = group("train_config.json", "environment")
+
+        if num_trainable_policies is None:
+            num_trainable_policies = env["num_trained_agents"]
+        if num_random_policies is None:
+            num_random_policies = env["num_agents"] - env["num_trained_agents"]
+        if std_dev_multiplier is None:
+            std_dev_multiplier = league["std_dev_multiplier"]
+        if max_champions is None:
+            max_champions = league["max_champions"]
+        if min_iterations_between_champions is None:
+            min_iterations_between_champions = league["min_iterations_between_champions"]
+        if original_opponent_weight is None:
+            original_opponent_weight = league["original_opponent_weight"]
+        if champion_weight is None:
+            champion_weight = league["champion_weight"]
+        if episode_data_dir is self._DISABLED:
+            episode_data_dir = league["episode_data_dir"]
 
         self.episode_data_dir = episode_data_dir
 
@@ -212,8 +243,10 @@ class SelfPlayCallback(RLlibCallback):
         # Always release the memory, whether or not we wrote it out.
         self.store.pop(episode.id_, None)
 
-        # Try to get parameters from different possible sources
-        init_cash = 0
+        # Try to get parameters from different possible sources. The starting
+        # points are the env's own fallback for init_cash and the league size
+        # this callback was built with - not literals.
+        init_cash = env_default("init_cash")
         num_agents = self.num_trainable + self.num_random
         
         # 1. Try env_runner.config

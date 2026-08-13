@@ -16,11 +16,20 @@ Each agent's action is a `gymnasium.spaces.Dict`
 
 | Key | Space | Description |
 |---|---|---|
-| `category` | `Discrete(9)` | Trade action — side and type combined |
-| `size_mean` | `Box(-1.0, 1.0)` | Mean for size sampling |
-| `size_sigma` | `Box(0.0, 1.0)` | Sigma for size sampling |
-| `price` | `Discrete(10)` | Market depth level index (0–9 for levels 1–10) |
-| `price_offset` | `Discrete(3)` | Stance relative to that level: 0 passive, 1 join, 2 aggressive |
+| Key | Space | Config key | Description |
+|---|---|---|---|
+| `category` | `Discrete(9)` | `action_space.category_n` | Trade action — side and type combined |
+| `size_mean` | `Box(-1.0, 1.0)` | `action_space.size_mean_low` / `_high` | Mean for size sampling |
+| `size_sigma` | `Box(0.0, 1.0)` | `action_space.size_sigma_low` / `_high` | Sigma for size sampling |
+| `price` | `Discrete(10)` | `observation_layout.k_rows` | Market depth level index (0–9 for levels 1–10) |
+| `price_offset` | `Discrete(3)` | `action_space.price_offset_n` | Stance relative to that level: 0 passive, 1 join, 2 aggressive |
+
+Every cardinality and bound comes from
+[`config/tunable_constants.json`](../config/tunable_constants.json). `category_n` and
+`price_offset_n` are validated against the code that decodes them — the `_CATEGORY_MAP` table, and
+the requirement that `price_offset_n` be odd so the neutral "join" code is the middle one — so a
+value the decoder cannot honour raises rather than being silently ignored. See
+[18_configuration.md](18_configuration.md) §4.2.
 
 ### 1.1 `category`
 
