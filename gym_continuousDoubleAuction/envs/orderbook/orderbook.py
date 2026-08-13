@@ -13,20 +13,13 @@ from decimal import Decimal
 from .ordertree import OrderTree
 
 class OrderBook(object):
-    # Note: the book takes no tick_size. It used to accept and store one, but
-    # never read it - there is no rounding or tick validation in the matching
-    # path, so the argument only made it look as though the engine enforced a
-    # grid. The tick lives in Action_Helper (`min_tick`, from the `tick_size`
-    # env config key), which is the sole producer of prices and builds them on
-    # the grid by construction. Reinstate a tick here only if a second price
-    # source appears (scripted agents, replayed order flow) that the action
-    # layer does not control.
-    def __init__(self, tape_display_length=10):
+    def __init__(self, tick_size = 0.0001, tape_display_length=10):
         self.tape = deque(maxlen=None) # Index[0] is most recent trade
         self.bids = OrderTree()
         self.asks = OrderTree()
         self.last_tick = None
         self.last_timestamp = 0
+        self.tick_size = tick_size
         self.time = 0
         self.next_order_id = 0
         self.tape_display_length = tape_display_length

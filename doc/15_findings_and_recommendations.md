@@ -212,26 +212,18 @@ not part of the action whose log-probability PPO uses in the importance ratio �
 never observes the realisation. Irreducible advantage variance.
 **Fix:** emit size directly as a `Box` action.
 
-### S3-4 · `tick_size` config is silently discarded **[verified]** — ✅ RESOLVED
+### S3-4 · `tick_size` config is silently discarded **[verified]**
 
 ```
 config=0.25 | LOB.tick_size before reset=0.25 | after reset=1 | action min_tick=1
 env has a self.tick_size attribute: False
 ```
 
-`reset()` hardcoded `OrderBook(1, ...)`, and `Action_Helper.min_tick = 1` was a second,
-independent tick that was the one actually driving prices.
-
-**Resolved.** `tick_size` now sets `Action_Helper.min_tick`, and `OrderBook` no longer takes a
-tick at all — the action layer is the sole price producer, so the book is deliberately
-tick-agnostic. `_set_price` quantizes onto the grid with `Decimal` so non-binary ticks cannot
-fragment the price map. See [18_configuration.md](18_configuration.md) §3.
-
-The *relative* tick still varies 10× across episodes, because that is a consequence of the
-`randint(10, 100)` price anchor rather than of the tick plumbing — mitigated by exposing
-`log_mid`, and controllable by narrowing `initial_price_min/max`. Those two keys remain read by
-`reset()` but omitted from `TrainConfig.env_config`, so **training still cannot narrow the
-range**. That part is open.
+`reset()` hardcodes `OrderBook(1, ...)`. Combined with the price anchor drawn from
+`randint(10, 100)`, the *relative* tick varies **10×** across episodes — a large uncontrolled
+non-stationarity, only partly mitigated by exposing `log_mid`. Related: `initial_price_min/max`
+are read by `reset()` but omitted from `TrainConfig.env_config`, so training cannot narrow the
+range.
 
 ### S3-5 · Seeding is entirely non-functional
 
@@ -332,7 +324,7 @@ quote" has no fixed meaning across steps.
 |---|---|
 | S4-1 | ~270 LOC of dead telemetry in `train/`: the `g_store` trio (`store_handler`, `log_handler`, `plot_handler`) depends on a detached Ray actor that is **never created** **[verified]**; `helper.py`'s order-imbalance utilities are unused (and would be valuable as observation features — S2-7) |
 | S4-2 | `envs/agent/random_agent.py` returns the **old 5-tuple** action format; superseded by `RandomRLModule` but still in `Trader`'s MRO **[verified]** |
-| S4-3 | Dead methods: `State_Helper.state_diff`, `Action_Helper._set_side/_set_type/_higher/_lower`, `OrderBook.__str__0`, `Order.__str__0`, `OrderList.to_str`. ~~`max_price` is a parameter of `_set_price` that its body never reads~~ — ✅ `max_price` deleted (attribute, `_set_price` argument, and the unused parameter on `_higher`/`_lower`); the dead *methods* remain |
+| S4-3 | Dead methods: `State_Helper.state_diff`, `Action_Helper._set_side/_set_type/_higher/_lower`, `OrderBook.__str__0`, `Order.__str__0`, `OrderList.to_str`; `max_price` is a parameter of `_set_price` that its body never reads |
 | S4-4 | ~200 LOC of commented-out code (`continuousDoubleAuction_env.py:100-133,178-207`; `orderbook.py:260-318`; `action_helper.py:23-36`) |
 | S4-5 | `test_accounting.py::test_insufficient_funds` is an empty `pass` with a 15-line comment debating the intended behaviour — a TODO shipped as a test |
 | S4-6 | No linter, formatter, pre-commit or coverage tooling; type hints only in `train/` and essentially absent from `envs/` |

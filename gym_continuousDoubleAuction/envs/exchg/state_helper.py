@@ -11,11 +11,6 @@ BOOK_DIM = 4 * K_ROWS
 EXTRA_DIM = 2
 SNAPSHOT_DIM = BOOK_DIM + EXTRA_DIM
 
-# Price anchor used before any trade has printed and no two-sided market exists.
-# Both the action layer and the observation midpoint fall back to this, so it is
-# defined once here rather than as two literals that could drift apart.
-DEFAULT_PRICE_ANCHOR = 100.0
-
 
 class State_Helper(object):
 
@@ -134,9 +129,9 @@ class State_Helper(object):
         elif l1_ask > 0:
             M = l1_ask
         else:
-            M = float(getattr(self, 'last_price', DEFAULT_PRICE_ANCHOR))
+            M = float(getattr(self, 'last_price', 100.0))
             if M <= 0:
-                M = DEFAULT_PRICE_ANCHOR
+                M = 100.0
 
         # Apply price normalization using symmetric midpoint distance:
         # norm_P_bid = (M - P_bid) / M (non-negative)

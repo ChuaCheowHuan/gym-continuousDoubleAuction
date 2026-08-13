@@ -267,7 +267,7 @@ Full inventory in [10_testing.md](10_testing.md). Engineering-relevant summary:
 | `envs/agent/random_agent.py` | `select_random_action` returns the **old 5-tuple** action format; superseded by `RandomRLModule`; nothing calls it, but `Trader` still inherits from `Random_agent` **[verified]** |
 | `State_Helper.state_diff` | never called **[verified]** |
 | `Action_Helper._set_side` / `_set_type` / `_higher` / `_lower` | never called (superseded by the category mapping) |
-| ~~`Action_Helper.max_price`~~ | ~~passed into `_set_price` and never used in its body~~ — ✅ deleted since this analysis |
+| `Action_Helper.max_price` | passed into `_set_price` and never used in its body |
 | `OrderBook.__str__0`, `Order.__str__0`, `OrderList.to_str` | superseded |
 | `OrderBook.get_volume_at_price` | commented out |
 | `envs/orderbook/test/example.py`, `genOrders.py` (353 LOC) | standalone scripts, not collected by pytest |

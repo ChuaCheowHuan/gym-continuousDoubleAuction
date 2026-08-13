@@ -125,11 +125,10 @@ $$\texttt{log1p\_spread\_ticks} = \ln\!\left(1 + \frac{P_{ask,1} - P_{bid,1}}{\t
 Computed from the same `l1_bid` / `l1_ask` locals as `M`, so it is guaranteed consistent with the
 top of book actually present in the observation.
 
-**`min_tick` is the configured tick.** `Action_Helper.min_tick` is set from the `tick_size` env
-config key, so observation units match action units, and both follow configuration. This was
-previously a subtler point: `min_tick` was a hardcoded 1 and the `tick_size` config was silently
-discarded, so measuring the spread against `min_tick` was the only way to match action units at
-all ([02_architecture.md](02_architecture.md) §2.7, now resolved).
+**`min_tick`, not `tick_size` — deliberate.** `self.tick_size` is never stored on the env and
+`reset()` hardcodes `OrderBook(1, ...)`, so the `tick_size` config is silently discarded
+([02_architecture.md](02_architecture.md) §2.7). `Action_Helper.min_tick` (= 1) is the tick the
+action space actually quotes in, so this choice makes observation units match action units.
 
 **The `0.0` sentinel is unambiguous.** A resting book can never be locked or crossed — any bid
 `>= best ask` is filled on arrival ([03_matching_engine.md](03_matching_engine.md) §2.1) — so a

@@ -455,10 +455,7 @@ Observations:
    every step, poisoning the module's episode return with a term unrelated to its policy. That
    return is exactly what champion promotion reads.
 
-4. **`tick_size` config is silently dropped.** **[verified]** — ✅ *resolved since this analysis;
-   `tick_size` now sets the action tick, see [18_configuration.md](18_configuration.md) §3. The
-   10× relative-tick variation below still holds, since it follows from the price anchor rather
-   than the tick plumbing.*
+4. **`tick_size` config is silently dropped.** **[verified]**:
 
    ```
    config=0.25 | LOB.tick_size before reset=0.25 | after reset=1 | action min_tick=1

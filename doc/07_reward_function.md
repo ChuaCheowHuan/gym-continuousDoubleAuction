@@ -35,12 +35,12 @@ From
 ```python
 nav_change = float(trader.acc.nav - trader.acc.prev_nav)
 
-# Set from the env config; defaults shown. See 18_configuration.md §2.2.
-order_penalty    = self.order_penalty      # 0.1
-trade_penalty    = self.trade_penalty      # 0.05
-drawdown_penalty = self.drawdown_penalty   # 0.2
-passive_bonus    = self.passive_bonus      # 0.1
-loss_multiplier  = self.loss_multiplier    # 1.5
+# Internal defaults, can be moved to config
+order_penalty    = 0.1
+trade_penalty    = 0.05
+drawdown_penalty = 0.2
+passive_bonus    = 0.1
+loss_multiplier  = 1.5
 
 # 1. Asymmetric loss aversion
 nav_term = nav_change * (loss_multiplier if nav_change < 0 else 1.0)
@@ -186,10 +186,6 @@ on a common scale — fractional-NAV units — would make the stated objective t
 
 Objective values for these scalars come from aligning them with the environment's financial scale
 (tick size, order size, initial cash).
-
-All five are `env_config` keys, so the retunings below can be applied without touching source —
-pass them to `continuousDoubleAuctionEnv` or set the matching `TrainConfig` fields. See
-[18_configuration.md](18_configuration.md) §2.2.
 
 ### 6.1 Conviction threshold — `order_penalty`
 

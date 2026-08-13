@@ -44,7 +44,6 @@ For a detailed breakdown of codebase modernizations, please refer to the [17_cha
 | 15 | [15_findings_and_recommendations.md](15_findings_and_recommendations.md) | Consolidated, severity-ranked findings with fixes and a suggested sequence |
 | 16 | [16_verification_log.md](16_verification_log.md) | Every executed probe and its raw output |
 | 17 | [17_changelog.md](17_changelog.md) | What changed since `original_v1` (2020) and why |
-| 18 | [18_configuration.md](18_configuration.md) | Every knob: the `config/` inventory, the env / `TrainConfig` / CLI surfaces, and what stays hardcoded and why |
 
 ---
 
