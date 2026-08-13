@@ -1,0 +1,52 @@
+{
+  "_source": "gym_continuousDoubleAuction/train/train.py (TrainConfig dataclass)",
+  "_description": "Defaults of every TrainConfig field, grouped as in the dataclass. train_batch_size and checkpoint_dir are derived properties and are not listed.",
+
+  "environment": {
+    "num_agents": 8,
+    "num_trained_agents": 2,
+    "init_cash": 1000000,
+    "tick_size": 1,
+    "tape_display_length": 10,
+    "max_step": 4096,
+    "is_render": false,
+    "n_hist": 4
+  },
+
+  "rollouts": {
+    "num_env_runners": 0,
+    "num_envs_per_env_runner": 1,
+    "num_cpus_per_env_runner": 1.0
+  },
+
+  "learner": {
+    "num_learners": 0,
+    "num_gpus_per_learner": 0.75
+  },
+
+  "ppo": {
+    "num_episodes_per_iter": 4,
+    "num_epochs": 4,
+    "lr": 5e-05,
+    "fcnet_hiddens": [256, 256],
+    "minibatch_size": null
+  },
+
+  "league_self_play": {
+    "std_dev_multiplier": 0.1,
+    "max_champions": 8,
+    "min_iterations_between_champions": 2,
+    "original_opponent_weight": 1.0,
+    "champion_weight": 3.0,
+    "episode_data_dir": "episode_data"
+  },
+
+  "run": {
+    "num_iters": 16,
+    "chkpt_freq": 2,
+    "log_base_dir": "results",
+    "is_restore": false,
+    "log_level": "WARN",
+    "seed": null
+  }
+}

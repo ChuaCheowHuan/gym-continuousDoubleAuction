@@ -1,0 +1,72 @@
+{
+  "_description": "Constants that materially change behaviour but currently have no config path - they are hardcoded in the modules named by each _source key. Values here mirror the source as of this commit; changing this file alone has no effect until the corresponding module reads from it.",
+
+  "order_sizing": {
+    "_source": "gym_continuousDoubleAuction/envs/exchg/action_helper.py (Action_Helper.__init__)",
+    "min_size": 1,
+    "mkt_max_size": 100,
+    "N": 10,
+    "limit_max_size": 1000,
+    "min_tick": 1,
+    "max_price": 101,
+    "last_price_seed": 100.0
+  },
+
+  "action_space": {
+    "_source": "gym_continuousDoubleAuction/envs/exchg/action_helper.py (Action_Helper.act_space)",
+    "category_n": 9,
+    "price_n": 10,
+    "price_offset_n": 3,
+    "size_mean_low": -1.0,
+    "size_mean_high": 1.0,
+    "size_sigma_low": 0.0,
+    "size_sigma_high": 1.0
+  },
+
+  "reward": {
+    "_source": "gym_continuousDoubleAuction/envs/exchg/reward_helper.py (Reward_Helper.set_reward)",
+    "order_penalty": 0.1,
+    "trade_penalty": 0.05,
+    "drawdown_penalty": 0.2,
+    "passive_bonus": 0.1,
+    "loss_multiplier": 1.5
+  },
+
+  "observation_layout": {
+    "_source": "gym_continuousDoubleAuction/envs/exchg/state_helper.py (module constants)",
+    "K_ROWS": 10,
+    "BOOK_DIM": 40,
+    "EXTRA_DIM": 2,
+    "SNAPSHOT_DIM": 42
+  },
+
+  "model": {
+    "_source": "gym_continuousDoubleAuction/train/model/model_handler.py (default_model_config)",
+    "fcnet_activation": "tanh",
+    "vf_share_layers": false
+  },
+
+  "module_id_prefixes": {
+    "_source": "gym_continuousDoubleAuction/train/policy/policy_handler.py",
+    "POLICY_PREFIX": "policy_",
+    "CHAMPION_PREFIX": "champion_"
+  },
+
+  "orderbook": {
+    "_source": "gym_continuousDoubleAuction/envs/orderbook/orderbook.py (OrderBook.__init__) and continuousDoubleAuction_env.py reset()",
+    "default_tick_size": 0.0001,
+    "reset_tick_size": 1,
+    "_note": "reset() rebuilds the book as OrderBook(1, tape_display_length), so the configured tick_size is discarded on every episode reset."
+  },
+
+  "runtime_env_vars": {
+    "_source": "gym_continuousDoubleAuction/train/train.py (main)",
+    "RAY_DEBUG_DISABLE_MEMORY_MONITOR": "True"
+  },
+
+  "visualize_paths": {
+    "_source": "gym_continuousDoubleAuction/visualize/ (function default arguments, no CLI)",
+    "nav_json_path": "visualize/latest_episode_data.json",
+    "episode_pickle_dir": "../gym_continuousDoubleAuction/episode_data"
+  }
+}

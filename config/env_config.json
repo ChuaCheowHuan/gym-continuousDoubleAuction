@@ -1,0 +1,14 @@
+{
+  "_source": "gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py (__init__ and reset)",
+  "_description": "Keys read from the config dict passed to continuousDoubleAuctionEnv(config). Values here are the env's own fallbacks, i.e. what applies when a key is absent.",
+
+  "num_of_agents": 5,
+  "init_cash": 0,
+  "tick_size": 1,
+  "tape_display_length": 10,
+  "max_step": 64,
+  "is_render": true,
+  "n_hist": 4,
+  "initial_price_min": 10,
+  "initial_price_max": 100
+}
