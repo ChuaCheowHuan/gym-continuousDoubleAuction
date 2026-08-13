@@ -1,19 +1,9 @@
 {
-  "_description": "Constants that materially change behaviour but currently have no config path - they are hardcoded in the modules named by each _source key. Values here mirror the source as of this commit; changing this file alone has no effect until the corresponding module reads from it.",
-
-  "order_sizing": {
-    "_source": "gym_continuousDoubleAuction/envs/exchg/action_helper.py (Action_Helper.__init__)",
-    "min_size": 1,
-    "mkt_max_size": 100,
-    "N": 10,
-    "limit_max_size": 1000,
-    "min_tick": 1,
-    "max_price": 101,
-    "last_price_seed": 100.0
-  },
+  "_description": "Constants that materially change behaviour but have no config path - they are hardcoded in the modules named by each _source key. Values here mirror the source as of this commit; changing this file alone has no effect until the corresponding module reads from it. Entries that became real config keys have moved to env_config.json / train_config.json.",
 
   "action_space": {
     "_source": "gym_continuousDoubleAuction/envs/exchg/action_helper.py (Action_Helper.act_space)",
+    "_note": "Structural, not tunable. category_n is hardwired to the if/elif mapping in _set_action_mkt_depth, and price_offset_n to `offset_multiplier = price_offset - 1`; changing either number without changing that logic does nothing.",
     "category_n": 9,
     "price_n": 10,
     "price_offset_n": 3,
@@ -23,40 +13,27 @@
     "size_sigma_high": 1.0
   },
 
-  "reward": {
-    "_source": "gym_continuousDoubleAuction/envs/exchg/reward_helper.py (Reward_Helper.set_reward)",
-    "order_penalty": 0.1,
-    "trade_penalty": 0.05,
-    "drawdown_penalty": 0.2,
-    "passive_bonus": 0.1,
-    "loss_multiplier": 1.5
-  },
-
   "observation_layout": {
     "_source": "gym_continuousDoubleAuction/envs/exchg/state_helper.py (module constants)",
+    "_note": "Book depth is one concept stored in four places: K_ROWS here, price_n in the action space, and two literal .reshape(4, 10) calls in action_helper.py (lines 256, 266). All four are 10 today so behaviour is correct; any change raises ValueError/IndexError until they are de-duplicated. Promoting depth to env_config.json is blocked on that.",
     "K_ROWS": 10,
     "BOOK_DIM": 40,
     "EXTRA_DIM": 2,
     "SNAPSHOT_DIM": 42
   },
 
-  "model": {
-    "_source": "gym_continuousDoubleAuction/train/model/model_handler.py (default_model_config)",
-    "fcnet_activation": "tanh",
-    "vf_share_layers": false
+  "price_anchor_fallbacks": {
+    "_source": "gym_continuousDoubleAuction/envs/exchg/action_helper.py:19 and state_helper.py:130",
+    "_note": "Two independent fallbacks for last_price, both overwritten by reset(). Neither is worth exposing, but they should agree.",
+    "action_helper_last_price": 100.0,
+    "state_helper_midpoint_fallback": 100.0
   },
 
   "module_id_prefixes": {
     "_source": "gym_continuousDoubleAuction/train/policy/policy_handler.py",
+    "_note": "A naming contract SelfPlayCallback parses, not a knob.",
     "POLICY_PREFIX": "policy_",
     "CHAMPION_PREFIX": "champion_"
-  },
-
-  "orderbook": {
-    "_source": "gym_continuousDoubleAuction/envs/orderbook/orderbook.py (OrderBook.__init__) and continuousDoubleAuction_env.py reset()",
-    "default_tick_size": 0.0001,
-    "reset_tick_size": 1,
-    "_note": "reset() rebuilds the book as OrderBook(1, tape_display_length), so the configured tick_size is discarded on every episode reset."
   },
 
   "runtime_env_vars": {

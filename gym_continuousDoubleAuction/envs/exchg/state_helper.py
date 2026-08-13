@@ -17,7 +17,9 @@ class State_Helper(object):
     def __init__(self, n_hist=4, **kwargs):
         self.n_hist = n_hist
         self.obs_history = deque(maxlen=self.n_hist)
-        super().__init__()
+        # kwargs is forwarded, not swallowed: the sizing and reward knobs are
+        # consumed further along the MRO (Action_Helper, Reward_Helper).
+        super().__init__(**kwargs)
 
     # reset traders LOB observations/states
     def reset_traders_agg_LOB(self):

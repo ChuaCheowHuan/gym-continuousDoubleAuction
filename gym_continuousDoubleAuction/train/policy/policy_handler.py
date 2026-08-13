@@ -66,6 +66,8 @@ def build_multi_rl_module_spec(
     num_agents,
     num_trained_agents,
     fcnet_hiddens=None,
+    fcnet_activation="tanh",
+    vf_share_layers=False,
 ):
     """Build the MultiRLModuleSpec for a league-based self-play run.
 
@@ -75,6 +77,8 @@ def build_multi_rl_module_spec(
         num_agents: Total number of agents, n.
         num_trained_agents: Number of trainable PPO modules, k.
         fcnet_hiddens: Hidden sizes for the trainable modules.
+        fcnet_activation: Activation for the hidden layers.
+        vf_share_layers: Whether policy and value share a trunk.
 
     Returns:
         MultiRLModuleSpec covering policy_0..policy_(n-1).
@@ -90,7 +94,11 @@ def build_multi_rl_module_spec(
             f"num_trained_agents={num_trained_agents}, num_agents={num_agents}"
         )
 
-    model_config = default_model_config(fcnet_hiddens=fcnet_hiddens)
+    model_config = default_model_config(
+        fcnet_hiddens=fcnet_hiddens,
+        fcnet_activation=fcnet_activation,
+        vf_share_layers=vf_share_layers,
+    )
 
     specs = {}
     for pid in trainable_policy_ids(num_trained_agents):
@@ -115,6 +123,8 @@ def create_multi_agent_config(
     num_agents,
     num_trained_agents,
     fcnet_hiddens=None,
+    fcnet_activation="tanh",
+    vf_share_layers=False,
 ):
     """Everything `AlgorithmConfig.multi_agent(...)` / `.rl_module(...)` needs.
 
@@ -128,7 +138,13 @@ def create_multi_agent_config(
         rl_module_spec:   MultiRLModuleSpec, for `.rl_module(rl_module_spec=...)`
     """
     spec = build_multi_rl_module_spec(
-        obs_space, act_space, num_agents, num_trained_agents, fcnet_hiddens
+        obs_space,
+        act_space,
+        num_agents,
+        num_trained_agents,
+        fcnet_hiddens,
+        fcnet_activation=fcnet_activation,
+        vf_share_layers=vf_share_layers,
     )
     policies = set(spec.rl_module_specs.keys())
     policies_to_train = trainable_policy_ids(num_trained_agents)

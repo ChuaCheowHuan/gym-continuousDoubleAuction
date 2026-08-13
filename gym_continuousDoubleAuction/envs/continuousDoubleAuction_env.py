@@ -34,12 +34,32 @@ class continuousDoubleAuctionEnv(
         is_render = config.get("is_render", True)
         self.n_hist = config.get("n_hist", 4)
 
+        # Order sizing, consumed by Action_Helper.
+        min_size = config.get("min_size", 1)
+        mkt_max_size = config.get("mkt_max_size", 100)
+        limit_size_multiple = config.get("limit_size_multiple", 10)
+
+        # Reward coefficients, consumed by Reward_Helper.
+        order_penalty = config.get("order_penalty", 0.1)
+        trade_penalty = config.get("trade_penalty", 0.05)
+        drawdown_penalty = config.get("drawdown_penalty", 0.2)
+        passive_bonus = config.get("passive_bonus", 0.1)
+        loss_multiplier = config.get("loss_multiplier", 1.5)
+
         # Initialize parent classes
         super().__init__(
-            init_cash, 
-            tick_size, 
+            init_cash,
+            tick_size,
             tape_display_length,
-            n_hist=self.n_hist
+            n_hist=self.n_hist,
+            min_size=min_size,
+            mkt_max_size=mkt_max_size,
+            limit_size_multiple=limit_size_multiple,
+            order_penalty=order_penalty,
+            trade_penalty=trade_penalty,
+            drawdown_penalty=drawdown_penalty,
+            passive_bonus=passive_bonus,
+            loss_multiplier=loss_multiplier,
         )
 
         self.next_states = {}

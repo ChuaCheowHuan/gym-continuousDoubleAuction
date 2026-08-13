@@ -1,8 +1,29 @@
 import numpy as np
 import pandas as pd
 
-class Reward_Helper(object): 
-    
+class Reward_Helper(object):
+
+    def __init__(self, order_penalty=0.1, trade_penalty=0.05,
+                 drawdown_penalty=0.2, passive_bonus=0.1, loss_multiplier=1.5,
+                 **kwargs):
+        """
+        Coefficients of the reward formula in `set_reward`.
+
+        Arguments:
+            order_penalty: Per order placed this step.
+            trade_penalty: Per trade filled this step.
+            drawdown_penalty: Per unit of NAV below the running peak.
+            passive_bonus: Per passive (liquidity-providing) fill this step.
+            loss_multiplier: Extra weight on negative NAV changes.
+        """
+        self.order_penalty = order_penalty
+        self.trade_penalty = trade_penalty
+        self.drawdown_penalty = drawdown_penalty
+        self.passive_bonus = passive_bonus
+        self.loss_multiplier = loss_multiplier
+
+        super().__init__(**kwargs)
+
     def set_reward(self, rewards, trader):
         """
         Calculate and set the reward for the trader at the current time step.
@@ -22,14 +43,14 @@ class Reward_Helper(object):
             dict: Updated rewards dictionary.
         """
         nav_change = float(trader.acc.nav - trader.acc.prev_nav)
-        
-        # Penalties/Bonus coefficients (Internal defaults, can be moved to config)
-        order_penalty = 0.1
-        trade_penalty = 0.05
-        drawdown_penalty = 0.2
-        passive_bonus = 0.1
-        loss_multiplier = 1.5
-        
+
+        # Penalties/Bonus coefficients, set from the env config (see __init__).
+        order_penalty = self.order_penalty
+        trade_penalty = self.trade_penalty
+        drawdown_penalty = self.drawdown_penalty
+        passive_bonus = self.passive_bonus
+        loss_multiplier = self.loss_multiplier
+
         # 1. Asymmetric Loss Aversion: Penalize negative nav_change more heavily
         nav_term = nav_change * (loss_multiplier if nav_change < 0 else 1.0)
         

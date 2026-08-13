@@ -10,7 +10,15 @@
     "tape_display_length": 10,
     "max_step": 4096,
     "is_render": false,
-    "n_hist": 4
+    "n_hist": 4,
+    "min_size": 1,
+    "mkt_max_size": 100,
+    "limit_size_multiple": 10,
+    "order_penalty": 0.1,
+    "trade_penalty": 0.05,
+    "drawdown_penalty": 0.2,
+    "passive_bonus": 0.1,
+    "loss_multiplier": 1.5
   },
 
   "rollouts": {
@@ -29,6 +37,8 @@
     "num_epochs": 4,
     "lr": 5e-05,
     "fcnet_hiddens": [256, 256],
+    "fcnet_activation": "tanh",
+    "vf_share_layers": false,
     "minibatch_size": null
   },
 

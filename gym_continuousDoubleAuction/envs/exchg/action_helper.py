@@ -5,20 +5,33 @@ from gymnasium import spaces
 from sklearn.utils import shuffle
 
 class Action_Helper():
-    def __init__(self, **kwargs):
-        self.min_size = 1
-        self.mkt_max_size = 100
-        self.N = 10
-        self.limit_max_size = self.mkt_max_size * self.N
+    def __init__(self, min_size=1, mkt_max_size=100, limit_size_multiple=10,
+                 tick_size=1, **kwargs):
+        """
+        Arguments:
+            min_size: Smallest order size; also the offset added to every
+                      sampled size, since a size of 0 is not a valid order.
+            mkt_max_size: Upper bound on market order size.
+            limit_size_multiple: Limit orders may be this many times larger
+                                 than market orders.
+            tick_size: Price tick. Order prices are built on this grid.
+        """
+        self.min_size = min_size
+        self.mkt_max_size = mkt_max_size
+        self.limit_size_multiple = limit_size_multiple
+        self.limit_max_size = self.mkt_max_size * self.limit_size_multiple
         self.mkt_size_mean_mul = (self.mkt_max_size - self.min_size) / 2 # multiplier for mean size of mkt orders
         self.limit_size_mean_mul = (self.limit_max_size - self.min_size) / 2 # multiplier for mean size of non mkt orders
 
         # for random price generation
-        self.min_tick = 1 # price tick
-        self.max_price = 101
+        #
+        # `min_tick` is the `tick_size` env config key. It used to be a second,
+        # hardcoded 1 that happened to agree with the configured tick_size, so
+        # setting tick_size had no effect on the prices agents can quote.
+        self.min_tick = tick_size # price tick
         self.last_price = 100.0 # Default anchor (will be overwritten by env.reset)
 
-        super().__init__()
+        super().__init__(**kwargs)
 
     # def act_space(self):
     #     '''
@@ -177,7 +190,7 @@ class Action_Helper():
         if act["type"] == 'market':
             act["price"] = -1.0 # -1.0 to indicate market price
         else:
-            act["price"] = self._set_price(self.min_tick, self.max_price, act["side"], price_code, price_offset)
+            act["price"] = self._set_price(self.min_tick, act["side"], price_code, price_offset)
 
         return act
 
@@ -225,7 +238,7 @@ class Action_Helper():
         # return np.asscalar(np.rint(np.abs(sample)))
         return np.rint(np.abs(sample)).item()
 
-    def _set_price(self, min_tick, max_price, side, price_code, price_offset=1):
+    def _set_price(self, min_tick, side, price_code, price_offset=1):
         """
         Set price according to price_code (0-9, representing levels 1-10) 
         and price_offset (0-2).
@@ -276,13 +289,13 @@ class Action_Helper():
         set_price = max(min_tick, set_price)
         return float(set_price)
 
-    def _higher(self, min_tick, max_price, price):
+    def _higher(self, min_tick, price):
         """
         Sets the price of the order to 1 tick higher.
         """
         return price + min_tick
 
-    def _lower(self, min_tick, max_price, price):
+    def _lower(self, min_tick, price):
         """
         Sets the price of the order to 1 tick lower, ensuring it's not below min_tick.
         """

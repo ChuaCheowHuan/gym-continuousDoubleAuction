@@ -75,12 +75,17 @@ class RandomRLModule(RLModule):
         """No-op, for parity with TorchRLModule's compile hook."""
 
 
-def default_model_config(fcnet_hiddens=None, fcnet_activation="tanh"):
+def default_model_config(fcnet_hiddens=None, fcnet_activation="tanh",
+                         vf_share_layers=False):
     """Network config for the trainable PPO modules.
 
     Args:
         fcnet_hiddens: Hidden layer sizes. Defaults to [256, 256].
         fcnet_activation: Activation for the hidden layers.
+        vf_share_layers: Whether policy and value share a trunk. The default is
+            False because the learners train against non-stationary opponents
+            (the league), where sharing a trunk between policy and value tends
+            to destabilise the value estimate.
 
     Returns:
         A `DefaultModelConfig` for `RLModuleSpec(model_config=...)`.
@@ -88,8 +93,5 @@ def default_model_config(fcnet_hiddens=None, fcnet_activation="tanh"):
     return DefaultModelConfig(
         fcnet_hiddens=list(fcnet_hiddens) if fcnet_hiddens else [256, 256],
         fcnet_activation=fcnet_activation,
-        # Separate value network: the two learners are trained against
-        # non-stationary opponents (the league), where sharing a trunk between
-        # policy and value tends to destabilise the value estimate.
-        vf_share_layers=False,
+        vf_share_layers=vf_share_layers,
     )

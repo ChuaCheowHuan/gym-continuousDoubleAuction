@@ -10,5 +10,15 @@
   "is_render": true,
   "n_hist": 4,
   "initial_price_min": 10,
-  "initial_price_max": 100
+  "initial_price_max": 100,
+
+  "min_size": 1,
+  "mkt_max_size": 100,
+  "limit_size_multiple": 10,
+
+  "order_penalty": 0.1,
+  "trade_penalty": 0.05,
+  "drawdown_penalty": 0.2,
+  "passive_bonus": 0.1,
+  "loss_multiplier": 1.5
 }

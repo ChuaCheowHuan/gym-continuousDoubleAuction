@@ -55,6 +55,21 @@ class TrainConfig:
     is_render: bool = False
     n_hist: int = 4
 
+    # Order sizing. limit orders may be limit_size_multiple x larger than
+    # market orders.
+    min_size: int = 1
+    mkt_max_size: int = 100
+    limit_size_multiple: int = 10
+
+    # Reward coefficients. Previously hardcoded in Reward_Helper.set_reward,
+    # which made them the least reachable knobs in the project despite being
+    # the ones most worth sweeping.
+    order_penalty: float = 0.1
+    trade_penalty: float = 0.05
+    drawdown_penalty: float = 0.2
+    passive_bonus: float = 0.1
+    loss_multiplier: float = 1.5
+
     # --- Rollouts ------------------------------------------------------------
     # 0 keeps sampling in the driver process, which is the right default for a
     # CPU dev box and for tests. Raise it for real training runs.
@@ -74,6 +89,10 @@ class TrainConfig:
     num_epochs: int = 4
     lr: float = 5e-5
     fcnet_hiddens: List[int] = field(default_factory=lambda: [256, 256])
+    fcnet_activation: str = "tanh"
+    # False keeps policy and value on separate trunks, which matters against
+    # the non-stationary league opponents - see model_handler.
+    vf_share_layers: bool = False
     # PPO requires minibatch_size <= train_batch_size_per_learner. RLlib's
     # default is 128, which is larger than the batch of a short-episode test
     # run, so this is exposed rather than left implicit.
@@ -114,6 +133,14 @@ class TrainConfig:
             "max_step": self.max_step,
             "is_render": self.is_render,
             "n_hist": self.n_hist,
+            "min_size": self.min_size,
+            "mkt_max_size": self.mkt_max_size,
+            "limit_size_multiple": self.limit_size_multiple,
+            "order_penalty": self.order_penalty,
+            "trade_penalty": self.trade_penalty,
+            "drawdown_penalty": self.drawdown_penalty,
+            "passive_bonus": self.passive_bonus,
+            "loss_multiplier": self.loss_multiplier,
         }
 
     def resolved_gpus_per_learner(self) -> float:
@@ -158,6 +185,8 @@ def build_config(cfg: TrainConfig):
         num_agents=cfg.num_agents,
         num_trained_agents=cfg.num_trained_agents,
         fcnet_hiddens=cfg.fcnet_hiddens,
+        fcnet_activation=cfg.fcnet_activation,
+        vf_share_layers=cfg.vf_share_layers,
     )
 
     callback_instance = SelfPlayCallback(
