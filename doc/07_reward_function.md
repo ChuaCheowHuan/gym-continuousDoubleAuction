@@ -30,17 +30,20 @@ actually binds.
 ## 2. The formula
 
 From
-[`reward_helper.py:24-47`](../gym_continuousDoubleAuction/envs/exchg/reward_helper.py#L24-L47):
+[`reward_helper.py:45-68`](../gym_continuousDoubleAuction/envs/exchg/reward_helper.py#L45-L68).
+The five coefficients are `env_config` keys, set on the helper in
+[`reward_helper.py:6-25`](../gym_continuousDoubleAuction/envs/exchg/reward_helper.py#L6-L25) —
+see [18_configuration.md](18_configuration.md) §2.2:
 
 ```python
 nav_change = float(trader.acc.nav - trader.acc.prev_nav)
 
-# Internal defaults, can be moved to config
-order_penalty    = 0.1
-trade_penalty    = 0.05
-drawdown_penalty = 0.2
-passive_bonus    = 0.1
-loss_multiplier  = 1.5
+# Set from the env config; the values below are the defaults.
+order_penalty    = self.order_penalty      # 0.1
+trade_penalty    = self.trade_penalty      # 0.05
+drawdown_penalty = self.drawdown_penalty   # 0.2
+passive_bonus    = self.passive_bonus      # 0.1
+loss_multiplier  = self.loss_multiplier    # 1.5
 
 # 1. Asymmetric loss aversion
 nav_term = nav_change * (loss_multiplier if nav_change < 0 else 1.0)

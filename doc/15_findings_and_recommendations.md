@@ -212,18 +212,48 @@ not part of the action whose log-probability PPO uses in the importance ratio �
 never observes the realisation. Irreducible advantage variance.
 **Fix:** emit size directly as a `Box` action.
 
-### S3-4 · `tick_size` config is silently discarded **[verified]**
+### S3-4 · `tick_size` config is silently discarded **[partly fixed]**
 
-```
-config=0.25 | LOB.tick_size before reset=0.25 | after reset=1 | action min_tick=1
-env has a self.tick_size attribute: False
-```
+`tick_size` used to exist as two independent values: a hardcoded `min_tick = 1` in
+`Action_Helper` that actually drove prices, and an `OrderBook` argument that was stored and never
+read. Setting the config key therefore changed nothing anywhere.
 
-`reset()` hardcodes `OrderBook(1, ...)`. Combined with the price anchor drawn from
-`randint(10, 100)`, the *relative* tick varies **10×** across episodes — a large uncontrolled
-non-stationarity, only partly mitigated by exposing `log_mid`. Related: `initial_price_min/max`
-are read by `reset()` but omitted from `TrainConfig.env_config`, so training cannot narrow the
-range.
+**Fixed:** `Action_Helper.min_tick` now comes from the `tick_size` config key, so the key controls
+the price grid agents quote on. Both defaults were 1, so behaviour at default config is unchanged.
+
+**Deliberately not fixed — the action layer should be the single definition, and `OrderBook`'s
+copy should be deleted.** `OrderBook` still accepts a `tick_size`, stores it, and never reads it;
+`reset()` still hardcodes `OrderBook(1, ...)`. That argument makes it look as though the matching
+engine enforces a grid, which it does not — there is no rounding or tick validation anywhere in
+the matching path.
+
+The reason to delete rather than enforce: there is exactly **one** price producer in the system.
+Every price reaching `process_order` comes from `_set_price` via `place_order`, and `_set_price`
+builds prices as `anchor ± k × min_tick`, so output is on the grid by construction. A snapping or
+validation step in the book would re-derive a guarantee the producer already provides. Deleting
+the parameter is also nearly free: 9 of the 11 `OrderBook(...)` call sites already use the no-arg
+form, and dropping it makes the hardcoded `1` in `reset()` disappear rather than need a fix.
+
+**This is deferred because the `envs/orderbook/` package is off-limits to changes.** It requires
+editing `orderbook.py` plus the two call sites in `exchg_helper.py` and
+`continuousDoubleAuction_env.py`. Until then `tick_size` is half-live: it governs the action
+layer, not the book.
+
+Enforcement in `OrderBook.process_order` would be the right call instead of deletion only if a
+second price source appears that the action layer does not control — scripted or human agents,
+replayed real order flow, an external feed.
+
+**Float-grid caveat, for whoever picks this up.** `_set_price` performs no quantization, so a tick
+that is not binary-exact can in principle produce a price whose `Decimal(str(price))` key sits off
+the grid, splitting one book level into two price-map entries. This is rarer than it sounds: over
+all anchors 10–100, ticks {0.01, 0.05, 0.1, 0.2, 0.25, 0.3} and 10 levels either side, exactly one
+combination drifts (`10 − 9 × 0.3 → 7.300000000000001`). Worth a quantize step if non-integer
+ticks are ever used in earnest, but it is not the reason to make the change.
+
+Related, and still open: the price anchor is drawn from `randint(10, 100)`, so with a fixed tick
+the *relative* tick varies **10×** across episodes — a large uncontrolled non-stationarity, only
+partly mitigated by exposing `log_mid`. `initial_price_min/max` are read by `reset()` but omitted
+from `TrainConfig.env_config`, so training cannot narrow the range.
 
 ### S3-5 · Seeding is entirely non-functional
 

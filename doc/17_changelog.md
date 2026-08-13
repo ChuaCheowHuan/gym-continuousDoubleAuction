@@ -279,13 +279,18 @@ These reach their consumers through the mixin `__init__` chain. `State_Helper.__
 `super().__init__()` with no arguments, which would have silently swallowed every new key; it now
 forwards `**kwargs`.
 
-**`tick_size` consolidated.** It was two independent values: a hardcoded `Action_Helper.min_tick`
-that drove prices, and an `OrderBook` argument that was stored, never read, and discarded anyway
-when `reset()` rebuilt the book as `OrderBook(1, ...)`. `tick_size` now sets `min_tick`, and
-`OrderBook` takes no tick — the action layer is the only price producer and emits on-grid prices
-by construction. `_set_price` quantizes with `Decimal`, so ticks that are not binary-exact (0.1,
-0.3) cannot fragment the price map. Both defaults were 1, so behaviour at default config is
-unchanged. Resolves S3-4 in [15_findings_and_recommendations.md](15_findings_and_recommendations.md).
+**`tick_size` half-consolidated.** It was two independent values: a hardcoded
+`Action_Helper.min_tick` that drove prices, and an `OrderBook` argument that was stored, never
+read, and discarded anyway when `reset()` rebuilt the book as `OrderBook(1, ...)`. `tick_size` now
+sets `min_tick`, so the key governs the price grid agents quote on. Both defaults were 1, so
+behaviour at default config is unchanged.
+
+The other half — deleting `OrderBook`'s inert copy so the action layer is the single definition —
+was implemented and then **deliberately reverted**, because the `envs/orderbook/` package is
+off-limits to changes. `OrderBook` still accepts and stores a `tick_size` it never reads, and
+`reset()` still hardcodes `OrderBook(1, ...)`. `_set_price` performs no quantization. S3-4 in
+[15_findings_and_recommendations.md](15_findings_and_recommendations.md) is therefore **partly
+fixed**, not resolved, and carries the reasoning for the deferred half.
 
 **Book depth de-duplicated.** `K_ROWS`, the action space's `price: Discrete(10)`, and two literal
 `.reshape(4, 10)` calls in `action_helper` were four copies of one number. All now derive from
@@ -296,6 +301,6 @@ per-instance — but changing it is now a one-line edit rather than a four-site 
 nothing; `_higher` / `_lower` carried it as an unused parameter and have no callers at all. No
 behaviour change. Closes half of S4-3.
 
-The two `100.0` price-anchor fallbacks became one `DEFAULT_PRICE_ANCHOR` constant. `TestTickGrid`
-in `test_new_action_space.py` covers the consolidated tick, the quantization, and the
-depth/action-space agreement.
+`TestTickGrid` in `test_new_action_space.py` covers the tick reaching the action layer and the
+depth/action-space agreement. Its assertion that `OrderBook` carries no tick was removed with the
+revert described above. The two `100.0` price-anchor fallbacks remain two separate literals.

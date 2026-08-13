@@ -148,12 +148,13 @@ class TestActionSpaceRobust:
 
 
 class TestTickGrid:
-    """The `tick_size` env config key is the one definition of the price tick.
+    """`tick_size` drives the price grid through `Action_Helper.min_tick`.
 
-    It used to exist twice: a hardcoded `min_tick = 1` in Action_Helper, which
-    actually drove prices, and an `OrderBook` argument that was stored and never
-    read. Setting `tick_size` therefore did nothing. These cover the consolidated
-    behaviour.
+    `min_tick` was a hardcoded 1 that made the configured `tick_size` a no-op;
+    it now comes from the config key. `OrderBook` still accepts and stores a
+    `tick_size` it never reads - that copy is retained deliberately, because the
+    orderbook package is off-limits. See doc/15 S3-4; these tests cover the
+    action-layer half only.
     """
 
     def _env(self, tick_size, anchor=37):
@@ -196,13 +197,6 @@ class TestTickGrid:
                 assert stored == stored.quantize(Decimal('0.1')), (
                     f"{side} level {level} off grid: {price!r}"
                 )
-
-    def test_orderbook_takes_no_tick_size(self):
-        """The book is tick-agnostic; the tick lives in the action layer."""
-        from gym_continuousDoubleAuction.envs.orderbook.orderbook import OrderBook
-
-        book = OrderBook()
-        assert not hasattr(book, "tick_size")
 
     def test_action_price_levels_match_book_depth(self):
         """price codes index book levels, so the two depths cannot drift apart."""

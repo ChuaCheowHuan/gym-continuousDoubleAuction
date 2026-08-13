@@ -4,6 +4,8 @@ import random
 from gymnasium import spaces
 from sklearn.utils import shuffle
 
+from .state_helper import K_ROWS
+
 class Action_Helper():
     def __init__(self, min_size=1, mkt_max_size=100, limit_size_multiple=10,
                  tick_size=1, **kwargs):
@@ -56,7 +58,7 @@ class Action_Helper():
                                      5: Sell Mkt, 6: Sell Lmt, 7: Sell Mod, 8: Sell Can
             - size_mean: Box(-1.0, 1.0)
             - size_sigma: Box(0.0, 1.0)
-            - price: Discrete(10) -> levels 1 to 10
+            - price: Discrete(K_ROWS) -> book levels 1 to K_ROWS
             - price_offset: Discrete(3) -> 0: Passive (-1 tick), 1: Join (0 tick), 2: Aggressive (+1 tick)
 
         Args:
@@ -70,7 +72,9 @@ class Action_Helper():
             "category": spaces.Discrete(9),
             "size_mean": spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),
             "size_sigma": spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),
-            "price": spaces.Discrete(10),
+            # One code per book level, so this is K_ROWS - the same depth the
+            # observation exposes and the same depth _set_price indexes into.
+            "price": spaces.Discrete(K_ROWS),
             "price_offset": spaces.Discrete(3),
         })
 
@@ -266,7 +270,7 @@ class Action_Helper():
         agg_LOB_source = getattr(self, 'agg_LOB_raw', self.agg_LOB)
 
         if side == 'bid':
-            price_array = np.array(agg_LOB_source).reshape(4, 10)[0] # raw bid prices
+            price_array = np.array(agg_LOB_source).reshape(4, K_ROWS)[0] # raw bid prices
             p = price_array[level_idx]
             
             # If level is empty, use ghost logic relative to ref_price
@@ -276,7 +280,7 @@ class Action_Helper():
             set_price = base_price + (offset_multiplier * min_tick)
 
         else: # 'ask'
-            price_array = np.array(agg_LOB_source).reshape(4, 10)[2] # raw ask prices
+            price_array = np.array(agg_LOB_source).reshape(4, K_ROWS)[2] # raw ask prices
             p = abs(price_array[level_idx])
             
             # If level is empty, use ghost logic relative to ref_price
