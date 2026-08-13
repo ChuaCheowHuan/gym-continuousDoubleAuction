@@ -33,7 +33,8 @@ driver only orchestrates.
 [`SelfPlayCallback`](../gym_continuousDoubleAuction/train/callbk/league_based_self_play_callback.py)
 instance *is* the object doing the sampling, and the driver's `LearnerGroup` *is* local. The
 moment either setting goes above `0`, that stops being true — and three separate bugs in this
-codebase's history lived exactly in that gap. See §4.
+codebase's history lived exactly in that gap. All three are fixed and carry regression tests that
+run at the non-default value; §4 documents them because the *gap* is still there for new code.
 
 ---
 
@@ -207,7 +208,11 @@ force-push described in [08_self_play_league.md](08_self_play_league.md) §5.2.
 
 ---
 
-## 4. Bugs that only existed at non-default values
+## 4. Bugs that only existed at non-default values (all fixed)
+
+Every bug in this section has been fixed in the current tree — the commit is named inline, and
+each has regression coverage that runs at the non-default value. They are documented because the
+structural gap that produced them has not gone away.
 
 Both settings default to `0` in `TrainConfig`, which is the one configuration where everything
 lives in a single process. Every bug below was invisible there and only appeared once a setting

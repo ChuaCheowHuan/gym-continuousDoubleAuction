@@ -6,7 +6,7 @@ For a detailed breakdown of codebase modernizations, please refer to the [17_cha
 
 ---
 
-## Reading order
+# Version 2 README:
 
 ### Start here
 
@@ -30,7 +30,7 @@ For a detailed breakdown of codebase modernizations, please refer to the [17_cha
 | # | Document | What it answers |
 |---|---|---|
 | 8 | [08_self_play_league.md](08_self_play_league.md) | League play: champion snapshotting and its four load-bearing ordering constraints, weighted matchmaking, configuration, monitoring, troubleshooting |
-| 9 | [09_distributed_training.md](09_distributed_training.md) | `num_env_runners` and `num_learners`: what each distributes, worked examples, and three bugs that existed only at non-default values |
+| 9 | [09_distributed_training.md](09_distributed_training.md) | `num_env_runners` and `num_learners`: what each distributes, worked examples, and three now-fixed bugs that existed only at non-default values |
 | 10 | [10_testing.md](10_testing.md) | Every test file, what each case pins down, CI, and the gaps |
 | 11 | [11_logging_and_observability.md](11_logging_and_observability.md) | What training records, where it goes, and the gap between what is computed and what is surfaced |
 
@@ -72,28 +72,13 @@ or `num_learners` above their `0` defaults) → [11](11_logging_and_observabilit
 
 ---
 
-## One-paragraph summary
+## Summary
 
-This repository implements a multi-agent continuous double auction system, structured as a price- and time-priority limit order book exchange. It is provided as a Gymnasium / RLlib `MultiAgentEnv` and includes a league-based self-play PPO training pipeline built on Ray RLlib 2.56.1’s new API stack. In this environment, agents act as traders who can submit market, limit, modify, and cancel orders to a shared order book. They are marked to market based on the trade tape, and receive rewards derived from a multi-term NAV-based function. The codebase also features a matching engine, supports `Decimal`-based accounting, includes the necessary RLlib league wiring, and comes with CI unit tests.
+This repository implements a multi-agent continuous double auction system, structured as a price- and time-priority limit order book exchange. It is provided as a Gymnasium / RLlib `MultiAgentEnv` and includes a league-based self-play PPO training pipeline built on Ray RLlib 2.56.1’s new API stack. 
+
+In this environment, agents act as traders who can submit market, limit, modify, and cancel orders to a shared order book. They are marked to market based on the trade tape, and receive rewards derived from a multi-term NAV-based function. The codebase also includes a matching engine, supports `Decimal`-based accounting, includes the necessary RLlib league wiring, and comes with CI unit tests.
 
 **Main problems:** The weak points are concentrated in the learning problem formulation rather than in the simulator: agents observe no private state, the reward is strictly negative-sum with a dominant do-nothing strategy, and the reward scale silently disables PPO's critic entirely.
-
----
-
-## Conventions
-
-- **Never hardcode observation widths.** Import `SNAPSHOT_DIM` / `BOOK_DIM` from
-  [`state_helper.py`](../gym_continuousDoubleAuction/envs/exchg/state_helper.py). See
-  [05_observation_space.md](05_observation_space.md) §1.
-- **NAV is zero-sum; the reward is not.** Total NAV across traders is conserved exactly, but the
-  four shaping terms are not, so returns are not comparable across policies playing different
-  roles. See [07_reward_function.md](07_reward_function.md) §2.
-- **No episode is reproducible.** Seeding is non-functional: the env draws from global
-  `np.random` and the action shuffle is always passed `random_state=None`. See
-  [15_findings_and_recommendations.md](15_findings_and_recommendations.md) S3-5.
-- **The default config is the single-process one.** `num_env_runners=0, num_learners=0` is the
-  only configuration where the driver's objects and the "remote" objects are the same object.
-  Three real bugs lived in that gap. See [09_distributed_training.md](09_distributed_training.md).
 
 ---
 
@@ -104,11 +89,7 @@ https://github.com/dyn4mik3/OrderBook
 ---
 
 ## Disclaimer:
-This repository is only meant for research purposes & is **never** meant to be
-used in any form of trading. Past performance is no guarantee of future results.
-If you suffer losses from using this repository, you are the sole person
-responsible for the losses. The author will **NOT** be held responsible in any
-way.
+This repository is only meant for research purposes & is **never** meant to be used in any form of trading. Past performance is no guarantee of future results. If you suffer losses from using this repository, you are the sole person responsible for the losses. The author will **NOT** be held responsible in any way.
 
 ---
 
