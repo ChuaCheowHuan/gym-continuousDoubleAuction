@@ -1,6 +1,7 @@
+import numpy as np
 import pandas as pd
 
-from .state_helper import State_Helper
+from .state_helper import State_Helper, K_ROWS, BOOK_DIM, EXTRA_DIM
 from .action_helper import Action_Helper
 from .reward_helper import Reward_Helper
 from .done_helper import Done_Helper
@@ -17,6 +18,7 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
 
         self.LOB = OrderBook(tick_size, tape_display_length) # limit order book
         self.agg_LOB = {} # aggregated or consolidated LOB
+        self.agg_LOB_raw = {} # unnormalized raw aggregated LOB
         self.agg_LOB_aft = {} # aggregated or consolidated LOB after processing orders
 
         self.seq_trades = [] # list of trade lists
@@ -79,15 +81,18 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
     def print_table(self, msg, data):
         """
         Tabulate data for display.
-        If data is a 1D numpy array (flat LOB snapshot of length 40),
-        reshape it into a 4-column table: [bid_price, bid_size, ask_price, ask_size].
+        If data is a 1D numpy array holding a flat LOB snapshot, reshape the book
+        block into a 4-column table: [bid_price, bid_size, ask_price, ask_size],
+        then print any trailing market-level scalars on their own line.
         """
-        import numpy as np
-        if isinstance(data, np.ndarray) and data.ndim == 1:
-            k = len(data) // 4
-            reshaped = data.reshape(4, k).T  # shape (k, 4): each row is one price level
+        if isinstance(data, np.ndarray) and data.ndim == 1 and data.size >= BOOK_DIM:
+            book = data[:BOOK_DIM]
+            extras = data[BOOK_DIM:]
+            reshaped = book.reshape(4, K_ROWS).T  # shape (K_ROWS, 4): each row is one price level
             headers = ["bid_price", "bid_size", "ask_price", "ask_size"]
             print(msg, tabulate(reshaped, headers=headers))
+            if extras.size == EXTRA_DIM:
+                print("log_mid = {:.6f}; log1p_spread_ticks = {:.6f}".format(extras[0], extras[1]))
         else:
             print(msg, tabulate(data))
         return 0

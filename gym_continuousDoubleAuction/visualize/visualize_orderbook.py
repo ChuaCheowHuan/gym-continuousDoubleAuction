@@ -3,6 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 
+from gym_continuousDoubleAuction.envs.exchg.state_helper import SNAPSHOT_DIM
+
 def visualize_episode_data(json_path='visualize/latest_episode_data.json', agent_id='agent_0'):
     """
     Visualizes price and size changes for the orderbook from episode data.
@@ -33,13 +35,15 @@ def visualize_episode_data(json_path='visualize/latest_episode_data.json', agent
         if agent_id not in obs:
             continue
             
-        # Observation structure: 40 elements
-        # [0:10] Bid Prices
+        # Observation snapshot structure: SNAPSHOT_DIM elements
+        # [0:10]  Bid Prices
         # [10:20] Bid Sizes
         # [20:30] Ask Prices (negated)
         # [30:40] Ask Sizes (negated)
+        # [40]    log_mid
+        # [41]    log1p_spread_ticks
         agent_obs = np.array(obs[agent_id])
-        latest_snapshot = agent_obs[-40:]
+        latest_snapshot = agent_obs[-SNAPSHOT_DIM:]
         
         b_p = latest_snapshot[0:10]
         b_s = latest_snapshot[10:20]

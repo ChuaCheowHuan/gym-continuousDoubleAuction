@@ -249,8 +249,11 @@ class Action_Helper():
         # level_index: 0 to 9 representing levels 1 to 10
         level_idx = price_code 
 
+        # Use unnormalized raw prices array for action price calculation
+        agg_LOB_source = getattr(self, 'agg_LOB_raw', self.agg_LOB)
+
         if side == 'bid':
-            price_array = np.array(self.agg_LOB).reshape(4, 10)[0] # bid prices
+            price_array = np.array(agg_LOB_source).reshape(4, 10)[0] # raw bid prices
             p = price_array[level_idx]
             
             # If level is empty, use ghost logic relative to ref_price
@@ -260,7 +263,7 @@ class Action_Helper():
             set_price = base_price + (offset_multiplier * min_tick)
 
         else: # 'ask'
-            price_array = np.array(self.agg_LOB).reshape(4, 10)[2] # ask prices
+            price_array = np.array(agg_LOB_source).reshape(4, 10)[2] # raw ask prices
             p = abs(price_array[level_idx])
             
             # If level is empty, use ghost logic relative to ref_price

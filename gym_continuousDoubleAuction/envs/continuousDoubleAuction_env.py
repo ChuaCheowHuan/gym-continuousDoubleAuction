@@ -8,6 +8,7 @@ from ray.rllib.env.multi_agent_env import MultiAgentEnv
 
 from .orderbook.orderbook import OrderBook
 from .exchg.exchg_helper import Exchg_Helper
+from .exchg.state_helper import SNAPSHOT_DIM
 from .agent.trader import Trader
 
 from tabulate import tabulate
@@ -63,18 +64,13 @@ class continuousDoubleAuctionEnv(
         self.agents = list(self._agent_ids)
         self.possible_agents = list(self._agent_ids)
        
-        inf = float('inf')
-        neg_inf = float('-inf')
-        obs_row = 4
-        obs_col = 10       
+        # Each snapshot is SNAPSHOT_DIM floats (40 book features + 2 market scalars);
+        # n_hist of them are stacked into one flat observation.
         self.observation_space = {
             f"agent_{i}": gym.spaces.Box(
-                # low=neg_inf, 
-                # high=inf, 
                 low=-np.inf,
-                high=np.inf,                
-                # shape=(obs_row * obs_col,), 
-                shape=(self.n_hist * obs_row * obs_col,), 
+                high=np.inf,
+                shape=(self.n_hist * SNAPSHOT_DIM,),
                 dtype=np.float32
             ) for i in range(self.num_of_agents)
         }
@@ -141,6 +137,7 @@ class continuousDoubleAuctionEnv(
         self.LOB = OrderBook(1, self.tape_display_length) # new limit order book
         #self.LOB = OrderBook(0.25, self.tape_display_length) # new limit order book
         self.agg_LOB = {}
+        self.agg_LOB_raw = {}
         self.agg_LOB_aft = {}
 
         self.next_states = {}
