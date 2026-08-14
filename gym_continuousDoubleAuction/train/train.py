@@ -38,6 +38,8 @@ from gym_continuousDoubleAuction.config_loader import (
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
     continuousDoubleAuctionEnv,
 )
+from gym_continuousDoubleAuction.logging_setup import configure as configure_logging
+from gym_continuousDoubleAuction.logging_setup import get_logger
 from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
     SelfPlayCallback,
 )
@@ -45,6 +47,8 @@ from gym_continuousDoubleAuction.train.policy.policy_handler import (
     CHAMPION_PREFIX,
     create_multi_agent_config,
 )
+
+logger = get_logger("gym_continuousDoubleAuction.train.train")
 
 ENV_NAME = "continuousDoubleAuction-v0"
 
@@ -151,6 +155,14 @@ class TrainConfig:
     champion_weight: float = _default("champion_weight")
     # null disables the per-episode step pickles (a lot of I/O at long episodes).
     episode_data_dir: Optional[str] = _default("episode_data_dir")
+    # Episode-end NAV conservation check. The ledger is Decimal throughout, so
+    # the sum of every agent's NAV equals the cash the system started with, to
+    # the cent; the tolerance only absorbs the float() round trip through the
+    # info dict. strict raises on a violation rather than logging one, because
+    # a broken conservation invariant means the ledger is corrupt and whatever
+    # trains after it is meaningless.
+    nav_tolerance: float = _default("nav_tolerance")
+    strict_nav_check: bool = _default("strict_nav_check")
 
     # --- Run / checkpointing -------------------------------------------------
     # num_iters is a *target* iteration, not an amount: a restored run trains up
@@ -171,7 +183,14 @@ class TrainConfig:
     # checkpoint_dir, which is what a disconnect wants; a path pins one, which
     # is how a run is rolled back past a collapsed league. Requires is_restore.
     restore_path: Optional[str] = _default("restore_path")
+    # Ray's log level, handed to PPOConfig.debugging.
     log_level: str = _default("log_level")
+    # This package's own log level, applied by logging_setup and exported so
+    # remote env runners - separate processes that never run main() - come up
+    # at the same level. Kept apart from Ray's: Ray at INFO is noise, while
+    # this package at INFO is the per-episode NAV table and the per-iteration
+    # league statistics.
+    cda_log_level: str = _default("cda_log_level")
     seed: Optional[int] = _default("seed")
 
     @classmethod
@@ -244,9 +263,9 @@ class TrainConfig:
     def resolved_gpus_per_learner(self) -> float:
         """num_gpus_per_learner, forced to 0 when no CUDA device is present."""
         if self.num_gpus_per_learner and not torch.cuda.is_available():
-            print(
-                f"[train] num_gpus_per_learner={self.num_gpus_per_learner} requested "
-                f"but torch.cuda.is_available() is False - falling back to CPU."
+            logger.warning(
+                "num_gpus_per_learner=%s requested but torch.cuda.is_available() "
+                "is False - falling back to CPU.", self.num_gpus_per_learner,
             )
             return 0.0
         return self.num_gpus_per_learner
@@ -296,6 +315,8 @@ def build_config(cfg: TrainConfig):
         original_opponent_weight=cfg.original_opponent_weight,
         champion_weight=cfg.champion_weight,
         episode_data_dir=cfg.episode_data_dir,
+        nav_tolerance=cfg.nav_tolerance,
+        strict_nav_check=cfg.strict_nav_check,
     )
 
     ppo = (
@@ -430,16 +451,16 @@ def _prune_checkpoints(root: str, keep: int) -> None:
     checkpoints = list_checkpoints(root)
     if any(iteration < 0 for iteration, _ in checkpoints) and root not in _NOTED_OLD_LAYOUT:
         _NOTED_OLD_LAYOUT.add(root)
-        print(
-            f"[train] note: {root} also holds a checkpoint in the old single-directory "
-            f"layout. It is kept as a last-resort restore candidate and is never "
-            f"pruned; delete it by hand once the iter_* saves are trusted."
+        logger.info(
+            "note: %s also holds a checkpoint in the old single-directory "
+            "layout. It is kept as a last-resort restore candidate and is never "
+            "pruned; delete it by hand once the iter_* saves are trusted.", root,
         )
 
     prunable = [path for iteration, path in checkpoints if iteration >= 0]
     for path in prunable[:max(0, len(prunable) - keep)]:
         shutil.rmtree(path, ignore_errors=True)
-        print(f"[train] pruned old checkpoint: {path}")
+        logger.info("pruned old checkpoint: %s", path)
 
 
 def algo_callback(algo) -> Optional[SelfPlayCallback]:
@@ -489,7 +510,7 @@ def _read_league_state(path: str) -> Optional[dict]:
         with open(state_file) as fh:
             return json.load(fh)
     except (OSError, ValueError) as exc:
-        print(f"[train] could not read {state_file}: {exc}")
+        logger.warning("could not read %s: %s", state_file, exc)
         return None
 
 
@@ -515,9 +536,9 @@ def _reconcile_league_state(algo, path: str) -> None:
     """Repair the restored callback's league bookkeeping against the sidecar."""
     callback = algo_callback(algo)
     if callback is None:
-        print(
-            "[train] restored algorithm has no SelfPlayCallback - league state "
-            "cannot be checked. Champion matchmaking will not work."
+        logger.error(
+            "restored algorithm has no SelfPlayCallback - league state cannot "
+            "be checked. Champion matchmaking will not work."
         )
         return
 
@@ -529,16 +550,17 @@ def _reconcile_league_state(algo, path: str) -> None:
 
     repairs = callback.restore_league_state(state, _present_module_ids(algo))
     if not repairs:
-        print(f"[train] league state verified: {callback.champion_count} champion(s)")
+        logger.info(
+            "league state verified: %s champion(s)", callback.champion_count,
+        )
         return
 
-    print("[train] league state repaired against league_state.json:")
-    for repair in repairs:
-        print(f"  - {repair}")
-    print(
-        "  Repairs apply to the driver's matchmaking pool. With num_env_runners > 0 "
-        "the remote runners hold their own pickled mapping fn, so prefer restoring "
-        "from a checkpoint that verifies clean."
+    logger.warning(
+        "league state repaired against league_state.json:\n%s\n"
+        "  Repairs apply to the driver's matchmaking pool. With "
+        "num_env_runners > 0 the remote runners hold their own pickled mapping "
+        "fn, so prefer restoring from a checkpoint that verifies clean.",
+        "\n".join(f"  - {repair}" for repair in repairs),
     )
 
 
@@ -631,12 +653,12 @@ def _check_restored_config(restored, desired) -> None:
         f"  {key}: {was!r} (checkpoint, in effect) != {wants!r} (config, ignored)"
         for key, (was, wants) in sorted(diverged.items())
     )
-    print(
-        "[train] WARNING: restoring keeps the checkpoint's own config. These "
-        f"config values will NOT take effect:\n{detail}\n"
+    logger.warning(
+        "restoring keeps the checkpoint's own config. These config values will "
+        "NOT take effect:\n%s\n"
         "  Restore rebuilds the algorithm from the checkpoint, so only the "
         "driver-side knobs (num_iters, chkpt_freq, chkpt_keep) still apply. To "
-        "train with these values, start a fresh run."
+        "train with these values, start a fresh run.", detail,
     )
 
 
@@ -713,8 +735,8 @@ def build_algo(cfg: TrainConfig):
     ppo, callback_instance = build_config(cfg)
 
     for _iteration, path in reversed(candidates):
-        print(
-            f"[train] restoring from {'pinned ' if pinned else ''}checkpoint: {path}"
+        logger.info(
+            "restoring from %scheckpoint: %s", "pinned " if pinned else "", path,
         )
         try:
             algo = Algorithm.from_checkpoint(path)
@@ -725,9 +747,9 @@ def build_algo(cfg: TrainConfig):
             # from a different one is the last thing the caller wants.
             if pinned:
                 raise
-            print(
-                f"[train] checkpoint unreadable ({type(exc).__name__}: {exc}); "
-                f"falling back to the previous one"
+            logger.warning(
+                "checkpoint unreadable (%s: %s); falling back to the previous one",
+                type(exc).__name__, exc,
             )
             continue
 
@@ -737,16 +759,16 @@ def build_algo(cfg: TrainConfig):
 
         restored_callback = algo_callback(algo)
         if restored_callback is None:
-            print("[train] WARNING: restored algorithm exposes no SelfPlayCallback")
+            logger.warning("restored algorithm exposes no SelfPlayCallback")
         return algo, restored_callback
 
     if cfg.is_restore:
-        print(
-            f"[train] no readable checkpoint under {cfg.checkpoint_dir} - "
-            f"starting from scratch"
+        logger.warning(
+            "no readable checkpoint under %s - starting from scratch",
+            cfg.checkpoint_dir,
         )
     else:
-        print("[train] starting from scratch")
+        logger.info("starting from scratch")
 
     return ppo.build_algo(), callback_instance
 
@@ -781,13 +803,15 @@ def train(cfg: TrainConfig):
     target = start + cfg.num_iters if cfg.num_iters_is_delta else cfg.num_iters
 
     if start:
-        print(f"[train] resuming at iteration {start}, training through {target}")
+        logger.info(
+            "resuming at iteration %s, training through %s", start, target,
+        )
 
     if start >= target:
-        print(
-            f"[train] checkpoint is already at iteration {start}, at or past the "
-            f"target of {target} - nothing to do. Raise num_iters, or set "
-            f"num_iters_is_delta to run {cfg.num_iters} more from here."
+        logger.warning(
+            "checkpoint is already at iteration %s, at or past the target of "
+            "%s - nothing to do. Raise num_iters, or set num_iters_is_delta to "
+            "run %s more from here.", start, target, cfg.num_iters,
         )
         return algo
 
@@ -798,27 +822,31 @@ def train(cfg: TrainConfig):
     for _ in range(target - start):
         result = algo.train()
         iteration = int(result.get("training_iteration", iteration + 1))
-        _print_iteration(iteration, target, result)
+        _log_iteration(iteration, target, result)
 
         if cfg.chkpt_freq and iteration % cfg.chkpt_freq == 0:
             saved_at = iteration
-            print(f"[train] checkpoint at iter {iteration}: "
-                  f"{save_checkpoint(algo, cfg, iteration)}")
+            logger.info(
+                "checkpoint at iter %s: %s",
+                iteration, save_checkpoint(algo, cfg, iteration),
+            )
 
     if saved_at != iteration:
-        print(f"[train] final checkpoint: {save_checkpoint(algo, cfg, iteration)}")
+        logger.info(
+            "final checkpoint: %s", save_checkpoint(algo, cfg, iteration),
+        )
     return algo
 
 
-def _print_iteration(i: int, total: int, result: dict) -> None:
+def _log_iteration(i: int, total: int, result: dict) -> None:
     from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
 
     env_runners = result.get(ENV_RUNNER_RESULTS, {})
     returns = env_runners.get("module_episode_returns_mean", {})
     steps = env_runners.get("num_env_steps_sampled", "n/a")
-    print(
-        f"[train] iter {i}/{total} | env steps sampled: {steps} | "
-        f"module returns: { {k: round(float(v), 1) for k, v in returns.items()} }"
+    logger.info(
+        "iter %s/%s | env steps sampled: %s | module returns: %s",
+        i, total, steps, {k: round(float(v), 1) for k, v in returns.items()},
     )
 
 
@@ -885,14 +913,23 @@ def _parse_args(argv=None) -> TrainConfig:
         default=argparse.SUPPRESS,
         help="Disable per-episode step pickles (large I/O at long episodes).",
     )
+    p.add_argument(
+        "--no-strict-nav-check",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Log an episode-end NAV conservation violation instead of raising "
+             "on it. The nav_conservation_error metric is emitted either way.",
+    )
     args = p.parse_args(argv)
 
     overrides = {
         k: v for k, v in vars(args).items()
-        if k not in ("config", "no_episode_data")
+        if k not in ("config", "no_episode_data", "no_strict_nav_check")
     }
     if getattr(args, "no_episode_data", False):
         overrides["episode_data_dir"] = None
+    if getattr(args, "no_strict_nav_check", False):
+        overrides["strict_nav_check"] = False
     if "restore_path" in overrides:
         # Naming a checkpoint on the command line is unambiguous about intent,
         # so it does not also need --restore. In the config file the two keys
@@ -905,6 +942,13 @@ def _parse_args(argv=None) -> TrainConfig:
 
 def main(argv=None) -> None:
     cfg = _parse_args(argv)
+
+    # Before anything else logs, and before ray.init: `configure` exports the
+    # level so the worker processes Ray is about to start come up at the same
+    # one. force=True because importing this module already configured the
+    # process from the environment or the config default, and the level just
+    # parsed from the command line is the one the user asked for.
+    configure_logging(cfg.cda_log_level, force=True)
 
     # Shared with the notebook, which has to export these before it imports
     # ray. Imported here rather than at module scope: runtime.py reads

@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (216 tests: 203 unit + 13 integration)
+# everything (230 tests: 217 unit + 13 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -45,7 +45,7 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `216 passed`.
+**[verified]** — `230 passed`.
 
 ### File inventory
 
@@ -64,25 +64,27 @@ Counts re-measured with `--collect-only`; the earlier `90` predated the config a
 | `test_observation_history.py` | 3 | Temporal stacking |
 | `test_obs_market_features.py` | 17 | `log_mid`, `log1p_spread_ticks` |
 | `test_reward_logic.py` | 4 | Reward formula components |
-| `test_nav_callback.py` | 2 | Episode-end NAV conservation check |
+| `test_nav_callback.py` | 6 | Episode-end NAV conservation check: raises, tolerance, metric, strict off |
+| `test_logging_setup.py` | 10 | Level resolution and export, handler setup, no `print` in `envs/` or `train/` |
 | `test_probabilistic_mapping.py` | 1 | League matchmaking distribution |
 | `test_config_loading.py` | 14 | `train_config.json` → `TrainConfig` → env |
 | `test_config_sources.py` | 26 | No literal copy of a configured value survives in Python |
 | `test_config_wiring.py` | 11 | Config keys reaching their consumers |
 | `test_runtime_profiles.py` | 23 | `runtime_profiles.json` → hardware sets, platform paths |
 | `test_checkpointing.py` | 40 | Checkpoint retention, restore selection, league state across a save |
-| **unit total** | **203** | |
+| **unit total** | **217** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 
 > **Stale references in older docs.** `test_orderbook.py`, `repro_orderbook_crossed_book.py`,
 > `test_OrderBook.py`, `test_cda_nsp.py` and `test_orderbook_double_delete_order.py` do not exist.
 > The current names are in the table above.
 
-> **Side effect note, now resolved.** Running the suite creates `episode_data/` in the repository
-> root — `test_nav_callback` triggers the league callback's per-episode pickle dump. Both
-> `episode_data` and `gym_continuousDoubleAuction/episode_data` **are** in `.gitignore`, with a
-> comment explaining that the path is resolved relative to the working directory. The older
-> documentation's claim that this shows up as untracked noise no longer applies.
+> **Side effect note, now resolved.** The suite no longer writes `episode_data/` at all:
+> `test_nav_callback` builds its callback with `episode_data_dir=None`, so the per-episode pickle
+> dump never runs. (That dump is where the two committed `episode_data/test_ep_*.pkl` files came
+> from — output of the old tests, not fixtures anything reads.) Both `episode_data` and
+> `gym_continuousDoubleAuction/episode_data` remain in `.gitignore`, since a *training* run still
+> writes there by default.
 
 ---
 
@@ -332,8 +334,8 @@ The suite instantiates a bare `Reward_Helper()` with a `MockTrader`, which works
 ### 6.1 Unit level
 
 `test_probabilistic_mapping.py` (matchmaking distribution) and `test_nav_callback.py`
-(episode-end NAV conservation, both directions) are described in
-[08_self_play_league.md](08_self_play_league.md) §9.
+(episode-end NAV conservation: raising by default, the tolerance, the metric, and the non-strict
+path) are described in [08_self_play_league.md](08_self_play_league.md) §9.
 
 Note `test_probabilistic_mapping.py` is a bare module-level function rather than a class — it was
 already pytest-native before the rest of the suite was converted, and needed no changes. It

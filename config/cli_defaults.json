@@ -5,11 +5,12 @@
 
   "cda_env_rand": {
     "_module": "python -m gym_continuousDoubleAuction.CDA_env_rand",
-    "_note": "Standalone random-agent simulation. It builds an env config directly rather than going through TrainConfig, so these are its own defaults; every env key it does not set falls back to env_defaults.json.",
+    "_note": "Standalone random-agent simulation. It builds an env config directly rather than going through TrainConfig, so these are its own defaults; every env key it does not set falls back to env_defaults.json. log_level null defers to the logging group of tunable_constants.json; --render on its own raises the level to DEBUG, which is where the per-step render writes.",
     "num_agents": 4,
     "max_step": 1000,
     "init_cash": 1000000,
     "is_render": false,
+    "log_level": null,
     "seed": null
   }
 }

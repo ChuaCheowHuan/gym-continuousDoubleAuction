@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import pandas as pd
 
@@ -10,8 +12,11 @@ from .orderbook.orderbook import OrderBook
 from .exchg.exchg_helper import Exchg_Helper
 from .agent.trader import Trader
 from ..config_loader import env_default
+from ..logging_setup import get_logger
 
 from tabulate import tabulate
+
+logger = get_logger(__name__)
 
 # The exchange environment
 class continuousDoubleAuctionEnv(
@@ -294,12 +299,19 @@ class continuousDoubleAuctionEnv(
 
     # render
     def render(self):
-        if self.is_render == True:
+        # Two gates, not one. `is_render` is the caller's intent; the DEBUG
+        # check is whether the output has anywhere to go. `_render` builds
+        # tabulate tables and pandas DataFrames of the whole book, the tape and
+        # every account, on every step - none of which is worth constructing
+        # for a logger that will drop it.
+        if self.is_render == True and logger.isEnabledFor(logging.DEBUG):
             #if self.t_step % 300 == 0:
             self._render()
 
     def _render(self):
-        print('\n************************************************** t_step = {} **************************************************\n'.format(self.t_step))
+        logger.debug(
+            '*'*50 + ' t_step = %s ' + '*'*50, self.t_step,
+        )
 
         self.print_table("Model actions:\n", self.model_actions)
         self.print_table("Formatted actions acceptable by LOB:\n", self.LOB_actions)
@@ -308,16 +320,15 @@ class continuousDoubleAuctionEnv(
         self.LOB_actions = None
         self.shuffled_actions = None
 
-        #print('\nnext_states:\n', self.next_states)
-        print('\nrewards:\n', self.rewards)
-        print('\nterminateds:\n', self.terminateds)  # Updated from dones
-        print('\ntruncateds:\n', self.truncateds)    # New
-        print('\ninfos:\n', self.infos)
+        logger.debug(
+            'rewards:\n%s\nterminateds:\n%s\ntruncateds:\n%s\ninfos:\n%s',
+            self.rewards, self.terminateds, self.truncateds, self.infos,
+        )
 
         self.print_table("\nagg LOB @ t-1\n", self.agg_LOB)
         self.print_table("\nagg LOB @ t\n", self.agg_LOB_aft)
 
-        print('\nLOB:\n', self.LOB) # print entire LOB with tape
+        logger.debug('LOB:\n%s', self.LOB)  # the entire LOB, with tape
 
         self.print_trades_all_seq(self.seq_trades)
         self.seq_trades = []
@@ -329,7 +340,10 @@ class continuousDoubleAuctionEnv(
         self.print_mark_to_mkt("mark_to_mkt profit@t:")
 
         self.print_accs("\nAccounts:\n")
-        print('\ntotal_sys_profit = {}; total_sys_nav = {}\n'.format(self.total_sys_profit(), self.total_sys_nav()))
+        logger.debug(
+            'total_sys_profit = %s; total_sys_nav = %s',
+            self.total_sys_profit(), self.total_sys_nav(),
+        )
 
     def close(self):
         pass

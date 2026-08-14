@@ -50,16 +50,22 @@
   },
 
   "league_self_play": {
+    "_note": "nav_tolerance is the absolute cash tolerance for the episode-end NAV conservation check: the ledger is Decimal end to end, so conservation holds to the cent and the tolerance only absorbs the float() round trip through the info dict. Widen it only for a change that legitimately removes cash from the system, such as fees. strict_nav_check true raises on a violation, because a broken conservation invariant means the ledger is corrupt and everything trained after it is meaningless; false downgrades it to an ERROR log plus the nav_conservation_error metric, for a run that would rather keep going and be inspected afterwards.",
+
     "std_dev_multiplier": 0.1,
     "max_champions": 8,
     "min_iterations_between_champions": 2,
     "original_opponent_weight": 1.0,
     "champion_weight": 3.0,
-    "episode_data_dir": "episode_data"
+    "episode_data_dir": "episode_data",
+    "nav_tolerance": 1e-06,
+    "strict_nav_check": true
   },
 
   "run": {
-    "_note": "num_iters is a target, not an amount: a restored run trains up to iteration num_iters, so a 16-iteration run that resumes at 9 does 7 more. Set num_iters_is_delta true for the old behaviour, where num_iters is how many iterations to run from wherever the restore landed. restore_path pins which checkpoint to resume from; null takes the newest under log_base_dir/chkpt, which is what a disconnect wants. It requires is_restore, and is deliberately recorded here rather than passed at the call site, so which checkpoint a run continued from is written down beside the run.",
+    "_note": "log_level is Ray's, passed to PPOConfig.debugging; cda_log_level is this package's own, applied by logging_setup and exported as $CDA_LOG_LEVEL so Ray's worker processes pick it up. They are separate because Ray at INFO is noise while this package at INFO is the per-episode NAV table and the per-iteration league statistics - the output a run is meant to produce. Set cda_log_level to DEBUG for the per-step render and account tables, WARNING for a quiet run.",
+
+    "_note_run": "num_iters is a target, not an amount: a restored run trains up to iteration num_iters, so a 16-iteration run that resumes at 9 does 7 more. Set num_iters_is_delta true for the old behaviour, where num_iters is how many iterations to run from wherever the restore landed. restore_path pins which checkpoint to resume from; null takes the newest under log_base_dir/chkpt, which is what a disconnect wants. It requires is_restore, and is deliberately recorded here rather than passed at the call site, so which checkpoint a run continued from is written down beside the run.",
 
     "num_iters": 16,
     "num_iters_is_delta": false,
@@ -69,6 +75,7 @@
     "is_restore": false,
     "restore_path": null,
     "log_level": "WARN",
+    "cda_log_level": "INFO",
     "seed": null
   }
 }

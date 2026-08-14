@@ -175,16 +175,19 @@ helpers already exist in `train/helper/helper.py`, unused.
 `ord_imb`.
 → [05 §7.3](05_observation_space.md#73-the-tape-loop-is-dead-code--there-is-no-trade-flow-information-at-all)
 
-### S2-8 · No logging framework; the callback prints 42 diagnostics per episode **[verified]**
+### S2-8 · No logging framework; the callback prints 42 diagnostics per episode — **fixed**
 
-Zero `import logging` in the repository; ~86 `print()` calls in `envs/` + `train/`. With
-`num_env_runners > 0` every remote worker prints independently, with no level filter, no worker
-attribution, and no off switch. Only three custom values reach TensorBoard. The NAV-conservation
-check — a **hard ledger invariant** — prints `FAILED` rather than raising or emitting a metric.
+*Was:* zero `import logging`; ~86 `print()` calls in `envs/` + `train/`; every remote worker
+printing independently with no level filter, no attribution and no off switch; the
+NAV-conservation check — a **hard ledger invariant** — printing `FAILED` rather than raising.
 
-**Fix.** `logging` for diagnostics; `metrics_logger.log_value` for anything worth plotting; raise
-on conservation violation.
-→ [11 §4](11_logging_and_observability.md#4-recommended-minimum)
+*Now:* all of `envs/` and `train/` reports through `logging_setup.get_logger`, at levels, with the
+pid in the format and the level exported to worker processes; a violation raises by default and
+emits `nav_conservation_error` either way. `test_logging_setup.py` fails the build if a `print`
+comes back.
+
+Still open, tracked in [11 §4](11_logging_and_observability.md#4-recommended-additions): only
+three custom values reach TensorBoard, and no per-iteration history is written to disk.
 
 ---
 
@@ -360,7 +363,7 @@ quote" has no fixed meaning across steps.
 
 | ID | Finding |
 |---|---|
-| S4-1 | ~270 LOC of dead telemetry in `train/`: the `g_store` trio (`store_handler`, `log_handler`, `plot_handler`) depends on a detached Ray actor that is **never created** **[verified]**; `helper.py`'s order-imbalance utilities are unused (and would be valuable as observation features — S2-7) |
+| S4-1 | **Partly fixed.** The `g_store` trio (`store_handler`, `log_handler`, `plot_handler`, ~270 LOC) has been deleted; `helper.py`'s order-imbalance utilities are still unused (and would be valuable as observation features — S2-7) |
 | S4-2 | `envs/agent/random_agent.py` returns the **old 5-tuple** action format; superseded by `RandomRLModule` but still in `Trader`'s MRO **[verified]** |
 | S4-3 | Dead methods: `State_Helper.state_diff`, `Action_Helper._set_side/_set_type/_higher/_lower`, `OrderBook.__str__0`, `Order.__str__0`, `OrderList.to_str`; `max_price` is a parameter of `_set_price` that its body never reads |
 | S4-4 | ~200 LOC of commented-out code (`continuousDoubleAuction_env.py:100-133,178-207`; `orderbook.py:260-318`; `action_helper.py:23-36`) |
@@ -472,8 +475,8 @@ Roughly two to three weeks of work, ordered so each step unblocks the next.
 15. Per-episode desk metrics through `metrics_logger` (S3-9)
 
 **Phase 5 — engineering hygiene (≈3 days)**
-16. `logging` replaces `print`; conservation violation raises (S2-8)
+16. ~~`logging` replaces `print`; conservation violation raises (S2-8)~~ — **done**
 17. Fix `install_requires`; drop `six`, `sklearn` and the unused `import ray` (S3-6)
 18. `sys.exit` → `raise ValueError` (S3-7)
-19. Delete dead code (S4-1..4) — the `build_algo` restore path (S3-8) is done
+19. Delete dead code (S4-1..4) — the `g_store` trio (S4-1) and the `build_algo` restore path (S3-8) are done
 20. Add `ruff` / `black` / `pre-commit` / `pytest-cov`

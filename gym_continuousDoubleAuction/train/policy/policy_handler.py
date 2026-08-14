@@ -34,6 +34,7 @@ from ray.rllib.core.rl_module.multi_rl_module import MultiRLModuleSpec
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 
 from gym_continuousDoubleAuction.config_loader import constants
+from gym_continuousDoubleAuction.logging_setup import get_logger
 from gym_continuousDoubleAuction.train.model.model_handler import (
     RandomRLModule,
     default_model_config,
@@ -43,6 +44,8 @@ from gym_continuousDoubleAuction.train.model.model_handler import (
 # module_id_prefixes. The callback relies on these prefixes to tell baseline
 # opponents (weight `original_opponent_weight`) from champion snapshots
 # (weight `champion_weight`) when sampling the opponent pool.
+logger = get_logger(__name__)
+
 _PREFIXES = constants("module_id_prefixes")
 POLICY_PREFIX = _PREFIXES["policy_prefix"]
 CHAMPION_PREFIX = _PREFIXES["champion_prefix"]
@@ -152,11 +155,10 @@ def create_multi_agent_config(
     policies = set(spec.rl_module_specs.keys())
     policies_to_train = trainable_policy_ids(num_trained_agents)
 
-    print(f"[PolicyHandler] modules: {sorted(policies)}")
-    print(f"[PolicyHandler] trainable: {policies_to_train}")
-    print(
-        f"[PolicyHandler] frozen random baselines: "
-        f"{baseline_policy_ids(num_agents, num_trained_agents)}"
+    logger.info(
+        "modules: %s | trainable: %s | frozen random baselines: %s",
+        sorted(policies), policies_to_train,
+        baseline_policy_ids(num_agents, num_trained_agents),
     )
     return policies, policies_to_train, spec
 

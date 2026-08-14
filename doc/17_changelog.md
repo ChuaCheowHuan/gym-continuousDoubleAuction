@@ -468,3 +468,43 @@ league no longer means deleting directories.
 checkpoints in [16 §16.8.1](16_verification_log.md).
 
 See [18_configuration.md](18_configuration.md) §5.1–5.2 and [20_colab.md](20_colab.md) §20.5.
+
+---
+
+### Logging and the conservation invariant
+
+**`logging` replaces `print`** (S2-8). There was no logging framework at all: ~86 `print()` calls
+across `envs/` and `train/`, 42 in the self-play callback alone, and with `num_env_runners > 0`
+every remote worker wrote all of them into one stream with no level filter, no attribution and no
+way to turn them off short of editing the source.
+
+Everything now reports through
+[`logging_setup.get_logger`](../gym_continuousDoubleAuction/logging_setup.py), at levels: `DEBUG`
+for per-step detail (the env render, account and LOB tables), `INFO` for per-episode and
+per-iteration events, `WARNING` and `ERROR` for the rest. The format carries the pid, so
+interleaved worker output is separable. `cda_log_level` in `train_config.json` sets the level and
+is exported as `$CDA_LOG_LEVEL`, which is how it reaches Ray's worker processes — they are
+separate interpreters that never run `main()`. It is kept distinct from Ray's own `log_level`.
+
+Two consequences worth knowing: the env's per-step render is now gated on DEBUG as well as
+`is_render`, so a bare env no longer dumps the whole book on every step at the default level (the
+random runner's `--render` raises the level itself); and entry points name their loggers
+explicitly, because `python -m` sets `__name__` to `"__main__"`, which is not under the package
+logger and would have dropped every INFO line.
+
+**A NAV conservation violation raises.** The check compares the sum of every agent's NAV against
+the cash the system started with — a hard ledger invariant — and reported a break by printing
+`FAILED` into a stream nobody read. It now emits `nav_conservation_error` through
+`metrics_logger` whether or not the invariant held, logs at ERROR when it did not, and raises
+unless `strict_nav_check` is off. The tolerance is configurable (`nav_tolerance`) for a future
+change that legitimately removes cash from the system, such as fees.
+
+**The `g_store` trio was deleted** (S4-1): `train/storage/store_handler.py`,
+`train/logger/log_handler.py` and `train/plotter/plot_handler.py`, ~270 LOC depending on a
+detached Ray actor that was never created anywhere, so every entry point into them would have
+raised at call time. The orphaned `plot_defaults` config group went with them.
+
+`test_logging_setup.py` (10 tests) covers level resolution and export, handler setup, and fails
+the build if a `print` reappears in `envs/` or `train/`; `test_nav_callback.py` grew from 2 tests
+that asserted nothing to 6 that assert the behaviour above. See
+[11_logging_and_observability.md](11_logging_and_observability.md).
