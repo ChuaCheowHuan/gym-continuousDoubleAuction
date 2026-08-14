@@ -21,8 +21,9 @@ import argparse
 import dataclasses
 import json
 import os
+import shutil
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import ray
 import torch
@@ -41,6 +42,7 @@ from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback im
     SelfPlayCallback,
 )
 from gym_continuousDoubleAuction.train.policy.policy_handler import (
+    CHAMPION_PREFIX,
     create_multi_agent_config,
 )
 
@@ -151,10 +153,24 @@ class TrainConfig:
     episode_data_dir: Optional[str] = _default("episode_data_dir")
 
     # --- Run / checkpointing -------------------------------------------------
+    # num_iters is a *target* iteration, not an amount: a restored run trains up
+    # to it, so resuming a 16-iteration run at 9 does 7 more. That keeps the
+    # total length of a run independent of how many times it was interrupted.
+    # num_iters_is_delta restores the old reading - run num_iters more from
+    # wherever the restore landed - for anyone who wants to extend a finished run.
     num_iters: int = _default("num_iters")
+    num_iters_is_delta: bool = _default("num_iters_is_delta")
     chkpt_freq: int = _default("chkpt_freq")
+    # How many `iter_*` checkpoints to retain. Every save used to overwrite one
+    # directory, so a run had exactly one recoverable state and no way back from
+    # a league that collapsed. <= 0 keeps all of them.
+    chkpt_keep: int = _default("chkpt_keep")
     log_base_dir: str = _default("log_base_dir")
     is_restore: bool = _default("is_restore")
+    # Which checkpoint to resume from. null takes the newest readable one under
+    # checkpoint_dir, which is what a disconnect wants; a path pins one, which
+    # is how a run is rolled back past a collapsed league. Requires is_restore.
+    restore_path: Optional[str] = _default("restore_path")
     log_level: str = _default("log_level")
     seed: Optional[int] = _default("seed")
 
@@ -200,6 +216,7 @@ class TrainConfig:
 
     @property
     def checkpoint_dir(self) -> str:
+        """Root of the checkpoint tree. Individual saves are `iter_*` beneath it."""
         return os.path.abspath(os.path.join(self.log_base_dir, "chkpt"))
 
     @property
@@ -322,19 +339,416 @@ def build_config(cfg: TrainConfig):
     return ppo, callback_instance
 
 
+# --- Checkpoint layout -------------------------------------------------------
+#
+# Each save goes into its own `iter_<n>` directory under `checkpoint_dir`, and
+# the newest `chkpt_keep` of them are kept. Every save used to be written to
+# `chkpt/` itself, which gave a run exactly one recoverable state: a league that
+# collapsed at iteration 12 could not be rolled back to 8, and a save
+# interrupted partway - the thing checkpointing exists to survive - destroyed
+# the only copy.
+#
+# A save is staged in `<dir>.tmp` and renamed into place, so an interrupted one
+# leaves a `.tmp` directory the scanner skips rather than a half-written
+# checkpoint that looks complete.
+
+CHECKPOINT_PREFIX = "iter_"
+CHECKPOINT_TMP_SUFFIX = ".tmp"
+
+#: Champion bookkeeping, written beside each checkpoint. See `_write_league_state`.
+LEAGUE_STATE_FILE = "league_state.json"
+
+#: Checkpoint roots already reported as holding an old-layout checkpoint, so the
+#: note is printed once per run rather than once per save.
+_NOTED_OLD_LAYOUT = set()
+
+
+def _is_checkpoint(path: str) -> bool:
+    return os.path.isfile(os.path.join(path, "rllib_checkpoint.json"))
+
+
+def list_checkpoints(root: str) -> List[Tuple[int, str]]:
+    """Every readable checkpoint under `root`, oldest first, as (iteration, path).
+
+    A checkpoint written by the old single-directory layout sits in `root`
+    itself. It is reported with iteration -1 so it sorts oldest: still usable on
+    a box that has one, never preferred over a save whose iteration is known.
+    """
+    found: List[Tuple[int, str]] = []
+    if not os.path.isdir(root):
+        return found
+
+    if _is_checkpoint(root):
+        found.append((-1, root))
+
+    for name in sorted(os.listdir(root)):
+        if not name.startswith(CHECKPOINT_PREFIX) or name.endswith(CHECKPOINT_TMP_SUFFIX):
+            continue
+        path = os.path.join(root, name)
+        try:
+            iteration = int(name[len(CHECKPOINT_PREFIX):])
+        except ValueError:
+            continue
+        if _is_checkpoint(path):
+            found.append((iteration, path))
+
+    return sorted(found)
+
+
+def save_checkpoint(algo, cfg: TrainConfig, iteration: int) -> str:
+    """Save `algo` as `iter_<iteration>`, then prune to `cfg.chkpt_keep`."""
+    root = cfg.checkpoint_dir
+    os.makedirs(root, exist_ok=True)
+
+    final = os.path.join(root, f"{CHECKPOINT_PREFIX}{iteration:05d}")
+    staging = final + CHECKPOINT_TMP_SUFFIX
+
+    for stale in (staging, final):
+        # `final` exists when a restored run reaches an iteration it already
+        # saved; `staging` when a previous save was interrupted.
+        if os.path.exists(stale):
+            shutil.rmtree(stale, ignore_errors=True)
+
+    algo.save(staging)
+    _write_league_state(staging, algo, iteration)
+    os.rename(staging, final)
+
+    _prune_checkpoints(root, cfg.chkpt_keep)
+    return final
+
+
+def _prune_checkpoints(root: str, keep: int) -> None:
+    """Delete all but the newest `keep` saves. <= 0 keeps everything.
+
+    Only `iter_*` directories are pruned. A checkpoint left in `root` by the old
+    layout is another tool's data as far as this function is concerned, so it is
+    reported once and left alone.
+    """
+    if not keep or keep <= 0:
+        return
+
+    checkpoints = list_checkpoints(root)
+    if any(iteration < 0 for iteration, _ in checkpoints) and root not in _NOTED_OLD_LAYOUT:
+        _NOTED_OLD_LAYOUT.add(root)
+        print(
+            f"[train] note: {root} also holds a checkpoint in the old single-directory "
+            f"layout. It is kept as a last-resort restore candidate and is never "
+            f"pruned; delete it by hand once the iter_* saves are trusted."
+        )
+
+    prunable = [path for iteration, path in checkpoints if iteration >= 0]
+    for path in prunable[:max(0, len(prunable) - keep)]:
+        shutil.rmtree(path, ignore_errors=True)
+        print(f"[train] pruned old checkpoint: {path}")
+
+
+def algo_callback(algo) -> Optional[SelfPlayCallback]:
+    """The SelfPlayCallback instance the Algorithm is actually running.
+
+    `.callbacks(lambda: callback_instance)` means the algorithm holds the same
+    object the mapping fn closes over - but after a restore that object is
+    RLlib's unpickled copy, not the one `build_config` just made. Anything that
+    wants the live champion pool has to ask the algorithm for it.
+    """
+    callbacks = getattr(algo, "callbacks", None)
+    if not isinstance(callbacks, (list, tuple)):
+        callbacks = [callbacks]
+    for callback in callbacks:
+        if isinstance(callback, SelfPlayCallback):
+            return callback
+    return None
+
+
+def _write_league_state(path: str, algo, iteration: int) -> None:
+    """Write champion bookkeeping beside a checkpoint, as plain JSON.
+
+    The champion *modules* are in the checkpoint proper. Their metadata -
+    history, the monotonic ID counter, the matchmaking pool - lives only inside
+    the cloudpickled callback, so it survives exactly as long as
+    `SelfPlayCallback` stays unpickle-compatible. Rename the class, change its
+    `__init__`, or resume across a Ray upgrade, and the modules come back while
+    the league that indexes them does not: the counter restarts and mints a
+    second `champion_1`. This sidecar is the readable copy that
+    `_reconcile_league_state` repairs from.
+    """
+    callback = algo_callback(algo)
+    if callback is None:
+        return
+
+    state = callback.league_state()
+    state["training_iteration"] = iteration
+    with open(os.path.join(path, LEAGUE_STATE_FILE), "w") as fh:
+        json.dump(state, fh, indent=2)
+
+
+def _read_league_state(path: str) -> Optional[dict]:
+    state_file = os.path.join(path, LEAGUE_STATE_FILE)
+    if not os.path.isfile(state_file):
+        return None
+    try:
+        with open(state_file) as fh:
+            return json.load(fh)
+    except (OSError, ValueError) as exc:
+        print(f"[train] could not read {state_file}: {exc}")
+        return None
+
+
+def _present_module_ids(algo) -> Optional[set]:
+    """ModuleIDs actually present on an EnvRunner, or None if unobtainable."""
+    try:
+        if algo.env_runner is not None:
+            return set(algo.env_runner.module.keys())
+    except Exception:
+        pass
+    try:
+        per_runner = algo.env_runner_group.foreach_env_runner(
+            lambda env_runner: list(env_runner.module.keys())
+        )
+        if per_runner:
+            return set(per_runner[0])
+    except Exception:
+        pass
+    return None
+
+
+def _reconcile_league_state(algo, path: str) -> None:
+    """Repair the restored callback's league bookkeeping against the sidecar."""
+    callback = algo_callback(algo)
+    if callback is None:
+        print(
+            "[train] restored algorithm has no SelfPlayCallback - league state "
+            "cannot be checked. Champion matchmaking will not work."
+        )
+        return
+
+    state = _read_league_state(path)
+    if state is None:
+        # Pre-sidecar checkpoints, and the old layout, have nothing to check
+        # against. The pickled callback is all there is.
+        return
+
+    repairs = callback.restore_league_state(state, _present_module_ids(algo))
+    if not repairs:
+        print(f"[train] league state verified: {callback.champion_count} champion(s)")
+        return
+
+    print("[train] league state repaired against league_state.json:")
+    for repair in repairs:
+        print(f"  - {repair}")
+    print(
+        "  Repairs apply to the driver's matchmaking pool. With num_env_runners > 0 "
+        "the remote runners hold their own pickled mapping fn, so prefer restoring "
+        "from a checkpoint that verifies clean."
+    )
+
+
+# --- Config vs. checkpoint ---------------------------------------------------
+#
+# `Algorithm.from_checkpoint` rebuilds everything from the config stored in the
+# checkpoint and discards the PPOConfig just built from `config/train_config.json`.
+# Since resuming is documented as "edit train_config.json, set is_restore true",
+# that is the same file holding lr, the reward coefficients and num_agents - so
+# edits made in the same pass as the restore flag were silently ignored. These
+# make the divergence loud, and fatal where it would invalidate the weights.
+
+#: Keys whose value the restored weights depend on. A change here is a hard error.
+STRUCTURAL_CONFIG_KEYS = (
+    "policies",
+    "policies_to_train",
+    "env_config.num_of_agents",
+    "env_config.n_hist",
+)
+
+
+def _config_fingerprint(config) -> dict:
+    """The comparable subset of an AlgorithmConfig, flattened to scalars."""
+    missing = object()
+    fingerprint = {}
+
+    for key in (
+        "lr",
+        "num_epochs",
+        "minibatch_size",
+        "train_batch_size_per_learner",
+        "num_env_runners",
+        "num_envs_per_env_runner",
+        "num_learners",
+        "num_gpus_per_learner",
+    ):
+        value = getattr(config, key, missing)
+        if value is not missing:
+            fingerprint[key] = value
+
+    for key in ("policies", "policies_to_train"):
+        value = getattr(config, key, missing)
+        # Only the ids matter, and only the ones the config asks for: champions
+        # are added to `policies` during a run, so a restored config legitimately
+        # holds more of them than a freshly built one. `policies_to_train` can be
+        # a callable, which has nothing comparable about it.
+        if value is not missing and isinstance(value, (list, tuple, set, dict)):
+            fingerprint[key] = sorted(
+                m for m in value if not str(m).startswith(CHAMPION_PREFIX)
+            )
+
+    for key, value in (getattr(config, "env_config", None) or {}).items():
+        fingerprint[f"env_config.{key}"] = value
+
+    return fingerprint
+
+
+def _check_restored_config(restored, desired) -> None:
+    """Report config keys the restore is about to ignore; raise on structural ones.
+
+    Raises:
+        ValueError: a structural key differs, so the checkpoint's weights do not
+            fit the requested configuration.
+    """
+    old = _config_fingerprint(restored)
+    new = _config_fingerprint(desired)
+
+    diverged = {
+        key: (old[key], new[key])
+        for key in set(old) & set(new)
+        if old[key] != new[key]
+    }
+    if not diverged:
+        return
+
+    structural = {k: v for k, v in diverged.items() if k in STRUCTURAL_CONFIG_KEYS}
+    if structural:
+        detail = "\n".join(
+            f"  {key}: checkpoint has {was!r}, config asks for {wants!r}"
+            for key, (was, wants) in sorted(structural.items())
+        )
+        raise ValueError(
+            "Cannot restore: the configuration changes the shape of the problem "
+            f"the checkpoint was trained on.\n{detail}\n"
+            "The restored weights do not fit. Either revert these keys, or start "
+            "a fresh run (is_restore false, or a new log_base_dir)."
+        )
+
+    detail = "\n".join(
+        f"  {key}: {was!r} (checkpoint, in effect) != {wants!r} (config, ignored)"
+        for key, (was, wants) in sorted(diverged.items())
+    )
+    print(
+        "[train] WARNING: restoring keeps the checkpoint's own config. These "
+        f"config values will NOT take effect:\n{detail}\n"
+        "  Restore rebuilds the algorithm from the checkpoint, so only the "
+        "driver-side knobs (num_iters, chkpt_freq, chkpt_keep) still apply. To "
+        "train with these values, start a fresh run."
+    )
+
+
+def restore_candidates(cfg: TrainConfig) -> List[Tuple[int, str]]:
+    """The checkpoints a restore may use, oldest first.
+
+    Without `restore_path` that is every checkpoint under `checkpoint_dir`, so
+    an unreadable newest one can fall back to the one before it. With
+    `restore_path` it is exactly the one checkpoint named, because falling back
+    from a pinned checkpoint would train from something other than what was
+    asked for.
+
+    Raises:
+        ValueError: `restore_path` is set without `is_restore`, or does not name
+            a checkpoint directory.
+    """
+    if cfg.restore_path and not cfg.is_restore:
+        raise ValueError(
+            f"restore_path is set to {cfg.restore_path!r} but is_restore is false, "
+            f"so the run would start from scratch and ignore it. Set is_restore "
+            f"true to resume from that checkpoint, or restore_path to null to "
+            f"start fresh."
+        )
+
+    if not cfg.is_restore:
+        return []
+
+    if not cfg.restore_path:
+        return list_checkpoints(cfg.checkpoint_dir)
+
+    path = os.path.abspath(cfg.restore_path)
+    if not _is_checkpoint(path):
+        available = [p for _i, p in reversed(list_checkpoints(cfg.checkpoint_dir))]
+        listing = (
+            "\n".join(f"  {p}" for p in available) if available
+            else f"  (none under {cfg.checkpoint_dir})"
+        )
+        raise ValueError(
+            f"restore_path {path} is not a checkpoint directory - it has no "
+            f"rllib_checkpoint.json. Name one save, not the directory holding "
+            f"them. Available, newest first:\n{listing}"
+        )
+
+    return [(_checkpoint_iteration(path), path)]
+
+
+def _checkpoint_iteration(path: str) -> int:
+    """The iteration a checkpoint directory's name encodes, or -1 if it does not."""
+    name = os.path.basename(os.path.normpath(path))
+    if name.startswith(CHECKPOINT_PREFIX):
+        try:
+            return int(name[len(CHECKPOINT_PREFIX):])
+        except ValueError:
+            pass
+    return -1
+
+
 def build_algo(cfg: TrainConfig):
-    """Build (or restore) the Algorithm."""
+    """Build (or restore) the Algorithm.
+
+    Returns:
+        (algorithm, callback). On a restore the callback is the algorithm's own
+        unpickled instance - the one holding the restored champion pool. It is
+        None only if the restored algorithm has no SelfPlayCallback at all. This
+        used to return the freshly built instance instead, which trained fine
+        (the algorithm uses its own) but reported an empty champion history to
+        anything that inspected it.
+    """
+    # Resolved before build_config, so a bad restore_path fails immediately
+    # rather than after an env build and a module spec.
+    candidates = restore_candidates(cfg)
+    pinned = bool(cfg.restore_path)
+
     ppo, callback_instance = build_config(cfg)
 
-    if cfg.is_restore and os.path.exists(cfg.checkpoint_dir):
-        print(f"[train] restoring from checkpoint: {cfg.checkpoint_dir}")
-        algo = Algorithm.from_checkpoint(cfg.checkpoint_dir)
+    for _iteration, path in reversed(candidates):
+        print(
+            f"[train] restoring from {'pinned ' if pinned else ''}checkpoint: {path}"
+        )
+        try:
+            algo = Algorithm.from_checkpoint(path)
+        except Exception as exc:
+            # A save killed partway through, or one written by an incompatible
+            # version. Fall back to the one before it rather than losing the run -
+            # unless this checkpoint was named, in which case quietly training
+            # from a different one is the last thing the caller wants.
+            if pinned:
+                raise
+            print(
+                f"[train] checkpoint unreadable ({type(exc).__name__}: {exc}); "
+                f"falling back to the previous one"
+            )
+            continue
+
         _fix_checkpoint_optimizer_betas(algo)
+        _check_restored_config(algo.config, ppo)
+        _reconcile_league_state(algo, path)
+
+        restored_callback = algo_callback(algo)
+        if restored_callback is None:
+            print("[train] WARNING: restored algorithm exposes no SelfPlayCallback")
+        return algo, restored_callback
+
+    if cfg.is_restore:
+        print(
+            f"[train] no readable checkpoint under {cfg.checkpoint_dir} - "
+            f"starting from scratch"
+        )
     else:
         print("[train] starting from scratch")
-        algo = ppo.build_algo()
 
-    return algo, callback_instance
+    return ppo.build_algo(), callback_instance
 
 
 def _fix_checkpoint_optimizer_betas(algo) -> None:
@@ -353,21 +767,46 @@ def _fix_checkpoint_optimizer_betas(algo) -> None:
 
 
 def train(cfg: TrainConfig):
-    """Run the full training loop. Returns the trained Algorithm."""
+    """Run the full training loop. Returns the trained Algorithm.
+
+    Iteration numbers are the algorithm's own, which a restore brings back with
+    the weights, so `num_iters` is a target: a run resumed at iteration 9 of 16
+    does 7 more, not 16 more, and the total length of a run no longer depends on
+    how many times it was interrupted. `num_iters_is_delta` opts back into
+    counting from wherever the restore landed.
+    """
     algo, _callback = build_algo(cfg)
+
+    start = int(algo.iteration)
+    target = start + cfg.num_iters if cfg.num_iters_is_delta else cfg.num_iters
+
+    if start:
+        print(f"[train] resuming at iteration {start}, training through {target}")
+
+    if start >= target:
+        print(
+            f"[train] checkpoint is already at iteration {start}, at or past the "
+            f"target of {target} - nothing to do. Raise num_iters, or set "
+            f"num_iters_is_delta to run {cfg.num_iters} more from here."
+        )
+        return algo
 
     os.makedirs(cfg.checkpoint_dir, exist_ok=True)
 
-    for i in range(cfg.num_iters):
+    iteration = start
+    saved_at = None
+    for _ in range(target - start):
         result = algo.train()
-        _print_iteration(i + 1, cfg.num_iters, result)
+        iteration = int(result.get("training_iteration", iteration + 1))
+        _print_iteration(iteration, target, result)
 
-        if cfg.chkpt_freq and (i + 1) % cfg.chkpt_freq == 0:
-            path = algo.save(cfg.checkpoint_dir)
-            print(f"[train] checkpoint at iter {i + 1}: {path}")
+        if cfg.chkpt_freq and iteration % cfg.chkpt_freq == 0:
+            saved_at = iteration
+            print(f"[train] checkpoint at iter {iteration}: "
+                  f"{save_checkpoint(algo, cfg, iteration)}")
 
-    final = algo.save(cfg.checkpoint_dir)
-    print(f"[train] final checkpoint: {final}")
+    if saved_at != iteration:
+        print(f"[train] final checkpoint: {save_checkpoint(algo, cfg, iteration)}")
     return algo
 
 
@@ -414,6 +853,29 @@ def _parse_args(argv=None) -> TrainConfig:
     p.add_argument("--envs-per-runner", type=int, dest="num_envs_per_env_runner", default=argparse.SUPPRESS)
     p.add_argument("--gpus-per-learner", type=float, dest="num_gpus_per_learner", default=argparse.SUPPRESS)
     p.add_argument("--restore", action="store_true", dest="is_restore", default=argparse.SUPPRESS)
+    p.add_argument(
+        "--from-checkpoint",
+        type=str,
+        dest="restore_path",
+        default=argparse.SUPPRESS,
+        help="Resume from this checkpoint directory (one iter_* save, not the "
+             "directory holding them) instead of the newest. Implies --restore.",
+    )
+    p.add_argument("--chkpt-freq", type=int, default=argparse.SUPPRESS)
+    p.add_argument(
+        "--chkpt-keep",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="How many iter_* checkpoints to retain (<= 0 keeps all).",
+    )
+    p.add_argument(
+        "--iters-is-delta",
+        action="store_true",
+        dest="num_iters_is_delta",
+        default=argparse.SUPPRESS,
+        help="Treat --iters as iterations to run from a restore point, rather "
+             "than the iteration to train through.",
+    )
     p.add_argument("--log-base-dir", type=str, default=argparse.SUPPRESS)
     p.add_argument("--log-level", type=str, default=argparse.SUPPRESS)
     p.add_argument("--seed", type=int, default=argparse.SUPPRESS)
@@ -431,6 +893,11 @@ def _parse_args(argv=None) -> TrainConfig:
     }
     if getattr(args, "no_episode_data", False):
         overrides["episode_data_dir"] = None
+    if "restore_path" in overrides:
+        # Naming a checkpoint on the command line is unambiguous about intent,
+        # so it does not also need --restore. In the config file the two keys
+        # must agree - see restore_candidates.
+        overrides.setdefault("is_restore", True)
 
     base = TrainConfig.from_json(args.config) if args.config else TrainConfig()
     return dataclasses.replace(base, **overrides)

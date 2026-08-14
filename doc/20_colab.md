@@ -130,7 +130,7 @@ The Colab platform entry splits the two output roots deliberately:
 
 | Output | Goes to | Survives a disconnect |
 |---|---|---|
-| `results/chkpt` — checkpoints, every 2 iterations | the Drive-backed repo | **yes** |
+| `results/chkpt` — the newest 3 checkpoints, saved every 2 iterations | the Drive-backed repo | **yes** |
 | `episode_data/` — one pickle per episode | `/content/cda_episode_data` on the VM's local disk | no |
 
 The reason is size. The pickles are **~10MB per 4096-step episode** (measured), so the default run
@@ -152,21 +152,49 @@ Checkpoints are on Drive, so a killed session is recoverable. Set `is_restore` t
 }
 ```
 
-`build_algo()` restores from `checkpoint_dir` when that flag is set and the directory exists,
-and starts from scratch otherwise — so leaving it `true` is safe on a fresh machine, and there is
-no notebook edit involved either way.
+`build_algo()` restores from the newest readable checkpoint when that flag is set, and starts from
+scratch when there is none — so leaving it `true` is safe on a fresh machine, and there is no
+notebook edit involved either way.
 
-League state does survive the round trip — weights, the champion pool and the mapping function are
-all restored, because the callback instance is cloudpickled with the algorithm
-([16_verification_log.md](16_verification_log.md) §16.8). Two things to know:
+**The run picks up where it stopped.** `num_iters` is the iteration to train *through*, and RLlib
+stores the iteration number in the checkpoint, so a 16-iteration run killed at 9 does 7 more, not
+16 more. Reconnect as many times as Colab makes you: the run still ends at iteration 16. If it has
+already reached the target it says so and exits without training. To extend a finished run, set
+`num_iters_is_delta` true and `num_iters` to how many more you want.
 
-- **The iteration counter does not resume.** `train()` runs `num_iters` more iterations from
-  wherever it restarted, so 16 configured iterations after a restore means 16 *more*.
-- **`build_algo()` returns the fresh, empty callback** from `build_config`, not the restored one
-  (§16.8, recorded as S3-8/S3-11 in
-  [15_findings_and_recommendations.md](15_findings_and_recommendations.md)). Training is unaffected
-  — the algorithm uses its own restored callback — but code that inspects the returned object sees
-  an empty champion history.
+League state survives the round trip — weights, the champion pool and the mapping function are all
+restored, because the callback instance is cloudpickled with the algorithm
+([16_verification_log.md](16_verification_log.md) §16.8). `build_algo()` returns that restored
+callback, so the champion history you read from it is the one the algorithm is playing. A
+`league_state.json` beside each checkpoint records the same thing in plain JSON; on restore it is
+reconciled against the champion modules that actually came back, and the run prints either
+`league state verified: N champion(s)` or the list of repairs it made.
+
+**Do not change anything else in `train_config.json` in the same edit.** Restoring rebuilds the
+algorithm from the config inside the checkpoint, so the file's `lr`, reward coefficients and batch
+sizes are ignored — the run now prints a `WARNING` naming each one. Changing `num_agents` or
+`n_hist` is refused outright, because the restored weights no longer fit. Only the `run` group
+still applies to a restored run.
+
+**A disconnect mid-save is recoverable.** Saves are staged and renamed, so a killed session leaves
+either a complete checkpoint or an `iter_N.tmp` directory that is ignored; the last 3 checkpoints
+are kept (`chkpt_keep`), and a restore that cannot read the newest falls back to the one before it.
+
+**To resume from an older checkpoint** — a league that collapsed, a run you want to branch — name
+it with `restore_path` in the same `run` group. `null`, the default, takes the newest, which is
+what a disconnect wants:
+
+```json
+"run": {
+  "is_restore": true,
+  "restore_path": "results/chkpt/iter_00008"
+}
+```
+
+It names one save, not the directory holding them; pointing at `results/chkpt` raises and lists
+what is available. There is no separate notebook knob — `PLATFORM` and `USE_GPU` remain the only
+two — but cell 4 prints the resolved `restore` line, so you can see which checkpoint a run will
+pick up before starting it. See [18_configuration.md](18_configuration.md) §5.1.
 
 ---
 
@@ -182,6 +210,12 @@ all restored, because the callback instance is cloudpickled with the algorithm
 | Numpy/ABI errors, or odd import failures after installing | The restart was skipped. | Runtime → Restart session, then re-run from cell 1. |
 | Drive mount prompt loops | Colab occasionally fails to mount on a recycled VM. | Runtime → Disconnect and delete runtime, then start over. |
 | Training is much slower than §20.4 | Sampling is CPU-bound and the free tier gives 2 vCPUs; a busy VM gives less. | Expected. Lower `num_iters` or `max_step` in `train_config.json` for a shorter run. |
+| `checkpoint is already at iteration N ... nothing to do` | `is_restore` is true and the run reached `num_iters` already. | Raise `num_iters`, or set `num_iters_is_delta` true to run that many more. |
+| `WARNING: restoring keeps the checkpoint's own config` | Config values were edited in the same pass as `is_restore`. A restore rebuilds from the checkpoint's config. | Expected, and the message names every ignored key. To train with the new values, set `is_restore` false or point `log_base_dir` at a new directory. |
+| `ValueError: Cannot restore: the configuration changes the shape of the problem` | `num_agents` or `n_hist` differs from the checkpoint, so the restored weights do not fit. | Revert the key, or start a fresh run. |
+| `checkpoint unreadable ... falling back to the previous one` | The newest save was killed partway through, or written by a different Ray version. | None needed — the restore already stepped back one checkpoint. |
+| `restore_path ... is not a checkpoint directory` | The path names the tree (`results/chkpt`) rather than one save inside it. | The message lists the checkpoints available, newest first. Copy one. |
+| `restore_path is set ... but is_restore is false` | The two `run` keys disagree, so the pinned checkpoint would be ignored. | Set `is_restore` true, or `restore_path` back to `null`. |
 
 ---
 

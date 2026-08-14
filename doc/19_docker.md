@@ -169,7 +169,7 @@ things worth keeping, all of them **relative to the working directory** — `/wo
 | Written | By |
 |---|---|
 | `episode_data/` — one pickle per episode | `SelfPlayCallback`, when `TrainConfig.episode_data_dir` is set |
-| `results/chkpt/` | `algo.save()` in `train()`, at `TrainConfig.checkpoint_dir` — `log_base_dir` + `chkpt` |
+| `results/chkpt/iter_*/` | `save_checkpoint()` in `train()`, under `TrainConfig.checkpoint_dir` — `log_base_dir` + `chkpt`. The newest `chkpt_keep` are retained |
 
 `CDA_NSP.ipynb` gets there too: Jupyter starts a kernel in the *notebook's* directory, which is
 `/workspace/code/gym_continuousDoubleAuction`, so the notebook calls `runtime.chdir_to_repo()` to

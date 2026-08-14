@@ -262,6 +262,99 @@ opponents, where sharing a trunk between policy and value tends to destabilise t
 `num_learners`, the reward coefficients and the sizing knobs have no CLI flag, so the file is the
 only way to set them outside the Python API.
 
+### 5.1 The `run` group
+
+These six are the only keys that still mean something on a **restored** run. Everything else in
+the file is baked into the checkpoint — see §5.2.
+
+| Key | Flag | What it does |
+|---|---|---|
+| `num_iters` | `--iters` | The iteration to train **through**, not a number of iterations to run |
+| `num_iters_is_delta` | `--iters-is-delta` | Read `num_iters` as "this many more from wherever the restore landed" |
+| `chkpt_freq` | `--chkpt-freq` | Save every N iterations (0 saves only at the end) |
+| `chkpt_keep` | `--chkpt-keep` | How many saves to retain; `<= 0` keeps all |
+| `is_restore` | `--restore` | Resume from a checkpoint rather than starting from scratch |
+| `restore_path` | `--from-checkpoint` | Which checkpoint; `null` takes the newest readable one |
+
+**`num_iters` is a target.** A 16-iteration run resumed at iteration 9 does 7 more, so the length
+of a run does not depend on how many times it was interrupted. It used to be a count on a driver
+loop that restarted at zero, which made 16 configured iterations mean 16 *more* every time. The
+iteration numbers are the algorithm's own — RLlib stores `training_iteration` in the checkpoint —
+so they are the same numbers the checkpoint directories and the log lines carry.
+`num_iters_is_delta` restores the old reading, for extending a run that already reached its target.
+
+**Checkpoint layout.** Each save is its own directory:
+
+```
+results/chkpt/
+├── iter_00004/          ← an RLlib checkpoint, plus league_state.json
+├── iter_00006/
+└── iter_00008/          ← the newest; what a restore picks
+```
+
+`chkpt_keep` prunes the oldest. Every save used to overwrite one directory, which left a run with
+exactly one recoverable state: no way back from a league that collapsed at iteration 12, and a save
+interrupted partway — the event checkpointing exists to survive — destroyed the only copy. Saves
+are now staged as `iter_N.tmp` and renamed into place, so an interrupted save leaves a directory
+the scanner skips rather than a half-written one that looks complete. A restore that cannot read
+the newest checkpoint falls back to the one before it.
+
+`league_state.json` beside each checkpoint records the champion pool in plain JSON. The champion
+*modules* are in the checkpoint proper, but everything indexing them — history, the monotonic ID
+counter, the matchmaking pool — lives on the cloudpickled callback, and survives only as long as
+`SelfPlayCallback` stays unpickle-compatible. On restore the sidecar is reconciled against the
+modules that actually came back, and any repair is printed. See
+[08_self_play_league.md](08_self_play_league.md).
+
+**Choosing a checkpoint.** `restore_path` null — the default — takes the newest readable
+checkpoint, which is what a disconnect wants. Name one to go back further:
+
+```bash
+python -m gym_continuousDoubleAuction.train.train --from-checkpoint results/chkpt/iter_00008
+```
+
+```json
+"run": {
+  "is_restore": true,
+  "restore_path": "results/chkpt/iter_00008"
+}
+```
+
+It names **one save**, not the directory holding them; pointing at `results/chkpt` raises and
+lists the checkpoints that are there, newest first. Two rules follow from what pinning is for:
+
+- **`restore_path` requires `is_restore`.** Set without it, the run would start from scratch and
+  ignore the path, so it raises instead. `--from-checkpoint` implies `--restore`, since naming a
+  checkpoint on the command line is not ambiguous about intent; in the file, the two keys must
+  agree. Validation happens before the env is built, so a typo fails in a second.
+- **A pinned checkpoint never falls back.** An unreadable one raises rather than quietly training
+  from its neighbour — the opposite of what the automatic path should do, and the point of having
+  said which one.
+
+Rolling back a run past a collapsed league is then: pick the checkpoint, restore from it, and let
+training overwrite the iterations after it. `chkpt_keep` bounds how far back you can go.
+
+The notebook has no separate knob for any of this — it is a thin driver that reads
+`train_config.json`, and cell 4 prints the resolved `restore` line before the run starts.
+
+### 5.2 What a restore ignores
+
+`Algorithm.from_checkpoint` rebuilds everything from the config stored *in the checkpoint*. The
+`PPOConfig` built from `train_config.json` is discarded. Since resuming means editing
+`train_config.json` to set `is_restore`, that is the same file holding `lr`, the reward
+coefficients and `num_agents` — so an edit made in the same pass as the restore flag had no effect
+and said nothing.
+
+It is now loud in both directions:
+
+- **A structural change is fatal.** `num_agents`, `n_hist` or the policy set changing means the
+  restored weights do not fit the requested problem, so the restore raises rather than training
+  something other than what was asked for. Revert the key, or start a fresh run.
+- **Everything else warns.** `lr`, reward coefficients, batch sizes and runner counts print as
+  "will NOT take effect" with both values, and the run continues on the checkpoint's config.
+
+To train with new values, start a fresh run — `is_restore` false, or a new `log_base_dir`.
+
 ---
 
 ## 6. `tick_size`

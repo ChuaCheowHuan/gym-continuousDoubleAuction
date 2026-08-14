@@ -281,11 +281,88 @@ This probe **corrected an earlier hypothesis**: league state *does* survive chec
 because `.callbacks(lambda: callback_instance)` closes over the instance and RLlib cloudpickles
 it. The restored algorithm's own callback, its modules, and its mapping function are all correct.
 
-The narrower real defect is that `build_algo` returns the *fresh, empty* callback from
-`build_config` rather than the restored one — confirmed by reading
-[`train.py:215-227`](../gym_continuousDoubleAuction/train/train.py#L215-L227).
+The narrower real defect was that `build_algo` returned the *fresh, empty* callback from
+`build_config` rather than the restored one.
 
 **Supports:** S3-8, S3-11.
+
+### 16.8.1 After the fix
+
+Re-run against the current code, 2 agents / 1 trainable / `max_step=32`, a fresh `log_base_dir`.
+Each block is one `python -m gym_continuousDoubleAuction.train.train` invocation.
+
+```
+# 1. two iterations from scratch, chkpt_freq=2, chkpt_keep=2
+[train] starting from scratch
+[train] iter 2/2 | env steps sampled: 128 | ...
+[train] checkpoint at iter 2: .../chkpt/iter_00002
+
+# 2. --restore --iters 3: resumes, does ONE more iteration, not three
+[train] restoring from checkpoint: .../chkpt/iter_00002
+[train] league state verified: 1 champion(s)
+[train] resuming at iteration 2, training through 3
+[train] iter 3/3 | ...
+[train] final checkpoint: .../chkpt/iter_00003
+
+# 3. --restore --iters 3 again: already at the target
+[train] resuming at iteration 3, training through 3
+[train] checkpoint is already at iteration 3, at or past the target of 3 - nothing to do.
+
+# 4. --restore --iters 2 --iters-is-delta: 3 -> 5, and retention prunes to 2
+[train] iter 5/5 | ...
+[train] pruned old checkpoint: .../chkpt/iter_00003
+
+# 5. --restore --agents 3: structural change refused
+ValueError: Cannot restore: the configuration changes the shape of the problem ...
+  env_config.num_of_agents: checkpoint has 2, config asks for 3
+  policies: checkpoint has ['policy_0', 'policy_1'], config asks for [..., 'policy_2']
+
+# 6. --restore --envs-per-runner 2: non-structural change reported, run continues
+[train] WARNING: restoring keeps the checkpoint's own config. These config values will NOT take effect:
+  num_envs_per_env_runner: 1 (checkpoint, in effect) != 2 (config, ignored)
+
+# 7. a champion added to league_state.json by hand, its module absent
+[train] league state repaired against league_state.json:
+  - champion history ['champion_1'] -> ['champion_1', 'champion_9'] (taken from the sidecar; ...)
+  - dropped champion_9: the restored algorithm has no such module
+
+# 8. algorithm_state.pkl of the newest checkpoint truncated to 64 bytes
+[train] restoring from checkpoint: .../chkpt/iter_00008
+[train] checkpoint unreadable (UnpicklingError: pickle data was truncated); falling back to the previous one
+[train] restoring from checkpoint: .../chkpt/iter_00007
+[train] resuming at iteration 7, training through 9
+
+# 9. --from-checkpoint .../iter_00002 while iter_00003 exists: the older one wins,
+#    and iteration 3 is retrained over the checkpoint that recorded it
+[train] restoring from pinned checkpoint: .../chkpt/iter_00002
+[train] league state verified: 1 champion(s)
+[train] resuming at iteration 2, training through 4
+[train] checkpoint at iter 3: .../chkpt/iter_00003
+
+# 10. --from-checkpoint pointed at the tree rather than one save
+ValueError: restore_path .../chkpt is not a checkpoint directory - it has no
+rllib_checkpoint.json. Name one save, not the directory holding them. Available, newest first:
+  .../chkpt/iter_00004
+  .../chkpt/iter_00003
+  .../chkpt/iter_00002
+
+# 11. a config file with restore_path set and is_restore false
+ValueError: restore_path is set to '.../chkpt/iter_00002' but is_restore is false, so the run
+would start from scratch and ignore it. Set is_restore true to resume from that checkpoint, or
+restore_path to null to start fresh.
+```
+
+Probes 10 and 11 raise before `build_config` runs — no `[PolicyHandler]` lines precede them — so a
+mistyped path costs a second rather than an env build and a module spec.
+
+Probe 8 is the one the old layout could not survive: a single overwritten directory means a
+corrupt newest checkpoint is the *only* checkpoint. Note that a *partial* checkpoint does not
+reliably raise — deleting `learner_group/` from a checkpoint still restored — which is why the
+primary protection is the staged-then-renamed write, not the fallback.
+
+`build_algo` returning the algorithm's own callback (probes 2, 4) and the reconciliation branches
+(probe 7) are also covered by `test_checkpointing.py`, which stubs RLlib's loader so the cases run
+in seconds rather than minutes.
 
 ---
 

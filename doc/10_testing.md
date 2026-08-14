@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (176 tests: 163 unit + 13 integration)
+# everything (216 tests: 203 unit + 13 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -45,7 +45,7 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `176 passed`.
+**[verified]** — `216 passed`.
 
 ### File inventory
 
@@ -70,7 +70,8 @@ Counts re-measured with `--collect-only`; the earlier `90` predated the config a
 | `test_config_sources.py` | 26 | No literal copy of a configured value survives in Python |
 | `test_config_wiring.py` | 11 | Config keys reaching their consumers |
 | `test_runtime_profiles.py` | 23 | `runtime_profiles.json` → hardware sets, platform paths |
-| **unit total** | **163** | |
+| `test_checkpointing.py` | 40 | Checkpoint retention, restore selection, league state across a save |
+| **unit total** | **203** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 
 > **Stale references in older docs.** `test_orderbook.py`, `repro_orderbook_crossed_book.py`,
@@ -339,6 +340,31 @@ already pytest-native before the rest of the suite was converted, and needed no 
 collects the same way as everything else under `pytest`, but — like every file in this suite now
 — running it directly (`python test_probabilistic_mapping.py`, or `%run` from a notebook) does
 nothing, since there is no `unittest.main()` call left anywhere to trigger execution. See §0.
+
+### 6.1.1 `test_checkpointing.py` — 8 classes, 40 tests
+
+What survives a save/restore, and what a restore is allowed to change. RLlib's loader and the
+env build are stubbed, so these run in seconds; the same behaviours were also exercised against
+real checkpoints in [16 §16.8.1](16_verification_log.md).
+
+| Class | What it pins |
+|---|---|
+| `TestCheckpointDiscovery` | Saves are ordered oldest-first; `iter_N.tmp` (an interrupted save) and non-checkpoint directories are skipped; a checkpoint in the old single-directory layout is still found, and sorts oldest |
+| `TestRetention` | Each save is its own directory; `chkpt_keep` prunes the oldest; `<= 0` keeps all; the old-layout checkpoint is never pruned; the save is staged then renamed; re-saving an iteration replaces it |
+| `TestLeagueSidecar` | `league_state.json` is written beside every checkpoint; `algo_callback` finds the live instance |
+| `TestLeagueStateReconciliation` | Agreement repairs nothing; a callback that lost its history is rebuilt from the sidecar; a champion with no module is dropped; a module with no champion entry is adopted; the ID counter never goes backwards |
+| `TestRestoreCandidates` | `restore_path` null means every checkpoint; a path narrows it to that one; not restoring ignores the tree; a path without `is_restore` raises; a path that is not a checkpoint raises and lists the ones that are, newest first |
+| `TestCommandLine` | `--from-checkpoint` implies `--restore`; `--restore` alone leaves the path unset |
+| `TestRestoreSelection` | The newest checkpoint is picked; an unreadable one falls back to the previous; a **pinned** one raises instead of falling back; the **algorithm's own** callback is returned, not the fresh one; no checkpoint starts from scratch |
+| `TestIterationAccounting` | `num_iters` is a target, not an amount; `num_iters_is_delta` counts from the restore point; a completed run trains nothing; checkpoints land on true iteration numbers; the final save is not duplicated |
+
+Two of these encode bugs that were live in the codebase rather than hypothetical:
+
+- **`test_counter_never_goes_backwards`** — the monotonic champion ID counter lives on the
+  cloudpickled callback. If it restarts, `add_module` re-mints `champion_1` over a champion that
+  is already playing.
+- **`test_returns_the_algorithms_own_callback`** — S3-8. Training was never affected, which is
+  what made it survive: only code *inspecting* the returned league saw the empty one.
 
 ### 6.2 `integration/test_league_wiring.py` — 3 classes, 13 tests
 

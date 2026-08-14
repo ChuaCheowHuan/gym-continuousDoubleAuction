@@ -413,3 +413,58 @@ notebook now call `runtime.apply_env_vars()`.
 
 See [18_configuration.md](18_configuration.md) §8 and
 [10_testing.md](10_testing.md) §6.3 (23 tests).
+
+---
+
+## 14. Checkpointing became recoverable
+
+A run's checkpoint used to be a single directory. `algo.save(checkpoint_dir)` wrote every save to
+`results/chkpt`, so the run had exactly one recoverable state — no way back from a league that
+collapsed at iteration 12, and a save interrupted partway through destroyed the only copy. That is
+the event checkpointing exists to survive, and on Colab (§13) it is the expected way for a session
+to end.
+
+**Each save is now its own directory**, `results/chkpt/iter_00008`, staged as `iter_00008.tmp` and
+renamed into place; the newest `chkpt_keep` (default 3) are retained and the rest pruned. An
+interrupted save leaves a `.tmp` directory the scanner skips rather than a half-written one that
+looks complete, and a restore that cannot read the newest checkpoint falls back to the one before
+it — verified against a real truncated checkpoint
+([16 §16.8.1](16_verification_log.md), probe 8). Rolling back is now just deleting the newest
+directory. A checkpoint in the old layout is still found and restored from, and is never pruned.
+
+**A restore no longer silently discards config edits.** `Algorithm.from_checkpoint` rebuilds
+everything from the config stored *in the checkpoint* and drops the `PPOConfig` just built from
+`train_config.json`. Since resuming is documented as "edit `train_config.json`, set `is_restore`",
+that is the same file holding `lr`, the reward coefficients and `num_agents` — an edit made in the
+same pass had no effect and said nothing. A structural change (`num_agents`, `n_hist`, the policy
+set) now raises, because the restored weights do not fit the requested problem; everything else
+prints as ignored, with both values.
+
+**`num_iters` became a target rather than an amount.** The driver loop counted from zero, so 16
+configured iterations after a restore meant 16 *more*, and the length of a run depended on how many
+times it was interrupted. It now reads `algo.iteration` — RLlib restores `training_iteration` with
+the weights — and trains through `num_iters`, printing true iteration numbers. `num_iters_is_delta`
+opts back into the old reading for extending a finished run.
+
+**Champion metadata got a readable copy.** `champion_history`, `champion_id_counter` and
+`available_modules` reached the next run only via cloudpickle of `SelfPlayCallback`; a rename, an
+`__init__` change or a Ray upgrade would bring the champion modules back without the league that
+indexes them, restarting the counter and re-minting `champion_1` over a champion still in play.
+`league_state.json` is now written beside every checkpoint and reconciled on restore against the
+modules that actually came back. See [08 §8.1](08_self_play_league.md).
+
+**`build_algo` returns the algorithm's own callback on the restore path** (S3-8), not the fresh,
+empty one from `build_config`. Training never used the returned object, which is why the bug
+survived — the damage was to anything that inspected the league.
+
+**Which checkpoint to resume from became selectable.** `restore_path` (`--from-checkpoint`) pins
+one save; `null`, the default, takes the newest, which is what a disconnect wants. It requires
+`is_restore` — set without it the run would silently start from scratch, so it raises — and a
+pinned checkpoint never falls back to its neighbour, since training from a checkpoint other than
+the named one is exactly what pinning exists to prevent. Rolling a run back past a collapsed
+league no longer means deleting directories.
+
+40 tests in `test_checkpointing.py` ([10 §6.1.1](10_testing.md)), plus eleven probes against real
+checkpoints in [16 §16.8.1](16_verification_log.md).
+
+See [18_configuration.md](18_configuration.md) §5.1–5.2 and [20_colab.md](20_colab.md) §20.5.

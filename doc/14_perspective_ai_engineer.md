@@ -304,7 +304,7 @@ should be deleted, with `helper.py`'s order-imbalance functions salvaged into th
 
 | Gap | Impact |
 |---|---|
-| **`build_algo` returns a detached callback on the restore path** | See §5.9.1 — a latent bug, narrow but real. |
+| ~~**`build_algo` returns a detached callback on the restore path**~~ | Fixed — see §5.9.1, along with four adjacent checkpoint defects. |
 | **The Docker image `pip install`s a hardcoded dependency list** | Duplicates `requirements.txt` rather than `COPY`ing it. Two places to update; already at risk of drift. |
 | **No inference/serving path** | Nothing loads a checkpoint and runs a policy. There is no `evaluate.py`, no Ray Serve deployment, no exported TorchScript/ONNX. |
 | **No config validation** | `TrainConfig` accepts `num_trained_agents > num_agents` (caught later, in `build_multi_rl_module_spec`), negative `max_step`, etc. |
@@ -337,10 +337,10 @@ callback_instance)` closes over the instance, RLlib cloudpickles it into the che
 restored `Algorithm` gets a callback with its history intact. That is better than the design
 suggests, and worth knowing.
 
-The defect is narrower: `build_algo`
-([`train.py:215-227`](../gym_continuousDoubleAuction/train/train.py#L215-L227)) calls
-`build_config(cfg)` unconditionally, then on the restore branch discards the freshly-built `ppo`
-config and returns the **fresh, empty** `callback_instance` alongside the restored algorithm:
+The defect was narrower — and is **now fixed**; what follows describes what it was. `build_algo`
+called `build_config(cfg)` unconditionally, then on the restore branch discarded the freshly-built
+`ppo` config and returned the **fresh, empty** `callback_instance` alongside the restored
+algorithm:
 
 ```python
 ppo, callback_instance = build_config(cfg)          # builds a NEW callback
@@ -357,8 +357,23 @@ cls.algo, ...)` pattern — would be driving a detached object whose `available_
 with the mapping function the algorithm is actually using. Champions promoted through the
 detached instance would be added as modules but never selected.
 
-**Fix:** on the restore branch, recover the algorithm's live callback (or skip `build_config`
-entirely and read it back off the restored config) rather than returning the throwaway one.
+**Fixed:** the restore branch returns `algo_callback(algo)` — the instance RLlib unpickled, the one
+whose `available_modules` the mapping function is actually reading — and `None` with a warning if
+the restored algorithm has no `SelfPlayCallback`. Returning `None` rather than a plausible-looking
+empty object is deliberate: a caller that inspects a detached league gets a wrong answer silently,
+where an attribute error on `None` does not.
+
+The probe also surfaced four adjacent defects in the same path, all now fixed:
+
+| Was | Now |
+|---|---|
+| Every save overwrote one `chkpt/` directory — one recoverable state per run, destroyed by a crash mid-save | `chkpt/iter_N/`, staged and renamed, newest `chkpt_keep` retained, fallback to the previous on an unreadable one |
+| `from_checkpoint` silently discarded the config built from `train_config.json` | Structural divergence raises; everything else prints as ignored |
+| The driver loop counted from zero, so `num_iters` meant "that many *more*" after a restore | `num_iters` is a target iteration, read from `algo.iteration`; `num_iters_is_delta` opts back in |
+| Champion metadata existed only inside the cloudpickled callback | `league_state.json` beside each checkpoint, reconciled against the modules that came back |
+
+The remaining gap is structural rather than a bug: `train()` is still a hand-rolled loop, so this
+is a reimplementation of retention and fault tolerance that `tune.Tuner` would provide (§5.9).
 
 ---
 
@@ -379,7 +394,7 @@ Low risk overall (a self-contained simulator), but two notes:
 
 | # | Change | Effort | Why |
 |---|---|---|---|
-| 1 | Return the algorithm's live callback from `build_algo` on the restore path (§5.9.1) | S | Callers currently get a detached, empty league object |
+| 1 | ~~Return the algorithm's live callback from `build_algo` on the restore path (§5.9.1)~~ **done** | S | Callers got a detached, empty league object |
 | 2 | Replace all `print()` with `logging`; route callback diagnostics through `metrics_logger` | M | Multi-worker runs are currently unobservable |
 | 3 | Fix `install_requires` (add `ray` / `scikit-learn` / `six`, or remove those imports) | S | The package does not install correctly as declared |
 | 4 | Drop `six` → stdlib `io.StringIO`; drop `sklearn.utils.shuffle` → `random.shuffle` (seeded); drop the unused `import ray` | S | Removes a Py2 shim and a ~30 MB dependency; fixes reproducibility |
