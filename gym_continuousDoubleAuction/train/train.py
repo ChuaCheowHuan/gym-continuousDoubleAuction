@@ -31,7 +31,6 @@ from ray.rllib.algorithms.algorithm import Algorithm
 from ray.rllib.algorithms.ppo import PPOConfig
 
 from gym_continuousDoubleAuction.config_loader import (
-    constants,
     flat as flat_config,
     flatten,
 )
@@ -440,9 +439,12 @@ def _parse_args(argv=None) -> TrainConfig:
 def main(argv=None) -> None:
     cfg = _parse_args(argv)
 
-    # setdefault, so a value already exported in the shell wins over the file.
-    for name, val in constants("runtime_env_vars").items():
-        os.environ.setdefault(name, str(val))
+    # Shared with the notebook, which has to export these before it imports
+    # ray. Imported here rather than at module scope: runtime.py reads
+    # TrainConfig's fields, so a top-level import would be circular.
+    from gym_continuousDoubleAuction.train.runtime import apply_env_vars
+
+    apply_env_vars()
 
     ray.init(ignore_reinit_error=True, include_dashboard=False)
     try:

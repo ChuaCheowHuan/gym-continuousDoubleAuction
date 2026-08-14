@@ -1,0 +1,82 @@
+{
+  "_source": "gym_continuousDoubleAuction/train/runtime.py, driven from CDA_NSP.ipynb",
+  "_description": "Where a run executes, as opposed to what it does. train_config.json holds the training values - agents, batch sizes, reward coefficients - and is identical on every machine. This file holds the two things that are not: how much hardware is available, and where the filesystem is. Resolved by train/runtime.py; the notebook selects a platform and a GPU toggle and reads everything else from here.",
+  "_note": "Nothing here changes the learning problem. Moving a run between the sets below changes wall-clock time and output paths, not the trained policy (up to sampling nondeterminism). Values that would change the result belong in train_config.json.",
+
+  "hardware": {
+    "_note": "Exactly two sets, selected by runtime.detect_hardware() from torch.cuda.is_available() and the notebook's USE_GPU toggle. The ceiling is 2 CPUs + 1 GPU (a Colab free VM, and what `docker run --gpus all` is assumed to get); the floor is 1 CPU + 0 GPUs. Both sets keep num_learners=0, so the learner runs in the driver process rather than a remote actor - a second process would cost one of the two CPUs and buy nothing at this model size. `ray_init` is passed to ray.init(); `train_config` overrides TrainConfig fields, and every key must name a real field or runtime.resolve() raises.",
+
+    "gpu": {
+      "_description": "2 CPUs + 1 GPU. Sampling is the bottleneck in this environment (Python order-book matching), so both CPUs sample in parallel while the in-process learner does the PPO update on the GPU. See doc/09 S5: `num_env_runners=N, num_learners=0` is the shape for a CPU-bound sampler.",
+      "ray_init": {
+        "num_cpus": 2,
+        "num_gpus": 1
+      },
+      "train_config": {
+        "num_env_runners": 2,
+        "num_envs_per_env_runner": 1,
+        "num_cpus_per_env_runner": 1.0,
+        "num_learners": 0,
+        "num_gpus_per_learner": 1.0
+      }
+    },
+
+    "cpu": {
+      "_description": "1 CPU, no GPU. One process does everything: no remote env runner, because there is no second core for it to run on, and a remote actor on the same core is pure IPC overhead. This is also the shape the test suite runs against.",
+      "ray_init": {
+        "num_cpus": 1,
+        "num_gpus": 0
+      },
+      "train_config": {
+        "num_env_runners": 0,
+        "num_envs_per_env_runner": 1,
+        "num_cpus_per_env_runner": 1.0,
+        "num_learners": 0,
+        "num_gpus_per_learner": 0.0
+      }
+    }
+  },
+
+  "ray_init_common": {
+    "_note": "Merged into every profile's ray_init, so these are stated once rather than per set. Profile keys win on a collision.",
+    "ignore_reinit_error": true,
+    "include_dashboard": false
+  },
+
+  "platforms": {
+    "_note": "Filesystem shape per machine. `repo_path` is where the package and config/ live; null means 'the working directory already is it', which is the case on Colab (the notebook must chdir there before it can read this file at all) and for a local checkout. `results_root` and `episode_data_root` replace TrainConfig.log_base_dir and .episode_data_dir; null leaves the configured value alone, which keeps it relative to the working directory. Splitting the two matters on Colab: checkpoints are small and must survive a disconnect, while the per-episode pickles are ~10MB per 4096-step episode and have no business crossing the Drive FUSE layer.",
+
+    "colab": {
+      "_description": "Colab VM with Google Drive mounted. Checkpoints stay in the Drive-backed repo so a disconnect is recoverable with is_restore; episode pickles go to the VM's local disk and die with the session.",
+      "repo_path": null,
+      "results_root": null,
+      "episode_data_root": "/content/cda_episode_data",
+      "drive_mount_point": "/content/gdrive",
+      "_pip_note": "Read by the notebook's bootstrap cell, which runs before the package is importable and so reads this file with plain json.load. Pins must track requirements.txt. torch, numpy, pandas and scikit-learn are deliberately absent: Colab preinstalls them, and installing this repo's pins would replace Colab's CUDA torch build with a CPU wheel.",
+      "pip_packages": [
+        "ray[rllib]==2.56.1",
+        "gymnasium==1.2.2",
+        "sortedcontainers>=2.4",
+        "tabulate>=0.10"
+      ]
+    },
+
+    "docker": {
+      "_description": "The docker/ml/dockerfile_ray_torch image. The package is installed editable at /workspace/code, so outputs land in the repo - which is the host working tree when it is bind-mounted there, and otherwise the baked copy inside the container.",
+      "repo_path": "/workspace/code",
+      "results_root": null,
+      "episode_data_root": null,
+      "drive_mount_point": null,
+      "pip_packages": []
+    },
+
+    "local": {
+      "_description": "Any other machine: a dev checkout, or CI. Nothing is relocated, so paths behave exactly as they do for `python -m gym_continuousDoubleAuction.train.train`.",
+      "repo_path": null,
+      "results_root": null,
+      "episode_data_root": null,
+      "drive_mount_point": null,
+      "pip_packages": []
+    }
+  }
+}
