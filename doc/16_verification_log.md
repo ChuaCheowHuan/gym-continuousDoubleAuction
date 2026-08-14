@@ -382,11 +382,12 @@ tracked build artefacts in git:    none
 
 Dead-code confirmations (`grep`, `.py` files only):
 
-- `g_store` is referenced only inside `log_handler.py` and `plot_handler.py`, both as
-  `ray.util.get_actor("g_store")` lookups. The detached actor in `store_handler.py` is **never
-  instantiated** anywhere.
-- `train/helper/helper.py` is imported by nothing — the only reference is a commented-out import
-  in `store_handler.py`.
+- `g_store` was referenced only inside `log_handler.py` and `plot_handler.py`, both as
+  `ray.util.get_actor("g_store")` lookups, and the detached actor in `store_handler.py` was
+  **never instantiated** anywhere. All three modules have since been deleted — see
+  [11 §1.4](11_logging_and_observability.md).
+- `train/helper/helper.py` is imported by nothing — the only reference was a commented-out import
+  in the since-deleted `store_handler.py`.
 - `state_diff` is defined in `state_helper.py` and called nowhere.
 - `random_agent.Random_agent` is referenced only by `trader.py`'s `import` and class declaration;
   `select_random_action` is never called.

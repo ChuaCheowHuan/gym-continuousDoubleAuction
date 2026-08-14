@@ -9,12 +9,14 @@ holding an empty champion pool. These tests pin the fixes.
 See doc/20_colab.md 20.5 and doc/15_findings_and_recommendations.md S3-8/S3-11.
 """
 import json
+import logging
 import os
 from dataclasses import replace as dataclasses_replace
 from types import SimpleNamespace
 
 import pytest
 
+from gym_continuousDoubleAuction.logging_setup import ROOT_NAME as LOGGER
 from gym_continuousDoubleAuction.train import train as train_mod
 from gym_continuousDoubleAuction.train.train import (
     CHECKPOINT_PREFIX,
@@ -288,20 +290,21 @@ class TestRestoredConfigCheck:
         values["env_config"] = {**values["env_config"], **env_overrides}
         return SimpleNamespace(**values)
 
-    def test_identical_config_says_nothing(self, capsys):
-        _check_restored_config(self._config(), self._config())
-        assert capsys.readouterr().out == ""
+    def test_identical_config_says_nothing(self, caplog):
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            _check_restored_config(self._config(), self._config())
+        assert caplog.text == ""
 
-    def test_ignored_edits_are_reported(self, capsys):
-        _check_restored_config(
-            self._config(),
-            self._config(lr=0.001, env_config={"order_penalty": 0.9}),
-        )
+    def test_ignored_edits_are_reported(self, caplog):
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            _check_restored_config(
+                self._config(),
+                self._config(lr=0.001, env_config={"order_penalty": 0.9}),
+            )
 
-        out = capsys.readouterr().out
-        assert "WARNING" in out
-        assert "lr" in out and "0.001" in out
-        assert "env_config.order_penalty" in out
+        assert any(r.levelno == logging.WARNING for r in caplog.records)
+        assert "lr" in caplog.text and "0.001" in caplog.text
+        assert "env_config.order_penalty" in caplog.text
 
     def test_shape_changing_edits_are_fatal(self):
         with pytest.raises(ValueError, match="shape of the problem"):
@@ -503,16 +506,17 @@ class TestRestoreSelection:
                 dataclasses_replace(cfg, is_restore=True, restore_path=pinned)
             )
 
-    def test_no_checkpoint_starts_from_scratch(self, restorable, capsys):
+    def test_no_checkpoint_starts_from_scratch(self, restorable, caplog):
         restorable.configure()
 
-        algo, callback = train_mod.build_algo(
-            dataclasses_replace(restorable.cfg, is_restore=True)
-        )
+        with caplog.at_level(logging.INFO, logger=LOGGER):
+            algo, callback = train_mod.build_algo(
+                dataclasses_replace(restorable.cfg, is_restore=True)
+            )
 
         assert isinstance(algo, FakeAlgo)
         assert callback is restorable.fresh
-        assert "starting from scratch" in capsys.readouterr().out
+        assert "starting from scratch" in caplog.text
 
 
 class TestIterationAccounting:
@@ -540,13 +544,14 @@ class TestIterationAccounting:
 
         assert algo.iteration == 13
 
-    def test_a_completed_run_does_no_further_training(self, cfg, monkeypatch, capsys):
+    def test_a_completed_run_does_no_further_training(self, cfg, monkeypatch, caplog):
         cfg = TrainConfig(log_base_dir=cfg.log_base_dir, num_iters=5, chkpt_freq=0)
-        algo = self._run(cfg, monkeypatch, start_iteration=5)
+        with caplog.at_level(logging.INFO, logger=LOGGER):
+            algo = self._run(cfg, monkeypatch, start_iteration=5)
 
         assert algo.iteration == 5
         assert algo.saved == []
-        assert "nothing to do" in capsys.readouterr().out
+        assert "nothing to do" in caplog.text
 
     def test_checkpoints_land_on_true_iteration_numbers(self, cfg, monkeypatch):
         cfg = TrainConfig(

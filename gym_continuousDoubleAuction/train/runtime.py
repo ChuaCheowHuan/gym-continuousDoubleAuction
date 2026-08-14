@@ -32,6 +32,9 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional, Union
 
 from gym_continuousDoubleAuction.config_loader import constants, group
+from gym_continuousDoubleAuction.logging_setup import get_logger
+
+logger = get_logger(__name__)
 
 #: The file both parameter sets are read from.
 PROFILES_FILE = "runtime_profiles.json"
@@ -149,10 +152,10 @@ def detect_hardware(use_gpu: Union[str, bool, None] = AUTO) -> tuple[str, bool]:
 
     have = cuda_available()
     if want is True and not have:
-        print(
-            "[runtime] GPU requested but torch.cuda.is_available() is False - "
-            "using the cpu profile. On docker, start the container with "
-            "`--gpus all`; on Colab, Runtime > Change runtime type > GPU."
+        logger.warning(
+            "GPU requested but torch.cuda.is_available() is False - using the "
+            "cpu profile. On docker, start the container with `--gpus all`; "
+            "on Colab, Runtime > Change runtime type > GPU."
         )
         return "cpu", True
     return ("gpu", False) if have else ("cpu", False)
@@ -232,10 +235,10 @@ def resolve(
     requested_cpus = ray_init_kwargs.get("num_cpus")
     available = os.cpu_count() or 1
     if requested_cpus is not None and requested_cpus > available:
-        print(
-            f"[runtime] profile {hardware!r} asks Ray for {requested_cpus} CPUs "
-            f"but this machine reports {available}. Ray will accept the number "
-            f"as a logical resource and oversubscribe the cores."
+        logger.warning(
+            "profile %r asks Ray for %s CPUs but this machine reports %s. Ray "
+            "will accept the number as a logical resource and oversubscribe "
+            "the cores.", hardware, requested_cpus, available,
         )
 
     return Runtime(
@@ -327,9 +330,8 @@ def chdir_to_repo(rt: Runtime) -> str:
     if repo_path and os.path.isdir(repo_path):
         os.chdir(repo_path)
     elif repo_path:
-        print(
-            f"[runtime] platform {rt.platform!r} declares repo_path "
-            f"{repo_path!r}, which does not exist here - staying in "
-            f"{os.getcwd()}."
+        logger.warning(
+            "platform %r declares repo_path %r, which does not exist here - "
+            "staying in %s.", rt.platform, repo_path, os.getcwd(),
         )
     return os.getcwd()

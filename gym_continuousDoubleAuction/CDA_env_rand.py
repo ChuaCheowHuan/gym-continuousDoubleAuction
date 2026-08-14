@@ -26,6 +26,10 @@ from gym_continuousDoubleAuction.config_loader import cli_default
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
     continuousDoubleAuctionEnv,
 )
+from gym_continuousDoubleAuction.logging_setup import configure as configure_logging
+from gym_continuousDoubleAuction.logging_setup import get_logger
+
+logger = get_logger("gym_continuousDoubleAuction.CDA_env_rand")
 
 
 def _cli(key):
@@ -89,7 +93,20 @@ def main(argv=None):
     p.add_argument("--init-cash", type=int, default=_cli("init_cash"))
     p.add_argument("--render", action="store_true", default=_cli("is_render"))
     p.add_argument("--seed", type=int, default=_cli("seed"))
+    p.add_argument(
+        "--log-level",
+        type=str,
+        default=_cli("log_level"),
+        help="Level for this package's logging. null in cli_defaults.json "
+             "means the logging group of tunable_constants.json decides.",
+    )
     args = p.parse_args(argv)
+
+    # The env's per-step render writes at DEBUG, so --render without a level
+    # would produce nothing at all. Asking for the render is asking for the
+    # output it produces; an explicit --log-level still wins.
+    configure_logging(args.log_level or ("DEBUG" if args.render else None),
+                      force=True)
 
     steps = run_random(
         num_agents=args.agents,
@@ -98,7 +115,9 @@ def main(argv=None):
         is_render=args.render,
         seed=args.seed,
     )
-    print(f"CDA_env_rand: completed {steps} steps with {args.agents} random agents.")
+    logger.info(
+        "completed %s steps with %s random agents.", steps, args.agents,
+    )
     return 0
 
 

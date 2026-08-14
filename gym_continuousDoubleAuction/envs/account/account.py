@@ -3,8 +3,11 @@ from decimal import Decimal
 from .cash_processor import Cash_Processor
 from .calculate import Calculate
 from ...config_loader import env_default
+from ...logging_setup import get_logger
 
 from tabulate import tabulate
+
+logger = get_logger(__name__)
 
 class Account(Calculate, Cash_Processor):
     def __init__(self, ID, cash=env_default("init_cash")):
@@ -69,7 +72,7 @@ class Account(Calculate, Cash_Processor):
         acc['total_profit'] = [self.total_profit]
         acc['num_trades'] = [self.num_trades]
 
-        print(msg, tabulate(acc, headers="keys"))
+        logger.debug("%s %s", msg, tabulate(acc, headers="keys"))
         return 0
 
     def print_both_accs(self, msg, curr_step_trade_ID, counter_party, init_party):
@@ -92,7 +95,7 @@ class Account(Calculate, Cash_Processor):
         acc['total_profit'] = [counter_party.acc.total_profit, init_party.acc.total_profit]
         acc['num_trades'] = [counter_party.acc.num_trades, init_party.acc.num_trades]
 
-        print(msg, tabulate(acc, headers="keys"))
+        logger.debug("%s %s", msg, tabulate(acc, headers="keys"))
         return 0
 
     def _size_increase(self, trade, position, party, trade_val):

@@ -11,6 +11,9 @@ from six.moves import cStringIO as StringIO
 from decimal import Decimal
 
 from .ordertree import OrderTree
+from ...logging_setup import get_logger
+
+logger = get_logger(__name__)
 
 class OrderBook(object):
     def __init__(self, tick_size = 0.0001, tape_display_length=10):
@@ -96,7 +99,12 @@ class OrderBook(object):
                 #quantity_to_trade -= traded_quantity
                 quantity_to_trade = Decimal(quantity_to_trade) - traded_quantity
             if verbose:
-                print(("TRADE: Time - {}, Price - {}, Quantity - {}, TradeID - {}, Matching TradeID - {}".format(self.time, traded_price, traded_quantity, counter_party, quote['trade_id'])))
+                logger.debug(
+                    "TRADE: Time - %s, Price - %s, Quantity - %s, TradeID - %s, "
+                    "Matching TradeID - %s",
+                    self.time, traded_price, traded_quantity, counter_party,
+                    quote['trade_id'],
+                )
 
             transaction_record = {'timestamp': self.time,
                                   'price': traded_price,

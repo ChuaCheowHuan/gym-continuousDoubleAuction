@@ -404,8 +404,11 @@ normalize correctly, and that selection is stable given the episode and agent ID
 | Determinism | Moderate | Verifies the distribution, not per-episode stability |
 | Edge cases | Moderate | Empty pools and zero weights are not tested |
 
-`test/test_nav_callback.py` covers the callback's episode-end NAV conservation check, in both the
-passing and the failing direction.
+`test/test_nav_callback.py` covers the callback's episode-end NAV conservation check: the passing
+direction logs a zero `nav_conservation_error`; the failing direction raises `AssertionError`
+under the default `strict_nav_check`, emits the metric before raising, and downgrades to an ERROR
+log when strict is off. The tolerance is tested from both sides, and both knobs are checked
+against `config/train_config.json`. See [11 §1.5](11_logging_and_observability.md).
 
 ### Integration tests
 

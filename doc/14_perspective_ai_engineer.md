@@ -262,9 +262,7 @@ Full inventory in [10_testing.md](10_testing.md). Engineering-relevant summary:
 
 | Item | Status |
 |---|---|
-| `train/storage/store_handler.py` (90 LOC) | Ray detached actor `g_store`, **never created anywhere** **[verified]** |
-| `train/logger/log_handler.py` (~89 LOC) | `ray.util.get_actor("g_store")` → would raise at call time |
-| `train/plotter/plot_handler.py` (90 LOC) | same dependency on `g_store` |
+| ~~`train/storage/store_handler.py`, `train/logger/log_handler.py`, `train/plotter/plot_handler.py`~~ | **Deleted.** ~270 LOC depending on a `g_store` actor that was never created — see [11 §1.4](11_logging_and_observability.md) |
 | `train/helper/helper.py` | `ord_imb` / `mid_price` utilities, imported by nothing (only a commented-out import) **[verified]** |
 | `envs/agent/random_agent.py` | `select_random_action` returns the **old 5-tuple** action format; superseded by `RandomRLModule`; nothing calls it, but `Trader` still inherits from `Random_agent` **[verified]** |
 | `State_Helper.state_diff` | never called **[verified]** |
@@ -276,12 +274,10 @@ Full inventory in [10_testing.md](10_testing.md). Engineering-relevant summary:
 | ~200 LOC of commented-out code | e.g. `continuousDoubleAuction_env.py:100-133, 178-207`, `orderbook.py:260-318`, `action_helper.py:23-36` |
 | `CODEOWNER` **and** `CODEOWNERS` | duplicate files at the repo root |
 
-Roughly **270 LOC of unreachable telemetry** in `train/` alone, plus the rest. The most
-misleading part is that the three `g_store` modules look like a working telemetry pipeline; they
-are a broken one. If the intent is to revive them, they need a
-`storage.options(name="g_store", lifetime="detached").remote(n)` call somewhere; otherwise they
-should be deleted, with `helper.py`'s order-imbalance functions salvaged into the observation
-(see [13](13_perspective_financial_trader.md) §6).
+The ~270 LOC of unreachable telemetry in `train/` — three modules that looked like a working
+pipeline and were a broken one — has been deleted. What remains above is smaller and less
+misleading, though `helper.py`'s order-imbalance functions are still worth salvaging into the
+observation rather than dropping (see [13](13_perspective_financial_trader.md) §6).
 
 ---
 
@@ -401,7 +397,7 @@ Low risk overall (a self-contained simulator), but two notes:
 | 5 | `sys.exit` → `raise ValueError` in `orderbook.py` | S | Prevents worker kills |
 | 6 | Raise (or emit a metric) on a NAV conservation violation instead of printing `FAILED` | S | A corrupt ledger should not be a log line |
 | 7 | Add `vf_explained_var` / learning-signal assertions to CI | S | Would have caught the frozen critic |
-| 8 | Delete the `g_store` trio + other dead code | S | Removes a misleading "working" telemetry path |
+| 8 | ~~Delete the `g_store` trio~~ **done**; other dead code remains | S | Removed a misleading "working" telemetry path |
 | 9 | Add `ruff` + `black` + pre-commit; add `pytest-cov` with a threshold | S | Baseline hygiene |
 | 10 | Make the Docker image `COPY requirements.txt` instead of duplicating it | S | Removes drift |
 | 11 | Add an `evaluate.py` that loads a checkpoint and runs deterministic episodes | M | There is currently no way to *use* a trained policy |

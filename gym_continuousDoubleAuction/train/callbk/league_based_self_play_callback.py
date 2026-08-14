@@ -1,5 +1,6 @@
 from collections import defaultdict
 
+import logging
 import numpy as np
 import os
 import pickle
@@ -15,11 +16,14 @@ from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
 
 from gym_continuousDoubleAuction.config_loader import env_default, group
+from gym_continuousDoubleAuction.logging_setup import get_logger
 from gym_continuousDoubleAuction.train.policy.policy_handler import (
     CHAMPION_PREFIX,
     POLICY_PREFIX,
     policy_id,
 )
+
+logger = get_logger(__name__)
 
 # Per-module mean return over the iteration, keyed by ModuleID. This is the
 # new-API-stack replacement for the old `hist_stats["policy_<id>_reward"]` /
@@ -40,6 +44,8 @@ class SelfPlayCallback(RLlibCallback):
         original_opponent_weight=None,
         champion_weight=None,
         episode_data_dir=_DISABLED,
+        nav_tolerance=None,
+        strict_nav_check=None,
     ):
         """
         Initialize league-based self-play callback with generalized agent configuration.
@@ -57,6 +63,11 @@ class SelfPlayCallback(RLlibCallback):
                 writes one file per episode containing every step's obs, action,
                 reward and info, which at a few thousand steps per episode is a
                 substantial amount of I/O and memory during training.
+            nav_tolerance: Absolute cash tolerance for the episode-end NAV
+                conservation check.
+            strict_nav_check: Raise on a conservation violation instead of
+                logging one. The `nav_conservation_error` metric is emitted
+                either way.
 
         Any argument left as None is read from `config/train_config.json`: the
         league knobs from its `league_self_play` group, and the two policy
@@ -89,8 +100,14 @@ class SelfPlayCallback(RLlibCallback):
             champion_weight = league["champion_weight"]
         if episode_data_dir is self._DISABLED:
             episode_data_dir = league["episode_data_dir"]
+        if nav_tolerance is None:
+            nav_tolerance = league["nav_tolerance"]
+        if strict_nav_check is None:
+            strict_nav_check = league["strict_nav_check"]
 
         self.episode_data_dir = episode_data_dir
+        self.nav_tolerance = nav_tolerance
+        self.strict_nav_check = strict_nav_check
 
         self.num_trainable = num_trainable_policies
         self.num_random = num_random_policies
@@ -138,9 +155,6 @@ class SelfPlayCallback(RLlibCallback):
         **kwargs,
     ) -> None:
         """Callback run right after an Episode has been started."""
-        print(f"\n{'='*40}")
-        print(f"Episode {episode.id_} Started - Policy Map:")
-
         # Report the mapping by CALLING the mapping function this EnvRunner is
         # actually using, taken from its own config.
         #
@@ -157,11 +171,16 @@ class SelfPlayCallback(RLlibCallback):
         mapping_fn = getattr(env_runner.config, "policy_mapping_fn", None)
         if mapping_fn is None:
             mapping_fn = self.get_mapping_fn(self)
-        for i in range(self.num_trainable + self.num_random):
-            agent_id = f"agent_{i}"
-            print(f"  {agent_id} -> {mapping_fn(agent_id, episode)}")
 
-        print(f"{'='*40}\n")
+        # Built only when it will be emitted: this runs once per episode per
+        # runner, and calling the mapping fn for every agent to format a line
+        # nobody sees is work the DEBUG level is meant to avoid.
+        if logger.isEnabledFor(logging.DEBUG):
+            mapping = ", ".join(
+                f"agent_{i} -> {mapping_fn(f'agent_{i}', episode)}"
+                for i in range(self.num_trainable + self.num_random)
+            )
+            logger.debug("episode %s started, policy map: %s", episode.id_, mapping)
 
         self.store[episode.id_] = []
 
@@ -227,7 +246,7 @@ class SelfPlayCallback(RLlibCallback):
         rl_module,
         **kwargs,
     ) -> None:
-        print(f'on_episode_end:{episode}')
+        logger.debug("episode %s ended", episode.id_)
 
         # Persist this episode's step data, then drop it from the in-memory
         # store. Only this episode's steps are written - previously the whole
@@ -268,32 +287,58 @@ class SelfPlayCallback(RLlibCallback):
 
         total_initial_cash = float(init_cash) * num_agents
 
-        print(f"DEBUG: env type: {type(env)}")
-        print(f"DEBUG: env_runner type: {type(env_runner)}")
-        print(f"DEBUG: init_cash derived: {init_cash}")
-        print(f"DEBUG: num_agents derived: {num_agents}")
-        print(f"DEBUG: total_initial_cash: {total_initial_cash}")
+        logger.debug(
+            "episode %s parameters: env=%s env_runner=%s init_cash=%s "
+            "num_agents=%s total_initial_cash=%s",
+            episode.id_, type(env), type(env_runner), init_cash, num_agents,
+            total_initial_cash,
+        )
 
         last_info = episode.get_infos(-1)
-        
-        print(f"\n{'='*20} Episode {episode.id_} NAV Verification {'='*20}")
+
         total_nav = 0.0
+        per_agent = []
         for i in range(num_agents):
             agent_key = f"agent_{i}"
             if agent_key in last_info:
-                nav_str = last_info[agent_key].get("NAV", "0")
-                nav = float(nav_str)
+                nav = float(last_info[agent_key].get("NAV", "0"))
                 total_nav += nav
-                print(f"  {agent_key} NAV: {nav:,.2f}")
-        
-        print(f"  Total NAV: {total_nav:,.2f}")
-        print(f"  Expected Total Initial Cash: {total_initial_cash:,.2f}")
-        
-        if abs(total_nav - total_initial_cash) < 1e-6:
-            print("  Verification: SUCCESS (Total NAV matches initial cash)")
-        else:
-            print(f"  Verification: FAILED (Difference: {total_nav - total_initial_cash:,.2f})")
-        print(f"{'='*60}\n")
+                per_agent.append(f"  {agent_key} NAV: {nav:,.2f}")
+
+        error = total_nav - total_initial_cash
+        conserved = abs(error) < self.nav_tolerance
+
+        # The metric goes out whether or not the invariant held, so a run has a
+        # series to look at rather than only the moment it broke. window=1
+        # keeps it per-iteration rather than smoothed - an error that appears
+        # in one episode out of many must not be averaged away.
+        if metrics_logger:
+            metrics_logger.log_value("nav_conservation_error", abs(error), window=1)
+
+        report = "\n".join(
+            [f"Episode {episode.id_} NAV verification"]
+            + per_agent
+            + [
+                f"  Total NAV: {total_nav:,.2f}",
+                f"  Expected total initial cash: {total_initial_cash:,.2f}",
+            ]
+        )
+
+        if conserved:
+            logger.info("%s\n  Conserved (within %g)", report, self.nav_tolerance)
+            return
+
+        # A conservation break means the ledger is corrupt: cash has been
+        # created or destroyed, so every reward computed from NAV after this
+        # point is meaningless. Loud by default, downgradable for a run that
+        # would rather finish and be inspected afterwards.
+        message = (
+            f"{report}\n  NAV conservation VIOLATED: difference "
+            f"{error:,.2f} exceeds tolerance {self.nav_tolerance:g}"
+        )
+        logger.error(message)
+        if self.strict_nav_check:
+            raise AssertionError(message)
 
     def on_train_result(self, *, algorithm, metrics_logger=None, result, **kwargs):
         """
@@ -319,11 +364,11 @@ class SelfPlayCallback(RLlibCallback):
         policy_returns = env_runner_results.get(MODULE_EPISODE_RETURNS_MEAN)
 
         if not policy_returns:
-            print(
-                f"[SelfPlayCallback] '{MODULE_EPISODE_RETURNS_MEAN}' missing or "
-                f"empty in result['{ENV_RUNNER_RESULTS}']; skipping champion "
-                f"check this iteration. Available keys: "
-                f"{sorted(env_runner_results.keys())}"
+            logger.warning(
+                "%r missing or empty in result[%r]; skipping the champion check "
+                "this iteration. Available keys: %s",
+                MODULE_EPISODE_RETURNS_MEAN, ENV_RUNNER_RESULTS,
+                sorted(env_runner_results.keys()),
             )
             return
 
@@ -334,7 +379,7 @@ class SelfPlayCallback(RLlibCallback):
         valid_returns = [v for v in policy_returns.values() if v is not None]
         
         if not valid_returns:
-            print("No valid policy returns found this iteration.")
+            logger.warning("No valid policy returns found this iteration.")
             return
 
         league_mean = np.mean(valid_returns)
@@ -343,11 +388,6 @@ class SelfPlayCallback(RLlibCallback):
         # Determine dynamic threshold
         # If std is 0 (all same), effectively requires > mean
         threshold = league_mean + (self.std_dev_multiplier * league_std)
-        
-        print(f"\n{'='*80}")
-        print(f"Iteration {iteration} League Stats:")
-        print(f"Mean: {league_mean:.2f} | Std: {league_std:.2f} | Threshold: {threshold:.2f}")
-        print(f"Policy Returns: {policy_returns}")
         
         # Check trainable policies for champion status
         trainable_policies = [policy_id(i) for i in range(self.num_trainable)]
@@ -362,9 +402,15 @@ class SelfPlayCallback(RLlibCallback):
                     best_return = p_ret
                     best_candidate = pid
         
-        print(f"Best Trainable: {best_candidate} ({best_return:.2f})")
-        print(f"{'='*80}\n")
-        
+        logger.info(
+            "iteration %s league stats: mean=%.2f std=%.2f threshold=%.2f "
+            "best_trainable=%s (%.2f)",
+            iteration, league_mean, league_std, threshold, best_candidate,
+            best_return,
+        )
+        logger.debug("iteration %s policy returns: %s", iteration, policy_returns)
+
+
         # Check relative performance trigger
         if best_candidate and best_return > threshold:
             # Also check if it's better than previous champion (optional but good for progress)
@@ -402,13 +448,20 @@ class SelfPlayCallback(RLlibCallback):
         if self.champion_history:
             last_champion_iter = self.champion_history[-1]['iteration']
             if iteration - last_champion_iter < self.min_iterations_between_champions:
-                print(f"Skipping champion creation: only {iteration - last_champion_iter} iterations "
-                      f"since last champion (min: {self.min_iterations_between_champions})")
+                logger.info(
+                    "Skipping champion creation: only %s iterations since the "
+                    "last champion (min: %s)",
+                    iteration - last_champion_iter,
+                    self.min_iterations_between_champions,
+                )
                 return False
 
         # Check if we need to remove old champion first (rolling window)
         if self.champion_count >= self.max_champions:
-            print(f"Max champions ({self.max_champions}) reached, will remove oldest")
+            logger.info(
+                "Max champions (%s) reached, removing the oldest",
+                self.max_champions,
+            )
             self._remove_oldest_champion(algorithm)
 
         return True
@@ -427,14 +480,12 @@ class SelfPlayCallback(RLlibCallback):
         self.champion_id_counter += 1
         champion_id = f"{CHAMPION_PREFIX}{self.champion_id_counter}"
         
-        print(f"\n{'*'*80}")
-        print(f"🏆 CREATING CHAMPION SNAPSHOT 🏆")
-        print(f"Champion ID: {champion_id}")
-        print(f"Source Policy: {source_policy_id}")
-        print(f"Return: {return_value:.2f}")
-        print(f"Iteration: {iteration}")
-        print(f"{'*'*80}\n")
-        
+        logger.info(
+            "Creating champion snapshot %s from %s (return %.2f, iteration %s)",
+            champion_id, source_policy_id, return_value, iteration,
+        )
+
+
         try:
             # Take the snapshot from the LearnerGroup, not from
             # `algorithm.get_module()`: the latter returns the EnvRunner's
@@ -547,21 +598,25 @@ class SelfPlayCallback(RLlibCallback):
             self.champion_history.append(champion_info)
             self.champion_count += 1
 
-            print(f"✓ Champion {champion_id} created successfully!")
-            print(f"✓ League size now: "
-                  f"{self.num_trainable + self.num_random + self.champion_count} "
-                  f"({self.num_trainable} trainable + {self.num_random} random "
-                  f"+ {self.champion_count} champions)")
-            print(f"✓ Active champions: {[c['id'] for c in self.champion_history]}\n")
-            
+            logger.info(
+                "Champion %s created. League size now %s (%s trainable + %s "
+                "random + %s champions). Active champions: %s",
+                champion_id,
+                self.num_trainable + self.num_random + self.champion_count,
+                self.num_trainable, self.num_random, self.champion_count,
+                [c['id'] for c in self.champion_history],
+            )
+
         except Exception as e:
             # Roll the pool entry back so matchmaking can never select a module
             # that failed to be created.
             if champion_id in self.available_modules:
                 self.available_modules.remove(champion_id)
-            print(f"✗ Error creating champion {champion_id}: {e}")
-            import traceback
-            traceback.print_exc()
+            # exc_info carries the traceback that the bare `traceback.print_exc`
+            # used to put on stderr, unattached to the message it belonged to.
+            logger.error(
+                "Error creating champion %s: %s", champion_id, e, exc_info=True,
+            )
     
     def _remove_oldest_champion(self, algorithm):
         """
@@ -581,8 +636,10 @@ class SelfPlayCallback(RLlibCallback):
         oldest = self.champion_history.pop(0)
         champion_id = oldest['id']
 
-        print(f"\n⚠️  Removing oldest champion: {champion_id} "
-              f"(from iteration {oldest['iteration']}, return={oldest['return']:.2f})")
+        logger.info(
+            "Removing oldest champion %s (from iteration %s, return %.2f)",
+            champion_id, oldest['iteration'], oldest['return'],
+        )
 
         # Remove from available modules (won't be assigned to agents anymore).
         # Do this BEFORE remove_module so the mapping fn we hand to RLlib below
@@ -600,9 +657,15 @@ class SelfPlayCallback(RLlibCallback):
         except Exception as e:
             # Non-fatal: the champion is already out of the matchmaking pool, so
             # training stays correct - we just keep holding its memory.
-            print(f"⚠️  Could not remove module {champion_id} from algorithm: {e}")
+            logger.warning(
+                "Could not remove module %s from the algorithm: %s",
+                champion_id, e,
+            )
 
-        print(f"✓ Champion removed. Active champions: {[c['id'] for c in self.champion_history]}\n")
+        logger.info(
+            "Champion removed. Active champions: %s",
+            [c['id'] for c in self.champion_history],
+        )
     
     def league_state(self):
         """Champion bookkeeping as plain JSON-able data.

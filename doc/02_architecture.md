@@ -17,7 +17,7 @@ For what each layer does in detail, follow the links into
 | DL backend | PyTorch | ≥2.13, <3 | `framework("torch")` |
 | Book data structure | `sortedcontainers.SortedDict` | ≥2.4 | price → `OrderList` map |
 | Numeric type for money | `decimal.Decimal` | stdlib | exact cash/quantity arithmetic |
-| Rendering | `tabulate`, `pandas` | | `env.render()` prints ASCII tables |
+| Rendering | `tabulate`, `pandas` | | `env.render()` logs ASCII tables at DEBUG |
 | Plotting | `matplotlib` | ≥3.11 | offline scripts in `visualize/` |
 | Packaging | setuptools | | `install_requires` + `[rllib]` / `[plot]` / `[dev]` extras |
 | CI | GitHub Actions | matrix 3.11 / 3.12 | unit tests → random smoke run → RLlib integration |

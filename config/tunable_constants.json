@@ -41,19 +41,13 @@
     "RAY_DEBUG_DISABLE_MEMORY_MONITOR": "True"
   },
 
-  "plot_defaults": {
-    "_source": "gym_continuousDoubleAuction/train/plotter/plot_handler.py",
-    "_note": "Presentation defaults for the notebook plots. lob_subplot_fig_size is separate because plot_LOB_subplot builds a tall stack of subplots and sizes it independently of its own fig_size argument, which it ignores; that behaviour is preserved rather than silently changed. moving_average_window_fraction is the rolling-mean window as a fraction of the series length.",
-    "fig_size": [25, 10],
-    "wide_fig_size": [25, 5],
-    "lob_subplot_fig_size": [25, 25],
-    "moving_average_window_fraction": 0.1,
-    "x_label": "step",
-    "reward_y_label": "reward",
-    "mid_prices_y_label": "mid_prices",
-    "series_line_width": 0.7,
-    "moving_average_line_width": 1,
-    "moving_average_color": "black"
+  "logging": {
+    "_source": "gym_continuousDoubleAuction/logging_setup.py",
+    "_note": "How the package configures the standard library logging module, applied once per process by the first get_logger call. level is the fallback: $CDA_LOG_LEVEL wins over it, which is how the level reaches Ray's worker processes - they are separate interpreters that never run train.main, so train.py exports the variable and each worker's first import picks it up. env_var is named here so the exporter and the reader agree on one string. The format carries the pid because with num_env_runners > 0 every worker logs into the same stream, and without it the episode hooks are unattributable.",
+    "level": "INFO",
+    "env_var": "CDA_LOG_LEVEL",
+    "format": "%(asctime)s %(levelname)-7s pid=%(process)d %(name)s: %(message)s",
+    "datefmt": "%H:%M:%S"
   },
 
   "visualize_paths": {

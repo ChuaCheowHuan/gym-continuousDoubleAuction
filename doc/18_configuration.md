@@ -21,7 +21,7 @@ beginning with `_`, at every level.
 |---|---|---|
 | [`config/train_config.json`](../config/train_config.json) | Every `TrainConfig` value, **including the env keys** | `TrainConfig`, `default_model_config`, `SelfPlayCallback` |
 | [`config/env_defaults.json`](../config/env_defaults.json) | Fallbacks for an env built without a full config dict | `continuousDoubleAuctionEnv` and the env mixins |
-| [`config/tunable_constants.json`](../config/tunable_constants.json) | Structural constants: space layout, ID prefixes, plot and path defaults | `state_helper`, `action_helper`, `policy_handler`, `plot_handler`, `visualize/` |
+| [`config/tunable_constants.json`](../config/tunable_constants.json) | Structural constants: space layout, ID prefixes, logging setup, path defaults | `state_helper`, `action_helper`, `policy_handler`, `logging_setup`, `visualize/` |
 | [`config/cli_defaults.json`](../config/cli_defaults.json) | Flag defaults with no other config home | `CDA_env_rand` |
 | [`config/runtime_profiles.json`](../config/runtime_profiles.json) | *Where* a run executes: the `gpu` / `cpu` hardware sets and per-platform paths | `train/runtime.py`, `CDA_NSP.ipynb` |
 
@@ -233,8 +233,16 @@ prefix.
 **Runtime env vars.** Set with `setdefault` before `ray.init`, so a value already exported in the
 shell wins.
 
-**Plot and visualize defaults.** Figure sizes, the moving-average window fraction, line widths, and
-the paths the `visualize/` scripts read.
+**Logging.** The default level, the format string, the date format, and the name of the
+environment variable the level travels in (`CDA_LOG_LEVEL`). Read by
+[`logging_setup.py`](../gym_continuousDoubleAuction/logging_setup.py), which applies them once per
+process on the first `get_logger` call — including inside Ray's worker processes, which never run
+`main()` and would otherwise come up unconfigured. The pid is in the format on purpose: with
+`num_env_runners > 0` several processes log into one stream. See
+[11 §1.3](11_logging_and_observability.md).
+
+**Visualize defaults.** The paths the `visualize/` scripts read. (The `plot_defaults` group went
+with `plot_handler.py` — see [11 §1.4](11_logging_and_observability.md).)
 
 ---
 
@@ -257,15 +265,20 @@ threaded to `default_model_config` via `create_multi_agent_config`. Called witho
 `vf_share_layers` is `False` deliberately: the learners train against non-stationary league
 opponents, where sharing a trunk between policy and value tends to destabilise the value estimate.
 
-`SelfPlayCallback` does the same with the `league_self_play` group and the two agent counts.
+`SelfPlayCallback` does the same with the `league_self_play` group and the two agent counts. That
+group also carries the two knobs on the episode-end NAV conservation check: `nav_tolerance`, the
+absolute cash tolerance, and `strict_nav_check` (`--no-strict-nav-check`), which decides whether a
+violation raises or only logs. It defaults to raising — a conservation break means the ledger is
+corrupt — and the `nav_conservation_error` metric is emitted either way. See
+[11 §1.5](11_logging_and_observability.md).
 
 `num_learners`, the reward coefficients and the sizing knobs have no CLI flag, so the file is the
 only way to set them outside the Python API.
 
 ### 5.1 The `run` group
 
-These six are the only keys that still mean something on a **restored** run. Everything else in
-the file is baked into the checkpoint — see §5.2.
+These are the keys that still mean something on a **restored** run. Everything else in the file is
+baked into the checkpoint — see §5.2.
 
 | Key | Flag | What it does |
 |---|---|---|
@@ -275,6 +288,13 @@ the file is baked into the checkpoint — see §5.2.
 | `chkpt_keep` | `--chkpt-keep` | How many saves to retain; `<= 0` keeps all |
 | `is_restore` | `--restore` | Resume from a checkpoint rather than starting from scratch |
 | `restore_path` | `--from-checkpoint` | Which checkpoint; `null` takes the newest readable one |
+| `log_level` | `--log-level` | **Ray's** level, handed to `PPOConfig.debugging` |
+| `cda_log_level` | — | **This package's** level; exported as `$CDA_LOG_LEVEL` so worker processes inherit it |
+
+**Two log levels, deliberately.** Ray at `INFO` is noise; this package at `INFO` is the per-episode
+NAV table, the per-iteration league statistics and the checkpoint lines — the output a run is meant
+to produce. Set `cda_log_level` to `DEBUG` for the per-step render and account tables, `WARNING`
+for a quiet run. See [11 §1.3](11_logging_and_observability.md).
 
 **`num_iters` is a target.** A 16-iteration run resumed at iteration 9 does 7 more, so the length
 of a run does not depend on how many times it was interrupted. It used to be a count on a driver

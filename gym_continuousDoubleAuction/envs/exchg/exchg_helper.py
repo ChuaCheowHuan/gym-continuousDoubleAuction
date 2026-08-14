@@ -10,8 +10,11 @@ from .info_helper import Info_Helper
 from ..orderbook.orderbook import OrderBook
 from ..agent.trader import Trader
 from ...config_loader import env_default
+from ...logging_setup import get_logger
 
 from tabulate import tabulate
+
+logger = get_logger(__name__)
 
 class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info_Helper):
     def __init__(self, init_cash=env_default("init_cash"),
@@ -89,12 +92,18 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
 
         return next_states, rewards, dones, truncateds, infos
 
+    # The print_* methods below keep their names - they are the render path,
+    # called only from `_render` - but write to the logger at DEBUG rather than
+    # to stdout. `render()` checks that DEBUG is enabled before calling any of
+    # them, so the tabulate and DataFrame work here does not happen for output
+    # that would be dropped.
+
     def print_table(self, msg, data):
         """
         Tabulate data for display.
         If data is a 1D numpy array holding a flat LOB snapshot, reshape the book
         block into a 4-column table: [bid_price, bid_size, ask_price, ask_size],
-        then print any trailing market-level scalars on their own line.
+        then log any trailing market-level scalars on their own line.
         """
         if isinstance(data, np.ndarray) and data.ndim == 1 and data.size >= self.book_dim:
             book = data[:self.book_dim]
@@ -102,24 +111,27 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
             # shape (k_rows, book_rows): each row is one price level
             reshaped = book.reshape(self.book_rows, self.k_rows).T
             headers = list(BOOK_ROW_ORDER)
-            print(msg, tabulate(reshaped, headers=headers))
+            logger.debug("%s %s", msg, tabulate(reshaped, headers=headers))
             if extras.size == self.extra_dim:
-                print("log_mid = {:.6f}; log1p_spread_ticks = {:.6f}".format(extras[0], extras[1]))
+                logger.debug(
+                    "log_mid = %.6f; log1p_spread_ticks = %.6f",
+                    extras[0], extras[1],
+                )
         else:
-            print(msg, tabulate(data))
+            logger.debug("%s %s", msg, tabulate(data))
         return 0
 
     def print_order_in_book_all_seq(self, all_order_in_book):
         for act_seq_num, order_in_book in enumerate(all_order_in_book):
-            #print(order_in_book)
             if order_in_book is not None and order_in_book != []:
-                print("order_in_book (act_seq_num): {}\n".format(act_seq_num) + tabulate([order_in_book], headers="keys"))
-        print("\n")
+                logger.debug(
+                    "order_in_book (act_seq_num): %s\n%s",
+                    act_seq_num, tabulate([order_in_book], headers="keys"),
+                )
 
     def print_trades_all_seq(self, all_trades):
         for act_seq_num, trades in enumerate(all_trades):
             self._print_trades(act_seq_num, trades)
-        print("\n")
 
     def _print_trades(self, act_seq_num, trades):
         """
@@ -144,7 +156,7 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
             str = ""
         else:
             str = "TRADES (act_seq_num): {}\n".format(act_seq_num) + df_trade_list.to_string()
-            print(str)
+            logger.debug(str)
 
         return str
 
@@ -185,12 +197,14 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
 
     def print_mark_to_mkt(self, msg):
         """
-        Print mark_to_mkt info for all traders(agents).
+        Log mark_to_mkt info for all traders(agents).
         """
 
-        print(msg)
-        for trader in self.traders:
-            print('ID: {}; profit: {}'.format(trader.ID, trader.acc.profit))
+        rows = "\n".join(
+            'ID: {}; profit: {}'.format(trader.ID, trader.acc.profit)
+            for trader in self.traders
+        )
+        logger.debug("%s\n%s", msg, rows)
 
         return 0
 
@@ -238,7 +252,7 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         acc['total_profit'] = total_profit_list
         acc['num_trades'] = num_trades_list
 
-        print(msg, tabulate(acc, headers="keys"))
+        logger.debug("%s %s", msg, tabulate(acc, headers="keys"))
 
         return 0
 
