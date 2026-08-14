@@ -2,7 +2,7 @@
 
 Every value in the project lives in `config/`. No module holds a literal copy of one.
 
-The `config/` folder at the repository root holds four JSON files, **all four of which are real
+The `config/` folder at the repository root holds five JSON files, **all five of which are real
 inputs**. Python code declares the *schema* — what each knob is called, what type it has, what it
 does — and reads the *value* from these files through
 [`config_loader.py`](../gym_continuousDoubleAuction/config_loader.py). There is no
@@ -15,7 +15,7 @@ beginning with `_`, at every level.
 
 ---
 
-## 1. The four files
+## 1. The five files
 
 | File | Holds | Read by |
 |---|---|---|
@@ -23,6 +23,12 @@ beginning with `_`, at every level.
 | [`config/env_defaults.json`](../config/env_defaults.json) | Fallbacks for an env built without a full config dict | `continuousDoubleAuctionEnv` and the env mixins |
 | [`config/tunable_constants.json`](../config/tunable_constants.json) | Structural constants: space layout, ID prefixes, plot and path defaults | `state_helper`, `action_helper`, `policy_handler`, `plot_handler`, `visualize/` |
 | [`config/cli_defaults.json`](../config/cli_defaults.json) | Flag defaults with no other config home | `CDA_env_rand` |
+| [`config/runtime_profiles.json`](../config/runtime_profiles.json) | *Where* a run executes: the `gpu` / `cpu` hardware sets and per-platform paths | `train/runtime.py`, `CDA_NSP.ipynb` |
+
+The split between the first file and the last is the one worth holding on to: `train_config.json`
+is **what the run does** and is identical on every machine; `runtime_profiles.json` is **what the
+machine is** and changes with it. Moving a run between hardware sets changes wall-clock time and
+output paths, not the trained policy. See [§8](#8-runtime-profiles).
 
 ### 1.1 The loader
 
@@ -316,3 +322,69 @@ anything.
 4. If the code cannot honour every value the key could take — a cardinality wired to a mapping, a
    count that has to be odd — validate it and raise. A structural value that is silently ignored is
    worse than a literal, because the file claims it works.
+
+---
+
+## 8. Runtime profiles
+
+[`config/runtime_profiles.json`](../config/runtime_profiles.json) answers a question the other four
+files deliberately do not: *what machine is this?* It exists because `CDA_NSP.ipynb` has to run
+unchanged on a Colab VM and inside the
+[docker/ml image](19_docker.md), which differ in core count, GPU presence and filesystem layout —
+and in nothing else. Resolved by
+[`train/runtime.py`](../gym_continuousDoubleAuction/train/runtime.py).
+
+### 8.1 The two hardware sets
+
+Exactly two, chosen by `torch.cuda.is_available()` and the notebook's `USE_GPU` toggle. The stated
+bounds are a ceiling of **2 CPUs + 1 GPU** and a floor of **1 CPU + 0 GPUs**;
+[`test_runtime_profiles.py`](../gym_continuousDoubleAuction/test/test_runtime_profiles.py) asserts
+both sets stay inside them.
+
+| | `gpu` | `cpu` |
+|---|---|---|
+| `ray.init(num_cpus, num_gpus)` | 2, 1 | 1, 0 |
+| `num_env_runners` | 2 | 0 |
+| `num_cpus_per_env_runner` | 1.0 | 1.0 |
+| `num_learners` | 0 | 0 |
+| `num_gpus_per_learner` | 1.0 | 0.0 |
+
+Two choices in there are worth stating outright:
+
+- **`num_learners=0` in both.** The learner runs in the driver process and still gets the GPU —
+  `num_gpus_per_learner` is only turned into a Ray *resource request* for remote learners
+  (`learner_group.py`, the `is_remote` branch). A remote learner would cost one of the two CPUs and
+  buy nothing at a 256×256 MLP.
+- **`num_env_runners=2` under the gpu set.** Sampling is the bottleneck here, not the update — the
+  environment matches orders in Python, measured at ~500 env-steps/sec on one core, against a PPO
+  update the GPU finishes in seconds. This is the `num_env_runners=N, num_learners=0` shape
+  [doc/09 §5](09_distributed_training.md) recommends for exactly this case. A test asserts
+  `num_env_runners × num_cpus_per_env_runner ≤ num_cpus`, because runners are actors: ask for more
+  CPUs than `ray.init()` was given and they stay pending forever rather than failing.
+
+### 8.2 Platforms
+
+`repo_path`, `results_root` and `episode_data_root` per platform; `null` means "leave it alone",
+which is what a local checkout wants. The Colab entry splits the two output roots on purpose:
+checkpoints go to the Drive-backed repo so a disconnected session is recoverable with
+`is_restore`, while the per-episode pickles (~10MB per 4096-step episode) go to the VM's local disk
+and never cross the Drive FUSE layer.
+
+`platforms.colab.pip_packages` is the one entry read *without* the loader — the notebook's
+bootstrap cell reads it with plain `json.load`, because it runs before the package is importable
+and installing what makes it importable is the whole job of that cell. Its pins must track
+`requirements.txt`; torch, numpy and pandas are absent from it deliberately, since installing this
+repo's pins over Colab's preinstalled CUDA torch would replace it with a CPU wheel.
+
+### 8.3 Overriding it
+
+`$CDA_PLATFORM` and `$CDA_USE_GPU` pin what detection would otherwise guess, so a headless run can
+be forced onto a given set without editing anything:
+
+```bash
+CDA_PLATFORM=docker CDA_USE_GPU=false python -m gym_continuousDoubleAuction.train.train
+```
+
+Note the asymmetry, which is intentional: `CDA_USE_GPU=true` does **not** force the gpu set onto a
+machine without CUDA. It falls back to the cpu set and says so, because the alternative is RLlib
+placing a learner on a device that is not there.

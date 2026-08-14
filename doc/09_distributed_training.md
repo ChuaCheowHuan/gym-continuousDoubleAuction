@@ -290,6 +290,29 @@ default-config tests, before being considered correct.**
 `num_env_runners` and `num_learners` should be sized independently, against whichever of sampling
 or learning is actually the bottleneck on the target machine — not moved in lockstep.
 
+### 5.1 The two shipped sizings
+
+[`config/runtime_profiles.json`](../config/runtime_profiles.json) applies the above to the two
+machines this repo is actually run on, under a ceiling of 2 CPUs + 1 GPU
+([18_configuration.md](18_configuration.md) §8):
+
+| | `gpu` (2 CPUs, 1 GPU) | `cpu` (1 CPU) |
+|---|---|---|
+| `num_env_runners` | 2 | 0 |
+| `num_learners` | 0 | 0 |
+| `num_gpus_per_learner` | 1.0 | 0.0 |
+
+The gpu set is the second bullet above — `num_env_runners=N, num_learners=0` — chosen because
+sampling is measured at ~500 env-steps/sec on one core against a PPO update a GPU finishes in
+seconds. It is deliberately *not* the third bullet: a remote learner would consume one of the two
+CPUs, and `num_learners=0` still puts the learner on the GPU, because `num_gpus_per_learner`
+becomes a Ray resource request only in `LearnerGroup`'s remote branch.
+
+Both sets are exercised end to end before being changed, and
+`test_runtime_profiles.py::test_env_runners_fit_the_cpu_budget` pins the constraint that actually
+bites: runners are actors, so `num_env_runners × num_cpus_per_env_runner` above `ray.init`'s
+`num_cpus` leaves them pending forever rather than raising.
+
 ### Cost to watch: per-episode pickles
 
 With `episode_data_dir` set (the default), **every** episode on **every** runner writes one file

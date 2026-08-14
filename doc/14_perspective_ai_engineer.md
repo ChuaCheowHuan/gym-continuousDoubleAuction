@@ -192,8 +192,10 @@ other assertion pass vacuously over an empty list. That is a level of test disci
 see.
 
 `resolved_gpus_per_learner()` forces the GPU fraction to 0 when CUDA is unavailable, with a
-printed warning — so the notebook's `0.75` default does not hard-fail on a laptop. Good defensive
-default.
+printed warning — so a GPU config does not hard-fail on a laptop. Good defensive default, and
+`runtime.detect_hardware()` now applies the same rule one layer up: `USE_GPU=True` on a machine
+without CUDA selects the cpu parameter set and says so, rather than handing RLlib a device that is
+not there.
 
 Full mechanics in [09_distributed_training.md](09_distributed_training.md).
 

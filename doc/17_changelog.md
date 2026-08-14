@@ -229,12 +229,14 @@ exclusively from source code, with executed verification.
 tree and re-running every behavioural probe. It was originally created as `doc_new_2/` alongside
 the two source folders; once complete, both `gym_continuousDoubleAuction/doc/` and `doc_new/`
 were deleted and `doc_new_2/` was renamed to `doc/`, taking their place at the repository root.
-The reconciliation table is in [README.md](README.md#reconciliation-of-the-two-source-sets).
+The reconciliation table produced during that merge was not carried into the current
+[README.md](../README.md), which indexes the merged set instead.
 
-The top-level `README.md` was not part of this restructuring and still links to
-`gym_continuousDoubleAuction/doc/change.md` and the three `CHANGES_*.md` redirect shims — those
-paths are now broken, since the folder they pointed into no longer exists. Fixing the top-level
-`README.md` is follow-up work, not something this merge did.
+**Follow-up since done.** The top-level `README.md` was not part of that restructuring: it still
+pointed at `gym_continuousDoubleAuction/doc/change.md` and three `CHANGES_*.md` redirect shims in
+a folder that no longer existed, and every entry in its own document table omitted the `doc/`
+prefix, so all 39 of those links resolved against the repository root and were broken. Both are
+fixed; the table now also lists §18 and §19.
 
 ## 10. Test suite: unittest → pytest
 
@@ -333,7 +335,8 @@ entry point. A missing key raises — naming the file, the group and the keys th
 than resolving to a default written in Python. `$CDA_CONFIG_DIR` repoints it at another config
 tree, which is what makes the no-literals claim testable.
 
-**All four files are now inputs.** `env_defaults.json` was added to hold the env's standalone
+**All four files became inputs** (a fifth, `runtime_profiles.json`, arrived later — see §13).
+`env_defaults.json` was added to hold the env's standalone
 fallbacks, which deliberately differ from the training values and had been literals in
 `continuousDoubleAuctionEnv.__init__`. `tunable_constants.json` and `cli_defaults.json` stopped
 being inventories and became live. `train_config.json` is no longer opt-in: `TrainConfig()` reads
@@ -361,3 +364,52 @@ property rather than asserting current values: it copies `config/`, edits a valu
 `$CDA_CONFIG_DIR` at the copy, and checks the change reaches the observation space, the action
 space, the env fallbacks and `TrainConfig`. A literal left behind would keep the old value and fail.
 See [18_configuration.md](18_configuration.md).
+
+---
+
+## 13. The notebook runs on two machines, from config
+
+`CDA_NSP.ipynb` was a Colab notebook that happened to also work elsewhere: a hand-flipped
+`IS_COLAB = False`, a hardcoded pip list, a hardcoded Drive path, and a `TrainConfig(...)` call
+passing eleven keyword arguments. It now runs unchanged on a Colab VM and inside the
+[docker/ml image](19_docker.md).
+
+**The config cell stopped holding values.** Ten of its eleven arguments restated
+`train_config.json` exactly; the eleventh (`num_gpus_per_learner=0.75` against the file's `0.25`)
+was a no-op, since with `num_learners=0` the fraction only selects a device and never becomes a
+Ray resource request. The consequence was worse than the redundancy: editing `train_config.json`
+changed nothing for those ten keys, and a config tree swapped in via `$CDA_CONFIG_DIR` applied to
+every field *except* them. The cell is now `TrainConfig()` and reports what it read.
+
+**`config/runtime_profiles.json` (new, the fifth file).** Two hardware parameter sets — `gpu`
+(2 CPUs + 1 GPU) and `cpu` (1 CPU, none) — plus per-platform paths, resolved by the new
+[`train/runtime.py`](../gym_continuousDoubleAuction/train/runtime.py). The split it introduces is
+the point: `train_config.json` is *what the run does* and is identical everywhere;
+`runtime_profiles.json` is *what the machine is*. A test asserts a profile moves no field that
+changes the learning problem, so a Colab run and a docker run stay comparable.
+
+**Two knobs left in the notebook**, `PLATFORM` and `USE_GPU`, both defaulting to `auto`. Detection
+covers Colab (`COLAB_RELEASE_TAG`) and the docker image (`/.dockerenv` **and** the recorded
+`repo_path` existing — `/.dockerenv` alone is true in any container, including a dev container that
+is not this image). `$CDA_PLATFORM` / `$CDA_USE_GPU` pin either one for headless runs.
+
+**Colab specifics that were previously left to the reader.** The bootstrap installs only what is
+missing, at the pinned versions, then stops with a restart banner — the install moves packages
+Colab has already imported, and continuing in the same session is the classic silent failure. It
+is a no-op on the second run. Checkpoints go to the Drive-backed repo so `is_restore` survives a
+disconnect, while the per-episode pickles (~10MB per 4096-step episode, measured) go to the VM's
+local disk instead of crossing the Drive FUSE layer. `torch`, `numpy` and `pandas` are absent from
+the install list on purpose: this repo's pins would replace Colab's preinstalled CUDA torch with a
+CPU wheel.
+
+**Under Jupyter the kernel's working directory is the notebook's own directory**, one level below
+the repo root that `python -m ...train` runs from — so notebook and CLI runs had been writing to
+two different `results/` trees. `runtime.chdir_to_repo()` resolves it, best-effort: a container
+with the working tree bind-mounted somewhere other than `/workspace/code` degrades to the `local`
+platform, which relocates nothing.
+
+`train.main()` also lost its private copy of the `runtime_env_vars` export loop; both it and the
+notebook now call `runtime.apply_env_vars()`.
+
+See [18_configuration.md](18_configuration.md) §8 and
+[10_testing.md](10_testing.md) §6.3 (23 tests).

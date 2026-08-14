@@ -330,7 +330,7 @@ Infrastructure confirmations:
 - `CODEOWNER` and `CODEOWNERS` both exist at the repo root.
 
 **Supports:** S2-8, S3-6, S3-7, S4-1, S4-2, S4-3, S4-9, S4-18, and the CI / `.gitignore`
-corrections in [README.md](README.md).
+corrections in [README.md](../README.md).
 
 ---
 

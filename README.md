@@ -12,63 +12,75 @@ For a detailed breakdown of codebase modernizations, please refer to the [17_cha
 
 | # | Document | What it answers |
 |---|---|---|
-| 1 | [01_overview.md](01_overview.md) | What this project is, the market it models, the research question, what an episode looks like |
-| 2 | [02_architecture.md](02_architecture.md) | Layer map, package tree, the mixin/MRO chain, the step lifecycle, config keys, data flow, tech stack |
+| 1 | [01_overview.md](doc/01_overview.md) | What this project is, the market it models, the research question, what an episode looks like |
+| 2 | [02_architecture.md](doc/02_architecture.md) | Layer map, package tree, the mixin/MRO chain, the step lifecycle, config keys, data flow, tech stack |
 
 ### Core mechanisms (reference)
 
 | # | Document | What it answers |
 |---|---|---|
-| 3 | [03_matching_engine.md](03_matching_engine.md) | Book data structures, limit/market processing, modify-order semantics and the six accounting scenarios, invariants |
-| 4 | [04_accounting.md](04_accounting.md) | Cash escrow, order approval, position transitions including atomic flips, mark-to-market, NAV conservation |
-| 5 | [05_observation_space.md](05_observation_space.md) | The 42-float snapshot: midpoint normalization, `√V` sizing, `log_mid` / `log1p_spread_ticks`, temporal stacking, the raw/normalized split, measured feature scales |
-| 6 | [06_action_space.md](06_action_space.md) | The `Dict` action space, ghost-level price anchoring, the two degenerate size dimensions, the legacy `Tuple` design it replaced |
-| 7 | [07_reward_function.md](07_reward_function.md) | The five-term formula, its account plumbing, the measured decomposition, a coefficient tuning guide |
+| 3 | [03_matching_engine.md](doc/03_matching_engine.md) | Book data structures, limit/market processing, modify-order semantics and the six accounting scenarios, invariants |
+| 4 | [04_accounting.md](doc/04_accounting.md) | Cash escrow, order approval, position transitions including atomic flips, mark-to-market, NAV conservation |
+| 5 | [05_observation_space.md](doc/05_observation_space.md) | The 42-float snapshot: midpoint normalization, `√V` sizing, `log_mid` / `log1p_spread_ticks`, temporal stacking, the raw/normalized split, measured feature scales |
+| 6 | [06_action_space.md](doc/06_action_space.md) | The `Dict` action space, ghost-level price anchoring, the two degenerate size dimensions, the legacy `Tuple` design it replaced |
+| 7 | [07_reward_function.md](doc/07_reward_function.md) | The five-term formula, its account plumbing, the measured decomposition, a coefficient tuning guide |
 
 ### Training
 
 | # | Document | What it answers |
 |---|---|---|
-| 8 | [08_self_play_league.md](08_self_play_league.md) | League play: champion snapshotting and its four load-bearing ordering constraints, weighted matchmaking, configuration, monitoring, troubleshooting |
-| 9 | [09_distributed_training.md](09_distributed_training.md) | `num_env_runners` and `num_learners`: what each distributes, worked examples, and three now-fixed bugs that existed only at non-default values |
-| 10 | [10_testing.md](10_testing.md) | Every test file, what each case pins down, CI, and the gaps |
-| 11 | [11_logging_and_observability.md](11_logging_and_observability.md) | What training records, where it goes, and the gap between what is computed and what is surfaced |
+| 8 | [08_self_play_league.md](doc/08_self_play_league.md) | League play: champion snapshotting and its four load-bearing ordering constraints, weighted matchmaking, configuration, monitoring, troubleshooting |
+| 9 | [09_distributed_training.md](doc/09_distributed_training.md) | `num_env_runners` and `num_learners`: what each distributes, worked examples, and three now-fixed bugs that existed only at non-default values |
+| 10 | [10_testing.md](doc/10_testing.md) | Every test file, what each case pins down, CI, and the gaps |
+| 11 | [11_logging_and_observability.md](doc/11_logging_and_observability.md) | What training records, where it goes, and the gap between what is computed and what is surfaced |
 
 ### Analysis
 
 | # | Document | Audience |
 |---|---|---|
-| 12 | [12_perspective_rl_researcher.md](12_perspective_rl_researcher.md) | Algorithm, reward design, exploration, sample efficiency, training stability |
-| 13 | [13_perspective_financial_trader.md](13_perspective_financial_trader.md) | Microstructure realism, risk, execution, P&L, desk metrics |
-| 14 | [14_perspective_ai_engineer.md](14_perspective_ai_engineer.md) | Code quality, packaging, scalability, observability, production readiness |
-| 15 | [15_findings_and_recommendations.md](15_findings_and_recommendations.md) | Consolidated, severity-ranked findings with fixes and a suggested sequence |
-| 16 | [16_verification_log.md](16_verification_log.md) | Every executed probe and its raw output |
-| 17 | [17_changelog.md](17_changelog.md) | What changed since `original_v1` (2020) and why |
+| 12 | [12_perspective_rl_researcher.md](doc/12_perspective_rl_researcher.md) | Algorithm, reward design, exploration, sample efficiency, training stability |
+| 13 | [13_perspective_financial_trader.md](doc/13_perspective_financial_trader.md) | Microstructure realism, risk, execution, P&L, desk metrics |
+| 14 | [14_perspective_ai_engineer.md](doc/14_perspective_ai_engineer.md) | Code quality, packaging, scalability, observability, production readiness |
+| 15 | [15_findings_and_recommendations.md](doc/15_findings_and_recommendations.md) | Consolidated, severity-ranked findings with fixes and a suggested sequence |
+| 16 | [16_verification_log.md](doc/16_verification_log.md) | Every executed probe and its raw output |
+| 17 | [17_changelog.md](doc/17_changelog.md) | What changed since `original_v1` (2020) and why |
+
+### Configuration and deployment
+
+| # | Document | What it answers |
+|---|---|---|
+| 18 | [18_configuration.md](doc/18_configuration.md) | The five `config/` files and what each owns, the loader's rules, precedence between file and flags, the runtime profiles that pick a hardware set, how to add a knob |
+| 19 | [19_docker.md](doc/19_docker.md) | The GPU training image: build and run, what each flag is for, GPU prerequisites, where artefacts land in an ephemeral container, troubleshooting |
 
 ---
 
 ## Reading paths
 
 **New to the codebase**
-[01](01_overview.md) → [02](02_architecture.md) → [03](03_matching_engine.md) →
-[04](04_accounting.md) → [05](05_observation_space.md) → [06](06_action_space.md)
+[01](doc/01_overview.md) → [02](doc/02_architecture.md) → [03](doc/03_matching_engine.md) →
+[04](doc/04_accounting.md) → [05](doc/05_observation_space.md) → [06](doc/06_action_space.md)
 
 **Deciding whether to build on this**
-[01](01_overview.md) → [15](15_findings_and_recommendations.md) → [16](16_verification_log.md)
+[01](doc/01_overview.md) → [15](doc/15_findings_and_recommendations.md) → [16](doc/16_verification_log.md)
 
 **Planning changes to the RL layer**
-[15](15_findings_and_recommendations.md) (severity order) → [12](12_perspective_rl_researcher.md) →
-[05](05_observation_space.md) → [07](07_reward_function.md)
+[15](doc/15_findings_and_recommendations.md) (severity order) → [12](doc/12_perspective_rl_researcher.md) →
+[05](doc/05_observation_space.md) → [07](doc/07_reward_function.md)
 
 **Setting up training**
-[08](08_self_play_league.md) → [09](09_distributed_training.md) (if raising `num_env_runners`
-or `num_learners` above their `0` defaults) → [11](11_logging_and_observability.md)
+[18](doc/18_configuration.md) (where every value lives) → [08](doc/08_self_play_league.md) →
+[09](doc/09_distributed_training.md) (if raising `num_env_runners` or `num_learners` above their
+`0` defaults) → [11](doc/11_logging_and_observability.md)
+
+**Running it on Colab or a GPU box**
+[19](doc/19_docker.md) (the training image) → [18](doc/18_configuration.md) §8 (the `gpu` / `cpu`
+parameter sets `CDA_NSP.ipynb` selects between) → [09](doc/09_distributed_training.md) §5
 
 **Modifying the engine or accounts**
-[03](03_matching_engine.md) §4 (invariants) → [04](04_accounting.md) → [10](10_testing.md) §1–2
+[03](doc/03_matching_engine.md) §4 (invariants) → [04](doc/04_accounting.md) → [10](doc/10_testing.md) §1–2
 
 **Trading / microstructure review**
-[13](13_perspective_financial_trader.md) → [03](03_matching_engine.md) → [04](04_accounting.md)
+[13](doc/13_perspective_financial_trader.md) → [03](doc/03_matching_engine.md) → [04](doc/04_accounting.md)
 
 ---
 

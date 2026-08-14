@@ -141,6 +141,11 @@ things worth keeping, all of them **relative to the working directory** — `/wo
 | `episode_data/` — one pickle per episode | `SelfPlayCallback`, when `TrainConfig.episode_data_dir` is set |
 | `results/chkpt/` | `algo.save()` in `train()`, at `TrainConfig.checkpoint_dir` — `log_base_dir` + `chkpt` |
 
+`CDA_NSP.ipynb` gets there too: Jupyter starts a kernel in the *notebook's* directory, which is
+`/workspace/code/gym_continuousDoubleAuction`, so the notebook calls `runtime.chdir_to_repo()` to
+move to the `repo_path` its platform declares. Without that, notebook runs and
+`python -m ...train` runs would write to two different `results/` directories one level apart.
+
 Mounting the repo root at `/workspace/code` means these land in your real working tree and survive.
 Both are already in [`.gitignore`](../.gitignore) and [`.dockerignore`](../.dockerignore), so they
 are neither committed nor copied back into the next image build.
@@ -174,4 +179,5 @@ WSL2.
 - [09_distributed_training.md](09_distributed_training.md) — Ray env runners and learner placement,
   which is what `--shm-size` and `--gpus` actually feed
 - [18_configuration.md](18_configuration.md) — `TrainConfig`, including `episode_data_dir` and
-  `num_gpus_per_learner`
+  `num_gpus_per_learner`; §8 covers `runtime_profiles.json`, which is what makes `CDA_NSP.ipynb`
+  run unchanged in this image and on Colab
