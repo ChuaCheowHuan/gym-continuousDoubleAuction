@@ -59,10 +59,15 @@
   },
 
   "run": {
+    "_note": "num_iters is a target, not an amount: a restored run trains up to iteration num_iters, so a 16-iteration run that resumes at 9 does 7 more. Set num_iters_is_delta true for the old behaviour, where num_iters is how many iterations to run from wherever the restore landed. restore_path pins which checkpoint to resume from; null takes the newest under log_base_dir/chkpt, which is what a disconnect wants. It requires is_restore, and is deliberately recorded here rather than passed at the call site, so which checkpoint a run continued from is written down beside the run.",
+
     "num_iters": 16,
+    "num_iters_is_delta": false,
     "chkpt_freq": 2,
+    "chkpt_keep": 3,
     "log_base_dir": "results",
     "is_restore": false,
+    "restore_path": null,
     "log_level": "WARN",
     "seed": null
   }

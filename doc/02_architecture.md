@@ -68,6 +68,7 @@ gym_continuousDoubleAuction/
 │       └── random_agent.py                (legacy) random action sampler, still in Trader's MRO
 ├── train/
 │   ├── train.py                        TrainConfig dataclass, build_algo, CLI
+│   ├── runtime.py                      platform + hardware profile resolution (Colab / docker)
 │   ├── policy/policy_handler.py        MultiRLModuleSpec, module ID conventions
 │   ├── model/model_handler.py          RandomRLModule + DefaultModelConfig
 │   ├── callbk/…_self_play_callback.py  league: champions, matchmaking, logging
@@ -369,9 +370,16 @@ dedicated integration test. Full detail in [08_self_play_league.md](08_self_play
 
 `TrainConfig` exposes `num_env_runners` (rollout parallelism) and `num_learners` (gradient
 parallelism) with 0/0 as the CPU-friendly default. `resolved_gpus_per_learner()` forces the GPU
-fraction to 0 when CUDA is absent, which is what makes the notebook's `0.75` default safe on a
-laptop. The integration suite covers all three topologies: local, `num_env_runners=1`, and
-`num_learners=1`. See [09_distributed_training.md](09_distributed_training.md).
+fraction to 0 when CUDA is absent, so a config written for a GPU box degrades to CPU with a
+printed notice instead of failing. The integration suite covers all three topologies: local,
+`num_env_runners=1`, and `num_learners=1`. See
+[09_distributed_training.md](09_distributed_training.md).
+
+Which values those knobs actually take on a given machine is a separate decision, made by
+[`train/runtime.py`](../gym_continuousDoubleAuction/train/runtime.py) from the two hardware sets in
+`config/runtime_profiles.json` — 2 CPUs + 1 GPU, or 1 CPU and none. That is what lets
+`CDA_NSP.ipynb` run unchanged on Colab and in the docker image without a resource literal in the
+notebook. See [18_configuration.md](18_configuration.md) §8.
 
 ---
 

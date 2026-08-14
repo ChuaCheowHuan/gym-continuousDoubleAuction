@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (90 unit tests)
+# everything (216 tests: 203 unit + 13 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -45,32 +45,38 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `90 passed`.
+**[verified]** — `216 passed`.
 
 ### File inventory
+
+Counts re-measured with `--collect-only`; the earlier `90` predated the config and runtime suites.
 
 | File | Tests | Area |
 |---|---|---|
 | `test_orderbook_new.py` | 12 | Matching engine components and integration |
 | `test_orderbook_crossed_book.py` | 1 | Crossed-book invariant |
-| `test_orderbook_double_delete_order.py` | 1 | Double-delete regression |
 | `test_orderbook_volume_sync.py` | 1 | Volume cache synchronization |
 | `test_accounting.py` | 13 | Cash, position, NAV, position flips |
 | `test_cash_check.py` | 7 | Order approval and cash gating |
 | `test_modify_order.py` | 6 | Modify-order accounting scenarios |
-| `test_new_action_space.py` | 8 | Action decoding and ghost pricing |
+| `test_new_action_space.py` | 10 | Action decoding and ghost pricing |
 | `test_obs_normalization.py` | 12 | Price/volume normalization, action unnormalization |
-| `test_observation_history.py` | 5 | Temporal stacking |
+| `test_observation_history.py` | 3 | Temporal stacking |
 | `test_obs_market_features.py` | 17 | `log_mid`, `log1p_spread_ticks` |
 | `test_reward_logic.py` | 4 | Reward formula components |
 | `test_nav_callback.py` | 2 | Episode-end NAV conservation check |
 | `test_probabilistic_mapping.py` | 1 | League matchmaking distribution |
-| **unit total** | **90** | |
+| `test_config_loading.py` | 14 | `train_config.json` → `TrainConfig` → env |
+| `test_config_sources.py` | 26 | No literal copy of a configured value survives in Python |
+| `test_config_wiring.py` | 11 | Config keys reaching their consumers |
+| `test_runtime_profiles.py` | 23 | `runtime_profiles.json` → hardware sets, platform paths |
+| `test_checkpointing.py` | 40 | Checkpoint retention, restore selection, league state across a save |
+| **unit total** | **203** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 
 > **Stale references in older docs.** `test_orderbook.py`, `repro_orderbook_crossed_book.py`,
-> `test_OrderBook.py` and `test_cda_nsp.py` do not exist. The current names are in the table
-> above.
+> `test_OrderBook.py`, `test_cda_nsp.py` and `test_orderbook_double_delete_order.py` do not exist.
+> The current names are in the table above.
 
 > **Side effect note, now resolved.** Running the suite creates `episode_data/` in the repository
 > root — `test_nav_callback` triggers the league callback's per-episode pickle dump. Both
@@ -129,7 +135,11 @@ Either the engine matches the crossing modification immediately, or it must at m
 leave `best_bid >= best_ask` resting. A failure here means the matching engine corrupted market
 state during modification — and the `log1p_spread_ticks` sentinel would stop being unambiguous.
 
-### 1.3 Double-delete regression — `test_orderbook_double_delete_order.py`
+### 1.3 Double-delete regression — `test_orderbook_double_delete_order.py` (removed)
+
+**This file no longer exists**; the case it describes is covered by
+`test_modify_order_price_change` in §1.1. The description is kept because the failure mode is
+worth knowing about when touching `modify_order`.
 
 `test_modify_order_price_no_double_delete`. Changing an order's price is two micro-steps —
 **remove** from the `OrderList` at 100, **insert** into the one at 101. The bug guarded against is
@@ -331,6 +341,31 @@ collects the same way as everything else under `pytest`, but — like every file
 — running it directly (`python test_probabilistic_mapping.py`, or `%run` from a notebook) does
 nothing, since there is no `unittest.main()` call left anywhere to trigger execution. See §0.
 
+### 6.1.1 `test_checkpointing.py` — 8 classes, 40 tests
+
+What survives a save/restore, and what a restore is allowed to change. RLlib's loader and the
+env build are stubbed, so these run in seconds; the same behaviours were also exercised against
+real checkpoints in [16 §16.8.1](16_verification_log.md).
+
+| Class | What it pins |
+|---|---|
+| `TestCheckpointDiscovery` | Saves are ordered oldest-first; `iter_N.tmp` (an interrupted save) and non-checkpoint directories are skipped; a checkpoint in the old single-directory layout is still found, and sorts oldest |
+| `TestRetention` | Each save is its own directory; `chkpt_keep` prunes the oldest; `<= 0` keeps all; the old-layout checkpoint is never pruned; the save is staged then renamed; re-saving an iteration replaces it |
+| `TestLeagueSidecar` | `league_state.json` is written beside every checkpoint; `algo_callback` finds the live instance |
+| `TestLeagueStateReconciliation` | Agreement repairs nothing; a callback that lost its history is rebuilt from the sidecar; a champion with no module is dropped; a module with no champion entry is adopted; the ID counter never goes backwards |
+| `TestRestoreCandidates` | `restore_path` null means every checkpoint; a path narrows it to that one; not restoring ignores the tree; a path without `is_restore` raises; a path that is not a checkpoint raises and lists the ones that are, newest first |
+| `TestCommandLine` | `--from-checkpoint` implies `--restore`; `--restore` alone leaves the path unset |
+| `TestRestoreSelection` | The newest checkpoint is picked; an unreadable one falls back to the previous; a **pinned** one raises instead of falling back; the **algorithm's own** callback is returned, not the fresh one; no checkpoint starts from scratch |
+| `TestIterationAccounting` | `num_iters` is a target, not an amount; `num_iters_is_delta` counts from the restore point; a completed run trains nothing; checkpoints land on true iteration numbers; the final save is not duplicated |
+
+Two of these encode bugs that were live in the codebase rather than hypothetical:
+
+- **`test_counter_never_goes_backwards`** — the monotonic champion ID counter lives on the
+  cloudpickled callback. If it restarts, `add_module` re-mints `champion_1` over a champion that
+  is already playing.
+- **`test_returns_the_algorithms_own_callback`** — S3-8. Training was never affected, which is
+  what made it survive: only code *inspecting* the returned league saw the empty one.
+
 ### 6.2 `integration/test_league_wiring.py` — 3 classes, 13 tests
 
 The module docstring names the three real bugs the suite exists to prevent:
@@ -359,6 +394,34 @@ closing over `cls`, and module-level helpers being pickled by reference into a w
 import `test_league_wiring`.
 
 These tests build real `Algorithm`s and run real training iterations, so they take minutes.
+
+### 6.3 `test_runtime_profiles.py` — 23 tests
+
+Covers [`config/runtime_profiles.json`](../config/runtime_profiles.json) and
+[`train/runtime.py`](../gym_continuousDoubleAuction/train/runtime.py), the pair that lets
+`CDA_NSP.ipynb` run unchanged on Colab and in the docker image
+([18_configuration.md](18_configuration.md) §8). Four groups:
+
+| Group | Asserts |
+|---|---|
+| `TestHardwareProfiles` | Exactly the two sets `gpu` / `cpu` exist; both stay inside the stated bounds (≤2 CPUs, ≤1 GPU, ≥1 CPU); the gpu set asks for a GPU and the cpu set does not; every override names a real `TrainConfig` field, and one that does not raises |
+| `TestResolution` | The `USE_GPU` toggle in all three states; `$CDA_PLATFORM` / `$CDA_USE_GPU` pinning; an unknown platform raising by name; `ray_init_common` merging; a platform missing a required key raising |
+| `TestApply` | Profile fields land on the `TrainConfig`; output roots are applied and `null` ones are not; `episode_data_dir=None` is never re-enabled by a root |
+| `TestEnvVars` | `apply_env_vars()` exports the configured names, and an already-exported value wins |
+
+Two of these are the ones that would actually catch a regression:
+
+- **`test_env_runners_fit_the_cpu_budget`** — asserts
+  `num_env_runners × num_cpus_per_env_runner ≤ ray_init.num_cpus` for both sets. Env runners are
+  Ray actors: ask for more CPUs than `ray.init()` was given and they sit **pending forever**
+  rather than failing, which reads as a hang with no error.
+- **`test_training_values_are_untouched`** — asserts a profile moves no field that changes the
+  learning problem (agent counts, batch sizes, `lr`, reward coefficients, `seed`). This is the
+  property that makes a Colab run and a docker run comparable; without it, "runs anywhere" would
+  quietly mean "trains differently anywhere".
+
+Both fixtures monkeypatch `runtime.cuda_available`, so the suite tests both hardware paths on a
+machine with no GPU — and gives the same result on one with a GPU.
 
 ---
 

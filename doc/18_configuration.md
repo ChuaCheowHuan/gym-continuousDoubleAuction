@@ -2,7 +2,7 @@
 
 Every value in the project lives in `config/`. No module holds a literal copy of one.
 
-The `config/` folder at the repository root holds four JSON files, **all four of which are real
+The `config/` folder at the repository root holds five JSON files, **all five of which are real
 inputs**. Python code declares the *schema* — what each knob is called, what type it has, what it
 does — and reads the *value* from these files through
 [`config_loader.py`](../gym_continuousDoubleAuction/config_loader.py). There is no
@@ -15,7 +15,7 @@ beginning with `_`, at every level.
 
 ---
 
-## 1. The four files
+## 1. The five files
 
 | File | Holds | Read by |
 |---|---|---|
@@ -23,6 +23,12 @@ beginning with `_`, at every level.
 | [`config/env_defaults.json`](../config/env_defaults.json) | Fallbacks for an env built without a full config dict | `continuousDoubleAuctionEnv` and the env mixins |
 | [`config/tunable_constants.json`](../config/tunable_constants.json) | Structural constants: space layout, ID prefixes, plot and path defaults | `state_helper`, `action_helper`, `policy_handler`, `plot_handler`, `visualize/` |
 | [`config/cli_defaults.json`](../config/cli_defaults.json) | Flag defaults with no other config home | `CDA_env_rand` |
+| [`config/runtime_profiles.json`](../config/runtime_profiles.json) | *Where* a run executes: the `gpu` / `cpu` hardware sets and per-platform paths | `train/runtime.py`, `CDA_NSP.ipynb` |
+
+The split between the first file and the last is the one worth holding on to: `train_config.json`
+is **what the run does** and is identical on every machine; `runtime_profiles.json` is **what the
+machine is** and changes with it. Moving a run between hardware sets changes wall-clock time and
+output paths, not the trained policy. See [§8](#8-runtime-profiles).
 
 ### 1.1 The loader
 
@@ -256,6 +262,99 @@ opponents, where sharing a trunk between policy and value tends to destabilise t
 `num_learners`, the reward coefficients and the sizing knobs have no CLI flag, so the file is the
 only way to set them outside the Python API.
 
+### 5.1 The `run` group
+
+These six are the only keys that still mean something on a **restored** run. Everything else in
+the file is baked into the checkpoint — see §5.2.
+
+| Key | Flag | What it does |
+|---|---|---|
+| `num_iters` | `--iters` | The iteration to train **through**, not a number of iterations to run |
+| `num_iters_is_delta` | `--iters-is-delta` | Read `num_iters` as "this many more from wherever the restore landed" |
+| `chkpt_freq` | `--chkpt-freq` | Save every N iterations (0 saves only at the end) |
+| `chkpt_keep` | `--chkpt-keep` | How many saves to retain; `<= 0` keeps all |
+| `is_restore` | `--restore` | Resume from a checkpoint rather than starting from scratch |
+| `restore_path` | `--from-checkpoint` | Which checkpoint; `null` takes the newest readable one |
+
+**`num_iters` is a target.** A 16-iteration run resumed at iteration 9 does 7 more, so the length
+of a run does not depend on how many times it was interrupted. It used to be a count on a driver
+loop that restarted at zero, which made 16 configured iterations mean 16 *more* every time. The
+iteration numbers are the algorithm's own — RLlib stores `training_iteration` in the checkpoint —
+so they are the same numbers the checkpoint directories and the log lines carry.
+`num_iters_is_delta` restores the old reading, for extending a run that already reached its target.
+
+**Checkpoint layout.** Each save is its own directory:
+
+```
+results/chkpt/
+├── iter_00004/          ← an RLlib checkpoint, plus league_state.json
+├── iter_00006/
+└── iter_00008/          ← the newest; what a restore picks
+```
+
+`chkpt_keep` prunes the oldest. Every save used to overwrite one directory, which left a run with
+exactly one recoverable state: no way back from a league that collapsed at iteration 12, and a save
+interrupted partway — the event checkpointing exists to survive — destroyed the only copy. Saves
+are now staged as `iter_N.tmp` and renamed into place, so an interrupted save leaves a directory
+the scanner skips rather than a half-written one that looks complete. A restore that cannot read
+the newest checkpoint falls back to the one before it.
+
+`league_state.json` beside each checkpoint records the champion pool in plain JSON. The champion
+*modules* are in the checkpoint proper, but everything indexing them — history, the monotonic ID
+counter, the matchmaking pool — lives on the cloudpickled callback, and survives only as long as
+`SelfPlayCallback` stays unpickle-compatible. On restore the sidecar is reconciled against the
+modules that actually came back, and any repair is printed. See
+[08_self_play_league.md](08_self_play_league.md).
+
+**Choosing a checkpoint.** `restore_path` null — the default — takes the newest readable
+checkpoint, which is what a disconnect wants. Name one to go back further:
+
+```bash
+python -m gym_continuousDoubleAuction.train.train --from-checkpoint results/chkpt/iter_00008
+```
+
+```json
+"run": {
+  "is_restore": true,
+  "restore_path": "results/chkpt/iter_00008"
+}
+```
+
+It names **one save**, not the directory holding them; pointing at `results/chkpt` raises and
+lists the checkpoints that are there, newest first. Two rules follow from what pinning is for:
+
+- **`restore_path` requires `is_restore`.** Set without it, the run would start from scratch and
+  ignore the path, so it raises instead. `--from-checkpoint` implies `--restore`, since naming a
+  checkpoint on the command line is not ambiguous about intent; in the file, the two keys must
+  agree. Validation happens before the env is built, so a typo fails in a second.
+- **A pinned checkpoint never falls back.** An unreadable one raises rather than quietly training
+  from its neighbour — the opposite of what the automatic path should do, and the point of having
+  said which one.
+
+Rolling back a run past a collapsed league is then: pick the checkpoint, restore from it, and let
+training overwrite the iterations after it. `chkpt_keep` bounds how far back you can go.
+
+The notebook has no separate knob for any of this — it is a thin driver that reads
+`train_config.json`, and cell 4 prints the resolved `restore` line before the run starts.
+
+### 5.2 What a restore ignores
+
+`Algorithm.from_checkpoint` rebuilds everything from the config stored *in the checkpoint*. The
+`PPOConfig` built from `train_config.json` is discarded. Since resuming means editing
+`train_config.json` to set `is_restore`, that is the same file holding `lr`, the reward
+coefficients and `num_agents` — so an edit made in the same pass as the restore flag had no effect
+and said nothing.
+
+It is now loud in both directions:
+
+- **A structural change is fatal.** `num_agents`, `n_hist` or the policy set changing means the
+  restored weights do not fit the requested problem, so the restore raises rather than training
+  something other than what was asked for. Revert the key, or start a fresh run.
+- **Everything else warns.** `lr`, reward coefficients, batch sizes and runner counts print as
+  "will NOT take effect" with both values, and the run continues on the checkpoint's config.
+
+To train with new values, start a fresh run — `is_restore` false, or a new `log_base_dir`.
+
 ---
 
 ## 6. `tick_size`
@@ -316,3 +415,72 @@ anything.
 4. If the code cannot honour every value the key could take — a cardinality wired to a mapping, a
    count that has to be odd — validate it and raise. A structural value that is silently ignored is
    worse than a literal, because the file claims it works.
+
+---
+
+## 8. Runtime profiles
+
+[`config/runtime_profiles.json`](../config/runtime_profiles.json) answers a question the other four
+files deliberately do not: *what machine is this?* It exists because `CDA_NSP.ipynb` has to run
+unchanged on a [Colab VM](20_colab.md) and inside the
+[docker/ml image](19_docker.md), which differ in core count, GPU presence and filesystem layout —
+and in nothing else. Resolved by
+[`train/runtime.py`](../gym_continuousDoubleAuction/train/runtime.py).
+
+This document is the mechanism. For the step-by-step of actually running either target, see
+[20_colab.md](20_colab.md) and [19_docker.md](19_docker.md).
+
+### 8.1 The two hardware sets
+
+Exactly two, chosen by `torch.cuda.is_available()` and the notebook's `USE_GPU` toggle. The stated
+bounds are a ceiling of **2 CPUs + 1 GPU** and a floor of **1 CPU + 0 GPUs**;
+[`test_runtime_profiles.py`](../gym_continuousDoubleAuction/test/test_runtime_profiles.py) asserts
+both sets stay inside them.
+
+| | `gpu` | `cpu` |
+|---|---|---|
+| `ray.init(num_cpus, num_gpus)` | 2, 1 | 1, 0 |
+| `num_env_runners` | 2 | 0 |
+| `num_cpus_per_env_runner` | 1.0 | 1.0 |
+| `num_learners` | 0 | 0 |
+| `num_gpus_per_learner` | 1.0 | 0.0 |
+
+Two choices in there are worth stating outright:
+
+- **`num_learners=0` in both.** The learner runs in the driver process and still gets the GPU —
+  `num_gpus_per_learner` is only turned into a Ray *resource request* for remote learners
+  (`learner_group.py`, the `is_remote` branch). A remote learner would cost one of the two CPUs and
+  buy nothing at a 256×256 MLP.
+- **`num_env_runners=2` under the gpu set.** Sampling is the bottleneck here, not the update — the
+  environment matches orders in Python, measured at ~500 env-steps/sec on one core, against a PPO
+  update the GPU finishes in seconds. This is the `num_env_runners=N, num_learners=0` shape
+  [doc/09 §5](09_distributed_training.md) recommends for exactly this case. A test asserts
+  `num_env_runners × num_cpus_per_env_runner ≤ num_cpus`, because runners are actors: ask for more
+  CPUs than `ray.init()` was given and they stay pending forever rather than failing.
+
+### 8.2 Platforms
+
+`repo_path`, `results_root` and `episode_data_root` per platform; `null` means "leave it alone",
+which is what a local checkout wants. The Colab entry splits the two output roots on purpose:
+checkpoints go to the Drive-backed repo so a disconnected session is recoverable with
+`is_restore`, while the per-episode pickles (~10MB per 4096-step episode) go to the VM's local disk
+and never cross the Drive FUSE layer.
+
+`platforms.colab.pip_packages` is the one entry read *without* the loader — the notebook's
+bootstrap cell reads it with plain `json.load`, because it runs before the package is importable
+and installing what makes it importable is the whole job of that cell. Its pins must track
+`requirements.txt`; torch, numpy and pandas are absent from it deliberately, since installing this
+repo's pins over Colab's preinstalled CUDA torch would replace it with a CPU wheel.
+
+### 8.3 Overriding it
+
+`$CDA_PLATFORM` and `$CDA_USE_GPU` pin what detection would otherwise guess, so a headless run can
+be forced onto a given set without editing anything:
+
+```bash
+CDA_PLATFORM=docker CDA_USE_GPU=false python -m gym_continuousDoubleAuction.train.train
+```
+
+Note the asymmetry, which is intentional: `CDA_USE_GPU=true` does **not** force the gpu set onto a
+machine without CUDA. It falls back to the cpu set and says so, because the alternative is RLlib
+placing a learner on a device that is not there.

@@ -343,20 +343,47 @@ BEFORE save    -> champion_history: ['champion_1', 'champion_2']
 AFTER restore  -> modules on env_runner:  [champion_1, champion_2, policy_0..policy_3]  ✅
                -> algo's own callback:    champions ['champion_1', 'champion_2']        ✅
                -> mapping fn draws:       {'policy_3', 'champion_1'}                    ✅
-               -> callback returned by build_algo(): champion_history: []               ❌
+               -> callback returned by build_algo(): champion_history: []               ❌ (fixed)
 ```
 
 `.callbacks(lambda: callback_instance)` closes over the instance, RLlib cloudpickles it into the
 checkpoint, and the restored `Algorithm` gets a callback with its history intact.
 
-The narrower real defect is that `build_algo`
-([`train.py:215-227`](../gym_continuousDoubleAuction/train/train.py#L215-L227))
-calls `build_config(cfg)` unconditionally and then, on the restore branch, returns the **fresh,
-empty** `callback_instance` alongside the restored algorithm. `train()` ignores the returned
-callback, so training is unaffected — but any caller that *uses* it (the notebook, or the
-integration tests' `cls.callback._create_champion_snapshot_from_policy(cls.algo, ...)` pattern)
-would be driving a detached object whose `available_modules` disagrees with the mapping function
-the algorithm is actually using. Tracked as S3-7.
+The narrower real defect — `build_algo` returning the **fresh, empty** `callback_instance` from
+`build_config` rather than the algorithm's own — is fixed: the restore path returns
+`algo_callback(algo)`, and `None` with a warning if the restored algorithm has no
+`SelfPlayCallback`. `train()` never used the returned callback, so training was unaffected; the
+damage was to anything that *inspected* the league, which saw an empty one. Tracked as S3-8.
+
+### 8.1 The sidecar, and what it repairs
+
+The champion **modules** are in the checkpoint proper — RLlib manages them. Everything that
+*indexes* them is not: `champion_history`, `champion_id_counter` and `available_modules` are plain
+attributes on the callback, and reach the next run only because cloudpickle can reconstruct
+`SelfPlayCallback`. Rename the class, change its `__init__`, or resume across a Ray upgrade, and
+the modules come back while the league that indexes them does not. The counter then restarts and
+mints a second `champion_1`, which `add_module` writes over a champion that is still playing.
+
+So `save_checkpoint` writes `league_state.json` beside every checkpoint —
+`SelfPlayCallback.league_state()`, as plain JSON, readable without importing anything. On restore,
+`restore_league_state` reconciles three sources that can disagree:
+
+| Source | Authority |
+|---|---|
+| The unpickled callback | Lowest — it is the one that can drift |
+| `league_state.json` | Beats the callback: they can only differ if unpickling drifted |
+| The modules actually present on the restored algorithm | Highest — matchmaking may only return a module that exists |
+
+A champion in the sidecar with no module is dropped; a champion module with no sidecar entry is
+adopted (appended as newest, since its true position is unknowable); the pool is rebuilt from the
+reconciled history; and the ID counter is raised to at least the highest champion number in play,
+never lowered. Each repair is printed. A clean restore prints
+`league state verified: N champion(s)` instead.
+
+One limit worth knowing: repairs apply to the **driver's** pool. With `num_env_runners > 0` the
+remote runners hold their own pickled mapping fn, frozen at construction, and nothing short of
+`add_module` / `remove_module` updates it — so a checkpoint that needs repairs is a reason to
+prefer an earlier one that verifies clean, not something to train through.
 
 ---
 

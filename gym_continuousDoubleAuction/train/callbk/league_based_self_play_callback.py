@@ -604,6 +604,117 @@ class SelfPlayCallback(RLlibCallback):
 
         print(f"✓ Champion removed. Active champions: {[c['id'] for c in self.champion_history]}\n")
     
+    def league_state(self):
+        """Champion bookkeeping as plain JSON-able data.
+
+        `train.save_checkpoint` writes this beside every checkpoint. The
+        champion modules themselves are in the checkpoint proper; everything
+        that indexes them - the history, the monotonic ID counter, the
+        matchmaking pool - exists only inside this object, which survives a
+        restore only as long as it stays unpickle-compatible.
+        """
+        return {
+            'champion_id_counter': self.champion_id_counter,
+            'champion_count': self.champion_count,
+            'champion_history': [dict(c) for c in self.champion_history],
+            'available_modules': list(self.available_modules),
+            'num_trainable': self.num_trainable,
+            'num_random': self.num_random,
+        }
+
+    def restore_league_state(self, state, present_modules=None):
+        """Reconcile this callback's league bookkeeping with a sidecar and reality.
+
+        Called after a restore, where three sources can disagree: this object
+        (RLlib's unpickled copy), `state` (the sidecar `league_state()` wrote at
+        save time), and `present_modules` (the champion modules the restored
+        algorithm actually has). The sidecar wins over this object, because they
+        can only differ if unpickling drifted; the modules win over both, since
+        matchmaking may only return a module that exists.
+
+        Args:
+            state: a dict from `league_state()`.
+            present_modules: ModuleIDs on the restored algorithm, or None when
+                they could not be read - in which case membership is taken on
+                trust and only the counter is protected.
+
+        Returns:
+            A list of human-readable repair descriptions. Empty means the three
+            sources agreed and nothing was changed.
+        """
+        repairs = []
+
+        sidecar_history = [dict(c) for c in state.get('champion_history', [])]
+        if [c['id'] for c in sidecar_history] != [c['id'] for c in self.champion_history]:
+            repairs.append(
+                f"champion history {[c['id'] for c in self.champion_history]} -> "
+                f"{[c['id'] for c in sidecar_history]} (taken from the sidecar; the "
+                f"unpickled callback disagreed)"
+            )
+            self.champion_history = sidecar_history
+
+        if present_modules is not None:
+            present_champions = {
+                m for m in present_modules if m.startswith(CHAMPION_PREFIX)
+            }
+            for champion in list(self.champion_history):
+                if champion['id'] not in present_champions:
+                    self.champion_history.remove(champion)
+                    repairs.append(
+                        f"dropped {champion['id']}: the restored algorithm has no "
+                        f"such module"
+                    )
+            known = {c['id'] for c in self.champion_history}
+            for module_id in sorted(present_champions - known):
+                # Ordering within the history decides eviction order, and an
+                # orphan's true position is unknowable - it goes last, so a
+                # rolling window evicts a champion whose iteration is known first.
+                self.champion_history.append({
+                    'id': module_id,
+                    'source_policy': None,
+                    'iteration': state.get('training_iteration', 0),
+                    'return': None,
+                })
+                repairs.append(
+                    f"adopted {module_id}: present in the checkpoint but missing "
+                    f"from the league state (appended as newest)"
+                )
+
+        # The pool is derived, so rebuild it rather than repairing it in place.
+        pool = [
+            policy_id(i) for i in range(self.num_trainable + self.num_random)
+        ] + [c['id'] for c in self.champion_history]
+        if pool != self.available_modules:
+            repairs.append(f"matchmaking pool {self.available_modules} -> {pool}")
+            self.available_modules = pool
+
+        if self.champion_count != len(self.champion_history):
+            self.champion_count = len(self.champion_history)
+
+        # The counter must never go backwards: a restarted counter re-mints
+        # champion IDs that are already in use, and `add_module` would then
+        # overwrite a live champion with a new snapshot.
+        highest_seen = max(
+            [
+                int(c['id'][len(CHAMPION_PREFIX):])
+                for c in self.champion_history
+                if c['id'][len(CHAMPION_PREFIX):].isdigit()
+            ] + [0]
+        )
+        counter = max(
+            self.champion_id_counter,
+            state.get('champion_id_counter', 0),
+            highest_seen,
+        )
+        if counter != self.champion_id_counter:
+            repairs.append(
+                f"champion ID counter {self.champion_id_counter} -> {counter} "
+                f"(a restarted counter would re-mint existing champion IDs)"
+            )
+            self.champion_id_counter = counter
+
+        return repairs
+
     @classmethod
     def get_mapping_fn(cls, callback_instance):
         """

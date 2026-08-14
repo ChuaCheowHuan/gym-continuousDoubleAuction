@@ -285,12 +285,20 @@ Ray actor it kills the worker rather than surfacing a traceback. Currently unrea
 action-space change away.
 **Fix:** `raise ValueError(...)`.
 
-### S3-8 · `build_algo` returns a detached callback on the restore path **[verified]**
+### S3-8 · `build_algo` returns a detached callback on the restore path **[fixed]**
 
 League state *does* survive checkpointing (cloudpickle preserves the callback closure — restored
-modules, history and mapping all verified correct). But `build_algo` returns the **fresh, empty**
-callback from `build_config` rather than the algorithm's live one. `train()` ignores it, so
-training is unaffected; any caller that uses it (notebook, tests) drives a detached object.
+modules, history and mapping all verified correct). But `build_algo` returned the **fresh, empty**
+callback from `build_config` rather than the algorithm's live one. `train()` ignored it, so
+training was unaffected; any caller that used it (notebook, tests) drove a detached object.
+
+**Fixed:** the restore path returns `algo_callback(algo)`, the instance RLlib unpickled — the one
+holding the restored champion pool — and `None`, loudly, if the restored algorithm has no
+`SelfPlayCallback` at all. Four adjacent checkpoint defects went with it: the single overwritten
+checkpoint directory, config edits silently discarded on restore, the driver's iteration counter
+restarting at zero, and champion metadata existing only inside the cloudpickled callback. See
+[18 §5.1–5.2](18_configuration.md#51-the-run-group), [16 §16.8](16_verification_log.md), and
+`test_checkpointing.py`.
 → [14 §5.9.1](14_perspective_ai_engineer.md#591-checkpointrestore-what-actually-happens)
 
 ### S3-9 · No risk-adjusted performance metrics
@@ -467,5 +475,5 @@ Roughly two to three weeks of work, ordered so each step unblocks the next.
 16. `logging` replaces `print`; conservation violation raises (S2-8)
 17. Fix `install_requires`; drop `six`, `sklearn` and the unused `import ray` (S3-6)
 18. `sys.exit` → `raise ValueError` (S3-7)
-19. Delete dead code; fix the `build_algo` restore path (S3-8, S4-1..4)
+19. Delete dead code (S4-1..4) — the `build_algo` restore path (S3-8) is done
 20. Add `ruff` / `black` / `pre-commit` / `pytest-cov`

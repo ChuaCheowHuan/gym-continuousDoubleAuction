@@ -229,12 +229,14 @@ exclusively from source code, with executed verification.
 tree and re-running every behavioural probe. It was originally created as `doc_new_2/` alongside
 the two source folders; once complete, both `gym_continuousDoubleAuction/doc/` and `doc_new/`
 were deleted and `doc_new_2/` was renamed to `doc/`, taking their place at the repository root.
-The reconciliation table is in [README.md](README.md#reconciliation-of-the-two-source-sets).
+The reconciliation table produced during that merge was not carried into the current
+[README.md](../README.md), which indexes the merged set instead.
 
-The top-level `README.md` was not part of this restructuring and still links to
-`gym_continuousDoubleAuction/doc/change.md` and the three `CHANGES_*.md` redirect shims — those
-paths are now broken, since the folder they pointed into no longer exists. Fixing the top-level
-`README.md` is follow-up work, not something this merge did.
+**Follow-up since done.** The top-level `README.md` was not part of that restructuring: it still
+pointed at `gym_continuousDoubleAuction/doc/change.md` and three `CHANGES_*.md` redirect shims in
+a folder that no longer existed, and every entry in its own document table omitted the `doc/`
+prefix, so all 39 of those links resolved against the repository root and were broken. Both are
+fixed; the table now also lists §18 and §19.
 
 ## 10. Test suite: unittest → pytest
 
@@ -333,7 +335,8 @@ entry point. A missing key raises — naming the file, the group and the keys th
 than resolving to a default written in Python. `$CDA_CONFIG_DIR` repoints it at another config
 tree, which is what makes the no-literals claim testable.
 
-**All four files are now inputs.** `env_defaults.json` was added to hold the env's standalone
+**All four files became inputs** (a fifth, `runtime_profiles.json`, arrived later — see §13).
+`env_defaults.json` was added to hold the env's standalone
 fallbacks, which deliberately differ from the training values and had been literals in
 `continuousDoubleAuctionEnv.__init__`. `tunable_constants.json` and `cli_defaults.json` stopped
 being inventories and became live. `train_config.json` is no longer opt-in: `TrainConfig()` reads
@@ -361,3 +364,107 @@ property rather than asserting current values: it copies `config/`, edits a valu
 `$CDA_CONFIG_DIR` at the copy, and checks the change reaches the observation space, the action
 space, the env fallbacks and `TrainConfig`. A literal left behind would keep the old value and fail.
 See [18_configuration.md](18_configuration.md).
+
+---
+
+## 13. The notebook runs on two machines, from config
+
+`CDA_NSP.ipynb` was a Colab notebook that happened to also work elsewhere: a hand-flipped
+`IS_COLAB = False`, a hardcoded pip list, a hardcoded Drive path, and a `TrainConfig(...)` call
+passing eleven keyword arguments. It now runs unchanged on a Colab VM and inside the
+[docker/ml image](19_docker.md).
+
+**The config cell stopped holding values.** Ten of its eleven arguments restated
+`train_config.json` exactly; the eleventh (`num_gpus_per_learner=0.75` against the file's `0.25`)
+was a no-op, since with `num_learners=0` the fraction only selects a device and never becomes a
+Ray resource request. The consequence was worse than the redundancy: editing `train_config.json`
+changed nothing for those ten keys, and a config tree swapped in via `$CDA_CONFIG_DIR` applied to
+every field *except* them. The cell is now `TrainConfig()` and reports what it read.
+
+**`config/runtime_profiles.json` (new, the fifth file).** Two hardware parameter sets — `gpu`
+(2 CPUs + 1 GPU) and `cpu` (1 CPU, none) — plus per-platform paths, resolved by the new
+[`train/runtime.py`](../gym_continuousDoubleAuction/train/runtime.py). The split it introduces is
+the point: `train_config.json` is *what the run does* and is identical everywhere;
+`runtime_profiles.json` is *what the machine is*. A test asserts a profile moves no field that
+changes the learning problem, so a Colab run and a docker run stay comparable.
+
+**Two knobs left in the notebook**, `PLATFORM` and `USE_GPU`, both defaulting to `auto`. Detection
+covers Colab (`COLAB_RELEASE_TAG`) and the docker image (`/.dockerenv` **and** the recorded
+`repo_path` existing — `/.dockerenv` alone is true in any container, including a dev container that
+is not this image). `$CDA_PLATFORM` / `$CDA_USE_GPU` pin either one for headless runs.
+
+**Colab specifics that were previously left to the reader.** The bootstrap installs only what is
+missing, at the pinned versions, then stops with a restart banner — the install moves packages
+Colab has already imported, and continuing in the same session is the classic silent failure. It
+is a no-op on the second run. Checkpoints go to the Drive-backed repo so `is_restore` survives a
+disconnect, while the per-episode pickles (~10MB per 4096-step episode, measured) go to the VM's
+local disk instead of crossing the Drive FUSE layer. `torch`, `numpy` and `pandas` are absent from
+the install list on purpose: this repo's pins would replace Colab's preinstalled CUDA torch with a
+CPU wheel.
+
+**Under Jupyter the kernel's working directory is the notebook's own directory**, one level below
+the repo root that `python -m ...train` runs from — so notebook and CLI runs had been writing to
+two different `results/` trees. `runtime.chdir_to_repo()` resolves it, best-effort: a container
+with the working tree bind-mounted somewhere other than `/workspace/code` degrades to the `local`
+platform, which relocates nothing.
+
+`train.main()` also lost its private copy of the `runtime_env_vars` export loop; both it and the
+notebook now call `runtime.apply_env_vars()`.
+
+See [18_configuration.md](18_configuration.md) §8 and
+[10_testing.md](10_testing.md) §6.3 (23 tests).
+
+---
+
+## 14. Checkpointing became recoverable
+
+A run's checkpoint used to be a single directory. `algo.save(checkpoint_dir)` wrote every save to
+`results/chkpt`, so the run had exactly one recoverable state — no way back from a league that
+collapsed at iteration 12, and a save interrupted partway through destroyed the only copy. That is
+the event checkpointing exists to survive, and on Colab (§13) it is the expected way for a session
+to end.
+
+**Each save is now its own directory**, `results/chkpt/iter_00008`, staged as `iter_00008.tmp` and
+renamed into place; the newest `chkpt_keep` (default 3) are retained and the rest pruned. An
+interrupted save leaves a `.tmp` directory the scanner skips rather than a half-written one that
+looks complete, and a restore that cannot read the newest checkpoint falls back to the one before
+it — verified against a real truncated checkpoint
+([16 §16.8.1](16_verification_log.md), probe 8). Rolling back is now just deleting the newest
+directory. A checkpoint in the old layout is still found and restored from, and is never pruned.
+
+**A restore no longer silently discards config edits.** `Algorithm.from_checkpoint` rebuilds
+everything from the config stored *in the checkpoint* and drops the `PPOConfig` just built from
+`train_config.json`. Since resuming is documented as "edit `train_config.json`, set `is_restore`",
+that is the same file holding `lr`, the reward coefficients and `num_agents` — an edit made in the
+same pass had no effect and said nothing. A structural change (`num_agents`, `n_hist`, the policy
+set) now raises, because the restored weights do not fit the requested problem; everything else
+prints as ignored, with both values.
+
+**`num_iters` became a target rather than an amount.** The driver loop counted from zero, so 16
+configured iterations after a restore meant 16 *more*, and the length of a run depended on how many
+times it was interrupted. It now reads `algo.iteration` — RLlib restores `training_iteration` with
+the weights — and trains through `num_iters`, printing true iteration numbers. `num_iters_is_delta`
+opts back into the old reading for extending a finished run.
+
+**Champion metadata got a readable copy.** `champion_history`, `champion_id_counter` and
+`available_modules` reached the next run only via cloudpickle of `SelfPlayCallback`; a rename, an
+`__init__` change or a Ray upgrade would bring the champion modules back without the league that
+indexes them, restarting the counter and re-minting `champion_1` over a champion still in play.
+`league_state.json` is now written beside every checkpoint and reconciled on restore against the
+modules that actually came back. See [08 §8.1](08_self_play_league.md).
+
+**`build_algo` returns the algorithm's own callback on the restore path** (S3-8), not the fresh,
+empty one from `build_config`. Training never used the returned object, which is why the bug
+survived — the damage was to anything that inspected the league.
+
+**Which checkpoint to resume from became selectable.** `restore_path` (`--from-checkpoint`) pins
+one save; `null`, the default, takes the newest, which is what a disconnect wants. It requires
+`is_restore` — set without it the run would silently start from scratch, so it raises — and a
+pinned checkpoint never falls back to its neighbour, since training from a checkpoint other than
+the named one is exactly what pinning exists to prevent. Rolling a run back past a collapsed
+league no longer means deleting directories.
+
+40 tests in `test_checkpointing.py` ([10 §6.1.1](10_testing.md)), plus eleven probes against real
+checkpoints in [16 §16.8.1](16_verification_log.md).
+
+See [18_configuration.md](18_configuration.md) §5.1–5.2 and [20_colab.md](20_colab.md) §20.5.
