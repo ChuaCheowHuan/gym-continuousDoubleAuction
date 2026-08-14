@@ -329,10 +329,13 @@ anything.
 
 [`config/runtime_profiles.json`](../config/runtime_profiles.json) answers a question the other four
 files deliberately do not: *what machine is this?* It exists because `CDA_NSP.ipynb` has to run
-unchanged on a Colab VM and inside the
+unchanged on a [Colab VM](20_colab.md) and inside the
 [docker/ml image](19_docker.md), which differ in core count, GPU presence and filesystem layout —
 and in nothing else. Resolved by
 [`train/runtime.py`](../gym_continuousDoubleAuction/train/runtime.py).
+
+This document is the mechanism. For the step-by-step of actually running either target, see
+[20_colab.md](20_colab.md) and [19_docker.md](19_docker.md).
 
 ### 8.1 The two hardware sets
 

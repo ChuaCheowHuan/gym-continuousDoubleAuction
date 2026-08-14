@@ -51,6 +51,7 @@ For a detailed breakdown of codebase modernizations, please refer to the [17_cha
 |---|---|---|
 | 18 | [18_configuration.md](doc/18_configuration.md) | The five `config/` files and what each owns, the loader's rules, precedence between file and flags, the runtime profiles that pick a hardware set, how to add a knob |
 | 19 | [19_docker.md](doc/19_docker.md) | The GPU training image: build and run, what each flag is for, GPU prerequisites, where artefacts land in an ephemeral container, troubleshooting |
+| 20 | [20_colab.md](doc/20_colab.md) | Running the notebook on a free Colab VM: setup, the forced restart, what the free tier gives you, where output goes, resuming after a disconnect |
 
 ---
 
@@ -72,9 +73,13 @@ For a detailed breakdown of codebase modernizations, please refer to the [17_cha
 [09](doc/09_distributed_training.md) (if raising `num_env_runners` or `num_learners` above their
 `0` defaults) → [11](doc/11_logging_and_observability.md)
 
-**Running it on Colab or a GPU box**
-[19](doc/19_docker.md) (the training image) → [18](doc/18_configuration.md) §8 (the `gpu` / `cpu`
-parameter sets `CDA_NSP.ipynb` selects between) → [09](doc/09_distributed_training.md) §5
+**Running it on Colab**
+[20](doc/20_colab.md) → [18](doc/18_configuration.md) §8 (the `gpu` / `cpu` parameter sets
+`CDA_NSP.ipynb` selects between)
+
+**Running it on a local GPU box**
+[19](doc/19_docker.md) (the training image) → [18](doc/18_configuration.md) §8 →
+[09](doc/09_distributed_training.md) §5
 
 **Modifying the engine or accounts**
 [03](doc/03_matching_engine.md) §4 (invariants) → [04](doc/04_accounting.md) → [10](doc/10_testing.md) §1–2

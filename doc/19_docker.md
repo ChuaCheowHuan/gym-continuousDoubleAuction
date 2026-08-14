@@ -30,7 +30,9 @@ docker run --gpus all -it --rm -p 8888:8888 --shm-size=2g \
 
 PowerShell needs different quoting — `-v "${PWD}:/workspace/code"`. Then open the
 `http://127.0.0.1:8888/?token=...` URL from the container's output and run
-[`CDA_NSP.ipynb`](../gym_continuousDoubleAuction/CDA_NSP.ipynb).
+[`CDA_NSP.ipynb`](../gym_continuousDoubleAuction/CDA_NSP.ipynb) top to bottom. **Nothing in the
+notebook needs editing for this image** — `PLATFORM` and `USE_GPU` are both `auto`, and the
+Colab bootstrap cell is a no-op here.
 
 Or run the source exactly as it was at build time, with no mount at all:
 
@@ -42,8 +44,36 @@ Headless training, no notebook:
 
 ```bash
 docker run --gpus all -it --rm --shm-size=2g -v "$PWD":/workspace/code cda-ray-torch \
-    python -m gym_continuousDoubleAuction.train.train --iters 16 --agents 8
+    python -m gym_continuousDoubleAuction.train.train
 ```
+
+No flags: `config/train_config.json` already supplies every value, so the bare command *is* the
+configured run. Flags are for deviating from it — `--iters 4` for a smoke test,
+`--no-episode-data` to suppress the pickles ([18_configuration.md](18_configuration.md) §2).
+
+### What to check on the first run
+
+The notebook's second cell prints what it resolved. Two lines decide whether the run is doing what
+you think:
+
+```
+platform         : docker
+hardware profile : gpu
+```
+
+- **`platform : local`** instead of `docker` — the mount did not land on `/workspace/code`.
+  Harmless in itself (the `local` platform relocates nothing), but it means the paths in §19.5 are
+  relative to wherever the kernel started.
+- **`hardware profile : cpu`** on a machine with a GPU — `--gpus all` did not take, or the toolkit
+  is missing. Training still runs, on one core. Go to §19.4.
+
+The profile decides the resource counts, not you: `gpu` gives 2 env runners and a GPU learner,
+`cpu` gives one in-process everything. Both are in
+[`config/runtime_profiles.json`](../config/runtime_profiles.json), and
+[18_configuration.md](18_configuration.md) §8 explains the sizing. If the container has more than
+2 CPUs and you want them used, raise `num_env_runners` and `num_cpus` in the `gpu` set together —
+runners are Ray actors, and asking for more CPUs than `ray.init()` was given leaves them pending
+forever rather than failing.
 
 ---
 
@@ -51,7 +81,7 @@ docker run --gpus all -it --rm --shm-size=2g -v "$PWD":/workspace/code cda-ray-t
 
 | Flag | Why it is not optional |
 |---|---|
-| `--gpus all` | Exposes the GPU. Without it `resolved_gpus_per_learner()` returns 0 and training proceeds on CPU — it prints a `falling back to CPU` line but does not fail, so it is easy to miss. |
+| `--gpus all` | Exposes the GPU. Without it, `runtime.detect_hardware()` selects the `cpu` parameter set and `resolved_gpus_per_learner()` returns 0: training proceeds on one core. Both print a line saying so, but neither fails, so it is easy to miss — check `hardware profile` in the notebook's output. |
 | `--shm-size=2g` | Ray's object store lives on `/dev/shm`. Docker's 64MB default makes Ray fall back to `/tmp` and warn about degraded performance. Ray recommends >30% of available RAM. |
 | `-p 8888:8888` | Publishes Jupyter. The `CMD` binds `--ip=0.0.0.0`, which is required for the port to be reachable from outside the container. |
 | `-it` | Keeps the Jupyter token visible and `Ctrl-C` working. |
@@ -169,12 +199,15 @@ WSL2.
 | `Cannot uninstall pip 24.0, RECORD file not found` | PEP 668 system Python. | Already handled by the venv — rebuild with the current Dockerfile. |
 | Ray warns about `/dev/shm` and degraded performance | Docker's 64MB shm default. | `--shm-size=2g`. |
 | `torch.cuda.is_available()` is `False` | `--gpus all` omitted, or the toolkit is not installed. | Run the §19.4 check. |
+| The notebook prints `hardware profile : cpu` on a GPU box | Same cause as the row above — the profile follows `torch.cuda.is_available()`. | Run the §19.4 check. `USE_GPU=True` will *not* override it; it falls back and says so rather than placing a learner on a device that is not there. |
+| Training hangs after `ray.init()` with no error | An edited profile asks for more CPUs than `ray.init()` was given (`num_env_runners × num_cpus_per_env_runner > num_cpus`). Env runners are actors: they stay **pending**, which looks like a hang. | Raise `ray_init.num_cpus` in the same profile, or lower the runner count. `test_runtime_profiles.py` pins this for the shipped sets. |
 | Build is slow on every source edit | Expected. `COPY .` is the last layer by design; only it and the editable install re-run. | Nothing to fix — if the *torch* layer rebuilds, something above it changed. |
 
 ---
 
 ## 19.7 Related
 
+- [20_colab.md](20_colab.md) — the other supported target, for when there is no local GPU
 - [02_architecture.md](02_architecture.md) — where the container sits in the overall stack
 - [09_distributed_training.md](09_distributed_training.md) — Ray env runners and learner placement,
   which is what `--shm-size` and `--gpus` actually feed
