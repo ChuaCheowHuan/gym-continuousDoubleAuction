@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from .state_helper import State_Helper, K_ROWS, BOOK_DIM, EXTRA_DIM
+from .state_helper import State_Helper, BOOK_ROW_ORDER
 from .action_helper import Action_Helper
 from .reward_helper import Reward_Helper
 from .done_helper import Done_Helper
@@ -9,12 +9,23 @@ from .info_helper import Info_Helper
 
 from ..orderbook.orderbook import OrderBook
 from ..agent.trader import Trader
+from ...config_loader import env_default
 
 from tabulate import tabulate
 
 class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info_Helper):
-    def __init__(self, init_cash=0, tick_size=1, tape_display_length=10, n_hist=4):
-        super().__init__(n_hist=n_hist)
+    def __init__(self, init_cash=env_default("init_cash"),
+                 tick_size=env_default("tick_size"),
+                 tape_display_length=env_default("tape_display_length"),
+                 n_hist=env_default("n_hist"),
+                 **kwargs):
+        # tick_size goes on to Action_Helper as well: it is the tick the action
+        # space quotes on, not just a property of the book.
+        super().__init__(n_hist=n_hist, tick_size=tick_size, **kwargs)
+
+        # Kept so reset() can rebuild the book on the same tick rather than
+        # with a literal of its own.
+        self.tick_size = tick_size
 
         self.LOB = OrderBook(tick_size, tape_display_length) # limit order book
         self.agg_LOB = {} # aggregated or consolidated LOB
@@ -85,13 +96,14 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         block into a 4-column table: [bid_price, bid_size, ask_price, ask_size],
         then print any trailing market-level scalars on their own line.
         """
-        if isinstance(data, np.ndarray) and data.ndim == 1 and data.size >= BOOK_DIM:
-            book = data[:BOOK_DIM]
-            extras = data[BOOK_DIM:]
-            reshaped = book.reshape(4, K_ROWS).T  # shape (K_ROWS, 4): each row is one price level
-            headers = ["bid_price", "bid_size", "ask_price", "ask_size"]
+        if isinstance(data, np.ndarray) and data.ndim == 1 and data.size >= self.book_dim:
+            book = data[:self.book_dim]
+            extras = data[self.book_dim:]
+            # shape (k_rows, book_rows): each row is one price level
+            reshaped = book.reshape(self.book_rows, self.k_rows).T
+            headers = list(BOOK_ROW_ORDER)
             print(msg, tabulate(reshaped, headers=headers))
-            if extras.size == EXTRA_DIM:
+            if extras.size == self.extra_dim:
                 print("log_mid = {:.6f}; log1p_spread_ticks = {:.6f}".format(extras[0], extras[1]))
         else:
             print(msg, tabulate(data))

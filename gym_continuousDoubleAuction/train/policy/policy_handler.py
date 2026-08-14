@@ -1,257 +1,173 @@
-import numpy as np
-from ray.rllib.policy.policy import Policy, PolicySpec
-from ray.rllib.algorithms.ppo import PPOConfig
-  
-# Custom Random Policy
-class RandomPolicy:
-    def __init__(self, observation_space, action_space, config):
-        self.action_space = action_space
+"""
+Multi-agent module wiring for the CDA environment (RLlib new API stack).
 
-    def compute_actions(self, obs_batch, state_batches=None, **kwargs):
-        actions = [self.action_space.sample() for _ in range(len(obs_batch))]
-        return actions, [], {}
+Layout, for n agents with k trainable:
 
-    def learn_on_batch(self, samples):
-        return {}  # Random policy doesn't learn
+    policy_0 .. policy_(k-1)    trainable PPO modules   (agents 0..k-1)
+    policy_k .. policy_(n-1)    frozen RandomRLModule   (baseline opponents)
+    champion_1, champion_2, ..  frozen PPO snapshots    (added at runtime by
+                                                         SelfPlayCallback)
 
-    def get_weights(self):
-        return {}  # No weights for random policy
+Agents k..n-1 do not map 1:1 to modules. Each episode they are drawn from the
+opponent pool (baselines + champions) by
+`SelfPlayCallback.get_mapping_fn`. Only agents 0..k-1 have a fixed mapping.
 
-    def set_weights(self, weights):
-        pass  # No weights to set
-    
-def create_multi_agent_config(obs_space, act_space, num_agents, num_trained_agents):
-    """
-    Create multi-agent configuration using Ray 2.4+ API.
-    Sets up policies where first num_trained_agents use PPO and rest use RandomPolicy.
-    """
-    
-    # Create policy specifications
-    policies = {}
-    policies_to_train = []
-    
-    # Set up trained agents (PPO policies)
-    for i in range(num_trained_agents):
-        policies[f"policy_{i}"] = PolicySpec(
-            policy_class=None,  # Use default PPO policy
-            observation_space=obs_space, 
-            action_space=act_space, 
-            # {
-            #     "model": {"custom_model": "model_disc"},
-            #     "gamma": 0.99,
-            # }
-            config={
-                "model": {
-                    "custom_model": "model_disc"
-                    }
-                },       
-        )
-        policies_to_train.append(f"policy_{i}")
-    
-    # Set up random agents
-    for i in range(num_trained_agents, num_agents):
-        policies[f"policy_{i}"] = PolicySpec(
-            RandomPolicy,  # Use random policy with seed
-            observation_space=obs_space, 
-            action_space=act_space, 
-            # {}
-        )
-    
-    print('policies:', policies)
-    print('policies_to_train:', policies_to_train)
-    
-    return policies, policies_to_train
+------------------------------------------------------------------------------
+Migration note
+------------------------------------------------------------------------------
+This module previously built a dict of `PolicySpec`s, with the baseline
+opponents declared as `PolicySpec(RandomPolicy, ...)` and the trainable ones
+carrying `config={"model": {"custom_model": "model_disc"}}`.
 
-# Policy mapping function - maps agent IDs to policy IDs
-# def policy_mapping_fn(agent_id, episode, worker, **kwargs):
-def policy_mapping_fn(agent_id, episode, **kwargs):
-    # Extract numeric ID from agent_id (assuming format like "agent_0", "agent_1", etc.)
-    if isinstance(agent_id, str) and agent_id.startswith("agent_"):
-        agent_num = int(agent_id.split("_")[1])
-    else:
-        agent_num = int(agent_id)
-    return f"policy_{agent_num}"
-    
-# def create_algorithm_config(env_name, obs_space, act_space, num_agents, num_trained_agents):
-#     """
-#     Create PPO algorithm configuration for multi-agent setup using Ray 2.4+ API.
-#     """
-    
-#     # Get policies and training list
-#     policies, policies_to_train = create_multi_agent_config(
-#         obs_space, act_space, num_agents, num_trained_agents
-#     )
-    
-#     # Create PPO configuration
-#     config = (
-#         PPOConfig()
-#         .environment(env=env_name)
-#         .multi_agent(
-#             policies=policies,
-#             policy_mapping_fn=policy_mapping_fn,
-#             policies_to_train=policies_to_train,
-#         )
-#         .framework("torch")  # or "tf2" depending on your preference
-#         .training(
-#             lr=5e-5,
-#             num_sgd_iter=10,
-#             sgd_minibatch_size=128,
-#             train_batch_size=4000,
-#         )
-#         .rollouts(
-#             num_rollout_workers=2,
-#             rollout_fragment_length=200,
-#         )
-#         .debugging(log_level="WARN")
-#     )
-    
-#     return config
+On the new API stack `AlgorithmConfig.multi_agent(policies=...)` uses only the
+*keys* of that dict as ModuleIDs; `policy_class` and the per-policy model config
+are discarded (see `AlgorithmConfig.get_multi_rl_module_spec`, which fills
+`module_class` from the algorithm's default RLModule spec). The result was that
+every module - including the six "random" ones - was built as
+`DefaultPPOTorchRLModule` with no warning, so the baseline opponents were
+frozen randomly-initialised networks rather than random samplers.
+
+Module classes are now declared explicitly through `MultiRLModuleSpec`, which is
+the only thing the new stack actually reads.
+"""
+from ray.rllib.core.rl_module.multi_rl_module import MultiRLModuleSpec
+from ray.rllib.core.rl_module.rl_module import RLModuleSpec
+
+from gym_continuousDoubleAuction.config_loader import constants
+from gym_continuousDoubleAuction.train.model.model_handler import (
+    RandomRLModule,
+    default_model_config,
+)
+
+# Module ID conventions, from config/tunable_constants.json ->
+# module_id_prefixes. The callback relies on these prefixes to tell baseline
+# opponents (weight `original_opponent_weight`) from champion snapshots
+# (weight `champion_weight`) when sampling the opponent pool.
+_PREFIXES = constants("module_id_prefixes")
+POLICY_PREFIX = _PREFIXES["policy_prefix"]
+CHAMPION_PREFIX = _PREFIXES["champion_prefix"]
 
 
-# def create_and_train_algorithm(config, num_iterations=100):
-#     """
-#     Create and train the algorithm using the new Ray 2.4+ API.
-#     """
-    
-#     # Build the algorithm
-#     algo = config.build()
-    
-#     try:
-#         # Training loop
-#         for i in range(num_iterations):
-#             result = algo.train()
-            
-#             # Print progress every 10 iterations
-#             if i % 10 == 0:
-#                 print(f"Iteration {i}: "
-#                       f"Episode reward mean: {result.get('episode_reward_mean', 'N/A')}")
-                
-#         print("Training completed!")
-        
-#     finally:
-#         # Clean up
-#         algo.stop()
-    
-#     return algo
+def policy_id(i):
+    """ModuleID for the i-th policy slot."""
+    return f"{POLICY_PREFIX}{i}"
 
 
-# # Example usage function
-# def example_usage():
-#     """
-#     Example of how to use the updated multi-agent setup.
-#     """
-    
-#     # Example parameters (adjust according to your environment)
-#     env_name = "your_multi_agent_env"  # Replace with your actual environment
-#     # obs_space and act_space would come from your environment
-#     # obs_space = your_env.observation_space
-#     # act_space = your_env.action_space
-    
-#     num_agents = 4
-#     num_trained_agents = 2
-    
-#     # Uncomment and modify the following lines when you have your environment set up:
-    
-#     # # Create configuration
-#     # config = create_algorithm_config(
-#     #     env_name, obs_space, act_space, num_agents, num_trained_agents
-#     # )
-    
-#     # # Train the algorithm
-#     # trained_algo = create_and_train_algorithm(config, num_iterations=50)
-    
-#     print("Example setup complete. Uncomment the lines above to run with your environment.")
+def trainable_policy_ids(num_trained_agents):
+    """ModuleIDs of the trainable PPO modules."""
+    return [policy_id(i) for i in range(num_trained_agents)]
 
 
-# if __name__ == "__main__":
-#     example_usage()
+def baseline_policy_ids(num_agents, num_trained_agents):
+    """ModuleIDs of the frozen random baseline opponents."""
+    return [policy_id(i) for i in range(num_trained_agents, num_agents)]
 
-# ============================================================================
-# League-based self-play helper functions
-# ============================================================================
 
-def create_league_policy_spec(obs_space, act_space, model_name="model_disc"):
-    '''
-    Create a frozen policy spec for a league opponent.
-    
-    League policies are non-trainable snapshots with exploration disabled.
-    
+def build_multi_rl_module_spec(
+    obs_space,
+    act_space,
+    num_agents,
+    num_trained_agents,
+    fcnet_hiddens=None,
+    fcnet_activation="tanh",
+    vf_share_layers=False,
+):
+    """Build the MultiRLModuleSpec for a league-based self-play run.
+
     Args:
-        obs_space: Observation space for the policy
-        act_space: Action space for the policy
-        model_name: Name of the custom model to use
-        
+        obs_space: Single-agent observation space.
+        act_space: Single-agent action space.
+        num_agents: Total number of agents, n.
+        num_trained_agents: Number of trainable PPO modules, k.
+        fcnet_hiddens: Hidden sizes for the trainable modules.
+        fcnet_activation: Activation for the hidden layers.
+        vf_share_layers: Whether policy and value share a trunk.
+
     Returns:
-        PolicySpec for a frozen league opponent
-    '''
-    return PolicySpec(
-        policy_class=None,  # Use default PPO policy
-        observation_space=obs_space,
-        action_space=act_space,
-        config={
-            'model': {
-                'custom_model': model_name
-            },
-            'explore': False,  # Disable exploration for frozen policies
-        }
+        MultiRLModuleSpec covering policy_0..policy_(n-1).
+
+    Note:
+        `module_class=None` on the trainable specs is intentional - it makes
+        RLlib fill in the algorithm's default (PPO) module. The random modules
+        set `module_class` explicitly, which is the whole point of this rewrite.
+    """
+    if not 0 < num_trained_agents <= num_agents:
+        raise ValueError(
+            f"num_trained_agents must be in (0, num_agents]; got "
+            f"num_trained_agents={num_trained_agents}, num_agents={num_agents}"
+        )
+
+    model_config = default_model_config(
+        fcnet_hiddens=fcnet_hiddens,
+        fcnet_activation=fcnet_activation,
+        vf_share_layers=vf_share_layers,
     )
 
-
-def add_league_policy_to_algorithm(algorithm, snapshot_name, snapshot_weights, 
-                                   obs_space, act_space):
-    '''
-    Dynamically add a league opponent policy to a running algorithm.
-    
-    Args:
-        algorithm: The training algorithm instance
-        snapshot_name: Name for the new league policy
-        snapshot_weights: Policy weights to load
-        obs_space: Observation space
-        act_space: Action space
-        
-    Returns:
-        True if successful, False otherwise
-    '''
-    try:
-        # Create policy spec for league opponent
-        league_spec = create_league_policy_spec(obs_space, act_space)
-        
-        # Add the policy to the algorithm
-        # Note: In RLlib 2.4+, we need to add it to workers
-        worker = algorithm.workers.local_worker()
-        
-        # Add policy to local worker
-        worker.add_policy(
-            policy_id=snapshot_name,
-            policy_cls=league_spec.policy_class,
-            observation_space=league_spec.observation_space,
-            action_space=league_spec.action_space,
-            config=league_spec.config,
+    specs = {}
+    for pid in trainable_policy_ids(num_trained_agents):
+        specs[pid] = RLModuleSpec(
+            observation_space=obs_space,
+            action_space=act_space,
+            model_config=model_config,
         )
-        
-        # Set the weights
-        worker.set_policy_weights(snapshot_name, snapshot_weights)
-        
-        # Also add to remote workers
-        if algorithm.workers.num_healthy_remote_workers() > 0:
-            algorithm.workers.foreach_worker(
-                lambda w: w.add_policy(
-                    policy_id=snapshot_name,
-                    policy_cls=league_spec.policy_class,
-                    observation_space=league_spec.observation_space,
-                    action_space=league_spec.action_space,
-                    config=league_spec.config,
-                ) if not w.policy_map.get(snapshot_name) else None
-            )
-            
-            # Set weights on remote workers
-            algorithm.workers.foreach_worker(
-                lambda w: w.set_policy_weights(snapshot_name, snapshot_weights)
-            )
-        
-        print(f'[PolicyHandler] Successfully added league policy: {snapshot_name}')
-        return True
-        
-    except Exception as e:
-        print(f'[PolicyHandler] Error adding league policy {snapshot_name}: {e}')
-        return False
+    for pid in baseline_policy_ids(num_agents, num_trained_agents):
+        specs[pid] = RLModuleSpec(
+            module_class=RandomRLModule,
+            observation_space=obs_space,
+            action_space=act_space,
+        )
+
+    return MultiRLModuleSpec(rl_module_specs=specs)
+
+
+def create_multi_agent_config(
+    obs_space,
+    act_space,
+    num_agents,
+    num_trained_agents,
+    fcnet_hiddens=None,
+    fcnet_activation="tanh",
+    vf_share_layers=False,
+):
+    """Everything `AlgorithmConfig.multi_agent(...)` / `.rl_module(...)` needs.
+
+    Returns:
+        (policies, policies_to_train, rl_module_spec) where
+
+        policies:         set of ModuleIDs, for `.multi_agent(policies=...)`
+        policies_to_train: list of trainable ModuleIDs. The baseline modules
+                          MUST be excluded - RandomRLModule._forward_train
+                          raises if RLlib ever tries to update it.
+        rl_module_spec:   MultiRLModuleSpec, for `.rl_module(rl_module_spec=...)`
+    """
+    spec = build_multi_rl_module_spec(
+        obs_space,
+        act_space,
+        num_agents,
+        num_trained_agents,
+        fcnet_hiddens,
+        fcnet_activation=fcnet_activation,
+        vf_share_layers=vf_share_layers,
+    )
+    policies = set(spec.rl_module_specs.keys())
+    policies_to_train = trainable_policy_ids(num_trained_agents)
+
+    print(f"[PolicyHandler] modules: {sorted(policies)}")
+    print(f"[PolicyHandler] trainable: {policies_to_train}")
+    print(
+        f"[PolicyHandler] frozen random baselines: "
+        f"{baseline_policy_ids(num_agents, num_trained_agents)}"
+    )
+    return policies, policies_to_train, spec
+
+
+def policy_mapping_fn(agent_id, episode=None, **kwargs):
+    """Static 1:1 agent -> module mapping.
+
+    Only useful for runs *without* league self-play (e.g. the integration
+    tests). Live training uses `SelfPlayCallback.get_mapping_fn`, which maps the
+    non-trainable agent slots to the opponent pool instead.
+    """
+    if isinstance(agent_id, str) and agent_id.startswith("agent_"):
+        return policy_id(int(agent_id.split("_")[1]))
+    return policy_id(int(agent_id))

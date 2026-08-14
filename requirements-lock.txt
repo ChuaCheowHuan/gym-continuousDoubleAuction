@@ -1,0 +1,73 @@
+# Fully-resolved dependency set, verified against this repo's test suite and a
+# live multi-agent PPO training iteration on 2026-08-10.
+#
+# Generated with:
+#     pip install -r requirements.txt && pip freeze > requirements-lock.txt
+#
+# NOTE ON torch: pinned here without a local version suffix. Pick the build that
+# matches your machine:
+#     CPU:  pip install torch==2.13.0 --extra-index-url https://download.pytorch.org/whl/cpu
+#     CUDA: pip install torch==2.13.0 --extra-index-url https://download.pytorch.org/whl/cu<VER>
+# This set was verified on the CPU build; the GPU build differs only in the
+# nvidia-* CUDA runtime packages it pulls in.
+#
+# Jupyter is intentionally absent - it is a dev tool, not a runtime dependency.
+# See requirements.txt for the human-editable list of direct dependencies.
+
+absl-py==2.5.0
+annotated-types==0.8.0
+attrs==26.1.0
+certifi==2026.7.22
+charset-normalizer==3.4.9
+click==8.4.2
+cloudpickle==3.1.2
+contourpy==1.3.3
+cycler==0.12.1
+dm-tree==0.1.10
+Farama-Notifications==0.0.6
+filelock==3.32.2
+fonttools==4.63.0
+fsspec==2026.7.0
+gymnasium==1.2.2
+idna==3.18
+Jinja2==3.1.6
+joblib==1.5.3
+jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
+kiwisolver==1.5.0
+lz4==4.4.5
+MarkupSafe==3.0.3
+matplotlib==3.11.1
+mpmath==1.3.0
+msgpack==1.2.1
+narwhals==2.24.0
+networkx==3.6.1
+numpy==2.5.2
+ormsgpack==1.12.2
+packaging==26.3
+pandas==3.0.5
+pillow==12.3.0
+protobuf==7.35.1
+pyarrow==25.0.0
+pydantic==2.13.4
+pydantic_core==2.46.4
+pyparsing==3.3.2
+python-dateutil==2.9.0.post0
+PyYAML==6.0.3
+ray==2.56.1
+referencing==0.37.0
+requests==2.34.2
+rpds-py==2026.6.3
+scikit-learn==1.9.0
+scipy==1.18.0
+six==1.17.0
+sortedcontainers==2.4.0
+sympy==1.14.0
+tabulate==0.10.0
+tensorboardX==2.6.5
+threadpoolctl==3.6.0
+torch==2.13.0
+typing-inspection==0.4.3
+typing_extensions==4.16.0
+urllib3==2.7.0
+wrapt==2.3.0

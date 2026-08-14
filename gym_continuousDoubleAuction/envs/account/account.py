@@ -2,11 +2,12 @@ from decimal import Decimal
 
 from .cash_processor import Cash_Processor
 from .calculate import Calculate
+from ...config_loader import env_default
 
 from tabulate import tabulate
 
 class Account(Calculate, Cash_Processor):
-    def __init__(self, ID, cash=0):
+    def __init__(self, ID, cash=env_default("init_cash")):
         self.ID = ID
         self.cash = Decimal(cash)
         # nav is used to calculate P&L & r per t step
@@ -30,7 +31,7 @@ class Account(Calculate, Cash_Processor):
         self.num_passive_fills_step = 0 # passive executions in current step
         self.order_step_placed = 0 # 1 if a Market/Limit order was placed this step
 
-    def reset_acc(self, ID, cash=0):
+    def reset_acc(self, ID, cash=env_default("init_cash")):
         self.ID = ID
         self.cash = Decimal(cash)
         # nav is used to calculate P&L & r per t step

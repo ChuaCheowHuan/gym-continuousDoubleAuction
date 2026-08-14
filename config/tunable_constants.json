@@ -1,0 +1,73 @@
+{
+  "_description": "Structural constants: values that shape the observation and action spaces, the module-ID naming contract, and the paths the visualizers read. These are real inputs - every module named by a _source key reads them through gym_continuousDoubleAuction/config_loader.py and holds no literal of its own. Per-run knobs live in train_config.json; env fallbacks live in env_defaults.json.",
+  "_note": "Derived quantities are not listed. book_dim is book_rows * k_rows, snapshot_dim is book_dim + extra_dim, and the action space's price cardinality is k_rows. Writing a derived value here would create a second copy that can disagree with the first.",
+
+  "observation_layout": {
+    "_source": "gym_continuousDoubleAuction/envs/exchg/state_helper.py (State_Helper.__init__)",
+    "_note": "One observation snapshot is book_rows stacked rows of k_rows price levels - [bid_price, bid_size, ask_price, ask_size] - followed by extra_dim market-level scalars [log_mid, log1p_spread_ticks]. k_rows is the single definition of book depth: the observation exposes it, the action space's price code indexes it, and _set_price reshapes against it. book_rows is fixed by the four lists set_agg_LOB builds; changing it requires changing that function.",
+    "k_rows": 10,
+    "book_rows": 4,
+    "extra_dim": 2
+  },
+
+  "action_space": {
+    "_source": "gym_continuousDoubleAuction/envs/exchg/action_helper.py (Action_Helper.act_space)",
+    "_note": "category_n is checked against the side/type mapping in _set_action_mkt_depth at construction, so a value that disagrees with that mapping raises instead of silently doing nothing. price_offset_n must be odd: the neutral 'join' code is the middle one, and offsets run from -(n//2) to +(n//2) ticks. The price code's cardinality is not here - it is observation_layout.k_rows.",
+    "category_n": 9,
+    "price_offset_n": 3,
+    "size_mean_low": -1.0,
+    "size_mean_high": 1.0,
+    "size_sigma_low": 0.0,
+    "size_sigma_high": 1.0
+  },
+
+  "price_anchor_fallbacks": {
+    "_source": "gym_continuousDoubleAuction/envs/exchg/action_helper.py (Action_Helper.__init__) and state_helper.py (set_agg_LOB)",
+    "_note": "Two fallbacks for the price anchor, both normally overwritten by reset(). action_helper_last_price seeds self.last_price before the first reset; state_helper_midpoint is used when the book has no two-sided market and last_price is unusable. They are read from one place now, so they cannot drift apart.",
+    "action_helper_last_price": 100.0,
+    "state_helper_midpoint": 100.0
+  },
+
+  "module_id_prefixes": {
+    "_source": "gym_continuousDoubleAuction/train/policy/policy_handler.py",
+    "_note": "A naming contract, not a knob: SelfPlayCallback parses these prefixes to tell baseline opponents from champion snapshots. Changing them invalidates existing checkpoints, whose module directories are named with the old prefix.",
+    "policy_prefix": "policy_",
+    "champion_prefix": "champion_"
+  },
+
+  "runtime_env_vars": {
+    "_source": "gym_continuousDoubleAuction/train/train.py (main)",
+    "_note": "Set with setdefault before ray.init, so an existing value in the environment wins. Add entries here rather than in code.",
+    "RAY_DEBUG_DISABLE_MEMORY_MONITOR": "True"
+  },
+
+  "plot_defaults": {
+    "_source": "gym_continuousDoubleAuction/train/plotter/plot_handler.py",
+    "_note": "Presentation defaults for the notebook plots. lob_subplot_fig_size is separate because plot_LOB_subplot builds a tall stack of subplots and sizes it independently of its own fig_size argument, which it ignores; that behaviour is preserved rather than silently changed. moving_average_window_fraction is the rolling-mean window as a fraction of the series length.",
+    "fig_size": [25, 10],
+    "wide_fig_size": [25, 5],
+    "lob_subplot_fig_size": [25, 25],
+    "moving_average_window_fraction": 0.1,
+    "x_label": "step",
+    "reward_y_label": "reward",
+    "mid_prices_y_label": "mid_prices",
+    "series_line_width": 0.7,
+    "moving_average_line_width": 1,
+    "moving_average_color": "black"
+  },
+
+  "visualize_paths": {
+    "_source": "gym_continuousDoubleAuction/visualize/",
+    "_note": "Default arguments of the visualize entry points. nav_json_fallback is the bare filename tried when nav_json_path does not exist, which is what happens when the visualizer is run from inside visualize/.",
+    "nav_json_path": "visualize/latest_episode_data.json",
+    "nav_json_fallback": "latest_episode_data.json",
+    "episode_pickle_dir": "../gym_continuousDoubleAuction/episode_data",
+    "default_agent_id": "agent_0"
+  },
+
+  "inert_tick_size_copy": {
+    "_source": "gym_continuousDoubleAuction/envs/orderbook/orderbook.py (OrderBook.__init__)",
+    "_note": "DOCUMENTATION ONLY - the one value in this file that is not read from here. OrderBook accepts and stores a tick_size it never reads, and the envs/orderbook/ package is off-limits to changes, so its literal default stays in that module. The live tick is Action_Helper.min_tick, which comes from the tick_size config key. Deleting the dead parameter is the documented recommendation (doc/15 S3-4). The env side of this is fixed: reset() now builds the book with the configured tick_size instead of a literal 1.",
+    "orderbook_default_tick_size": 0.0001
+  }
+}

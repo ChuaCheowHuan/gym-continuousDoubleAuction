@@ -1,4 +1,4 @@
-#**/*.egg-info
+**/*.egg-info
 **/__pycache__
 .pytest_cache
 **/*.pyc
@@ -12,7 +12,13 @@
 **/eps
 **/last_eps_steps
 venv
+.venv
+# SelfPlayCallback pickles one file per episode into ./episode_data relative to
+# the *working directory*, so this lands at the repo root when training is
+# launched from there - not only under gym_continuousDoubleAuction/.
+episode_data
 gym_continuousDoubleAuction/episode_data
+results
 gym_continuousDoubleAuction/*.txt
 gym_continuousDoubleAuction/*.json
 gym_continuousDoubleAuction/visualize/latest_episode_data.json

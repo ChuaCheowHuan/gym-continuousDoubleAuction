@@ -8,8 +8,8 @@ from ray.rllib.env.multi_agent_env import MultiAgentEnv
 
 from .orderbook.orderbook import OrderBook
 from .exchg.exchg_helper import Exchg_Helper
-from .exchg.state_helper import SNAPSHOT_DIM
 from .agent.trader import Trader
+from ..config_loader import env_default
 
 from tabulate import tabulate
 
@@ -23,23 +23,45 @@ class continuousDoubleAuctionEnv(
     def __init__(self, config=None):      
         # Handle config parameter for RLlib compatibility
         self.config = config or {}
-        config = self.config
-        
-        # Extract parameters from config with defaults
-        self.num_of_agents = config.get("num_of_agents", 5)
-        init_cash = config.get("init_cash", 0)
-        tick_size = config.get("tick_size", 1)
-        tape_display_length = config.get("tape_display_length", 10)
-        self.max_step = config.get("max_step", 64)
-        is_render = config.get("is_render", True)
-        self.n_hist = config.get("n_hist", 4)
+
+        # Every key below falls back to config/env_defaults.json when the
+        # caller omits it. There are no literal defaults here: a training run
+        # supplies all of them from train_config.json via TrainConfig.env_config,
+        # and a bare env picks up the standalone defaults from the JSON.
+        self.num_of_agents = self._cfg("num_of_agents")
+        init_cash = self._cfg("init_cash")
+        tick_size = self._cfg("tick_size")
+        tape_display_length = self._cfg("tape_display_length")
+        self.max_step = self._cfg("max_step")
+        is_render = self._cfg("is_render")
+        self.n_hist = self._cfg("n_hist")
+
+        # Order sizing, consumed by Action_Helper.
+        min_size = self._cfg("min_size")
+        mkt_max_size = self._cfg("mkt_max_size")
+        limit_size_multiple = self._cfg("limit_size_multiple")
+
+        # Reward coefficients, consumed by Reward_Helper.
+        order_penalty = self._cfg("order_penalty")
+        trade_penalty = self._cfg("trade_penalty")
+        drawdown_penalty = self._cfg("drawdown_penalty")
+        passive_bonus = self._cfg("passive_bonus")
+        loss_multiplier = self._cfg("loss_multiplier")
 
         # Initialize parent classes
         super().__init__(
-            init_cash, 
-            tick_size, 
+            init_cash,
+            tick_size,
             tape_display_length,
-            n_hist=self.n_hist
+            n_hist=self.n_hist,
+            min_size=min_size,
+            mkt_max_size=mkt_max_size,
+            limit_size_multiple=limit_size_multiple,
+            order_penalty=order_penalty,
+            trade_penalty=trade_penalty,
+            drawdown_penalty=drawdown_penalty,
+            passive_bonus=passive_bonus,
+            loss_multiplier=loss_multiplier,
         )
 
         self.next_states = {}
@@ -59,39 +81,56 @@ class continuousDoubleAuctionEnv(
         # list of agents or traders
         self.traders = [Trader(ID, init_cash) for ID in range(0, self.num_of_agents)]
 
-        # Updated agent naming to be consistent with new API
-        self._agent_ids = set([f"agent_{i}" for i in range(self.num_of_agents)])
-        self.agents = list(self._agent_ids)
-        self.possible_agents = list(self._agent_ids)
-       
-        # Each snapshot is SNAPSHOT_DIM floats (40 book features + 2 market scalars);
-        # n_hist of them are stacked into one flat observation.
-        self.observation_space = {
-            f"agent_{i}": gym.spaces.Box(
+        # Agent IDs. `agents` / `possible_agents` are built from a sorted list
+        # rather than from the set, because iteration order of a set of strings
+        # is not stable across processes (PYTHONHASHSEED). RLlib zips these
+        # against per-agent spaces on the EnvRunners, so an unstable order can
+        # silently mismatch agents to spaces in a multi-process run.
+        agent_ids = [f"agent_{i}" for i in range(self.num_of_agents)]
+        self._agent_ids = set(agent_ids)
+        self.agents = list(agent_ids)
+        self.possible_agents = list(agent_ids)
+
+        # Each snapshot is self.snapshot_dim floats (book_rows * k_rows book
+        # features + extra_dim market scalars, all from
+        # config/tunable_constants.json -> observation_layout, and set on the
+        # instance by State_Helper); n_hist of them are stacked into one flat
+        # observation.
+        #
+        # NOTE: these are the *plural* attributes (`observation_spaces` /
+        # `action_spaces`) that RLlib's new API stack reads. The singular
+        # `observation_space` / `action_space` on MultiAgentEnv are marked
+        # @OldAPIStack in Ray 2.56 and mean something different (the space of a
+        # single agent, not a per-agent dict).
+        self.observation_spaces = {
+            agent_id: gym.spaces.Box(
                 low=-np.inf,
                 high=np.inf,
-                shape=(self.n_hist * SNAPSHOT_DIM,),
+                shape=(self.n_hist * self.snapshot_dim,),
                 dtype=np.float32
-            ) for i in range(self.num_of_agents)
+            ) for agent_id in agent_ids
         }
 
         # Updated action space to use the new Compact Flat structure
-        self.action_space = self.act_space(self.num_of_agents)
-    
+        self.action_spaces = self.act_space(self.num_of_agents)
+
+    def _cfg(self, key):
+        """One env config value, falling back to `config/env_defaults.json`.
+
+        Written as an explicit membership test rather than `dict.get(key,
+        default)` so the fallback is only looked up when it is actually needed,
+        and so a missing key raises from the loader - naming the file and the
+        keys it does define - instead of resolving to a literal written here.
+        """
+        return self.config[key] if key in self.config else env_default(key)
+
     def get_action_space(self, agent_id):
-        # Return the actual action space, not a dictionary
-
-        # print(f'get_action_space, agent_id: {agent_id}')
-        # print(f'get_action_space, self.action_space[agent_id]: {self.action_space[agent_id]}')
-
-        return self.action_space[agent_id]
+        """Action space for a single agent (not the per-agent dict)."""
+        return self.action_spaces[agent_id]
 
     def get_observation_space(self, agent_id):
-
-        # print(f'get_observation_space, agent_id: {agent_id}')
-        # print(f'get_observation_space, self.observation_spaces[agent_id]: {self.observation_spaces[agent_id]}')
-
-        return self.observation_space[agent_id]
+        """Observation space for a single agent (not the per-agent dict)."""
+        return self.observation_spaces[agent_id]
         
     # Override from RLlib
     # def get_observation_space(self, agent_id):
@@ -134,8 +173,12 @@ class continuousDoubleAuctionEnv(
         if hasattr(super(), 'reset'):
             super().reset(seed=seed)
 
-        self.LOB = OrderBook(1, self.tape_display_length) # new limit order book
-        #self.LOB = OrderBook(0.25, self.tape_display_length) # new limit order book
+        # Same tick the book was built with in Exchg_Helper, from the tick_size
+        # config key. This used to be a literal 1, which disagreed with any
+        # other configured tick_size - harmlessly, since OrderBook stores
+        # tick_size without ever reading it, but there is no reason to keep a
+        # second value here.
+        self.LOB = OrderBook(self.tick_size, self.tape_display_length) # new limit order book
         self.agg_LOB = {}
         self.agg_LOB_raw = {}
         self.agg_LOB_aft = {}
@@ -157,8 +200,8 @@ class continuousDoubleAuctionEnv(
         self.t_step = 0
 
         # Establish initial price anchor
-        low = self.config.get("initial_price_min", 10)
-        high = self.config.get("initial_price_max", 100)
+        low = self._cfg("initial_price_min")
+        high = self._cfg("initial_price_max")
         self.last_price = float(np.random.randint(low, high + 1))
 
         self.reset_traders_acc()

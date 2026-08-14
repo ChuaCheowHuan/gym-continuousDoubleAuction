@@ -1,37 +1,102 @@
-FROM nvidia/cuda:12.6.0-cudnn-runtime-ubuntu22.04
+# GPU training image for gym-continuousDoubleAuction.
+#
+# Build:
+#   docker build -f docker/ml/dockerfile_ray_torch -t cda-ray-torch .
+#
+# Run (GPU), with your working tree mounted over the baked-in copy:
+#   docker run --gpus all -it --rm -p 8888:8888 --shm-size=2g \
+#       -v "$PWD":/workspace/code cda-ray-torch
+#   (PowerShell: -v "${PWD}:/workspace/code")
+#
+# Run the source as built, no mount:
+#   docker run --gpus all -it --rm -p 8888:8888 --shm-size=2g cda-ray-torch
+#
+# Either way the package is already importable - no `pip install -e .` needed.
+#
+# NOTE on --shm-size: Ray's object store uses /dev/shm. Docker's 64MB default
+# makes Ray fall back to /tmp and warn about degraded performance. Give it at
+# least 2g (Ray recommends >30% of available RAM).
+#
+# CUDA 12.8 runtime matches the cu128 torch wheels selected below. If you move
+# to a different CUDA minor, change BOTH the base image and the wheel index.
+FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH=/opt/venv/bin:$PATH
 
-RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.edge.kernel.org/ubuntu/|g' /etc/apt/sources.list && \
-    sed -i 's|http://security.ubuntu.com/ubuntu|http://mirrors.edge.kernel.org/ubuntu|g' /etc/apt/sources.list && \
-    apt-get -o Acquire::ForceIPv4=true update && \
+RUN apt-get -o Acquire::ForceIPv4=true update && \
     apt-get install -y --no-install-recommends \
         build-essential \
         curl \
         git \
-        libgl1-mesa-glx \
+        libgl1 \
         libglib2.0-0 \
         wget \
         python3-pip \
+        python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir \
-        torch \
+# Everything below installs into this venv, not Ubuntu's system Python.
+#
+# 24.04 marks the system Python externally-managed (PEP 668). The escape hatch
+# (PIP_BREAK_SYSTEM_PACKAGES) is not enough on its own: apt's pip ships without
+# a RECORD file, so `pip install --upgrade pip` fails with "Cannot uninstall
+# pip 24.0, RECORD file not found". A venv sidesteps the whole problem and
+# keeps our pins from colliding with distro packages.
+#
+# PATH puts /opt/venv/bin first (see ENV above), so plain `pip`, `python`, and
+# `jupyter` resolve here - including in the CMD below and in any shell you open
+# with `docker exec`.
+RUN python3 -m venv /opt/venv && \
+    pip install --upgrade pip setuptools wheel
+
+# torch first, from the CUDA wheel index, so the CPU wheel is not pulled in as a
+# transitive dependency of ray[rllib] later.
+RUN pip install \
+        torch==2.13.0 \
         torchvision \
         torchaudio \
-        --extra-index-url https://download.pytorch.org/whl/cu126 && \
-    pip install --no-cache-dir \
-        jupyterlab \
-        notebook \
+        --extra-index-url https://download.pytorch.org/whl/cu128
+
+# Ray 2.56.x hard-pins gymnasium==1.2.2 - do not bump it independently.
+RUN pip install \
+        "ray[rllib]==2.56.1" \
+        "gymnasium==1.2.2" \
+        "numpy>=2.5,<3" \
+        "pandas>=3.0,<4" \
+        "scipy>=1.18,<2" \
+        "scikit-learn>=1.9,<2" \
+        "matplotlib>=3.11,<4" \
+        "sortedcontainers>=2.4" \
+        "tabulate>=0.10" \
+        "tensorboardX>=2.6.5" \
         gputil \
-        gymnasium==1.0.0 \
-        ray[rllib]==2.47.1
-        
-RUN mkdir -p /workspace/code && chmod -R 777 /workspace
+        jupyterlab \
+        notebook
+
+# The project itself, installed editable. Two things follow from that:
+#
+#   * The image is self-contained - `docker run` with no -v works, using the
+#     source as of build time.
+#   * The editable install records the *path* /workspace/code, so bind-mounting
+#     your working tree there at run time shadows the baked copy and imports
+#     resolve against your live edits instead. Mount the repo ROOT, not its
+#     parent, or the recorded path stops pointing at a package tree.
+#
+# This is the last layer on purpose: every source edit invalidates it, and the
+# expensive apt/torch/ray layers above stay cached.
+#
+# --no-deps because everything in setup.py's install_requires is already
+# installed above at versions chosen to match this CUDA build. Letting pip
+# re-resolve here risks quietly swapping one of them.
+COPY . /workspace/code
+RUN pip install --no-deps -e /workspace/code && \
+    chmod -R 777 /workspace
 WORKDIR /workspace/code
 
 EXPOSE 8888

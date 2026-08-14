@@ -1,0 +1,34 @@
+# Keep the build context small and the image reproducible. Without this,
+# `COPY . /workspace/code` in docker/ml/dockerfile_ray_torch pulls in git
+# history and every training artefact ever written to the working tree.
+
+.git
+.github
+
+# Training output. These are generated at runtime into the mounted volume and
+# can be gigabytes; they have no business in an image.
+**/chkpt
+**/ray_results
+**/episode_data
+**/last_eps_steps
+**/eps
+**/my_tmp
+results
+
+# Python build/run detritus.
+**/__pycache__
+**/*.pyc
+**/*.egg-info
+.pytest_cache
+.cache
+venv
+.venv
+
+# Editor / notebook state.
+.ipynb_checkpoints
+**/.ipynb_checkpoints
+.DS_Store
+
+# Docs and images are not needed to run training.
+pic
+doc

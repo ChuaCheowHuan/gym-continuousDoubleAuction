@@ -1,0 +1,69 @@
+{
+  "_source": "gym_continuousDoubleAuction/train/train.py (TrainConfig dataclass)",
+  "_description": "THE source of every TrainConfig value. The dataclass declares the schema - field names, types, and what each knob does - and holds no values: each field's default is read from here. Editing this file changes what `python -m gym_continuousDoubleAuction.train.train` does, with no flag needed. Every field must be present; a missing key raises when a TrainConfig is built. Groups are flattened one level, keys starting with _ are documentation, unknown keys raise. Derived properties (train_batch_size, checkpoint_dir) are computed in code and are not listed.",
+  "_note": "Precedence is this file -> `--config <other file>` -> explicit CLI flags. The `environment` group is forwarded to the env by TrainConfig.env_config, which renames exactly one key: num_agents here becomes num_of_agents in the env config dict. num_trained_agents is NOT forwarded - it configures the policy/module wiring, not the env. A bare env built without these keys falls back to config/env_defaults.json, whose standalone values deliberately differ from the training values here. The ppo and league_self_play groups are also read directly by model_handler.default_model_config and SelfPlayCallback when those are called without arguments.",
+
+  "environment": {
+    "num_agents": 8,
+
+    "num_trained_agents": 2,
+
+    "init_cash": 1000000,
+    "tick_size": 1,
+    "tape_display_length": 10,
+    "max_step": 4096,
+    "is_render": false,
+    "n_hist": 4,
+    "initial_price_min": 10,
+    "initial_price_max": 100,
+
+    "min_size": 1,
+    "mkt_max_size": 100,
+    "limit_size_multiple": 10,
+
+    "order_penalty": 0.1,
+    "trade_penalty": 0.05,
+    "drawdown_penalty": 0.2,
+    "passive_bonus": 0.1,
+    "loss_multiplier": 1.5
+  },
+
+  "rollouts": {
+    "num_env_runners": 0,
+    "num_envs_per_env_runner": 1,
+    "num_cpus_per_env_runner": 0.25
+  },
+
+  "learner": {
+    "num_learners": 0,
+    "num_gpus_per_learner": 0.25
+  },
+
+  "ppo": {
+    "num_episodes_per_iter": 4,
+    "num_epochs": 4,
+    "lr": 5e-05,
+    "fcnet_hiddens": [256, 256],
+    "fcnet_activation": "tanh",
+    "vf_share_layers": false,
+    "minibatch_size": null
+  },
+
+  "league_self_play": {
+    "std_dev_multiplier": 0.1,
+    "max_champions": 8,
+    "min_iterations_between_champions": 2,
+    "original_opponent_weight": 1.0,
+    "champion_weight": 3.0,
+    "episode_data_dir": "episode_data"
+  },
+
+  "run": {
+    "num_iters": 16,
+    "chkpt_freq": 2,
+    "log_base_dir": "results",
+    "is_restore": false,
+    "log_level": "WARN",
+    "seed": null
+  }
+}

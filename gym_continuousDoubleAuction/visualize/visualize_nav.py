@@ -3,14 +3,22 @@ import matplotlib.pyplot as plt
 import os
 from collections import defaultdict
 
-def visualize_nav(json_path='visualize/latest_episode_data.json'):
+from gym_continuousDoubleAuction.config_loader import constant
+
+def visualize_nav(json_path=None):
     """
     Plots the NAV for each agent from the episode data JSON file.
+
+    Paths come from config/tunable_constants.json -> visualize_paths.
     """
+    if json_path is None:
+        json_path = constant("visualize_paths", "nav_json_path")
+
     if not os.path.exists(json_path):
         # Fallback to local directory if relative path fails
-        if os.path.exists('latest_episode_data.json'):
-            json_path = 'latest_episode_data.json'
+        fallback = constant("visualize_paths", "nav_json_fallback")
+        if os.path.exists(fallback):
+            json_path = fallback
         else:
             print(f"Error: {json_path} not found.")
             return

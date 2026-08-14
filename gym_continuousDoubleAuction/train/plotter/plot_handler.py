@@ -4,14 +4,19 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import ray
 
+from gym_continuousDoubleAuction.config_loader import constants
+
 #from gym_continuousDoubleAuction.train.storage.store_handler import get_lv_data
 
-fig_size = (25,10)
+# Presentation defaults, from config/tunable_constants.json -> plot_defaults.
+_PLOT = constants("plot_defaults")
+
+fig_size = tuple(_PLOT["fig_size"])
 #step_window = 100 #int(np.rint(max_step * 0.1))
 #eps_window = 15 #int(np.rint(num_iters * 0.1))
 
 def _window_size(y):
-    return int(np.rint(len(y) * 0.1))
+    return int(np.rint(len(y) * _PLOT["moving_average_window_fraction"]))
 
 def _process_list(init_cash, agt_id, step_or_eps, data_key):
     g_store = ray.util.get_actor("g_store")
@@ -35,7 +40,8 @@ def _process_list(init_cash, agt_id, step_or_eps, data_key):
 
     return l
 
-def plot_storage(num_agents, init_cash, x_label="step", ylabel="reward", fig_size=(25, 10)):
+def plot_storage(num_agents, init_cash, x_label=_PLOT["x_label"],
+                 ylabel=_PLOT["reward_y_label"], fig_size=tuple(_PLOT["fig_size"])):
     sq_rt = np.sqrt(num_agents)
     rnd = math.ceil(sq_rt)
     num_del = rnd**2 - num_agents           # num of unused axes to hide.
@@ -53,9 +59,12 @@ def plot_storage(num_agents, init_cash, x_label="step", ylabel="reward", fig_siz
     for i in range(num_del):
         axes[-(i+1)].set_axis_off()
 
-def plot_LOB_subplot(store, depth, y_label, fig_size=(25,5)):
+def plot_LOB_subplot(store, depth, y_label, fig_size=tuple(_PLOT["wide_fig_size"])):
     #store = [item for sublist in store for item in sublist]
-    fig, axs = plt.subplots(depth, figsize=(25,25), sharex=True, sharey=True)
+    # Note: this ignores its own fig_size argument, as it always has. The size
+    # it does use is lob_subplot_fig_size, a tall stack sized for `depth` rows.
+    fig, axs = plt.subplots(depth, figsize=tuple(_PLOT["lob_subplot_fig_size"]),
+                            sharex=True, sharey=True)
     for i, _ in enumerate(axs):
         x = range(len(store[i]))
         y = store[i]
@@ -63,28 +72,32 @@ def plot_LOB_subplot(store, depth, y_label, fig_size=(25,5)):
         axs[i].set(ylabel='lv_' + str(i+1) + y_label)
     axs[i].set(xlabel='step')
 
-def plot_sum_ord_imb(sum_ord_imb_store, y_label, fig_size=(25,5)):
+def plot_sum_ord_imb(sum_ord_imb_store, y_label, fig_size=tuple(_PLOT["wide_fig_size"])):
     plt.figure(figsize=fig_size)
-    plt.xlabel("step")
+    plt.xlabel(_PLOT["x_label"])
     plt.ylabel(y_label)
     x = range(len(sum_ord_imb_store))
     y = sum_ord_imb_store
-    plt.plot(x, y, color=np.random.uniform(0,1,3),label=y_label, linewidth=0.7)
+    plt.plot(x, y, color=np.random.uniform(0,1,3), label=y_label,
+             linewidth=_PLOT["series_line_width"])
 
     y_MA = pd.Series(y).rolling(window=_window_size(y)).mean()
-    plt.plot(x, y_MA, color='black', label='MA', linewidth=1)
+    plt.plot(x, y_MA, color=_PLOT["moving_average_color"], label='MA',
+             linewidth=_PLOT["moving_average_line_width"])
 
     plt.legend()
     plt.show()
 
-def plot_mid_prices(mid_price_store, y_label="mid_prices", fig_size=(25,5)):
+def plot_mid_prices(mid_price_store, y_label=_PLOT["mid_prices_y_label"],
+                    fig_size=tuple(_PLOT["wide_fig_size"])):
     plt.figure(figsize=fig_size)
-    plt.xlabel("step")
+    plt.xlabel(_PLOT["x_label"])
     plt.ylabel(y_label)
     for i, row in enumerate(mid_price_store):
         x = range(len(row))
         y = row
-        plt.plot(x, y, color=np.random.uniform(0,1,3), label="lv_" + str(i+1), linewidth=0.7)
+        plt.plot(x, y, color=np.random.uniform(0,1,3), label="lv_" + str(i+1),
+                 linewidth=_PLOT["series_line_width"])
 
     plt.legend()
     plt.show()

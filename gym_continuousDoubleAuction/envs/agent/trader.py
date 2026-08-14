@@ -6,9 +6,10 @@ from decimal import Decimal
 
 from ..account.account import Account
 from .random_agent import Random_agent
+from ...config_loader import env_default
 
 class Trader(Random_agent):
-    def __init__(self, ID, cash=0):
+    def __init__(self, ID, cash=env_default("init_cash")):
         self.ID = ID # trader unique ID
         self.acc = Account(ID, cash)
 

@@ -1,586 +1,95 @@
 # Changes from original_v1 to Current Version 2 (update 20251224)
 
-This repository has undergone significant modernization since the `original_v1` branch (the original release from 2020).
+This repository has undergone significant modernization since the `original_v1` branch (the original release from 2020, [README_v1.md](README_v1.md)).
 
-For a detailed breakdown of codebase modernizations, please refer to the [change.md](gym_continuousDoubleAuction/doc/change.md) document.
-
----
-
-# Below are the information for the `original_v1` branch (released more than 5 years ago):
-1) [Update](#update)
-2) [Purpose of this repository](#purpose-of-this-repository)
-3) [Example](#example)
-4) [Dependencies](#dependencies)
-5) [Installation](#installation)
-6) [TODO](#todo)
-7) [Acknowledgements](#acknowledgements)
-8) [Contributing](#contributing)
-9) [Disclaimer](#disclaimer)
-
-# Appendix:
-10) [Observation space](#observation-space)
-11) [Action space](#action-space)
-12) [Reward](#Reward)
-13) [Making sense of the render output](#making-sense-of-the-render-output)
-14) [Generated LOB](#generated-lob)
+For a detailed breakdown of codebase modernizations, please refer to the [17_changelog.md](doc/17_changelog.md) document.
 
 ---
 
-[![Build Status](https://travis-ci.com/ChuaCheowHuan/gym-continuousDoubleAuction.svg?branch=master)](https://travis-ci.com/ChuaCheowHuan/gym-continuousDoubleAuction)
+# Version 2 README:
+
+### Start here
+
+| # | Document | What it answers |
+|---|---|---|
+| 1 | [01_overview.md](01_overview.md) | What this project is, the market it models, the research question, what an episode looks like |
+| 2 | [02_architecture.md](02_architecture.md) | Layer map, package tree, the mixin/MRO chain, the step lifecycle, config keys, data flow, tech stack |
+
+### Core mechanisms (reference)
+
+| # | Document | What it answers |
+|---|---|---|
+| 3 | [03_matching_engine.md](03_matching_engine.md) | Book data structures, limit/market processing, modify-order semantics and the six accounting scenarios, invariants |
+| 4 | [04_accounting.md](04_accounting.md) | Cash escrow, order approval, position transitions including atomic flips, mark-to-market, NAV conservation |
+| 5 | [05_observation_space.md](05_observation_space.md) | The 42-float snapshot: midpoint normalization, `√V` sizing, `log_mid` / `log1p_spread_ticks`, temporal stacking, the raw/normalized split, measured feature scales |
+| 6 | [06_action_space.md](06_action_space.md) | The `Dict` action space, ghost-level price anchoring, the two degenerate size dimensions, the legacy `Tuple` design it replaced |
+| 7 | [07_reward_function.md](07_reward_function.md) | The five-term formula, its account plumbing, the measured decomposition, a coefficient tuning guide |
+
+### Training
+
+| # | Document | What it answers |
+|---|---|---|
+| 8 | [08_self_play_league.md](08_self_play_league.md) | League play: champion snapshotting and its four load-bearing ordering constraints, weighted matchmaking, configuration, monitoring, troubleshooting |
+| 9 | [09_distributed_training.md](09_distributed_training.md) | `num_env_runners` and `num_learners`: what each distributes, worked examples, and three now-fixed bugs that existed only at non-default values |
+| 10 | [10_testing.md](10_testing.md) | Every test file, what each case pins down, CI, and the gaps |
+| 11 | [11_logging_and_observability.md](11_logging_and_observability.md) | What training records, where it goes, and the gap between what is computed and what is surfaced |
+
+### Analysis
+
+| # | Document | Audience |
+|---|---|---|
+| 12 | [12_perspective_rl_researcher.md](12_perspective_rl_researcher.md) | Algorithm, reward design, exploration, sample efficiency, training stability |
+| 13 | [13_perspective_financial_trader.md](13_perspective_financial_trader.md) | Microstructure realism, risk, execution, P&L, desk metrics |
+| 14 | [14_perspective_ai_engineer.md](14_perspective_ai_engineer.md) | Code quality, packaging, scalability, observability, production readiness |
+| 15 | [15_findings_and_recommendations.md](15_findings_and_recommendations.md) | Consolidated, severity-ranked findings with fixes and a suggested sequence |
+| 16 | [16_verification_log.md](16_verification_log.md) | Every executed probe and its raw output |
+| 17 | [17_changelog.md](17_changelog.md) | What changed since `original_v1` (2020) and why |
 
 ---
 
-# Update:
-See latest PR.
+## Reading paths
+
+**New to the codebase**
+[01](01_overview.md) → [02](02_architecture.md) → [03](03_matching_engine.md) →
+[04](04_accounting.md) → [05](05_observation_space.md) → [06](06_action_space.md)
+
+**Deciding whether to build on this**
+[01](01_overview.md) → [15](15_findings_and_recommendations.md) → [16](16_verification_log.md)
+
+**Planning changes to the RL layer**
+[15](15_findings_and_recommendations.md) (severity order) → [12](12_perspective_rl_researcher.md) →
+[05](05_observation_space.md) → [07](07_reward_function.md)
+
+**Setting up training**
+[08](08_self_play_league.md) → [09](09_distributed_training.md) (if raising `num_env_runners`
+or `num_learners` above their `0` defaults) → [11](11_logging_and_observability.md)
+
+**Modifying the engine or accounts**
+[03](03_matching_engine.md) §4 (invariants) → [04](04_accounting.md) → [10](10_testing.md) §1–2
+
+**Trading / microstructure review**
+[13](13_perspective_financial_trader.md) → [03](03_matching_engine.md) → [04](04_accounting.md)
 
 ---
 
-# Purpose of this repository:
-The purpose of this repository is to create a custom MARL
-(multi-agent reinforcement learning) environment where multiple agents trade
-against one another in a CDA (continuous double auction).
+## Summary
 
-The environment doesn't use any external data. Data is generated by self-play
-of the agents themselves through their interaction with the limit order book.
+This repository implements a multi-agent continuous double auction system, structured as a price- and time-priority limit order book exchange. It is provided as a Gymnasium / RLlib `MultiAgentEnv` and includes a league-based self-play PPO training pipeline built on Ray RLlib 2.56.1’s new API stack. 
 
-At each time step, the environment emits the top k rows of the aggregated
-order book as observations to the agents. Each agent then samples an action from
-the action space & all actions are randomly shuffled before execution in each
-time step.
+In this environment, agents act as traders who can submit market, limit, modify, and cancel orders to a shared order book. They are marked to market based on the trade tape, and receive rewards derived from a multi-term NAV-based function. The codebase also includes a matching engine, supports `Decimal`-based accounting, includes the necessary RLlib league wiring, and comes with CI unit tests.
 
-Each time step is a snapshot of the limit order book & a key assumption is that
-all traders(agents) suffer the same lag (wait for all traders to have their orders
-executed before seeing the next LOB snapshot).
+**Main problems:** The weak points are concentrated in the learning problem formulation rather than in the simulator: agents observe no private state, the reward is strictly negative-sum with a dominant do-nothing strategy, and the reward scale silently disables PPO's critic entirely.
 
 ---
 
-# Example:
-The example is available in this Jupyter notebook implemented with
-RLlib: `CDA_NSP.ipynb`. This notebook is tested in Colab.
-
-This example uses two trained agents & N random agents. All agents compete with
-one another in this zero-sum environment, irregardless of whether they're
-trained or random.
-
-**competitive self-play**
-
-The policy weights of the winning trained agent(trader) is used to replace the
-policy weights of the other trained agents after each training iteration.
-Winning here is defined as having the highest reward per training iteration.
-
-The reward function requires the agents to maximize profit while minimizing
-number of trades made in an episode (trading session). As the number of trades
-accumulates in the later stages of a session, profits will be scaled down by
-the number of trades & losses will be magnified.
-
-The trained agents are P0 & P1, both using separate PPO policy weights. The
-rest are random agents.
-
-The results with 10 agents are shown in the figures below:
-
-![Cumulative rewards](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/penalize_r.png)
-
-![Cumulative P & L](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/penalize_PandL.png)
-
----
-
-If you're running locally, you can run the following command & navigate
-to ```localhost:6006``` in your browser to access the **tensorboard graphs**:
-```
-$ tensorboard --logdir ~/ray_results
-```
-
----
-
-**Other ways** to run this environment:
-
-By using the python `CDA_env_rand.py` script which is basically running a
-CDA simulator with dummy (non-learning) random agents.
-
----
-
-# Dependencies:
-
-1) tensorFlow
-2) ray[rllib]
-3) pandas
-4) sortedcontainers
-5) sklearn
-
-For a full list of dependencies & versions, see `requirements.txt` in this
-repository.
-
----
-
-# Installation:
-The environment is installable via pip.
-```
-$ cd gym-continuousDoubleAuction
-
-$ pip install -e .
-```
-
----
-
-# TODO:
-
-1) Better documentation.
-
-2) Generalize the environment to use more than 1 LOB.
-
-3) Parametric or hybrid action space (or experiment with different types of
-action space).
-
-4) Expose the limit orders (that are currently in the LOB or aggregated LOB)
-which belongs to a particular trader as observation to that trader.  
-
-5) Allow traders to have random starting capital.
-
-6) Instead of traders(agents) having the same lag, introduce zero lag
-(Each LOB snapshot in each t-step is visible to all traders) or random lag.
-
-7) Allows a distribution of previous winning policies to be selected for
-trained agents. (training)
-
-8) Custom RLlib workflow to include custom RND + PPO policies. (training)
-
-9) Update current model (deprecated) or use default from RLlib. (training)
-
-10) Move TODO to issues.
-
----
-
-# Acknowledgements:
+## Acknowledgements:
 The orderbook matching engine is adapted from
 https://github.com/dyn4mik3/OrderBook
 
 ---
 
-# Contributing:
-Please see [CONTRIBUTING.md](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/CONTRIBUTING.md).
-
----
-
-# Disclaimer:
-This repository is only meant for research purposes & is **never** meant to be
-used in any form of trading. Past performance is no guarantee of future results.
-If you suffer losses from using this repository, you are the sole person
-responsible for the losses. The author will **NOT** be held responsible in any
-way.
-
----
-
-# Appendix:
-
----
-
-# Observation space:
-
-Each observation is a flat 1D vector of shape `(n_hist * 42,)` (default shape `(168,)` for `n_hist = 4`), representing a sliding temporal history window of the last *N* sequential orderbook snapshots.
-
-Each 42-element snapshot segment is organized as:
-```
-snapshot = [
-    normalized_bid_prices (10), # (M - P_bid) / M  (>= 0)
-    normalized_bid_sizes  (10), #  sqrt(V_bid)      (>= 0)
-    normalized_ask_prices (10), # -(|P_ask| - M) / M (<= 0)
-    normalized_ask_sizes  (10), # -sqrt(V_ask)      (<= 0)
-    log_mid                (1), #  log(M)
-    log1p_spread_ticks     (1)  #  log1p(spread / min_tick), 0.0 if not two-sided
-]
-```
-where $M = \frac{P_{bid, 1} + |P_{ask, 1}|}{2}$ is the Level 1 Midpoint Price.
-
-The two trailing scalars are market-level features carried by every frame in the stack:
-
-- **`log_mid`** restores the price anchor that midpoint normalization discards. Without it, a market at price 10 and one at price 100 produce identical observations even though `min_tick` is absolute and therefore worth 10x more in the former.
-- **`log1p_spread_ticks`** reports the bid-ask spread in the same tick units the action space quotes in. A resting book can never be locked or crossed, so a two-sided book always has a spread of at least 1 tick (`log1p(1) = 0.693`), leaving `0.0` as an unambiguous sentinel for "no two-sided market".
-
-See [CHANGES_obs_market_features.md](gym_continuousDoubleAuction/doc/CHANGES_obs_market_features.md) for details.
-
-*Note: While agents observe normalized LOB snapshots, their discrete price level choices (0–9) map to actual unnormalized orderbook prices in `self.agg_LOB_raw` when submitting orders into the market.*
-
-For a detailed mathematical description of observation normalization, see [CHANGES_obs_normalization.md](gym_continuousDoubleAuction/doc/CHANGES_obs_normalization.md). For temporal history stacking details, see [CHANGES_temporal_obs_history.md](gym_continuousDoubleAuction/doc/CHANGES_temporal_obs_history.md).
-
----
-
-# Action space:
-
-See [PR 9](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/pull/9) for the current action space.
-
----
-
-# Reward:
-
-If `NAV_chg` is used as the reward. The `episode_reward` from RLlib training
-output will be 0, indicating a zero-sum game.
-
-```
-NAV_chg = float(trader.acc.nav - trader.acc.prev_nav)
-
-# maximize NAV
-#rewards[trader.ID] = NAV_chg
-```
-
-However, if the `NAV_chg` is scaled, then the `episode_reward` from RLlib
-training output will NOT be 0.
-
-```
-# maximize NAV, minimize num of trades (more trades gets penalized).
-if NAV_chg >= 0:
-    rewards[trader.ID] = NAV_chg / (trader.acc.num_trades + 1)
-else:
-    rewards[trader.ID] = NAV_chg * (trader.acc.num_trades + 1)
-
-trader.acc.reward = rewards[trader.ID]
-```
-
----
-
-# Making sense of the render output:
-
-**The step separator:**
-```
-************************************************** t_step = 306 **************************************************
-```
----
-
-**Actions:**
-
-Actions output from the model:
-
-1) Each column represents the action from each trader(agent).
-2) Row 1 represents the side: none, bid, ask (0 to 2).
-3) Row 2 represents the type: market, limit, modify, cancel.
-4) Row 3 represents the mean for size selection.
-5) Row 4 represents the sigma for size selection.
-6) Row 5 represents the price: based on LOB market depth from 0 to 11.
-```
-Model actions:
- --  --  --  --
- 1   1   1   2
- 1   0   0   1
-39  29   6  17
-19  89  13   0
- 7   4   9  10
---  --  --  --
-```
-
-1) Column 1 represents the ID of each trader(agent).
-2) Column 2 the side: none, bid, ask (0 to 2).
-3) Column 3 type: market, limit, modify, cancel.
-4) Column 4 represents the order size.
-5) Column 5 represents the order price.
-```
-Formatted actions acceptable by LOB:
- -  ---  ------  -----  --
-0  bid  limit   38982  15
-1  bid  market   5779   0
-2  bid  market    999   0
-3  ask  limit   17001  47
--  ---  ------  -----  --
-Shuffled action queue sequence for LOB executions:
- -  ---  ------  -----  --
-3  ask  limit   17001  47
-2  bid  market    999   0
-1  bid  market   5779   0
-0  bid  limit   38982  15
--  ---  ------  -----  --
-```
-
----
-
-**Rewards, dones, & infos:**
-```
-rewards:
- {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0}
-
-dones:
- {'__all__': True}
-
-infos:
- {0: {}, 1: {}, 2: {}, 3: {}}
-```
-
----
-
-**Aggregated LOB:**
-
-1) The columns represents the 10 levels (1 to 10, left to right) of the market
-depth in the LOB.
-2) Row 1 represents the bid size.
-3) Row 2 represents the bid price.
-4) Row 3 represents the ask size.
-5) Row 4 represents the ask price.
-```
-agg LOB @ t-1
- ------  -----  ------  ------  ------  ------  ------  ------  ------  ------
-  7746  19011  126634  116130   43073  124055   74977  188096  139117  143968
-    23     22      21      20      19      15      14      12      11      10
--62448  -7224  -65989  -96940  -77985  -93987  -55942   -4173  -16998  -81011
-   -36    -37     -38     -39     -40     -41     -42     -43     -47     -48
-------  -----  ------  ------  ------  ------  ------  ------  ------  ------
-```
-
-```
-agg LOB @ t
- ------  -----  ------  ------  ------  ------  ------  ------  ------  ------
-  7746  19011  126634  116130   43073  163037   74977  188096  139117  143968
-    23     22      21      20      19      15      14      12      11      10
--56669  -7224  -65989  -96940  -77985  -93987  -55942   -4173  -33999  -81011
-   -36    -37     -38     -39     -40     -41     -42     -43     -47     -48
-------  -----  ------  ------  ------  ------  ------  ------  ------  ------
-```
-
----
-
-**LOB bids:**
-
-The current limit bid orders in the LOB.
-```
-LOB:
- ***Bids***
-     size price  trade_id  timestamp  order_id
-0    7746    23         0        345       265
-1   19011    22         1        344       231
-2   14553    21         2        107        99
-3   63025    21         1        333       209
-4   49056    21         3        349       268
-5   89029    20         2         53        53
-6   24060    20         0        201        46
-7    3041    20         1        297       229
-8   43073    19         1         35        35
-9   42989    15         1        340       234
-10  81066    15         3        336       259
-11  38982    15         0        359       275
-12  63003    14         0        253       201
-13  11974    14         1        285       168
-14  18089    12         3        351       105
-15  91998    12         0        343       264
-16  78009    12         1        352        40
-17  45039    11         3        123       101
-18  94078    11         0        204       172
-19  97967    10         3        223       185
-20  46001    10         1        313       243
-21  45871     9         2         52        52
-22  94993     9         3        209       176
-```
-
----
-
-**LOB asks:**
-
-The current limit ask orders in the LOB.
-```
-***Asks***
-     size price  trade_id  timestamp  order_id
-0   40654    36         3        322       250
-1   16015    36         0        323       251
-2    7224    37         1        272       214
-3   39980    38         3        299       190
-4   26009    38         1        261       206
-5   58977    39         0        231       188
-6   37963    39         3        284       164
-7   15995    40         0        305       235
-8   61990    40         3        328       254
-9   93987    41         0        353       143
-10  55942    42         1        290       189
-11   4173    43         0        112       104
-12  16998    47         1        341       239
-```
-
----
-
-**Tape (Time & sales):**
-```
-***tape***
-    size price  timestamp  counter_party_ID  init_party_ID init_party_side
-0   5779    36        358                 3              1             bid
-1   5894    36        356                 3              0             bid
-2  13347    36        355                 3              1             bid
-3   2272    36        354                 3              0             bid
-4    894    23        350                 0              1             ask
-5  12874    23        347                 0              0             ask
-6   7501    23        346                 0              1             ask
-7   9405    22        342                 1              3             ask
-```
-
----
-
-**Trades:**
-
-Trades that took place when executing the action of a trader(agent) at t-step.
-
-act_seq_num represents the sequence of the action. In this case, it's the
-2nd action executed at t-step.
-```
-TRADES (act_seq_num): 2
-   seq_Trade_ID  timestamp price    size  time  counter_ID counter_side  counter_order_ID counter_new_book_size  init_ID init_side init_order_ID init_new_LOB_size
-0             0        358    36  5779.0   358           3          ask               250                 40654        1       bid          None              None
-```
-
----
-
-**New order in LOB:**
-
-The new limit orders inserted into LOB
-(includes unfilled leftover quantity from previous order).
-```
-order_in_book (act_seq_num): 0
-type    side      quantity    price    trade_id    timestamp    order_id
-------  ------  ----------  -------  ----------  -----------  ----------
-limit   ask          17001       47           3          357         273
-order_in_book (act_seq_num): 3
-type    side      quantity    price    trade_id    timestamp    order_id
-------  ------  ----------  -------  ----------  -----------  ----------
-limit   bid          38982       15           0          359         275
-```
-
----
-
-**Mark to market profit @ t-step:**
-```
-mark_to_mkt profit@t:
-ID: 0; profit: 1491150.999999999999999999998
-ID: 1; profit: 3583508.999999999999999999995
-ID: 2; profit: -7421583.999999999999999999999
-ID: 3; profit: -676658.0000000000000000000013
-```
-
----
-
-**Accounts info:**
-```
-Accounts:
-   ID          cash    cash_on_hold    position_val      prev_nav           nav    net_position     VWAP             profit    total_profit    num_trades
-----  ------------  --------------  --------------  ------------  ------------  --------------  -------  -----------------  --------------  ------------
-   0  -4.51044e+07     3.11089e+07     1.64866e+07   2.49115e+06   2.49115e+06         -375119  39.9751        1.49115e+06     1.49115e+06            74
-   1  -3.8919e+07      3.27787e+07     1.07237e+07   4.58351e+06   4.58351e+06          -98798  72.2711        3.58351e+06     3.58351e+06            78
-   2  -1.92421e+07     3.55094e+06     9.2696e+06   -6.42158e+06  -6.42158e+06          257489  64.8229       -7.42158e+06    -7.42158e+06            23
-   3  -4.46985e+07     4.0254e+07      7.79141e+06   3.34692e+06   3.34692e+06          216428  39.1265  -676658               2.34692e+06            79
-```
-
----
-
-1) **total_sys_profit** (total profit of all agents at each step) should be
-equal to 0 (zero-sum game).
-
-2) **total_sys_nav** (total net asset value of all agents at each step) is the total
-sum of beginning NAV of all traders(agents).
-
-Note: Small random rounding errors are present.
-```
-total_sys_profit = -9E-21; total_sys_nav = 3999999.999999999999999999991
-```
-
----
-
-**Sample output results** for final training iteration:
-
-1) The episode_reward is zero (zero sum game) for each episode.
-```
-episode_reward_max: 0.0
-episode_reward_mean: 0.0
-episode_reward_min: 0.0
-```
-
-2) The mean reward of each policy is shown under `policy_reward_mean`.
-```
-.
-.
-.
-Result for PPO_continuousDoubleAuction-v0_0:
-  custom_metrics: {}
-  date: 2019-09-30_21-16-20
-  done: true
-  episode_len_mean: 1001.0
-  episode_reward_max: 0.0
-  episode_reward_mean: 0.0
-  episode_reward_min: 0.0
-  episodes_this_iter: 4
-  episodes_total: 38
-  experiment_id: 56cbdad4389343eca5cfd49eadeb3554
-  hostname: Duality0.local
-  info:
-    grad_time_ms: 15007.219
-    learner:
-      policy_0:
-        cur_kl_coeff: 0.0003906250058207661
-        cur_lr: 4.999999873689376e-05
-        entropy: 10.819798469543457
-        entropy_coeff: 0.0
-        kl: 8.689265087014064e-06
-        model: {}
-        policy_loss: 153.9163055419922
-        total_loss: 843138688.0
-        vf_explained_var: 0.0
-        vf_loss: 843138496.0
-    num_steps_sampled: 40000
-    num_steps_trained: 40000
-    opt_peak_throughput: 266.538
-    opt_samples: 4000.0
-    sample_peak_throughput: 80.462
-    sample_time_ms: 49713.208
-    update_time_ms: 176.14
-  iterations_since_restore: 10
-  node_ip: 192.168.1.12
-  num_healthy_workers: 2
-  off_policy_estimator: {}
-  pid: 10220
-  policy_reward_mean:
-    policy_0: 12414.421052631578
-    policy_1: -301.39473684210526
-    policy_2: -952.1578947368421
-    policy_3: -11160.868421052632
-  sampler_perf:
-    mean_env_wait_ms: 18.1753569144153
-    mean_inference_ms: 4.126144958830859
-    mean_processing_ms: 1.5262831265657335
-  time_since_restore: 649.1416146755219
-  time_this_iter_s: 61.54709506034851
-  time_total_s: 649.1416146755219
-  timestamp: 1569849380
-  timesteps_since_restore: 40000
-  timesteps_this_iter: 4000
-  timesteps_total: 40000
-  training_iteration: 10
-  trial_id: ea67f638
-
-2019-09-30 21:16:20,507	WARNING util.py:145 -- The `process_trial` operation took 0.4397752285003662 seconds to complete, which may be a performance bottleneck.
-2019-09-30 21:16:21,407	WARNING util.py:145 -- The `experiment_checkpoint` operation took 0.899777889251709 seconds to complete, which may be a performance bottleneck.
-== Status ==
-Using FIFO scheduling algorithm.
-Resources requested: 0/4 CPUs, 0/0 GPUs
-Memory usage on this node: 3.3/4.3 GB
-Result logdir: /Users/hadron0/ray_results/PPO
-Number of trials: 1 ({'TERMINATED': 1})
-TERMINATED trials:
- - PPO_continuousDoubleAuction-v0_0:	TERMINATED, [3 CPUs, 0 GPUs], [pid=10220], 649 s, 10 iter, 40000 ts, 0 rew
-
-== Status ==
-Using FIFO scheduling algorithm.
-Resources requested: 0/4 CPUs, 0/0 GPUs
-Memory usage on this node: 3.3/4.3 GB
-Result logdir: /Users/hadron0/ray_results/PPO
-Number of trials: 1 ({'TERMINATED': 1})
-TERMINATED trials:
- - PPO_continuousDoubleAuction-v0_0:	TERMINATED, [3 CPUs, 0 GPUs], [pid=10220], 649 s, 10 iter, 40000 ts, 0 rew
-```
-
----
-
-# Generated LOB:
-
-![bid_price](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/bid_price.png)
-![ask_price](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/ask_price.png)
-
-![midpt_price](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/midpt_price.png)
-
-![bid_size](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/bid_size.png)
-![ask_size](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/ask_size.png)
-
-![ord_imb](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/ord_imb.png)
-![sum_imb](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/sum_imb.png)
+## Disclaimer:
+This repository is only meant for research purposes & is **never** meant to be used in any form of trading. Past performance is no guarantee of future results. If you suffer losses from using this repository, you are the sole person responsible for the losses. The author will **NOT** be held responsible in any way.
 
 ---
 
