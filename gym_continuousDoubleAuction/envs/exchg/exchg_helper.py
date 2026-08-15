@@ -79,11 +79,10 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         touching book - the ambiguity doc/15 S3-14 is about. `None` encodes as
         JSON null.
         """
-        best_bid = self.LOB.get_best_bid()
-        best_ask = self.LOB.get_best_ask()
-
-        self.best_bid = float(best_bid) if best_bid is not None else None
-        self.best_ask = float(best_ask) if best_ask is not None else None
+        # Decimal, as the book already reports them: these are prices, and
+        # prices stay Decimal until something serialises them (doc/11 1.8).
+        self.best_bid = self.LOB.get_best_bid()
+        self.best_ask = self.LOB.get_best_ask()
         if self.best_bid is not None and self.best_ask is not None:
             self.spread = self.best_ask - self.best_bid
         else:

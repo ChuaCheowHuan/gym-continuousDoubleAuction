@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (279 tests: 253 unit + 26 integration)
+# everything (314 tests: 288 unit + 26 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -46,7 +46,7 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `278 passed, 1 xfailed` (the xfail pins S1-1; see §6.2.2).
+**[verified]** — `313 passed, 1 xfailed` (the xfail pins S1-1; see §6.2.2).
 
 ### File inventory
 
@@ -76,7 +76,8 @@ Counts re-measured with `--collect-only`; the earlier `90` predated the config a
 | `test_champion_trigger.py` | 6 | League statistics with modules that played no episodes |
 | `test_progress_log.py` | 19 | `progress.jsonl` writer, numpy/NaN handling, `vf_explained_var` extraction |
 | `test_info_dict.py` | 18 | Per-step `info`: back-compat, reward terms summing exactly, live counters, spread, JSON |
-| **unit total** | **273** | |
+| `test_type_policy.py` | 15 | Decimal money/prices, int sizes, no field changing type mid-episode, book boundary |
+| **unit total** | **288** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported and finite (1 xfail pins S1-1) |

@@ -161,13 +161,20 @@ class TestAccountState:
         for i in range(NUM_AGENTS):
             assert expected <= set(infos[f"agent_{i}"])
 
-    def test_net_position_holds_one_type_across_the_episode(self, stepped_env):
-        """account.py starts it as int 0 and rebuilds it as a Decimal on the
-        first fill. The reported field must not change type underneath a
-        consumer partway through an episode."""
-        _, infos, _, _ = stepped_env
-        for i in range(NUM_AGENTS):
-            assert isinstance(infos[f"agent_{i}"]["net_position"], float)
+    def test_net_position_is_an_int_across_the_episode(self, stepped_env):
+        """A net position is a count of contracts, so it is an int - before the
+        first fill and after it.
+
+        This used to be reported as a float purely to paper over the account
+        rebuilding the field as a Decimal on the first trade. The account now
+        keeps it in int, so the cast is gone and the type is the real one.
+        """
+        _, _, _, every_info = stepped_env
+        for infos in every_info:
+            for i in range(NUM_AGENTS):
+                value = infos[f"agent_{i}"]["net_position"]
+                assert isinstance(value, int), f"{value!r} is {type(value).__name__}"
+                assert not isinstance(value, bool)
 
     def test_drawdown_is_the_level_the_penalty_uses(self, stepped_env):
         """max_nav - nav, floored at 0 - computed in reward_helper and, before

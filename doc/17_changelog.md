@@ -700,3 +700,51 @@ mutation: moving the per-step counter reset to before `set_info` makes it fail, 
 — the counters would otherwise log a valid, healthy-looking, permanent 0.
 
 See [11 §1.7](11_logging_and_observability.md) and [07 §6.4](07_reward_function.md).
+
+---
+
+## 20. Money in Decimal, sizes in int
+
+The account was `Decimal` where it mattered, but four of its fields did not hold one type for a
+whole episode. Measured over a real run: `net_position` was `int` until the first fill and
+`Decimal` after; `VWAP` was `Decimal` until a position went flat and `int` after, from a bare `0`
+at `account.py:136`; `reward` was `int` until the first `set_reward`; `drawdown` was `Decimal`
+until the first step, introduced by §19, the change that documented the pattern.
+
+The policy is now explicit — money and prices `Decimal`, sizes `int`, `reward` and `drawdown`
+`float` — and enforced by `test_type_policy.py` (15 tests) rather than left to convention. See
+[11 §1.8](11_logging_and_observability.md).
+
+**This is not tidiness.** `Decimal * float` raises `TypeError`; `Decimal * int` does not. The
+orderbook already carries two workarounds for that exact error, each commented with the traceback
+it came from, and `cash_processor.py:78` computes `Decimal(str(price)) * qoute['quantity']`, which
+would raise on the modify path with a float size. Making sizes `int` removes the failure mode
+instead of adding a third workaround.
+
+**The orderbook is untouched**, per `ec1f5ea`. It stores sizes as `Decimal` — `order.py:12`
+coerces on the way in — so a fill reports whichever type its branch held: `quantity_to_trade`
+(int) on a partial or exact fill, `head_order.quantity` (Decimal) when the incoming order is the
+larger one, 84 against 10 on one tape. Rather than change the book, the mixing is absorbed at the
+one point every trade passes through on its way into env code, `trader._normalise_trade_sizes`.
+That coercion is lossless by construction and not by luck: ints go in, the book only subtracts
+whole sizes from whole sizes, and a fractional size raises rather than truncating silently.
+
+Sizes are also `int` at ingress. The old `act["size"] = (size + self.min_size) * 1.0`, commented
+*"\*1 for float"*, was the single character that made every downstream size a float.
+
+**A mutation test earned its keep here.** Restoring that `* 1.0` left all thirteen type tests
+green, because the egress normalisation absorbs float sizes so completely that the account never
+sees the difference. The tests could not distinguish a working ingress from a broken one. Two
+ingress tests were added for that reason, and the same mutation now fails both — which matters
+because `cash_processor`'s modify path is reached by orders, not by the trades the egress tests
+inspect.
+
+Two deliberate exceptions. `reward` and `drawdown` stay `float`: RLlib requires float rewards and
+the drawdown feeds the reward, so they are learning signals rather than money. `last_price` stays
+`float` because it never reaches the ledger — `mark_to_mkt` hands the account the tape's `Decimal`,
+while `last_price` is a separate anchor consumed only by `_set_price`'s NumPy arithmetic and by
+`state_helper`, which already wraps it in `float()`.
+
+`info` is unaffected as a format, being a serialisation boundary where JSON has no `Decimal` —
+except that `net_position` is now a plain `int` rather than a `float()` cast that existed only to
+hide the account changing type underneath it.

@@ -227,6 +227,59 @@ exactly, penalties matching coefficient × counter, the counters being read *bef
 `set_step_outputs` zeroes them, `spread` on a one-sided book, and the whole dict surviving
 `json.dumps`.
 
+### 1.8 The type policy
+
+Everything above assumes a field means one thing and holds one type. Before this, four did not.
+
+| Kind | Type | Fields |
+|---|---|---|
+| Money | `Decimal` | `cash`, `cash_on_hold`, `position_val`, `init_nav`, `nav`, `prev_nav`, `max_nav`, `profit`, `total_profit` |
+| Price | `Decimal` | order and trade `price`, `VWAP`, `best_bid`, `best_ask`, `spread` |
+| Size | `int` | order and trade `quantity`, `net_position`, `num_trades`, the per-step counters |
+| Signal | `float` | `reward`, `drawdown` |
+
+**Why it is not cosmetic.** `Decimal * float` raises `TypeError`; `Decimal * int` does not. The
+orderbook carries two local workarounds for exactly that error, both commented with the traceback
+they came from (`orderbook.py:76-79`, `:99-100`), and `cash_processor.py:78` computes
+`Decimal(str(price)) * qoute['quantity']`, which would raise on the modify path with a float size.
+Sizes being `int` makes that class of failure unreachable rather than worked around.
+
+The second failure is a field that changes type partway through an episode, which breaks any
+consumer that checks it. Measured over a real run, before the fix: `net_position` was `int` until
+the first fill and `Decimal` after; `VWAP` was `Decimal` until a position went flat, then `int`
+(a bare `0` at `account.py:136`); `reward` was `int` until the first `set_reward`; `drawdown` was
+`Decimal` until the first step.
+
+**Signals are the deliberate exception.** `reward` must be a `float` — RLlib requires it — and
+`drawdown` feeds the reward. They are learning signals, not money. The observation is `float32`
+by construction, so prices and sizes are converted at that boundary too.
+
+**`last_price` is the other exception**, and it stays a `float`. It never reaches the ledger:
+`mark_to_mkt` passes the tape's `Decimal` to the account, while `last_price` is a separate anchor
+consumed only by `_set_price`'s NumPy arithmetic and by `state_helper`, which already wraps it in
+`float()`. Making it a `Decimal` would mean converting back at both consumers and buys no
+exactness.
+
+**`envs/orderbook/` is deliberately not changed** — see `ec1f5ea`, "Intentional revert because I
+don't want code in orderbook folder to change." The book stores sizes as `Decimal` (`order.py:12`
+coerces on the way in), and a fill reports whichever type its branch happened to hold:
+`quantity_to_trade` (int) on a partial or exact fill, `head_order.quantity` (Decimal) when the
+incoming order is larger — 84 against 10 on one tape. That mixing is absorbed at the single point
+every trade passes through, `trader._normalise_trade_sizes`, before any account arithmetic sees
+it. The coercion is lossless by construction rather than by luck: ints go in, the book only
+subtracts whole sizes from whole sizes, and a fractional size raises instead of truncating
+silently.
+
+Sizes are `int` at ingress too (`action_helper.py:250`), which is a separate guarantee: the old
+`(size + min_size) * 1.0` — commented *"\*1 for float"* — was the single character that made every
+downstream size a float. Egress normalisation hides an ingress regression completely, so both ends
+are pinned by `test_type_policy.py` (15 tests); the ingress tests exist precisely because a
+mutation restoring that `* 1.0` left every other test in the file green.
+
+**`info` is a serialisation boundary, not part of the policy.** JSON has no `Decimal`, so money
+and prices are emitted as `float` there, except `NAV`, which pays the string cost because the
+conservation check (§1.5) depends on its exactness. Sizes need no conversion — `int` is JSON-native.
+
 ---
 
 ## 2. What is not logged but should be

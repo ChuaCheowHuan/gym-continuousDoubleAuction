@@ -20,6 +20,11 @@ def _plain(value):
     return value
 
 
+def _as_float(value):
+    """Decimal (or None) to float, for the JSON boundary. None passes through."""
+    return None if value is None else float(value)
+
+
 class Info_Helper(object):
 
     def set_info(self, infos, trader):
@@ -53,12 +58,10 @@ class Info_Helper(object):
         # Account state (doc/11 2.3). Read before set_step_outputs zeroes the
         # per-step counters, which happens after this call.
         info.update({
-            # float(), despite account.py initialising this to int 0: the
-            # position becomes a Decimal the moment a trade lands (account.py
-            # rebuilds it as Decimal +/- Decimal), so the type is int before the
-            # first fill and Decimal after. Contract counts are integral, so
-            # float loses nothing and the key holds one type all episode.
-            "net_position": float(acc.net_position),
+            # int, straight through: net_position is a count of contracts and
+            # the account now holds it as one for the whole episode, so there
+            # is nothing left here to paper over.
+            "net_position": acc.net_position,
             "VWAP": float(acc.VWAP),
             "cash": float(acc.cash),
             "cash_on_hold": float(acc.cash_on_hold),
@@ -77,11 +80,17 @@ class Info_Helper(object):
 
         # Market state (doc/11 2.2). Identical for every agent this step; it is
         # repeated per agent because that is the shape RLlib gives `info`.
+        #
+        # These are Decimal on the env and float here: `info` is a
+        # serialisation boundary, and JSON has no Decimal. NAV is the one field
+        # that pays the string cost to stay exact, because the conservation
+        # check depends on it; these are read for plots and diagnostics, where a
+        # float is both sufficient and directly usable. None stays None.
         info.update({
-            "last_price": float(getattr(self, "last_price", 0.0)),
-            "best_bid": getattr(self, "best_bid", None),
-            "best_ask": getattr(self, "best_ask", None),
-            "spread": getattr(self, "spread", None),
+            "last_price": _as_float(getattr(self, "last_price", None)),
+            "best_bid": _as_float(getattr(self, "best_bid", None)),
+            "best_ask": _as_float(getattr(self, "best_ask", None)),
+            "spread": _as_float(getattr(self, "spread", None)),
         })
 
         # The action this agent actually submitted, as the model emitted it -
