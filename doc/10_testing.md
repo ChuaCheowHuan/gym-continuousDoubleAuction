@@ -17,14 +17,14 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (230 tests: 217 unit + 13 integration)
+# everything (242 tests: 222 unit + 20 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
 python -m pytest gym_continuousDoubleAuction/test -q \
     --ignore=gym_continuousDoubleAuction/test/integration
 
-# RLlib wiring (13 tests, builds real Algorithms — minutes, not seconds)
+# RLlib wiring and the real save/restore (20 tests, builds real Algorithms)
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 
 # a single file
@@ -74,6 +74,8 @@ Counts re-measured with `--collect-only`; the earlier `90` predated the config a
 | `test_checkpointing.py` | 44 | Checkpoint retention, restore selection, league state across a save |
 | **unit total** | **222** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
+| `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
+| **integration total** | **20** | |
 
 > **Stale references in older docs.** `test_orderbook.py`, `repro_orderbook_crossed_book.py`,
 > `test_OrderBook.py`, `test_cda_nsp.py` and `test_orderbook_double_delete_order.py` do not exist.
@@ -347,7 +349,8 @@ nothing, since there is no `unittest.main()` call left anywhere to trigger execu
 
 What survives a save/restore, and what a restore is allowed to change. RLlib's loader and the
 env build are stubbed, so these run in seconds; the same behaviours were also exercised against
-real checkpoints in [16 §16.8.1](16_verification_log.md).
+real checkpoints in [16 §16.8.1](16_verification_log.md). The stubbing is what §6.2.1 exists to
+complete: nothing here touches RLlib's own serialisation.
 
 | Class | What it pins |
 |---|---|
@@ -398,6 +401,37 @@ closing over `cls`, and module-level helpers being pickled by reference into a w
 import `test_league_wiring`.
 
 These tests build real `Algorithm`s and run real training iterations, so they take minutes.
+
+### 6.2.1 `integration/test_checkpoint_roundtrip.py` — 1 class, 7 tests
+
+`test_checkpointing.py` (§6.1.1) pins the driver logic around checkpointing against a `FakeAlgo`
+whose `save()` writes a one-key marker file and whose loader is monkeypatched out. That left the
+thing checkpoints exist for untested: whether a restored run resumes with its learned weights or
+quietly starts over from a random initialisation. This module does **one real save and one real
+restore** through `save_checkpoint` and `build_algo`, on a PPO sized for speed (~26s).
+
+| Test | What it pins |
+|---|---|
+| `test_the_checkpoint_is_where_the_driver_expects_it` | The save lands at `chkpt/iter_NNNNN` with its `league_state.json` sidecar |
+| `test_trained_weights_survive` | Every LearnerGroup parameter of `policy_0` is bit-identical after the restore |
+| `test_the_champion_module_comes_back_and_acts_the_same` | The champion is present **on the EnvRunner** with the acting weights it was saved with — a champion restored only into the LearnerGroup leaves the league matchmaking against a random network |
+| `test_league_bookkeeping_comes_back` | The returned callback is the algorithm's own; champion history, pool membership and the monotonic ID counter all survive |
+| `test_iteration_count_comes_back` | `num_iters`-as-a-target depends on this |
+| `test_optimizer_betas_are_plain_floats` | `_fix_checkpoint_optimizer_betas` — stubbed out everywhere else in the suite, so this is its only execution |
+| `test_the_restored_algorithm_trains_further` | The resumed run takes another gradient step, gets an `env_runners` block, and moves its weights |
+
+Two things this suite had to get right, and which are worth preserving in any edit:
+
+- **Weights are compared on the LearnerGroup, not the EnvRunner.** RLlib syncs only the acting
+  path to runners, so a runner's `critic_encoder` and `vf.*` tensors sit at their initial values
+  even in a run that never restarts. The first draft compared runner state and "failed" against a
+  perfectly good checkpoint. `_acting_only()` names the subset a runner does keep current, and the
+  champion test uses it.
+- **The iteration under test creates a champion of its own**, so the assertions record whatever
+  champion IDs exist at save time rather than a hardcoded `champion_1`.
+
+Verified to fail for the right reason: flipping the restore to `is_restore=False` fails 5 of the
+7, the two survivors being the ones that do not depend on the restore.
 
 ### 6.3 `test_runtime_profiles.py` — 23 tests
 
