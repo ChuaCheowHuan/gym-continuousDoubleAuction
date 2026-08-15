@@ -546,9 +546,11 @@ See [18 §5.1](18_configuration.md#51-sample_timeout_s-and-the-run-that-trains-o
 ## 17. What the first two GPU runs that trained showed
 
 With `sample_timeout_s` fixed (§16), two full 16-iteration runs completed on 2026-08-15 doing real
-gradient steps: Colab T4 (`CDA_NSP_colab.ipynb`, 186s/iter) and an RTX 4060 docker container
-(`CDA_NSP.ipynb`, 58s/iter). Both reached 262,144 lifetime env steps, kept NAV conserved in every
-episode check, and finished with 2 healthy workers and 0 restarts.
+gradient steps: one on a Colab T4 at 186s/iter, one in an RTX 4060 docker container at 58s/iter.
+The docker run is recorded in `CDA_NSP.ipynb`; the Colab notebook was not committed, so the figures
+below come from that run's own output rather than from a file in this repository. Both reached
+262,144 lifetime env steps, kept NAV conserved in every episode check, and finished with 2 healthy
+workers and 0 restarts.
 
 Both also hit the same two silent failures, on different machines with different seeds.
 
