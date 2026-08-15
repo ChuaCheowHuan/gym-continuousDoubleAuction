@@ -508,3 +508,93 @@ raised at call time. The orphaned `plot_defaults` config group went with them.
 the build if a `print` reappears in `envs/` or `train/`; `test_nav_callback.py` grew from 2 tests
 that asserted nothing to 6 that assert the behaviour above. See
 [11_logging_and_observability.md](11_logging_and_observability.md).
+
+---
+
+## 16. The iteration that trained on nothing
+
+A GPU Colab run of 16 iterations finished in 19 minutes having done **zero gradient steps**, and
+said so only in a warning that reads like a performance hint:
+
+```
+WARNING rollout_ops.py:122 -- No samples returned from remote workers...
+```
+
+`sample_timeout_s` was left at RLlib's default of 60s. The batch is
+`max_step × num_episodes_per_iter` = 16,384 env steps, and the Python order book delivers roughly
+60 env-steps/sec per runner with 8 agents, so two runners need about two minutes. Every iteration
+timed out, and a timed-out iteration does not return a short batch — it **discards** the partial
+rollouts. The learner got nothing, while the loop counted the iteration, logged it, and wrote
+checkpoints of the initial random weights. The only visible symptom downstream was a `KeyError:
+'env_runners'` in the notebook cell that reads the league table, since a result with no samples has
+no `env_runners` block at all.
+
+- **`sample_timeout_s` is now a `TrainConfig` field** (`rollouts` group, `--sample-timeout`),
+  defaulting to 600s rather than inheriting RLlib's 60.
+- **`_log_iteration` names the failure**: an iteration whose result has no `env_runners` block logs
+  a WARNING quoting the batch size, the timeout it missed, and the two knobs that fix it.
+- **`train()` returns `(algo, last_result)`.** It returned only the Algorithm, so inspecting the
+  league meant calling `algo.train()` again — a second full iteration of sampling and learning, run
+  for its return value, outside this function's checkpointing. `CDA_NSP.ipynb` now reads the result
+  it was handed.
+
+See [18 §5.1](18_configuration.md#51-sample_timeout_s-and-the-run-that-trains-on-nothing) and
+[09 §5.1](09_distributed_training.md).
+
+---
+
+## 17. What the first two GPU runs that trained showed
+
+With `sample_timeout_s` fixed (§16), two full 16-iteration runs completed on 2026-08-15 doing real
+gradient steps: one on a Colab T4 at 186s/iter, one in an RTX 4060 docker container at 58s/iter.
+The docker run is recorded in `CDA_NSP.ipynb`; the Colab notebook was not committed, so the figures
+below come from that run's own output rather than from a file in this repository. Both reached
+262,144 lifetime env steps, kept NAV conserved in every episode check, and finished with 2 healthy
+workers and 0 restarts.
+
+Both also hit the same two silent failures, on different machines with different seeds.
+
+### 17.1 Each fresh checkpoint was deleted the moment it was written
+
+The log says it plainly, once you look for it:
+
+```
+pruned old checkpoint: .../results/chkpt/iter_00002
+checkpoint at iter 2:  .../results/chkpt/iter_00002
+```
+
+Same path, prune first. Repeated at iterations 4, 6, 8 and 10, then stopping — which is the tell:
+`chkpt_keep` is 3, and the directory already held `iter_00012/14/16` from an earlier run.
+`_prune_checkpoints` ranked by iteration number, so the save just written was the "oldest" of four.
+
+Retention now ranks by **mtime**, with the iteration number as tiebreaker. mtime says what the
+iteration number cannot: which of these did *this* run write. A run starting from scratch in a
+directory holding checkpoints it did not write also warns and names them, newest first —
+`warn_about_foreign_checkpoints`. Nothing is deleted; the directory belongs to the operator.
+
+The reason this matters beyond disk hygiene is restore selection, which still ranks by iteration
+number (correctly — a resumed run's saves genuinely are the higher-numbered ones). For the first
+eleven iterations of both runs, `--restore` would have loaded the *previous* run: in this case the
+one from §16 that trained on nothing. See [15 S3-17](15_findings_and_recommendations.md).
+
+### 17.2 Champion promotion died two-thirds of the way through
+
+`iteration N league stats: mean=nan std=nan threshold=nan` — from iteration 12 of 16 on Colab,
+iteration 10 in docker, and every iteration after.
+
+`on_train_result` filtered `None` out of `module_episode_returns_mean` but not `NaN`, which is what
+RLlib reports for a module the mapping fn did not draw that iteration. One NaN makes the mean, the
+std and the threshold NaN, and every `best_return > threshold` False. Both runs froze at 4
+champions. It is self-reinforcing: each champion in the pool makes an undrawn baseline likelier,
+so the failure becomes more certain the longer the run goes.
+
+NaN is now filtered alongside `None`, and the modules that played no episodes are named at INFO
+rather than silently distorting the league. See [15 S3-16](15_findings_and_recommendations.md).
+
+### 17.3 What both runs did not do is learn
+
+Unchanged and already documented as S1-1: `vf_loss` pinned at the `vf_clip_param` bound of 10.0,
+`vf_loss_unclipped` between 1.4e11 and 6.6e11, `vf_explained_var` at 0.0 to 1.8e-07. The critic
+receives no gradient, PPO degenerates to REINFORCE, and `best_trainable` across the 16 iterations
+of either run is noise with no trend. The infrastructure now works end to end; the learning
+problem is untouched.

@@ -11,6 +11,7 @@ See doc/20_colab.md 20.5 and doc/15_findings_and_recommendations.md S3-8/S3-11.
 import json
 import logging
 import os
+import time
 from dataclasses import replace as dataclasses_replace
 from types import SimpleNamespace
 
@@ -29,6 +30,7 @@ from gym_continuousDoubleAuction.train.train import (
     restore_candidates,
     save_checkpoint,
     train,
+    warn_about_foreign_checkpoints,
 )
 from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
     SelfPlayCallback,
@@ -40,6 +42,20 @@ def _write_checkpoint(path, marker="x"):
     os.makedirs(path, exist_ok=True)
     with open(os.path.join(path, "rllib_checkpoint.json"), "w") as fh:
         json.dump({"marker": marker}, fh)
+    return path
+
+
+def _write_stale_checkpoint(root, iteration, age_s=3600):
+    """A checkpoint an earlier run left behind, backdated so it looks it.
+
+    Retention ranks by mtime, and a test that wrote these in the same second as
+    the run's own save would be ranking on a tie.
+    """
+    path = _write_checkpoint(
+        os.path.join(root, f"{CHECKPOINT_PREFIX}{iteration:05d}"), marker="stale"
+    )
+    stamp = time.time() - age_s
+    os.utime(path, (stamp, stamp))
     return path
 
 
@@ -130,6 +146,39 @@ class TestRetention:
             save_checkpoint(algo, cfg, iteration)
 
         assert [i for i, _ in list_checkpoints(cfg.checkpoint_dir)] == [-1, 2]
+
+    def test_a_stale_higher_numbered_save_never_prunes_a_fresh_one(self, cfg):
+        """The bug both GPU runs of 2026-08-15 hit, in miniature.
+
+        A fresh run reaching iteration 2 in a directory left holding
+        `iter_00012/14/16` used to prune by iteration number, so the save it had
+        just written was the "oldest" of four and was deleted microseconds after
+        the rename that made it real - leaving the previous run's checkpoints as
+        the only recoverable state.
+        """
+        cfg = TrainConfig(log_base_dir=cfg.log_base_dir, chkpt_keep=3)
+        for iteration in (12, 14, 16):
+            _write_stale_checkpoint(cfg.checkpoint_dir, iteration)
+
+        save_checkpoint(FakeAlgo(), cfg, 2)
+
+        surviving = [i for i, _ in list_checkpoints(cfg.checkpoint_dir)]
+        assert 2 in surviving, (
+            "the checkpoint this run just wrote was pruned in favour of an "
+            "earlier run's"
+        )
+        # Retention is still `keep`, and the one dropped is the least recently
+        # written of the strangers.
+        assert surviving == [2, 14, 16]
+
+    def test_prunes_the_least_recently_written(self, cfg):
+        cfg = TrainConfig(log_base_dir=cfg.log_base_dir, chkpt_keep=2)
+        _write_stale_checkpoint(cfg.checkpoint_dir, 30, age_s=7200)
+        _write_stale_checkpoint(cfg.checkpoint_dir, 40, age_s=3600)
+
+        save_checkpoint(FakeAlgo(), cfg, 1)
+
+        assert [i for i, _ in list_checkpoints(cfg.checkpoint_dir)] == [1, 40]
 
     def test_save_is_staged_then_renamed(self, cfg):
         """The rename is what makes an interrupted save non-destructive."""
@@ -404,6 +453,63 @@ class TestCommandLine:
         assert cfg.restore_path is None
 
 
+class TestForeignCheckpoints:
+    """What a fresh run says about the saves it is about to write alongside.
+
+    Nothing is deleted: the directory belongs to the operator. But until the run
+    passes those iteration numbers, `list_checkpoints` reports a stranger as the
+    newest, so an interrupted run restored with `--restore` resumes someone
+    else's weights - which is how the run that trained on nothing could have
+    been picked up as if it were the good one.
+    """
+
+    def test_names_them_newest_first(self, cfg, caplog):
+        for iteration in (12, 14, 16):
+            _write_stale_checkpoint(cfg.checkpoint_dir, iteration)
+
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            stale = warn_about_foreign_checkpoints(cfg)
+
+        assert [os.path.basename(p) for p in stale] == [
+            f"{CHECKPOINT_PREFIX}00016",
+            f"{CHECKPOINT_PREFIX}00014",
+            f"{CHECKPOINT_PREFIX}00012",
+        ]
+        assert f"{CHECKPOINT_PREFIX}00016" in caplog.text
+        assert caplog.text.index(f"{CHECKPOINT_PREFIX}00016") < caplog.text.index(
+            f"{CHECKPOINT_PREFIX}00012"
+        )
+
+    def test_an_empty_directory_says_nothing(self, cfg, caplog):
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            assert warn_about_foreign_checkpoints(cfg) == []
+        assert caplog.text == ""
+
+    def test_a_restoring_run_is_not_warned(self, cfg, caplog):
+        """Those checkpoints are the point of the run, not a hazard."""
+        _write_stale_checkpoint(cfg.checkpoint_dir, 16)
+
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            stale = warn_about_foreign_checkpoints(
+                dataclasses_replace(cfg, is_restore=True)
+            )
+
+        assert stale == []
+        assert caplog.text == ""
+
+    def test_build_algo_warns_on_the_scratch_path(self, cfg, monkeypatch, caplog):
+        _write_stale_checkpoint(cfg.checkpoint_dir, 16)
+        monkeypatch.setattr(
+            train_mod, "build_config",
+            lambda _cfg: (SimpleNamespace(build_algo=FakeAlgo), None),
+        )
+
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            train_mod.build_algo(cfg)
+
+        assert f"{CHECKPOINT_PREFIX}00016" in caplog.text
+
+
 class TestRestoreSelection:
     """Which checkpoint a restore picks, and what it hands back."""
 
@@ -569,3 +675,74 @@ class TestIterationAccounting:
         algo = self._run(cfg, monkeypatch)
 
         assert len(algo.saved) == 2  # iters 2 and 4, not 4 again at the end
+
+
+class TestTrainReturnsTheLastResult:
+    """`train()` hands back the final iteration's result along with the algo.
+
+    It used to return only the Algorithm, so reading the league meant calling
+    `algo.train()` again - a whole extra iteration of sampling and learning, run
+    for its return value, outside the checkpointing this loop does.
+    """
+
+    def _train(self, cfg, monkeypatch, start_iteration=0):
+        algo = FakeAlgo(start_iteration=start_iteration)
+        monkeypatch.setattr(train_mod, "build_algo", lambda _cfg: (algo, None))
+        return train(cfg)
+
+    def test_result_is_the_last_iterations(self, cfg, monkeypatch):
+        cfg = TrainConfig(log_base_dir=cfg.log_base_dir, num_iters=3, chkpt_freq=0)
+        algo, result = self._train(cfg, monkeypatch)
+
+        assert algo.iteration == 3
+        assert result == {"training_iteration": 3}
+
+    def test_a_completed_run_returns_an_empty_result(self, cfg, monkeypatch):
+        cfg = TrainConfig(log_base_dir=cfg.log_base_dir, num_iters=5, chkpt_freq=0)
+        algo, result = self._train(cfg, monkeypatch, start_iteration=5)
+
+        assert result == {}
+
+
+class TestEmptyIterationIsReported:
+    """An iteration whose result carries no `env_runners` block trained on
+    nothing - the samples timed out and were discarded - and says so.
+
+    Left unsaid, the loop counts the iteration, checkpoints, and produces a run
+    whose weights never moved. FakeAlgo's result has no env_runners block, which
+    is exactly the shape RLlib returns when `sample_timeout_s` elapses.
+    """
+
+    def _train(self, cfg, monkeypatch):
+        monkeypatch.setattr(
+            train_mod, "build_algo", lambda _cfg: (FakeAlgo(), None)
+        )
+        return train(cfg)
+
+    def test_warns_and_names_the_timeout(self, cfg, monkeypatch, caplog):
+        cfg = TrainConfig(
+            log_base_dir=cfg.log_base_dir,
+            num_iters=1,
+            chkpt_freq=0,
+            num_env_runners=2,
+            sample_timeout_s=17.0,
+        )
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            self._train(cfg, monkeypatch)
+
+        assert "trained on no samples" in caplog.text
+        assert "sample_timeout_s=17.0" in caplog.text
+
+    def test_silent_when_sampling_is_in_process(self, cfg, monkeypatch, caplog):
+        # num_env_runners=0 samples in the driver, where there is no timeout to
+        # miss, so an empty block there means something else entirely.
+        cfg = TrainConfig(
+            log_base_dir=cfg.log_base_dir,
+            num_iters=1,
+            chkpt_freq=0,
+            num_env_runners=0,
+        )
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            self._train(cfg, monkeypatch)
+
+        assert "trained on no samples" not in caplog.text

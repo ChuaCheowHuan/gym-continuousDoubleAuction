@@ -275,10 +275,39 @@ corrupt — and the `nav_conservation_error` metric is emitted either way. See
 `num_learners`, the reward coefficients and the sizing knobs have no CLI flag, so the file is the
 only way to set them outside the Python API.
 
-### 5.1 The `run` group
+### 5.1 `sample_timeout_s`, and the run that trains on nothing
+
+In the `rollouts` group, with `--sample-timeout`. It is how long the driver waits for a remote env
+runner to hand back its share of `train_batch_size` before giving up on it.
+
+RLlib's default is **60 seconds**, and this environment cannot meet it at the shipped batch size.
+`train_batch_size` is `max_step × num_episodes_per_iter` = 4096 × 4 = 16,384 env steps; the order
+book matches in Python at roughly 60 env-steps/sec per runner with 8 agents, so two runners need
+about two minutes. The failure is silent in the worst way: a timed-out iteration **discards the
+partial rollouts**, hands the learner nothing, and then counts itself, logs, and checkpoints
+exactly like a real one. A 16-iteration run finishes in 19 minutes having done zero gradient steps,
+and its checkpoints hold the initial random weights.
+
+What it looks like, once per iteration:
+
+```
+WARNING rollout_ops.py:122 -- No samples returned from remote workers...
+iter 1/16 | env steps sampled: n/a | module returns: {}
+iter 1 trained on no samples: the result has no 'env_runners' block...
+```
+
+The second warning is this repo's (`_log_iteration`), and it names the batch size and the timeout
+it just missed. The consequence downstream is that `result` has no `env_runners` key at all, so
+anything indexing `result[ENV_RUNNER_RESULTS]` raises `KeyError` rather than reading a zero.
+
+Raise `sample_timeout_s` above what one iteration's sampling actually takes, or shrink the batch
+with `max_step` / `num_episodes_per_iter`. The value is ignored when `num_env_runners` is 0, since
+the driver then samples in-process with no timeout to miss.
+
+### 5.2 The `run` group
 
 These are the keys that still mean something on a **restored** run. Everything else in the file is
-baked into the checkpoint — see §5.2.
+baked into the checkpoint — see §5.3.
 
 | Key | Flag | What it does |
 |---|---|---|
@@ -357,7 +386,7 @@ training overwrite the iterations after it. `chkpt_keep` bounds how far back you
 The notebook has no separate knob for any of this — it is a thin driver that reads
 `train_config.json`, and cell 4 prints the resolved `restore` line before the run starts.
 
-### 5.2 What a restore ignores
+### 5.3 What a restore ignores
 
 `Algorithm.from_checkpoint` rebuilds everything from the config stored *in the checkpoint*. The
 `PPOConfig` built from `train_config.json` is discarded. Since resuming means editing

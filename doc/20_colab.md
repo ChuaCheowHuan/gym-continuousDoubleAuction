@@ -194,7 +194,7 @@ what a disconnect wants:
 It names one save, not the directory holding them; pointing at `results/chkpt` raises and lists
 what is available. There is no separate notebook knob — `PLATFORM` and `USE_GPU` remain the only
 two — but cell 4 prints the resolved `restore` line, so you can see which checkpoint a run will
-pick up before starting it. See [18_configuration.md](18_configuration.md) §5.1.
+pick up before starting it. See [18_configuration.md](18_configuration.md) §5.2.
 
 ---
 

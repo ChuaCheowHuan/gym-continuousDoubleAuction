@@ -129,6 +129,16 @@ class TestCliPrecedence:
         path = _write(tmp_path, {"environment": {"num_agents": 3}})
         assert _parse_args(["--config", path, "--agents", "7"]).num_agents == 7
 
+    def test_sample_timeout_is_settable(self, tmp_path):
+        # The knob whose absence let every iteration time out silently: RLlib's
+        # 60s default cannot be met at this batch size, and a timed-out
+        # iteration discards its rollouts rather than shortening them.
+        assert _parse_args([]).sample_timeout_s == TrainConfig().sample_timeout_s
+        assert _parse_args(["--sample-timeout", "12.5"]).sample_timeout_s == 12.5
+
+        path = _write(tmp_path, {"rollouts": {"sample_timeout_s": 300.0}})
+        assert _parse_args(["--config", path]).sample_timeout_s == 300.0
+
     def test_store_true_flags_still_work(self, tmp_path):
         path = _write(tmp_path, {"league_self_play": {"episode_data_dir": "eps"}})
         assert _parse_args(["--config", path]).episode_data_dir == "eps"

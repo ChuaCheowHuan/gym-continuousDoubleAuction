@@ -13,7 +13,7 @@ Run:
 From a notebook:
     from gym_continuousDoubleAuction.train.train import TrainConfig, build_algo, train
     cfg = TrainConfig(num_agents=8, num_trained_agents=2, num_iters=16)
-    algo = train(cfg)
+    algo, result = train(cfg)
 """
 from __future__ import annotations
 
@@ -126,6 +126,13 @@ class TrainConfig:
     num_env_runners: int = _default("num_env_runners")
     num_envs_per_env_runner: int = _default("num_envs_per_env_runner")
     num_cpus_per_env_runner: float = _default("num_cpus_per_env_runner")
+    # How long the driver waits for a remote runner's share of the batch.
+    # RLlib's default is 60s, which this env cannot meet at the configured
+    # batch size: a timed-out iteration discards its partial rollouts, so the
+    # learner gets nothing and the iteration trains on no data at all while
+    # still counting itself and checkpointing. See the note in
+    # train_config.json. Ignored when num_env_runners is 0.
+    sample_timeout_s: float = _default("sample_timeout_s")
 
     # --- Learner -------------------------------------------------------------
     num_learners: int = _default("num_learners")
@@ -339,6 +346,7 @@ def build_config(cfg: TrainConfig):
             num_env_runners=cfg.num_env_runners,
             num_envs_per_env_runner=cfg.num_envs_per_env_runner,
             num_cpus_per_env_runner=cfg.num_cpus_per_env_runner,
+            sample_timeout_s=cfg.sample_timeout_s,
         )
         .learners(
             num_learners=cfg.num_learners,
@@ -439,7 +447,17 @@ def save_checkpoint(algo, cfg: TrainConfig, iteration: int) -> str:
 
 
 def _prune_checkpoints(root: str, keep: int) -> None:
-    """Delete all but the newest `keep` saves. <= 0 keeps everything.
+    """Delete all but the `keep` most recently written saves. <= 0 keeps everything.
+
+    Recency is the directory's mtime, not its iteration number. Ranking by
+    iteration number deletes the save that was just written whenever the
+    directory also holds higher-numbered ones from an earlier run: a fresh run
+    reaching `iter_00002` in a directory that still has `iter_00012/14/16` sees
+    its own checkpoint pruned microseconds after the rename that made it real,
+    and keeps the stale ones instead. Both GPU runs of 2026-08-15 did exactly
+    that for iterations 2 through 10 - the whole first half of each run left
+    unrecoverable while the previous run's checkpoints survived. mtime says
+    what the iteration number cannot: which of these did *this* run write.
 
     Only `iter_*` directories are pruned. A checkpoint left in `root` by the old
     layout is another tool's data as far as this function is concerned, so it is
@@ -458,9 +476,59 @@ def _prune_checkpoints(root: str, keep: int) -> None:
         )
 
     prunable = [path for iteration, path in checkpoints if iteration >= 0]
+    # Oldest first, so the tail of the list is what `keep` retains. The
+    # iteration number breaks mtime ties, which is what a filesystem with
+    # coarse timestamps produces when two saves land in the same second.
+    prunable.sort(key=lambda path: (_mtime(path), _iteration_of(path)))
+
     for path in prunable[:max(0, len(prunable) - keep)]:
         shutil.rmtree(path, ignore_errors=True)
         logger.info("pruned old checkpoint: %s", path)
+
+
+def _mtime(path: str) -> float:
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0.0
+
+
+def _iteration_of(path: str) -> int:
+    """The iteration in an `iter_<n>` basename, or -1 if it has none."""
+    name = os.path.basename(path)
+    try:
+        return int(name[len(CHECKPOINT_PREFIX):])
+    except ValueError:
+        return -1
+
+
+def warn_about_foreign_checkpoints(cfg: TrainConfig) -> List[str]:
+    """Report checkpoints a fresh run is about to write alongside.
+
+    A run that is not restoring shares its directory with whatever the last run
+    left there, and the two are told apart only by iteration number. Until this
+    run passes that number, `list_checkpoints` reports the *stale* save as the
+    newest, so an interrupted run restored with `--restore` silently resumes
+    someone else's weights - which is how a run that trained on nothing could
+    have been picked up as if it were this one. Nothing is deleted here; the
+    directory belongs to the operator, not to this function.
+
+    Returns the stale paths, newest first, for the caller to log or test.
+    """
+    if cfg.is_restore:
+        return []
+
+    stale = [path for _iteration, path in reversed(list_checkpoints(cfg.checkpoint_dir))]
+    if stale:
+        logger.warning(
+            "%s already holds %s checkpoint(s) from an earlier run, newest "
+            "first: %s. This run is not restoring, so they are left alone - but "
+            "until it passes their iteration numbers, a --restore would pick "
+            "one of them over anything written here. Move or delete them, or "
+            "point log_base_dir somewhere new.",
+            cfg.checkpoint_dir, len(stale), ", ".join(os.path.basename(p) for p in stale),
+        )
+    return stale
 
 
 def algo_callback(algo) -> Optional[SelfPlayCallback]:
@@ -594,6 +662,7 @@ def _config_fingerprint(config) -> dict:
         "train_batch_size_per_learner",
         "num_env_runners",
         "num_envs_per_env_runner",
+        "sample_timeout_s",
         "num_learners",
         "num_gpus_per_learner",
     ):
@@ -769,6 +838,7 @@ def build_algo(cfg: TrainConfig):
         )
     else:
         logger.info("starting from scratch")
+        warn_about_foreign_checkpoints(cfg)
 
     return ppo.build_algo(), callback_instance
 
@@ -788,8 +858,17 @@ def _fix_checkpoint_optimizer_betas(algo) -> None:
     algo.learner_group.foreach_learner(fix_betas)
 
 
-def train(cfg: TrainConfig):
-    """Run the full training loop. Returns the trained Algorithm.
+def train(cfg: TrainConfig) -> Tuple[Algorithm, dict]:
+    """Run the full training loop.
+
+    Returns:
+        (algorithm, last_result) - the trained Algorithm and the result dict of
+        the final iteration. The result is returned because inspecting the
+        league otherwise costs a whole extra `algo.train()` call: one more
+        iteration of real sampling and learning, run for its return value, and
+        one that falls outside this function's checkpointing. An empty dict is
+        returned when nothing was run, i.e. when a restore is already at or past
+        the target.
 
     Iteration numbers are the algorithm's own, which a restore brings back with
     the weights, so `num_iters` is a target: a run resumed at iteration 9 of 16
@@ -813,16 +892,17 @@ def train(cfg: TrainConfig):
             "%s - nothing to do. Raise num_iters, or set num_iters_is_delta to "
             "run %s more from here.", start, target, cfg.num_iters,
         )
-        return algo
+        return algo, {}
 
     os.makedirs(cfg.checkpoint_dir, exist_ok=True)
 
     iteration = start
     saved_at = None
+    result: dict = {}
     for _ in range(target - start):
         result = algo.train()
         iteration = int(result.get("training_iteration", iteration + 1))
-        _log_iteration(iteration, target, result)
+        _log_iteration(iteration, target, result, cfg)
 
         if cfg.chkpt_freq and iteration % cfg.chkpt_freq == 0:
             saved_at = iteration
@@ -835,10 +915,10 @@ def train(cfg: TrainConfig):
         logger.info(
             "final checkpoint: %s", save_checkpoint(algo, cfg, iteration),
         )
-    return algo
+    return algo, result
 
 
-def _log_iteration(i: int, total: int, result: dict) -> None:
+def _log_iteration(i: int, total: int, result: dict, cfg: TrainConfig) -> None:
     from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
 
     env_runners = result.get(ENV_RUNNER_RESULTS, {})
@@ -848,6 +928,22 @@ def _log_iteration(i: int, total: int, result: dict) -> None:
         "iter %s/%s | env steps sampled: %s | module returns: %s",
         i, total, steps, {k: round(float(v), 1) for k, v in returns.items()},
     )
+
+    # An iteration with no env_runners block sampled nothing the learner could
+    # use, which is silent otherwise: the loop still counts the iteration, still
+    # checkpoints, and produces a run whose weights never moved. The usual cause
+    # is sample_timeout_s elapsing before the runners have produced
+    # train_batch_size steps, so say that here rather than leaving it to be
+    # inferred from RLlib's "No samples returned from remote workers" warning.
+    if not env_runners and cfg.num_env_runners:
+        logger.warning(
+            "iter %s trained on no samples: the result has no %r block. The "
+            "%s env runners did not deliver %s env steps within "
+            "sample_timeout_s=%s. Raise sample_timeout_s, or lower max_step "
+            "(%s) / num_episodes_per_iter (%s) to shrink the batch.",
+            i, ENV_RUNNER_RESULTS, cfg.num_env_runners, cfg.train_batch_size,
+            cfg.sample_timeout_s, cfg.max_step, cfg.num_episodes_per_iter,
+        )
 
 
 def _parse_args(argv=None) -> TrainConfig:
@@ -880,6 +976,15 @@ def _parse_args(argv=None) -> TrainConfig:
     p.add_argument("--env-runners", type=int, dest="num_env_runners", default=argparse.SUPPRESS)
     p.add_argument("--envs-per-runner", type=int, dest="num_envs_per_env_runner", default=argparse.SUPPRESS)
     p.add_argument("--gpus-per-learner", type=float, dest="num_gpus_per_learner", default=argparse.SUPPRESS)
+    p.add_argument(
+        "--sample-timeout",
+        type=float,
+        dest="sample_timeout_s",
+        default=argparse.SUPPRESS,
+        help="Seconds to wait for a remote env runner's share of the batch. "
+             "Too low and the iteration discards its rollouts and trains on "
+             "nothing; watch for 'No samples returned from remote workers'.",
+    )
     p.add_argument("--restore", action="store_true", dest="is_restore", default=argparse.SUPPRESS)
     p.add_argument(
         "--from-checkpoint",
