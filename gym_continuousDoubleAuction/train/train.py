@@ -447,7 +447,17 @@ def save_checkpoint(algo, cfg: TrainConfig, iteration: int) -> str:
 
 
 def _prune_checkpoints(root: str, keep: int) -> None:
-    """Delete all but the newest `keep` saves. <= 0 keeps everything.
+    """Delete all but the `keep` most recently written saves. <= 0 keeps everything.
+
+    Recency is the directory's mtime, not its iteration number. Ranking by
+    iteration number deletes the save that was just written whenever the
+    directory also holds higher-numbered ones from an earlier run: a fresh run
+    reaching `iter_00002` in a directory that still has `iter_00012/14/16` sees
+    its own checkpoint pruned microseconds after the rename that made it real,
+    and keeps the stale ones instead. Both GPU runs of 2026-08-15 did exactly
+    that for iterations 2 through 10 - the whole first half of each run left
+    unrecoverable while the previous run's checkpoints survived. mtime says
+    what the iteration number cannot: which of these did *this* run write.
 
     Only `iter_*` directories are pruned. A checkpoint left in `root` by the old
     layout is another tool's data as far as this function is concerned, so it is
@@ -466,9 +476,59 @@ def _prune_checkpoints(root: str, keep: int) -> None:
         )
 
     prunable = [path for iteration, path in checkpoints if iteration >= 0]
+    # Oldest first, so the tail of the list is what `keep` retains. The
+    # iteration number breaks mtime ties, which is what a filesystem with
+    # coarse timestamps produces when two saves land in the same second.
+    prunable.sort(key=lambda path: (_mtime(path), _iteration_of(path)))
+
     for path in prunable[:max(0, len(prunable) - keep)]:
         shutil.rmtree(path, ignore_errors=True)
         logger.info("pruned old checkpoint: %s", path)
+
+
+def _mtime(path: str) -> float:
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0.0
+
+
+def _iteration_of(path: str) -> int:
+    """The iteration in an `iter_<n>` basename, or -1 if it has none."""
+    name = os.path.basename(path)
+    try:
+        return int(name[len(CHECKPOINT_PREFIX):])
+    except ValueError:
+        return -1
+
+
+def warn_about_foreign_checkpoints(cfg: TrainConfig) -> List[str]:
+    """Report checkpoints a fresh run is about to write alongside.
+
+    A run that is not restoring shares its directory with whatever the last run
+    left there, and the two are told apart only by iteration number. Until this
+    run passes that number, `list_checkpoints` reports the *stale* save as the
+    newest, so an interrupted run restored with `--restore` silently resumes
+    someone else's weights - which is how a run that trained on nothing could
+    have been picked up as if it were this one. Nothing is deleted here; the
+    directory belongs to the operator, not to this function.
+
+    Returns the stale paths, newest first, for the caller to log or test.
+    """
+    if cfg.is_restore:
+        return []
+
+    stale = [path for _iteration, path in reversed(list_checkpoints(cfg.checkpoint_dir))]
+    if stale:
+        logger.warning(
+            "%s already holds %s checkpoint(s) from an earlier run, newest "
+            "first: %s. This run is not restoring, so they are left alone - but "
+            "until it passes their iteration numbers, a --restore would pick "
+            "one of them over anything written here. Move or delete them, or "
+            "point log_base_dir somewhere new.",
+            cfg.checkpoint_dir, len(stale), ", ".join(os.path.basename(p) for p in stale),
+        )
+    return stale
 
 
 def algo_callback(algo) -> Optional[SelfPlayCallback]:
@@ -778,6 +838,7 @@ def build_algo(cfg: TrainConfig):
         )
     else:
         logger.info("starting from scratch")
+        warn_about_foreign_checkpoints(cfg)
 
     return ppo.build_algo(), callback_instance
 

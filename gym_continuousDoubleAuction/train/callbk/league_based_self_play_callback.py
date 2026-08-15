@@ -375,12 +375,34 @@ class SelfPlayCallback(RLlibCallback):
         iteration = result['training_iteration']
         
         # Filter mostly interesting policies (exclude extremely sparse ones if any)
-        # and calculate league statistics
-        valid_returns = [v for v in policy_returns.values() if v is not None]
-        
+        # and calculate league statistics.
+        #
+        # NaN, not just None: a module the mapping fn did not draw this
+        # iteration played no episodes, and RLlib reports its mean return as
+        # NaN. One of those poisons `np.mean`, so the threshold becomes NaN and
+        # `best_return > threshold` is False for every candidate - the champion
+        # trigger stops firing, silently and permanently. It is self-
+        # reinforcing: each champion added to the pool makes it likelier that
+        # some baseline goes undrawn. Both GPU runs of 2026-08-15 died this way,
+        # at iterations 10 and 12 of 16, having reported healthy league stats
+        # right up to the iteration it happened.
+        idle_modules = sorted(
+            module_id for module_id, value in policy_returns.items()
+            if value is None or np.isnan(value)
+        )
+        valid_returns = [
+            v for v in policy_returns.values() if v is not None and not np.isnan(v)
+        ]
+
         if not valid_returns:
             logger.warning("No valid policy returns found this iteration.")
             return
+
+        if idle_modules:
+            logger.info(
+                "iteration %s: %s played no episodes and are excluded from the "
+                "league statistics", iteration, ", ".join(idle_modules),
+            )
 
         league_mean = np.mean(valid_returns)
         league_std = np.std(valid_returns)

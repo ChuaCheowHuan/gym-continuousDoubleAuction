@@ -1,0 +1,122 @@
+"""The league statistics the champion trigger is computed from.
+
+A module the mapping fn did not draw this iteration played no episodes, and
+RLlib reports its mean return as NaN rather than omitting it. The trigger used
+to filter only `None`, so a single NaN made `np.mean` NaN, made the threshold
+NaN, and made `best_return > threshold` False for every candidate. Champion
+creation then stopped - silently, permanently, and self-reinforcingly, since
+each champion added to the pool makes it likelier that some baseline goes
+undrawn.
+
+Both GPU runs of 2026-08-15 died this way, at iterations 10 and 12 of 16,
+reporting healthy league stats right up to the iteration it happened. See
+doc/15_findings_and_recommendations.md S3-12.
+"""
+import logging
+
+import pytest
+
+from gym_continuousDoubleAuction.logging_setup import ROOT_NAME as LOGGER
+from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
+    SelfPlayCallback,
+)
+
+
+@pytest.fixture
+def callback():
+    cb = SelfPlayCallback(
+        num_trainable_policies=2,
+        num_random_policies=6,
+        min_iterations_between_champions=0,
+    )
+    return cb
+
+
+@pytest.fixture
+def snapshots(callback, monkeypatch):
+    """Records champion creation instead of touching an Algorithm."""
+    created = []
+    monkeypatch.setattr(
+        callback, "_create_champion_snapshot_from_policy",
+        lambda algorithm, pid, return_value, iteration: created.append(
+            (pid, return_value, iteration)
+        ),
+    )
+    return created
+
+
+def _result(returns, iteration=1):
+    return {
+        "training_iteration": iteration,
+        "env_runners": {"module_episode_returns_mean": returns},
+    }
+
+
+def _fire(callback, returns, iteration=1):
+    callback.on_train_result(algorithm=object(), result=_result(returns, iteration))
+
+
+class TestIdleModulesDoNotPoisonTheLeague:
+
+    def test_a_champion_is_still_created(self, callback, snapshots, caplog):
+        """The regression: one NaN used to veto every champion, forever."""
+        with caplog.at_level(logging.INFO, logger=LOGGER):
+            _fire(callback, {
+                "policy_0": -1.0,       # far above the rest: a clear champion
+                "policy_1": -100.0,
+                "policy_2": -100.0,
+                "policy_3": -100.0,
+                "policy_6": float("nan"),   # never drawn this iteration
+            })
+
+        assert [pid for pid, _r, _i in snapshots] == ["policy_0"]
+        assert "mean=nan" not in caplog.text
+
+    def test_the_idle_modules_are_named(self, callback, snapshots, caplog):
+        with caplog.at_level(logging.INFO, logger=LOGGER):
+            _fire(callback, {
+                "policy_0": -1.0,
+                "policy_1": -100.0,
+                "policy_5": float("nan"),
+                "policy_6": float("nan"),
+            })
+
+        assert "policy_5, policy_6" in caplog.text
+        assert "played no episodes" in caplog.text
+
+    def test_a_full_league_says_nothing_about_idle_modules(self, callback, snapshots, caplog):
+        with caplog.at_level(logging.INFO, logger=LOGGER):
+            _fire(callback, {"policy_0": -1.0, "policy_1": -100.0})
+
+        assert "played no episodes" not in caplog.text
+
+    def test_the_statistics_ignore_the_idle_module(self, callback, snapshots, caplog):
+        """Not just NaN-free - computed over the modules that actually played."""
+        with caplog.at_level(logging.INFO, logger=LOGGER):
+            _fire(callback, {
+                "policy_0": 10.0,
+                "policy_1": 10.0,
+                "policy_2": 10.0,
+                "policy_7": float("nan"),
+            })
+
+        assert "mean=10.00 std=0.00" in caplog.text
+
+    def test_all_idle_is_reported_and_creates_nothing(self, callback, snapshots, caplog):
+        """No episodes anywhere is a broken iteration, not a league update."""
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            _fire(callback, {"policy_0": float("nan"), "policy_1": float("nan")})
+
+        assert snapshots == []
+        assert "No valid policy returns" in caplog.text
+
+    def test_an_idle_trainable_is_never_the_champion(self, callback, snapshots):
+        """NaN loses every comparison, so it must not win by being first."""
+        _fire(callback, {
+            "policy_0": float("nan"),
+            "policy_1": -1.0,
+            "policy_2": -100.0,
+            "policy_3": -100.0,
+        })
+
+        assert [pid for pid, _r, _i in snapshots] == ["policy_1"]

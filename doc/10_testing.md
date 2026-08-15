@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (242 tests: 222 unit + 20 integration)
+# everything (254 tests: 234 unit + 20 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -45,7 +45,7 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `230 passed`.
+**[verified]** — `254 passed`.
 
 ### File inventory
 
@@ -71,8 +71,9 @@ Counts re-measured with `--collect-only`; the earlier `90` predated the config a
 | `test_config_sources.py` | 26 | No literal copy of a configured value survives in Python |
 | `test_config_wiring.py` | 11 | Config keys reaching their consumers |
 | `test_runtime_profiles.py` | 23 | `runtime_profiles.json` → hardware sets, platform paths |
-| `test_checkpointing.py` | 44 | Checkpoint retention, restore selection, league state across a save |
-| **unit total** | **222** | |
+| `test_checkpointing.py` | 50 | Checkpoint retention, restore selection, league state across a save |
+| `test_champion_trigger.py` | 6 | League statistics with modules that played no episodes |
+| **unit total** | **234** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | **integration total** | **20** | |
@@ -345,7 +346,7 @@ collects the same way as everything else under `pytest`, but — like every file
 — running it directly (`python test_probabilistic_mapping.py`, or `%run` from a notebook) does
 nothing, since there is no `unittest.main()` call left anywhere to trigger execution. See §0.
 
-### 6.1.1 `test_checkpointing.py` — 10 classes, 44 tests
+### 6.1.1 `test_checkpointing.py` — 11 classes, 50 tests
 
 What survives a save/restore, and what a restore is allowed to change. RLlib's loader and the
 env build are stubbed, so these run in seconds; the same behaviours were also exercised against
@@ -355,11 +356,12 @@ complete: nothing here touches RLlib's own serialisation.
 | Class | What it pins |
 |---|---|
 | `TestCheckpointDiscovery` | Saves are ordered oldest-first; `iter_N.tmp` (an interrupted save) and non-checkpoint directories are skipped; a checkpoint in the old single-directory layout is still found, and sorts oldest |
-| `TestRetention` | Each save is its own directory; `chkpt_keep` prunes the oldest; `<= 0` keeps all; the old-layout checkpoint is never pruned; the save is staged then renamed; re-saving an iteration replaces it |
+| `TestRetention` | Each save is its own directory; `chkpt_keep` prunes the **least recently written**; `<= 0` keeps all; a stale higher-numbered save from an earlier run never prunes a fresh one (S3-17); the old-layout checkpoint is never pruned; the save is staged then renamed; re-saving an iteration replaces it |
 | `TestLeagueSidecar` | `league_state.json` is written beside every checkpoint; `algo_callback` finds the live instance |
 | `TestLeagueStateReconciliation` | Agreement repairs nothing; a callback that lost its history is rebuilt from the sidecar; a champion with no module is dropped; a module with no champion entry is adopted; the ID counter never goes backwards |
 | `TestRestoreCandidates` | `restore_path` null means every checkpoint; a path narrows it to that one; not restoring ignores the tree; a path without `is_restore` raises; a path that is not a checkpoint raises and lists the ones that are, newest first |
 | `TestCommandLine` | `--from-checkpoint` implies `--restore`; `--restore` alone leaves the path unset |
+| `TestForeignCheckpoints` | A fresh run names the checkpoints it found and did not write, newest first, and deletes none of them; a restoring run is not warned; `build_algo` warns on the scratch path |
 | `TestRestoreSelection` | The newest checkpoint is picked; an unreadable one falls back to the previous; a **pinned** one raises instead of falling back; the **algorithm's own** callback is returned, not the fresh one; no checkpoint starts from scratch |
 | `TestIterationAccounting` | `num_iters` is a target, not an amount; `num_iters_is_delta` counts from the restore point; a completed run trains nothing; checkpoints land on true iteration numbers; the final save is not duplicated |
 | `TestTrainReturnsTheLastResult` | `train()` returns the final iteration's result beside the algo, so inspecting the league costs no extra `algo.train()`; a run with nothing to do returns an empty one |

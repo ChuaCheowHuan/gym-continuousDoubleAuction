@@ -540,3 +540,59 @@ no `env_runners` block at all.
 
 See [18 §5.1](18_configuration.md#51-sample_timeout_s-and-the-run-that-trains-on-nothing) and
 [09 §5.1](09_distributed_training.md).
+
+---
+
+## 17. What the first two GPU runs that trained showed
+
+With `sample_timeout_s` fixed (§16), two full 16-iteration runs completed on 2026-08-15 doing real
+gradient steps: Colab T4 (`CDA_NSP_colab.ipynb`, 186s/iter) and an RTX 4060 docker container
+(`CDA_NSP.ipynb`, 58s/iter). Both reached 262,144 lifetime env steps, kept NAV conserved in every
+episode check, and finished with 2 healthy workers and 0 restarts.
+
+Both also hit the same two silent failures, on different machines with different seeds.
+
+### 17.1 Each fresh checkpoint was deleted the moment it was written
+
+The log says it plainly, once you look for it:
+
+```
+pruned old checkpoint: .../results/chkpt/iter_00002
+checkpoint at iter 2:  .../results/chkpt/iter_00002
+```
+
+Same path, prune first. Repeated at iterations 4, 6, 8 and 10, then stopping — which is the tell:
+`chkpt_keep` is 3, and the directory already held `iter_00012/14/16` from an earlier run.
+`_prune_checkpoints` ranked by iteration number, so the save just written was the "oldest" of four.
+
+Retention now ranks by **mtime**, with the iteration number as tiebreaker. mtime says what the
+iteration number cannot: which of these did *this* run write. A run starting from scratch in a
+directory holding checkpoints it did not write also warns and names them, newest first —
+`warn_about_foreign_checkpoints`. Nothing is deleted; the directory belongs to the operator.
+
+The reason this matters beyond disk hygiene is restore selection, which still ranks by iteration
+number (correctly — a resumed run's saves genuinely are the higher-numbered ones). For the first
+eleven iterations of both runs, `--restore` would have loaded the *previous* run: in this case the
+one from §16 that trained on nothing. See [15 S3-17](15_findings_and_recommendations.md).
+
+### 17.2 Champion promotion died two-thirds of the way through
+
+`iteration N league stats: mean=nan std=nan threshold=nan` — from iteration 12 of 16 on Colab,
+iteration 10 in docker, and every iteration after.
+
+`on_train_result` filtered `None` out of `module_episode_returns_mean` but not `NaN`, which is what
+RLlib reports for a module the mapping fn did not draw that iteration. One NaN makes the mean, the
+std and the threshold NaN, and every `best_return > threshold` False. Both runs froze at 4
+champions. It is self-reinforcing: each champion in the pool makes an undrawn baseline likelier,
+so the failure becomes more certain the longer the run goes.
+
+NaN is now filtered alongside `None`, and the modules that played no episodes are named at INFO
+rather than silently distorting the league. See [15 S3-16](15_findings_and_recommendations.md).
+
+### 17.3 What both runs did not do is learn
+
+Unchanged and already documented as S1-1: `vf_loss` pinned at the `vf_clip_param` bound of 10.0,
+`vf_loss_unclipped` between 1.4e11 and 6.6e11, `vf_explained_var` at 0.0 to 1.8e-07. The critic
+receives no gradient, PPO degenerates to REINFORCE, and `best_trainable` across the 16 iterations
+of either run is noise with no trend. The infrastructure now works end to end; the learning
+problem is untouched.

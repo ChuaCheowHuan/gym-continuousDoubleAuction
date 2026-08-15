@@ -357,6 +357,38 @@ selects by the same unstable index. A learned association such as "level 3 is a 
 quote" has no fixed meaning across steps.
 **Fix:** a fixed tick-offset grid shared by observation and action.
 
+### S3-16 · One undrawn opponent kills champion promotion for the rest of the run **[verified, fixed]**
+
+`on_train_result` filtered `None` from `module_episode_returns_mean` but not `NaN`, which is what
+RLlib reports for a module the mapping fn did not draw that iteration. One NaN makes the league
+mean, std and threshold NaN, and `best_return > threshold` is False against NaN, so no champion
+is ever promoted again. Self-reinforcing: each champion added to the pool makes an undrawn
+baseline likelier.
+
+Observed in both GPU runs of 2026-08-15 — Colab T4 froze at 4 champions from iteration 12 of 16,
+the RTX 4060 docker run from iteration 10 — with `mean=nan std=nan threshold=nan` logged every
+iteration after that and no other symptom.
+
+**Fixed.** NaN is filtered alongside `None`, and the excluded modules are named at INFO. Pinned by
+`test_champion_trigger.py`.
+
+### S3-17 · Retention deleted each fresh checkpoint in a dirty directory **[verified, fixed]**
+
+`_prune_checkpoints` ranked by iteration number. A run starting from scratch in a directory that
+still held an earlier run's `iter_00012/14/16` therefore saw its own `iter_00002` as the oldest of
+four and deleted it immediately after the rename that made it real — and the same at 4, 6, 8, 10.
+Both GPU runs of 2026-08-15 left the whole first half of the run unrecoverable while preserving
+the previous run's saves.
+
+The worse half is restore selection: `list_checkpoints` reports the highest iteration number as
+newest, so for the first eleven iterations a `--restore` would have resumed the *earlier* run —
+in that instance, the run that trained on nothing ([17 §16](17_changelog.md)).
+
+**Fixed.** Retention ranks by mtime, with the iteration number as tiebreaker, so the save just
+written is never the one pruned. A fresh run that finds checkpoints it did not write now warns and
+names them, newest first; nothing is deleted, because the directory belongs to the operator.
+Pinned by `TestRetention` and `TestForeignCheckpoints` in `test_checkpointing.py`.
+
 ---
 
 ## S4 — Minor
