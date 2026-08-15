@@ -44,18 +44,22 @@ Two further notes:
   from an older version of `test_nav_callback.py`, not fixtures anything reads, and the suite no
   longer regenerates them.
 
-### 1.2 RLlib `metrics_logger` custom metrics (per training iteration)
+### 1.2 RLlib `metrics_logger` custom metrics
 
-**Where:** `on_train_result`.
+| Metric | Value | Window | Emitted in |
+|---|---|---|---|
+| `nav_conservation_error` | `abs(total NAV − total initial cash)`, as a float | 1 | `on_episode_end` |
+| `league_size` | `num_trainable + num_random + champion_count` | 1 | `on_train_result` |
+| `league_mean_return` | Mean module return across the league | 10 | `on_train_result` |
+| `league_std_return` | Std dev of module returns | 10 | `on_train_result` |
 
-| Metric | Value | Window |
-|---|---|---|
-| `league_size` | `num_trainable + num_random + champion_count` | 1 |
-| `league_mean_return` | Mean module return across the league | 10 |
-| `league_std_return` | Std dev of module returns | 10 |
-
-**Three metrics** is the entirety of what reaches RLlib's structured logger, alongside RLlib's
+**Four metrics** is the entirety of what reaches RLlib's structured logger, alongside RLlib's
 own built-ins.
+
+Three are per *iteration*, from `on_train_result`. `nav_conservation_error` is per *episode*, from
+`on_episode_end`, which is why its window is 1: an error in one episode out of many must not be
+averaged away (§1.5). It is also the only one of the four emitted on the env runners rather than
+the driver.
 
 ### 1.3 Logging (stdout and a run log, filterable)
 
