@@ -138,15 +138,64 @@ violation raises under the default, the metric is emitted before the raise, non-
 and continues, the tolerance admits what is inside it and not what is outside, and both knobs come
 from the config file.
 
+### 1.6 Per-iteration training history (`progress.jsonl`)
+
+`train()` calls `algo.train()` directly rather than through `tune.Tuner`, so nothing writes
+`progress.csv` or TensorBoard event files. Each iteration's result dict used to be summarised into
+one log line and dropped, which left a finished run with checkpoints, scrollback, and no queryable
+record of how it got there.
+
+Every iteration now appends one JSON object to `<log_base_dir>/progress.jsonl`:
+
+```python
+result = algo.train()
+_log_iteration(iteration, target, result, cfg)
+_append_progress(result, cfg)
+```
+
+* **The whole result dict**, not a chosen subset. The loss terms, KL, entropy, timers and learner
+  stats are all in there; deciding today which of them a future question needs is exactly the
+  mistake that produced this gap.
+* **`_json_safe` runs first.** RLlib results carry numpy scalars and arrays, occasional objects
+  with no JSON form, and NaNs. Numbers stay numbers (a bare `default=str` would write `"1.5"` and
+  make every reader parse it back), non-finite floats become `null` — `NaN` and `Infinity` are not
+  valid JSON — and anything left over is stringified.
+* **Opened and closed per iteration.** These runs normally end by being killed, so a buffer held
+  open for the run would lose the iterations it had already finished. Append mode also means a
+  resumed run extends its history rather than truncating it.
+* **Every failure is swallowed with a warning.** A full disk must not take down a run that is
+  otherwise training fine.
+* It sits beside `chkpt/` under `log_base_dir`, not with the per-episode pickles: one short line
+  per iteration belongs with the things that must survive a disconnect, which is why
+  `runtime_profiles.json` splits `results_root` from `episode_data_root` in the first place.
+
+Covered by `test_progress_log.py` (one line per iteration, appends across a restart, numbers
+survive as numbers, awkward values, and a write failure that must not stop the loop) and by
+`test/integration/test_progress_and_vf.py`, which trains a real PPO and reads the file back.
+
 ---
 
 ## 2. What is not logged but should be
 
 ### 2.1 Training metrics
 
+Done, and no longer on this list: **`vf_explained_var`** — the one metric that exposes the frozen
+critic (S1-1), and whose absence is why that defect survived. `_log_iteration` now prints it per
+trainable module on every iteration, read from `result["learners"][<module_id>]` and keyed on
+`trainable_policy_ids`, since only the modules in `policies_to_train` appear in that block.
+
+`test/integration/test_progress_and_vf.py` asserts in CI that a real run reports it, finite, for
+every trainable module. It deliberately does **not** assert `!= 0.0`: this repository currently
+reports values around 1e-5, so that assertion passes on a critic that is entirely dead. The
+substantive threshold (`>= 1e-3`) is there as a strict xfail that pins S1-1 as a known failure and
+becomes a live guard the moment it is fixed.
+
+Everything else on this list is *computed* by RLlib and reaches `progress.jsonl` (§1.6) as part of
+the full result dict. What is still missing is surfacing: none of it is in the iteration log line
+or aggregated into a metric worth alerting on.
+
 | Missing | Why it matters |
 |---|---|
-| **`vf_explained_var`** | The one metric that exposes the frozen critic (S1-1). Nothing surfaces it, which is why the defect survived. |
 | `vf_loss` vs `vf_loss_unclipped` | The saturation is invisible from `total_loss` alone |
 | Per-policy reward mean / min / max / std | Only league aggregates are logged; individual trends are invisible |
 | Policy win rate versus random and versus champion | The key signal for league-based training |
@@ -211,18 +260,20 @@ chosen for, and it makes the info dict awkward for RLlib metric aggregation.
 | Per-episode `.pkl` files grow without rotation or size cap | Disk fills over long runs; the flag is off/on, not bounded |
 | Episode `.pkl` files carry no timestamp or iteration metadata | Hard to correlate with training progress |
 | `pickle` format | Arbitrary code execution on load; prefer `npz` / `parquet` / `jsonl` |
-| No per-iteration training history on disk | `algo.train()` runs outside `tune.Tuner`, so nothing writes `progress.csv` or TensorBoard events; each result dict is logged in summary and dropped |
+| `progress.jsonl` grows without rotation | One line per iteration is small, but nothing bounds it across a long series of resumed runs |
 
-Logging itself is no longer in this table: output is levelled, attributable and switchable, and
-the `g_store` dead code is gone (§1.3, §1.4). What is still missing is a *machine-readable* record
-of training progress - see §4.
+Two things are no longer in this table. Logging itself: output is levelled, attributable and
+switchable, and the `g_store` dead code is gone (§1.3, §1.4). And the absence of a per-iteration
+training history: `progress.jsonl` is that machine-readable record (§1.6).
 
 ---
 
 ## 4. Recommended additions
 
-Done, and no longer on this list: `logging` in place of `print`, and raising on a NAV conservation
-violation with a `nav_conservation_error` metric.
+Done, and no longer on this list: `logging` in place of `print`; raising on a NAV conservation
+violation with a `nav_conservation_error` metric; writing each iteration's result dict to
+`progress.jsonl` (§1.6); and logging `vf_explained_var` per trainable module with a CI assertion
+behind it (§2.1).
 
 ```python
 # in on_train_result / on_episode_end
@@ -234,17 +285,13 @@ metrics_logger.log_value("vf_explained_var", ...,  window=1)
 
 Highest-value additions, in order:
 
-1. **Write each iteration's result dict to `results/progress.jsonl`**, so a run leaves a queryable
-   history behind without adopting `tune.Tuner`.
-2. **Log `vf_explained_var`** and assert on it in CI — it is the one metric that would have
-   caught S1-1.
-3. **Log reward sub-components** into `metrics_logger` from `on_episode_step` / `on_episode_end`.
-4. **Log per-agent final account state** — NAV, position, drawdown, VWAP — at episode end.
-5. **Log the do-nothing action fraction and the order rejection rate**, so passivity collapse and
+1. **Log reward sub-components** into `metrics_logger` from `on_episode_step` / `on_episode_end`.
+2. **Log per-agent final account state** — NAV, position, drawdown, VWAP — at episode end.
+3. **Log the do-nothing action fraction and the order rejection rate**, so passivity collapse and
    blind modify/cancel actions become measurable.
-6. **Export market price and spread** into the info dict — already in env state, just not
+4. **Export market price and spread** into the info dict — already in env state, just not
    surfaced.
-7. **Per-episode desk metrics** (Sharpe, max drawdown, turnover, maker ratio, inventory) through
+5. **Per-episode desk metrics** (Sharpe, max drawdown, turnover, maker ratio, inventory) through
    `metrics_logger`, so they land in TensorBoard alongside returns. The `on_episode_end` hook
    already has everything it needs. See
    [13_perspective_financial_trader.md](13_perspective_financial_trader.md) §7.

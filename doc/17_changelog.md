@@ -598,3 +598,53 @@ Unchanged and already documented as S1-1: `vf_loss` pinned at the `vf_clip_param
 receives no gradient, PPO degenerates to REINFORCE, and `best_trainable` across the 16 iterations
 of either run is noise with no trend. The infrastructure now works end to end; the learning
 problem is untouched.
+
+---
+
+## 18. A run leaves a record behind
+
+The two GPU runs in §17 could only be diagnosed after the fact, from scrollback, because
+`algo.train()` returns a full metrics dict every iteration and the driver loop read two keys out
+of it — `num_env_steps_sampled` and `module_episode_returns_mean` — for a log line and dropped the
+rest. The loop calls `algo.train()` directly rather than through `tune.Tuner`, so nothing wrote
+`progress.csv` or TensorBoard events either. A finished run left checkpoints and no history.
+
+**Every iteration now appends its whole result dict to `<log_base_dir>/progress.jsonl`.** Not a
+chosen subset: the loss terms, KL, entropy, timers and learner stats are all in there, because
+deciding in advance which of them a future question needs is what produced this gap. A
+`_json_safe` pass runs first, since RLlib results carry numpy scalars and arrays, the occasional
+object with no JSON form, and NaNs — numbers stay numbers rather than being stringified by a bare
+`default=str`, non-finite floats become `null` because `NaN` is not valid JSON, and anything left
+over is stringified. The file is opened and closed per iteration so a killed run keeps the
+iterations it finished, and every failure inside the writer is swallowed with a warning:
+instrumentation must not be what takes down a run that is otherwise training fine.
+
+**`vf_explained_var` is now in the per-iteration log line**, per trainable module, beside the
+returns. This is the metric §17.3 identifies as the one that exposes S1-1, and nothing surfaced
+it — which is why a critic pinned at 0.0 survived two full runs. It is read from
+`result["learners"][<module_id>]`, keyed on `trainable_policy_ids`: only the modules in
+`policies_to_train` appear there, so the frozen champions and the random baselines are absent by
+construction. A module missing from the result is omitted rather than reported as 0.0, since
+"absent" and "the critic explains nothing" are different states and telling them apart is the
+whole point.
+
+**CI asserts on it.** `test/integration/test_progress_and_vf.py` trains a real PPO for three
+iterations at the existing tiny test size and checks that the file has one line per iteration,
+that a real result survives the JSON round trip, and that every trainable module reports a finite
+`vf_explained_var`.
+
+The obvious next assertion — `!= 0.0`, the value a critic that never received a gradient reports —
+was written, run, and thrown away, because it **passes on this repository today**. A run of the
+suite reports values around 1e-5, matching the "0.0 to 1.8e-07" that §17.3 records from the two
+GPU runs, and all of it is nonzero: floating-point noise is not evidence of learning, so the
+assertion would have guarded nothing while looking like it guarded the defect. What is there
+instead is `test_the_critic_actually_explains_something`, asserting `|vf_explained_var| >= 1e-3`
+under a **strict xfail**. It fails today because S1-1 is open. When S1-1 is fixed it XPASSes and
+fails the build, at which point the marker comes off and it becomes the live regression guard it
+cannot be while the defect is still there.
+
+`test_progress_log.py` (19 tests) covers the writer itself against hand-built results — the
+append-across-a-restart case, numpy and NaN handling, and a write failure that must not stop the
+loop.
+
+See [11_logging_and_observability.md](11_logging_and_observability.md) §1.6.
