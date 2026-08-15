@@ -34,6 +34,13 @@ class Account(Calculate, Cash_Processor):
         self.num_passive_fills_step = 0 # passive executions in current step
         self.order_step_placed = 0 # 1 if a Market/Limit order was placed this step
 
+        # Written by Reward_Helper.set_reward each step, read by Info_Helper.
+        # The reward used to be a single number with its five components
+        # discarded the moment it was summed, which is what made the variance
+        # split in doc/07 6.4 unmeasurable. See doc/11 2.4.
+        self.drawdown = Decimal(0) # max_nav - nav, the level the penalty uses
+        self.reward_terms = {} # signed contributions, summing to self.reward
+
     def reset_acc(self, ID, cash=env_default("init_cash")):
         self.ID = ID
         self.cash = Decimal(cash)
@@ -57,6 +64,10 @@ class Account(Calculate, Cash_Processor):
         self.num_trades_step = 0
         self.num_passive_fills_step = 0
         self.order_step_placed = 0
+
+        # See __init__ for what these are and why they exist.
+        self.drawdown = Decimal(0)
+        self.reward_terms = {}
 
     def print_acc(self, msg):
         acc = {}

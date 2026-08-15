@@ -648,3 +648,55 @@ append-across-a-restart case, numpy and NaN handling, and a write failure that m
 loop.
 
 See [11_logging_and_observability.md](11_logging_and_observability.md) §1.6.
+
+---
+
+## 19. A step leaves a record behind
+
+§18 gave the *run* a history. The *step* still had almost none: `Info_Helper.set_info` reported
+`reward`, `NAV` and `num_trades`, and everything else a step knew about itself was computed,
+consumed and dropped inside the same function call. The position was in the account, the drawdown
+was calculated in `set_reward` and thrown away the moment the penalty was charged, the spread was
+derived in `state_helper` as `log1p(spread_ticks)` for the observation and the raw number
+discarded, and the five reward components existed only as terms in one expression. Every question
+in [11](11_logging_and_observability.md) §2.2–2.4 was unanswerable not because the data was hard
+to get, but because nothing kept it.
+
+**The per-step `info` dict now carries account state, market state, the reward decomposition and
+the submitted action** — see [11 §1.7](11_logging_and_observability.md) for the field list. The
+original three fields are untouched in name, type and order, and `NAV` remains the exact `str()`
+of a `Decimal` so the conservation check (§1.5) and `visualize_nav.py` both keep working.
+
+Four decisions in that change were not obvious, and one of them was a trap.
+
+**The reward terms sum to the reward, and the sum is the reward.** `set_reward` builds a dict of
+signed contributions and accumulates it, rather than keeping the old expression and computing a
+parallel breakdown beside it. A decomposition that can drift from the number the agent was trained
+on is worse than no decomposition, because it looks authoritative.
+
+**The trap: `sum()` would have changed the reward.** The obvious way to write that accumulation is
+`sum(terms.values())`. On Python 3.12+ the builtin applies Neumaier compensated summation to
+floats — it is *more* accurate than the original left-to-right expression, and it disagrees with
+it on ~44% of random inputs, by ~1e-13 relative. `math.fsum` likewise. Adding instrumentation must
+not perturb what is being instrumented, so the reward is accumulated with an explicit loop, which
+reproduces the previous arithmetic bit for bit — verified over 200,000 random inputs. Iterating
+the dict rather than naming the five keys also means a sixth term added later cannot be logged but
+left out of the reward.
+
+**`net_position` is reported as a float.** `account.py` initialises it to `int` 0 and then
+rebuilds it as a `Decimal` on the first fill, so its type changes partway through every episode.
+That is a latent inconsistency in the account, not something this change fixes; reporting one type
+throughout at least keeps it from reaching consumers.
+
+**`spread` is `None`, not `0.0`, when the book is one-sided.** The observation needs a finite
+sentinel and uses `0.0`. A log does not, and `0.0` there could not be told apart from a book whose
+touch is one tick wide — the collision [15](15_findings_and_recommendations.md) S3-14 describes.
+
+`test_info_dict.py` (18 tests) covers the back-compat of the original three fields, the terms
+summing exactly, penalties equalling coefficient × counter, `spread` on a one-sided book, and the
+whole dict surviving `json.dumps` — a numpy `int64` in `info` would break the progress log, and
+unlike `np.float64` it does not subclass its Python counterpart. One of those tests was checked by
+mutation: moving the per-step counter reset to before `set_info` makes it fail, which is the point
+— the counters would otherwise log a valid, healthy-looking, permanent 0.
+
+See [11 §1.7](11_logging_and_observability.md) and [07 §6.4](07_reward_function.md).

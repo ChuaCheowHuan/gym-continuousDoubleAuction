@@ -239,8 +239,11 @@ During training, monitor each term's contribution to total reward variance. A he
 | Penalties | ~20% |
 | Bonuses | ~10% |
 
-None of the five terms is currently logged individually, so this is not measurable without adding
-instrumentation — see [11_logging_and_observability.md](11_logging_and_observability.md) §2.4.
+All five terms are now logged individually, in `info["reward_terms"]`, as signed contributions
+that sum exactly to the reward — see
+[11_logging_and_observability.md](11_logging_and_observability.md) §1.7. The split above is
+therefore measurable from the per-step record; computing the variance share per episode is a
+reduction over that record, not a further instrumentation problem.
 
 ### 6.5 Make coefficients scale-invariant
 

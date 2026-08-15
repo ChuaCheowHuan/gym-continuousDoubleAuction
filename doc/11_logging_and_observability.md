@@ -185,6 +185,48 @@ Covered by `test_progress_log.py` (one line per iteration, appends across a rest
 survive as numbers, awkward values, and a write failure that must not stop the loop) and by
 `test/integration/test_progress_and_vf.py`, which trains a real PPO and reads the file back.
 
+### 1.7 Per-step `info` (account, market and reward decomposition)
+
+`Info_Helper.set_info` reported three fields — `reward`, `NAV`, `num_trades`. Everything else a
+step knew about itself was computed, consumed and dropped: the position, the drawdown the penalty
+had just been charged on, the spread, and the five reward components. §2.2–2.4 below were that
+gap; what follows is what closes it.
+
+**The original three are unchanged** — same names, same types, same order. `NAV` stays a *string*,
+the exact `str()` of a `Decimal`, because the conservation check parses it back with `Decimal`
+(§1.5) and `visualize_nav.py` with `float()`. §2.6 tracks that round trip as its own question and
+is not settled here.
+
+| Group | Fields |
+|---|---|
+| Account (§2.3) | `net_position`, `VWAP`, `cash`, `cash_on_hold`, `position_val`, `drawdown`, `max_nav`, `num_trades_step`, `num_passive_fills_step`, `order_step_placed` |
+| Market (§2.2) | `last_price`, `best_bid`, `best_ask`, `spread` |
+| Reward (§2.4) | `reward_terms`: `nav_term`, `order_penalty`, `trade_penalty`, `drawdown_penalty`, `passive_bonus` |
+| Action | `model_action` — as the model emitted it, before `set_actions` reshapes it for the book |
+
+Four decisions worth stating, because each could reasonably have gone the other way:
+
+* **The reward terms are signed contributions that sum to `reward`, and the sum *is* the reward.**
+  `set_reward` accumulates the dict rather than evaluating a second expression, so the logged
+  split cannot drift from the number the agent was trained on. The accumulation is a left-to-right
+  loop, deliberately **not** `sum()`: on Python 3.12+ the builtin applies Neumaier compensated
+  summation to floats, which disagrees with plain accumulation on ~44% of random inputs (~1e-13
+  relative). Instrumenting the reward must not change it.
+* **New numeric fields go out as plain numbers, not strings.** They are diagnostics, not
+  invariants — nothing reconstructs the ledger from them, and `float` is what the metrics stack
+  and `json` consume. `NAV` alone keeps the string treatment, for the reason above.
+* **`net_position` is reported as a float** even though `account.py` initialises it to `int` 0. The
+  account rebuilds it as a `Decimal` on the first fill, so the underlying type changes partway
+  through an episode; the reported field holds one type throughout.
+* **`spread` is `None`, not `0.0`, on a one-sided book.** The observation needs a finite sentinel
+  and uses `0.0`; a log does not, and `0.0` there would be indistinguishable from a book whose
+  touch is one tick wide — the ambiguity [15 S3-14](15_findings_and_recommendations.md) is about.
+
+Covered by `test_info_dict.py` (18 tests): back-compat of the original three, the terms summing
+exactly, penalties matching coefficient × counter, the counters being read *before*
+`set_step_outputs` zeroes them, `spread` on a one-sided book, and the whole dict surviving
+`json.dumps`.
+
 ---
 
 ## 2. What is not logged but should be
@@ -217,10 +259,11 @@ or aggregated into a metric worth alerting on.
 
 ### 2.2 Environment and market data
 
+`last_price` and the bid-ask spread are **done** — both are in the per-step `info` dict (§1.7),
+alongside `best_bid` and `best_ask`. What is still missing:
+
 | Missing | Why it matters |
 |---|---|
-| Last traded price per step | The central price signal; needed to reconstruct the price series |
-| Bid-ask spread | Key market-quality metric |
 | Order book depth per level | Liquidity analysis |
 | Market / limit / modify / cancel action counts per episode | Reveals strategy evolution |
 | Count of `category=0` (do-nothing) actions | **Directly detects the passivity collapse predicted by S1-3** |
@@ -228,22 +271,26 @@ or aggregated into a metric worth alerting on.
 
 ### 2.3 Agent and account state
 
-| Missing | Why it matters |
-|---|---|
-| Per-agent drawdown, current and max | The reward uses `max_nav − nav` but never logs it |
-| Per-agent `net_position` at episode end | Reveals held inventory risk |
-| Per-agent `VWAP` | Average fill quality |
-| Per-agent `cash_on_hold` | How much capital is locked in open orders |
-| `order_step_placed`, `num_passive_fills_step` | Reward sub-components computed, consumed, then zeroed |
-| Passive fill ratio | Distinguishes market-making from taking |
+**Done** — all of these are in the per-step `info` dict (§1.7): current `drawdown` and `max_nav`,
+`net_position` (every step, not only at episode end), `VWAP`, `cash`, `cash_on_hold`,
+`position_val`, and the three per-step counters `order_step_placed`, `num_passive_fills_step` and
+`num_trades_step`, read before `set_step_outputs` zeroes them.
+
+Passive fill ratio is not emitted as its own field: it is exactly
+`num_passive_fills_step / num_trades_step`, and both are now logged, so deriving it needs no
+further instrumentation. A field would only add a division-by-zero convention to argue about.
 
 ### 2.4 Reward decomposition
 
-None of the five terms is logged individually — `nav_term`, order penalty, trade penalty,
-drawdown penalty, passive bonus. The largest reward driver is invisible, and there is no way to
-detect over- or under-trading, risk-aversion learning, or market-making uptake from the logs. It
-also makes the tuning guidance in [07_reward_function.md](07_reward_function.md) §6.4
-unmeasurable without adding instrumentation first.
+**Done.** All five terms — `nav_term`, order penalty, trade penalty, drawdown penalty, passive
+bonus — are in `info["reward_terms"]` as signed contributions that sum exactly to `reward`
+(§1.7). The variance split in [07_reward_function.md](07_reward_function.md) §6.4 is measurable
+from the per-step record without further instrumentation, as is over- or under-trading,
+risk-aversion learning and market-making uptake.
+
+What remains is *aggregation*: the terms are per step and per agent, so a per-episode variance
+share is a reduction a consumer still has to perform. Doing that through `metrics_logger` is
+[15](15_findings_and_recommendations.md) Phase 4 item 15.
 
 ### 2.5 League and self-play state
 

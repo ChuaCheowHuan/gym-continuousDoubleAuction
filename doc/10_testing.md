@@ -65,7 +65,7 @@ Counts re-measured with `--collect-only`; the earlier `90` predated the config a
 | `test_observation_history.py` | 3 | Temporal stacking |
 | `test_obs_market_features.py` | 17 | `log_mid`, `log1p_spread_ticks` |
 | `test_reward_logic.py` | 4 | Reward formula components |
-| `test_nav_callback.py` | 6 | Episode-end NAV conservation check: raises, tolerance, metric, strict off |
+| `test_nav_callback.py` | 8 | Episode-end NAV conservation check: raises, tolerance, metric, strict off, exactness at a scale `float` cannot resolve |
 | `test_logging_setup.py` | 10 | Level resolution and export, handler setup, no `print` in `envs/` or `train/` |
 | `test_probabilistic_mapping.py` | 1 | League matchmaking distribution |
 | `test_config_loading.py` | 15 | `train_config.json` → `TrainConfig` → env |
@@ -75,7 +75,8 @@ Counts re-measured with `--collect-only`; the earlier `90` predated the config a
 | `test_checkpointing.py` | 50 | Checkpoint retention, restore selection, league state across a save |
 | `test_champion_trigger.py` | 6 | League statistics with modules that played no episodes |
 | `test_progress_log.py` | 19 | `progress.jsonl` writer, numpy/NaN handling, `vf_explained_var` extraction |
-| **unit total** | **253** | |
+| `test_info_dict.py` | 18 | Per-step `info`: back-compat, reward terms summing exactly, live counters, spread, JSON |
+| **unit total** | **273** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported and finite (1 xfail pins S1-1) |
