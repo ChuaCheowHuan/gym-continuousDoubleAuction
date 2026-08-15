@@ -412,7 +412,76 @@ corrections in [README.md](../README.md).
 
 ---
 
-## 16.10 Reproducing these probes
+## 16.10 NAV conservation is exact; the `float()` round trip went blind above `init_cash` 1e10
+
+The episode-end check used to parse `info["NAV"]` — the exact `str()` of a `Decimal` — back with
+`float()`. Three probes, run to decide whether that round trip was doing any harm and whether
+`nav_tolerance` was absorbing it as the config note claimed.
+
+**Probe A — 300-step rollout, 4 agents, `init_cash = 1,000,000`, uniformly random actions.**
+Comparing, at every step, the sum of agent NAVs against `init_cash × 4`:
+
+```
+steps compared: 300
+  exactly conserved under Decimal: 300/300
+  exactly conserved under float  : 300/300
+```
+
+Conservation is exact under *both* readings. Individual NAVs do carry long fractional tails —
+the Decimal residual prints as `0E-21`, i.e. an exact zero at 21 decimal places of scale — but
+they cancel.
+
+**Probe B — scale sweep, `init_cash` from `1e6` to `1e15`,** measuring how far the float reading
+of the NAV sum falls from the Decimal one:
+
+```
+init_cash=1e6   reading differs by 2.8e-20    breaches 1e-6 = False
+init_cash=1e7   reading differs by 4.0e-20    breaches 1e-6 = False
+init_cash=1e8 … 1e15  reading differs by 0    breaches 1e-6 = False
+```
+
+The float error cancels because `total_nav` and `total_initial_cash` were computed at the same
+magnitude, so the subtraction removes the common rounding. On these two probes alone the round
+trip looks harmless — which is why the third probe matters.
+
+**Probe C — detection, not representation.** Inject a *genuine* breach of `2e-6` (just over
+`nav_tolerance`) and ask which reading still sees it:
+
+```
+init_cash=1e6   decimal_detects=True   float_detects=True   (float read 2.00002e-06)
+init_cash=1e7   decimal_detects=True   float_detects=True   (float read 1.99676e-06)
+init_cash=1e8   decimal_detects=True   float_detects=True   (float read 2.02656e-06)
+init_cash=1e9   decimal_detects=True   float_detects=True   (float read 1.90735e-06)
+init_cash=1e10  decimal_detects=True   float_detects=False  (float read 0)
+init_cash=1e11  decimal_detects=True   float_detects=False  (float read 0)
+init_cash=1e12  decimal_detects=True   float_detects=False  (float read 0)
+```
+
+**Conclusion.** Two things, and the second is the one that justifies the change.
+
+1. At the default `init_cash = 1e6` the round trip was harmless, and `nav_tolerance` was **not**
+   absorbing arithmetic noise — the justification given in `train_config.json` and
+   [11 §1.5](11_logging_and_observability.md) was wrong on that point, and both are corrected.
+2. **Above `init_cash ≈ 1e10` the float check could not resolve its own tolerance.** A real
+   quarter-dollar of destroyed cash at `init_cash = 1e15` reads as exactly `0.0`; float's spacing
+   there is `0.5`. The check would pass a corrupt ledger silently — the precise failure
+   `strict_nav_check` exists to prevent. Note also that even where detection succeeds, the float
+   *reading* is off (`1.90735e-06` for a true `2e-06`), so the `nav_conservation_error` metric was
+   already imprecise at `1e9`.
+
+The check is now `Decimal` end to end: exact by construction rather than by a cancellation that
+happens to hold at one account size, with an expected error of `0` that `nav_tolerance` may be set
+to `0` to enforce. `float()` survives only at the metrics boundary, which reduces with NumPy.
+The default configuration was ~4 orders of magnitude from the cliff, so no existing run was
+affected.
+
+**Supports:** the correction to S3-9 in
+[15_findings_and_recommendations.md](15_findings_and_recommendations.md), and
+[11 §1.5](11_logging_and_observability.md).
+
+---
+
+## 16.11 Reproducing these probes
 
 The rollout probes (16.3–16.6) are a single self-contained script that imports
 `continuousDoubleAuctionEnv` directly. The training probe (16.7) builds a real `Algorithm`

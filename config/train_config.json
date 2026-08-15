@@ -53,7 +53,7 @@
   },
 
   "league_self_play": {
-    "_note": "nav_tolerance is the absolute cash tolerance for the episode-end NAV conservation check: the ledger is Decimal end to end, so conservation holds to the cent and the tolerance only absorbs the float() round trip through the info dict. Widen it only for a change that legitimately removes cash from the system, such as fees. strict_nav_check true raises on a violation, because a broken conservation invariant means the ledger is corrupt and everything trained after it is meaningless; false downgrades it to an ERROR log plus the nav_conservation_error metric, for a run that would rather keep going and be inspected afterwards.",
+    "_note": "nav_tolerance is the absolute cash tolerance for the episode-end NAV conservation check. The ledger is Decimal end to end and the check now parses info['NAV'] back with Decimal rather than float, so conservation is exact by construction and the expected error is 0, not merely small. The tolerance is therefore headroom for a change that legitimately removes cash from the system, such as fees - it is not absorbing arithmetic noise. Widen it for such a change; it can be set to 0 for a run that wants the invariant enforced exactly. strict_nav_check true raises on a violation, because a broken conservation invariant means the ledger is corrupt and everything trained after it is meaningless; false downgrades it to an ERROR log plus the nav_conservation_error metric, for a run that would rather keep going and be inspected afterwards.",
 
     "std_dev_multiplier": 0.1,
     "max_champions": 8,

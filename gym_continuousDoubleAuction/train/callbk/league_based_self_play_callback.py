@@ -1,4 +1,5 @@
 from collections import defaultdict
+from decimal import Decimal
 
 import logging
 import numpy as np
@@ -285,7 +286,12 @@ class SelfPlayCallback(RLlibCallback):
             init_cash = env.init_cash
             num_agents = getattr(env, "num_of_agents", num_agents)
 
-        total_initial_cash = float(init_cash) * num_agents
+        # Decimal, not float, all the way through the check: the ledger is
+        # Decimal end to end and `info["NAV"]` is its exact `str()`, so parsing
+        # it back with Decimal makes the comparison exact. Going through float
+        # would reintroduce, at the last step, precisely the representation
+        # error the account type exists to avoid.
+        total_initial_cash = Decimal(str(init_cash)) * num_agents
 
         logger.debug(
             "episode %s parameters: env=%s env_runner=%s init_cash=%s "
@@ -296,24 +302,33 @@ class SelfPlayCallback(RLlibCallback):
 
         last_info = episode.get_infos(-1)
 
-        total_nav = 0.0
+        total_nav = Decimal(0)
         per_agent = []
         for i in range(num_agents):
             agent_key = f"agent_{i}"
             if agent_key in last_info:
-                nav = float(last_info[agent_key].get("NAV", "0"))
+                nav = Decimal(last_info[agent_key].get("NAV", "0"))
                 total_nav += nav
                 per_agent.append(f"  {agent_key} NAV: {nav:,.2f}")
 
         error = total_nav - total_initial_cash
-        conserved = abs(error) < self.nav_tolerance
+        # Inclusive: with the comparison exact, "within tolerance" includes the
+        # boundary, which is what makes nav_tolerance=0 mean "conservation must
+        # be exact" rather than "every episode is a violation". At the default
+        # 1e-6 the two forms differ only on an error of exactly 1e-6.
+        conserved = abs(error) <= self.nav_tolerance
 
         # The metric goes out whether or not the invariant held, so a run has a
         # series to look at rather than only the moment it broke. window=1
         # keeps it per-iteration rather than smoothed - an error that appears
         # in one episode out of many must not be averaged away.
         if metrics_logger:
-            metrics_logger.log_value("nav_conservation_error", abs(error), window=1)
+            # float() only at the boundary: the metrics stack reduces with
+            # NumPy and will not take a Decimal. The check above has already
+            # been decided exactly by this point.
+            metrics_logger.log_value(
+                "nav_conservation_error", float(abs(error)), window=1
+            )
 
         report = "\n".join(
             [f"Episode {episode.id_} NAV verification"]

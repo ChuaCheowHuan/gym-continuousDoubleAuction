@@ -114,12 +114,17 @@ end to end, so trading moves cash and never creates it. This was a good idea imp
 
 ```python
 if metrics_logger:
-    metrics_logger.log_value("nav_conservation_error", abs(error), window=1)
+    metrics_logger.log_value("nav_conservation_error", float(abs(error)), window=1)
 if not conserved:
     logger.error(message)
     if self.strict_nav_check:
         raise AssertionError(message)
 ```
+
+The check is **`Decimal` end to end**. `info["NAV"]` is the exact `str()` of a `Decimal`
+(§2.6), so it is parsed back with `Decimal`, and `total_initial_cash` is built as a `Decimal`
+too; `float()` is applied only where the value leaves for the metrics stack, which reduces with
+NumPy and will not take a `Decimal`. The comparison that decides the raise is therefore exact.
 
 * The **metric goes out either way**, so a run has a series to inspect rather than only the moment
   it broke. `window=1` keeps it per-iteration: an error in one episode out of many must not be
@@ -128,10 +133,17 @@ if not conserved:
   every reward computed from NAV afterwards is meaningless, so the run stops. Set it false in
   `train_config.json`, or pass `--no-strict-nav-check`, for a run that would rather finish and be
   inspected afterwards; the ERROR log and the metric still happen.
-* **`nav_tolerance`** (default `1e-6`) absorbs the `float()` round trip through the info dict
-  (§2.6), nothing larger. Widen it only for a change that legitimately removes cash from the
-  system, such as fees - see [13_perspective_financial_trader.md](13_perspective_financial_trader.md)
-  §4.
+* **`nav_tolerance`** (default `1e-6`) is headroom for a change that legitimately removes cash
+  from the system, such as fees - see
+  [13_perspective_financial_trader.md](13_perspective_financial_trader.md) §4. It is **not**
+  absorbing arithmetic noise: with the check exact, the expected error is `0`, and the tolerance
+  can be set to `0` to enforce that — the comparison is `abs(error) <= nav_tolerance`, inclusive,
+  so `0` means "conservation must be exact" rather than "every episode is a violation". At the
+  default the inclusive and exclusive forms differ only on an error of exactly `1e-6`.
+  The `float()` round trip it was previously credited with
+  absorbing was harmless at the default `init_cash` — but above `init_cash ≈ 1e10` it made the
+  check unable to resolve this very tolerance, passing corrupt ledgers silently. See
+  [16 §16.10](16_verification_log.md).
 
 Covered by `test_nav_callback.py` (6 tests): conservation passes and logs a zero error, a
 violation raises under the default, the metric is emitted before the raise, non-strict logs ERROR
