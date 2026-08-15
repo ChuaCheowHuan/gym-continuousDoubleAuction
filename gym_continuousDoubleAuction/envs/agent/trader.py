@@ -95,9 +95,14 @@ class Trader(Random_agent):
 
         else: # not enough cash to place order
             #print('Invalid order: order value > cash available.', self.ID)
-            
+
             # print("\nOrder NOT approved: -ve NAV for trader_ID {}.\n".format(self.ID))
 
+            # A refusal used to leave no trace at all: the agent asked to trade
+            # and the book never heard about it. Counted so the rejection rate
+            # is measurable - a policy quoting past its cash every step looks
+            # identical to a passive one from returns alone (doc/11 2.2).
+            self.acc.num_rejected_step += 1
             return trades, order_in_book
 
     def _order_approved(self, side, size, price, LOB):

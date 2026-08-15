@@ -321,9 +321,15 @@ Episode 12345 Started - Policy Map:
 | `league_mean_return` | Mean module return across the league | 10 |
 | `league_std_return` | Std dev of module returns | 10 |
 | `nav_conservation_error` | `abs(total NAV − total initial cash)`; per *episode*, not per iteration | 1 |
+| `pass_action_fraction` | Share of agent-steps that chose to do nothing; per *episode* | 10 |
+| `order_rejection_fraction` | Share of agent-steps whose order was refused for want of cash; per *episode* | 10 |
 
-**Four metrics is the entirety of what reaches RLlib's structured logger.** Still absent: NAV
+**Six metrics is the entirety of what reaches RLlib's structured logger.** Still absent: NAV
 distribution, drawdown, trade counts, maker/taker ratio, champion promotions.
+
+`pass_action_fraction` is the one to watch against this document's own warning: a league whose
+policies collapse to always-pass still clears the promotion threshold, because 0 beats a negative
+mean. Returns will not show it; this will.
 
 `vf_explained_var` is no longer among them, but it is not lost either: it is in the per-iteration
 log line and, with every other value RLlib computes, in `progress.jsonl`. That is the general

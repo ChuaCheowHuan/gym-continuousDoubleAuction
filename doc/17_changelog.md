@@ -798,3 +798,54 @@ the `tmp_path` they point into, and `$CDA_LOG_DIR` is restored, since `configure
 and a leaked value would make the next test write into a directory that no longer exists.
 
 See [11 §1.9](11_logging_and_observability.md).
+
+---
+
+## 22. Two behaviours a return series cannot tell apart
+
+An agent that stops trading looks the same in its returns whether it *chose* to pass or whether
+every order it sent was refused for want of cash. Both produce a flat, unremarkable line, and
+nothing recorded could separate them.
+
+The first case is **S1-1's companion, S1-3**. `entropy_coeff` is 0.0, so policies can collapse to
+always-pass, and a do-nothing policy still clears the champion promotion threshold because 0 beats
+a negative league mean. The pool then fills with snapshots of the do-nothing policy while the
+returns series looks ordinary. [11 §2.2](11_logging_and_observability.md) has listed the
+`category=0` count as "**directly detects** the passivity collapse predicted by S1-3" since the
+audit; it was still not counted.
+
+The second is a policy quoting past its cash. `order_step_placed` cannot express it: that flag is
+`0` both for an agent that never tried and for one whose order was refused, which are opposite
+behaviours.
+
+**Both are now metrics** — `pass_action_fraction` and `order_rejection_fraction`, per episode,
+`window=10` (§1.2). The custom-metric count goes from four to six.
+
+Two details worth recording.
+
+**The pass flag is set where the encoding lives.** `is_pass_action` is written in `set_actions`,
+beside `_CATEGORY_MAP`, rather than derived by a consumer from `category == 0` — a reader of `info`
+should not have to know the action encoding to ask whether an agent passed. `test_info_dict.py`
+cross-checks that the flag and the encoding agree, over every agent-step of a real episode; they
+did, 200 of 200.
+
+**A counter that never fires is indistinguishable from a broken one.** The first run of the
+rejection counter reported 0 across 200 agent-steps, which proves nothing — at `init_cash=1e6`
+every order is affordable. Re-run at `init_cash=500` it reported 151 of 200, and that case is now
+a test, so the counter is known to be able to fire rather than assumed to be.
+
+The tally is a plain dict keyed by episode ID, not a `defaultdict` with a lambda factory: this
+callback is cloudpickled into every checkpoint, and a lambda default_factory is exactly the kind of
+thing that passes every local test and fails on a restore path nobody exercised. There is a test
+that pickles the callback mid-episode. It is also counted independently of the per-episode pickle
+store, since `episode_data_dir=None` is a supported configuration and these metrics must not
+depend on that dump being switched on.
+
+**[verified]** on a real 2-iteration run: `pass_action_fraction` reported `0.122` and `0.130`,
+consistent with 1 of 9 action categories being the pass code for near-uniform untrained policies.
+
+This also makes [11 §4](11_logging_and_observability.md)'s recommendation list accurate again.
+Item 3 is done; items 1, 2 and 4 turn out to be half done in the same way — the reward
+sub-components, the per-agent account state and the market price and spread are all captured in
+`info` but none is reduced into a metric. That is the shape of what remains: capture is good,
+aggregation is six metrics.

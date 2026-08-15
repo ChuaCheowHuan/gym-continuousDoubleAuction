@@ -49,17 +49,33 @@ Two further notes:
 | Metric | Value | Window | Emitted in |
 |---|---|---|---|
 | `nav_conservation_error` | `abs(total NAV − total initial cash)`, as a float | 1 | `on_episode_end` |
+| `pass_action_fraction` | Share of agent-steps where the agent chose `category=0` | 10 | `on_episode_end` |
+| `order_rejection_fraction` | Share of agent-steps where an order was refused for want of cash | 10 | `on_episode_end` |
 | `league_size` | `num_trainable + num_random + champion_count` | 1 | `on_train_result` |
 | `league_mean_return` | Mean module return across the league | 10 | `on_train_result` |
 | `league_std_return` | Std dev of module returns | 10 | `on_train_result` |
 
-**Four metrics** is the entirety of what reaches RLlib's structured logger, alongside RLlib's
+**Six metrics** is the entirety of what reaches RLlib's structured logger, alongside RLlib's
 own built-ins.
 
-Three are per *iteration*, from `on_train_result`. `nav_conservation_error` is per *episode*, from
-`on_episode_end`, which is why its window is 1: an error in one episode out of many must not be
-averaged away (§1.5). It is also the only one of the four emitted on the env runners rather than
-the driver.
+The split matters. The three `on_train_result` metrics are per *iteration* and are emitted on the
+driver. The three `on_episode_end` ones are per *episode* and are emitted **on the env runners**,
+which is where the episode hooks run. `nav_conservation_error` keeps `window=1` because an error in
+one episode out of many must not be averaged away (§1.5); the two activity fractions use
+`window=10`, matching the league metrics, because a single episode's fraction is noisy and the
+question they answer is the trend.
+
+**Why the two activity fractions exist.** They separate the two behaviours a return series cannot
+tell apart. An agent that stops trading looks identical in its returns whether it *chose* to pass
+or whether every order it sent was refused. The first is S1-3: `entropy_coeff` is 0.0, policies can
+collapse to always-pass, and such a policy still clears the champion promotion threshold because 0
+beats a negative league mean — so the pool fills with do-nothing snapshots while the returns series
+looks unremarkable. `pass_action_fraction` trending to 1.0 states it outright. The second is a
+policy quoting past its cash; `order_step_placed` cannot express it, being 0 both for an agent that
+never tried and for one whose order was refused.
+
+**[verified]** on a real 2-iteration run: `pass_action_fraction` reported `0.122` and `0.130`,
+consistent with 1 of 9 action categories being the pass code for near-uniform untrained policies.
 
 ### 1.3 Logging (stdout and a run log, filterable)
 
@@ -211,7 +227,8 @@ is not settled here.
 
 | Group | Fields |
 |---|---|
-| Account (§2.3) | `net_position`, `VWAP`, `cash`, `cash_on_hold`, `position_val`, `drawdown`, `max_nav`, `num_trades_step`, `num_passive_fills_step`, `order_step_placed` |
+| Account (§2.3) | `net_position`, `VWAP`, `cash`, `cash_on_hold`, `position_val`, `drawdown`, `max_nav`, `num_trades_step`, `num_passive_fills_step`, `order_step_placed`, `num_rejected_step` |
+| Activity (§2.2) | `is_pass_action` — did this agent choose to do nothing this step |
 | Market (§2.2) | `last_price`, `best_bid`, `best_ask`, `spread` |
 | Reward (§2.4) | `reward_terms`: `nav_term`, `order_penalty`, `trade_penalty`, `drawdown_penalty`, `passive_bonus` |
 | Action | `model_action` — as the model emitted it, before `set_actions` reshapes it for the book |
@@ -376,12 +393,16 @@ or aggregated into a metric worth alerting on.
 `last_price` and the bid-ask spread are **done** — both are in the per-step `info` dict (§1.7),
 alongside `best_bid` and `best_ask`. What is still missing:
 
+The do-nothing count and the rejection rate are **done**, and are metrics rather than only
+fields: `is_pass_action` and `num_rejected_step` per agent-step in `info`, aggregated into
+`pass_action_fraction` and `order_rejection_fraction` (§1.2). The pass flag is set where
+`_CATEGORY_MAP` lives, so a reader of `info` does not need to know that `category=0` means pass;
+`test_info_dict.py` cross-checks the two agree.
+
 | Missing | Why it matters |
 |---|---|
 | Order book depth per level | Liquidity analysis |
-| Market / limit / modify / cancel action counts per episode | Reveals strategy evolution |
-| Count of `category=0` (do-nothing) actions | **Directly detects the passivity collapse predicted by S1-3** |
-| Order rejection / no-op rate | Signals cash constraints or blind modify/cancel actions ([04](04_accounting.md) §3) |
+| Market / limit / modify / cancel action counts per episode | Reveals strategy evolution — the *pass* share is now covered, the breakdown across the other four types is not |
 
 ### 2.3 Agent and account state
 
@@ -459,15 +480,26 @@ metrics_logger.log_value("pass_action_fraction", n_pass / n_actions, window=10)
 metrics_logger.log_value("vf_explained_var", ...,  window=1)
 ```
 
-Highest-value additions, in order:
+Item 3 is **done** — `pass_action_fraction` and `order_rejection_fraction` are metrics (§1.2).
 
-1. **Log reward sub-components** into `metrics_logger` from `on_episode_step` / `on_episode_end`.
-2. **Log per-agent final account state** — NAV, position, drawdown, VWAP — at episode end.
-3. **Log the do-nothing action fraction and the order rejection rate**, so passivity collapse and
-   blind modify/cancel actions become measurable.
-4. **Export market price and spread** into the info dict — already in env state, just not
-   surfaced.
+Items 1, 2 and 4 are **half done, and the half that is missing is the same one in each case**: the
+reward sub-components, the per-agent account state, and the market price and spread are all
+captured per step in `info` (§1.7), but none is reduced into a `metrics_logger` value. The data
+exists; nothing aggregates it. That is the shape of what is left across this whole document —
+capture is now good, aggregation is four league-and-NAV metrics plus the two above.
+
+What remains, in order:
+
+1. **Reduce the reward sub-components into metrics** from `on_episode_end`, so the variance split
+   [07](07_reward_function.md) §6.4 prescribes is watchable during a run rather than computed
+   afterwards from `progress.jsonl`.
+2. **Reduce per-agent end-of-episode account state** — NAV, position, drawdown, VWAP — the same
+   way.
+3. **Surface the §2.1 training metrics** (`vf_loss` vs unclipped, KL, clip fraction, per-policy
+   reward spread, throughput) in the iteration log line. All are already in `progress.jsonl`.
+4. **League state** (§2.5): champion promotion as a metric rather than a log line, per-champion
+   win rate, time since last snapshot — the last of these is already computed in
+   `_should_create_champion` and discarded.
 5. **Per-episode desk metrics** (Sharpe, max drawdown, turnover, maker ratio, inventory) through
-   `metrics_logger`, so they land in TensorBoard alongside returns. The `on_episode_end` hook
-   already has everything it needs. See
+   `metrics_logger`. The `on_episode_end` hook already has everything it needs. See
    [13_perspective_financial_trader.md](13_perspective_financial_trader.md) §7.

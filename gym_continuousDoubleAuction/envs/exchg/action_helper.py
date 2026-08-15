@@ -155,10 +155,20 @@ class Action_Helper():
         """
 
         acts = []
+        # Which agents chose to do nothing this step. Recorded here rather than
+        # derived by a consumer from `category == 0`, because _CATEGORY_MAP is
+        # what defines that and it lives in this module: a reader of `info`
+        # should not have to know the action encoding to ask "did this agent
+        # pass?". This is the S1-3 detector - a league whose policies collapse
+        # to always-pass still clears the promotion threshold, since 0 beats a
+        # negative mean, so the collapse is invisible from returns (doc/11 2.2).
+        self.pass_agents = set()
         for key, value in model_outs.items():
             act = self._set_action_mkt_depth(key, value)
             if act.get("side") is not None:
                 acts.append(act)
+            else:
+                self.pass_agents.add(key)
 
         return acts
 

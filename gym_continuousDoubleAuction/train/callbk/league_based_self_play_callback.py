@@ -143,6 +143,70 @@ class SelfPlayCallback(RLlibCallback):
         # `on_episode_end` reset the shared list to None.
         self.store = defaultdict(list)
 
+        # Per-episode activity tallies, keyed by episode ID like `store`, so
+        # concurrent episodes under a vectorised runner cannot mix.
+        #
+        # A plain dict, not defaultdict(lambda: ...): this callback is
+        # cloudpickled into every checkpoint, and a lambda default_factory is
+        # the kind of thing that survives locally and fails on a restore path
+        # nobody exercised. Three ints per live episode - the memory is nothing
+        # next to `store`.
+        self._activity = {}
+
+
+    def _log_activity(self, episode, metrics_logger) -> None:
+        """Emit the episode's pass and rejection fractions, then drop the tally.
+
+        `pass_action_fraction` is the metric S1-3 needs. A league whose policies
+        collapse to always-pass still clears the promotion threshold, because 0
+        beats a negative mean, so the pool fills with snapshots of the
+        do-nothing policy and the returns series looks unremarkable while it
+        happens. A fraction trending to 1.0 says it outright.
+
+        `order_rejection_fraction` separates the other case returns cannot
+        distinguish: an agent that is not trading because it chose not to, from
+        one whose every order is refused for want of cash.
+
+        Fractions rather than counts, so the numbers mean the same thing at any
+        `num_agents` or `max_step`. window=10 matches the league metrics: a
+        single episode's fraction is noisy, and the question is the trend.
+        """
+        tally = self._activity.pop(episode.id_, None)
+        if not tally or not metrics_logger:
+            return
+
+        agent_steps = tally["agent_steps"]
+        if agent_steps <= 0:
+            # An episode reporting no agent infos at all. Emitting 0.0 here
+            # would read as "nothing passed", which is a claim about behaviour
+            # this episode gives no evidence for.
+            return
+
+        pass_fraction = tally["passes"] / agent_steps
+        rejection_fraction = tally["rejections"] / agent_steps
+
+        metrics_logger.log_value("pass_action_fraction", pass_fraction, window=10)
+        metrics_logger.log_value(
+            "order_rejection_fraction", rejection_fraction, window=10
+        )
+
+        logger.debug(
+            "episode %s activity: %s agent-steps, %.1f%% pass, %.1f%% rejected",
+            episode.id_, agent_steps, 100 * pass_fraction,
+            100 * rejection_fraction,
+        )
+
+    def _activity_for(self, episode_id) -> dict:
+        """The tally for this episode, created if the start hook missed it.
+
+        `on_episode_start` is not guaranteed to have run for every episode a
+        worker reports on - a restored run picks up mid-flight - and a counter
+        that raises KeyError would take down training for the sake of a metric.
+        """
+        return self._activity.setdefault(
+            episode_id, {"agent_steps": 0, "passes": 0, "rejections": 0}
+        )
+
 
     def on_episode_start(
         self,
@@ -184,6 +248,9 @@ class SelfPlayCallback(RLlibCallback):
             logger.debug("episode %s started, policy map: %s", episode.id_, mapping)
 
         self.store[episode.id_] = []
+        self._activity[episode.id_] = {
+            "agent_steps": 0, "passes": 0, "rejections": 0,
+        }
 
     def on_episode_step(
         self,
@@ -236,6 +303,19 @@ class SelfPlayCallback(RLlibCallback):
         }
         self.store[episode.id_].append(step_data)
 
+        # Tally activity as the episode runs. Counted here rather than from
+        # `store` at episode end because `store` is only populated when
+        # episode_data_dir is set, and these metrics must not depend on the
+        # pickle dump being switched on.
+        tally = self._activity_for(episode.id_)
+        for agent_info in (last_info or {}).values():
+            if not isinstance(agent_info, dict):
+                continue
+            tally["agent_steps"] += 1
+            if agent_info.get("is_pass_action"):
+                tally["passes"] += 1
+            tally["rejections"] += int(agent_info.get("num_rejected_step", 0) or 0)
+
     def on_episode_end(
         self,
         *,
@@ -262,6 +342,8 @@ class SelfPlayCallback(RLlibCallback):
 
         # Always release the memory, whether or not we wrote it out.
         self.store.pop(episode.id_, None)
+
+        self._log_activity(episode, metrics_logger)
 
         # Try to get parameters from different possible sources. The starting
         # points are the env's own fallback for init_cash and the league size
