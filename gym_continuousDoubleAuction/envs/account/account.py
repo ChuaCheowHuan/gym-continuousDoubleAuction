@@ -38,7 +38,10 @@ class Account(Calculate, Cash_Processor):
         # The reward used to be a single number with its five components
         # discarded the moment it was summed, which is what made the variance
         # split in doc/07 6.4 unmeasurable. See doc/11 2.4.
-        self.drawdown = Decimal(0) # max_nav - nav, the level the penalty uses
+        # float, not Decimal(0): set_reward stores float(max(0, max_nav - nav)),
+        # so initialising this as a Decimal would make the field change type on
+        # the first step - the same defect net_position and VWAP already have.
+        self.drawdown = 0.0 # max_nav - nav, the level the penalty uses
         self.reward_terms = {} # signed contributions, summing to self.reward
 
     def reset_acc(self, ID, cash=env_default("init_cash")):
@@ -66,7 +69,7 @@ class Account(Calculate, Cash_Processor):
         self.order_step_placed = 0
 
         # See __init__ for what these are and why they exist.
-        self.drawdown = Decimal(0)
+        self.drawdown = 0.0
         self.reward_terms = {}
 
     def print_acc(self, msg):
