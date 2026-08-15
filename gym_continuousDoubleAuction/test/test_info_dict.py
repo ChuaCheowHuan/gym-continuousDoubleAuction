@@ -306,3 +306,74 @@ class TestSerialisation:
         assert _plain("1000.5") == "1000.5"
         assert _plain(None) is None
         assert _plain(3) == 3
+
+
+class TestActivityFields:
+    """doc/11 2.2: the two things a return series cannot distinguish."""
+
+    def test_both_fields_are_present(self, stepped_env):
+        _, infos, _, _ = stepped_env
+        for i in range(NUM_AGENTS):
+            info = infos[f"agent_{i}"]
+            assert isinstance(info["is_pass_action"], bool)
+            assert isinstance(info["num_rejected_step"], int)
+
+    def test_is_pass_action_agrees_with_the_category_encoding(self, stepped_env):
+        """The flag exists so a reader of `info` need not know that category 0
+        means pass - _CATEGORY_MAP owns that. It must still agree with it.
+        """
+        _, _, _, every_info = stepped_env
+        checked = 0
+        for infos in every_info:
+            for i in range(NUM_AGENTS):
+                info = infos[f"agent_{i}"]
+                category = info.get("model_action", {}).get("category")
+                if category is None:
+                    continue
+                checked += 1
+                assert info["is_pass_action"] == (category == 0), (
+                    f"agent_{i}: is_pass_action={info['is_pass_action']} but "
+                    f"category={category}"
+                )
+        assert checked, "no model actions were available to cross-check"
+
+    def test_passing_is_observed_at_all(self, stepped_env):
+        """Uniform random actions over the category space should pass sometimes;
+        a flag that is never True would be indistinguishable from a broken one.
+        """
+        _, _, _, every_info = stepped_env
+        assert any(
+            infos[f"agent_{i}"]["is_pass_action"]
+            for infos in every_info for i in range(NUM_AGENTS)
+        )
+
+    def test_rejections_are_counted_when_cash_runs_out(self):
+        """The counter must be able to fire. With init_cash this small most
+        orders cannot be afforded, so refusals are the common case - measured at
+        151 of 200 agent-steps when this was written.
+        """
+        env = continuousDoubleAuctionEnv({
+            "num_of_agents": NUM_AGENTS,
+            "init_cash": 500,
+            "tick_size": 1,
+            "tape_display_length": 10,
+            "max_step": 60,
+        })
+        env.reset()
+        rejections = 0
+        for _ in range(30):
+            actions = {
+                f"agent_{i}": env.action_spaces[f"agent_{i}"].sample()
+                for i in range(NUM_AGENTS)
+            }
+            _, _, terminateds, truncateds, infos = env.step(actions)
+            rejections += sum(
+                infos[f"agent_{i}"]["num_rejected_step"] for i in range(NUM_AGENTS)
+            )
+            if terminateds.get("__all__") or truncateds.get("__all__"):
+                break
+
+        assert rejections > 0, (
+            "no order was refused even at init_cash=500: num_rejected_step "
+            "would be a counter that is always 0"
+        )

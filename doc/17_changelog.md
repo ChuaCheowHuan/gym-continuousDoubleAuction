@@ -748,3 +748,104 @@ while `last_price` is a separate anchor consumed only by `_set_price`'s NumPy ar
 `info` is unaffected as a format, being a serialisation boundary where JSON has no `Decimal` —
 except that `net_position` is now a plain `int` rather than a `float()` cast that existed only to
 hide the account changing type underneath it.
+
+---
+
+## 21. The log outlives the terminal
+
+§18 gave the run a machine-readable history and §19 gave the step one. The log itself was still
+written only to stdout, so a finished run left its numbers on disk and its narrative in scrollback:
+the per-episode NAV tables, the league statistics, and the ERROR that immediately precedes a
+`strict_nav_check` raise. §17 records two GPU runs diagnosed exactly that way — after the fact,
+from a terminal buffer. There was one `addHandler` call in the package and it attached a
+`StreamHandler`.
+
+**Every process now writes a rotating log file under `log_base_dir`, beside `progress.jsonl`** —
+`run.log` from the driver, `run.<pid>.log` from each env runner. Bounded by `file_max_bytes` and
+`file_backup_count`, so it does not re-create the unbounded-growth problem [11 §3] lists for the
+episode pickles. A failure to open it warns rather than raising: instrumentation must not take
+down a run that is otherwise training, the same rule `_append_progress` follows.
+
+**One file per process is not a detail, and measuring it changed the design.** The first version
+wrote from the driver only, on the reasoning that `RotatingFileHandler` is unsafe across processes
+— two of them crossing the size threshold together rename and truncate the same file — and that
+Ray captures worker stdout anyway. A real two-runner run showed what that costs: the driver file
+held 7 lines and **not one NAV table**. The episode callbacks run on the env runners, so with
+`num_env_runners > 0` the NAV tables and the conservation ERROR are emitted in a worker and reach
+no file at all. Since the shipped runtime profiles use `num_env_runners=2`, driver-only logging
+would have missed precisely the lines that motivated the change. Per-process files keep them and
+sidestep the rotation race, since no two processes share an inode. `log_base_dir` reaches the
+workers through `$CDA_LOG_DIR`, the same channel the level already takes.
+
+**Timestamps carry the date.** `datefmt` was `"%H:%M:%S"`. A training run outlasts a day, so a
+time-only stamp cannot be ordered across midnight or joined to anything dated.
+
+**Log lines carry the training iteration.** `progress.jsonl` is keyed by iteration and the log was
+keyed by nothing, so relating the two meant matching on wall-clock order. Lines are now stamped
+`iter=<n>`, tracked in a `ContextVar` — per-thread, not a module global, since the driver loop may
+not be the only thread — and injected by a filter on the *handlers* rather than the logger, because
+a filter on the package logger never sees records propagating up from a child module. It reads `-`
+where the iteration is unknown, which is deliberate: `0` is a real iteration number.
+
+Being honest about the limit: with remote runners a worker's NAV table is dated, attributed and
+durable but reads `iter=-`. The worker does not know which iteration its episode belongs to.
+Recovering that means passing the iteration to the runners, which is a change to what RLlib hands
+the callbacks rather than a logging change.
+
+`test_logging_setup.py` grows from 10 tests to 29. Two isolation hazards the new ones introduced
+are handled in the fixture rather than left to luck: file handles are closed before pytest removes
+the `tmp_path` they point into, and `$CDA_LOG_DIR` is restored, since `configure` now exports it
+and a leaked value would make the next test write into a directory that no longer exists.
+
+See [11 §1.9](11_logging_and_observability.md).
+
+---
+
+## 22. Two behaviours a return series cannot tell apart
+
+An agent that stops trading looks the same in its returns whether it *chose* to pass or whether
+every order it sent was refused for want of cash. Both produce a flat, unremarkable line, and
+nothing recorded could separate them.
+
+The first case is **S1-1's companion, S1-3**. `entropy_coeff` is 0.0, so policies can collapse to
+always-pass, and a do-nothing policy still clears the champion promotion threshold because 0 beats
+a negative league mean. The pool then fills with snapshots of the do-nothing policy while the
+returns series looks ordinary. [11 §2.2](11_logging_and_observability.md) has listed the
+`category=0` count as "**directly detects** the passivity collapse predicted by S1-3" since the
+audit; it was still not counted.
+
+The second is a policy quoting past its cash. `order_step_placed` cannot express it: that flag is
+`0` both for an agent that never tried and for one whose order was refused, which are opposite
+behaviours.
+
+**Both are now metrics** — `pass_action_fraction` and `order_rejection_fraction`, per episode,
+`window=10` (§1.2). The custom-metric count goes from four to six.
+
+Two details worth recording.
+
+**The pass flag is set where the encoding lives.** `is_pass_action` is written in `set_actions`,
+beside `_CATEGORY_MAP`, rather than derived by a consumer from `category == 0` — a reader of `info`
+should not have to know the action encoding to ask whether an agent passed. `test_info_dict.py`
+cross-checks that the flag and the encoding agree, over every agent-step of a real episode; they
+did, 200 of 200.
+
+**A counter that never fires is indistinguishable from a broken one.** The first run of the
+rejection counter reported 0 across 200 agent-steps, which proves nothing — at `init_cash=1e6`
+every order is affordable. Re-run at `init_cash=500` it reported 151 of 200, and that case is now
+a test, so the counter is known to be able to fire rather than assumed to be.
+
+The tally is a plain dict keyed by episode ID, not a `defaultdict` with a lambda factory: this
+callback is cloudpickled into every checkpoint, and a lambda default_factory is exactly the kind of
+thing that passes every local test and fails on a restore path nobody exercised. There is a test
+that pickles the callback mid-episode. It is also counted independently of the per-episode pickle
+store, since `episode_data_dir=None` is a supported configuration and these metrics must not
+depend on that dump being switched on.
+
+**[verified]** on a real 2-iteration run: `pass_action_fraction` reported `0.122` and `0.130`,
+consistent with 1 of 9 action categories being the pass code for near-uniform untrained policies.
+
+This also makes [11 §4](11_logging_and_observability.md)'s recommendation list accurate again.
+Item 3 is done; items 1, 2 and 4 turn out to be half done in the same way — the reward
+sub-components, the per-agent account state and the market price and spread are all captured in
+`info` but none is reduced into a metric. That is the shape of what remains: capture is good,
+aggregation is six metrics.

@@ -71,7 +71,13 @@ class Info_Helper(object):
             "num_trades_step": acc.num_trades_step,
             "num_passive_fills_step": acc.num_passive_fills_step,
             "order_step_placed": acc.order_step_placed,
+            "num_rejected_step": acc.num_rejected_step,
         })
+
+        # Did this agent choose to do nothing this step? The two behaviours a
+        # return series cannot tell apart: passing, and quoting past your cash
+        # so that every order is refused.
+        info["is_pass_action"] = agent_key in getattr(self, "pass_agents", set())
 
         # Reward decomposition (doc/11 2.4). The five signed contributions that
         # sum to `reward`, so the variance split in doc/07 6.4 is measurable

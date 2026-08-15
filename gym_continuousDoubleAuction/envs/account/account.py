@@ -36,6 +36,11 @@ class Account(Calculate, Cash_Processor):
         self.num_trades_step = 0 # trades in current environment step
         self.num_passive_fills_step = 0 # passive executions in current step
         self.order_step_placed = 0 # 1 if a Market/Limit order was placed this step
+        # Orders refused by _order_approved this step. order_step_placed cannot
+        # stand in for this: it is 0 both for an agent that never tried and for
+        # one whose order was refused, and those are opposite behaviours - the
+        # second is an agent repeatedly quoting past its cash (doc/11 2.2).
+        self.num_rejected_step = 0
 
         # Written by Reward_Helper.set_reward each step, read by Info_Helper.
         # The reward used to be a single number with its five components
@@ -70,6 +75,7 @@ class Account(Calculate, Cash_Processor):
         self.num_trades_step = 0
         self.num_passive_fills_step = 0
         self.order_step_placed = 0
+        self.num_rejected_step = 0
 
         # See __init__ for what these are and why they exist.
         self.drawdown = 0.0

@@ -44,20 +44,40 @@ Two further notes:
   from an older version of `test_nav_callback.py`, not fixtures anything reads, and the suite no
   longer regenerates them.
 
-### 1.2 RLlib `metrics_logger` custom metrics (per training iteration)
+### 1.2 RLlib `metrics_logger` custom metrics
 
-**Where:** `on_train_result`.
+| Metric | Value | Window | Emitted in |
+|---|---|---|---|
+| `nav_conservation_error` | `abs(total NAV − total initial cash)`, as a float | 1 | `on_episode_end` |
+| `pass_action_fraction` | Share of agent-steps where the agent chose `category=0` | 10 | `on_episode_end` |
+| `order_rejection_fraction` | Share of agent-steps where an order was refused for want of cash | 10 | `on_episode_end` |
+| `league_size` | `num_trainable + num_random + champion_count` | 1 | `on_train_result` |
+| `league_mean_return` | Mean module return across the league | 10 | `on_train_result` |
+| `league_std_return` | Std dev of module returns | 10 | `on_train_result` |
 
-| Metric | Value | Window |
-|---|---|---|
-| `league_size` | `num_trainable + num_random + champion_count` | 1 |
-| `league_mean_return` | Mean module return across the league | 10 |
-| `league_std_return` | Std dev of module returns | 10 |
-
-**Three metrics** is the entirety of what reaches RLlib's structured logger, alongside RLlib's
+**Six metrics** is the entirety of what reaches RLlib's structured logger, alongside RLlib's
 own built-ins.
 
-### 1.3 Logging (stdout, filterable)
+The split matters. The three `on_train_result` metrics are per *iteration* and are emitted on the
+driver. The three `on_episode_end` ones are per *episode* and are emitted **on the env runners**,
+which is where the episode hooks run. `nav_conservation_error` keeps `window=1` because an error in
+one episode out of many must not be averaged away (§1.5); the two activity fractions use
+`window=10`, matching the league metrics, because a single episode's fraction is noisy and the
+question they answer is the trend.
+
+**Why the two activity fractions exist.** They separate the two behaviours a return series cannot
+tell apart. An agent that stops trading looks identical in its returns whether it *chose* to pass
+or whether every order it sent was refused. The first is S1-3: `entropy_coeff` is 0.0, policies can
+collapse to always-pass, and such a policy still clears the champion promotion threshold because 0
+beats a negative league mean — so the pool fills with do-nothing snapshots while the returns series
+looks unremarkable. `pass_action_fraction` trending to 1.0 states it outright. The second is a
+policy quoting past its cash; `order_step_placed` cannot express it, being 0 both for an agent that
+never tried and for one whose order was refused.
+
+**[verified]** on a real 2-iteration run: `pass_action_fraction` reported `0.122` and `0.130`,
+consistent with 1 of 9 action categories being the pass code for near-uniform untrained policies.
+
+### 1.3 Logging (stdout and a run log, filterable)
 
 Every module reports through the standard library's `logging`, configured in one place by
 [`logging_setup.py`](../gym_continuousDoubleAuction/logging_setup.py):
@@ -79,7 +99,7 @@ whose stdout *is* the product - as are the demo scripts under `envs/orderbook/te
 | `WARNING` | A recoverable surprise: a requested GPU that is absent, an unreadable checkpoint, a repaired league state |
 | `ERROR` | A broken invariant: NAV conservation failing, a champion that could not be created |
 
-Two properties this buys that `print` could not:
+Three properties this buys that `print` could not:
 
 * **Worker attribution.** The format carries the pid, so with `num_env_runners > 0` the
   interleaved episode hooks are separable by process. Previously eight workers wrote
@@ -88,6 +108,14 @@ Two properties this buys that `print` could not:
   `--log-level` on the random runner) sets the level. Remote EnvRunners are separate interpreters
   that never run `main()`, so `configure()` exports the level into the environment and each
   worker's first `get_logger` call picks it up.
+* **A record that outlives the terminal.** See §1.9 - the log is written to a rotating file under
+  `log_base_dir` as well as stdout.
+
+Each line is stamped `<date> <time> <level> pid=<pid> iter=<iteration> <module>: <message>`. The
+date is there because a training run outlasts a day and a time-only stamp cannot be ordered across
+midnight; `iter=` is the training iteration, which is what lets a line be joined to the
+`progress.jsonl` row for the same iteration. It reads `-` in any process that does not know the
+iteration - see §1.9.
 
 `cda_log_level` is deliberately separate from `log_level`, which is Ray's: Ray at INFO is noise,
 while this package at INFO is the output a run is meant to produce.
@@ -199,7 +227,8 @@ is not settled here.
 
 | Group | Fields |
 |---|---|
-| Account (§2.3) | `net_position`, `VWAP`, `cash`, `cash_on_hold`, `position_val`, `drawdown`, `max_nav`, `num_trades_step`, `num_passive_fills_step`, `order_step_placed` |
+| Account (§2.3) | `net_position`, `VWAP`, `cash`, `cash_on_hold`, `position_val`, `drawdown`, `max_nav`, `num_trades_step`, `num_passive_fills_step`, `order_step_placed`, `num_rejected_step` |
+| Activity (§2.2) | `is_pass_action` — did this agent choose to do nothing this step |
 | Market (§2.2) | `last_price`, `best_bid`, `best_ask`, `spread` |
 | Reward (§2.4) | `reward_terms`: `nav_term`, `order_penalty`, `trade_penalty`, `drawdown_penalty`, `passive_bonus` |
 | Action | `model_action` — as the model emitted it, before `set_actions` reshapes it for the book |
@@ -280,6 +309,55 @@ mutation restoring that `* 1.0` left every other test in the file green.
 and prices are emitted as `float` there, except `NAV`, which pays the string cost because the
 conservation check (§1.5) depends on its exactness. Sizes need no conversion — `int` is JSON-native.
 
+### 1.9 The run log
+
+§1.6 gave the run a machine-readable history and §1.7 gave the step one, but the log itself was
+still written only to stdout. So a finished run left its *numbers* on disk and its *narrative* in
+scrollback — the per-episode NAV tables, the league statistics, and the ERROR that immediately
+precedes a `strict_nav_check` raise. [17 §17](17_changelog.md) records two GPU runs diagnosed
+exactly that way, after the fact, from a terminal buffer.
+
+Every process now writes a rotating log file under `log_base_dir`, beside `progress.jsonl`:
+
+| File | Written by | Contains |
+|---|---|---|
+| `run.log` | the driver | iteration summaries, league statistics, champion events, checkpoint writes |
+| `run.<pid>.log` | each env runner | the per-episode NAV tables and the conservation ERROR |
+
+**Why one file per process rather than one shared file.** `RotatingFileHandler` is not safe across
+processes: two of them crossing the size threshold together rename and truncate the same file
+underneath each other, losing lines from both. That rules out sharing — and sharing is not
+something to give up lightly here, because the split is not cosmetic. The episode callbacks run on
+the env runners, so with `num_env_runners > 0` the NAV tables and the conservation ERROR are
+emitted in a worker and *nowhere else*. **[verified]** against a real two-runner run: a
+driver-only file captured 7 lines and none of the NAV tables; with per-process files the worker
+logs carry them. `log_base_dir` reaches the workers through `$CDA_LOG_DIR`, the same channel the
+level takes, because an env runner never executes `train.main`.
+
+Rotation bounds the output: `file_max_bytes` per file, `file_backup_count` older files kept. This
+is the one item from §3's persistence table that the run log could otherwise have re-created.
+Setting `file_name` to `""` disables file logging entirely.
+
+A failure to open the file is a **warning, not an exception**. Logging is instrumentation, and a
+run that cannot write its log should still train — the same rule `_append_progress` follows.
+
+**The `iter=` field.** `progress.jsonl` is keyed by iteration and the log was keyed by nothing, so
+joining them meant matching on wall-clock order. Log lines now carry the training iteration,
+tracked in a `ContextVar` — per-thread rather than a module global, since the driver loop may not
+be the only thread. It reads `-` where the iteration is unknown, which is every env runner and the
+driver before the first iteration and after the last. Not `0`, which is a real iteration number.
+
+So with remote runners a worker's NAV table is dated, attributed to its pid and durable, but reads
+`iter=-`: the worker genuinely does not know which iteration its episode belongs to. Recovering
+that association means passing the iteration to the runners, which is a change to what RLlib hands
+the callbacks rather than a logging change.
+
+Covered by `test_logging_setup.py` (29 tests): the file appears beside the metrics and mirrors
+stdout, rotation bounds it, an unwritable destination warns instead of raising, a worker resolves
+the directory from the environment and writes its own pid-suffixed file, the driver keeps the
+plain name, the iteration tag follows `set_iteration` and defaults to a dash, and the timestamp
+carries the date.
+
 ---
 
 ## 2. What is not logged but should be
@@ -315,12 +393,16 @@ or aggregated into a metric worth alerting on.
 `last_price` and the bid-ask spread are **done** — both are in the per-step `info` dict (§1.7),
 alongside `best_bid` and `best_ask`. What is still missing:
 
+The do-nothing count and the rejection rate are **done**, and are metrics rather than only
+fields: `is_pass_action` and `num_rejected_step` per agent-step in `info`, aggregated into
+`pass_action_fraction` and `order_rejection_fraction` (§1.2). The pass flag is set where
+`_CATEGORY_MAP` lives, so a reader of `info` does not need to know that `category=0` means pass;
+`test_info_dict.py` cross-checks the two agree.
+
 | Missing | Why it matters |
 |---|---|
 | Order book depth per level | Liquidity analysis |
-| Market / limit / modify / cancel action counts per episode | Reveals strategy evolution |
-| Count of `category=0` (do-nothing) actions | **Directly detects the passivity collapse predicted by S1-3** |
-| Order rejection / no-op rate | Signals cash constraints or blind modify/cancel actions ([04](04_accounting.md) §3) |
+| Market / limit / modify / cancel action counts per episode | Reveals strategy evolution — the *pass* share is now covered, the breakdown across the other four types is not |
 
 ### 2.3 Agent and account state
 
@@ -374,9 +456,12 @@ chosen for, and it makes the info dict awkward for RLlib metric aggregation.
 | `pickle` format | Arbitrary code execution on load; prefer `npz` / `parquet` / `jsonl` |
 | `progress.jsonl` grows without rotation | One line per iteration is small, but nothing bounds it across a long series of resumed runs |
 
-Two things are no longer in this table. Logging itself: output is levelled, attributable and
-switchable, and the `g_store` dead code is gone (§1.3, §1.4). And the absence of a per-iteration
-training history: `progress.jsonl` is that machine-readable record (§1.6).
+Three things are no longer in this table. Logging itself: output is levelled, attributable,
+switchable and now durable, written to a rotating file per process as well as stdout (§1.3, §1.9),
+and the `g_store` dead code is gone (§1.4). The absence of a per-iteration training history:
+`progress.jsonl` is that machine-readable record (§1.6). And the run log does not re-create the
+unbounded-growth problem it would otherwise have added — `file_max_bytes` and `file_backup_count`
+bound it.
 
 ---
 
@@ -395,15 +480,26 @@ metrics_logger.log_value("pass_action_fraction", n_pass / n_actions, window=10)
 metrics_logger.log_value("vf_explained_var", ...,  window=1)
 ```
 
-Highest-value additions, in order:
+Item 3 is **done** — `pass_action_fraction` and `order_rejection_fraction` are metrics (§1.2).
 
-1. **Log reward sub-components** into `metrics_logger` from `on_episode_step` / `on_episode_end`.
-2. **Log per-agent final account state** — NAV, position, drawdown, VWAP — at episode end.
-3. **Log the do-nothing action fraction and the order rejection rate**, so passivity collapse and
-   blind modify/cancel actions become measurable.
-4. **Export market price and spread** into the info dict — already in env state, just not
-   surfaced.
+Items 1, 2 and 4 are **half done, and the half that is missing is the same one in each case**: the
+reward sub-components, the per-agent account state, and the market price and spread are all
+captured per step in `info` (§1.7), but none is reduced into a `metrics_logger` value. The data
+exists; nothing aggregates it. That is the shape of what is left across this whole document —
+capture is now good, aggregation is four league-and-NAV metrics plus the two above.
+
+What remains, in order:
+
+1. **Reduce the reward sub-components into metrics** from `on_episode_end`, so the variance split
+   [07](07_reward_function.md) §6.4 prescribes is watchable during a run rather than computed
+   afterwards from `progress.jsonl`.
+2. **Reduce per-agent end-of-episode account state** — NAV, position, drawdown, VWAP — the same
+   way.
+3. **Surface the §2.1 training metrics** (`vf_loss` vs unclipped, KL, clip fraction, per-policy
+   reward spread, throughput) in the iteration log line. All are already in `progress.jsonl`.
+4. **League state** (§2.5): champion promotion as a metric rather than a log line, per-champion
+   win rate, time since last snapshot — the last of these is already computed in
+   `_should_create_champion` and discarded.
 5. **Per-episode desk metrics** (Sharpe, max drawdown, turnover, maker ratio, inventory) through
-   `metrics_logger`, so they land in TensorBoard alongside returns. The `on_episode_end` hook
-   already has everything it needs. See
+   `metrics_logger`. The `on_episode_end` hook already has everything it needs. See
    [13_perspective_financial_trader.md](13_perspective_financial_trader.md) §7.

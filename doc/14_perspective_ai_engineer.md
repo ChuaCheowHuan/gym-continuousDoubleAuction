@@ -125,6 +125,14 @@ Three of these are trivially removable:
 This is the weakest engineering area. Full audit in
 [11_logging_and_observability.md](11_logging_and_observability.md); the summary:
 
+> **This section is the original audit, kept as the record of what was found.** Most of it has
+> since been addressed — there is a logging framework, no `print()` survives in `envs/` or
+> `train/`, output is levelled and worker-attributed and written to a rotating run log, the
+> conservation check raises and emits a metric, and `vf_explained_var` is surfaced per iteration.
+> The custom-metric count is four rather than three. Read
+> [11](11_logging_and_observability.md) §1 for the current state; the bullets below describe the
+> starting point, not today.
+
 - **No logging framework at all.** **[verified]** zero `import logging` in the repository.
 - **~86 `print()` calls** in `envs/` + `train/`, 42 of them in `SelfPlayCallback` — including a
   3+-line banner per episode start listing the full policy map, five `DEBUG:`-prefixed lines and

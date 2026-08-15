@@ -117,6 +117,7 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
             trader.acc.num_trades_step = 0
             trader.acc.num_passive_fills_step = 0
             trader.acc.order_step_placed = 0
+            trader.acc.num_rejected_step = 0
 
         dones, truncateds = self.set_all_done(dones)
 

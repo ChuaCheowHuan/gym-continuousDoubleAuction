@@ -43,11 +43,18 @@
 
   "logging": {
     "_source": "gym_continuousDoubleAuction/logging_setup.py",
-    "_note": "How the package configures the standard library logging module, applied once per process by the first get_logger call. level is the fallback: $CDA_LOG_LEVEL wins over it, which is how the level reaches Ray's worker processes - they are separate interpreters that never run train.main, so train.py exports the variable and each worker's first import picks it up. env_var is named here so the exporter and the reader agree on one string. The format carries the pid because with num_env_runners > 0 every worker logs into the same stream, and without it the episode hooks are unattributable.",
+    "_note": "How the package configures the standard library logging module, applied once per process by the first get_logger call. level is the fallback: $CDA_LOG_LEVEL wins over it, which is how the level reaches Ray's worker processes - they are separate interpreters that never run train.main, so train.py exports the variable and each worker's first import picks it up. env_var is named here so the exporter and the reader agree on one string. The format carries the pid because with num_env_runners > 0 every worker logs into the same stream, and without it the episode hooks are unattributable. It also carries iter=, the training iteration, so a log line can be joined to the progress.jsonl row for the same iteration; it reads '-' in any process that does not know the iteration, which is every env runner. datefmt carries the date because a training run outlasts a day and a time-only stamp cannot be ordered across midnight.",
     "level": "INFO",
     "env_var": "CDA_LOG_LEVEL",
-    "format": "%(asctime)s %(levelname)-7s pid=%(process)d %(name)s: %(message)s",
-    "datefmt": "%H:%M:%S"
+    "format": "%(asctime)s %(levelname)-7s pid=%(process)d iter=%(iteration)s %(name)s: %(message)s",
+    "datefmt": "%Y-%m-%d %H:%M:%S",
+
+    "_file_note": "The run log. Until this existed the package logged only to stdout, so the narrative a run is diagnosed from - the per-episode NAV tables, the league statistics, the ERROR that precedes a strict_nav_check raise - survived only in scrollback, while progress.jsonl kept the numbers. file_name is written under log_base_dir, beside progress.jsonl. Rotation bounds it: file_max_bytes per file, file_backup_count old files kept, so a long or resumed run cannot fill the disk. Set file_name to an empty string to disable file logging entirely.",
+    "_file_worker_note": "Every process writes its own file rather than sharing one, because RotatingFileHandler is not safe across processes - two of them crossing the size threshold together rename and truncate the same file underneath each other. The driver writes file_name; a worker writes the same name with its pid before the suffix (run.log -> run.4231.log). This matters rather than being a detail: the episode callbacks run on the env runners, so with num_env_runners > 0 the NAV tables and the conservation ERROR are emitted there and nowhere else. dir_env_var carries log_base_dir to those workers the same way env_var carries the level - they are separate interpreters that never run train.main.",
+    "dir_env_var": "CDA_LOG_DIR",
+    "file_name": "run.log",
+    "file_max_bytes": 10485760,
+    "file_backup_count": 5
   },
 
   "visualize_paths": {
