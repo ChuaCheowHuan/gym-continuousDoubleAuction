@@ -569,3 +569,74 @@ class TestIterationAccounting:
         algo = self._run(cfg, monkeypatch)
 
         assert len(algo.saved) == 2  # iters 2 and 4, not 4 again at the end
+
+
+class TestTrainReturnsTheLastResult:
+    """`train()` hands back the final iteration's result along with the algo.
+
+    It used to return only the Algorithm, so reading the league meant calling
+    `algo.train()` again - a whole extra iteration of sampling and learning, run
+    for its return value, outside the checkpointing this loop does.
+    """
+
+    def _train(self, cfg, monkeypatch, start_iteration=0):
+        algo = FakeAlgo(start_iteration=start_iteration)
+        monkeypatch.setattr(train_mod, "build_algo", lambda _cfg: (algo, None))
+        return train(cfg)
+
+    def test_result_is_the_last_iterations(self, cfg, monkeypatch):
+        cfg = TrainConfig(log_base_dir=cfg.log_base_dir, num_iters=3, chkpt_freq=0)
+        algo, result = self._train(cfg, monkeypatch)
+
+        assert algo.iteration == 3
+        assert result == {"training_iteration": 3}
+
+    def test_a_completed_run_returns_an_empty_result(self, cfg, monkeypatch):
+        cfg = TrainConfig(log_base_dir=cfg.log_base_dir, num_iters=5, chkpt_freq=0)
+        algo, result = self._train(cfg, monkeypatch, start_iteration=5)
+
+        assert result == {}
+
+
+class TestEmptyIterationIsReported:
+    """An iteration whose result carries no `env_runners` block trained on
+    nothing - the samples timed out and were discarded - and says so.
+
+    Left unsaid, the loop counts the iteration, checkpoints, and produces a run
+    whose weights never moved. FakeAlgo's result has no env_runners block, which
+    is exactly the shape RLlib returns when `sample_timeout_s` elapses.
+    """
+
+    def _train(self, cfg, monkeypatch):
+        monkeypatch.setattr(
+            train_mod, "build_algo", lambda _cfg: (FakeAlgo(), None)
+        )
+        return train(cfg)
+
+    def test_warns_and_names_the_timeout(self, cfg, monkeypatch, caplog):
+        cfg = TrainConfig(
+            log_base_dir=cfg.log_base_dir,
+            num_iters=1,
+            chkpt_freq=0,
+            num_env_runners=2,
+            sample_timeout_s=17.0,
+        )
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            self._train(cfg, monkeypatch)
+
+        assert "trained on no samples" in caplog.text
+        assert "sample_timeout_s=17.0" in caplog.text
+
+    def test_silent_when_sampling_is_in_process(self, cfg, monkeypatch, caplog):
+        # num_env_runners=0 samples in the driver, where there is no timeout to
+        # miss, so an empty block there means something else entirely.
+        cfg = TrainConfig(
+            log_base_dir=cfg.log_base_dir,
+            num_iters=1,
+            chkpt_freq=0,
+            num_env_runners=0,
+        )
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            self._train(cfg, monkeypatch)
+
+        assert "trained on no samples" not in caplog.text

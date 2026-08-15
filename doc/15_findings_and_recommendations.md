@@ -300,7 +300,7 @@ holding the restored champion pool — and `None`, loudly, if the restored algor
 `SelfPlayCallback` at all. Four adjacent checkpoint defects went with it: the single overwritten
 checkpoint directory, config edits silently discarded on restore, the driver's iteration counter
 restarting at zero, and champion metadata existing only inside the cloudpickled callback. See
-[18 §5.1–5.2](18_configuration.md#51-the-run-group), [16 §16.8](16_verification_log.md), and
+[18 §5.2–5.3](18_configuration.md#52-the-run-group), [16 §16.8](16_verification_log.md), and
 `test_checkpointing.py`.
 → [14 §5.9.1](14_perspective_ai_engineer.md#591-checkpointrestore-what-actually-happens)
 

@@ -313,6 +313,15 @@ Both sets are exercised end to end before being changed, and
 bites: runners are actors, so `num_env_runners × num_cpus_per_env_runner` above `ray.init`'s
 `num_cpus` leaves them pending forever rather than raising.
 
+### Cost to watch: `sample_timeout_s`
+
+Going remote adds a deadline the in-process sampler does not have. The driver waits
+`sample_timeout_s` for each runner's share of `train_batch_size` and **discards whatever has not
+arrived** — so an under-sized timeout does not slow an iteration down, it empties it: no batch, no
+gradient step, but a counted iteration and a written checkpoint all the same. RLlib's 60s default
+is below what this environment needs at `max_step=4096`, which is why `train_config.json` sets it
+explicitly. See [18 §5.1](18_configuration.md#51-sample_timeout_s-and-the-run-that-trains-on-nothing).
+
 ### Cost to watch: per-episode pickles
 
 With `episode_data_dir` set (the default), **every** episode on **every** runner writes one file

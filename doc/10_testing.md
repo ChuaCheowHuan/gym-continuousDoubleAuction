@@ -67,12 +67,12 @@ Counts re-measured with `--collect-only`; the earlier `90` predated the config a
 | `test_nav_callback.py` | 6 | Episode-end NAV conservation check: raises, tolerance, metric, strict off |
 | `test_logging_setup.py` | 10 | Level resolution and export, handler setup, no `print` in `envs/` or `train/` |
 | `test_probabilistic_mapping.py` | 1 | League matchmaking distribution |
-| `test_config_loading.py` | 14 | `train_config.json` → `TrainConfig` → env |
+| `test_config_loading.py` | 15 | `train_config.json` → `TrainConfig` → env |
 | `test_config_sources.py` | 26 | No literal copy of a configured value survives in Python |
 | `test_config_wiring.py` | 11 | Config keys reaching their consumers |
 | `test_runtime_profiles.py` | 23 | `runtime_profiles.json` → hardware sets, platform paths |
-| `test_checkpointing.py` | 40 | Checkpoint retention, restore selection, league state across a save |
-| **unit total** | **217** | |
+| `test_checkpointing.py` | 44 | Checkpoint retention, restore selection, league state across a save |
+| **unit total** | **222** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 
 > **Stale references in older docs.** `test_orderbook.py`, `repro_orderbook_crossed_book.py`,
@@ -343,7 +343,7 @@ collects the same way as everything else under `pytest`, but — like every file
 — running it directly (`python test_probabilistic_mapping.py`, or `%run` from a notebook) does
 nothing, since there is no `unittest.main()` call left anywhere to trigger execution. See §0.
 
-### 6.1.1 `test_checkpointing.py` — 8 classes, 40 tests
+### 6.1.1 `test_checkpointing.py` — 10 classes, 44 tests
 
 What survives a save/restore, and what a restore is allowed to change. RLlib's loader and the
 env build are stubbed, so these run in seconds; the same behaviours were also exercised against
@@ -359,6 +359,8 @@ real checkpoints in [16 §16.8.1](16_verification_log.md).
 | `TestCommandLine` | `--from-checkpoint` implies `--restore`; `--restore` alone leaves the path unset |
 | `TestRestoreSelection` | The newest checkpoint is picked; an unreadable one falls back to the previous; a **pinned** one raises instead of falling back; the **algorithm's own** callback is returned, not the fresh one; no checkpoint starts from scratch |
 | `TestIterationAccounting` | `num_iters` is a target, not an amount; `num_iters_is_delta` counts from the restore point; a completed run trains nothing; checkpoints land on true iteration numbers; the final save is not duplicated |
+| `TestTrainReturnsTheLastResult` | `train()` returns the final iteration's result beside the algo, so inspecting the league costs no extra `algo.train()`; a run with nothing to do returns an empty one |
+| `TestEmptyIterationIsReported` | An iteration whose result has no `env_runners` block trained on no samples and warns, naming `sample_timeout_s` and the batch; silent when `num_env_runners=0`, where there is no timeout to miss |
 
 Two of these encode bugs that were live in the codebase rather than hypothetical:
 

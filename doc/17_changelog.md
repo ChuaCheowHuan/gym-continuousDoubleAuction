@@ -508,3 +508,35 @@ raised at call time. The orphaned `plot_defaults` config group went with them.
 the build if a `print` reappears in `envs/` or `train/`; `test_nav_callback.py` grew from 2 tests
 that asserted nothing to 6 that assert the behaviour above. See
 [11_logging_and_observability.md](11_logging_and_observability.md).
+
+---
+
+## 16. The iteration that trained on nothing
+
+A GPU Colab run of 16 iterations finished in 19 minutes having done **zero gradient steps**, and
+said so only in a warning that reads like a performance hint:
+
+```
+WARNING rollout_ops.py:122 -- No samples returned from remote workers...
+```
+
+`sample_timeout_s` was left at RLlib's default of 60s. The batch is
+`max_step × num_episodes_per_iter` = 16,384 env steps, and the Python order book delivers roughly
+60 env-steps/sec per runner with 8 agents, so two runners need about two minutes. Every iteration
+timed out, and a timed-out iteration does not return a short batch — it **discards** the partial
+rollouts. The learner got nothing, while the loop counted the iteration, logged it, and wrote
+checkpoints of the initial random weights. The only visible symptom downstream was a `KeyError:
+'env_runners'` in the notebook cell that reads the league table, since a result with no samples has
+no `env_runners` block at all.
+
+- **`sample_timeout_s` is now a `TrainConfig` field** (`rollouts` group, `--sample-timeout`),
+  defaulting to 600s rather than inheriting RLlib's 60.
+- **`_log_iteration` names the failure**: an iteration whose result has no `env_runners` block logs
+  a WARNING quoting the batch size, the timeout it missed, and the two knobs that fix it.
+- **`train()` returns `(algo, last_result)`.** It returned only the Algorithm, so inspecting the
+  league meant calling `algo.train()` again — a second full iteration of sampling and learning, run
+  for its return value, outside this function's checkpointing. `CDA_NSP.ipynb` now reads the result
+  it was handed.
+
+See [18 §5.1](18_configuration.md#51-sample_timeout_s-and-the-run-that-trains-on-nothing) and
+[09 §5.1](09_distributed_training.md).

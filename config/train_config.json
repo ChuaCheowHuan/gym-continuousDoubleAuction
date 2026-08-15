@@ -29,9 +29,12 @@
   },
 
   "rollouts": {
+    "_note": "sample_timeout_s is how long the driver waits for a remote env runner to return its share of train_batch_size (= max_step * num_episodes_per_iter) before giving up on it. RLlib's default is 60s, which this environment cannot meet: the order book is pure Python at roughly 60 env steps/s per runner, so 16,384 steps across 2 runners needs ~2 minutes. A timed-out iteration is not a slow iteration - the partial rollouts are discarded, the learner is handed nothing, and the run does zero gradient work while still logging iterations and writing checkpoints. Size this above the time one iteration's sampling actually takes, or shrink the batch by lowering max_step / num_episodes_per_iter. It is ignored when num_env_runners is 0, since the driver then samples in-process.",
+
     "num_env_runners": 0,
     "num_envs_per_env_runner": 1,
-    "num_cpus_per_env_runner": 0.25
+    "num_cpus_per_env_runner": 0.25,
+    "sample_timeout_s": 600.0
   },
 
   "learner": {
