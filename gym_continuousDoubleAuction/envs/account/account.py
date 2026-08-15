@@ -26,13 +26,26 @@ class Account(Calculate, Cash_Processor):
         self.profit = Decimal(0) # profit @ each trade(tick) within a single t step
         self.total_profit = Decimal(0) # profit at the end of a single t-step
         self.num_trades = 0
-        self.reward = 0
+        # float, not int: set_reward assigns a float, and RLlib requires float
+        # rewards. Reward is a learning signal, not money - it is the one thing
+        # in this account that is deliberately neither Decimal nor int.
+        self.reward = 0.0
 
         # New metrics for improved reward function
         self.max_nav = Decimal(cash) # peak nav seen so far
         self.num_trades_step = 0 # trades in current environment step
         self.num_passive_fills_step = 0 # passive executions in current step
         self.order_step_placed = 0 # 1 if a Market/Limit order was placed this step
+
+        # Written by Reward_Helper.set_reward each step, read by Info_Helper.
+        # The reward used to be a single number with its five components
+        # discarded the moment it was summed, which is what made the variance
+        # split in doc/07 6.4 unmeasurable. See doc/11 2.4.
+        # float, not Decimal(0): set_reward stores float(max(0, max_nav - nav)),
+        # so initialising this as a Decimal would make the field change type on
+        # the first step - the same defect net_position and VWAP already have.
+        self.drawdown = 0.0 # max_nav - nav, the level the penalty uses
+        self.reward_terms = {} # signed contributions, summing to self.reward
 
     def reset_acc(self, ID, cash=env_default("init_cash")):
         self.ID = ID
@@ -50,13 +63,17 @@ class Account(Calculate, Cash_Processor):
         self.profit = Decimal(0) # profit @ each trade(tick) within a single t step
         self.total_profit = Decimal(0) # profit at the end of a single t-step
         self.num_trades = 0
-        self.reward = 0
+        self.reward = 0.0
 
         # New metrics for improved reward function
         self.max_nav = Decimal(cash)
         self.num_trades_step = 0
         self.num_passive_fills_step = 0
         self.order_step_placed = 0
+
+        # See __init__ for what these are and why they exist.
+        self.drawdown = 0.0
+        self.reward_terms = {}
 
     def print_acc(self, msg):
         acc = {}
@@ -99,7 +116,8 @@ class Account(Calculate, Cash_Processor):
         return 0
 
     def _size_increase(self, trade, position, party, trade_val):
-        total_size = abs(self.net_position) + Decimal(trade.get('quantity'))
+        # Sizes add in int; only the value terms below are Decimal.
+        total_size = abs(self.net_position) + int(trade.get('quantity'))
         # VWAP
         self.VWAP = (abs(self.net_position) * self.VWAP + trade_val) / total_size
         raw_val = total_size * self.VWAP # value acquired with VWAP
@@ -117,13 +135,15 @@ class Account(Calculate, Cash_Processor):
         mkt_val = abs(self.net_position) * trade.get('price')
         self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
         self.size_zero_cash_transfer(mkt_val)
-        # reset to 0
-        self.position_val = 0
-        self.VWAP = 0
+        # reset to 0 - as Decimal, not int. position_val is money and VWAP is a
+        # price, so both are Decimal everywhere else; assigning a bare 0 here
+        # was what made VWAP read back as an int once a position went flat.
+        self.position_val = Decimal(0)
+        self.VWAP = Decimal(0)
         return mkt_val
 
     def _size_decrease(self, trade, position, party, trade_val):
-        size_left = abs(self.net_position) - Decimal(trade.get('quantity'))
+        size_left = abs(self.net_position) - int(trade.get('quantity'))
         if size_left > 0:
             self.VWAP = (abs(self.net_position) * self.VWAP - trade_val) / size_left
             raw_val = size_left * self.VWAP # value acquired with VWAP
@@ -138,7 +158,7 @@ class Account(Calculate, Cash_Processor):
         mkt_val = self._covered(trade, position)
         self.size_decrease_cash_transfer(party, mkt_val)
         # deal with remaining size that cause position change
-        new_size = Decimal(trade.get('quantity')) - abs(self.net_position)
+        new_size = int(trade.get('quantity')) - abs(self.net_position)
         self.position_val = new_size * trade.get('price') # traded value
         self.VWAP = trade.get('price')
         self.size_increase_cash_transfer(party, self.position_val)
@@ -168,20 +188,22 @@ class Account(Calculate, Cash_Processor):
                 self._covered_side_chg(trade, 'short', party)
 
     def _update_net_position(self, side, trade_quantity):
+        # int throughout: a net position is a count of contracts. The Decimal()
+        # wrapping this used to carry was working around float sizes coming out
+        # of the book - with sizes normalised to int at that boundary
+        # (trader._normalise_trade_sizes) the arithmetic is exact in int, and
+        # the field no longer changes type on the first fill.
+        trade_quantity = int(trade_quantity)
         if self.net_position >= 0: # long or neutral
             if side == 'bid':
-                #self.net_position += trade_quantity
-                self.net_position = Decimal(self.net_position) + Decimal(trade_quantity)
+                self.net_position += trade_quantity
             else:
-                #self.net_position += -trade_quantity
-                self.net_position = Decimal(self.net_position) - Decimal(trade_quantity)
+                self.net_position -= trade_quantity
         else: # short
             if side == 'ask':
-                #self.net_position += -trade_quantity
-                self.net_position = Decimal(self.net_position) - Decimal(trade_quantity)
+                self.net_position -= trade_quantity
             else:
-                #self.net_position += trade_quantity
-                self.net_position = Decimal(self.net_position) + Decimal(trade_quantity)
+                self.net_position += trade_quantity
         return 0
 
     def process_acc(self, trade, party):

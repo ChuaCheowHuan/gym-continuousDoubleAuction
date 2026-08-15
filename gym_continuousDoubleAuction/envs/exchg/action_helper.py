@@ -240,7 +240,14 @@ class Action_Helper():
         act["side"], act["type"] = _CATEGORY_MAP[int(category)]
 
         size = self._set_size(act["type"], self.mkt_size_mean_mul, self.limit_size_mean_mul, size_mean, size_sigma)
-        act["size"] = (size + self.min_size) * 1.0 # +self.min_size as size can't be 0, *1 for float
+        # int, not float. A size is a count of contracts, so int is the type
+        # that can represent it exactly; the previous `* 1.0` coerced to float
+        # deliberately ("*1 for float") and that single character is why sizes
+        # were floats everywhere downstream. Decimal * int is defined, whereas
+        # Decimal * float raises TypeError - which is the error the orderbook
+        # already carries two local workarounds for, and the one
+        # cash_processor's modify path would hit. See doc/11 1.8.
+        act["size"] = int(size + self.min_size) # +self.min_size as size can't be 0
 
         if act["type"] == 'market':
             act["price"] = -1.0 # -1.0 to indicate market price
@@ -295,7 +302,10 @@ class Action_Helper():
             sample = np.random.normal(limit_size_mean_mul * mean, sigma, 1)
 
         # return np.asscalar(np.rint(np.abs(sample)))
-        return np.rint(np.abs(sample)).item()
+        # int(): np.rint already rounds to a whole number, but .item() hands
+        # back a Python float (40.0), and np.int64 is not an int subclass, so
+        # neither is usable as a size without a further conversion.
+        return int(np.rint(np.abs(sample)).item())
 
     def _set_price(self, min_tick, side, price_code, price_offset=None):
         """

@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import math
 import os
 import shutil
 from dataclasses import dataclass, field
@@ -46,6 +47,7 @@ from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback im
 from gym_continuousDoubleAuction.train.policy.policy_handler import (
     CHAMPION_PREFIX,
     create_multi_agent_config,
+    trainable_policy_ids,
 )
 
 logger = get_logger("gym_continuousDoubleAuction.train.train")
@@ -54,6 +56,22 @@ ENV_NAME = "continuousDoubleAuction-v0"
 
 #: The file every TrainConfig default is read from.
 TRAIN_CONFIG_FILE = "train_config.json"
+
+#: Per-iteration result dicts, one JSON object per line, under `log_base_dir`.
+#: `algo.train()` returns a full metrics dict every iteration and the loop used
+#: to read two keys out of it for a log line and drop the rest, so a finished
+#: run left behind checkpoints and no record of how it got there. This is the
+#: record. See doc/11 1.6.
+PROGRESS_FILE = "progress.jsonl"
+
+#: `result["learners"][<module_id>]["vf_explained_var"]`: the fraction of return
+#: variance the critic accounts for. Defined by RLlib as
+#: `ppo.LEARNER_RESULTS_VF_EXPLAINED_VAR_KEY` and written by PPOTorchLearner;
+#: spelled out here rather than imported so a rename in Ray degrades to a
+#: missing metric instead of an ImportError that stops training. A critic stuck
+#: near 0.0 is the failure this exists to make visible while a run is going,
+#: which no amount of reading `module_episode_returns_mean` will show.
+VF_EXPLAINED_VAR_KEY = "vf_explained_var"
 
 
 def _default(key: str):
@@ -244,6 +262,17 @@ class TrainConfig:
     def checkpoint_dir(self) -> str:
         """Root of the checkpoint tree. Individual saves are `iter_*` beneath it."""
         return os.path.abspath(os.path.join(self.log_base_dir, "chkpt"))
+
+    @property
+    def progress_path(self) -> str:
+        """The per-iteration JSONL log, beside the checkpoint tree.
+
+        Under `log_base_dir` rather than `episode_data_dir` deliberately: this
+        is one short line per iteration, so it belongs with the checkpoints that
+        must survive a disconnect, not with the per-episode pickles that
+        runtime_profiles.json keeps off the Drive FUSE layer.
+        """
+        return os.path.abspath(os.path.join(self.log_base_dir, PROGRESS_FILE))
 
     @property
     def env_config(self) -> dict:
@@ -903,6 +932,7 @@ def train(cfg: TrainConfig) -> Tuple[Algorithm, dict]:
         result = algo.train()
         iteration = int(result.get("training_iteration", iteration + 1))
         _log_iteration(iteration, target, result, cfg)
+        _append_progress(result, cfg)
 
         if cfg.chkpt_freq and iteration % cfg.chkpt_freq == 0:
             saved_at = iteration
@@ -918,15 +948,114 @@ def train(cfg: TrainConfig) -> Tuple[Algorithm, dict]:
     return algo, result
 
 
+def _json_safe(value):
+    """Recursively coerce a result dict into something `json.dump` accepts.
+
+    RLlib fills results with numpy scalars, numpy arrays, and the occasional
+    object with no JSON form at all. `default=` on json.dump would catch the
+    last of those, but it would also stringify every numpy float, turning a
+    column of numbers into a column of quoted numbers that whatever reads the
+    file has to parse back. Converting first keeps numbers as numbers and
+    reserves `str()` for the genuinely unserialisable.
+
+    Non-finite floats become null: NaN and Infinity are what Python's json emits
+    by default but are not valid JSON, and a NaN early in training - an
+    untrained critic's `vf_explained_var`, say - should not produce a file that
+    a strict parser rejects.
+    """
+    if isinstance(value, bool) or value is None or isinstance(value, (int, str)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(v) for v in value]
+    # numpy scalars (.item()) before numpy arrays (.tolist()): a 0-d array has
+    # both, and .item() gives the scalar rather than a bare number in a list.
+    # A multi-element array has .item() too and raises on it, so a failed
+    # attempt has to fall through to the next rather than give up - that is the
+    # difference between logging [1, 2, 3] and logging the string "[1 2 3]".
+    for unwrap in ("item", "tolist"):
+        method = getattr(value, unwrap, None)
+        if callable(method):
+            try:
+                return _json_safe(method())
+            except Exception:
+                continue
+    return str(value)
+
+
+def _append_progress(result: dict, cfg: TrainConfig) -> None:
+    """Append one iteration's full result dict to `progress.jsonl`.
+
+    Opened, written, and closed per iteration rather than held open for the run:
+    a training run that is killed - a Colab disconnect, an OOM, a Ctrl-C - is
+    the normal way these runs end, and this way it keeps every iteration it had
+    finished instead of losing a buffer.
+
+    Every failure here is swallowed with a warning. Logging is instrumentation;
+    a full disk or a value that defeats `_json_safe` must never take down a run
+    that is otherwise training fine.
+    """
+    try:
+        os.makedirs(os.path.dirname(cfg.progress_path), exist_ok=True)
+        with open(cfg.progress_path, "a") as fh:
+            json.dump(_json_safe(result), fh)
+            fh.write("\n")
+            fh.flush()
+    except Exception:
+        logger.warning(
+            "could not append to %s - the run continues without a progress "
+            "record for this iteration", cfg.progress_path, exc_info=True,
+        )
+
+
+def vf_explained_var(result: dict, cfg: TrainConfig) -> dict:
+    """`vf_explained_var` per trainable module, as far as the result has it.
+
+    Only the modules in `policies_to_train` appear in the learner block, so the
+    frozen champions and the random baselines are absent by construction and
+    this is keyed on `trainable_policy_ids` rather than on every policy.
+
+    A module missing from the result is omitted rather than reported as 0.0:
+    absent and "the critic explains nothing" are different states, and this
+    metric exists precisely to tell them apart.
+    """
+    from ray.rllib.utils.metrics import LEARNER_RESULTS
+
+    learners = result.get(LEARNER_RESULTS) or {}
+    out = {}
+    for pid in trainable_policy_ids(cfg.num_trained_agents):
+        stats = learners.get(pid)
+        if isinstance(stats, dict) and VF_EXPLAINED_VAR_KEY in stats:
+            out[pid] = float(stats[VF_EXPLAINED_VAR_KEY])
+    return out
+
+
 def _log_iteration(i: int, total: int, result: dict, cfg: TrainConfig) -> None:
     from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
 
     env_runners = result.get(ENV_RUNNER_RESULTS, {})
     returns = env_runners.get("module_episode_returns_mean", {})
     steps = env_runners.get("num_env_steps_sampled", "n/a")
+    # vf_explained_var sits beside the returns because it is the one number that
+    # says whether the critic is learning at all. A run whose returns drift
+    # while every critic sits in the noise is a run whose advantages are noise,
+    # and that is worth seeing at iteration 3 rather than in a post mortem.
+    #
+    # Formatted to 3 significant figures rather than rounded to 3 decimals:
+    # this metric's whole diagnostic range is near zero, and `round(3.8e-05, 3)`
+    # prints `0.0` - which is how a critic that is merely dead ends up looking
+    # identical to one that reported nothing at all.
+    vf = ", ".join(
+        f"{pid}={value:.3g}" for pid, value in vf_explained_var(result, cfg).items()
+    )
     logger.info(
-        "iter %s/%s | env steps sampled: %s | module returns: %s",
+        "iter %s/%s | env steps sampled: %s | module returns: %s | "
+        "vf_explained_var: %s",
         i, total, steps, {k: round(float(v), 1) for k, v in returns.items()},
+        vf or "n/a",
     )
 
     # An iteration with no env_runners block sampled nothing the learner could

@@ -66,13 +66,38 @@ class Reward_Helper(object):
         current_drawdown = float(max(0, trader.acc.max_nav - trader.acc.nav))
         
         # 3. Comprehensive Reward Formula
-        reward = (nav_term 
-                  - (order_penalty * trader.acc.order_step_placed) 
-                  - (trade_penalty * trader.acc.num_trades_step) 
-                  - (drawdown_penalty * current_drawdown) 
-                  + (passive_bonus * trader.acc.num_passive_fills_step))
+        #
+        # Kept as the signed contribution of each term rather than a single
+        # expression, so the decomposition doc/07 6.4 asks to monitor is the
+        # same arithmetic the agent is actually trained on: accumulating the
+        # terms *is* the reward, and there is no second expression that could
+        # drift out of step with the logged split.
+        terms = {
+            "nav_term": nav_term,
+            "order_penalty": -(order_penalty * trader.acc.order_step_placed),
+            "trade_penalty": -(trade_penalty * trader.acc.num_trades_step),
+            "drawdown_penalty": -(drawdown_penalty * current_drawdown),
+            "passive_bonus": passive_bonus * trader.acc.num_passive_fills_step,
+        }
+
+        # Accumulated left to right, deliberately NOT with sum() or math.fsum().
+        # Instrumenting the reward must not change it, and on Python 3.12+ the
+        # builtin sum() applies Neumaier compensated summation to floats: it is
+        # more accurate, and it disagrees with this loop on ~44% of random
+        # inputs (~1e-13 relative). Insertion order matches the original
+        # formula and `a - b` is `a + (-b)` exactly in IEEE 754, so this
+        # reproduces the previous expression bit for bit. Iterating the dict
+        # rather than naming the five keys also means a term added later cannot
+        # be logged but left out of the reward.
+        reward = 0.0
+        for value in terms.values():
+            reward += value
 
         rewards[f'agent_{trader.ID}'] = reward
         trader.acc.reward = reward
+        trader.acc.reward_terms = terms
+        # The penalty uses the level, so the level is what is worth recording;
+        # it was previously computed here and thrown away (doc/11 2.3).
+        trader.acc.drawdown = current_drawdown
 
         return rewards

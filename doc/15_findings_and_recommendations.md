@@ -312,6 +312,15 @@ split, adverse-selection mark-outs. The counters for several of these already ex
 discarded after the reward consumes them. `info["NAV"]` is a **string**, round-tripped through
 `float()` by every consumer, discarding the exactness `Decimal` was chosen for.
 
+**Partly addressed:** the episode-end NAV conservation check now parses `info["NAV"]` back with
+`Decimal` and compares against a `Decimal` total, so that one consumer is exact by construction;
+`float()` remains only at the metrics boundary. [16 §16.10](16_verification_log.md) shows the
+round trip was harmless at the default `init_cash = 1e6`, but that **above `init_cash ≈ 1e10` the
+float check could not resolve its own `1e-6` tolerance** — a genuine breach read as exactly `0.0`
+and would have passed a corrupt ledger silently. It also corrects the claim that `nav_tolerance`
+was absorbing float noise. The missing risk-adjusted metrics above, and the remaining `float()`
+consumers of `info["NAV"]`, are untouched.
+
 ### S3-10 · A trader can hold only one resting order per price level **[verified]**
 
 A second limit at the same price *replaces* the first (level volume 7, not 12) —

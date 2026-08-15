@@ -114,12 +114,17 @@ end to end, so trading moves cash and never creates it. This was a good idea imp
 
 ```python
 if metrics_logger:
-    metrics_logger.log_value("nav_conservation_error", abs(error), window=1)
+    metrics_logger.log_value("nav_conservation_error", float(abs(error)), window=1)
 if not conserved:
     logger.error(message)
     if self.strict_nav_check:
         raise AssertionError(message)
 ```
+
+The check is **`Decimal` end to end**. `info["NAV"]` is the exact `str()` of a `Decimal`
+(§2.6), so it is parsed back with `Decimal`, and `total_initial_cash` is built as a `Decimal`
+too; `float()` is applied only where the value leaves for the metrics stack, which reduces with
+NumPy and will not take a `Decimal`. The comparison that decides the raise is therefore exact.
 
 * The **metric goes out either way**, so a run has a series to inspect rather than only the moment
   it broke. `window=1` keeps it per-iteration: an error in one episode out of many must not be
@@ -128,15 +133,152 @@ if not conserved:
   every reward computed from NAV afterwards is meaningless, so the run stops. Set it false in
   `train_config.json`, or pass `--no-strict-nav-check`, for a run that would rather finish and be
   inspected afterwards; the ERROR log and the metric still happen.
-* **`nav_tolerance`** (default `1e-6`) absorbs the `float()` round trip through the info dict
-  (§2.6), nothing larger. Widen it only for a change that legitimately removes cash from the
-  system, such as fees - see [13_perspective_financial_trader.md](13_perspective_financial_trader.md)
-  §4.
+* **`nav_tolerance`** (default `1e-6`) is headroom for a change that legitimately removes cash
+  from the system, such as fees - see
+  [13_perspective_financial_trader.md](13_perspective_financial_trader.md) §4. It is **not**
+  absorbing arithmetic noise: with the check exact, the expected error is `0`, and the tolerance
+  can be set to `0` to enforce that — the comparison is `abs(error) <= nav_tolerance`, inclusive,
+  so `0` means "conservation must be exact" rather than "every episode is a violation". At the
+  default the inclusive and exclusive forms differ only on an error of exactly `1e-6`.
+  The `float()` round trip it was previously credited with
+  absorbing was harmless at the default `init_cash` — but above `init_cash ≈ 1e10` it made the
+  check unable to resolve this very tolerance, passing corrupt ledgers silently. See
+  [16 §16.10](16_verification_log.md).
 
 Covered by `test_nav_callback.py` (6 tests): conservation passes and logs a zero error, a
 violation raises under the default, the metric is emitted before the raise, non-strict logs ERROR
 and continues, the tolerance admits what is inside it and not what is outside, and both knobs come
 from the config file.
+
+### 1.6 Per-iteration training history (`progress.jsonl`)
+
+`train()` calls `algo.train()` directly rather than through `tune.Tuner`, so nothing writes
+`progress.csv` or TensorBoard event files. Each iteration's result dict used to be summarised into
+one log line and dropped, which left a finished run with checkpoints, scrollback, and no queryable
+record of how it got there.
+
+Every iteration now appends one JSON object to `<log_base_dir>/progress.jsonl`:
+
+```python
+result = algo.train()
+_log_iteration(iteration, target, result, cfg)
+_append_progress(result, cfg)
+```
+
+* **The whole result dict**, not a chosen subset. The loss terms, KL, entropy, timers and learner
+  stats are all in there; deciding today which of them a future question needs is exactly the
+  mistake that produced this gap.
+* **`_json_safe` runs first.** RLlib results carry numpy scalars and arrays, occasional objects
+  with no JSON form, and NaNs. Numbers stay numbers (a bare `default=str` would write `"1.5"` and
+  make every reader parse it back), non-finite floats become `null` — `NaN` and `Infinity` are not
+  valid JSON — and anything left over is stringified.
+* **Opened and closed per iteration.** These runs normally end by being killed, so a buffer held
+  open for the run would lose the iterations it had already finished. Append mode also means a
+  resumed run extends its history rather than truncating it.
+* **Every failure is swallowed with a warning.** A full disk must not take down a run that is
+  otherwise training fine.
+* It sits beside `chkpt/` under `log_base_dir`, not with the per-episode pickles: one short line
+  per iteration belongs with the things that must survive a disconnect, which is why
+  `runtime_profiles.json` splits `results_root` from `episode_data_root` in the first place.
+
+Covered by `test_progress_log.py` (one line per iteration, appends across a restart, numbers
+survive as numbers, awkward values, and a write failure that must not stop the loop) and by
+`test/integration/test_progress_and_vf.py`, which trains a real PPO and reads the file back.
+
+### 1.7 Per-step `info` (account, market and reward decomposition)
+
+`Info_Helper.set_info` reported three fields — `reward`, `NAV`, `num_trades`. Everything else a
+step knew about itself was computed, consumed and dropped: the position, the drawdown the penalty
+had just been charged on, the spread, and the five reward components. §2.2–2.4 below were that
+gap; what follows is what closes it.
+
+**The original three are unchanged** — same names, same types, same order. `NAV` stays a *string*,
+the exact `str()` of a `Decimal`, because the conservation check parses it back with `Decimal`
+(§1.5) and `visualize_nav.py` with `float()`. §2.6 tracks that round trip as its own question and
+is not settled here.
+
+| Group | Fields |
+|---|---|
+| Account (§2.3) | `net_position`, `VWAP`, `cash`, `cash_on_hold`, `position_val`, `drawdown`, `max_nav`, `num_trades_step`, `num_passive_fills_step`, `order_step_placed` |
+| Market (§2.2) | `last_price`, `best_bid`, `best_ask`, `spread` |
+| Reward (§2.4) | `reward_terms`: `nav_term`, `order_penalty`, `trade_penalty`, `drawdown_penalty`, `passive_bonus` |
+| Action | `model_action` — as the model emitted it, before `set_actions` reshapes it for the book |
+
+Four decisions worth stating, because each could reasonably have gone the other way:
+
+* **The reward terms are signed contributions that sum to `reward`, and the sum *is* the reward.**
+  `set_reward` accumulates the dict rather than evaluating a second expression, so the logged
+  split cannot drift from the number the agent was trained on. The accumulation is a left-to-right
+  loop, deliberately **not** `sum()`: on Python 3.12+ the builtin applies Neumaier compensated
+  summation to floats, which disagrees with plain accumulation on ~44% of random inputs (~1e-13
+  relative). Instrumenting the reward must not change it.
+* **New numeric fields go out as plain numbers, not strings.** They are diagnostics, not
+  invariants — nothing reconstructs the ledger from them, and `float` is what the metrics stack
+  and `json` consume. `NAV` alone keeps the string treatment, for the reason above.
+* **`net_position` is reported as a float** even though `account.py` initialises it to `int` 0. The
+  account rebuilds it as a `Decimal` on the first fill, so the underlying type changes partway
+  through an episode; the reported field holds one type throughout.
+* **`spread` is `None`, not `0.0`, on a one-sided book.** The observation needs a finite sentinel
+  and uses `0.0`; a log does not, and `0.0` there would be indistinguishable from a book whose
+  touch is one tick wide — the ambiguity [15 S3-14](15_findings_and_recommendations.md) is about.
+
+Covered by `test_info_dict.py` (18 tests): back-compat of the original three, the terms summing
+exactly, penalties matching coefficient × counter, the counters being read *before*
+`set_step_outputs` zeroes them, `spread` on a one-sided book, and the whole dict surviving
+`json.dumps`.
+
+### 1.8 The type policy
+
+Everything above assumes a field means one thing and holds one type. Before this, four did not.
+
+| Kind | Type | Fields |
+|---|---|---|
+| Money | `Decimal` | `cash`, `cash_on_hold`, `position_val`, `init_nav`, `nav`, `prev_nav`, `max_nav`, `profit`, `total_profit` |
+| Price | `Decimal` | order and trade `price`, `VWAP`, `best_bid`, `best_ask`, `spread` |
+| Size | `int` | order and trade `quantity`, `net_position`, `num_trades`, the per-step counters |
+| Signal | `float` | `reward`, `drawdown` |
+
+**Why it is not cosmetic.** `Decimal * float` raises `TypeError`; `Decimal * int` does not. The
+orderbook carries two local workarounds for exactly that error, both commented with the traceback
+they came from (`orderbook.py:76-79`, `:99-100`), and `cash_processor.py:78` computes
+`Decimal(str(price)) * qoute['quantity']`, which would raise on the modify path with a float size.
+Sizes being `int` makes that class of failure unreachable rather than worked around.
+
+The second failure is a field that changes type partway through an episode, which breaks any
+consumer that checks it. Measured over a real run, before the fix: `net_position` was `int` until
+the first fill and `Decimal` after; `VWAP` was `Decimal` until a position went flat, then `int`
+(a bare `0` at `account.py:136`); `reward` was `int` until the first `set_reward`; `drawdown` was
+`Decimal` until the first step.
+
+**Signals are the deliberate exception.** `reward` must be a `float` — RLlib requires it — and
+`drawdown` feeds the reward. They are learning signals, not money. The observation is `float32`
+by construction, so prices and sizes are converted at that boundary too.
+
+**`last_price` is the other exception**, and it stays a `float`. It never reaches the ledger:
+`mark_to_mkt` passes the tape's `Decimal` to the account, while `last_price` is a separate anchor
+consumed only by `_set_price`'s NumPy arithmetic and by `state_helper`, which already wraps it in
+`float()`. Making it a `Decimal` would mean converting back at both consumers and buys no
+exactness.
+
+**`envs/orderbook/` is deliberately not changed** — see `ec1f5ea`, "Intentional revert because I
+don't want code in orderbook folder to change." The book stores sizes as `Decimal` (`order.py:12`
+coerces on the way in), and a fill reports whichever type its branch happened to hold:
+`quantity_to_trade` (int) on a partial or exact fill, `head_order.quantity` (Decimal) when the
+incoming order is larger — 84 against 10 on one tape. That mixing is absorbed at the single point
+every trade passes through, `trader._normalise_trade_sizes`, before any account arithmetic sees
+it. The coercion is lossless by construction rather than by luck: ints go in, the book only
+subtracts whole sizes from whole sizes, and a fractional size raises instead of truncating
+silently.
+
+Sizes are `int` at ingress too (`action_helper.py:250`), which is a separate guarantee: the old
+`(size + min_size) * 1.0` — commented *"\*1 for float"* — was the single character that made every
+downstream size a float. Egress normalisation hides an ingress regression completely, so both ends
+are pinned by `test_type_policy.py` (15 tests); the ingress tests exist precisely because a
+mutation restoring that `* 1.0` left every other test in the file green.
+
+**`info` is a serialisation boundary, not part of the policy.** JSON has no `Decimal`, so money
+and prices are emitted as `float` there, except `NAV`, which pays the string cost because the
+conservation check (§1.5) depends on its exactness. Sizes need no conversion — `int` is JSON-native.
 
 ---
 
@@ -144,9 +286,23 @@ from the config file.
 
 ### 2.1 Training metrics
 
+Done, and no longer on this list: **`vf_explained_var`** — the one metric that exposes the frozen
+critic (S1-1), and whose absence is why that defect survived. `_log_iteration` now prints it per
+trainable module on every iteration, read from `result["learners"][<module_id>]` and keyed on
+`trainable_policy_ids`, since only the modules in `policies_to_train` appear in that block.
+
+`test/integration/test_progress_and_vf.py` asserts in CI that a real run reports it, finite, for
+every trainable module. It deliberately does **not** assert `!= 0.0`: this repository currently
+reports values around 1e-5, so that assertion passes on a critic that is entirely dead. The
+substantive threshold (`>= 1e-3`) is there as a strict xfail that pins S1-1 as a known failure and
+becomes a live guard the moment it is fixed.
+
+Everything else on this list is *computed* by RLlib and reaches `progress.jsonl` (§1.6) as part of
+the full result dict. What is still missing is surfacing: none of it is in the iteration log line
+or aggregated into a metric worth alerting on.
+
 | Missing | Why it matters |
 |---|---|
-| **`vf_explained_var`** | The one metric that exposes the frozen critic (S1-1). Nothing surfaces it, which is why the defect survived. |
 | `vf_loss` vs `vf_loss_unclipped` | The saturation is invisible from `total_loss` alone |
 | Per-policy reward mean / min / max / std | Only league aggregates are logged; individual trends are invisible |
 | Policy win rate versus random and versus champion | The key signal for league-based training |
@@ -156,10 +312,11 @@ from the config file.
 
 ### 2.2 Environment and market data
 
+`last_price` and the bid-ask spread are **done** — both are in the per-step `info` dict (§1.7),
+alongside `best_bid` and `best_ask`. What is still missing:
+
 | Missing | Why it matters |
 |---|---|
-| Last traded price per step | The central price signal; needed to reconstruct the price series |
-| Bid-ask spread | Key market-quality metric |
 | Order book depth per level | Liquidity analysis |
 | Market / limit / modify / cancel action counts per episode | Reveals strategy evolution |
 | Count of `category=0` (do-nothing) actions | **Directly detects the passivity collapse predicted by S1-3** |
@@ -167,22 +324,26 @@ from the config file.
 
 ### 2.3 Agent and account state
 
-| Missing | Why it matters |
-|---|---|
-| Per-agent drawdown, current and max | The reward uses `max_nav − nav` but never logs it |
-| Per-agent `net_position` at episode end | Reveals held inventory risk |
-| Per-agent `VWAP` | Average fill quality |
-| Per-agent `cash_on_hold` | How much capital is locked in open orders |
-| `order_step_placed`, `num_passive_fills_step` | Reward sub-components computed, consumed, then zeroed |
-| Passive fill ratio | Distinguishes market-making from taking |
+**Done** — all of these are in the per-step `info` dict (§1.7): current `drawdown` and `max_nav`,
+`net_position` (every step, not only at episode end), `VWAP`, `cash`, `cash_on_hold`,
+`position_val`, and the three per-step counters `order_step_placed`, `num_passive_fills_step` and
+`num_trades_step`, read before `set_step_outputs` zeroes them.
+
+Passive fill ratio is not emitted as its own field: it is exactly
+`num_passive_fills_step / num_trades_step`, and both are now logged, so deriving it needs no
+further instrumentation. A field would only add a division-by-zero convention to argue about.
 
 ### 2.4 Reward decomposition
 
-None of the five terms is logged individually — `nav_term`, order penalty, trade penalty,
-drawdown penalty, passive bonus. The largest reward driver is invisible, and there is no way to
-detect over- or under-trading, risk-aversion learning, or market-making uptake from the logs. It
-also makes the tuning guidance in [07_reward_function.md](07_reward_function.md) §6.4
-unmeasurable without adding instrumentation first.
+**Done.** All five terms — `nav_term`, order penalty, trade penalty, drawdown penalty, passive
+bonus — are in `info["reward_terms"]` as signed contributions that sum exactly to `reward`
+(§1.7). The variance split in [07_reward_function.md](07_reward_function.md) §6.4 is measurable
+from the per-step record without further instrumentation, as is over- or under-trading,
+risk-aversion learning and market-making uptake.
+
+What remains is *aggregation*: the terms are per step and per agent, so a per-episode variance
+share is a reduction a consumer still has to perform. Doing that through `metrics_logger` is
+[15](15_findings_and_recommendations.md) Phase 4 item 15.
 
 ### 2.5 League and self-play state
 
@@ -211,18 +372,20 @@ chosen for, and it makes the info dict awkward for RLlib metric aggregation.
 | Per-episode `.pkl` files grow without rotation or size cap | Disk fills over long runs; the flag is off/on, not bounded |
 | Episode `.pkl` files carry no timestamp or iteration metadata | Hard to correlate with training progress |
 | `pickle` format | Arbitrary code execution on load; prefer `npz` / `parquet` / `jsonl` |
-| No per-iteration training history on disk | `algo.train()` runs outside `tune.Tuner`, so nothing writes `progress.csv` or TensorBoard events; each result dict is logged in summary and dropped |
+| `progress.jsonl` grows without rotation | One line per iteration is small, but nothing bounds it across a long series of resumed runs |
 
-Logging itself is no longer in this table: output is levelled, attributable and switchable, and
-the `g_store` dead code is gone (§1.3, §1.4). What is still missing is a *machine-readable* record
-of training progress - see §4.
+Two things are no longer in this table. Logging itself: output is levelled, attributable and
+switchable, and the `g_store` dead code is gone (§1.3, §1.4). And the absence of a per-iteration
+training history: `progress.jsonl` is that machine-readable record (§1.6).
 
 ---
 
 ## 4. Recommended additions
 
-Done, and no longer on this list: `logging` in place of `print`, and raising on a NAV conservation
-violation with a `nav_conservation_error` metric.
+Done, and no longer on this list: `logging` in place of `print`; raising on a NAV conservation
+violation with a `nav_conservation_error` metric; writing each iteration's result dict to
+`progress.jsonl` (§1.6); and logging `vf_explained_var` per trainable module with a CI assertion
+behind it (§2.1).
 
 ```python
 # in on_train_result / on_episode_end
@@ -234,17 +397,13 @@ metrics_logger.log_value("vf_explained_var", ...,  window=1)
 
 Highest-value additions, in order:
 
-1. **Write each iteration's result dict to `results/progress.jsonl`**, so a run leaves a queryable
-   history behind without adopting `tune.Tuner`.
-2. **Log `vf_explained_var`** and assert on it in CI — it is the one metric that would have
-   caught S1-1.
-3. **Log reward sub-components** into `metrics_logger` from `on_episode_step` / `on_episode_end`.
-4. **Log per-agent final account state** — NAV, position, drawdown, VWAP — at episode end.
-5. **Log the do-nothing action fraction and the order rejection rate**, so passivity collapse and
+1. **Log reward sub-components** into `metrics_logger` from `on_episode_step` / `on_episode_end`.
+2. **Log per-agent final account state** — NAV, position, drawdown, VWAP — at episode end.
+3. **Log the do-nothing action fraction and the order rejection rate**, so passivity collapse and
    blind modify/cancel actions become measurable.
-6. **Export market price and spread** into the info dict — already in env state, just not
+4. **Export market price and spread** into the info dict — already in env state, just not
    surfaced.
-7. **Per-episode desk metrics** (Sharpe, max drawdown, turnover, maker ratio, inventory) through
+5. **Per-episode desk metrics** (Sharpe, max drawdown, turnover, maker ratio, inventory) through
    `metrics_logger`, so they land in TensorBoard alongside returns. The `on_episode_end` hook
    already has everything it needs. See
    [13_perspective_financial_trader.md](13_perspective_financial_trader.md) §7.

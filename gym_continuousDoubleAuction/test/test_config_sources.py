@@ -47,6 +47,11 @@ def config_tree(tmp_path, monkeypatch):
 
     yield edit
 
+    # The env var has to go back *before* the cache is dropped, or the reload
+    # repopulates it from the modified tree and every later test in the session
+    # reads the edited values. monkeypatch would restore it on its own, but not
+    # until after this teardown has already run.
+    monkeypatch.delenv(config_loader.CONFIG_DIR_ENV_VAR, raising=False)
     config_loader.reload()
 
 
@@ -232,7 +237,18 @@ class TestStructuralConstantsComeFromTheFile:
         space = env.action_spaces["agent_0"]["size_mean"]
         assert (float(space.low[0]), float(space.high[0])) == (-2.0, 2.0)
 
-    def test_module_id_prefixes_come_from_the_file(self, config_tree):
+    def test_module_id_prefixes_come_from_the_file(self, config_tree, monkeypatch):
+        """`policy_handler` reads the prefixes once, at import.
+
+        That makes this the one test that has to put a *module* back, not just
+        the loader cache: `importlib.reload` re-executes policy_handler in its
+        own namespace, so POLICY_PREFIX stays at whatever the tree said until
+        something reloads it against the real one. Restoring the env var before
+        the reload is what makes that reload read the real one - leaving it set
+        pins `agent_` for the rest of the session, and anything later that
+        builds a ModuleID (`train.vf_explained_var`, for one) silently looks up
+        names no result will ever have.
+        """
         config_tree(
             "tunable_constants.json",
             lambda raw: raw["module_id_prefixes"].update(policy_prefix="agent_"),
@@ -242,8 +258,13 @@ class TestStructuralConstantsComeFromTheFile:
         try:
             assert ph.policy_id(0) == "agent_0"
         finally:
+            monkeypatch.delenv(config_loader.CONFIG_DIR_ENV_VAR, raising=False)
             config_loader.reload()
             importlib.reload(ph)
+
+        assert ph.policy_id(0) == "policy_0", (
+            "the prefix leaked out of this test and into the rest of the session"
+        )
 
     def test_price_anchor_fallbacks_are_read_once_for_both_users(self, config_tree):
         """The two fallbacks used to be independent literals that had to agree."""

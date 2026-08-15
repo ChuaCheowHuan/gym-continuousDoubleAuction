@@ -65,6 +65,31 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
                 trader.acc.mark_to_mkt(trader.ID, mkt_price)
         return 0
 
+    def set_market_snapshot(self):
+        """Record top of book and the spread for this step.
+
+        The spread was previously computed nowhere durable: `state_helper`
+        derives `log1p(spread_ticks)` for the observation and discards the raw
+        number, so the single most-used market-quality metric never reached a
+        log (doc/11 2.2).
+
+        `None` rather than 0.0 when a side is empty. The observation needs a
+        finite sentinel and uses 0.0 for "no two-sided market"; a log does not,
+        and 0.0 there would be indistinguishable from a genuinely crossed-to-
+        touching book - the ambiguity doc/15 S3-14 is about. `None` encodes as
+        JSON null.
+        """
+        # Decimal, as the book already reports them: these are prices, and
+        # prices stay Decimal until something serialises them (doc/11 1.8).
+        self.best_bid = self.LOB.get_best_bid()
+        self.best_ask = self.LOB.get_best_ask()
+        if self.best_bid is not None and self.best_ask is not None:
+            self.spread = self.best_ask - self.best_bid
+        else:
+            self.spread = None
+
+        return 0
+
     def set_step_outputs(self, state_input):
         """
         Set outputs for each step.
@@ -75,6 +100,11 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         Return:
             next_states, rewards, dones, infos
         """
+
+        # Once per step, not once per trader: the book is the same for all of
+        # them, and set_info reads it off self the way it already reads
+        # last_price.
+        self.set_market_snapshot()
 
         next_states, rewards, dones, infos = {},{},{},{}
         for trader in self.traders:

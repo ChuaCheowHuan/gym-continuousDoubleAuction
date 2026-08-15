@@ -12,6 +12,7 @@ is now under test. See doc/11_logging_and_observability.md.
 import logging
 import sys
 import os
+from decimal import Decimal
 from unittest.mock import MagicMock
 
 import pytest
@@ -119,7 +120,9 @@ class TestNAVCallback:
         assert any(r.levelno == logging.ERROR for r in caplog.records)
 
     def test_tolerance_admits_a_difference_below_it(self):
-        """The tolerance absorbs the float() round trip, nothing larger."""
+        """The tolerance is headroom for real cash leaving the system, not
+        arithmetic slack: the check is Decimal end to end, so it is what
+        separates a legitimate difference from a corrupt ledger."""
         drift = 0.001
         per_agent = self.init_cash + drift / self.num_agents
 
@@ -129,6 +132,65 @@ class TestNAVCallback:
         strict = self._callback(nav_tolerance=1e-9)
         with pytest.raises(AssertionError):
             self._end_episode(strict, "ep_outside", per_agent)
+
+    def test_a_breach_is_caught_at_an_account_size_float_cannot_resolve(self):
+        """The check must be Decimal end to end, not float.
+
+        At init_cash 1e15 the spacing between adjacent floats near the total is
+        0.5, so a real quarter-dollar of destroyed cash rounds to exactly 0.0 -
+        the old float() round trip reported perfect conservation and the run
+        continued on a corrupt ledger. Decimal sees the 0.25. The cliff is at
+        roughly init_cash 1e10; see doc/16 §16.10.
+        """
+        self.init_cash = 10 ** 15
+        self.mock_env = MockEnv(self.init_cash, self.num_agents)
+        callback = self._callback()
+        metrics = MagicMock()
+
+        # 0.0625 short per agent = 0.25 destroyed across the four of them.
+        info = {
+            f"agent_{i}": {"NAV": str(Decimal(self.init_cash) - Decimal("0.0625"))}
+            for i in range(self.num_agents)
+        }
+        with pytest.raises(AssertionError, match="NAV conservation VIOLATED"):
+            callback.on_episode_end(
+                episode=MockEpisode("ep_large", info),
+                env_runner=self.mock_runner,
+                metrics_logger=metrics,
+                env=self.mock_env,
+                env_index=0,
+                rl_module=None,
+            )
+
+        metrics.log_value.assert_called_once_with(
+            "nav_conservation_error", pytest.approx(0.25), window=1
+        )
+
+    def test_conservation_error_is_exactly_zero_not_merely_close(self):
+        """Decimal end to end means the expected error is 0, so a tolerance of
+        0 is a usable setting rather than an impossible one."""
+        callback = self._callback(nav_tolerance=0.0)
+        metrics = MagicMock()
+
+        # Long fractional tails that cancel exactly - what the ledger produces.
+        tails = ["0.000000000000000000001", "-0.000000000000000000001",
+                 "0.000000000000000000002", "-0.000000000000000000002"]
+        info = {
+            f"agent_{i}": {"NAV": str(Decimal(self.init_cash) + Decimal(t))}
+            for i, t in enumerate(tails)
+        }
+        callback.on_episode_end(
+            episode=MockEpisode("ep_exact", info),
+            env_runner=self.mock_runner,
+            metrics_logger=metrics,
+            env=self.mock_env,
+            env_index=0,
+            rl_module=None,
+        )
+
+        metrics.log_value.assert_called_once_with(
+            "nav_conservation_error", 0.0, window=1
+        )
 
     def test_config_supplies_the_defaults(self):
         """Neither knob is a literal in the callback."""

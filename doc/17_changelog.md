@@ -598,3 +598,153 @@ Unchanged and already documented as S1-1: `vf_loss` pinned at the `vf_clip_param
 receives no gradient, PPO degenerates to REINFORCE, and `best_trainable` across the 16 iterations
 of either run is noise with no trend. The infrastructure now works end to end; the learning
 problem is untouched.
+
+---
+
+## 18. A run leaves a record behind
+
+The two GPU runs in §17 could only be diagnosed after the fact, from scrollback, because
+`algo.train()` returns a full metrics dict every iteration and the driver loop read two keys out
+of it — `num_env_steps_sampled` and `module_episode_returns_mean` — for a log line and dropped the
+rest. The loop calls `algo.train()` directly rather than through `tune.Tuner`, so nothing wrote
+`progress.csv` or TensorBoard events either. A finished run left checkpoints and no history.
+
+**Every iteration now appends its whole result dict to `<log_base_dir>/progress.jsonl`.** Not a
+chosen subset: the loss terms, KL, entropy, timers and learner stats are all in there, because
+deciding in advance which of them a future question needs is what produced this gap. A
+`_json_safe` pass runs first, since RLlib results carry numpy scalars and arrays, the occasional
+object with no JSON form, and NaNs — numbers stay numbers rather than being stringified by a bare
+`default=str`, non-finite floats become `null` because `NaN` is not valid JSON, and anything left
+over is stringified. The file is opened and closed per iteration so a killed run keeps the
+iterations it finished, and every failure inside the writer is swallowed with a warning:
+instrumentation must not be what takes down a run that is otherwise training fine.
+
+**`vf_explained_var` is now in the per-iteration log line**, per trainable module, beside the
+returns. This is the metric §17.3 identifies as the one that exposes S1-1, and nothing surfaced
+it — which is why a critic pinned at 0.0 survived two full runs. It is read from
+`result["learners"][<module_id>]`, keyed on `trainable_policy_ids`: only the modules in
+`policies_to_train` appear there, so the frozen champions and the random baselines are absent by
+construction. A module missing from the result is omitted rather than reported as 0.0, since
+"absent" and "the critic explains nothing" are different states and telling them apart is the
+whole point.
+
+**CI asserts on it.** `test/integration/test_progress_and_vf.py` trains a real PPO for three
+iterations at the existing tiny test size and checks that the file has one line per iteration,
+that a real result survives the JSON round trip, and that every trainable module reports a finite
+`vf_explained_var`.
+
+The obvious next assertion — `!= 0.0`, the value a critic that never received a gradient reports —
+was written, run, and thrown away, because it **passes on this repository today**. A run of the
+suite reports values around 1e-5, matching the "0.0 to 1.8e-07" that §17.3 records from the two
+GPU runs, and all of it is nonzero: floating-point noise is not evidence of learning, so the
+assertion would have guarded nothing while looking like it guarded the defect. What is there
+instead is `test_the_critic_actually_explains_something`, asserting `|vf_explained_var| >= 1e-3`
+under a **strict xfail**. It fails today because S1-1 is open. When S1-1 is fixed it XPASSes and
+fails the build, at which point the marker comes off and it becomes the live regression guard it
+cannot be while the defect is still there.
+
+`test_progress_log.py` (19 tests) covers the writer itself against hand-built results — the
+append-across-a-restart case, numpy and NaN handling, and a write failure that must not stop the
+loop.
+
+See [11_logging_and_observability.md](11_logging_and_observability.md) §1.6.
+
+---
+
+## 19. A step leaves a record behind
+
+§18 gave the *run* a history. The *step* still had almost none: `Info_Helper.set_info` reported
+`reward`, `NAV` and `num_trades`, and everything else a step knew about itself was computed,
+consumed and dropped inside the same function call. The position was in the account, the drawdown
+was calculated in `set_reward` and thrown away the moment the penalty was charged, the spread was
+derived in `state_helper` as `log1p(spread_ticks)` for the observation and the raw number
+discarded, and the five reward components existed only as terms in one expression. Every question
+in [11](11_logging_and_observability.md) §2.2–2.4 was unanswerable not because the data was hard
+to get, but because nothing kept it.
+
+**The per-step `info` dict now carries account state, market state, the reward decomposition and
+the submitted action** — see [11 §1.7](11_logging_and_observability.md) for the field list. The
+original three fields are untouched in name, type and order, and `NAV` remains the exact `str()`
+of a `Decimal` so the conservation check (§1.5) and `visualize_nav.py` both keep working.
+
+Four decisions in that change were not obvious, and one of them was a trap.
+
+**The reward terms sum to the reward, and the sum is the reward.** `set_reward` builds a dict of
+signed contributions and accumulates it, rather than keeping the old expression and computing a
+parallel breakdown beside it. A decomposition that can drift from the number the agent was trained
+on is worse than no decomposition, because it looks authoritative.
+
+**The trap: `sum()` would have changed the reward.** The obvious way to write that accumulation is
+`sum(terms.values())`. On Python 3.12+ the builtin applies Neumaier compensated summation to
+floats — it is *more* accurate than the original left-to-right expression, and it disagrees with
+it on ~44% of random inputs, by ~1e-13 relative. `math.fsum` likewise. Adding instrumentation must
+not perturb what is being instrumented, so the reward is accumulated with an explicit loop, which
+reproduces the previous arithmetic bit for bit — verified over 200,000 random inputs. Iterating
+the dict rather than naming the five keys also means a sixth term added later cannot be logged but
+left out of the reward.
+
+**`net_position` is reported as a float.** `account.py` initialises it to `int` 0 and then
+rebuilds it as a `Decimal` on the first fill, so its type changes partway through every episode.
+That is a latent inconsistency in the account, not something this change fixes; reporting one type
+throughout at least keeps it from reaching consumers.
+
+**`spread` is `None`, not `0.0`, when the book is one-sided.** The observation needs a finite
+sentinel and uses `0.0`. A log does not, and `0.0` there could not be told apart from a book whose
+touch is one tick wide — the collision [15](15_findings_and_recommendations.md) S3-14 describes.
+
+`test_info_dict.py` (18 tests) covers the back-compat of the original three fields, the terms
+summing exactly, penalties equalling coefficient × counter, `spread` on a one-sided book, and the
+whole dict surviving `json.dumps` — a numpy `int64` in `info` would break the progress log, and
+unlike `np.float64` it does not subclass its Python counterpart. One of those tests was checked by
+mutation: moving the per-step counter reset to before `set_info` makes it fail, which is the point
+— the counters would otherwise log a valid, healthy-looking, permanent 0.
+
+See [11 §1.7](11_logging_and_observability.md) and [07 §6.4](07_reward_function.md).
+
+---
+
+## 20. Money in Decimal, sizes in int
+
+The account was `Decimal` where it mattered, but four of its fields did not hold one type for a
+whole episode. Measured over a real run: `net_position` was `int` until the first fill and
+`Decimal` after; `VWAP` was `Decimal` until a position went flat and `int` after, from a bare `0`
+at `account.py:136`; `reward` was `int` until the first `set_reward`; `drawdown` was `Decimal`
+until the first step, introduced by §19, the change that documented the pattern.
+
+The policy is now explicit — money and prices `Decimal`, sizes `int`, `reward` and `drawdown`
+`float` — and enforced by `test_type_policy.py` (15 tests) rather than left to convention. See
+[11 §1.8](11_logging_and_observability.md).
+
+**This is not tidiness.** `Decimal * float` raises `TypeError`; `Decimal * int` does not. The
+orderbook already carries two workarounds for that exact error, each commented with the traceback
+it came from, and `cash_processor.py:78` computes `Decimal(str(price)) * qoute['quantity']`, which
+would raise on the modify path with a float size. Making sizes `int` removes the failure mode
+instead of adding a third workaround.
+
+**The orderbook is untouched**, per `ec1f5ea`. It stores sizes as `Decimal` — `order.py:12`
+coerces on the way in — so a fill reports whichever type its branch held: `quantity_to_trade`
+(int) on a partial or exact fill, `head_order.quantity` (Decimal) when the incoming order is the
+larger one, 84 against 10 on one tape. Rather than change the book, the mixing is absorbed at the
+one point every trade passes through on its way into env code, `trader._normalise_trade_sizes`.
+That coercion is lossless by construction and not by luck: ints go in, the book only subtracts
+whole sizes from whole sizes, and a fractional size raises rather than truncating silently.
+
+Sizes are also `int` at ingress. The old `act["size"] = (size + self.min_size) * 1.0`, commented
+*"\*1 for float"*, was the single character that made every downstream size a float.
+
+**A mutation test earned its keep here.** Restoring that `* 1.0` left all thirteen type tests
+green, because the egress normalisation absorbs float sizes so completely that the account never
+sees the difference. The tests could not distinguish a working ingress from a broken one. Two
+ingress tests were added for that reason, and the same mutation now fails both — which matters
+because `cash_processor`'s modify path is reached by orders, not by the trades the egress tests
+inspect.
+
+Two deliberate exceptions. `reward` and `drawdown` stay `float`: RLlib requires float rewards and
+the drawdown feeds the reward, so they are learning signals rather than money. `last_price` stays
+`float` because it never reaches the ledger — `mark_to_mkt` hands the account the tape's `Decimal`,
+while `last_price` is a separate anchor consumed only by `_set_price`'s NumPy arithmetic and by
+`state_helper`, which already wraps it in `float()`.
+
+`info` is unaffected as a format, being a serialisation boundary where JSON has no `Decimal` —
+except that `net_position` is now a plain `int` rather than a `float()` cast that existed only to
+hide the account changing type underneath it.

@@ -8,6 +8,39 @@ from ..account.account import Account
 from .random_agent import Random_agent
 from ...config_loader import env_default
 
+
+def _normalise_trade_sizes(trades):
+    """Coerce the sizes in the book's trade records back to int, in place.
+
+    Sizes enter the book as int, but `Order.__init__` stores them as `Decimal`,
+    so a fill reports whichever the branch that produced it happened to hold:
+    `quantity_to_trade` (int) on a partial or exact fill, `head_order.quantity`
+    (Decimal) when the incoming order is the larger one. Measured over a 120
+    step run that is 84 int against 10 Decimal on the same tape.
+
+    The orderbook is deliberately left untouched (see doc/11 1.8), so the mixing
+    is absorbed here instead - at the one point every trade passes through,
+    before any account arithmetic sees it. This is the *only* place env code
+    should have to think about it.
+
+    Lossless by construction, not by luck: ints go in, and the book only ever
+    subtracts one whole size from another, so every quantity out is integral.
+    The assertion says so out loud rather than letting a fractional size become
+    a silent truncation.
+    """
+    for trade in trades:
+        quantity = trade.get('quantity')
+        if quantity is None:
+            continue
+        as_int = int(quantity)
+        if as_int != quantity:
+            raise ValueError(
+                f"non-integral trade size {quantity!r} out of the order book: "
+                f"sizes are counts of contracts and must stay whole"
+            )
+        trade['quantity'] = as_int
+
+
 class Trader(Random_agent):
     def __init__(self, ID, cash=env_default("init_cash")):
         self.ID = ID # trader unique ID
@@ -54,6 +87,7 @@ class Trader(Random_agent):
                 return trades, order_in_book
 
             if trades != []: # if trades took placed in this order
+                _normalise_trade_sizes(trades)
                 self._process_trades(trades, agents)
 
             self.acc.order_in_book_passive_party(order_in_book) # if there's any unfilled
