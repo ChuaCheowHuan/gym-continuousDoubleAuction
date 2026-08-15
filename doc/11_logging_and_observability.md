@@ -57,7 +57,7 @@ Two further notes:
 **Three metrics** is the entirety of what reaches RLlib's structured logger, alongside RLlib's
 own built-ins.
 
-### 1.3 Logging (stdout, filterable)
+### 1.3 Logging (stdout and a run log, filterable)
 
 Every module reports through the standard library's `logging`, configured in one place by
 [`logging_setup.py`](../gym_continuousDoubleAuction/logging_setup.py):
@@ -79,7 +79,7 @@ whose stdout *is* the product - as are the demo scripts under `envs/orderbook/te
 | `WARNING` | A recoverable surprise: a requested GPU that is absent, an unreadable checkpoint, a repaired league state |
 | `ERROR` | A broken invariant: NAV conservation failing, a champion that could not be created |
 
-Two properties this buys that `print` could not:
+Three properties this buys that `print` could not:
 
 * **Worker attribution.** The format carries the pid, so with `num_env_runners > 0` the
   interleaved episode hooks are separable by process. Previously eight workers wrote
@@ -88,6 +88,14 @@ Two properties this buys that `print` could not:
   `--log-level` on the random runner) sets the level. Remote EnvRunners are separate interpreters
   that never run `main()`, so `configure()` exports the level into the environment and each
   worker's first `get_logger` call picks it up.
+* **A record that outlives the terminal.** See §1.9 - the log is written to a rotating file under
+  `log_base_dir` as well as stdout.
+
+Each line is stamped `<date> <time> <level> pid=<pid> iter=<iteration> <module>: <message>`. The
+date is there because a training run outlasts a day and a time-only stamp cannot be ordered across
+midnight; `iter=` is the training iteration, which is what lets a line be joined to the
+`progress.jsonl` row for the same iteration. It reads `-` in any process that does not know the
+iteration - see §1.9.
 
 `cda_log_level` is deliberately separate from `log_level`, which is Ray's: Ray at INFO is noise,
 while this package at INFO is the output a run is meant to produce.
@@ -280,6 +288,55 @@ mutation restoring that `* 1.0` left every other test in the file green.
 and prices are emitted as `float` there, except `NAV`, which pays the string cost because the
 conservation check (§1.5) depends on its exactness. Sizes need no conversion — `int` is JSON-native.
 
+### 1.9 The run log
+
+§1.6 gave the run a machine-readable history and §1.7 gave the step one, but the log itself was
+still written only to stdout. So a finished run left its *numbers* on disk and its *narrative* in
+scrollback — the per-episode NAV tables, the league statistics, and the ERROR that immediately
+precedes a `strict_nav_check` raise. [17 §17](17_changelog.md) records two GPU runs diagnosed
+exactly that way, after the fact, from a terminal buffer.
+
+Every process now writes a rotating log file under `log_base_dir`, beside `progress.jsonl`:
+
+| File | Written by | Contains |
+|---|---|---|
+| `run.log` | the driver | iteration summaries, league statistics, champion events, checkpoint writes |
+| `run.<pid>.log` | each env runner | the per-episode NAV tables and the conservation ERROR |
+
+**Why one file per process rather than one shared file.** `RotatingFileHandler` is not safe across
+processes: two of them crossing the size threshold together rename and truncate the same file
+underneath each other, losing lines from both. That rules out sharing — and sharing is not
+something to give up lightly here, because the split is not cosmetic. The episode callbacks run on
+the env runners, so with `num_env_runners > 0` the NAV tables and the conservation ERROR are
+emitted in a worker and *nowhere else*. **[verified]** against a real two-runner run: a
+driver-only file captured 7 lines and none of the NAV tables; with per-process files the worker
+logs carry them. `log_base_dir` reaches the workers through `$CDA_LOG_DIR`, the same channel the
+level takes, because an env runner never executes `train.main`.
+
+Rotation bounds the output: `file_max_bytes` per file, `file_backup_count` older files kept. This
+is the one item from §3's persistence table that the run log could otherwise have re-created.
+Setting `file_name` to `""` disables file logging entirely.
+
+A failure to open the file is a **warning, not an exception**. Logging is instrumentation, and a
+run that cannot write its log should still train — the same rule `_append_progress` follows.
+
+**The `iter=` field.** `progress.jsonl` is keyed by iteration and the log was keyed by nothing, so
+joining them meant matching on wall-clock order. Log lines now carry the training iteration,
+tracked in a `ContextVar` — per-thread rather than a module global, since the driver loop may not
+be the only thread. It reads `-` where the iteration is unknown, which is every env runner and the
+driver before the first iteration and after the last. Not `0`, which is a real iteration number.
+
+So with remote runners a worker's NAV table is dated, attributed to its pid and durable, but reads
+`iter=-`: the worker genuinely does not know which iteration its episode belongs to. Recovering
+that association means passing the iteration to the runners, which is a change to what RLlib hands
+the callbacks rather than a logging change.
+
+Covered by `test_logging_setup.py` (29 tests): the file appears beside the metrics and mirrors
+stdout, rotation bounds it, an unwritable destination warns instead of raising, a worker resolves
+the directory from the environment and writes its own pid-suffixed file, the driver keeps the
+plain name, the iteration tag follows `set_iteration` and defaults to a dash, and the timestamp
+carries the date.
+
 ---
 
 ## 2. What is not logged but should be
@@ -374,9 +431,12 @@ chosen for, and it makes the info dict awkward for RLlib metric aggregation.
 | `pickle` format | Arbitrary code execution on load; prefer `npz` / `parquet` / `jsonl` |
 | `progress.jsonl` grows without rotation | One line per iteration is small, but nothing bounds it across a long series of resumed runs |
 
-Two things are no longer in this table. Logging itself: output is levelled, attributable and
-switchable, and the `g_store` dead code is gone (§1.3, §1.4). And the absence of a per-iteration
-training history: `progress.jsonl` is that machine-readable record (§1.6).
+Three things are no longer in this table. Logging itself: output is levelled, attributable,
+switchable and now durable, written to a rotating file per process as well as stdout (§1.3, §1.9),
+and the `g_store` dead code is gone (§1.4). The absence of a per-iteration training history:
+`progress.jsonl` is that machine-readable record (§1.6). And the run log does not re-create the
+unbounded-growth problem it would otherwise have added — `file_max_bytes` and `file_backup_count`
+bound it.
 
 ---
 

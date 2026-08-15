@@ -41,6 +41,7 @@ from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
 )
 from gym_continuousDoubleAuction.logging_setup import configure as configure_logging
 from gym_continuousDoubleAuction.logging_setup import get_logger
+from gym_continuousDoubleAuction.logging_setup import log_file_path, set_iteration
 from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
     SelfPlayCallback,
 )
@@ -929,8 +930,14 @@ def train(cfg: TrainConfig) -> Tuple[Algorithm, dict]:
     saved_at = None
     result: dict = {}
     for _ in range(target - start):
+        # Provisional, so anything the driver logs *during* the iteration is
+        # tagged with the one being worked on rather than the one before it.
+        # RLlib's own count is authoritative and replaces it below; the two
+        # agree unless a restore left the counter somewhere unexpected.
+        set_iteration(iteration + 1)
         result = algo.train()
         iteration = int(result.get("training_iteration", iteration + 1))
+        set_iteration(iteration)
         _log_iteration(iteration, target, result, cfg)
         _append_progress(result, cfg)
 
@@ -1182,7 +1189,13 @@ def main(argv=None) -> None:
     # one. force=True because importing this module already configured the
     # process from the environment or the config default, and the level just
     # parsed from the command line is the one the user asked for.
-    configure_logging(cfg.cda_log_level, force=True)
+    #
+    # log_dir is passed only here, and only by the driver: it adds the rotating
+    # run log beside progress.jsonl, and RotatingFileHandler cannot be shared
+    # across processes without workers racing each other's rotations.
+    configure_logging(cfg.cda_log_level, log_dir=cfg.log_base_dir, force=True)
+    if log_file_path():
+        logger.info("run log: %s", log_file_path())
 
     # Shared with the notebook, which has to export these before it imports
     # ray. Imported here rather than at module scope: runtime.py reads
@@ -1195,6 +1208,9 @@ def main(argv=None) -> None:
     try:
         train(cfg)
     finally:
+        # Shutdown is not part of any iteration; leaving the last one set would
+        # tag teardown lines with a number they had nothing to do with.
+        set_iteration(None)
         ray.shutdown()
 
 
