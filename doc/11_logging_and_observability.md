@@ -35,7 +35,12 @@ memory.
 
 Configurable via `SelfPlayCallback(episode_data_dir=...)` / `TrainConfig.episode_data_dir` /
 `--no-episode-data`. **Default: on.** At `max_step=4096` and 8 agents this is ~4,096 dicts per
-episode held in memory then serialised, per episode, per worker.
+episode held in memory then serialised, per episode, per worker - measured at 8,314 pickled bytes
+per step, so ~34 MB per episode.
+
+**The switch turns off the write, not the accumulation.** `on_episode_step` appends to `self.store`
+unconditionally; only `on_episode_end`'s `pickle.dump` is guarded. So `--no-episode-data` removes
+the I/O and keeps the memory. See [21 §2.2](21_logging_review.md).
 
 Two further notes:
 - The store is keyed by episode ID, which is what makes it safe under
@@ -168,6 +173,11 @@ NumPy and will not take a `Decimal`. The comparison that decides the raise is th
   every reward computed from NAV afterwards is meaningless, so the run stops. Set it false in
   `train_config.json`, or pass `--no-strict-nav-check`, for a run that would rather finish and be
   inspected afterwards; the ERROR log and the metric still happen.
+  **It stops the run only at `num_env_runners=0`.** `on_episode_end` runs on the env runner, so with
+  remote runners the raise is a `RayTaskError` from `sample()`, and RLlib's default
+  `restart_failed_env_runners=True` makes `EnvRunnerGroup` log it through Ray's own logger and
+  restart the actor - `algo.train()` returns normally and training continues on the ledger the check
+  just condemned. See [21 §2.1](21_logging_review.md), which also proposes the fix.
 * **`nav_tolerance`** (default `1e-6`) is headroom for a change that legitimately removes cash
   from the system, such as fees - see
   [13_perspective_financial_trader.md](13_perspective_financial_trader.md) §4. It is **not**
