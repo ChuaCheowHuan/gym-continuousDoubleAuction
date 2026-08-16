@@ -66,7 +66,7 @@ Counts re-measured with `--collect-only`; the earlier `90` predated the config a
 | `test_obs_market_features.py` | 17 | `log_mid`, `log1p_spread_ticks` |
 | `test_reward_logic.py` | 4 | Reward formula components |
 | `test_nav_callback.py` | 8 | Episode-end NAV conservation check: raises, tolerance, metric, strict off, exactness at a scale `float` cannot resolve |
-| `test_logging_setup.py` | 29 | Level resolution and export, handler setup, no `print` in `envs/` or `train/`, the rotating run log, per-worker files, the `iter=` tag, dated stamps |
+| `test_logging_setup.py` | 49 | Level resolution and export, handler setup, no `print` in `envs/` or `train/`, the rotating run log, per-worker files, the `iter=` tag, dated stamps, concurrent configuration, two-process isolation, unhandled exceptions and warning capture |
 | `test_probabilistic_mapping.py` | 1 | League matchmaking distribution |
 | `test_config_loading.py` | 15 | `train_config.json` → `TrainConfig` → env |
 | `test_config_sources.py` | 26 | No literal copy of a configured value survives in Python |
@@ -74,11 +74,11 @@ Counts re-measured with `--collect-only`; the earlier `90` predated the config a
 | `test_runtime_profiles.py` | 23 | `runtime_profiles.json` → hardware sets, platform paths |
 | `test_checkpointing.py` | 50 | Checkpoint retention, restore selection, league state across a save |
 | `test_champion_trigger.py` | 6 | League statistics with modules that played no episodes |
-| `test_progress_log.py` | 19 | `progress.jsonl` writer, numpy/NaN handling, `vf_explained_var` extraction |
+| `test_progress_log.py` | 31 | `progress.jsonl` writer, numpy/NaN handling, `vf_explained_var` extraction, per-run directory isolation, the iteration broadcast to env runners |
 | `test_info_dict.py` | 22 | Per-step `info`: back-compat, reward terms summing exactly, live counters, spread, pass/rejection fields, JSON |
 | `test_type_policy.py` | 15 | Decimal money/prices, int sizes, no field changing type mid-episode, book boundary |
 | `test_activity_metrics.py` | 12 | `pass_action_fraction` / `order_rejection_fraction`: the S1-3 detector, per-episode tallies, pickling |
-| **unit total** | **323** | |
+| **unit total** | **355** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported and finite (1 xfail pins S1-1) |

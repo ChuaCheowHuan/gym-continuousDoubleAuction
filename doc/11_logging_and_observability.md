@@ -12,6 +12,9 @@ at all, ~86 `print()` calls, and a conservation check that reported a corrupt le
 `FAILED`. Both are fixed - see §1.3 and §1.5. What remains open is *coverage*: the set of things
 worth recording is still much larger than the set actually recorded (§2).
 
+**Concurrency.** §1.10 is the answer to "is this thread safe or process safe", which is a separate
+question from coverage and was for a long time answered only in prose. It now has tests.
+
 ---
 
 ## 1. What is currently logged
@@ -107,7 +110,11 @@ Three properties this buys that `print` could not:
 * **An off switch.** `cda_log_level` in `train_config.json` (or `$CDA_LOG_LEVEL`, or
   `--log-level` on the random runner) sets the level. Remote EnvRunners are separate interpreters
   that never run `main()`, so `configure()` exports the level into the environment and each
-  worker's first `get_logger` call picks it up.
+  worker's first `get_logger` call picks it up. That export reaches a worker only when this
+  process starts the cluster, because the raylet inherits our environment; against
+  `ray.init(address=...)` on a cluster that was already running it never arrives. So the same
+  variables are also passed as a `runtime_env`, which Ray applies to the workers it starts for the
+  job whoever started the cluster - see `logging_setup.worker_env_vars`.
 * **A record that outlives the terminal.** See §1.9 - the log is written to a rotating file under
   `log_base_dir` as well as stdout.
 
@@ -185,7 +192,7 @@ from the config file.
 one log line and dropped, which left a finished run with checkpoints, scrollback, and no queryable
 record of how it got there.
 
-Every iteration now appends one JSON object to `<log_base_dir>/progress.jsonl`:
+Every iteration now appends one JSON object to `<run_dir>/progress.jsonl` (§1.11):
 
 ```python
 result = algo.train()
@@ -205,9 +212,11 @@ _append_progress(result, cfg)
   resumed run extends its history rather than truncating it.
 * **Every failure is swallowed with a warning.** A full disk must not take down a run that is
   otherwise training fine.
-* It sits beside `chkpt/` under `log_base_dir`, not with the per-episode pickles: one short line
-  per iteration belongs with the things that must survive a disconnect, which is why
-  `runtime_profiles.json` splits `results_root` from `episode_data_root` in the first place.
+* It sits under `log_base_dir`, not with the per-episode pickles: one short line per iteration
+  belongs with the things that must survive a disconnect, which is why `runtime_profiles.json`
+  splits `results_root` from `episode_data_root` in the first place. It is one level further down
+  than it used to be, in this run's own directory - see §1.11 for why sharing one file across runs
+  was not safe.
 
 Covered by `test_progress_log.py` (one line per iteration, appends across a restart, numbers
 survive as numbers, awkward values, and a write failure that must not stop the loop) and by
@@ -322,7 +331,7 @@ Every process now writes a rotating log file under `log_base_dir`, beside `progr
 | File | Written by | Contains |
 |---|---|---|
 | `run.log` | the driver | iteration summaries, league statistics, champion events, checkpoint writes |
-| `run.<pid>.log` | each env runner | the per-episode NAV tables and the conservation ERROR |
+| `run.<pid>.<worker>.log` | each env runner | the per-episode NAV tables and the conservation ERROR |
 
 **Why one file per process rather than one shared file.** `RotatingFileHandler` is not safe across
 processes: two of them crossing the size threshold together rename and truncate the same file
@@ -347,16 +356,163 @@ tracked in a `ContextVar` — per-thread rather than a module global, since the 
 be the only thread. It reads `-` where the iteration is unknown, which is every env runner and the
 driver before the first iteration and after the last. Not `0`, which is a real iteration number.
 
-So with remote runners a worker's NAV table is dated, attributed to its pid and durable, but reads
-`iter=-`: the worker genuinely does not know which iteration its episode belongs to. Recovering
-that association means passing the iteration to the runners, which is a change to what RLlib hands
-the callbacks rather than a logging change.
+A worker's NAV table is therefore dated, attributed and durable. It used to read `iter=-` as well,
+on the reasoning that the worker genuinely does not know which iteration its episode belongs to -
+§1.12 sends it the number instead. The dash remains for a process that legitimately has no
+iteration: the driver before the first one and after the last.
 
-Covered by `test_logging_setup.py` (29 tests): the file appears beside the metrics and mirrors
+Covered by `test_logging_setup.py` (49 tests): the file appears beside the metrics and mirrors
 stdout, rotation bounds it, an unwritable destination warns instead of raising, a worker resolves
-the directory from the environment and writes its own pid-suffixed file, the driver keeps the
-plain name, the iteration tag follows `set_iteration` and defaults to a dash, and the timestamp
-carries the date.
+the directory from the environment and writes its own uniquely tagged file, the driver keeps the
+plain name, the iteration tag follows `set_iteration` and defaults to a dash, the timestamp
+carries the date, and - see §1.10 - concurrent configuration, two-process isolation, unhandled
+exceptions and warning capture.
+
+### 1.10 Thread safety and process safety
+
+The short answer: **thread safe on both the write and the setup path; process safe by not sharing
+files rather than by locking them.** The long answer is worth stating, because three of the four
+holes below were real and none of them was covered by a test.
+
+**Writes, within a process.** Safe, and always were. `logging.Handler.handle()` acquires the
+handler's `RLock` around `emit()`, and `RotatingFileHandler.doRollover()` runs inside `emit`, so
+concurrent `logger.info` from several threads can neither interleave a line nor rotate the file
+twice. `test_concurrent_writers_do_not_tear_a_line` pins it.
+
+**Setup, within a process.** Was *not* safe. `get_logger` checks `_configured` and then acts on
+it, and `configure()` closes and removes the existing handlers before adding replacements.
+`addHandler` is individually atomic under logging's own module lock, but that *sequence* is not:
+two threads inside it produce duplicate handlers, or one closes a handler the other is emitting
+through. The whole swap is now under `_configure_lock`. The window was small - the first
+`get_logger` normally happens at import, which the import lock serialises - but "small" is not a
+property a test can hold you to.
+
+**Across processes.** `RotatingFileHandler` has no cross-process interlock, and the design's answer
+is not to make sharing safe but to stop processes sharing a file:
+
+| Writer | File | What keeps it apart |
+|---|---|---|
+| Driver | `run.log` | its own run directory (§1.11) |
+| Env runner | `run.<pid>.<worker>.log` | pid *and* Ray worker id |
+| Driver | `progress.jsonl` | its own run directory (§1.11) |
+| Env runner | `<episode_id>.pkl` | the episode id, already unique |
+
+Two of those were previously weaker than they looked:
+
+* **A pid is not a unique key.** It is unique per *node*. On a multi-node run with `log_base_dir`
+  on a shared filesystem - NFS, or the Drive mount Colab uses - two workers on different nodes can
+  hold the same pid and open the same `run.<pid>.log`, which is the exact rotation race the
+  per-worker name exists to prevent. The name now carries Ray's worker id, which is unique
+  cluster-wide, behind the pid, which is what the `pid=` field of each line matches. Ray is read
+  out of `sys.modules` rather than imported: `runtime.apply_env_vars()` must run before ray is
+  first imported, and `configure()` runs before *that*.
+* **The driver's own files were not covered at all.** `run.log` carries no pid, and `log_base_dir`
+  defaulted to a fixed `results`, so two concurrent runs - or a notebook session alongside a CLI
+  run - shared both it and `progress.jsonl`. §1.11 is the fix.
+
+**Why a shared `progress.jsonl` is worse than a shared log.** Not just rotation: line integrity.
+`_append_progress` calls `json.dump(result, fh)`, which writes incrementally - 61 `write()` calls
+for a trivial dict. Python's `TextIOWrapper` coalesces those into ~8 KiB chunks, so a small record
+is a single `O_APPEND` write and atomic; a real RLlib result dict with learner stats and timers is
+larger than the buffer and splits (measured: 31 KB → 4 syscalls, 314 KB → 39). Two drivers
+appending would interleave *inside* one JSON line and produce a record nothing can parse.
+
+**The `iter=` tag is process-wide, not per-thread.** It was a `ContextVar`, chosen so it would be
+per-thread. That was the wrong model twice over: a new thread starts from an empty context, so a
+line the driver logged from any thread but the loop read `iter=-` while the process knew the
+answer; and a value set inside a Ray actor task is not guaranteed to still be in context for the
+next task, which is what §1.12's broadcast needs. It is now a module global - one training loop per
+process, so the iteration is a property of the process. Assignment of an int is atomic under the
+GIL, so it needs no lock.
+
+Covered by `TestConcurrentConfiguration` and `TestSeparateProcesses` in `test_logging_setup.py`,
+which spawn real subprocesses because that is the one thing threads cannot stand in for.
+
+### 1.11 One directory per run
+
+Everything above keeps the *processes of one run* from colliding. Nothing kept two runs apart:
+`log_base_dir` was a fixed `results`, so a second run wrote the same `run.log` and appended to the
+same `progress.jsonl`.
+
+Each run now gets a directory under `log_base_dir`, named by `run_id`:
+
+```
+results/                          <- log_base_dir
+  chkpt/iter_000010/              <- shared across runs, deliberately
+  run_20260816_094500_a3f9/       <- run_dir
+    progress.jsonl
+    run.log
+    run.4231.01000000.log
+```
+
+`run_id` is generated from the local date, time and four random hex digits - the timestamp so a
+listing is readable and orderable, the random suffix because two runs launched by the same script
+in the same second would otherwise collide on the second, which is the case being fixed. Setting
+`run_id` in `train_config.json` or passing `--run-id` reuses an existing directory, which is how a
+restored run extends the `progress.jsonl` it left behind.
+
+**The checkpoint tree is deliberately *not* run-scoped.** Restoring from a disconnect means finding
+the newest `iter_*` written by an *earlier* run; a per-run checkpoint tree would hide it and every
+resumed run would start from nothing. So the thing that must be shared is shared, and the two files
+that cannot tolerate sharing are not. `warn_about_stale_checkpoints` already covers the cost of
+that sharing.
+
+`run_id` is out of `TrainConfig.__eq__`: it names the run rather than configuring it, and since one
+is generated per instance, comparing it would make no two configs equal - including the checked-in
+file against its own defaults, which `test_config_sources.py` asserts, and a restored checkpoint's
+config against the current one, which `config_divergence` reports on.
+
+### 1.12 The iteration reaches the env runners
+
+§1.9 noted that a worker's lines read `iter=-` because "the worker genuinely does not know which
+iteration its episode belongs to", and put recovering that association down as a change to what
+RLlib hands the callbacks. That was too pessimistic. The driver knows the number, and
+`foreach_env_runner` already reaches every runner; it only had to be sent.
+
+`_broadcast_iteration` does that at the top of each iteration, before `algo.train()` starts
+sampling. It is best-effort and quiet: a runner that is restarting, or an RLlib rename, degrades to
+the old `iter=-` rather than stopping a training run. `local_env_runner=False`, because the
+driver's own runner shares its process and `set_iteration` has already tagged it.
+
+This is what makes the run log joinable to `progress.jsonl` under `num_env_runners > 0`, which is
+the configuration where it matters: the episode callbacks run on the runners, so the per-episode
+NAV tables and the conservation ERROR are emitted there and nowhere else.
+
+### 1.13 A run that dies says why, in the log
+
+`main()` was `try: train(cfg) / finally: ray.shutdown()`, with no `except`. An unhandled exception
+- including the `strict_nav_check` `AssertionError` whose entire purpose is to stop a run loudly
+enough to be diagnosed afterwards - unwound to Python's default hook, which writes to `sys.stderr`
+outside logging. So `run.log` ended mid-narrative and the reason for the ending was in scrollback,
+which is the failure §1.9 exists to fix.
+
+Three things now catch it:
+
+* `main()` logs the traceback where it happens, so it is tagged with the `iter=` that failed rather
+  than appearing after the teardown lines;
+* `sys.excepthook`, for anything that gets past that - and for every *worker* process, which no
+  try/except on the driver could reach;
+* `threading.excepthook`, for a thread dying, which Python handles separately again.
+
+The previous hooks are chained rather than replaced, so stderr and any debugger still see what they
+always did. `KeyboardInterrupt` is logged as a one-line INFO with no stack: these runs are normally
+ended by being killed, and a full traceback for an intentional Ctrl-C is noise at the end of every
+session.
+
+`warnings.warn` is captured too, via `logging.captureWarnings(True)`. A `DeprecationWarning` from
+Ray or gymnasium is the earliest signal that an upgrade is about to break this repository, and it
+was going to stderr unrecorded and unrotated. Capture alone is not enough - it logs to
+`py.warnings`, which is outside this package's namespace and inherits none of its handlers, so the
+record would fall through to logging's last-resort handler and reach stderr anyway. The package's
+handlers are mirrored onto it.
+
+### 1.14 The stream handler writes to stdout
+
+`logging.StreamHandler()` with no argument writes to **stderr**, which is what this package did
+while §1.3, §1.9 and `tunable_constants.json` all described it as stdout. It matters:
+`python -m gym_continuousDoubleAuction.train.train > run.txt` captured none of the output a run
+exists to produce. It is now explicitly `sys.stdout`. Warnings and errors are not split onto stderr
+separately - they are part of the same narrative, and two streams reorder against each other.
 
 ---
 
@@ -454,14 +610,17 @@ chosen for, and it makes the info dict awkward for RLlib metric aggregation.
 | Per-episode `.pkl` files grow without rotation or size cap | Disk fills over long runs; the flag is off/on, not bounded |
 | Episode `.pkl` files carry no timestamp or iteration metadata | Hard to correlate with training progress |
 | `pickle` format | Arbitrary code execution on load; prefer `npz` / `parquet` / `jsonl` |
-| `progress.jsonl` grows without rotation | One line per iteration is small, but nothing bounds it across a long series of resumed runs |
+| `progress.jsonl` grows without rotation | One line per iteration is small, but nothing bounds it across a run that pins its `run_id` and resumes repeatedly |
+| Rotation discards the *earliest* output first | `file_backup_count` × `file_max_bytes` caps the run log at 60 MB, which at DEBUG is reached quickly — and it is the start of a run, where divergence usually begins, that is dropped. A time-based handler, or archiving the run directory, keeps it |
 
-Three things are no longer in this table. Logging itself: output is levelled, attributable,
+Four things are no longer in this table. Logging itself: output is levelled, attributable,
 switchable and now durable, written to a rotating file per process as well as stdout (§1.3, §1.9),
 and the `g_store` dead code is gone (§1.4). The absence of a per-iteration training history:
-`progress.jsonl` is that machine-readable record (§1.6). And the run log does not re-create the
+`progress.jsonl` is that machine-readable record (§1.6). The run log does not re-create the
 unbounded-growth problem it would otherwise have added — `file_max_bytes` and `file_backup_count`
-bound it.
+bound it. And two runs no longer write into each other's files (§1.11), which was never listed here
+but was the more serious of the two: a shared `run.log` loses lines to a rotation race, and a
+shared `progress.jsonl` can interleave two writers inside one JSON line.
 
 ---
 

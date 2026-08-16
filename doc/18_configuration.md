@@ -317,8 +317,20 @@ baked into the checkpoint — see §5.3.
 | `chkpt_keep` | `--chkpt-keep` | How many saves to retain; `<= 0` keeps all |
 | `is_restore` | `--restore` | Resume from a checkpoint rather than starting from scratch |
 | `restore_path` | `--from-checkpoint` | Which checkpoint; `null` takes the newest readable one |
+| `log_base_dir` | `--log-base-dir` | Root for all run output. Holds `chkpt/` and one directory per run |
+| `run_id` | `--run-id` | Names this run's directory under `log_base_dir`; `null` generates one |
 | `log_level` | `--log-level` | **Ray's** level, handed to `PPOConfig.debugging` |
 | `cda_log_level` | — | **This package's** level; exported as `$CDA_LOG_LEVEL` so worker processes inherit it |
+
+**`run_id` and what is shared between runs.** `progress.jsonl` and the run logs go in
+`<log_base_dir>/<run_id>/`, generated per run so two runs cannot write into each other's files —
+a shared `run.log` loses lines to a cross-process rotation race, and a shared `progress.jsonl` can
+interleave two drivers inside one JSON line. The **checkpoint tree stays at
+`<log_base_dir>/chkpt`**, outside the run directory and shared: restoring means finding the newest
+`iter_*` an *earlier* run wrote, and scoping it per run would make every resumed run start from
+nothing. Pass `--run-id` with a previous run's id to write into that directory again, which is how
+a restored run extends the progress history it left. See
+[11_logging_and_observability.md](11_logging_and_observability.md) §1.11.
 
 **Two log levels, deliberately.** Ray at `INFO` is noise; this package at `INFO` is the per-episode
 NAV table, the per-iteration league statistics and the checkpoint lines — the output a run is meant
