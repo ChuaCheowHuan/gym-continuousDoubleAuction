@@ -15,6 +15,11 @@ Related: [09_distributed_training.md](09_distributed_training.md),
 Everything marked **[verified]** was checked against Ray 2.56.1 as pinned in `requirements.txt`,
 either by reading the installed source at the line cited or by running the code.
 
+**All eight recommendations in §6 are implemented.** §1-§5 are kept in the present tense of the
+audit - they describe what was found - and each §6 item records what was built and where it
+departed from the recommendation. §7 is what the implementation turned up that the review did not
+predict.
+
 ---
 
 ## 1. What is logged, and by what mechanism
@@ -275,65 +280,108 @@ cloud storage) rather than the RLlib feature.
 
 ---
 
-## 6. Recommendations
+## 6. Recommendations — all eight implemented
 
-Ordered by (damage prevented) ÷ (effort). Items 1–3 are defects; 4–6 are the format work; 7–8 are
-adoption of Ray built-ins.
+Ordered as they were written: 1–3 defects, 4–6 the format work, 7–8 adoption of Ray built-ins. Each
+now records what was actually built and where it differed from the recommendation.
 
-**1. Make `strict_nav_check` fatal on a distributed run.** (§2.1) Raising in the callback is not a
-stop signal once the runner is remote. Emit the violation the way the run can act on it: keep the
-ERROR and the `nav_conservation_error` metric where they are, and have the driver stop the loop.
-Concretely — log the violation with a distinguishing metric (e.g. `nav_conservation_violations`,
-`reduce="sum"`), then in `train()` check that metric in the result after each `algo.train()` and
-raise on the driver when `strict_nav_check` is set. That path is where an exception genuinely ends
-the run, and it also puts the message into `run.log`. Test it at `num_env_runners=1`; the existing
-`test_nav_callback.py` tests only the in-process case.
+**1. `strict_nav_check` stops a distributed run.** ✅ The callback no longer raises. It logs the
+ERROR, `nav_conservation_error`, and a new `nav_conservation_violations` counter
+(`reduce="sum"`, emitted on conserved episodes too so the key always exists); the driver reads it
+after `algo.train()` and raises `NavConservationError` — a subclass of `AssertionError`, so any
+existing `except` still catches. The check runs after `_append_progress`, so the failing iteration's
+numbers are on disk, and before the checkpoint, because a corrupt ledger is not a state worth
+saving. Non-strict now warns *on the driver*, which previously said nothing at all about a violated
+run — the per-episode ERROR is in a worker's file.
 
-**2. Stop accumulating steps when the pickles are off.** (§2.2) One guard on
-`self.store[...].append(...)`. `--no-episode-data` currently buys none of what it advertises. The
-activity tallies are already independent of `store`, so nothing else changes.
+*Beyond the recommendation:* the raise had to go entirely, not merely be supplemented. A throwing
+`sample()` means `get_metrics()` never runs, so the raise would have destroyed the very metric the
+driver check reads. At `num_env_runners=0` the stop is now one iteration later than it used to be;
+that is the price of one code path that works at every runner count.
 
-**3. Guard the pickle write, and make its path absolute and run-scoped.** (§2.3, §2.4) Wrap the
-`makedirs`/`open`/`dump` in `try`/`except` with a `logger.warning`, matching `_append_progress`.
-Resolve `episode_data_dir` to an absolute path in `TrainConfig` (as `run_dir` already is), and put
-the per-episode files under a run-scoped subdirectory. Export it to the workers through the same
-`runtime_env` channel the log directory uses, so the resolution never depends on worker cwd.
+**2. Accumulation stops when the record is off.** ✅ `on_episode_step` no longer touches
+observations or actions when `episode_data_dir` is None. Verified by the test that caught it:
+1,000 steps with the record off now retains nothing.
 
-**4. Prune `store`/`_activity` defensively.** (§3.2) Either cap the dict (evict the oldest episode
-id when it exceeds `num_envs_per_env_runner` + slack) or hook `on_environment_created` /
-`on_sample_end` to drop ids no longer live. Cheap, and it converts an unbounded leak into a bounded
-one.
+**3. The write is guarded, absolute and run-scoped.** ✅ `TrainConfig.episode_data_path` resolves
+`<episode_data_dir>/<run_id>` to an absolute path. Every failure in the writer is a warning. No
+env-var plumbing was needed after all — the absolute path is pickled into the callback that every
+runner already receives, which is simpler than the `runtime_env` channel the recommendation
+proposed and has the same effect.
 
-**5. Replace `pickle` with Parquet via Ray Data, keeping the `info` fields.** (§5, doc 11 §3) This
-is the item Ray's offline recording *would* have provided. Write one flattened row per
-(episode, step, agent) with the `info` fields as columns, `obs`/`act` as list columns. It fixes four
-listed problems at once: arbitrary code execution on load, no schema, no queryability, and no
-timestamp/iteration metadata (add `run_id` and `iteration` columns — the runner now knows the
-iteration, per §1.12 of doc 11). Buffer to a row threshold and write from a background thread so the
-sampling loop is not blocked. Do this *before* revisiting RLlib's `output=`, since the schema is the
-part that has to be right either way.
+**4. The live-episode dicts are bounded.** ✅ Both of them: the recorder evicts the oldest buffered
+episode past `max_live_episodes`, and the callback's activity tallies past `_MAX_LIVE_EPISODES`.
+Insertion-ordered, so "oldest" means the episode that started first.
 
-**6. Bound the per-episode record.** (doc 11 §3) A sampling rate (every Nth episode), a per-run byte
-cap, or a retention count. The flag is on/off today, and "on" is the default at ~34 MB per episode.
+**5. Parquet instead of `pickle`.** ✅ One row per (episode, step, agent), a declared schema, and
+`run_id` / `iteration` / `wall_time` / `module_id` columns — which also closes "the files carry no
+timestamp or iteration metadata" from doc/11 §3 and makes champion matchups a group-by. An `info`
+key with no column is preserved as JSON in `info_extra`, and a test fails if `Info_Helper` grows a
+field the schema does not cover.
 
-**7. Adopt `ray.LoggingConfig` for cluster-wide structure.** (§2.7, §3.4) Pass
-`ray.init(logging_config=ray.LoggingConfig(encoding="JSON", log_level=...))` so Ray's own diagnostics
-in every process are structured and carry job/worker/actor ids. Set the package logger's
-`propagate = False` in the same change, or every package line prints twice. This is the cleanest fix
-for "the swallowed env-runner traceback is in a different stream from the narrative it explains".
+*Deliberate deviation:* this writes with `pyarrow.parquet` from one background thread, **not** via
+`ray.data` as the recommendation said. Starting a Ray Data execution inside an env runner is the
+objection §5 raises against RLlib's own offline recording — it clamps to `num_cpus_per_env_runner`
+and competes with sampling on a two-core profile. The output is byte-for-byte the same thing
+`ray.data.read_parquet` consumes, so nothing downstream is lost.
 
-**8. Reduce the per-step `info` into metrics.** (doc 11 §4, unchanged and still the largest gap)
-Capture is good; aggregation is six values. The `reward_terms` variance split, per-agent end-of-
-episode account state, and the champion/league events in §2.5 of doc 11 all belong in
-`MetricsLogger`, which is the one channel that already survives multiple runners correctly and
-lands in `progress.jsonl` for free.
+**6. The record is bounded.** ✅ `episode_sample_every` (default 10, chosen by `crc32` of the
+episode id so every runner picks the same subset without coordinating) and `episode_max_bytes`
+(default 2 GiB per writer, oldest deleted first). Both were needed: at ~34 MB per episode the
+default was previously "record until the disk fills".
+
+**7. `ray.LoggingConfig`, and propagation off.** ✅ `ray_log_encoding` (`TEXT` by default, `JSON`
+available, empty to leave Ray alone), feature-detected so an older or newer Ray degrades to its own
+formatting. Setting it also passes `propagate=False`, since `LoggingConfig` configures the root
+logger and both handlers would otherwise print every package line twice. Propagation stays on by
+default — `caplog` and any other root-attached handler depend on it — so it is a `configure()`
+argument rather than a constant.
+
+**8. The per-step `info` is reduced into metrics.** ✅ Six metrics became 27. Per episode:
+`reward_term_mean_*` and `reward_term_var_share_*` for all five contributions, `episode_nav_mean` /
+`_min` / `_max`, `mean_agent_drawdown`, `mean_abs_net_position`, `mean_num_trades`,
+`maker_fill_ratio`. Per iteration: `champions_promoted`, `iterations_since_champion` — the number
+`_should_create_champion` had computed and thrown away on every call — `available_modules` and
+`idle_modules`.
+
+The variance shares are computed from running sums, not a retained series, which matters for the
+same reason item 2 does. On a real 2-iteration run they read `nav_term` 0.95, `drawdown_penalty`
+0.05, and the other three below 1e-8 — the doc/07 §6.4 split, live, from a run rather than from a
+post mortem.
 
 ---
 
-## 7. Corrections made to existing docs
+## 7. What was found while implementing
+
+Three things the review did not predict.
+
+**A 30-second hang at process exit.** The recorder's first design stopped its writer thread with a
+sentinel value on the queue. `close()` is called at exit, and the one moment it is called under load
+is the one moment the queue is full — so the `put` failed, the thread never learned to stop, and the
+join sat out its whole timeout. Two tests took exactly 30.00s, which is what made it visible. It is
+a `threading.Event` now, with the writer polling; the same two tests take 8s total.
+
+**The `on_train_result` metrics are one iteration late.** The hook is handed a `result` that has
+already been compiled, so `champions_promoted` reads `1.0` in the row *after* the promotion. This
+has always been true of `league_size` and the return statistics — the new champion metrics simply
+make it visible against a known event. Documented rather than corrected: the lag is uniform, and one
+documented offset is better than a correction that has to be undone if RLlib changes the order.
+
+**Live state should not be pickled at all.** The callback is cloudpickled into every env runner and
+every checkpoint, and it was carrying its in-flight episode tallies along. The unpickling side is a
+different process; a tally for an episode it never ran is not bookkeeping it should continue.
+`__getstate__` now ships the configuration and nothing else — which is also what makes the
+recorder's thread and queue safe to own.
+
+---
+
+## 8. Corrections made to existing docs
 
 | Doc | Was | Now |
 |---|---|---|
-| `11 §1.5` | "`strict_nav_check` defaults to true … so the run stops" | Qualified: true at `num_env_runners=0`; a remote runner's raise is swallowed and the runner restarted (§2.1 here) |
-| `11 §1.1` | The `episode_data_dir` flag described as switching the per-episode record off | Notes that the flag switches off the *write*, not the accumulation (§2.2 here) |
+| `11 §1.5` | "`strict_nav_check` defaults to true … so the run stops" | The stop is the driver's, from a metric; the hook reports (§2.1 here) |
+| `11 §1.1` | Per-episode pickles, flag switches the record off | Parquet, bounded, run-scoped; the flag now switches off the accumulation too |
+| `11 §1.2` | "Six metrics is the entirety" | 27, with the `on_train_result` lag documented |
+| `11 §3` | Three persistence problems about the `.pkl` files | Gone with `pickle`; one new entry for the unbounded run-log file *count* |
+| `11 §4` | Four sketched `log_value` calls "to add" | All four exist; the list is now things needing new computation |
 | `config/runtime_profiles.json` | "~10MB per 4096-step episode" | ~34 MB, measured at the training shape |

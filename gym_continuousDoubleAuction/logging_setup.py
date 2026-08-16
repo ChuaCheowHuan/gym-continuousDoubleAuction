@@ -25,7 +25,9 @@ Two facts shape this module:
   the package's root logger on first use rather than at import time, so
   importing the package never installs a handler behind the caller's back. A
   handler is attached to the `gym_continuousDoubleAuction` logger only, with
-  propagation left on but Ray's own handlers unaffected.
+  propagation left on by default but Ray's own handlers unaffected. A training
+  entry point that hands `ray.init` a `LoggingConfig` turns propagation off -
+  see `configure`'s `propagate` argument.
 
 Levels used across the package:
 
@@ -174,6 +176,7 @@ def configure(
     *,
     log_dir: Optional[str] = None,
     force: bool = False,
+    propagate: Optional[bool] = None,
 ) -> str:
     """Attach the package handlers and set the level. Idempotent per process.
 
@@ -197,6 +200,16 @@ def configure(
     env runners, so with `num_env_runners > 0` the NAV tables and the
     conservation ERROR are emitted in a worker and would otherwise reach no
     file at all.
+
+    `propagate` controls whether records also travel to the *root* logger.
+    Left as None it is not touched, which keeps propagation on - the default,
+    and what `caplog` and any other root-attached handler rely on. `train.main`
+    passes False, because it is about to hand `ray.init` a `LoggingConfig`, and
+    that configures the root logger of this process and every worker Ray starts
+    for the job: with propagation on, every line this package emits would be
+    printed once by the handler attached here and once by Ray's (doc/21 §6
+    item 7). It is a parameter rather than a constant precisely because the
+    duplication only exists once Ray has configured the root logger.
     """
     global _configured, _log_file_path
 
@@ -249,6 +262,9 @@ def configure(
 
         root.setLevel(resolved)
 
+        if propagate is not None:
+            root.propagate = bool(propagate)
+
         # Inside the lock: it copies `root.handlers`, which the block above is
         # what changes. Route warnings.warn through logging, so a
         # DeprecationWarning from Ray or gymnasium - the earliest signal that an
@@ -291,7 +307,7 @@ def _capture_warnings(root: logging.Logger) -> None:
     logging.captureWarnings(True)
 
 
-def _worker_file_tag() -> str:
+def worker_file_tag() -> str:
     """A file-name tag unique across the cluster, not merely across this node.
 
     A pid alone is not a unique key. Two nodes number their processes
@@ -309,6 +325,10 @@ def _worker_file_tag() -> str:
     ray is first imported, and `configure()` runs before that in `main()`. In
     an env runner - the only process that takes this branch in earnest - ray is
     long since imported, so the lookup succeeds exactly where it matters.
+
+    Public because the run log is no longer the only per-process file a worker
+    writes: `train.episode_record` names its Parquet files the same way, and for
+    the same reason - two writers must never open one path.
     """
     pid = os.getpid()
     ray = sys.modules.get("ray")
@@ -343,7 +363,7 @@ def _build_file_handler(log_dir: str, settings: dict, own_file: bool):
         # has run.4231.a3f9c2d1.log beside it rather than several processes
         # fighting over one inode.
         stem, suffix = os.path.splitext(file_name)
-        file_name = f"{stem}.{_worker_file_tag()}{suffix}"
+        file_name = f"{stem}.{worker_file_tag()}{suffix}"
 
     path = os.path.join(os.path.abspath(log_dir), file_name)
     try:

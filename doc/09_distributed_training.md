@@ -322,9 +322,24 @@ gradient step, but a counted iteration and a written checkpoint all the same. RL
 is below what this environment needs at `max_step=4096`, which is why `train_config.json` sets it
 explicitly. See [18 §5.1](18_configuration.md#51-sample_timeout_s-and-the-run-that-trains-on-nothing).
 
-### Cost to watch: per-episode pickles
+### Cost to watch: the per-step episode record
 
-With `episode_data_dir` set (the default), **every** episode on **every** runner writes one file
-containing every step's obs (168 floats), action, reward and info. At `max_step=4096` and 8
-agents that is ~4,096 dicts per episode held in memory and then serialised, per episode, per
-worker. Pass `--no-episode-data` (or `episode_data_dir=None`) for real training runs.
+With `episode_data_dir` set (the default), each runner records sampled episodes to Parquet - one row
+per (episode, step, agent), carrying the obs (168 floats), the action and every `info` field. At
+`max_step=4096` and 8 agents an episode is ~34 MB.
+
+Three things bound it, and all three matter more with several runners, because each one records
+independently:
+
+* `episode_sample_every` (default 10) records one episode in N. The choice is a `crc32` of the
+  episode id, so every runner samples the same subset without coordinating.
+* `episode_max_bytes` (default 2 GiB) caps what **each writer** keeps, deleting its own oldest files
+  first. Per writer rather than per directory - deleting another worker's files is a cross-process
+  race for no benefit - so a run with N runners keeps up to N times the cap.
+* `--no-episode-data` (or `episode_data_dir=None`) switches it off entirely, including the buffering
+  behind it. It did not always: the flag used to disable only the write.
+
+The write is handed to a background thread per process, so it is off the sampling path, and every
+failure in it is a warning. Both properties exist because the previous synchronous `pickle.dump`
+could raise into `on_episode_end` - and on a remote runner an exception there is a killed and
+restarted worker, not a stopped run. See [21 §2.4](21_logging_review.md).

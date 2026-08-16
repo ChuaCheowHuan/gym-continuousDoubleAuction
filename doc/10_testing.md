@@ -46,7 +46,7 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `348 passed, 1 xfailed` (the xfail pins S1-1; see §6.2.2).
+**[verified]** — `458 passed, 1 xfailed` (the xfail pins S1-1; see §6.2.2).
 
 ### File inventory
 
@@ -65,23 +65,25 @@ Counts re-measured with `--collect-only`; the earlier `90` predated the config a
 | `test_observation_history.py` | 3 | Temporal stacking |
 | `test_obs_market_features.py` | 17 | `log_mid`, `log1p_spread_ticks` |
 | `test_reward_logic.py` | 4 | Reward formula components |
-| `test_nav_callback.py` | 8 | Episode-end NAV conservation check: raises, tolerance, metric, strict off, exactness at a scale `float` cannot resolve |
-| `test_logging_setup.py` | 49 | Level resolution and export, handler setup, no `print` in `envs/` or `train/`, the rotating run log, per-worker files, the `iter=` tag, dated stamps, concurrent configuration, two-process isolation, unhandled exceptions and warning capture |
+| `test_nav_callback.py` | 16 | Episode-end NAV conservation, in both halves: the hook counts a violation without raising, the driver stops the run from the count, tolerance, exactness at a scale `float` cannot resolve, a missing metric reading as "nothing seen" |
+| `test_logging_setup.py` | 58 | Level resolution and export, handler setup, no `print` in `envs/` or `train/`, the rotating run log, per-worker files, the `iter=` tag, dated stamps, concurrent configuration, two-process isolation, unhandled exceptions, warning capture, propagation control and `ray.LoggingConfig` |
 | `test_probabilistic_mapping.py` | 1 | League matchmaking distribution |
 | `test_config_loading.py` | 15 | `train_config.json` → `TrainConfig` → env |
 | `test_config_sources.py` | 26 | No literal copy of a configured value survives in Python |
-| `test_config_wiring.py` | 11 | Config keys reaching their consumers |
+| `test_config_wiring.py` | 17 | Config keys reaching their consumers; `episode_data_path` absolute and run-scoped |
 | `test_runtime_profiles.py` | 23 | `runtime_profiles.json` → hardware sets, platform paths |
 | `test_checkpointing.py` | 50 | Checkpoint retention, restore selection, league state across a save |
-| `test_champion_trigger.py` | 6 | League statistics with modules that played no episodes |
+| `test_champion_trigger.py` | 13 | League statistics with modules that played no episodes; promotion, pool size, idle count and time-since-champion as metrics |
 | `test_progress_log.py` | 31 | `progress.jsonl` writer, numpy/NaN handling, `vf_explained_var` extraction, per-run directory isolation, the iteration broadcast to env runners |
 | `test_info_dict.py` | 22 | Per-step `info`: back-compat, reward terms summing exactly, live counters, spread, pass/rejection fields, JSON |
 | `test_type_policy.py` | 15 | Decimal money/prices, int sizes, no field changing type mid-episode, book boundary |
-| `test_activity_metrics.py` | 12 | `pass_action_fraction` / `order_rejection_fraction`: the S1-3 detector, per-episode tallies, pickling |
+| `test_activity_metrics.py` | 24 | `pass_action_fraction` / `order_rejection_fraction`: the S1-3 detector, per-episode tallies, pickling; the reward-term variance split and the end-of-episode account metrics |
+| `test_episode_record.py` | 26 | The Parquet per-step record: declared schema and its drift guard against `Info_Helper`, identity columns, sampling rate, byte cap, eviction of episodes that never end, and the four ways it must fail without raising |
 | **unit total** | **355** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported and finite (1 xfail pins S1-1) |
+| `integration/test_distributed_observability.py` | 10 | A real `num_env_runners=1` iteration: every episode-hook metric arrives on the driver, and the episode record is written by the *worker* into the driver's absolute run-scoped path |
 | **integration total** | **26** | |
 
 > **Stale references in older docs.** `test_orderbook.py`, `repro_orderbook_crossed_book.py`,
@@ -89,8 +91,8 @@ Counts re-measured with `--collect-only`; the earlier `90` predated the config a
 > The current names are in the table above.
 
 > **Side effect note, now resolved.** The suite no longer writes `episode_data/` at all:
-> `test_nav_callback` builds its callback with `episode_data_dir=None`, so the per-episode pickle
-> dump never runs. (That dump is where the two committed `episode_data/test_ep_*.pkl` files came
+> `test_nav_callback` builds its callback with `episode_data_dir=None`, so the per-episode record
+> never runs. (Its predecessor is where the two committed `episode_data/test_ep_*.pkl` files came
 > from — output of the old tests, not fixtures anything reads.) Both `episode_data` and
 > `gym_continuousDoubleAuction/episode_data` remain in `.gitignore`, since a *training* run still
 > writes there by default.

@@ -1,13 +1,25 @@
-"""The episode-end NAV conservation check.
+"""The episode-end NAV conservation check, in both halves.
 
 The sum of every agent's NAV must equal the cash the system started with: the
 ledger is Decimal end to end, so nothing is created or destroyed by trading,
 only moved. A violation means the ledger is corrupt and every reward computed
-from NAV after it is meaningless, which is why the default is to raise.
+from NAV after it is meaningless, which is why the run stops.
 
-These tests used to call `on_episode_end` twice and assert nothing at all -
-they passed as long as it did not throw, which is precisely the behaviour that
-is now under test. See doc/11_logging_and_observability.md.
+**The check is in two pieces, and the split is the point.** It used to be one:
+`on_episode_end` raised, and the raise was the stop. That works only at
+`num_env_runners=0`. The hook runs on the env runner, so with remote sampling
+the raise arrives as a `RayTaskError` from `sample()`, RLlib's
+`restart_failed_env_runners` (True by default) logs it through Ray's own logger
+and restarts the actor, and `algo.train()` returns normally - the run carries on
+training on the ledger the check just condemned. The raise also destroyed the
+evidence: `synchronous_parallel_sample` asks each runner for
+`(sample(), get_metrics())` in one call, so a throwing `sample()` means the
+metrics for that runner are discarded with the error. See doc/21 §2.1.
+
+So now the callback *reports* - the ERROR, `nav_conservation_error`, and a
+`nav_conservation_violations` count - and `train._check_nav_conservation` acts
+on it, on the driver, where an exception genuinely ends a run. These tests cover
+both halves and the seam between them.
 """
 import logging
 import sys
@@ -21,7 +33,21 @@ import pytest
 # Assuming the tests are run from the project root or the test directory
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import SelfPlayCallback
+from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
+
+from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
+    NAV_VIOLATIONS_METRIC,
+    SelfPlayCallback,
+)
+from gym_continuousDoubleAuction.train.train import (
+    NavConservationError,
+    TrainConfig,
+    _check_nav_conservation,
+    nav_violations,
+)
+
+LOGGER = "gym_continuousDoubleAuction"
+
 
 class MockEpisode:
     def __init__(self, id, last_info):
@@ -33,10 +59,21 @@ class MockEpisode:
             return self.last_info
         return {}
 
+
 class MockEnv:
     def __init__(self, init_cash, num_of_agents):
         self.init_cash = init_cash
         self.num_of_agents = num_of_agents
+
+
+def _emitted(metrics, name):
+    """The last call that logged `name`, or None."""
+    found = None
+    for call in metrics.log_value.call_args_list:
+        if call.args and call.args[0] == name:
+            found = call
+    return found
+
 
 class TestNAVCallback:
     def setup_method(self):
@@ -52,11 +89,11 @@ class TestNAVCallback:
         }
 
     def _callback(self, **kwargs):
-        """A callback that writes no episode pickles.
+        """A callback that writes no episode record.
 
         The previous version of these tests left `episode_data_dir` at its
-        configured default, so running them dropped two .pkl files into the
-        repo's `episode_data/` - which is where the two committed fixtures came
+        configured default, so running them dropped files into the repo's
+        `episode_data/` - which is where the two committed .pkl fixtures came
         from.
         """
         kwargs.setdefault("episode_data_dir", None)
@@ -84,36 +121,47 @@ class TestNAVCallback:
 
         self._end_episode(callback, "ep_success", self.init_cash, metrics)
 
-        metrics.log_value.assert_called_once_with(
-            "nav_conservation_error", pytest.approx(0.0), window=1
-        )
+        assert _emitted(metrics, "nav_conservation_error").args[1] == pytest.approx(0.0)
 
-    def test_violation_raises_under_the_default(self):
-        """Strict is the default: a corrupt ledger stops the run."""
-        callback = self._callback()
-        assert callback.strict_nav_check is True
+    def test_a_conserved_episode_reports_zero_violations(self):
+        """The counter is emitted every episode, not only on a violation.
 
-        with pytest.raises(AssertionError, match="NAV conservation VIOLATED"):
-            self._end_episode(callback, "ep_failure", self.init_cash - 1000)
-
-    def test_violation_reports_the_metric_before_raising(self):
-        """The metric is what a run is diagnosed from afterwards."""
+        A key that only appears when something is wrong forces the driver to
+        distinguish "no violations" from "the metric never arrived" - which are
+        different states with the same reading, and the second one is what a
+        crashed runner produces.
+        """
         callback = self._callback()
         metrics = MagicMock()
 
-        with pytest.raises(AssertionError):
-            self._end_episode(callback, "ep_failure", self.init_cash - 1000, metrics)
+        self._end_episode(callback, "ep_success", self.init_cash, metrics)
 
-        metrics.log_value.assert_called_once_with(
-            "nav_conservation_error",
-            pytest.approx(1000.0 * self.num_agents),
-            window=1,
+        call = _emitted(metrics, NAV_VIOLATIONS_METRIC)
+        assert call.args[1] == 0.0
+        assert call.kwargs["reduce"] == "sum"
+
+    def test_a_violation_is_counted_and_does_not_raise(self):
+        """The hook reports; the driver decides.
+
+        Raising here is what used to happen, and on an env runner it is
+        swallowed by RLlib's fault tolerance - so it stopped nothing and cost
+        the iteration its metrics.
+        """
+        callback = self._callback()
+        assert callback.strict_nav_check is True
+        metrics = MagicMock()
+
+        self._end_episode(callback, "ep_failure", self.init_cash - 1000, metrics)
+
+        assert _emitted(metrics, NAV_VIOLATIONS_METRIC).args[1] == 1.0
+        assert _emitted(metrics, "nav_conservation_error").args[1] == pytest.approx(
+            1000.0 * self.num_agents
         )
 
-    def test_non_strict_logs_an_error_and_continues(self, caplog):
-        callback = self._callback(strict_nav_check=False)
+    def test_a_violation_is_logged_as_an_error(self, caplog):
+        callback = self._callback()
 
-        with caplog.at_level(logging.ERROR, logger="gym_continuousDoubleAuction"):
+        with caplog.at_level(logging.ERROR, logger=LOGGER):
             self._end_episode(callback, "ep_failure", self.init_cash - 1000)
 
         assert "NAV conservation VIOLATED" in caplog.text
@@ -127,11 +175,14 @@ class TestNAVCallback:
         per_agent = self.init_cash + drift / self.num_agents
 
         tolerant = self._callback(nav_tolerance=1.0)
-        self._end_episode(tolerant, "ep_within", per_agent)  # no raise
+        metrics = MagicMock()
+        self._end_episode(tolerant, "ep_within", per_agent, metrics)
+        assert _emitted(metrics, NAV_VIOLATIONS_METRIC).args[1] == 0.0
 
         strict = self._callback(nav_tolerance=1e-9)
-        with pytest.raises(AssertionError):
-            self._end_episode(strict, "ep_outside", per_agent)
+        metrics = MagicMock()
+        self._end_episode(strict, "ep_outside", per_agent, metrics)
+        assert _emitted(metrics, NAV_VIOLATIONS_METRIC).args[1] == 1.0
 
     def test_a_breach_is_caught_at_an_account_size_float_cannot_resolve(self):
         """The check must be Decimal end to end, not float.
@@ -152,19 +203,17 @@ class TestNAVCallback:
             f"agent_{i}": {"NAV": str(Decimal(self.init_cash) - Decimal("0.0625"))}
             for i in range(self.num_agents)
         }
-        with pytest.raises(AssertionError, match="NAV conservation VIOLATED"):
-            callback.on_episode_end(
-                episode=MockEpisode("ep_large", info),
-                env_runner=self.mock_runner,
-                metrics_logger=metrics,
-                env=self.mock_env,
-                env_index=0,
-                rl_module=None,
-            )
-
-        metrics.log_value.assert_called_once_with(
-            "nav_conservation_error", pytest.approx(0.25), window=1
+        callback.on_episode_end(
+            episode=MockEpisode("ep_large", info),
+            env_runner=self.mock_runner,
+            metrics_logger=metrics,
+            env=self.mock_env,
+            env_index=0,
+            rl_module=None,
         )
+
+        assert _emitted(metrics, NAV_VIOLATIONS_METRIC).args[1] == 1.0
+        assert _emitted(metrics, "nav_conservation_error").args[1] == pytest.approx(0.25)
 
     def test_conservation_error_is_exactly_zero_not_merely_close(self):
         """Decimal end to end means the expected error is 0, so a tolerance of
@@ -188,9 +237,13 @@ class TestNAVCallback:
             rl_module=None,
         )
 
-        metrics.log_value.assert_called_once_with(
-            "nav_conservation_error", 0.0, window=1
-        )
+        assert _emitted(metrics, "nav_conservation_error").args[1] == 0.0
+        assert _emitted(metrics, NAV_VIOLATIONS_METRIC).args[1] == 0.0
+
+    def test_no_metrics_logger_is_tolerated(self):
+        """The hook is also driven by tests and by a runner mid-restore."""
+        callback = self._callback()
+        self._end_episode(callback, "ep_failure", self.init_cash - 1000, None)
 
     def test_config_supplies_the_defaults(self):
         """Neither knob is a literal in the callback."""
@@ -201,3 +254,62 @@ class TestNAVCallback:
 
         assert callback.nav_tolerance == league["nav_tolerance"]
         assert callback.strict_nav_check == league["strict_nav_check"]
+
+
+class TestDriverCheck:
+    """The half that actually stops the run.
+
+    Everything here reads the result dict RLlib hands back, because that is the
+    only channel a violation on a remote env runner travels on.
+    """
+
+    def _cfg(self, **kwargs):
+        return TrainConfig(episode_data_dir=None, **kwargs)
+
+    def _result(self, violations):
+        return {ENV_RUNNER_RESULTS: {NAV_VIOLATIONS_METRIC: violations}}
+
+    def test_a_clean_iteration_passes(self):
+        _check_nav_conservation(3, self._result(0.0), self._cfg())
+
+    def test_a_violation_stops_a_strict_run(self):
+        cfg = self._cfg(strict_nav_check=True)
+
+        with pytest.raises(NavConservationError, match="iteration 7"):
+            _check_nav_conservation(7, self._result(2.0), cfg)
+
+    def test_it_is_still_an_assertion_error(self):
+        """doc/11 §1.5 has always documented this as an AssertionError, and any
+        `except AssertionError` written around a training call still works."""
+        assert issubclass(NavConservationError, AssertionError)
+
+    def test_a_non_strict_run_warns_and_continues(self, caplog):
+        cfg = self._cfg(strict_nav_check=False)
+
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            _check_nav_conservation(7, self._result(2.0), cfg)
+
+        assert "strict_nav_check is off" in caplog.text
+
+    def test_the_driver_says_where_the_detail_is(self, caplog):
+        """With remote runners the per-episode ERROR is in a *worker's* file.
+        A driver log that only said "violated" would send a reader to the one
+        file that does not have the numbers."""
+        cfg = self._cfg(strict_nav_check=False)
+
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            _check_nav_conservation(1, self._result(1.0), cfg)
+
+        assert "run.<pid>.<worker>.log" in caplog.text
+
+    def test_a_missing_metric_reads_as_no_violations(self):
+        """An iteration that completed no episode never emits the counter, and
+        that must not look like a failure of its own."""
+        assert nav_violations({}) == 0.0
+        assert nav_violations({ENV_RUNNER_RESULTS: {}}) == 0.0
+        _check_nav_conservation(1, {}, self._cfg(strict_nav_check=True))
+
+    def test_an_unreadable_metric_reads_as_no_violations(self):
+        """RLlib nests metrics differently across versions. A shape this cannot
+        parse must degrade to "nothing seen", not stop a healthy run."""
+        assert nav_violations({ENV_RUNNER_RESULTS: {NAV_VIOLATIONS_METRIC: {}}}) == 0.0

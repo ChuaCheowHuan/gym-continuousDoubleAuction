@@ -40,7 +40,8 @@ class MockEpisode:
     def get_infos(self, index):
         return self._infos if index == -1 else {}
 
-    # on_episode_step reads these for the pickle store; empty is fine.
+    # on_episode_step reads these only when the episode record is on;
+    # every harness here has it off, so empty is fine.
     def get_observations(self, index):
         return {}
 
@@ -186,8 +187,8 @@ class TestBookkeeping:
         assert "ep" not in h.callback._activity
 
     def test_concurrent_episodes_do_not_mix(self):
-        """Keyed by episode ID, like `store`: under a vectorised runner two
-        episodes are in flight at once."""
+        """Keyed by episode ID: under a vectorised runner two episodes are in
+        flight on one worker at once."""
         h = ActivityHarness()
         h.start("a")
         h.start("b")
@@ -213,9 +214,10 @@ class TestBookkeeping:
 
         assert h.emitted("pass_action_fraction").args[1] == pytest.approx(1.0)
 
-    def test_it_does_not_depend_on_the_pickle_store(self):
+    def test_it_does_not_depend_on_the_episode_record(self):
         """episode_data_dir=None is a supported configuration, and these
-        metrics are counted independently of that dump."""
+        metrics are counted independently of it - which is why they are
+        tallied in the hook rather than derived from the recorded rows."""
         h = ActivityHarness(episode_data_dir=None)
         h.start("ep")
         for _ in range(3):
@@ -234,11 +236,199 @@ class TestBookkeeping:
         assert "ep" not in h.callback._activity   # still released
 
     def test_the_callback_still_pickles(self):
-        """It is cloudpickled into every checkpoint. A defaultdict with a lambda
-        factory would pass every test above and fail on restore."""
-        h = ActivityHarness()
+        """It is cloudpickled into every checkpoint and every env runner.
+
+        A defaultdict with a lambda factory would pass every test above and
+        fail on restore.
+        """
+        h = ActivityHarness(episode_sample_every=7)
         h.start("ep")
         h.step("ep", _infos(passes=2))
 
         revived = pickle.loads(pickle.dumps(h.callback))
-        assert revived._activity["ep"]["passes"] == 2
+
+        # The configuration travels...
+        assert revived.episode_sample_every == 7
+        assert revived.num_trainable == h.callback.num_trainable
+
+    def test_live_episode_state_does_not_travel(self):
+        """What is pickled is the configuration, not the process's live state.
+
+        The unpickling side is a *different process* - an env runner, or a
+        restored driver - and a tally for an episode it never ran is not
+        bookkeeping it should continue. Emitting a fraction from those counts
+        would attribute one runner's behaviour to another's episode.
+        """
+        h = ActivityHarness()
+        h.start("ep")
+        h.step("ep", _infos(passes=2))
+        assert h.callback._activity["ep"]["passes"] == 2
+
+        revived = pickle.loads(pickle.dumps(h.callback))
+
+        assert revived._activity == {}
+        assert revived._episode_recorder is None
+        # ...and the original is untouched by having been pickled.
+        assert h.callback._activity["ep"]["passes"] == 2
+
+    def test_a_tally_for_an_episode_that_never_ends_is_dropped(self):
+        """A force-reset discards in-flight episodes without calling
+        on_episode_end, so a dict pruned only there grows for the life of the
+        worker (doc/21 §3.2)."""
+        h = ActivityHarness()
+        limit = h.callback._MAX_LIVE_EPISODES
+
+        for i in range(limit * 2):
+            h.start(f"ep_{i}")
+            h.step(f"ep_{i}", _infos(passes=1))
+
+        assert len(h.callback._activity) <= limit
+        # The oldest went first, the newest is still being counted.
+        assert "ep_0" not in h.callback._activity
+        assert f"ep_{limit * 2 - 1}" in h.callback._activity
+
+
+class TestRewardDecomposition:
+    """The five signed contributions, reduced to something a run can watch.
+
+    doc/11 §2.4 closed the capture half of this - the terms are in `info` and
+    sum exactly to `reward` - and left the aggregation open: "the terms are per
+    step and per agent, so a per-episode variance share is a reduction a
+    consumer still has to perform". doc/07 §6.4 is the reason it is a variance
+    share and not just a mean: what matters is which term is *driving* the
+    signal, and a term with a large constant offset drives nothing.
+    """
+
+    def _steps(self, h, episode_id, per_step_terms):
+        h.start(episode_id)
+        for terms in per_step_terms:
+            infos = _infos()
+            for agent_info in infos.values():
+                agent_info["reward_terms"] = terms
+            h.step(episode_id, infos)
+        h.end(episode_id)
+
+    def test_the_mean_of_each_term_is_reported(self):
+        h = ActivityHarness()
+        self._steps(h, "ep", [
+            {"nav_term": 1.0, "order_penalty": -0.5, "trade_penalty": 0.0,
+             "drawdown_penalty": 0.0, "passive_bonus": 0.0},
+            {"nav_term": 3.0, "order_penalty": -0.5, "trade_penalty": 0.0,
+             "drawdown_penalty": 0.0, "passive_bonus": 0.0},
+        ])
+
+        assert h.emitted("reward_term_mean_nav_term").args[1] == pytest.approx(2.0)
+        assert h.emitted("reward_term_mean_order_penalty").args[1] == pytest.approx(-0.5)
+
+    def test_a_constant_term_gets_no_variance_share(self):
+        """The whole point of a share rather than a magnitude: a penalty that is
+        the same every step explains none of the reward's movement, however
+        large it is."""
+        h = ActivityHarness()
+        self._steps(h, "ep", [
+            {"nav_term": 0.0, "order_penalty": -100.0, "trade_penalty": 0.0,
+             "drawdown_penalty": 0.0, "passive_bonus": 0.0},
+            {"nav_term": 4.0, "order_penalty": -100.0, "trade_penalty": 0.0,
+             "drawdown_penalty": 0.0, "passive_bonus": 0.0},
+        ])
+
+        assert h.emitted("reward_term_var_share_nav_term").args[1] == pytest.approx(1.0)
+        assert h.emitted(
+            "reward_term_var_share_order_penalty"
+        ).args[1] == pytest.approx(0.0)
+
+    def test_the_shares_sum_to_one(self):
+        h = ActivityHarness()
+        self._steps(h, "ep", [
+            {"nav_term": 1.0, "order_penalty": -2.0, "trade_penalty": 0.5,
+             "drawdown_penalty": -1.0, "passive_bonus": 0.25},
+            {"nav_term": -3.0, "order_penalty": 1.0, "trade_penalty": -0.5,
+             "drawdown_penalty": 2.0, "passive_bonus": -0.75},
+        ])
+
+        total = sum(
+            h.emitted(f"reward_term_var_share_{term}").args[1]
+            for term in ("nav_term", "order_penalty", "trade_penalty",
+                         "drawdown_penalty", "passive_bonus")
+        )
+        assert total == pytest.approx(1.0)
+
+    def test_an_episode_with_no_variance_reports_no_share(self):
+        """Nothing moved, so there is nothing to attribute. An even split would
+        be a claim this episode gives no evidence for, and 0/0 is not a number.
+        """
+        h = ActivityHarness()
+        flat = {term: 1.0 for term in
+                ("nav_term", "order_penalty", "trade_penalty",
+                 "drawdown_penalty", "passive_bonus")}
+        self._steps(h, "ep", [flat, flat, flat])
+
+        assert h.emitted("reward_term_mean_nav_term") is not None
+        assert h.emitted("reward_term_var_share_nav_term") is None
+
+    def test_a_missing_decomposition_is_tolerated(self):
+        """`info` without `reward_terms` is what a restored run mid-flight, or
+        an older checkpoint's env, can hand back."""
+        h = ActivityHarness()
+        h.start("ep")
+        h.step("ep", _infos(passes=1))       # no reward_terms in these infos
+        h.end("ep")
+
+        assert h.emitted("reward_term_mean_nav_term").args[1] == pytest.approx(0.0)
+
+
+class TestEndOfEpisodeAccountState:
+    """doc/11 §2.3 and §4 item 2: captured per step, never reduced."""
+
+    def _end(self, h, navs, **fields):
+        last_info = {}
+        for i, nav in enumerate(navs):
+            last_info[f"agent_{i}"] = {
+                "NAV": str(nav),
+                "drawdown": fields.get("drawdown", 0.1),
+                "net_position": fields.get("net_position", -3),
+                "num_trades": fields.get("num_trades", 4),
+                "num_passive_fills_step": fields.get("passive", 1),
+            }
+        h.callback._log_episode_account(last_info, h.metrics)
+
+    def test_nav_is_reported_as_a_spread_not_a_single_number(self):
+        """The league's whole question is whether one policy is pulling ahead,
+        which a mean across agents hides."""
+        h = ActivityHarness()
+        self._end(h, [100.0, 200.0, 300.0])
+
+        assert h.emitted("episode_nav_mean").args[1] == pytest.approx(200.0)
+        assert h.emitted("episode_nav_min").args[1] == pytest.approx(100.0)
+        assert h.emitted("episode_nav_max").args[1] == pytest.approx(300.0)
+
+    def test_drawdown_and_inventory_are_reported(self):
+        h = ActivityHarness()
+        self._end(h, [100.0, 100.0], drawdown=0.25, net_position=-3)
+
+        assert h.emitted("mean_agent_drawdown").args[1] == pytest.approx(0.25)
+        # Absolute: a short of 3 is as much inventory risk as a long of 3, and
+        # averaging the signed values across agents cancels to roughly zero by
+        # construction in a closed market.
+        assert h.emitted("mean_abs_net_position").args[1] == pytest.approx(3.0)
+
+    def test_the_maker_ratio_needs_a_trade_to_exist(self):
+        """0.0 on an episode with no trades would read as "every fill was
+        aggressive", which is a claim about behaviour that did not happen."""
+        h = ActivityHarness()
+        self._end(h, [100.0], num_trades=0, passive=0)
+
+        assert h.emitted("mean_num_trades").args[1] == pytest.approx(0.0)
+        assert h.emitted("maker_fill_ratio") is None
+
+    def test_the_maker_ratio_is_the_passive_share_of_fills(self):
+        h = ActivityHarness()
+        self._end(h, [100.0, 100.0], num_trades=4, passive=1)
+
+        assert h.emitted("maker_fill_ratio").args[1] == pytest.approx(2 / 8)
+
+    def test_an_empty_info_reports_nothing(self):
+        h = ActivityHarness()
+        h.callback._log_episode_account({}, h.metrics)
+
+        assert h.emitted("episode_nav_mean") is None

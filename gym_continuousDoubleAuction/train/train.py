@@ -49,6 +49,7 @@ from gym_continuousDoubleAuction.logging_setup import (
     set_iteration,
 )
 from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
+    NAV_VIOLATIONS_METRIC,
     SelfPlayCallback,
 )
 from gym_continuousDoubleAuction.train.policy.policy_handler import (
@@ -208,8 +209,15 @@ class TrainConfig:
     min_iterations_between_champions: int = _default("min_iterations_between_champions")
     original_opponent_weight: float = _default("original_opponent_weight")
     champion_weight: float = _default("champion_weight")
-    # null disables the per-episode step pickles (a lot of I/O at long episodes).
+    # null disables the per-step episode record entirely. See episode_data_path
+    # for how this is resolved before it reaches the callback.
     episode_data_dir: Optional[str] = _default("episode_data_dir")
+    # Record one episode in N. The record is ~34MB per 4096-step episode, so
+    # "on" used to mean "until the disk fills"; this and episode_max_bytes are
+    # what bound it (doc/21 §6 item 6).
+    episode_sample_every: int = _default("episode_sample_every")
+    episode_max_bytes: int = _default("episode_max_bytes")
+    episode_rows_per_file: int = _default("episode_rows_per_file")
     # Episode-end NAV conservation check. The ledger is Decimal throughout, so
     # the sum of every agent's NAV equals the cash the system started with, to
     # the cent; the tolerance only absorbs the float() round trip through the
@@ -256,6 +264,12 @@ class TrainConfig:
     restore_path: Optional[str] = _default("restore_path")
     # Ray's log level, handed to PPOConfig.debugging.
     log_level: str = _default("log_level")
+    # How Ray formats its own logging, in the driver and in every process it
+    # starts for this job: "TEXT" or "JSON". Handed to `ray.LoggingConfig`,
+    # which is the only lever that reaches a worker's Ray-side output at all -
+    # including the traceback RLlib swallows when an env runner dies (doc/21
+    # §2.1, §6 item 7). "" leaves Ray's logging alone.
+    ray_log_encoding: str = _default("ray_log_encoding")
     # This package's own log level, applied by logging_setup and exported so
     # remote env runners - separate processes that never run main() - come up
     # at the same level. Kept apart from Ray's: Ray at INFO is noise, while
@@ -354,7 +368,7 @@ class TrainConfig:
 
         Under `log_base_dir` rather than `episode_data_dir` deliberately: this
         is one short line per iteration, so it belongs with the checkpoints that
-        must survive a disconnect, not with the per-episode pickles that
+        must survive a disconnect, not with the per-step episode record that
         runtime_profiles.json keeps off the Drive FUSE layer.
 
         Appending still matters within a run directory: the file is opened per
@@ -363,6 +377,33 @@ class TrainConfig:
         second file.
         """
         return os.path.abspath(os.path.join(self.run_dir, PROGRESS_FILE))
+
+    @property
+    def episode_data_path(self) -> Optional[str]:
+        """Where this run's per-step episode record goes, or None if it is off.
+
+        Two things this does that the raw `episode_data_dir` did not, and both
+        are the reasons doc/21 §2.3 called it the one output path with no
+        protection at all:
+
+        * **Absolute.** The callback carrying this string is pickled into every
+          env runner, and `os.makedirs`/`open` in a worker resolve a relative
+          path against whatever working directory that worker inherited. Today
+          that is usually the driver's, because nothing sets a `runtime_env`
+          `working_dir` - an accident, not a guarantee, and one that scatters
+          the record silently rather than failing. The run log was given
+          `abspath` for exactly this reason; this had been left behind.
+        * **Run-scoped.** `run_id` beneath it, so two concurrent runs cannot
+          write into one directory. The same argument as `run_dir` (§1.11): the
+          files carry no interlock, so the answer is not to share them.
+
+        Deliberately *not* under `run_dir`: `runtime_profiles.json` splits
+        `results_root` from `episode_data_root` precisely so this can be kept
+        off a Drive FUSE mount while the checkpoints stay on it.
+        """
+        if self.episode_data_dir is None:
+            return None
+        return os.path.abspath(os.path.join(self.episode_data_dir, self.run_id))
 
     @property
     def env_config(self) -> dict:
@@ -440,9 +481,13 @@ def build_config(cfg: TrainConfig):
         min_iterations_between_champions=cfg.min_iterations_between_champions,
         original_opponent_weight=cfg.original_opponent_weight,
         champion_weight=cfg.champion_weight,
-        episode_data_dir=cfg.episode_data_dir,
+        episode_data_dir=cfg.episode_data_path,
         nav_tolerance=cfg.nav_tolerance,
         strict_nav_check=cfg.strict_nav_check,
+        episode_sample_every=cfg.episode_sample_every,
+        episode_max_bytes=cfg.episode_max_bytes,
+        episode_rows_per_file=cfg.episode_rows_per_file,
+        run_id=cfg.run_id,
     )
 
     ppo = (
@@ -1033,6 +1078,10 @@ def train(cfg: TrainConfig) -> Tuple[Algorithm, dict]:
         set_iteration(iteration)
         _log_iteration(iteration, target, result, cfg)
         _append_progress(result, cfg)
+        # After the progress row is on disk - the failing iteration's numbers
+        # are what the violation is diagnosed from - and before the checkpoint,
+        # because a corrupt ledger is not a state worth saving.
+        _check_nav_conservation(iteration, result, cfg)
 
         if cfg.chkpt_freq and iteration % cfg.chkpt_freq == 0:
             saved_at = iteration
@@ -1046,6 +1095,73 @@ def train(cfg: TrainConfig) -> Tuple[Algorithm, dict]:
             "final checkpoint: %s", save_checkpoint(algo, cfg, iteration),
         )
     return algo, result
+
+
+class NavConservationError(AssertionError):
+    """A run stopped because the NAV conservation invariant broke.
+
+    Subclasses AssertionError rather than replacing it: that is what this
+    failure has always been raised as, what doc/11 §1.5 documents, and what any
+    existing `except` around a training call is written for.
+    """
+
+
+def nav_violations(result: dict) -> float:
+    """How many episodes failed the conservation check this iteration.
+
+    Read from the env-runner metrics block, which is where a metric logged in
+    `on_episode_end` lands regardless of which process ran the hook. That is the
+    whole point: with `num_env_runners > 0` the check runs on the runners, and
+    the metric is the only part of it that reliably crosses back to the driver
+    (see `NAV_VIOLATIONS_METRIC`).
+
+    A missing key is 0.0 rather than an error. The metric appears once an
+    episode has ended, so an iteration that produced no complete episode - or a
+    result from an RLlib version that nests this differently - must read as "no
+    violations seen", not as a failure of its own.
+    """
+    from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
+
+    env_runners = result.get(ENV_RUNNER_RESULTS) or {}
+    try:
+        return float(env_runners.get(NAV_VIOLATIONS_METRIC, 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _check_nav_conservation(iteration: int, result: dict, cfg: TrainConfig) -> None:
+    """Stop the run if the ledger broke, wherever the episode that broke it ran.
+
+    This is the driver half of the check `on_episode_end` reports. The callback
+    logs the ERROR and the per-episode numbers; this decides whether the run
+    continues, because the driver is the only process whose exceptions end one.
+
+    At `num_env_runners=0` this is strictly later than the old in-hook raise -
+    the iteration finishes first. That is the price of an answer that is the
+    same at every runner count, and it is a small one: the invariant has already
+    broken, and everything downstream of it was already meaningless.
+
+    Non-strict is not silent here either. The per-episode ERROR is written in
+    the *worker's* log file, so before this the driver's own `run.log` said
+    nothing at all about a violated run.
+    """
+    violations = nav_violations(result)
+    if violations <= 0:
+        return
+
+    message = (
+        f"NAV conservation was violated in {violations:.0f} episode(s) during "
+        f"iteration {iteration}. The ledger has created or destroyed cash, so "
+        f"every reward computed from NAV after this point is meaningless. The "
+        f"per-episode detail is in the log of the process that ran the episode "
+        f"(with num_env_runners > 0 that is an env runner's "
+        f"run.<pid>.<worker>.log, not this file)."
+    )
+    if not cfg.strict_nav_check:
+        logger.warning("%s Continuing: strict_nav_check is off.", message)
+        return
+    logger.error(message)
+    raise NavConservationError(message)
 
 
 def _apply_iteration(iteration: Optional[int]):
@@ -1300,7 +1416,24 @@ def _parse_args(argv=None) -> TrainConfig:
         "--no-episode-data",
         action="store_true",
         default=argparse.SUPPRESS,
-        help="Disable per-episode step pickles (large I/O at long episodes).",
+        help="Disable the per-step episode record entirely - both the Parquet "
+             "files and the buffering behind them.",
+    )
+    p.add_argument(
+        "--episode-sample-every",
+        type=int,
+        dest="episode_sample_every",
+        default=argparse.SUPPRESS,
+        help="Record one episode in N. 1 records every episode (~34MB each at "
+             "max_step 4096 and 8 agents).",
+    )
+    p.add_argument(
+        "--episode-max-bytes",
+        type=int,
+        dest="episode_max_bytes",
+        default=argparse.SUPPRESS,
+        help="Cap the episode record each writer keeps, oldest deleted first. "
+             "0 keeps everything.",
     )
     p.add_argument(
         "--no-strict-nav-check",
@@ -1350,10 +1483,59 @@ def configure_run_logging(cfg: TrainConfig) -> None:
     # processes of *this* run apart, but two concurrent runs would still have
     # collided on the driver's own `run.log`, which carries no pid. The run
     # directory is what keeps runs apart.
-    configure_logging(cfg.cda_log_level, log_dir=cfg.run_dir, force=True)
+    #
+    # propagate=False whenever Ray is about to be given a LoggingConfig: that
+    # configures the *root* logger of this process and of every worker Ray
+    # starts for the job, so a package record travelling on to root would be
+    # printed twice - once by the handler attached here and once by Ray's.
+    # Left alone otherwise, because propagation is what any root-attached
+    # handler (pytest's caplog among them) depends on.
+    configure_logging(
+        cfg.cda_log_level,
+        log_dir=cfg.run_dir,
+        force=True,
+        propagate=False if cfg.ray_log_encoding else None,
+    )
     logger.info("run id: %s (%s)", cfg.run_id, cfg.run_dir)
     if log_file_path():
         logger.info("run log: %s", log_file_path())
+    if cfg.episode_data_path:
+        logger.info("episode record: %s", cfg.episode_data_path)
+
+
+def ray_logging_config(cfg: TrainConfig):
+    """`ray.LoggingConfig` for this run, or None to leave Ray's logging alone.
+
+    This is the only lever that reaches the Ray-side output of a *worker*. The
+    package's own logging already crosses to the runners (`$CDA_LOG_LEVEL`,
+    `$CDA_LOG_DIR`, and the `runtime_env`), but Ray's does not: an env-runner
+    restart notice, the "No samples returned from remote workers" warning, and
+    the traceback `EnvRunnerGroup` swallows when a runner dies (doc/21 §2.1) are
+    all emitted by Ray's own loggers in a process this package never configured.
+    A `LoggingConfig` is applied by Ray to the driver and to every process it
+    starts for the job, which is exactly that set.
+
+    Feature-detected rather than assumed. `ray.LoggingConfig` is a young API;
+    a Ray without it, or one that rejects an argument, must cost this run its
+    log formatting and nothing else.
+    """
+    if not cfg.ray_log_encoding:
+        return None
+    factory = getattr(ray, "LoggingConfig", None)
+    if factory is None:
+        logger.debug("this Ray has no LoggingConfig; leaving its logging alone")
+        return None
+    try:
+        return factory(
+            encoding=cfg.ray_log_encoding.upper(), log_level=cfg.log_level,
+        )
+    except Exception:
+        logger.warning(
+            "could not build a ray.LoggingConfig(encoding=%r, log_level=%r) - "
+            "continuing with Ray's default logging",
+            cfg.ray_log_encoding, cfg.log_level, exc_info=True,
+        )
+        return None
 
 
 def main(argv=None) -> None:
@@ -1383,10 +1565,15 @@ def main(argv=None) -> None:
     # cluster this process starts, because the raylet inherits our environment;
     # it does not cover `ray.init(address=...)` against a cluster that was
     # running first. See logging_setup.worker_env_vars.
+    logging_config = ray_logging_config(cfg)
     ray.init(
         ignore_reinit_error=True,
         include_dashboard=False,
         runtime_env=merge_runtime_env(),
+        # Only when there is one: passing logging_config=None is not the same
+        # as omitting it on every Ray version, and "leave Ray's logging alone"
+        # has to mean exactly that.
+        **({"logging_config": logging_config} if logging_config else {}),
     )
     try:
         train(cfg)

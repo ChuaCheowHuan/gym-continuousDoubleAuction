@@ -131,14 +131,16 @@ The Colab platform entry splits the two output roots deliberately:
 | Output | Goes to | Survives a disconnect |
 |---|---|---|
 | `results/chkpt` — the newest 3 checkpoints, saved every 2 iterations | the Drive-backed repo | **yes** |
-| `episode_data/` — one pickle per episode | `/content/cda_episode_data` on the VM's local disk | no |
+| `episode_data/<run_id>/` — the per-step Parquet record | `/content/cda_episode_data` on the VM's local disk | no |
 
-The reason is size. The pickles are **~10MB per 4096-step episode** (measured), so the default run
-writes ~640MB across 64 episodes. Pushing that through the Drive FUSE layer is slow and eats your
-Drive quota; checkpoints are small and are the thing you actually need back.
+The reason is size. An episode is **~34MB at `max_step=4096` and 8 agents** (measured), so recording
+all 64 episodes of a default run would write ~2.2GB. Pushing that through the Drive FUSE layer is
+slow and eats your Drive quota; checkpoints are small and are the thing you actually need back.
 
-If you do not want the pickles at all, set `episode_data_dir` to `null` in the
-`league_self_play` group of `config/train_config.json`.
+`episode_sample_every` (default 10) records one episode in ten, which brings the default run to
+~220MB, and `episode_max_bytes` (default 2GiB) caps what each writer keeps. If you do not want the
+record at all, set `episode_data_dir` to `null` in the `league_self_play` group of
+`config/train_config.json` — which now switches off the buffering as well as the files.
 
 ### Resuming after a disconnect
 

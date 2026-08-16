@@ -120,3 +120,120 @@ class TestIdleModulesDoNotPoisonTheLeague:
         })
 
         assert [pid for pid, _r, _i in snapshots] == ["policy_1"]
+
+
+class TestLeagueMetrics:
+    """League state as metrics, not only as log banners.
+
+    doc/11 §2.5 listed four things the callback computes and discards, and §4
+    item 4 asked for them as metrics: promotion events, the matchmaking pool
+    size, and the time since the last snapshot - the last of which
+    `_should_create_champion` has computed since it was written and thrown away
+    every time. A banner in a worker's log file cannot be plotted against the
+    return series; a metric can.
+    """
+
+    def _metrics(self):
+        from unittest.mock import MagicMock
+        return MagicMock()
+
+    def _emitted(self, metrics, name):
+        for call in metrics.log_value.call_args_list:
+            if call.args and call.args[0] == name:
+                return call
+        return None
+
+    def test_a_quiet_iteration_reports_no_promotion(self, callback, snapshots):
+        metrics = self._metrics()
+        callback.on_train_result(
+            algorithm=object(), metrics_logger=metrics,
+            result=_result({"policy_0": 1.0, "policy_1": 1.0}),
+        )
+
+        call = self._emitted(metrics, "champions_promoted")
+        assert call.args[1] == 0.0
+        assert call.kwargs["reduce"] == "sum"
+
+    def test_the_pool_size_is_reported(self, callback, snapshots):
+        metrics = self._metrics()
+        callback.on_train_result(
+            algorithm=object(), metrics_logger=metrics,
+            result=_result({"policy_0": 1.0, "policy_1": 2.0}),
+        )
+
+        assert self._emitted(metrics, "available_modules").args[1] == float(
+            len(callback.available_modules)
+        )
+
+    def test_idle_modules_are_counted(self, callback, snapshots):
+        """The S3-12 signature as a number rather than a log line: a league that
+        is quietly shrinking to the modules the mapping fn happens to draw."""
+        metrics = self._metrics()
+        callback.on_train_result(
+            algorithm=object(), metrics_logger=metrics,
+            result=_result({
+                "policy_0": 1.0, "policy_1": 2.0,
+                "policy_5": float("nan"), "policy_6": float("nan"),
+            }),
+        )
+
+        assert self._emitted(metrics, "idle_modules").args[1] == 2.0
+
+    def test_the_time_since_the_last_champion_is_reported(self, callback):
+        """Computed by `_should_create_champion` since it was written, and
+        discarded every time. It is what says whether the cooldown or the
+        threshold is holding the league still."""
+        callback.champion_history.append(
+            {"id": "champion_1", "source_policy": "policy_0",
+             "iteration": 4, "return": 1.0}
+        )
+        metrics = self._metrics()
+        callback.on_train_result(
+            algorithm=object(), metrics_logger=metrics,
+            result=_result({"policy_0": 1.0, "policy_1": 1.0}, iteration=9),
+        )
+
+        assert self._emitted(metrics, "iterations_since_champion").args[1] == 5.0
+
+    def test_no_champion_yet_reports_no_interval(self):
+        """None-so-far and zero-iterations-ago are different states, and a 0
+        here would read as "one was just made"."""
+        cb = SelfPlayCallback(num_trainable_policies=2, num_random_policies=6)
+        metrics = self._metrics()
+        cb.on_train_result(
+            algorithm=object(), metrics_logger=metrics,
+            result=_result({"policy_0": 1.0, "policy_1": 1.0}),
+        )
+
+        assert self._emitted(metrics, "iterations_since_champion") is None
+
+    def test_a_promotion_is_counted(self, callback, monkeypatch):
+        """Counted from the champion count either side of the trigger, not from
+        the branch that decided to try: a snapshot that raised and rolled itself
+        back has not promoted anything, and `_create_champion_snapshot_from_policy`
+        swallows its own exceptions."""
+        def _promote(algorithm, pid, return_value, iteration):
+            callback.champion_count += 1
+
+        monkeypatch.setattr(
+            callback, "_create_champion_snapshot_from_policy", _promote,
+        )
+        metrics = self._metrics()
+        callback.on_train_result(
+            algorithm=object(), metrics_logger=metrics,
+            result=_result({"policy_0": 10.0, "policy_1": 0.0, "policy_5": 0.0}),
+        )
+
+        assert self._emitted(metrics, "champions_promoted").args[1] == 1.0
+
+    def test_a_failed_snapshot_is_not_counted_as_a_promotion(self, callback, snapshots):
+        """`snapshots` records the attempt without changing the count - which is
+        exactly the shape of a snapshot that raised and rolled back."""
+        metrics = self._metrics()
+        callback.on_train_result(
+            algorithm=object(), metrics_logger=metrics,
+            result=_result({"policy_0": 10.0, "policy_1": 0.0, "policy_5": 0.0}),
+        )
+
+        assert snapshots, "the trigger should have fired"
+        assert self._emitted(metrics, "champions_promoted").args[1] == 0.0

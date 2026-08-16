@@ -268,9 +268,21 @@ opponents, where sharing a trunk between policy and value tends to destabilise t
 `SelfPlayCallback` does the same with the `league_self_play` group and the two agent counts. That
 group also carries the two knobs on the episode-end NAV conservation check: `nav_tolerance`, the
 absolute cash tolerance, and `strict_nav_check` (`--no-strict-nav-check`), which decides whether a
-violation raises or only logs. It defaults to raising — a conservation break means the ledger is
-corrupt — and the `nav_conservation_error` metric is emitted either way. See
-[11 §1.5](11_logging_and_observability.md).
+violation stops the run or only logs. It defaults to stopping — a conservation break means the
+ledger is corrupt — and the `nav_conservation_error` metric is emitted either way. The stop is
+decided **on the driver**, from the `nav_conservation_violations` count, rather than raised inside
+the episode hook: that hook runs on the env runner, where RLlib's fault tolerance swallows the
+exception and restarts the worker. See [11 §1.5](11_logging_and_observability.md) and
+[21 §2.1](21_logging_review.md).
+
+The same group carries the four knobs on the per-step episode record:
+
+| Key | Flag | Meaning |
+|---|---|---|
+| `episode_data_dir` | `--no-episode-data` | Root of the record; `null` switches it off entirely, buffering included. Resolved to an absolute `<dir>/<run_id>` before it reaches the callback, because the callback is pickled into every env runner |
+| `episode_sample_every` | `--episode-sample-every` | Record one episode in N, chosen by `crc32` of the episode id so every runner picks the same subset |
+| `episode_max_bytes` | `--episode-max-bytes` | Cap on what **each writer** keeps, oldest deleted first; `0` keeps everything |
+| `episode_rows_per_file` | — | Rows buffered before a file is written. A floor, not a size: rows are handed over a whole episode at a time, so no episode is split across two files |
 
 `num_learners`, the reward coefficients and the sizing knobs have no CLI flag, so the file is the
 only way to set them outside the Python API.
@@ -321,6 +333,7 @@ baked into the checkpoint — see §5.3.
 | `run_id` | `--run-id` | Names this run's directory under `log_base_dir`; `null` generates one |
 | `log_level` | `--log-level` | **Ray's** level, handed to `PPOConfig.debugging` |
 | `cda_log_level` | — | **This package's** level; exported as `$CDA_LOG_LEVEL` so worker processes inherit it |
+| `ray_log_encoding` | — | How Ray formats its own logging, in the driver and every process it starts: `TEXT`, `JSON`, or `""` to leave it alone |
 
 **`run_id` and what is shared between runs.** `progress.jsonl` and the run logs go in
 `<log_base_dir>/<run_id>/`, generated per run so two runs cannot write into each other's files —
@@ -336,6 +349,13 @@ a restored run extends the progress history it left. See
 NAV table, the per-iteration league statistics and the checkpoint lines — the output a run is meant
 to produce. Set `cda_log_level` to `DEBUG` for the per-step render and account tables, `WARNING`
 for a quiet run. See [11 §1.3](11_logging_and_observability.md).
+
+**`ray_log_encoding` is the third logging knob, and it is not a level.** It is handed to
+`ray.LoggingConfig`, which is the only lever that reaches a *worker's* Ray-side output — the
+env-runner restart notices, and the traceback RLlib swallows when a runner dies. Setting it also
+turns off propagation from this package's logger to the root one, since `LoggingConfig` configures
+root and both handlers would otherwise print every line twice. See
+[11 §1.15](11_logging_and_observability.md).
 
 **`num_iters` is a target.** A 16-iteration run resumed at iteration 9 does 7 more, so the length
 of a run does not depend on how many times it was interrupted. It used to be a count on a driver
@@ -524,8 +544,8 @@ Two choices in there are worth stating outright:
 `repo_path`, `results_root` and `episode_data_root` per platform; `null` means "leave it alone",
 which is what a local checkout wants. The Colab entry splits the two output roots on purpose:
 checkpoints go to the Drive-backed repo so a disconnected session is recoverable with
-`is_restore`, while the per-episode pickles (~10MB per 4096-step episode) go to the VM's local disk
-and never cross the Drive FUSE layer.
+`is_restore`, while the per-step episode record (~34MB per 4096-step episode) goes to the VM's local
+disk and never crosses the Drive FUSE layer.
 
 `platforms.colab.pip_packages` is the one entry read *without* the loader — the notebook's
 bootstrap cell reads it with plain `json.load`, because it runs before the package is importable

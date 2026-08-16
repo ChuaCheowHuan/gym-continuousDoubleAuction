@@ -954,3 +954,103 @@ signal that an upgrade is about to break this repository, and it was going to st
 unrotated. `logging.captureWarnings(True)` alone would not have been enough — it logs to
 `py.warnings`, outside this package's namespace, which inherits none of its handlers and falls
 through to stderr anyway; the handlers are mirrored onto it.
+
+---
+
+## 19. Logging under multiple env runners
+
+§18 made the logging correct within a process and between two runs. It did not ask what happens
+once sampling moves off the driver — which is what `runtime_profiles.json`'s GPU profile does at
+`num_env_runners=2`, and what CI, at `num_env_runners=0`, never exercises.
+[21_logging_review.md](21_logging_review.md) is that audit. Three of its findings were defects
+rather than gaps, and all eight of its recommendations are implemented.
+
+### 19.1 The stop signal stopped nothing
+
+`strict_nav_check` exists to end a run whose ledger is corrupt. It did that by raising inside
+`on_episode_end` — a hook that runs **on the env runner**. So the raise arrived as a `RayTaskError`
+from `sample()`, and `restart_failed_env_runners` (True by default) made `EnvRunnerGroup` log it
+through Ray's own logger and restart the actor. `algo.train()` returned normally, and the run kept
+training on the ledger the check had just condemned. It stopped the run only at
+`num_env_runners=0`, which is the default and what CI runs, which is why nobody had seen it.
+
+The raise also destroyed the evidence: `synchronous_parallel_sample` asks each runner for
+`(sample(), get_metrics())` in one call, so a throwing `sample()` means that runner's metrics —
+including any record of the violation — are discarded with the error.
+
+The hook now reports and returns: the ERROR, `nav_conservation_error`, and a
+`nav_conservation_violations` count emitted on conserved episodes too, so the key always exists.
+`train._check_nav_conservation` reads it after `algo.train()` and raises `NavConservationError` on
+the driver, after the progress row is written and before the checkpoint. At `num_env_runners=0` the
+stop is one iteration later than it used to be; that is the price of one code path that behaves the
+same at every runner count.
+
+### 19.2 The off switch turned off the write, not the work
+
+`--no-episode-data` disabled the `pickle.dump` and left `on_episode_step` appending every step to an
+in-memory store regardless. At 8,314 pickled bytes per step and `max_step=4096` that is ~34 MB per
+episode of memory bought for nothing — `runtime_profiles.json` had estimated ~10 MB for the files,
+which was wrong by 3.4× as well.
+
+### 19.3 The episode record was the one path with no protection
+
+The run log had been made absolute and run-scoped in §18; `episode_data_dir` had not. It was a bare
+relative string, pickled into every env runner and resolved there against whatever working
+directory that worker inherited — today usually the driver's, by accident rather than by guarantee
+— and shared by every concurrent run.
+
+### 19.4 What replaced the pickles
+
+A Parquet record: one row per (episode, step, agent), a declared schema, and `run_id`, `iteration`,
+`wall_time` and `module_id` columns. That closes three separate entries from
+[11 §3](11_logging_and_observability.md) at once — arbitrary code execution on load, no timestamp or
+iteration metadata, and no bound on growth — and makes champion matchups a group-by rather than
+missing instrumentation. Writing happens on a background thread per process, every failure in it is
+a warning, and `episode_sample_every` (default 10) plus `episode_max_bytes` (default 2 GiB per
+writer) bound it.
+
+It is written with `pyarrow.parquet`, not `ray.data`, deliberately. Starting a Ray Data execution
+inside an env runner is the same objection [21 §5](21_logging_review.md) raises against RLlib's own
+offline recording: it clamps to `num_cpus_per_env_runner` and competes with sampling on a two-core
+profile. `ray.data.read_parquet` reads the output natively, so nothing downstream is lost.
+
+**RLlib's Offline Dataset Logging cannot be used at all**, which is what prompted the review.
+Setting `output` selects a recording env runner whose class selection opens with
+`raise ValueError("Multi-agent recording is not supported, yet.")`, and this environment is
+multi-agent by construction. Past that, the columnar format writes no `info` — which is most of what
+this repository's per-step record exists to keep.
+
+### 19.5 Six metrics became 27
+
+The gap across [11 §2](11_logging_and_observability.md) was never capture; it was aggregation. The
+per-step `info` already held the reward decomposition and the account state, and the callback
+already computed the league's timing and pool. None of it was reduced into anything a run could
+watch. Now: `reward_term_mean_*` and `reward_term_var_share_*` for all five contributions,
+`episode_nav_mean`/`_min`/`_max`, `mean_agent_drawdown`, `mean_abs_net_position`, `mean_num_trades`,
+`maker_fill_ratio`, `champions_promoted`, `iterations_since_champion`, `available_modules` and
+`idle_modules`.
+
+On a real 2-iteration run the variance split reads `nav_term` 0.95, `drawdown_penalty` 0.05, the
+other three below 1e-8 — the [07 §6.4](07_reward_function.md) split, live, from a run rather than
+from a post mortem.
+
+### 19.6 Ray's own logging, and three things found while building this
+
+`ray.init(logging_config=ray.LoggingConfig(...))` is the only lever that reaches a worker's Ray-side
+output — the restart notices and the traceback §19.1 describes being swallowed. `ray_log_encoding`
+selects it, feature-detected so an older Ray degrades to its own formatting, and setting it turns
+propagation off on this package's logger since `LoggingConfig` configures root.
+
+Three things the review had not predicted:
+
+* **A 30-second hang at process exit.** The recorder's first design stopped its writer thread with a
+  sentinel on the queue — and the one moment `close()` runs under load is the one moment the queue
+  is full, so the put failed, the thread never stopped, and the join sat out its whole timeout. Two
+  tests taking exactly 30.00s is what made it visible. It is a `threading.Event` now.
+* **`on_train_result` metrics are one iteration late.** The hook is handed an already-compiled
+  `result`, so `champions_promoted` reads 1.0 in the row *after* the promotion. Always true of
+  `league_size` and the return statistics; the new champion metrics simply made it visible against a
+  known event. Documented, not corrected — the lag is uniform.
+* **Live state should never have been pickled.** The callback ships to every env runner and every
+  checkpoint, carrying its in-flight episode tallies along. The unpickling side is a different
+  process; a tally for an episode it never ran is not bookkeeping it should continue.
