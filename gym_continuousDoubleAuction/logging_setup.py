@@ -41,10 +41,11 @@ Levels used across the package:
 """
 from __future__ import annotations
 
-import contextvars
 import logging
 import logging.handlers
 import os
+import sys
+import threading
 from typing import Optional
 
 from gym_continuousDoubleAuction.config_loader import constants
@@ -55,15 +56,33 @@ ROOT_NAME = "gym_continuousDoubleAuction"
 
 _configured = False
 _log_file_path: Optional[str] = None
+_excepthooks_installed = False
+
+#: Guards the handler swap in `configure`. The individual `addHandler` calls are
+#: already atomic under logging's own module lock, but the sequence here is
+#: remove-close-then-add, and two threads interleaving in it produce duplicate
+#: handlers or a handler closed while another thread is emitting through it.
+#: `get_logger`'s check-then-act on `_configured` has the same shape. Cheap to
+#: hold: this runs once per process.
+_configure_lock = threading.Lock()
 
 #: The training iteration in progress, for the `iter=` field of every log line.
-#: A ContextVar rather than a global so it is per-thread: RLlib may run the
-#: driver loop alongside other threads, and an int here would be shared by all
-#: of them. Unset in any process that does not know the iteration - every env
-#: runner - where it formats as "-".
-_iteration: contextvars.ContextVar[Optional[int]] = contextvars.ContextVar(
-    "cda_log_iteration", default=None
-)
+#: Unset in a process that does not know it, where it formats as "-".
+#:
+#: A plain module global, deliberately, having previously been a ContextVar.
+#: The ContextVar was chosen to be per-thread, on the reasoning that an int
+#: would be "shared by all of them" - but sharing is the correct model here.
+#: There is one training loop per process, so the iteration is a property of
+#: the *process*, and per-thread storage made that unreachable in two ways.
+#: A new thread starts from an empty context, so it read `-` even on the driver,
+#: which knows perfectly well which iteration it is on; and a value set inside a
+#: Ray actor task is not guaranteed to still be in context for the next task,
+#: which is what `train._broadcast_iteration` needs it to be.
+#:
+#: Assignment of an int is atomic under the GIL, so no lock is needed. The one
+#: configuration this gets wrong is two concurrent training loops in threads of
+#: one process, which RLlib does not support anyway.
+_iteration: Optional[int] = None
 
 #: Substituted for the iteration when it is unknown. Not "0", which is a real
 #: iteration number, and not "" which would make the field vanish and misalign
@@ -80,13 +99,18 @@ def set_iteration(iteration: Optional[int]) -> None:
 
     Pass None to clear it, which is what a process that has stopped training
     should do rather than leave a stale number on unrelated lines.
+
+    Process-wide, so every thread's lines carry it - including the ones the
+    driver logs from somewhere other than the training loop. On an env runner
+    this is called by `train._broadcast_iteration` rather than locally.
     """
-    _iteration.set(iteration)
+    global _iteration
+    _iteration = iteration
 
 
 def current_iteration() -> Optional[int]:
     """The iteration tagging this process's log lines, or None."""
-    return _iteration.get()
+    return _iteration
 
 
 def log_file_path() -> Optional[str]:
@@ -105,7 +129,7 @@ class _IterationFilter(logging.Filter):
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
-        iteration = _iteration.get()
+        iteration = _iteration
         record.iteration = _NO_ITERATION if iteration is None else iteration
         return True
 
@@ -186,36 +210,118 @@ def configure(
         log_dir = os.environ.get(log_dir_env_var()) or None
 
     root = logging.getLogger(ROOT_NAME)
-    if not _configured or force:
-        for handler in list(root.handlers):
-            handler.close()
-            root.removeHandler(handler)
-        _log_file_path = None
+    # The whole swap under one lock. Not for the individual addHandler calls -
+    # logging locks those itself - but for the remove-close-then-add sequence,
+    # which is where a second thread finds either no handler at all or one that
+    # has just been closed underneath it.
+    with _configure_lock:
+        if not _configured or force:
+            for handler in list(root.handlers):
+                handler.close()
+                root.removeHandler(handler)
+            _log_file_path = None
 
-        formatter = logging.Formatter(
-            settings["format"], datefmt=settings["datefmt"]
-        )
-        iteration_filter = _IterationFilter()
+            formatter = logging.Formatter(
+                settings["format"], datefmt=settings["datefmt"]
+            )
+            iteration_filter = _IterationFilter()
 
-        stream = logging.StreamHandler()
-        stream.setFormatter(formatter)
-        stream.addFilter(iteration_filter)
-        root.addHandler(stream)
+            # Explicitly stdout. `logging.StreamHandler()` defaults to stderr,
+            # which made `python -m ...train > run.txt` capture nothing of the
+            # output a run exists to produce - the NAV tables, the league
+            # statistics, the iteration summaries - while the docs described it
+            # as stdout throughout. Warnings and errors are not routed
+            # separately: they are part of the same narrative, and splitting
+            # them across two streams reorders them against each other.
+            stream = logging.StreamHandler(stream=sys.stdout)
+            stream.setFormatter(formatter)
+            stream.addFilter(iteration_filter)
+            root.addHandler(stream)
 
-        if log_dir:
-            file_handler = _build_file_handler(log_dir, settings, own_file)
-            if file_handler is not None:
-                file_handler.setFormatter(formatter)
-                file_handler.addFilter(iteration_filter)
-                root.addHandler(file_handler)
+            if log_dir:
+                file_handler = _build_file_handler(log_dir, settings, own_file)
+                if file_handler is not None:
+                    file_handler.setFormatter(formatter)
+                    file_handler.addFilter(iteration_filter)
+                    root.addHandler(file_handler)
 
-        _configured = True
+            _configured = True
 
-    root.setLevel(resolved)
+        root.setLevel(resolved)
+
+        # Inside the lock: it copies `root.handlers`, which the block above is
+        # what changes. Route warnings.warn through logging, so a
+        # DeprecationWarning from Ray or gymnasium - the earliest signal that an
+        # upgrade is about to break this repository - lands in the run log
+        # instead of going to stderr unrecorded and unrotated. `py.warnings` is
+        # a top-level logger and this package's handlers hang off
+        # `gym_continuousDoubleAuction`, so the two are joined by copying the
+        # handlers across rather than by propagation.
+        _capture_warnings(root)
+
+    # Every process, not just the driver: a worker that dies takes its
+    # traceback with it otherwise, and the env runners are where the episode
+    # callbacks - including the NAV conservation raise - actually run.
+    install_excepthooks()
+
     os.environ[level_env_var()] = resolved
     if log_dir:
         os.environ[log_dir_env_var()] = os.path.abspath(log_dir)
     return resolved
+
+
+def _capture_warnings(root: logging.Logger) -> None:
+    """Point `py.warnings` at this package's handlers and turn capture on.
+
+    `logging.captureWarnings(True)` alone would not be enough: it logs to
+    `py.warnings`, which is outside `ROOT_NAME` and so inherits none of the
+    handlers attached here. Without somewhere to go the record falls through to
+    logging's last-resort handler, which writes to stderr - exactly what
+    capturing it was meant to stop. So the package's handlers are mirrored onto
+    it, replacing any set installed by an earlier `configure()` call.
+    """
+    warnings_logger = logging.getLogger("py.warnings")
+    for handler in list(warnings_logger.handlers):
+        warnings_logger.removeHandler(handler)
+    for handler in root.handlers:
+        warnings_logger.addHandler(handler)
+    # Its own records must not also reach the real root logger, which would
+    # print them a second time if anything ever calls basicConfig.
+    warnings_logger.propagate = False
+    logging.captureWarnings(True)
+
+
+def _worker_file_tag() -> str:
+    """A file-name tag unique across the cluster, not merely across this node.
+
+    A pid alone is not a unique key. Two nodes number their processes
+    independently, so on a multi-node run with `log_base_dir` on a shared
+    filesystem - an NFS mount, or the Drive mount Colab uses - two workers can
+    hold the same pid and open the same `run.<pid>.log`. That is the
+    cross-process `RotatingFileHandler` race the per-worker name exists to
+    prevent, reintroduced by the naming itself. Ray's worker id is unique
+    cluster-wide, so it is the part that actually separates them; the pid stays
+    in front of it because it is what the `pid=` field of every line matches,
+    and dropping it would make a file hard to tie back to its lines.
+
+    Ray is read from `sys.modules` rather than imported. Importing it here would
+    break a documented ordering: `runtime.apply_env_vars()` must run *before*
+    ray is first imported, and `configure()` runs before that in `main()`. In
+    an env runner - the only process that takes this branch in earnest - ray is
+    long since imported, so the lookup succeeds exactly where it matters.
+    """
+    pid = os.getpid()
+    ray = sys.modules.get("ray")
+    if ray is not None:
+        try:
+            worker_id = ray.get_runtime_context().get_worker_id()
+        except Exception:
+            # Not in a worker, or a Ray version that names this differently.
+            # The pid alone is still correct on a single node.
+            worker_id = None
+        if worker_id:
+            return f"{pid}.{str(worker_id)[:8]}"
+    return str(pid)
 
 
 def _build_file_handler(log_dir: str, settings: dict, own_file: bool):
@@ -233,11 +339,11 @@ def _build_file_handler(log_dir: str, settings: dict, own_file: bool):
         return None
 
     if not own_file:
-        # A worker: same name with its pid before the suffix, so run.log has
-        # run.4231.log beside it rather than several processes fighting over
-        # one inode.
+        # A worker: same name with its own tag before the suffix, so run.log
+        # has run.4231.a3f9c2d1.log beside it rather than several processes
+        # fighting over one inode.
         stem, suffix = os.path.splitext(file_name)
-        file_name = f"{stem}.{os.getpid()}{suffix}"
+        file_name = f"{stem}.{_worker_file_tag()}{suffix}"
 
     path = os.path.join(os.path.abspath(log_dir), file_name)
     try:
@@ -260,6 +366,107 @@ def _build_file_handler(log_dir: str, settings: dict, own_file: bool):
     return handler
 
 
+def worker_env_vars() -> dict:
+    """The logging settings a Ray worker needs, as an env-var mapping.
+
+    `configure()` exports these into `os.environ`, which reaches workers only
+    when this process is the one that starts the cluster - the raylet inherits
+    the environment and forks workers from it. Against an existing cluster
+    (`ray.init(address=...)`, or a Ray job submitted to a running head node)
+    the raylet was started long before, so nothing exported here ever arrives:
+    those workers come up at the config default level and write no run log at
+    all. Since the episode callbacks run on the env runners, that is precisely
+    where the NAV tables and the conservation ERROR are emitted - so they would
+    reach no file anywhere.
+
+    Passing this through `ray.init(runtime_env={"env_vars": ...})` closes that,
+    because Ray applies a runtime_env to the worker processes it starts for the
+    job regardless of who started the cluster.
+
+    Only names that are actually set are returned: an unset variable must stay
+    unset in the worker rather than arriving as an empty string, which
+    `resolve_level` and the log-dir lookup would both have to special-case.
+    """
+    return {
+        name: os.environ[name]
+        for name in (level_env_var(), log_dir_env_var())
+        if os.environ.get(name)
+    }
+
+
+def merge_runtime_env(runtime_env: Optional[dict] = None) -> dict:
+    """`runtime_env` with this process's logging vars merged into `env_vars`.
+
+    Call it at the `ray.init` site rather than storing the result: the vars are
+    exported by `configure()`, so a copy taken before that call would be empty.
+    Anything already in `env_vars` wins - a caller that set a variable
+    explicitly means it.
+    """
+    merged = dict(runtime_env or {})
+    env_vars = dict(worker_env_vars())
+    env_vars.update(merged.get("env_vars") or {})
+    if env_vars:
+        merged["env_vars"] = env_vars
+    return merged
+
+
+def install_excepthooks() -> None:
+    """Send an unhandled exception to the log before the process dies.
+
+    Without this the most valuable line in a failed run is the one line that
+    never reaches the run log. Python's default hook writes the traceback
+    straight to `sys.stderr`, outside logging entirely, so `run.log` ends
+    mid-narrative and the reason is only in scrollback - which is the exact
+    failure the run log was added to fix (doc/11 1.9). It matters most for the
+    `strict_nav_check` AssertionError, whose whole purpose is to stop a run
+    loudly enough to be diagnosed afterwards.
+
+    Both hooks are installed. `sys.excepthook` covers the main thread;
+    `threading.excepthook` covers every other one, which the default handles
+    separately and which no amount of try/except around `train()` would reach.
+
+    The previous hooks are called afterwards rather than replaced, so whatever
+    Ray or a debugger installed still runs and the traceback still reaches
+    stderr. Idempotent: re-running `configure()` must not chain a second copy.
+
+    KeyboardInterrupt is logged as a one-line INFO without a traceback. These
+    runs are normally ended by being killed, and a full stack for an
+    intentional Ctrl-C is noise at the end of every session.
+    """
+    global _excepthooks_installed
+    if _excepthooks_installed:
+        return
+
+    logger = logging.getLogger(ROOT_NAME)
+    previous_sys_hook = sys.excepthook
+    previous_thread_hook = threading.excepthook
+
+    def _hook(exc_type, exc_value, exc_tb):
+        if issubclass(exc_type, KeyboardInterrupt):
+            logger.info("interrupted")
+        else:
+            logger.error(
+                "unhandled %s, the process is exiting", exc_type.__name__,
+                exc_info=(exc_type, exc_value, exc_tb),
+            )
+        previous_sys_hook(exc_type, exc_value, exc_tb)
+
+    def _thread_hook(args):
+        if args.exc_type is not None and not issubclass(
+            args.exc_type, SystemExit
+        ):
+            logger.error(
+                "unhandled %s in thread %s", args.exc_type.__name__,
+                getattr(args.thread, "name", "?"),
+                exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+            )
+        previous_thread_hook(args)
+
+    sys.excepthook = _hook
+    threading.excepthook = _thread_hook
+    _excepthooks_installed = True
+
+
 def get_logger(name: str) -> logging.Logger:
     """A logger for `name`, configuring this process on first use.
 
@@ -274,6 +481,10 @@ def get_logger(name: str) -> logging.Logger:
     points should pass an explicit dotted name so they stay attributable;
     re-homing is the safety net for the ones that do not.
     """
+    # Racy on its own - two threads can both read False and both configure -
+    # so the decision is re-made inside `configure` under the lock. This check
+    # stays as the fast path, since it runs on every call and the answer is
+    # True for all but the first.
     if not _configured:
         configure()
     if name != ROOT_NAME and not name.startswith(f"{ROOT_NAME}."):

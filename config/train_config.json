@@ -70,11 +70,14 @@
 
     "_note_run": "num_iters is a target, not an amount: a restored run trains up to iteration num_iters, so a 16-iteration run that resumes at 9 does 7 more. Set num_iters_is_delta true for the old behaviour, where num_iters is how many iterations to run from wherever the restore landed. restore_path pins which checkpoint to resume from; null takes the newest under log_base_dir/chkpt, which is what a disconnect wants. It requires is_restore, and is deliberately recorded here rather than passed at the call site, so which checkpoint a run continued from is written down beside the run.",
 
+    "_note_run_id": "Names the per-run directory under log_base_dir that holds progress.jsonl and the run logs. null generates one from the local date, time and four random hex digits, so two runs never write into each other's files - a shared run.log is the cross-process RotatingFileHandler race the per-worker files exist to avoid, and a shared progress.jsonl can interleave two drivers' writes inside a single JSON line. Set it to a fixed string to resume into an existing run directory and extend its progress.jsonl, which is what a disconnected run that is being restored wants. The checkpoint tree deliberately stays at log_base_dir/chkpt, outside the run directory: restore looks for the newest iter_* across runs, so scoping it per run would make every resumed run start from nothing.",
+
     "num_iters": 16,
     "num_iters_is_delta": false,
     "chkpt_freq": 2,
     "chkpt_keep": 3,
     "log_base_dir": "results",
+    "run_id": null,
     "is_restore": false,
     "restore_path": null,
     "log_level": "WARN",

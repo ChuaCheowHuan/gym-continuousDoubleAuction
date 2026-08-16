@@ -849,3 +849,108 @@ Item 3 is done; items 1, 2 and 4 turn out to be half done in the same way — th
 sub-components, the per-agent account state and the market price and spread are all captured in
 `info` but none is reduced into a metric. That is the shape of what remains: capture is good,
 aggregation is six metrics.
+
+---
+
+## 18. Logging: concurrency, run isolation, and the traceback that was never logged
+
+A review of the logging *functionality* rather than its coverage — what happens when more than one
+thread or process writes at once, and what a run leaves behind when it dies. Six changes, in
+descending order of how much they can cost.
+
+See [11_logging_and_observability.md](11_logging_and_observability.md) §1.10–§1.14.
+
+### 18.1 Two runs shared one `run.log` and one `progress.jsonl`
+
+The per-worker file names (§1.9) kept the processes of *one* run apart, and the reasoning was
+explicit: `RotatingFileHandler` is not safe across processes, so two of them crossing the size
+threshold together rename and truncate the same file. But the driver's own file carries no pid, and
+`log_base_dir` defaulted to a fixed `results`. So two concurrent runs — or a notebook session
+alongside a CLI run — hit exactly the race the worker naming exists to avoid, on the driver's file.
+
+`progress.jsonl` was the worse of the two, because the failure is not rotation but line integrity.
+`json.dump` writes incrementally: 61 `write()` calls for a trivial dict. `TextIOWrapper` coalesces
+them into ~8 KiB chunks, so a small record is one atomic `O_APPEND` write — but a real RLlib result
+dict is bigger than the buffer and splits (measured: 31 KB → 4 syscalls, 314 KB → 39). Two drivers
+appending interleave *inside* a JSON line, and the record is then unparseable.
+
+Each run now gets `<log_base_dir>/<run_id>/`, `run_id` generated from the date, time and four random
+hex digits. The random suffix is not decoration: two runs launched by one script in the same second
+would collide on a timestamp alone.
+
+**The checkpoint tree deliberately stays outside it.** Restoring from a disconnect means finding the
+newest `iter_*` an *earlier* run wrote; a per-run checkpoint tree would hide it and every resumed
+run would silently start from nothing. So what must be shared is, and what cannot tolerate sharing
+is not. `--run-id` re-enters an existing directory, which is how a restored run extends its own
+`progress.jsonl`.
+
+### 18.2 A run that died did not say why in its log
+
+`main()` was `try: train(cfg) / finally: ray.shutdown()`, with no `except`. Python's default hook
+writes the traceback to `sys.stderr`, outside logging — so `run.log` ended mid-sentence and the
+reason lived in scrollback. That is precisely the failure §1.9 was written to fix, still present
+for the single most valuable line in a failed run, and it applied to the `strict_nav_check`
+`AssertionError` whose whole purpose is to stop a run loudly enough to be diagnosed later.
+
+Now: `main()` logs it where it happens, so it carries the `iter=` that failed; `sys.excepthook`
+catches whatever gets past that, including in *worker* processes that no driver-side try/except
+could reach; and `threading.excepthook` catches a thread dying, which Python handles separately
+again. Previous hooks are chained, so stderr still gets what it always did. `KeyboardInterrupt` is
+one INFO line with no stack — these runs normally end by being killed.
+
+### 18.3 The log level and directory did not reach a pre-existing cluster
+
+`configure()` exports `$CDA_LOG_LEVEL` and `$CDA_LOG_DIR`, which workers inherit because the raylet
+inherits the driver's environment. That holds only when this process *starts* the cluster. Against
+`ray.init(address=...)` the raylet was started long before, so neither variable arrives: workers
+come up at the config default and write no run log — and since the episode callbacks run on the
+runners, the NAV tables and the conservation ERROR would reach no file anywhere. They are now also
+passed as a `runtime_env`, which Ray applies to the workers it starts for the job regardless of who
+started the cluster.
+
+### 18.4 A pid is not a unique file name
+
+`run.<pid>.log` is unique per *node*. On a multi-node run with `log_base_dir` on a shared mount —
+NFS, or the Drive mount Colab uses — two workers on different nodes can hold the same pid and open
+the same file, reintroducing the rotation race through the naming meant to prevent it. The name now
+carries Ray's cluster-unique worker id behind the pid, which is kept because it is what the `pid=`
+field of every line matches. Ray is read from `sys.modules` rather than imported: `apply_env_vars()`
+must run before ray is first imported, and `configure()` runs before that.
+
+### 18.5 Configuration was racy; nothing tested concurrency at all
+
+The write path was always safe — `Handler.handle` takes the handler's lock around `emit`. The setup
+path was not: `get_logger` checks `_configured` then acts on it, and `configure` closes and removes
+handlers before adding replacements, so two threads inside that sequence produce duplicate handlers
+or a handler closed mid-emit. It is now under one lock.
+
+The reason this survived is that `test_logging_setup.py` had no thread or process test in it at all;
+every safety property was asserted in prose. It now has both, including real subprocesses, which is
+the one thing threads cannot stand in for.
+
+The `iter=` tag also stopped being a `ContextVar`. It was chosen to be per-thread, but a new thread
+starts from an empty context, so the driver's own lines read `iter=-` whenever they came from
+anywhere but the loop thread — and a value set inside a Ray actor task is not guaranteed to survive
+into the next task, which is what §18.6 depends on. One training loop per process makes the
+iteration a property of the process, so it is a module global.
+
+### 18.6 `iter=` now reaches the env runners
+
+§1.9 recorded the worker's `iter=-` as needing "a change to what RLlib hands the callbacks". It did
+not: the driver knows the number and `foreach_env_runner` already reaches every runner, so it only
+had to be sent, once per iteration, before sampling starts. Best-effort — a restarting runner costs
+`iter=-` on its lines, never the run. This is what makes a worker's NAV table joinable to its
+`progress.jsonl` row under `num_env_runners > 0`, which is the configuration where those lines are
+emitted nowhere else.
+
+### 18.7 Two smaller corrections
+
+**Output went to stderr, not stdout.** `logging.StreamHandler()` defaults to stderr, while §1.3,
+§1.9 and `tunable_constants.json` all described stdout — so `train ... > run.txt` captured nothing.
+Now explicitly `sys.stdout`.
+
+**`warnings.warn` went nowhere.** A `DeprecationWarning` from Ray or gymnasium is the earliest
+signal that an upgrade is about to break this repository, and it was going to stderr unrecorded and
+unrotated. `logging.captureWarnings(True)` alone would not have been enough — it logs to
+`py.warnings`, outside this package's namespace, which inherits none of its handlers and falls
+through to stderr anyway; the handlers are mirrored onto it.

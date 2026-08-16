@@ -201,7 +201,7 @@ class TestRunLogFile:
         logging_setup.configure("INFO", log_dir=str(tmp_path), force=True)
         logging_setup.get_logger("gym_continuousDoubleAuction.t").warning("both")
 
-        assert "both" in capsys.readouterr().err
+        assert "both" in capsys.readouterr().out
         assert "both" in (tmp_path / "run.log").read_text()
 
     def test_no_file_without_a_log_dir(self, tmp_path):
@@ -359,7 +359,7 @@ class TestWorkerProcessesGetTheirOwn:
         assert len(written) == 1, [p.name for p in written]
         assert "worker line" in written[0].read_text()
 
-    def test_a_worker_writes_its_own_pid_suffixed_file(self, tmp_path, monkeypatch):
+    def test_a_worker_writes_its_own_tagged_file(self, tmp_path, monkeypatch):
         """Separate files, not one shared: RotatingFileHandler is not safe
         across processes, and two workers rotating together truncate each
         other's output."""
@@ -369,10 +369,84 @@ class TestWorkerProcessesGetTheirOwn:
         logging_setup.configure("INFO", force=True)
         logging_setup.get_logger("gym_continuousDoubleAuction.t").info("x")
 
+        path = logging_setup.log_file_path()
+        # The pid leads, because that is what the `pid=` field of every line
+        # matches. Anything after it is the cluster-unique part - see
+        # test_the_tag_is_unique_across_nodes_not_just_within_one.
+        assert os.path.basename(path).startswith(f"run.{os.getpid()}")
+        assert path.endswith(".log")
+        assert not (tmp_path / "run.log").exists()
+
+    def test_the_tag_is_unique_across_nodes_not_just_within_one(
+        self, tmp_path, monkeypatch
+    ):
+        """A pid is unique per node, and `log_base_dir` can be a shared mount.
+
+        Two nodes number processes independently, so with results on NFS or a
+        Drive mount two workers can hold the same pid and open the same file -
+        which is the cross-process rotation race the per-worker name exists to
+        prevent. Ray's worker id is what actually separates them.
+        """
+        import sys
+        from types import SimpleNamespace
+
+        monkeypatch.setenv(logging_setup.log_dir_env_var(), str(tmp_path))
+
+        def fake_ray(worker_id):
+            return SimpleNamespace(
+                get_runtime_context=lambda: SimpleNamespace(
+                    get_worker_id=lambda: worker_id
+                )
+            )
+
+        # Same pid, two workers: the names must still differ.
+        monkeypatch.setitem(sys.modules, "ray", fake_ray("aaaaaaaabbbb"))
+        logging_setup.configure("INFO", force=True)
+        first = logging_setup.log_file_path()
+
+        monkeypatch.setitem(sys.modules, "ray", fake_ray("ccccccccdddd"))
+        logging_setup.configure("INFO", force=True)
+        second = logging_setup.log_file_path()
+
+        assert first != second
+        assert first.endswith("aaaaaaaa.log")
+        assert second.endswith("cccccccc.log")
+
+    def test_the_tag_falls_back_to_the_pid_without_ray(
+        self, tmp_path, monkeypatch
+    ):
+        """Ray is read from sys.modules, never imported: importing it here would
+        break apply_env_vars(), which must run before ray is first imported."""
+        import os
+        import sys
+
+        monkeypatch.setenv(logging_setup.log_dir_env_var(), str(tmp_path))
+        monkeypatch.delitem(sys.modules, "ray", raising=False)
+
+        logging_setup.configure("INFO", force=True)
+
         assert logging_setup.log_file_path() == str(
             tmp_path / f"run.{os.getpid()}.log"
         )
-        assert not (tmp_path / "run.log").exists()
+
+    def test_a_ray_without_a_worker_id_does_not_break_logging(
+        self, tmp_path, monkeypatch
+    ):
+        """A renamed API degrades to the pid rather than losing the log."""
+        import os
+        import sys
+        from types import SimpleNamespace
+
+        monkeypatch.setenv(logging_setup.log_dir_env_var(), str(tmp_path))
+        monkeypatch.setitem(sys.modules, "ray", SimpleNamespace(
+            get_runtime_context=lambda: (_ for _ in ()).throw(RuntimeError())
+        ))
+
+        logging_setup.configure("INFO", force=True)
+
+        assert logging_setup.log_file_path() == str(
+            tmp_path / f"run.{os.getpid()}.log"
+        )
 
     def test_the_driver_keeps_the_plain_name(self, tmp_path):
         """Passing log_dir explicitly is what makes a process the driver."""
@@ -394,3 +468,414 @@ class TestWorkerProcessesGetTheirOwn:
 
         assert logging_setup.log_file_path() is None
         assert not list(tmp_path.glob("*.log*"))
+
+
+class TestConcurrentConfiguration:
+    """Setting logging up from several threads at once.
+
+    The write path was already safe - `Handler.handle` takes the handler's lock
+    around `emit`, so records cannot interleave. The *setup* path was not:
+    `get_logger` checks `_configured` and then acts on it, and `configure`
+    removes and closes the existing handlers before adding the replacements.
+    Two threads inside that sequence produce either a duplicated handler or a
+    handler closed while another thread is emitting through it. Nothing in this
+    file exercised concurrency at all, which is why it went unnoticed.
+    """
+
+    def test_racing_get_logger_calls_leave_exactly_one_handler_set(self):
+        import threading
+
+        logging_setup._configured = False
+        root = logging.getLogger(logging_setup.ROOT_NAME)
+        root.handlers = []
+
+        start = threading.Barrier(8)
+
+        def configure_from_scratch():
+            start.wait()
+            logging_setup.get_logger("gym_continuousDoubleAuction.race")
+
+        threads = [
+            threading.Thread(target=configure_from_scratch) for _ in range(8)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        # One stream handler, not eight, and not zero.
+        assert len(root.handlers) == 1
+
+    def test_a_racing_reconfigure_never_drops_a_line(self, tmp_path):
+        """Lines logged while another thread is calling configure(force=True).
+
+        The failure this pins is not a torn line - the handler lock prevents
+        that - but a line written to a handler that a concurrent reconfigure
+        had already closed and removed.
+        """
+        import threading
+
+        logging_setup.configure("INFO", log_dir=str(tmp_path), force=True)
+        logger = logging_setup.get_logger("gym_continuousDoubleAuction.race")
+
+        errors = []
+        stop = threading.Event()
+
+        def reconfigure():
+            while not stop.is_set():
+                try:
+                    logging_setup.configure(
+                        "INFO", log_dir=str(tmp_path), force=True
+                    )
+                except Exception as exc:      # pragma: no cover - the failure
+                    errors.append(exc)
+
+        def emit():
+            for i in range(200):
+                try:
+                    logger.info("line %s", i)
+                except Exception as exc:      # pragma: no cover - the failure
+                    errors.append(exc)
+
+        spinner = threading.Thread(target=reconfigure)
+        spinner.start()
+        writers = [threading.Thread(target=emit) for _ in range(4)]
+        for writer in writers:
+            writer.start()
+        for writer in writers:
+            writer.join()
+        stop.set()
+        spinner.join()
+
+        assert not errors, errors[:3]
+
+    def test_concurrent_writers_do_not_tear_a_line(self, tmp_path):
+        """Every record arrives whole. This already held - it is pinned so that
+        a future handler change cannot quietly give it up."""
+        import threading
+
+        logging_setup.configure("INFO", log_dir=str(tmp_path), force=True)
+        logger = logging_setup.get_logger("gym_continuousDoubleAuction.race")
+
+        def emit(marker):
+            for i in range(100):
+                logger.info("%s-%03d-END", marker, i)
+
+        threads = [
+            threading.Thread(target=emit, args=(f"w{n}",)) for n in range(6)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        lines = [
+            line for line in (tmp_path / "run.log").read_text().splitlines()
+            if "-END" in line
+        ]
+        assert len(lines) == 600
+        # A torn line would show a second record's text after the terminator.
+        assert all(line.endswith("-END") for line in lines)
+
+
+class TestSeparateProcesses:
+    """What two OS processes do to one log directory.
+
+    `RotatingFileHandler` has no cross-process interlock, so the design's answer
+    is to stop them sharing a file rather than to make sharing safe. These run
+    real subprocesses, because the thing being tested is precisely what threads
+    cannot stand in for.
+    """
+
+    SCRIPT = """
+import sys
+sys.path.insert(0, {repo!r})
+from gym_continuousDoubleAuction.logging_setup import configure, get_logger
+configure("INFO", {kwargs}, force=True)
+log = get_logger("gym_continuousDoubleAuction.proc")
+for i in range(200):
+    log.info("%s line %03d END", {marker!r}, i)
+"""
+
+    def _run(self, tmp_path, name, marker, kwargs):
+        import subprocess
+        import sys
+
+        repo = str(
+            __import__("pathlib").Path(__file__).resolve().parents[2]
+        )
+        script = tmp_path / f"{name}.py"
+        script.write_text(self.SCRIPT.format(
+            repo=repo, kwargs=kwargs, marker=marker
+        ))
+        return subprocess.Popen([sys.executable, str(script)])
+
+    def test_two_workers_write_separate_files_and_lose_nothing(self, tmp_path):
+        """The per-worker name, doing its job: both processes' output survives."""
+        env_var = logging_setup.log_dir_env_var()
+        kwargs = f"log_dir=None"
+
+        import os
+        import subprocess
+        import sys
+
+        repo = str(
+            __import__("pathlib").Path(__file__).resolve().parents[2]
+        )
+        env = dict(os.environ, **{env_var: str(tmp_path)})
+        script = tmp_path / "worker.py"
+        script.write_text(self.SCRIPT.format(
+            repo=repo, kwargs=kwargs, marker="W",
+        ))
+
+        procs = [
+            subprocess.Popen([sys.executable, str(script)], env=env)
+            for _ in range(2)
+        ]
+        for proc in procs:
+            assert proc.wait(timeout=120) == 0
+
+        files = sorted(tmp_path.glob("run.*.log"))
+        assert len(files) == 2, [f.name for f in files]
+        total = sum(
+            len([l for l in f.read_text().splitlines() if "END" in l])
+            for f in files
+        )
+        assert total == 400
+
+    def test_two_runs_do_not_share_a_driver_log(self, tmp_path):
+        """Why run_dir exists.
+
+        Both processes are drivers, so both take the un-suffixed `run.log`. Given
+        one directory they would rotate the same file underneath each other;
+        given a directory each - which is what TrainConfig.run_dir hands them -
+        they cannot interact at all.
+        """
+        first = tmp_path / "run_a"
+        second = tmp_path / "run_b"
+
+        procs = [
+            self._run(tmp_path, "d1", "A", f"log_dir={str(first)!r}"),
+            self._run(tmp_path, "d2", "B", f"log_dir={str(second)!r}"),
+        ]
+        for proc in procs:
+            assert proc.wait(timeout=120) == 0
+
+        for directory, marker in ((first, "A"), (second, "B")):
+            lines = (directory / "run.log").read_text().splitlines()
+            kept = [line for line in lines if "END" in line]
+            assert len(kept) == 200, directory
+            # Nothing from the other run reached this file.
+            assert all(marker in line for line in kept)
+
+
+class TestUnhandledExceptions:
+    """The traceback belongs in the run log.
+
+    Python's default hook writes it to stderr, outside logging entirely, so a
+    run that died left its narrative in `run.log` and the reason for its death
+    only in scrollback - the exact failure the run log was added to fix. It
+    matters most for the `strict_nav_check` AssertionError, whose whole job is
+    to stop a run loudly enough to be diagnosed afterwards.
+    """
+
+    SCRIPT = """
+import sys
+sys.path.insert(0, {repo!r})
+from gym_continuousDoubleAuction.logging_setup import configure
+configure("INFO", log_dir={log_dir!r}, force=True)
+{body}
+"""
+
+    def _run(self, tmp_path, body):
+        import subprocess
+        import sys
+
+        repo = str(
+            __import__("pathlib").Path(__file__).resolve().parents[2]
+        )
+        script = tmp_path / "dies.py"
+        script.write_text(self.SCRIPT.format(
+            repo=repo, log_dir=str(tmp_path), body=body
+        ))
+        proc = subprocess.run(
+            [sys.executable, str(script)],
+            capture_output=True, text=True, timeout=120,
+        )
+        return proc, (tmp_path / "run.log").read_text()
+
+    def test_the_traceback_reaches_the_run_log(self, tmp_path):
+        proc, log = self._run(
+            tmp_path, "raise AssertionError('NAV conservation VIOLATED')"
+        )
+
+        assert proc.returncode != 0
+        assert "NAV conservation VIOLATED" in log
+        assert "Traceback (most recent call last)" in log
+        assert "unhandled AssertionError" in log
+
+    def test_stderr_still_gets_it_too(self, tmp_path):
+        """The previous hook is chained, not replaced: anything reading stderr -
+        a CI log, a terminal - sees what it always did."""
+        proc, _ = self._run(tmp_path, "raise ValueError('boom')")
+
+        assert "ValueError: boom" in proc.stderr
+
+    def test_an_exception_in_a_thread_is_logged(self, tmp_path):
+        """threading.excepthook, which no try/except around train() would reach."""
+        _, log = self._run(tmp_path, (
+            "import threading\n"
+            "t = threading.Thread(target=lambda: 1 / 0, name='sampler')\n"
+            "t.start(); t.join()\n"
+        ))
+
+        assert "unhandled ZeroDivisionError in thread sampler" in log
+
+    def test_a_keyboard_interrupt_is_one_line_not_a_stack(self, tmp_path):
+        """These runs normally end by being killed. A full stack for every
+        intentional Ctrl-C is noise at the end of every session."""
+        _, log = self._run(tmp_path, "raise KeyboardInterrupt")
+
+        assert "interrupted" in log
+        assert "Traceback" not in log
+
+
+class TestWarningCapture:
+    """`warnings.warn` goes through logging, not to a bare stderr write.
+
+    A DeprecationWarning from Ray or gymnasium is the earliest signal that an
+    upgrade is about to break this repository, and it used to go to stderr
+    unrecorded and unrotated.
+
+    In a subprocess, not in-process: pytest's warnings plugin wraps every test
+    in `catch_warnings(record=True)`, which replaces `warnings.showwarning` -
+    the exact hook `captureWarnings(True)` installs. In-process assertions here
+    would be testing pytest's recorder rather than this package's routing.
+    """
+
+    SCRIPT = """
+import sys
+sys.path.insert(0, {repo!r})
+import warnings
+from gym_continuousDoubleAuction.logging_setup import configure
+configure("INFO", log_dir={log_dir!r}, force=True)
+warnings.simplefilter("always")
+warnings.warn("ray is going to break this", DeprecationWarning)
+"""
+
+    def _run(self, tmp_path):
+        import subprocess
+        import sys
+
+        repo = str(
+            __import__("pathlib").Path(__file__).resolve().parents[2]
+        )
+        script = tmp_path / "warns.py"
+        script.write_text(self.SCRIPT.format(repo=repo, log_dir=str(tmp_path)))
+        proc = subprocess.run(
+            [sys.executable, str(script)],
+            capture_output=True, text=True, timeout=120,
+        )
+        return proc, (tmp_path / "run.log").read_text()
+
+    def test_a_deprecation_warning_lands_in_the_run_log(self, tmp_path):
+        proc, log = self._run(tmp_path)
+
+        assert proc.returncode == 0
+        assert "ray is going to break this" in log
+        assert "py.warnings" in log
+
+    def test_it_does_not_reach_the_last_resort_handler(self, tmp_path):
+        """`captureWarnings(True)` alone would not be enough: it logs to
+        `py.warnings`, which is outside this package's namespace and so inherits
+        none of its handlers, leaving the record to fall through to logging's
+        last-resort handler - which writes to stderr, exactly what capturing it
+        was meant to stop."""
+        proc, _ = self._run(tmp_path)
+
+        assert "ray is going to break this" in proc.stdout
+        assert proc.stderr == ""
+
+
+class TestWorkerEnvVars:
+    """What `ray.init(runtime_env=...)` has to carry.
+
+    The os.environ export reaches workers only when this process starts the
+    cluster - the raylet inherits our environment. Against `ray.init(address=)`
+    on a cluster that was already running, nothing exported here arrives, and
+    since the episode callbacks run on the runners that is where the NAV tables
+    and the conservation ERROR would be lost.
+    """
+
+    def test_it_carries_the_level_and_the_directory(self, tmp_path):
+        logging_setup.configure("DEBUG", log_dir=str(tmp_path), force=True)
+
+        env_vars = logging_setup.merge_runtime_env()["env_vars"]
+        assert env_vars[logging_setup.level_env_var()] == "DEBUG"
+        assert env_vars[logging_setup.log_dir_env_var()] == str(tmp_path)
+
+    def test_an_unset_variable_stays_unset(self, monkeypatch):
+        """Not an empty string, which resolve_level and the directory lookup
+        would both have to special-case."""
+        monkeypatch.delenv(logging_setup.log_dir_env_var(), raising=False)
+        logging_setup.configure("INFO", force=True)
+
+        assert logging_setup.log_dir_env_var() not in logging_setup.worker_env_vars()
+
+    def test_an_explicit_caller_value_wins(self, tmp_path):
+        logging_setup.configure("DEBUG", log_dir=str(tmp_path), force=True)
+
+        merged = logging_setup.merge_runtime_env(
+            {"env_vars": {logging_setup.level_env_var(): "ERROR"}}
+        )
+        assert merged["env_vars"][logging_setup.level_env_var()] == "ERROR"
+
+    def test_the_rest_of_the_runtime_env_is_preserved(self, tmp_path):
+        logging_setup.configure("INFO", log_dir=str(tmp_path), force=True)
+
+        merged = logging_setup.merge_runtime_env({"pip": ["tabulate"]})
+        assert merged["pip"] == ["tabulate"]
+
+
+class TestIterationAcrossThreads:
+    """The iteration tag is a property of the process, not of one thread.
+
+    It was a ContextVar, chosen to be per-thread. A new thread starts from an
+    empty context, so every line the driver logged from anywhere but the loop
+    thread read `iter=-` while the process knew the answer perfectly well - and
+    a value set inside a Ray actor task was not guaranteed to still be in
+    context for the next task, which is what the broadcast to the env runners
+    depends on.
+    """
+
+    def test_a_line_from_another_thread_carries_the_iteration(self, tmp_path):
+        import threading
+
+        logging_setup.configure("INFO", log_dir=str(tmp_path), force=True)
+        logging_setup.set_iteration(7)
+
+        def emit():
+            logging_setup.get_logger("gym_continuousDoubleAuction.t").info("elsewhere")
+
+        thread = threading.Thread(target=emit)
+        thread.start()
+        thread.join()
+
+        line = [
+            l for l in (tmp_path / "run.log").read_text().splitlines()
+            if "elsewhere" in l
+        ][0]
+        assert "iter=7" in line
+
+    def test_a_thread_can_set_it_for_the_process(self, tmp_path):
+        """Which is what an env runner does when the driver broadcasts."""
+        import threading
+
+        logging_setup.configure("INFO", log_dir=str(tmp_path), force=True)
+        logging_setup.set_iteration(None)
+
+        thread = threading.Thread(target=logging_setup.set_iteration, args=(11,))
+        thread.start()
+        thread.join()
+
+        assert logging_setup.current_iteration() == 11
