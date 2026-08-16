@@ -100,7 +100,7 @@ version of `test_nav_callback.py`, not fixtures anything reads, and nothing rege
 | `mean_agent_drawdown` | Mean per-agent drawdown at episode end | 10 | `on_episode_end` |
 | `mean_abs_net_position` | Mean absolute inventory at episode end | 10 | `on_episode_end` |
 | `mean_num_trades` | Mean trades per agent over the episode | 10 | `on_episode_end` |
-| `maker_fill_ratio` | Passive share of fills, when anything traded | 10 | `on_episode_end` |
+| `maker_fill_ratio_max` | The most maker-like agent's share of its own fills | 10 | `on_episode_end` |
 | `league_size` | `num_trainable + num_random + champion_count` | 1 | `on_train_result` |
 | `league_mean_return` | Mean module return across the league | 10 | `on_train_result` |
 | `league_std_return` | Std dev of module returns | 10 | `on_train_result` |
@@ -120,12 +120,33 @@ of many must not be averaged away (§1.5); the fractions and the per-episode red
 `window=10`, matching the league metrics, because a single episode is noisy and the question they
 answer is the trend.
 
-**The `on_train_result` metrics are one iteration late.** The hook is handed a `result` that has
-already been compiled, so a value logged there is reduced on the following pass:
-`champions_promoted` reads `1.0` in the row for the iteration *after* the promotion. This has always
-been true of `league_size` and the return statistics; the champion metrics simply make it visible.
-The lag is uniform, so joining on `training_iteration` with one documented offset is better than a
-correction that would have to be undone if RLlib changed the order.
+**The `on_train_result` metrics are one iteration late, so `result["league"]` exists.** The hook is
+handed a `result` that has already been compiled, so a value logged through `metrics_logger` there
+is reduced on the following pass: `champions_promoted` reads `1.0` in the row for the iteration
+*after* the promotion. This has always been true of `league_size` and the return statistics; the
+champion metrics simply made it visible.
+
+The callback therefore also writes the same state **directly into `result["league"]`**, which lands
+in the row for the iteration it describes. RLlib's call site invokes this hook before
+`Trainable.log_result` specifically "so that the user has a chance to mutate the result", and its
+own TODO beside the `metrics_logger` argument notes there is "probably no point in adding more Stats
+here" — so this is the sanctioned path, not a trick. `progress.jsonl` writes the whole result dict,
+so a reader joining `result["league"]` on `training_iteration` gets correctly aligned values; the
+metrics channel is kept unchanged for anything reading RLlib's metrics rather than the result
+(Tune, a Prometheus exporter, `algo.metrics.peek`), and those readers still see the lag.
+
+`result["league"]` carries `size`, `mean_return`, `std_return`, `threshold`, `promoted`,
+`available_modules`, `idle_modules`, `champions` and — once there has been one —
+`iterations_since_champion`.
+
+**`maker_fill_ratio_max` is a maximum for a reason.** The maker share summed over *all* agents is a
+tautology in a closed double auction: `process_acc` runs once per side of every trade, both sides
+increment `num_trades_step`, and only the passive side increments `num_passive_fills_step` — so the
+aggregate is exactly `0.5` in every episode whatever anyone did. A real 3-iteration run reported
+`0.5000` three times, which is how the first version of this metric was caught. The maximum across
+agents does carry signal: 0.5 everywhere means nobody is specialising, one agent at 0.9 against the
+others' 0.3 is a policy that has learnt to quote and wait. Agents below five fills are excluded, or
+one passive fill out of one trade would pin the maximum at 1.0 for the whole run.
 
 **Two of them exist to be alerted on, not plotted.** `nav_conservation_violations` is how a broken
 ledger reaches the driver at all (§1.5), and `idle_modules` is the S3-12 signature — a league

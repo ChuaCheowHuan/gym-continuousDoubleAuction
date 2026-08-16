@@ -418,3 +418,43 @@ class TestItCannotBreakTheRun:
             num_trainable_policies=1, num_random_policies=1, episode_data_dir=None,
         )
         assert callback._recorder() is None
+
+
+class TestCloseKeepsTheTail:
+    """`close` is the one moment blocking is the right answer.
+
+    `_enqueue` never blocks during sampling - putting the filesystem into the
+    env runner's step loop is the failure this module exists to remove. At
+    close there is nothing left to starve, and the batch being dropped is
+    exactly the episodes a killed run most wants: these runs normally end by
+    being killed.
+
+    The first design got both halves of this wrong at once. It signalled the
+    writer with a sentinel *on the queue*, so a full queue meant the sentinel
+    never arrived and the join sat out its whole 30s timeout - and the flush
+    that preceded it had already dropped the tail for the same reason.
+    """
+
+    def test_close_returns_promptly_when_the_queue_is_full(self, tmp_path):
+        import time
+
+        recorder = EpisodeRecorder(str(tmp_path), rows_per_file=1, queue_size=1)
+        _run(recorder, steps=2)
+
+        started = time.monotonic()
+        recorder.close()
+        elapsed = time.monotonic() - started
+
+        assert elapsed < 20.0, f"close took {elapsed:.1f}s - it used to hang for 30"
+
+    def test_the_tail_is_written_rather_than_dropped(self, tmp_path):
+        """A slow writer at close must cost latency, not data."""
+        recorder = EpisodeRecorder(str(tmp_path), rows_per_file=10 ** 9, queue_size=1)
+        _run(recorder, episode_id="a", steps=2)
+        _run(recorder, episode_id="b", steps=2)
+        recorder.close()
+
+        df = _read_all(str(tmp_path))
+        assert set(df["episode_id"]) == {"a", "b"}
+        assert len(df) == 4 * NUM_AGENTS
+        assert recorder._dropped_batches == 0

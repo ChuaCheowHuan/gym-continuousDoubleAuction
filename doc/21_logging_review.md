@@ -351,9 +351,10 @@ post mortem.
 
 ---
 
-## 7. What was found while implementing
+## 7. What was found while implementing, and while checking the implementation
 
-Three things the review did not predict.
+Five things the review did not predict. The last two came out of re-reading the finished work
+rather than out of building it, which is the argument for doing that pass at all.
 
 **A 30-second hang at process exit.** The recorder's first design stopped its writer thread with a
 sentinel value on the queue. `close()` is called at exit, and the one moment it is called under load
@@ -372,6 +373,34 @@ every checkpoint, and it was carrying its in-flight episode tallies along. The u
 different process; a tally for an episode it never ran is not bookkeeping it should continue.
 `__getstate__` now ships the configuration and nothing else — which is also what makes the
 recorder's thread and queue safe to own.
+
+**`maker_fill_ratio` was a tautology.** The first version divided the episode's passive fills by its
+trades, aggregated across all agents. In a closed double auction that is exactly `0.5` in every
+episode whatever anyone did: `process_acc` runs once per side of every trade, both sides increment
+`num_trades_step`, and only the passive side increments `num_passive_fills_step`. A real
+3-iteration run reported `0.5000` three times — a constant so clean it reads like a working metric.
+It also mixed a cumulative field (`num_trades`) with a per-step one
+(`num_passive_fills_step`, zeroed by `exchg_helper` on every step), so even per agent it was
+measuring the last step against the whole episode.
+
+It is `maker_fill_ratio_max` now: per-agent shares accumulated over the episode, reported as the
+maximum across agents with at least five fills. 0.5 everywhere means nobody is specialising; one
+agent at 0.9 against the others' 0.3 is a policy that has learnt to quote and wait. The same run now
+reports 0.794, 0.837, 0.645. The floor on fills matters — one passive fill out of one trade is 1.0,
+and with eight agents the maximum would otherwise sit there all run on noise.
+
+The lesson generalises past this metric: **an aggregate over all agents of a two-sided quantity is a
+conservation identity, not an observation.** Anything summing a maker/taker, buyer/seller or
+long/short quantity across a closed market has the same defect waiting in it.
+
+**The one-iteration lag turned out to be fixable.** §7's third item above said it was documented
+rather than corrected. Re-reading RLlib's call site showed the correction is sanctioned: the hook
+runs before `Trainable.log_result` "so that the user has a chance to mutate the result", and the
+TODO beside the `metrics_logger` argument says there is "probably no point in adding more Stats
+here". The callback now writes `result["league"]`, which lands in the row for the iteration it
+describes, and keeps the metrics channel unchanged for readers that consume RLlib metrics rather
+than the result dict. Verified: `promoted` reads 1 in iteration 1's row, where the promotion
+happened.
 
 ---
 

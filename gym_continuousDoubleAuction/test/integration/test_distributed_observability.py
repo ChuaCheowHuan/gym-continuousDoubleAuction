@@ -122,6 +122,7 @@ class TestMetricsCrossTheRunnerBoundary:
         for key in (
             "episode_nav_mean", "episode_nav_min", "episode_nav_max",
             "mean_agent_drawdown", "mean_abs_net_position", "mean_num_trades",
+            "maker_fill_ratio_max",
         ):
             assert key in self.env_runners
 

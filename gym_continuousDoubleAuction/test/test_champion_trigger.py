@@ -237,3 +237,88 @@ class TestLeagueMetrics:
 
         assert snapshots, "the trigger should have fired"
         assert self._emitted(metrics, "champions_promoted").args[1] == 0.0
+
+
+class TestLeagueStateInTheResult:
+    """League state written into `result`, where it lands in the right row.
+
+    Anything logged through `metrics_logger` in `on_train_result` appears one
+    iteration late: RLlib hands the hook a `result` it has already compiled, so
+    the value is reduced on the following pass and `champions_promoted` reads
+    1.0 in the row *after* the promotion. `progress.jsonl` writes the result
+    dict, so a reader joining on `training_iteration` was getting values that
+    described the previous iteration.
+
+    RLlib's call site invokes this callback before `Trainable.log_result`
+    specifically "so that the user has a chance to mutate the result", and its
+    own TODO beside the `metrics_logger` argument notes there is "probably no
+    point in adding more Stats here". Mutating is the sanctioned path.
+    """
+
+    def test_the_result_carries_the_league_state(self, callback, snapshots):
+        result = _result({"policy_0": 2.0, "policy_1": 1.0})
+        callback.on_train_result(algorithm=object(), result=result)
+
+        league = result["league"]
+        assert league["size"] == callback.num_trainable + callback.num_random
+        assert league["available_modules"] == len(callback.available_modules)
+        assert league["mean_return"] == pytest.approx(1.5)
+
+    def test_a_promotion_lands_in_its_own_iteration(self, callback, monkeypatch):
+        """The whole point. Under the metrics channel alone this reads 0 here
+        and 1 in the next iteration's row."""
+        def _promote(algorithm, pid, return_value, iteration):
+            callback.champion_count += 1
+            callback.champion_history.append(
+                {"id": "champion_1", "source_policy": pid,
+                 "iteration": iteration, "return": return_value}
+            )
+
+        monkeypatch.setattr(
+            callback, "_create_champion_snapshot_from_policy", _promote,
+        )
+        result = _result(
+            {"policy_0": 10.0, "policy_1": 0.0, "policy_5": 0.0}, iteration=4,
+        )
+        callback.on_train_result(algorithm=object(), result=result)
+
+        assert result["league"]["promoted"] == 1
+        assert result["league"]["champions"] == ["champion_1"]
+        assert result["league"]["iterations_since_champion"] == 0
+
+    def test_idle_modules_are_counted_in_the_result(self, callback, snapshots):
+        result = _result({
+            "policy_0": 1.0, "policy_1": 2.0,
+            "policy_5": float("nan"), "policy_6": float("nan"),
+        })
+        callback.on_train_result(algorithm=object(), result=result)
+
+        assert result["league"]["idle_modules"] == 2
+
+    def test_no_champion_yet_omits_the_interval(self, callback, snapshots):
+        """None-so-far and zero-iterations-ago are different states."""
+        result = _result({"policy_0": 1.0, "policy_1": 1.0})
+        callback.on_train_result(algorithm=object(), result=result)
+
+        assert "iterations_since_champion" not in result["league"]
+
+    def test_it_survives_the_progress_json_round_trip(self, callback, snapshots):
+        """`_append_progress` is the consumer; a value it cannot serialise would
+        be dropped from the row it was added to fix."""
+        import json
+
+        from gym_continuousDoubleAuction.train.train import _json_safe
+
+        result = _result({"policy_0": 2.0, "policy_1": 1.0})
+        callback.on_train_result(algorithm=object(), result=result)
+
+        revived = json.loads(json.dumps(_json_safe(result)))
+        assert revived["league"]["size"] == result["league"]["size"]
+        assert revived["league"]["mean_return"] == pytest.approx(1.5)
+
+    def test_an_early_return_leaves_no_partial_state(self, callback, snapshots):
+        """A skipped iteration must not write a `league` key that looks real."""
+        result = {"training_iteration": 1, "env_runners": {}}
+        callback.on_train_result(algorithm=object(), result=result)
+
+        assert "league" not in result

@@ -67,6 +67,19 @@ def _new_tally() -> dict:
         "agent_steps": 0,
         "passes": 0,
         "rejections": 0,
+        # Per agent, because the maker share summed over *all* agents is a
+        # tautology: `process_acc` runs once per side of every trade, both
+        # sides increment `num_trades_step`, and only the passive side
+        # increments `num_passive_fills_step` - so the aggregate is exactly 0.5
+        # in every episode of a closed double auction, whatever anyone did.
+        # What carries information is whether one agent is specialising as a
+        # maker, which is a statement about the spread across agents.
+        #
+        # Accumulated here rather than read from the last step's info, because
+        # both are *per-step* counters that `exchg_helper` zeroes on every step.
+        # Only `num_trades` is cumulative, so pairing it with a step counter
+        # would divide an episode's trades by one step's passive fills.
+        "per_agent_fills": {},
         "term_sum": {term: 0.0 for term in REWARD_TERMS},
         "term_sq": {term: 0.0 for term in REWARD_TERMS},
     }
@@ -317,11 +330,48 @@ class SelfPlayCallback(RLlibCallback):
 
         self._log_reward_terms(tally, agent_steps, metrics_logger)
 
+        self._log_maker_ratio(tally, metrics_logger)
+
         logger.debug(
             "episode %s activity: %s agent-steps, %.1f%% pass, %.1f%% rejected",
             episode.id_, agent_steps, 100 * pass_fraction,
             100 * rejection_fraction,
         )
+
+    #: Trades an agent needs before its maker share is worth reporting. Below
+    #: this the ratio is quantised to almost nothing - one passive fill out of
+    #: one trade reads as a perfect market maker - so the maximum across agents
+    #: would sit at 1.0 for the whole run on noise alone.
+    _MIN_TRADES_FOR_MAKER_RATIO = 5
+
+    def _log_maker_ratio(self, tally, metrics_logger) -> None:
+        """The most maker-like agent's share of its own fills.
+
+        doc/13 §7's market-making uptake, and the one shape of it that says
+        anything. The *aggregate* maker share is a tautology in a closed double
+        auction: `process_acc` runs once per side of every trade, both sides
+        increment `num_trades_step`, and only the passive side increments
+        `num_passive_fills_step` - so summed over all agents it is exactly 0.5
+        in every episode regardless of behaviour. A real 3-iteration run
+        reported 0.5000 three times, which is what exposed it.
+
+        The maximum across agents does carry information: 0.5 everywhere means
+        nobody is specialising, while one agent at 0.9 against the others'
+        0.3 is a policy that has learnt to quote and wait. It is reported only
+        for agents with enough fills to distinguish that from noise.
+
+        Nothing is emitted when no agent qualifies. 0.0 would read as "everyone
+        crossed the spread", which is a claim about behaviour an episode with no
+        trades gives no evidence for.
+        """
+        ratios = [
+            fills["passive"] / fills["trades"]
+            for fills in tally["per_agent_fills"].values()
+            if fills["trades"] >= self._MIN_TRADES_FOR_MAKER_RATIO
+        ]
+        if not ratios:
+            return
+        metrics_logger.log_value("maker_fill_ratio_max", max(ratios), window=10)
 
     def _log_reward_terms(self, tally, agent_steps, metrics_logger) -> None:
         """The reward decomposition, reduced to a mean and a variance share.
@@ -378,7 +428,7 @@ class SelfPlayCallback(RLlibCallback):
         would be a different policy each time, which is the same mislabelling
         `module_episode_returns_mean` exists to avoid.
         """
-        navs, drawdowns, positions, trades, passive = [], [], [], [], []
+        navs, drawdowns, positions, trades = [], [], [], []
         for info in (last_info or {}).values():
             if not isinstance(info, dict):
                 continue
@@ -391,8 +441,12 @@ class SelfPlayCallback(RLlibCallback):
             position = _as_float(info.get("net_position"))
             if position is not None:
                 positions.append(abs(position))
+            # `num_trades` is the episode total. Deliberately not paired here
+            # with `num_passive_fills_step`, which is a *per-step* counter that
+            # `exchg_helper` zeroes every step - `maker_fill_ratio` is computed
+            # from the running tally instead, where both sides span the same
+            # part of the episode.
             trades.append(float(info.get("num_trades") or 0))
-            passive.append(float(info.get("num_passive_fills_step") or 0))
 
         if navs:
             metrics_logger.log_value("episode_nav_mean", sum(navs) / len(navs), window=10)
@@ -407,18 +461,9 @@ class SelfPlayCallback(RLlibCallback):
                 "mean_abs_net_position", sum(positions) / len(positions), window=10,
             )
         if trades:
-            total_trades = sum(trades)
             metrics_logger.log_value(
-                "mean_num_trades", total_trades / len(trades), window=10,
+                "mean_num_trades", sum(trades) / len(trades), window=10,
             )
-            # The maker share of fills - doc/13 §7's market-making uptake. Only
-            # meaningful once something traded; 0.0 on an episode with no trades
-            # would read as "every fill was aggressive", which is a claim about
-            # behaviour that did not happen.
-            if total_trades > 0:
-                metrics_logger.log_value(
-                    "maker_fill_ratio", sum(passive) / total_trades, window=10,
-                )
 
     def _activity_for(self, episode_id) -> dict:
         """The tally for this episode, created if the start hook missed it.
@@ -537,13 +582,24 @@ class SelfPlayCallback(RLlibCallback):
         # reading the recorded rows back at episode end.
         tally = self._activity_for(episode.id_)
         tally["steps"] += 1
-        for agent_info in (last_info or {}).values():
+        for agent_id, agent_info in (last_info or {}).items():
             if not isinstance(agent_info, dict):
                 continue
             tally["agent_steps"] += 1
             if agent_info.get("is_pass_action"):
                 tally["passes"] += 1
             tally["rejections"] += int(agent_info.get("num_rejected_step", 0) or 0)
+
+            trades = int(agent_info.get("num_trades_step", 0) or 0)
+            if trades:
+                fills = tally["per_agent_fills"].setdefault(
+                    agent_id, {"trades": 0, "passive": 0}
+                )
+                fills["trades"] += trades
+                fills["passive"] += int(
+                    agent_info.get("num_passive_fills_step", 0) or 0
+                )
+
             terms = agent_info.get("reward_terms") or {}
             for term in REWARD_TERMS:
                 value = _as_float(terms.get(term))
@@ -558,7 +614,15 @@ class SelfPlayCallback(RLlibCallback):
         # claimed and never did (doc/21 §2.2).
         recorder = self._recorder()
         if recorder is not None:
-            recorder.record_step(episode, tally["steps"])
+            # RLlib's own env timestep where it exists, because it is the
+            # episode's property rather than this process's: it survives a
+            # sample() boundary mid-episode, and it is right even when
+            # `on_episode_start` was never seen (a restored run picking up
+            # mid-flight) or the tally was evicted. The local count is the
+            # fallback for an episode type that does not carry one.
+            recorder.record_step(
+                episode, getattr(episode, "env_t", None) or tally["steps"]
+            )
 
     def on_episode_end(
         self,
@@ -801,18 +865,44 @@ class SelfPlayCallback(RLlibCallback):
                 self._create_champion_snapshot_from_policy(
                     algorithm, best_candidate, best_return, iteration)
         
-        # Log metrics.
+        league_state = {
+            "size": self.num_trainable + self.num_random + self.champion_count,
+            "mean_return": float(league_mean),
+            "std_return": float(league_std),
+            "threshold": float(threshold),
+            "promoted": max(0, self.champion_count - promoted_before),
+            "available_modules": len(self.available_modules),
+            "idle_modules": len(idle_modules),
+            "champions": [c["id"] for c in self.champion_history],
+        }
+        if self.champion_history:
+            league_state["iterations_since_champion"] = (
+                iteration - self.champion_history[-1]["iteration"]
+            )
+
+        # Written straight into `result`, and this is the only one of the two
+        # channels below that lands in the row for the iteration it describes.
         #
-        # Everything logged here lands in the *next* iteration's result dict,
-        # not this one: `on_train_result` is handed a `result` that has already
-        # been compiled, so a value logged now is reduced on the following pass.
-        # That has always been true of `league_size` and the two return
-        # statistics; it is written down here because the champion metrics below
-        # make it visible - `champions_promoted` reads 1.0 in the row for the
-        # iteration *after* the promotion. Do not shift the values to
-        # compensate: the lag is uniform, and a reader joining on
-        # `training_iteration` is better served by one documented offset than by
-        # a correction that has to be undone if RLlib changes the order.
+        # Anything logged through `metrics_logger` here appears one iteration
+        # late: RLlib hands this hook a `result` it has already compiled, so a
+        # value logged now is reduced on the following pass. `champions_promoted`
+        # would read 1.0 in the row *after* the promotion. RLlib's own comment at
+        # the call site says the callback runs before `Trainable.log_result` "so
+        # that the user has a chance to mutate the result", and its TODO beside
+        # `metrics_logger` notes there is "probably no point in adding more Stats
+        # here" - so mutating is the sanctioned path, not a trick.
+        #
+        # `progress.jsonl` is the consumer that matters, and it writes the whole
+        # result dict, so a reader joining `result["league"]` on
+        # `training_iteration` gets values that describe that iteration. A
+        # dedicated sub-dict rather than top-level keys, so it cannot collide
+        # with the lagged metrics of the same name.
+        result["league"] = league_state
+
+        # The metrics channel is kept as well, unchanged, for anything reading
+        # RLlib's metrics rather than the result dict - Tune, a Prometheus
+        # exporter, `algo.metrics.peek`. Those readers get the one-iteration lag
+        # that has always applied to `league_size` and the return statistics.
         if metrics_logger:
             metrics_logger.log_value(
                 "league_size",

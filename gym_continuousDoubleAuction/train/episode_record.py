@@ -101,6 +101,12 @@ REWARD_TERMS = (
     "passive_bonus",
 )
 
+#: How long `close` will wait for room in the writer's queue before giving the
+#: tail up. Bounded, because a process on its way out must not hang on a slow
+#: filesystem; non-zero, because the alternative is dropping exactly the
+#: episodes a killed run most wants to keep.
+_CLOSE_ENQUEUE_WAIT_S = 10.0
+
 #: `info` keys handled outside `INFO_COLUMNS`, so they do not also land in
 #: `info_extra`.
 _HANDLED_KEYS = frozenset(
@@ -333,13 +339,20 @@ class EpisodeRecorder:
         """Forget an episode without writing it."""
         self._live.pop(str(episode_id), None)
 
-    def flush(self) -> None:
-        """Write whatever is buffered, without waiting for `rows_per_file`."""
+    def flush(self, *, wait: float = 0.0) -> None:
+        """Write whatever is buffered, without waiting for `rows_per_file`.
+
+        `wait` is how long to block if the writer is behind. Zero everywhere
+        except at `close`, where nothing is left to starve: dropping the tail
+        there would lose exactly the episodes a killed run most wants, and the
+        reason `_enqueue` never blocks - keeping the filesystem out of the
+        sampling loop - has stopped applying by then.
+        """
         for rows in list(self._live.values()):
             self._pending.extend(rows)
         self._live.clear()
         if self._pending:
-            self._enqueue(self._pending)
+            self._enqueue(self._pending, wait=wait)
             self._pending = []
 
     def close(self) -> None:
@@ -354,7 +367,7 @@ class EpisodeRecorder:
             return
         self._closed = True
         try:
-            self.flush()
+            self.flush(wait=_CLOSE_ENQUEUE_WAIT_S)
         except Exception:
             logger.warning("episode record: the final flush failed", exc_info=True)
         # After the flush, so everything already buffered is in the queue before
@@ -428,17 +441,22 @@ class EpisodeRecorder:
         row["info_extra"] = _json_or_none(extra)
         return row
 
-    def _enqueue(self, rows: List[dict]) -> None:
+    def _enqueue(self, rows: List[dict], *, wait: float = 0.0) -> None:
         """Hand a batch to the writer, or drop it.
 
-        `put_nowait`, never `put`: blocking here would put a slow filesystem
+        Non-blocking by default: blocking here would put a slow filesystem
         directly into the env runner's step loop, which is the failure this
         module exists to remove. A dropped batch is counted and reported once at
         close rather than warned about per occurrence, because the condition
         that causes one causes many.
+
+        `wait` is non-zero only on the close path - see `flush`.
         """
         try:
-            self._queue.put_nowait(rows)
+            if wait > 0:
+                self._queue.put(rows, timeout=wait)
+            else:
+                self._queue.put_nowait(rows)
         except queue.Full:
             self._dropped_batches += 1
             if self._dropped_batches == 1:

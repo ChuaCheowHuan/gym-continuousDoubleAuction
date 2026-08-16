@@ -52,13 +52,21 @@ class MockEpisode:
         return {}
 
 
-def _infos(passes=0, rejections=0, agents=NUM_AGENTS):
-    """One step's infos: `passes` agents passed, `rejections` were refused."""
+def _infos(passes=0, rejections=0, agents=NUM_AGENTS, trades=0, passive=0):
+    """One step's infos.
+
+    `passes` agents passed and `rejections` were refused this step. `trades` and
+    `passive` are the *per-step* counters `exchg_helper` zeroes on every step -
+    every agent reports the same values here, which is enough to check the
+    accumulation.
+    """
     out = {}
     for i in range(agents):
         out[f"agent_{i}"] = {
             "is_pass_action": i < passes,
             "num_rejected_step": 1 if i < rejections else 0,
+            "num_trades_step": trades,
+            "num_passive_fills_step": passive,
         }
     return out
 
@@ -388,7 +396,6 @@ class TestEndOfEpisodeAccountState:
                 "drawdown": fields.get("drawdown", 0.1),
                 "net_position": fields.get("net_position", -3),
                 "num_trades": fields.get("num_trades", 4),
-                "num_passive_fills_step": fields.get("passive", 1),
             }
         h.callback._log_episode_account(last_info, h.metrics)
 
@@ -412,23 +419,109 @@ class TestEndOfEpisodeAccountState:
         # construction in a closed market.
         assert h.emitted("mean_abs_net_position").args[1] == pytest.approx(3.0)
 
-    def test_the_maker_ratio_needs_a_trade_to_exist(self):
-        """0.0 on an episode with no trades would read as "every fill was
-        aggressive", which is a claim about behaviour that did not happen."""
+    def test_trade_count_comes_from_the_cumulative_field(self):
+        """`num_trades` is the episode total; the *_step counters are not."""
         h = ActivityHarness()
-        self._end(h, [100.0], num_trades=0, passive=0)
+        self._end(h, [100.0, 100.0], num_trades=4)
 
-        assert h.emitted("mean_num_trades").args[1] == pytest.approx(0.0)
-        assert h.emitted("maker_fill_ratio") is None
-
-    def test_the_maker_ratio_is_the_passive_share_of_fills(self):
-        h = ActivityHarness()
-        self._end(h, [100.0, 100.0], num_trades=4, passive=1)
-
-        assert h.emitted("maker_fill_ratio").args[1] == pytest.approx(2 / 8)
+        assert h.emitted("mean_num_trades").args[1] == pytest.approx(4.0)
 
     def test_an_empty_info_reports_nothing(self):
         h = ActivityHarness()
         h.callback._log_episode_account({}, h.metrics)
 
         assert h.emitted("episode_nav_mean") is None
+
+
+class TestMakerFillRatio:
+    """The maker share of fills — doc/13 §7's market-making uptake.
+
+    Two things had to be got right, and the first version got neither.
+
+    **It has to span the episode.** `num_passive_fills_step` and
+    `num_trades_step` are per-step counters that `exchg_helper` zeroes on every
+    step, while `num_trades` is cumulative — so pairing the episode's trades
+    with one step's passive fills gives a number with no meaning.
+
+    **It has to be per agent.** The aggregate is a *tautology* in a closed
+    double auction: `process_acc` runs once per side of every trade, both sides
+    increment `num_trades_step`, and only the passive side increments
+    `num_passive_fills_step`. Summed over all agents the ratio is exactly 0.5 in
+    every episode, whatever anyone did — a real 3-iteration run reported 0.5000
+    three times, which is what exposed it. The maximum across agents is what
+    says whether anyone is specialising as a maker.
+    """
+
+    def _episode(self, h, per_agent_steps, episode_id="ep"):
+        """`per_agent_steps` is a list of steps, each a dict agent index ->
+        (trades, passive)."""
+        h.start(episode_id)
+        for step in per_agent_steps:
+            infos = {}
+            for i in range(NUM_AGENTS):
+                trades, passive = step.get(i, (0, 0))
+                infos[f"agent_{i}"] = {
+                    "is_pass_action": False,
+                    "num_rejected_step": 0,
+                    "num_trades_step": trades,
+                    "num_passive_fills_step": passive,
+                }
+            h.step(episode_id, infos)
+        h.end(episode_id)
+
+    def test_a_dedicated_maker_is_visible(self):
+        """agent_0 is passive on every fill, agent_1 aggressive on every one.
+        The old aggregate reported 0.5 for exactly this episode."""
+        h = ActivityHarness()
+        self._episode(h, [{0: (1, 1), 1: (1, 0)}] * 6)
+
+        assert h.emitted("maker_fill_ratio_max").args[1] == pytest.approx(1.0)
+
+    def test_nobody_specialising_reports_a_half(self):
+        """Every agent taking half its fills passively - which is what the
+        aggregate reports whether or not it is true."""
+        h = ActivityHarness()
+        self._episode(
+            h, [{0: (1, 1), 1: (1, 0)}] * 5 + [{0: (1, 0), 1: (1, 1)}] * 5
+        )
+
+        assert h.emitted("maker_fill_ratio_max").args[1] == pytest.approx(0.5)
+
+    def test_it_spans_the_whole_episode_not_the_last_step(self):
+        """The first regression: reading the last step's passive count against
+        the episode's trades gave 0.0 here, though every earlier fill was
+        passive."""
+        h = ActivityHarness()
+        self._episode(h, [{0: (1, 1)}] * 6 + [{0: (1, 0)}] * 2)
+
+        assert h.emitted("maker_fill_ratio_max").args[1] == pytest.approx(0.75)
+
+    def test_a_thin_trader_is_not_reported_as_a_perfect_maker(self):
+        """One passive fill out of one trade is 1.0, and with enough agents the
+        maximum would sit there all run on noise alone."""
+        h = ActivityHarness()
+        limit = h.callback._MIN_TRADES_FOR_MAKER_RATIO
+        # agent_0 trades a lot and crosses every time; agent_1 trades once.
+        self._episode(
+            h, [{0: (1, 0)}] * (limit + 2) + [{1: (1, 1)}],
+        )
+
+        assert h.emitted("maker_fill_ratio_max").args[1] == pytest.approx(0.0)
+
+    def test_an_episode_with_no_trades_reports_nothing(self):
+        """0.0 would read as "everyone crossed the spread", which is a claim
+        about behaviour that did not happen."""
+        h = ActivityHarness()
+        self._episode(h, [{}, {}])
+
+        assert h.emitted("maker_fill_ratio_max") is None
+
+    def test_the_order_of_fills_does_not_matter(self):
+        h = ActivityHarness()
+        self._episode(h, [{0: (1, 1)}] * 3 + [{0: (1, 0)}] * 3, episode_id="a")
+        first = h.emitted("maker_fill_ratio_max").args[1]
+        h.metrics.reset_mock()
+        self._episode(h, [{0: (1, 0)}] * 3 + [{0: (1, 1)}] * 3, episode_id="b")
+        second = h.emitted("maker_fill_ratio_max").args[1]
+
+        assert first == pytest.approx(second) == pytest.approx(0.5)
