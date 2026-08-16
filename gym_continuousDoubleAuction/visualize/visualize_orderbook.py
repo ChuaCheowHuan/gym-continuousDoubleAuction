@@ -1,81 +1,57 @@
-import json
 import numpy as np
 import matplotlib.pyplot as plt
-import os
 
 from gym_continuousDoubleAuction.config_loader import constant
 from gym_continuousDoubleAuction.envs.exchg.state_helper import SNAPSHOT_DIM
+from gym_continuousDoubleAuction.visualize.episode_data import load_episode
 
-def visualize_episode_data(json_path=None, agent_id=None):
+def visualize_episode_data(run_dir=None, episode_id=None, agent_id=None):
     """
-    Visualizes price and size changes for the orderbook from episode data.
+    Visualizes price and size changes for the orderbook, for one agent, over
+    one episode, from the per-step Parquet record
+    (`train.episode_record.EpisodeRecorder`).
 
-    Defaults come from config/tunable_constants.json -> visualize_paths.
-    SNAPSHOT_DIM is the observation layout from the same file; this reads a
-    pickled observation rather than a live env, so it uses the module-level
-    value instead of an instance attribute.
+    `best_bid`/`best_ask` are read straight off their own columns. Sizes have
+    no column of their own, so they still come from the raw observation
+    snapshot: the last SNAPSHOT_DIM entries of `obs`, which is the same
+    layout `state_helper` builds live - this reads a recorded observation
+    rather than a live env, so it uses the module-level SNAPSHOT_DIM instead
+    of an instance attribute.
+
+    [0:10]  Bid Prices
+    [10:20] Bid Sizes
+    [20:30] Ask Prices (negated)
+    [30:40] Ask Sizes (negated)
+    [40]    log_mid
+    [41]    log1p_spread_ticks
+
+    run_dir/episode_id default to the most recently recorded run/episode; see
+    `episode_data.load_episode`.
     """
-    if json_path is None:
-        json_path = constant("visualize_paths", "nav_json_path")
     if agent_id is None:
         agent_id = constant("visualize_paths", "default_agent_id")
 
-    if not os.path.exists(json_path):
-        print(f"Error: {json_path} not found.")
+    episode = load_episode(
+        run_dir, episode_id, columns=["agent_id", "best_bid", "best_ask", "obs"],
+    )
+    episode = episode[episode["agent_id"] == agent_id]
+    if episode.empty:
+        print(f"No rows for agent {agent_id!r} in this episode.")
         return
 
-    print(f"Loading data from {json_path}...")
-    with open(json_path, 'r') as f:
-        data = json.load(f)
+    print(f"Episode {episode['episode_id'].iloc[0]}: {len(episode)} steps for {agent_id}.")
 
-    steps = len(data)
-    print(f"Found {steps} steps in episode.")
+    best_bids = episode["best_bid"].to_numpy()
+    best_asks = episode["best_ask"].to_numpy()
 
-    # Data containers
-    bid_prices = []
-    bid_sizes = []
-    ask_prices = []
-    ask_sizes = []
-    
-    # Best Bid/Ask for easier plotting
-    best_bids = []
-    best_asks = []
-
-    for i, step in enumerate(data):
-        obs = step.get('obs', {})
-        if agent_id not in obs:
-            continue
-            
-        # Observation snapshot structure: SNAPSHOT_DIM elements
-        # [0:10]  Bid Prices
-        # [10:20] Bid Sizes
-        # [20:30] Ask Prices (negated)
-        # [30:40] Ask Sizes (negated)
-        # [40]    log_mid
-        # [41]    log1p_spread_ticks
-        agent_obs = np.array(obs[agent_id])
-        latest_snapshot = agent_obs[-SNAPSHOT_DIM:]
-        
-        b_p = latest_snapshot[0:10]
-        b_s = latest_snapshot[10:20]
-        a_p = -latest_snapshot[20:30] # Negated in env, restore to positive
-        a_s = -latest_snapshot[30:40] # Negated in env, restore to positive
-        
-        bid_prices.append(b_p)
-        bid_sizes.append(b_s)
-        ask_prices.append(a_p)
-        ask_sizes.append(a_s)
-        
-        # Best bid is index 0 (as per set_agg_LOB logic: reversed(...) for bids)
-        # Best ask is index 0 (as per set_agg_LOB logic: items() for asks)
-        best_bids.append(b_p[0] if b_p[0] > 0 else None)
-        best_asks.append(a_p[0] if a_p[0] > 0 else None)
-
-    # Convert to numpy arrays for easier manipulation
-    bid_prices = np.array(bid_prices)
-    bid_sizes = np.array(bid_sizes)
-    ask_prices = np.array(ask_prices)
-    ask_sizes = np.array(ask_sizes)
+    total_bid_size = []
+    total_ask_size = []
+    for obs in episode["obs"]:
+        snapshot = np.asarray(obs)[-SNAPSHOT_DIM:]
+        b_s = snapshot[10:20]
+        a_s = -snapshot[30:40]  # Negated in env, restore to positive
+        total_bid_size.append(b_s.sum())
+        total_ask_size.append(a_s.sum())
 
     # Plotting
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
@@ -89,11 +65,6 @@ def visualize_episode_data(json_path=None, agent_id=None):
     ax1.grid(True, alpha=0.3)
 
     # 2. Size Plot (Total Volume)
-    total_bid_size = np.sum(bid_sizes, axis=1)
-    total_ask_size = np.sum(ask_sizes, axis=1)
-    
-    # ax2.fill_between(range(len(total_bid_size)), total_bid_size, color='green', alpha=0.3, label='Total Bid Size')
-    # ax2.fill_between(range(len(total_ask_size)), total_ask_size, color='red', alpha=0.3, label='Total Ask Size')
     ax2.plot(range(len(total_bid_size)), total_bid_size, color='green', alpha=0.3, label='Total Bid Size')
     ax2.plot(range(len(total_ask_size)), total_ask_size, color='red', alpha=0.3, label='Total Ask Size')
     ax2.set_ylabel('Total Size (Volume)')
@@ -103,7 +74,7 @@ def visualize_episode_data(json_path=None, agent_id=None):
     ax2.grid(True, alpha=0.3)
 
     plt.tight_layout()
-    
+
     # Save or show
     output_plot = 'visualize/orderbook_visualization.png'
     plt.savefig(output_plot)

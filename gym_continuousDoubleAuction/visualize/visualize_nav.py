@@ -1,67 +1,32 @@
-import json
 import matplotlib.pyplot as plt
-import os
-from collections import defaultdict
 
-from gym_continuousDoubleAuction.config_loader import constant
+from gym_continuousDoubleAuction.visualize.episode_data import load_episode
 
-def visualize_nav(json_path=None):
+
+def visualize_nav(run_dir=None, episode_id=None):
     """
-    Plots the NAV for each agent from the episode data JSON file.
+    Plots the NAV for each agent over one episode, from the per-step Parquet
+    record (`train.episode_record.EpisodeRecorder`).
 
-    Paths come from config/tunable_constants.json -> visualize_paths.
+    run_dir/episode_id default to the most recently recorded run/episode; see
+    `episode_data.load_episode`.
     """
-    if json_path is None:
-        json_path = constant("visualize_paths", "nav_json_path")
+    episode = load_episode(run_dir, episode_id, columns=["agent_id", "nav"])
+    print(
+        f"Episode {episode['episode_id'].iloc[0]}: {len(episode)} rows, "
+        f"{episode['agent_id'].nunique()} agents."
+    )
 
-    if not os.path.exists(json_path):
-        # Fallback to local directory if relative path fails
-        fallback = constant("visualize_paths", "nav_json_fallback")
-        if os.path.exists(fallback):
-            json_path = fallback
-        else:
-            print(f"Error: {json_path} not found.")
-            return
-
-    print(f"Loading data from {json_path}...")
-    with open(json_path, 'r') as f:
-        data = json.load(f)
-
-    print(f"Processing {len(data)} steps...")
-    
-    # Use defaultdict to store NAV history for each agent
-    agent_navs = defaultdict(list)
-    
-    for step in data:
-        info = step.get('info', {})
-        for agent_id, agent_info in info.items():
-            if 'NAV' in agent_info:
-                try:
-                    # Convert string NAV to float
-                    nav_val = float(agent_info['NAV'])
-                    agent_navs[agent_id].append(nav_val)
-                except ValueError:
-                    print(f"Warning: Could not convert NAV '{agent_info['NAV']}' to float for {agent_id}.")
-
-    if not agent_navs:
-        print("No NAV data found for any agent.")
-        return
-
-    # Plotting
     plt.figure(figsize=(20, 10))
-    
-    # Sort agent IDs to ensure consistent legend and linestyle order
-    sorted_agents = sorted(agent_navs.keys())
-    
-    # Define linestyles to distinguish lines
+
+    sorted_agents = sorted(episode["agent_id"].unique())
+
     linestyles = ['-', '--', '-.', ':', (0, (3, 5, 1, 5, 1, 5)), (0, (5, 10)), (0, (1, 10))]
-    
+
     for i, agent_id in enumerate(sorted_agents):
-        nav_history = agent_navs[agent_id]
-        if nav_history:
-            # Cycle through linestyles
-            style = linestyles[i % len(linestyles)]
-            plt.plot(nav_history, label=agent_id, linewidth=2.0, linestyle=style)
+        nav_history = episode.loc[episode["agent_id"] == agent_id, "nav"].to_numpy()
+        style = linestyles[i % len(linestyles)]
+        plt.plot(nav_history, label=agent_id, linewidth=2.0, linestyle=style)
 
     plt.title('Agent Net Asset Value (NAV) Over Time')
     plt.xlabel('Step')
