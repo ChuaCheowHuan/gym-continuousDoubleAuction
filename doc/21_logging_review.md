@@ -353,8 +353,10 @@ post mortem.
 
 ## 7. What was found while implementing, and while checking the implementation
 
-Five things the review did not predict. The last two came out of re-reading the finished work
-rather than out of building it, which is the argument for doing that pass at all.
+Nine things the review did not predict. The last six came out of re-reading the finished work rather
+than out of building it, which is the argument for doing that pass at all — and the last four came
+out of cross-checking channels against each other and against the *other* entry point, which no
+single-channel reading would have caught.
 
 **A 30-second hang at process exit.** The recorder's first design stopped its writer thread with a
 sentinel value on the queue. `close()` is called at exit, and the one moment it is called under load
@@ -414,3 +416,45 @@ happened.
 | `11 §3` | Three persistence problems about the `.pkl` files | Gone with `pickle`; one new entry for the unbounded run-log file *count* |
 | `11 §4` | Four sketched `log_value` calls "to add" | All four exist; the list is now things needing new computation |
 | `config/runtime_profiles.json` | "~10MB per 4096-step episode" | ~34 MB, measured at the training shape |
+
+**The console is not a complete record under multiple runners, and never was.** A two-runner run put
+6 NAV tables in the per-worker log files and 2 on the console. Ray forwards worker stdout to the
+driver on a best-effort basis and stops when the worker is killed, so the tail is lost. This is
+pre-existing Ray behaviour rather than anything this work introduced — and it is exactly the reason
+doc/11 §1.9 gives for the per-process files existing. Worth stating because it makes the console
+misleading as a record: the files are complete, the terminal is a sample.
+
+**Two channels disagreed about how many episodes there were.** The same run recorded 8 distinct
+`episode_id`s in Parquet and 6 NAV tables in the logs. Both were right: `on_episode_end` fires only
+for episodes that actually end, while `close` writes whatever was in flight. The fragments were real
+rows and worth keeping, but nothing marked them, so any per-episode aggregate over the file counted
+them as episodes. There is an `episode_complete` column now, and the two channels agree exactly.
+
+The general form is worth remembering: **two independent records of the same events are the cheapest
+correctness check available, and they only help if someone actually compares the counts.** Three of
+the findings on this page came from doing that once.
+
+**The excepthook guard was racy.** `install_excepthooks` has an idempotence flag it checks and then
+sets, and `configure` called it *outside* `_configure_lock` - the same check-then-act shape, in the
+same file, as the bug that lock was added for. Two threads would each chain a hook onto the
+previous one, and every unhandled exception would be logged twice. It is inside the lock now, with a
+test that pins the mechanism and not just the outcome.
+
+**The iteration broadcast under-delivered silently.** `foreach_env_runner` defaults to
+`healthy_only=True` and skips a runner that is restarting or slower than the 10s timeout. That
+runner keeps whatever iteration it was last told, so its lines and its recorded rows carry the
+*previous* iteration rather than `-`. A stale but plausible number is worse than a missing one,
+because nothing about it looks wrong. Blocking sampling until every runner acknowledges a log field
+is not the trade to make, so the broadcast still degrades - but it now says when it fell short.
+
+**The notebook path turned propagation off without the thing that justifies it.**
+`configure_run_logging` disables propagation to the root logger whenever `ray_log_encoding` is set,
+reasoning that Ray is about to configure root and both handlers would print every line twice. That
+reasoning holds only if the `ray.init` that follows applies a `LoggingConfig` - `train.main` does,
+and `runtime.ray_init_kwargs` did not. A notebook run therefore had propagation off with nothing
+taking its place: no duplication, but no Ray-side formatting either, and a `logging.basicConfig()`
+in a cell would have stopped showing package lines. `ray_init_kwargs(rt, cfg)` now adds the
+`logging_config`, so the two entry points agree.
+
+The general form again: **a decision made in one place and acted on in another will drift**, and the
+two entry points into this repository are exactly where that drift lives.

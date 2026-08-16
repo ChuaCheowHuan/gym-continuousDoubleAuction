@@ -16,6 +16,7 @@ import importlib
 import json
 import logging
 import shutil
+import sys
 
 import pytest
 
@@ -987,3 +988,57 @@ class TestRayLoggingConfig:
         from gym_continuousDoubleAuction.train.train import ray_logging_config
 
         assert ray_logging_config(self._cfg()) is not None
+
+
+class TestExcepthookInstallationIsGuarded:
+    """The idempotence guard is a check-then-act, like `_configured` was.
+
+    Two threads arriving in `configure` together both read
+    `_excepthooks_installed` as False and both chain a hook onto the previous
+    one, after which every unhandled exception is logged twice - and the second
+    copy is chained onto the first, so it never unwinds. `configure` calls
+    `install_excepthooks` while holding `_configure_lock` for exactly this.
+    """
+
+    def test_repeated_configuration_installs_one_hook(self):
+        logging_setup.configure("INFO", force=True)
+        first = sys.excepthook
+        for _ in range(5):
+            logging_setup.configure("INFO", force=True)
+
+        assert sys.excepthook is first
+
+    def test_concurrent_configuration_installs_one_hook(self):
+        import threading
+
+        logging_setup.configure("INFO", force=True)
+        before = sys.excepthook
+        barrier = threading.Barrier(8)
+
+        def configure():
+            barrier.wait()
+            logging_setup.configure("DEBUG", force=True)
+
+        threads = [threading.Thread(target=configure) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert sys.excepthook is before
+
+    def test_it_is_installed_under_the_configure_lock(self):
+        """Pins the mechanism, not just the outcome: a future edit that moves
+        the call back outside the lock restores the race without failing the
+        two tests above, which cannot reach a window this small reliably."""
+        import inspect
+
+        source = inspect.getsource(logging_setup.configure)
+        body = source[source.index("with _configure_lock:"):]
+        installed = body.index("install_excepthooks()")
+        # Everything inside the `with` block is indented past its own line.
+        line = body[:installed].rsplit("\n", 1)[-1]
+
+        assert line.startswith(" " * 8), (
+            "install_excepthooks() has moved out of the _configure_lock block"
+        )

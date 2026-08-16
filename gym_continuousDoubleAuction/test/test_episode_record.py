@@ -458,3 +458,66 @@ class TestCloseKeepsTheTail:
         assert set(df["episode_id"]) == {"a", "b"}
         assert len(df) == 4 * NUM_AGENTS
         assert recorder._dropped_batches == 0
+
+
+class TestCompleteAndTruncatedEpisodes:
+    """A fragment must not read as a whole episode.
+
+    `close` writes whatever was still in flight, because a killed run's tail is
+    often the part worth having - but those rows stop at whatever step sampling
+    stopped at. Without a flag, every per-episode aggregate over the file (an
+    episode's NAV trajectory, its return, a Sharpe over it) silently includes
+    the fragment as though it were an episode.
+
+    Found by cross-checking two channels: a two-runner run recorded 8 distinct
+    episode_ids while the run logs held 6 NAV tables, because `on_episode_end`
+    fires only for episodes that actually end.
+    """
+
+    def test_a_finished_episode_is_marked_complete(self, tmp_path):
+        recorder = EpisodeRecorder(str(tmp_path))
+        _run(recorder, steps=3)
+        recorder.close()
+
+        df = _read_all(str(tmp_path))
+        assert df["episode_complete"].all()
+
+    def test_an_episode_cut_short_is_marked_incomplete(self, tmp_path):
+        recorder = EpisodeRecorder(str(tmp_path))
+        episode = FakeEpisode("ep")
+        for step in range(3):
+            recorder.record_step(episode, step)
+        recorder.close()          # no finish_episode: sampling stopped first
+
+        df = _read_all(str(tmp_path))
+        assert len(df) == 3 * NUM_AGENTS      # the rows are kept...
+        assert not df["episode_complete"].any()   # ...and labelled
+
+    def test_the_two_are_separable_in_one_file(self, tmp_path):
+        """The shape a real run produces: finished episodes plus whatever was
+        in flight when the worker was killed."""
+        recorder = EpisodeRecorder(str(tmp_path))
+        _run(recorder, episode_id="done", steps=2)
+        cut = FakeEpisode("cut")
+        for step in range(2):
+            recorder.record_step(cut, step)
+        recorder.close()
+
+        df = _read_all(str(tmp_path))
+        complete = set(df[df["episode_complete"]]["episode_id"])
+        truncated = set(df[~df["episode_complete"]]["episode_id"])
+
+        assert complete == {"done"}
+        assert truncated == {"cut"}
+
+    def test_an_evicted_episode_is_not_written_at_all(self, tmp_path):
+        """Eviction is a memory valve, not a write path: an episode dropped
+        because too many were open says nothing about the run."""
+        recorder = EpisodeRecorder(str(tmp_path), max_live_episodes=2)
+        for i in range(6):
+            recorder.record_step(FakeEpisode(f"ep_{i}"), 0)
+        recorder.finish_episode("ep_5")
+        recorder.close()
+
+        df = _read_all(str(tmp_path))
+        assert "ep_0" not in set(df["episode_id"])

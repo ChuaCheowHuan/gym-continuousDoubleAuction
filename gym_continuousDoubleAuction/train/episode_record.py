@@ -137,6 +137,9 @@ def _schema():
         # which is most of what one would ask this file.
         pa.field("module_id", pa.string()),
         pa.field("wall_time", pa.float64()),
+        # False where sampling stopped before the episode did. Every
+        # per-episode aggregate over this file wants it in the WHERE clause.
+        pa.field("episode_complete", pa.bool_()),
         # The two representations of NAV; see INFO_COLUMNS.
         pa.field("nav", pa.float64()),
         pa.field("nav_str", pa.string()),
@@ -330,10 +333,30 @@ class EpisodeRecorder:
         rows = self._live.pop(str(episode_id), None)
         if not rows:
             return
-        self._pending.extend(rows)
+        self._release(rows, complete=True)
         if len(self._pending) >= self.rows_per_file:
             self._enqueue(self._pending)
             self._pending = []
+
+    def _release(self, rows: List[dict], *, complete: bool) -> None:
+        """Move rows into the write buffer, saying whether the episode ended.
+
+        The flag is what stops a truncated episode from looking like a whole
+        one. `close` writes whatever was still in flight - a killed run's tail
+        is often the part worth having - but those rows stop at whatever step
+        sampling stopped at, and nothing in them says so. Any per-episode
+        aggregate over the file (an episode's NAV trajectory, its return, a
+        Sharpe over it) silently includes the fragment as though it were an
+        episode.
+
+        Found by cross-checking two channels against each other: a two-runner
+        run recorded 8 distinct `episode_id`s while the run logs held 6 NAV
+        tables, because `on_episode_end` fires only for episodes that actually
+        end. The rows are real either way and are kept; they are labelled.
+        """
+        for row in rows:
+            row["episode_complete"] = complete
+        self._pending.extend(rows)
 
     def drop_episode(self, episode_id) -> None:
         """Forget an episode without writing it."""
@@ -347,9 +370,13 @@ class EpisodeRecorder:
         there would lose exactly the episodes a killed run most wants, and the
         reason `_enqueue` never blocks - keeping the filesystem out of the
         sampling loop - has stopped applying by then.
+
+        Episodes still in flight are written with `episode_complete=False`, not
+        dropped and not silently mixed in with the finished ones - see
+        `_release`.
         """
         for rows in list(self._live.values()):
-            self._pending.extend(rows)
+            self._release(rows, complete=False)
         self._live.clear()
         if self._pending:
             self._enqueue(self._pending, wait=wait)
@@ -415,6 +442,10 @@ class EpisodeRecorder:
             "agent_id": agent_id,
             "module_id": _module_for(episode, agent_id),
             "wall_time": now,
+            # Overwritten by `_release` when the episode leaves the buffer.
+            # Pessimistic until then: a row that somehow reaches a file without
+            # passing through there describes an episode nothing said ended.
+            "episode_complete": False,
             "nav": _optional_float(nav_str),
             "nav_str": None if nav_str is None else str(nav_str),
             "action": _floats(action if action is not None

@@ -36,7 +36,7 @@ agent)**, with a declared schema.
 
 | Column group | Columns |
 |---|---|
-| Identity | `run_id`, `iteration`, `episode_id`, `step`, `agent_id`, `module_id`, `wall_time` |
+| Identity | `run_id`, `iteration`, `episode_id`, `step`, `agent_id`, `module_id`, `wall_time`, `episode_complete` |
 | NAV | `nav` (float, for arithmetic), `nav_str` (the exact `Decimal` string) |
 | Account | `net_position`, `VWAP`, `cash`, `cash_on_hold`, `position_val`, `drawdown`, `max_nav`, `num_trades`, `num_trades_step`, `num_passive_fills_step`, `order_step_placed`, `num_rejected_step`, `is_pass_action` |
 | Market | `last_price`, `best_bid`, `best_ask`, `spread` |
@@ -65,6 +65,17 @@ things changed, and each was a defect ([21 §2.2–2.4, §5–6](21_logging_revi
   `episode_max_bytes` (default 2 GiB) caps what each writer keeps, deleting its own oldest files
   first. Per writer, not per directory: deleting another worker's files is a cross-process race for
   no benefit, so a run with N runners keeps up to N × the cap.
+
+**`episode_complete` belongs in the `WHERE` clause of every per-episode query.** `close` writes
+whatever was still in flight — a killed run's tail is often the part worth having — but those rows
+stop at whatever step sampling stopped at. Unlabelled, every per-episode aggregate (an episode's NAV
+trajectory, its return, a Sharpe over it) would silently include the fragment as a whole episode.
+The flag was added after cross-checking two channels against each other: a two-runner run recorded
+**8** distinct `episode_id`s while the run logs held **6** NAV tables, because `on_episode_end`
+fires only for episodes that actually end. With the flag the two agree exactly — 6 complete, 2
+truncated. Episodes dropped by the live-buffer cap are a different case and are not written at all:
+eviction is a memory valve, and an episode discarded because too many were open says nothing about
+the run.
 
 The path is **absolute and run-scoped** (`TrainConfig.episode_data_path`). It is neither by
 accident: the callback is pickled into every env runner, and a relative path is resolved against

@@ -1200,7 +1200,7 @@ def _broadcast_iteration(algo, iteration: int) -> None:
     if group is None:
         return
     try:
-        group.foreach_env_runner(
+        acked = group.foreach_env_runner(
             _apply_iteration(iteration),
             local_env_runner=False,
             timeout_seconds=_BROADCAST_TIMEOUT_S,
@@ -1209,6 +1209,27 @@ def _broadcast_iteration(algo, iteration: int) -> None:
         logger.debug(
             "could not broadcast iteration %s to the env runners; their log "
             "lines will read iter=-", iteration, exc_info=True,
+        )
+        return
+
+    # A runner that did not answer within the timeout is skipped silently by
+    # `foreach_env_runner` (healthy_only defaults to True), and it keeps
+    # whatever iteration it was last told - so its lines and its recorded rows
+    # are labelled with the *previous* iteration rather than with `-`. A stale
+    # but plausible number is worse than a missing one, because nothing about it
+    # looks wrong. This does not fix that, which would mean blocking sampling on
+    # a log field; it makes it visible, so a reader who finds two iterations'
+    # NAV tables sharing a number has a line saying which one to distrust.
+    try:
+        expected = group.num_healthy_remote_env_runners()
+    except Exception:
+        return
+    if len(acked) < expected:
+        logger.warning(
+            "iteration %s reached only %s of %s env runners within %ss; the "
+            "rest will label this iteration's lines and recorded rows with "
+            "whatever iteration they were last told",
+            iteration, len(acked), expected, _BROADCAST_TIMEOUT_S,
         )
 
 

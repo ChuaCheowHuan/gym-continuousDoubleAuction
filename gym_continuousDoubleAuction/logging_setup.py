@@ -275,10 +275,17 @@ def configure(
         # handlers across rather than by propagation.
         _capture_warnings(root)
 
-    # Every process, not just the driver: a worker that dies takes its
-    # traceback with it otherwise, and the env runners are where the episode
-    # callbacks - including the NAV conservation raise - actually run.
-    install_excepthooks()
+        # Inside the lock, for the same reason the handler swap is: its
+        # `_excepthooks_installed` guard is a check-then-act, so two threads
+        # arriving together both read False and both chain a hook onto the
+        # previous one - after which every unhandled exception is logged twice.
+        # Same shape as the bug `_configure_lock` was added for, and the same
+        # answer. Cheap: this runs once per process.
+        #
+        # Every process, not just the driver: a worker that dies takes its
+        # traceback with it otherwise, and the env runners are where the
+        # episode callbacks actually run.
+        install_excepthooks()
 
     os.environ[level_env_var()] = resolved
     if log_dir:
@@ -452,6 +459,10 @@ def install_excepthooks() -> None:
     KeyboardInterrupt is logged as a one-line INFO without a traceback. These
     runs are normally ended by being killed, and a full stack for an
     intentional Ctrl-C is noise at the end of every session.
+
+    `configure` calls this while holding `_configure_lock`, because the
+    idempotence guard below is a check-then-act. Calling it directly from two
+    threads at once is still racy; nothing does.
     """
     global _excepthooks_installed
     if _excepthooks_installed:
