@@ -13,9 +13,10 @@
 **/last_eps_steps
 venv
 .venv
-# SelfPlayCallback pickles one file per episode into ./episode_data relative to
-# the *working directory*, so this lands at the repo root when training is
-# launched from there - not only under gym_continuousDoubleAuction/.
+# The per-step episode record is written under ./episode_data/<run_id>/. The
+# path is absolute now (TrainConfig.episode_data_path), but it is still derived
+# from the working directory a run was launched from, so it lands at the repo
+# root as often as under gym_continuousDoubleAuction/.
 episode_data
 gym_continuousDoubleAuction/episode_data
 results

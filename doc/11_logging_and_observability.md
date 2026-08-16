@@ -9,43 +9,93 @@ workers), [14_perspective_ai_engineer.md](14_perspective_ai_engineer.md) §5.4.
 
 **Status.** This used to be the weakest engineering area in the repository: no logging framework
 at all, ~86 `print()` calls, and a conservation check that reported a corrupt ledger by printing
-`FAILED`. Both are fixed - see §1.3 and §1.5. What remains open is *coverage*: the set of things
-worth recording is still much larger than the set actually recorded (§2).
+`FAILED`. Both are fixed - see §1.3 and §1.5. Coverage was the next gap and is largely closed:
+27 custom metrics (§1.2) and a typed, queryable per-step record (§1.1). What is left in §2 now needs
+new computation rather than aggregation of something already in hand.
 
 **Concurrency.** §1.10 is the answer to "is this thread safe or process safe", which is a separate
 question from coverage and was for a long time answered only in prose. It now has tests.
+
+**Distribution.** [21_logging_review.md](21_logging_review.md) is the audit of what all of the above
+does once `num_env_runners > 0`, which is the shape the GPU profile runs. Three of its findings were
+defects rather than gaps - a stop signal that stopped nothing, a switch that switched nothing off,
+and the one output path with no absolute resolution - and §1.5, §1.1 and §1.15 here are what they
+became.
 
 ---
 
 ## 1. What is currently logged
 
-### 1.1 Per-step episode data (persisted)
+### 1.1 The per-step episode record (Parquet)
 
-**Where:** `on_episode_step` accumulates into `self.store[episode.id_]`; `on_episode_end`
-serialises that episode's steps to `<episode_data_dir>/<episode_id>.pkl` and drops them from
-memory.
+**Where:** `on_episode_step` hands the step to
+[`train/episode_record.py`](../gym_continuousDoubleAuction/train/episode_record.py);
+`on_episode_end` releases the episode to a background writer thread, which writes
+`<episode_data_dir>/<run_id>/episodes.<pid>.<worker>.<n>.parquet`. **One row per (episode, step,
+agent)**, with a declared schema.
 
-| Field | Source |
+| Column group | Columns |
 |---|---|
-| `episode_id` | `episode.id_` |
-| `obs` | `episode.get_observations(-1)` |
-| `act` | `episode.get_actions(-1)` |
-| `reward` | `episode.get_rewards(-1)` |
-| `info` | `episode.get_infos(-1)` — carries `reward`, `NAV`, `num_trades` per agent |
+| Identity | `run_id`, `iteration`, `episode_id`, `step`, `agent_id`, `module_id`, `wall_time`, `episode_complete` |
+| NAV | `nav` (float, for arithmetic), `nav_str` (the exact `Decimal` string) |
+| Account | `net_position`, `VWAP`, `cash`, `cash_on_hold`, `position_val`, `drawdown`, `max_nav`, `num_trades`, `num_trades_step`, `num_passive_fills_step`, `order_step_placed`, `num_rejected_step`, `is_pass_action` |
+| Market | `last_price`, `best_bid`, `best_ask`, `spread` |
+| Reward | `reward`, and `reward_term_*` for each of the five signed contributions |
+| Raw | `obs` (list), `action` (list), `info_extra` (JSON for any `info` key with no column) |
 
-Configurable via `SelfPlayCallback(episode_data_dir=...)` / `TrainConfig.episode_data_dir` /
-`--no-episode-data`. **Default: on.** At `max_step=4096` and 8 agents this is ~4,096 dicts per
-episode held in memory then serialised, per episode, per worker.
+This replaced a `pickle.dump` of the whole episode performed inline in `on_episode_end`. Five
+things changed, and each was a defect ([21 §2.2–2.4, §5–6](21_logging_review.md)):
 
-Two further notes:
-- The store is keyed by episode ID, which is what makes it safe under
-  `num_envs_per_env_runner > 1` (see [09](09_distributed_training.md) §2.4).
-- The files carry no timestamp or iteration metadata, so correlating them with training progress
-  means parsing filenames against wall-clock order.
-- `pickle` executes arbitrary code on load. Fine for self-produced files; unsafe if episode data
-  is ever shared. Two `.pkl` files are committed under `episode_data/`; they are leftover output
-  from an older version of `test_nav_callback.py`, not fixtures anything reads, and the suite no
-  longer regenerates them.
+* **Typed and queryable.** `ray.data.read_parquet`, pandas or DuckDB read it without this package
+  installed, and `pickle`'s arbitrary-code-execution-on-load is gone. The schema is *declared*, not
+  inferred — inference would let two files of one run disagree about a column's type whenever an
+  episode happened to hold only nulls in it. An `info` key with no column is preserved as JSON in
+  `info_extra` rather than dropped, and `test_episode_record.py` fails if `Info_Helper` grows a
+  field the schema does not cover.
+* **Off the hot path.** A bounded queue hands rows to one background thread, so the env runner's
+  step loop pays a buffer append. A full queue drops a batch with a warning rather than blocking —
+  putting the filesystem into the sampling loop is the failure this exists to remove.
+* **It cannot raise into the hook.** Every failure is a warning. On a remote env runner an
+  exception out of `on_episode_end` is a killed and restarted worker, not a stopped run.
+* **`--no-episode-data` now costs nothing.** `on_episode_step` no longer touches observations or
+  actions when the record is off. Previously the flag disabled the write and kept the ~34 MB per
+  episode of accumulation.
+* **It is bounded.** `episode_sample_every` (default **10**) records one episode in N, chosen by
+  `crc32` of the episode id so every runner samples the same subset without coordinating;
+  `episode_max_bytes` (default 2 GiB) caps what each writer keeps, deleting its own oldest files
+  first. Per writer, not per directory: deleting another worker's files is a cross-process race for
+  no benefit, so a run with N runners keeps up to N × the cap.
+
+**`episode_complete` belongs in the `WHERE` clause of every per-episode query.** `close` writes
+whatever was still in flight — a killed run's tail is often the part worth having — but those rows
+stop at whatever step sampling stopped at. Unlabelled, every per-episode aggregate (an episode's NAV
+trajectory, its return, a Sharpe over it) would silently include the fragment as a whole episode.
+The flag was added after cross-checking two channels against each other: a two-runner run recorded
+**8** distinct `episode_id`s while the run logs held **6** NAV tables, because `on_episode_end`
+fires only for episodes that actually end. With the flag the two agree exactly — 6 complete, 2
+truncated. Episodes dropped by the live-buffer cap are a different case and are not written at all:
+eviction is a memory valve, and an episode discarded because too many were open says nothing about
+the run.
+
+The path is **absolute and run-scoped** (`TrainConfig.episode_data_path`). It is neither by
+accident: the callback is pickled into every env runner, and a relative path is resolved against
+whatever working directory that worker inherited. It stays outside `run_dir` deliberately —
+`runtime_profiles.json` splits `results_root` from `episode_data_root` so the bulky record can be
+kept off the Drive FUSE mount the checkpoints need.
+
+**Why pyarrow and not Ray Data.** [21 §6](21_logging_review.md) item 5 said "Parquet via Ray Data";
+this writes Parquet with `pyarrow.parquet` directly. The reason is the objection §5 raised against
+RLlib's own offline recording: it starts a Ray Data execution *inside* the env runner, clamped to
+`num_cpus_per_env_runner`, competing with sampling on a profile with two cores. The output is
+identical — `ray.data.read_parquet` reads these files natively — so nothing downstream is given up.
+pyarrow is not a new dependency; `ray[rllib]` already requires it.
+
+**The measurement that made the bounds necessary.** At `max_step=4096` and 8 agents a step is 8,314
+pickled bytes, so an episode was **~34 MB** — held in memory and then serialised, per episode, per
+worker. `runtime_profiles.json` had estimated ~10 MB.
+
+Two `.pkl` files remain committed under `episode_data/`. They are leftover output from an older
+version of `test_nav_callback.py`, not fixtures anything reads, and nothing regenerates them.
 
 ### 1.2 RLlib `metrics_logger` custom metrics
 
@@ -54,19 +104,70 @@ Two further notes:
 | `nav_conservation_error` | `abs(total NAV − total initial cash)`, as a float | 1 | `on_episode_end` |
 | `pass_action_fraction` | Share of agent-steps where the agent chose `category=0` | 10 | `on_episode_end` |
 | `order_rejection_fraction` | Share of agent-steps where an order was refused for want of cash | 10 | `on_episode_end` |
+| `nav_conservation_violations` | Episodes that failed the check | `reduce="sum"` | `on_episode_end` |
+| `reward_term_mean_<term>` × 5 | Mean of each signed reward contribution | 10 | `on_episode_end` |
+| `reward_term_var_share_<term>` × 5 | That term's share of the reward's variance | 10 | `on_episode_end` |
+| `episode_nav_mean` / `_min` / `_max` | Per-agent NAV at episode end | 10 | `on_episode_end` |
+| `mean_agent_drawdown` | Mean per-agent drawdown at episode end | 10 | `on_episode_end` |
+| `mean_abs_net_position` | Mean absolute inventory at episode end | 10 | `on_episode_end` |
+| `mean_num_trades` | Mean trades per agent over the episode | 10 | `on_episode_end` |
+| `maker_fill_ratio_max` | The most maker-like agent's share of its own fills | 10 | `on_episode_end` |
 | `league_size` | `num_trainable + num_random + champion_count` | 1 | `on_train_result` |
 | `league_mean_return` | Mean module return across the league | 10 | `on_train_result` |
 | `league_std_return` | Std dev of module returns | 10 | `on_train_result` |
+| `champions_promoted` | Champions created this iteration | `reduce="sum"` | `on_train_result` |
+| `available_modules` | Size of the matchmaking pool | 1 | `on_train_result` |
+| `idle_modules` | Modules that played no episode this iteration | 1 | `on_train_result` |
+| `iterations_since_champion` | Iterations since the last snapshot | 1 | `on_train_result` |
 
-**Six metrics** is the entirety of what reaches RLlib's structured logger, alongside RLlib's
-own built-ins.
+**27 metrics**, up from six. What was missing was never capture — it was aggregation: §2.3, §2.4
+and §2.5 all described numbers already sitting in `info` or already computed in the callback and
+then dropped.
 
-The split matters. The three `on_train_result` metrics are per *iteration* and are emitted on the
-driver. The three `on_episode_end` ones are per *episode* and are emitted **on the env runners**,
-which is where the episode hooks run. `nav_conservation_error` keeps `window=1` because an error in
-one episode out of many must not be averaged away (§1.5); the two activity fractions use
-`window=10`, matching the league metrics, because a single episode's fraction is noisy and the
-question they answer is the trend.
+The split matters. The `on_train_result` metrics are per *iteration* and are emitted on the driver.
+The `on_episode_end` ones are per *episode* and are emitted **on the env runners**, which is where
+the episode hooks run. `nav_conservation_error` keeps `window=1` because an error in one episode out
+of many must not be averaged away (§1.5); the fractions and the per-episode reductions use
+`window=10`, matching the league metrics, because a single episode is noisy and the question they
+answer is the trend.
+
+**The `on_train_result` metrics are one iteration late, so `result["league"]` exists.** The hook is
+handed a `result` that has already been compiled, so a value logged through `metrics_logger` there
+is reduced on the following pass: `champions_promoted` reads `1.0` in the row for the iteration
+*after* the promotion. This has always been true of `league_size` and the return statistics; the
+champion metrics simply made it visible.
+
+The callback therefore also writes the same state **directly into `result["league"]`**, which lands
+in the row for the iteration it describes. RLlib's call site invokes this hook before
+`Trainable.log_result` specifically "so that the user has a chance to mutate the result", and its
+own TODO beside the `metrics_logger` argument notes there is "probably no point in adding more Stats
+here" — so this is the sanctioned path, not a trick. `progress.jsonl` writes the whole result dict,
+so a reader joining `result["league"]` on `training_iteration` gets correctly aligned values; the
+metrics channel is kept unchanged for anything reading RLlib's metrics rather than the result
+(Tune, a Prometheus exporter, `algo.metrics.peek`), and those readers still see the lag.
+
+`result["league"]` carries `size`, `mean_return`, `std_return`, `threshold`, `promoted`,
+`available_modules`, `idle_modules`, `champions` and — once there has been one —
+`iterations_since_champion`.
+
+**`maker_fill_ratio_max` is a maximum for a reason.** The maker share summed over *all* agents is a
+tautology in a closed double auction: `process_acc` runs once per side of every trade, both sides
+increment `num_trades_step`, and only the passive side increments `num_passive_fills_step` — so the
+aggregate is exactly `0.5` in every episode whatever anyone did. A real 3-iteration run reported
+`0.5000` three times, which is how the first version of this metric was caught. The maximum across
+agents does carry signal: 0.5 everywhere means nobody is specialising, one agent at 0.9 against the
+others' 0.3 is a policy that has learnt to quote and wait. Agents below five fills are excluded, or
+one passive fill out of one trade would pin the maximum at 1.0 for the whole run.
+
+**Two of them exist to be alerted on, not plotted.** `nav_conservation_violations` is how a broken
+ledger reaches the driver at all (§1.5), and `idle_modules` is the S3-12 signature — a league
+quietly shrinking to whichever modules the mapping fn happens to draw.
+
+**The variance shares are the doc/07 §6.4 split, live.** Measured on a real 2-iteration run:
+`nav_term` 0.95, `drawdown_penalty` 0.05, the other three below 1e-8. That is the answer to "which
+term is actually driving the signal", and it previously required reading a file back afterwards. A
+term that is large but constant contributes no variance and correctly reports no share — which is
+why the shares, not the means, are the diagnostic.
 
 **Why the two activity fractions exist.** They separate the two behaviours a return series cannot
 tell apart. An agent that stops trading looks identical in its returns whether it *chose* to pass
@@ -145,15 +246,19 @@ them if the design is ever wanted back.
 
 The sum of every agent's NAV must equal the cash the system started with: the ledger is `Decimal`
 end to end, so trading moves cash and never creates it. This was a good idea implemented as a
-`print("... FAILED ...")`. It now raises:
+`print("... FAILED ...")`. It now reports on the runner and stops on the driver:
 
 ```python
+# on the env runner, in on_episode_end
 if metrics_logger:
     metrics_logger.log_value("nav_conservation_error", float(abs(error)), window=1)
+    metrics_logger.log_value(NAV_VIOLATIONS_METRIC, 0.0 if conserved else 1.0, reduce="sum")
 if not conserved:
     logger.error(message)
-    if self.strict_nav_check:
-        raise AssertionError(message)
+
+# on the driver, in train(), after algo.train()
+if nav_violations(result) and cfg.strict_nav_check:
+    raise NavConservationError(message)
 ```
 
 The check is **`Decimal` end to end**. `info["NAV"]` is the exact `str()` of a `Decimal`
@@ -167,7 +272,18 @@ NumPy and will not take a `Decimal`. The comparison that decides the raise is th
 * **`strict_nav_check` defaults to true.** A conservation break means the ledger is corrupt and
   every reward computed from NAV afterwards is meaningless, so the run stops. Set it false in
   `train_config.json`, or pass `--no-strict-nav-check`, for a run that would rather finish and be
-  inspected afterwards; the ERROR log and the metric still happen.
+  inspected afterwards; the ERROR log and the metrics still happen.
+* **The stop is the driver's, not the hook's.** The callback reports - ERROR,
+  `nav_conservation_error`, and a `nav_conservation_violations` count - and
+  `train._check_nav_conservation` raises `NavConservationError` on the driver after the iteration,
+  before the checkpoint. Raising inside `on_episode_end` worked only at `num_env_runners=0`: the
+  hook runs on the env runner, so the raise arrives as a `RayTaskError` from `sample()`, and
+  `restart_failed_env_runners` (True by default) makes `EnvRunnerGroup` log it through Ray's own
+  logger and restart the actor - `algo.train()` returns normally. The raise also destroyed the
+  evidence, since `synchronous_parallel_sample` asks each runner for `(sample(), get_metrics())` in
+  one call. See [21 §2.1](21_logging_review.md).
+  `NavConservationError` subclasses `AssertionError`, so anything written to catch the old
+  behaviour still does.
 * **`nav_tolerance`** (default `1e-6`) is headroom for a change that legitimately removes cash
   from the system, such as fees - see
   [13_perspective_financial_trader.md](13_perspective_financial_trader.md) §4. It is **not**
@@ -180,10 +296,13 @@ NumPy and will not take a `Decimal`. The comparison that decides the raise is th
   check unable to resolve this very tolerance, passing corrupt ledgers silently. See
   [16 §16.10](16_verification_log.md).
 
-Covered by `test_nav_callback.py` (6 tests): conservation passes and logs a zero error, a
-violation raises under the default, the metric is emitted before the raise, non-strict logs ERROR
-and continues, the tolerance admits what is inside it and not what is outside, and both knobs come
-from the config file.
+Covered by `test_nav_callback.py` (18 tests) in two halves: the hook reports a violation without
+raising, counts it, keeps the error exact at an account size `float` cannot resolve, and emits the
+counter on conserved episodes too; the driver raises under the default, warns and continues when
+non-strict, says which file holds the detail, and reads a missing or unparseable metric as "nothing
+seen" rather than as a failure. `test/integration/test_distributed_observability.py` then runs a
+real `num_env_runners=1` iteration and asserts the counter actually arrives on the driver — which
+is the claim the in-process tests cannot make.
 
 ### 1.6 Per-iteration training history (`progress.jsonl`)
 
@@ -212,7 +331,7 @@ _append_progress(result, cfg)
   resumed run extends its history rather than truncating it.
 * **Every failure is swallowed with a warning.** A full disk must not take down a run that is
   otherwise training fine.
-* It sits under `log_base_dir`, not with the per-episode pickles: one short line per iteration
+* It sits under `log_base_dir`, not with the per-step episode record: one short line per iteration
   belongs with the things that must survive a disconnect, which is why `runtime_profiles.json`
   splits `results_root` from `episode_data_root` in the first place. It is one level further down
   than it used to be, in this run's own directory - see §1.11 for why sharing one file across runs
@@ -395,9 +514,9 @@ is not to make sharing safe but to stop processes sharing a file:
 | Driver | `run.log` | its own run directory (§1.11) |
 | Env runner | `run.<pid>.<worker>.log` | pid *and* Ray worker id |
 | Driver | `progress.jsonl` | its own run directory (§1.11) |
-| Env runner | `<episode_id>.pkl` | the episode id, already unique |
+| Env runner | `episodes.<pid>.<worker>.<n>.parquet` | pid, Ray worker id *and* a per-writer sequence number, under a run-scoped directory (§1.1) |
 
-Two of those were previously weaker than they looked:
+Three of those were previously weaker than they looked:
 
 * **A pid is not a unique key.** It is unique per *node*. On a multi-node run with `log_base_dir`
   on a shared filesystem - NFS, or the Drive mount Colab uses - two workers on different nodes can
@@ -409,6 +528,11 @@ Two of those were previously weaker than they looked:
 * **The driver's own files were not covered at all.** `run.log` carries no pid, and `log_base_dir`
   defaulted to a fixed `results`, so two concurrent runs - or a notebook session alongside a CLI
   run - shared both it and `progress.jsonl`. §1.11 is the fix.
+* **The episode record's directory was not covered either.** The episode id kept two *writers*
+  apart, which was never the weak part; the *path* was a bare relative string, resolved inside each
+  worker against whatever working directory it inherited, and shared by every concurrent run. It is
+  absolute and run-scoped now (§1.1, [21 §2.3](21_logging_review.md)). The per-writer file naming
+  is what lets each process enforce its own byte cap without deleting another's files.
 
 **Why a shared `progress.jsonl` is worse than a shared log.** Not just rotation: line integrity.
 `_append_progress` calls `json.dump(result, fh)`, which writes incrementally - 61 `write()` calls
@@ -514,6 +638,26 @@ while §1.3, §1.9 and `tunable_constants.json` all described it as stdout. It m
 exists to produce. It is now explicitly `sys.stdout`. Warnings and errors are not split onto stderr
 separately - they are part of the same narrative, and two streams reorder against each other.
 
+### 1.15 Ray's own logging, and propagation
+
+Everything above concerns *this package's* logging. Ray's is a separate stream, and until now
+nothing configured it in the processes where it matters most: an env runner's restart notices,
+RLlib's "No samples returned from remote workers", and the traceback `EnvRunnerGroup` swallows when
+a runner dies ([21 §2.1](21_logging_review.md)) are emitted by Ray's loggers in workers this package
+never touches.
+
+`ray.init(logging_config=ray.LoggingConfig(...))` is the one lever that reaches them: Ray applies it
+to the driver and to every process it starts for the job. `ray_log_encoding` in `train_config.json`
+selects `TEXT` (default, human-readable with job and worker ids attached) or `JSON`; an empty string
+leaves Ray's logging alone. It is feature-detected - a Ray without the API, or one that rejects an
+argument, costs the run its log formatting and nothing else.
+
+Setting it also turns **propagation off** on this package's logger. `LoggingConfig` configures the
+*root* logger, and this package's handler hangs off `gym_continuousDoubleAuction` with propagation
+on, so every line would otherwise be printed twice. Propagation stays on by default, because that is
+what any root-attached handler depends on - `caplog`, which is how most of the test suite reads log
+output, among them. It is a `configure()` argument rather than a constant for exactly that reason:
+the duplication exists only once Ray has configured root.
 ---
 
 ## 2. What is not logged but should be
@@ -562,7 +706,14 @@ fields: `is_pass_action` and `num_rejected_step` per agent-step in `info`, aggre
 
 ### 2.3 Agent and account state
 
-**Done** — all of these are in the per-step `info` dict (§1.7): current `drawdown` and `max_nav`,
+**Done, both halves.** All of these are in the per-step `info` dict (§1.7), and the end-of-episode
+state is now reduced into metrics as well: `episode_nav_mean`/`_min`/`_max`, `mean_agent_drawdown`,
+`mean_abs_net_position`, `mean_num_trades` and `maker_fill_ratio` (§1.2). Aggregated across agents
+rather than emitted per agent, because the league reassigns opponents every episode - a metric named
+for `agent_3` would be a different policy each time, the same mislabelling
+`module_episode_returns_mean` exists to avoid.
+
+The per-step fields: current `drawdown` and `max_nav`,
 `net_position` (every step, not only at episode end), `VWAP`, `cash`, `cash_on_hold`,
 `position_val`, and the three per-step counters `order_step_placed`, `num_passive_fills_step` and
 `num_trades_step`, read before `set_step_outputs` zeroes them.
@@ -579,19 +730,25 @@ bonus — are in `info["reward_terms"]` as signed contributions that sum exactly
 from the per-step record without further instrumentation, as is over- or under-trading,
 risk-aversion learning and market-making uptake.
 
-What remains is *aggregation*: the terms are per step and per agent, so a per-episode variance
-share is a reduction a consumer still has to perform. Doing that through `metrics_logger` is
-[15](15_findings_and_recommendations.md) Phase 4 item 15.
+The aggregation is **done too**. `reward_term_mean_<term>` and `reward_term_var_share_<term>` are
+emitted per episode (§1.2), computed from running sums rather than a retained series - an episode is
+`max_step` × `num_agents` agent-steps, and keeping all of them to produce five numbers is the memory
+cost §1.1 is about. The shares are normalised across the five terms, so a term that is large but
+*constant* correctly reports no share: what the split answers is which term is driving the signal,
+not which is biggest.
 
 ### 2.5 League and self-play state
 
+Three of the five are **done** and are metrics now (§1.2): `champions_promoted`,
+`iterations_since_champion` - the number `_should_create_champion` had computed and discarded on
+every call - and `available_modules`, joined by `idle_modules`. Champion *matchups* are also
+recoverable without new instrumentation: the episode record's `module_id` column says which module
+played each agent slot in each episode (§1.1), so "who played whom" is a group-by rather than a
+missing field.
+
 | Missing | Why it matters |
 |---|---|
-| Champion matchup history (who played whom) | Needed to verify league diversity |
-| Per-champion win rate over time | Without it, champion pool management is blind |
-| Champion promotion events as a metric | Currently only a stdout banner |
-| Time since last champion snapshot | Already computed in `_should_create_champion`, never logged |
-| `available_modules` per iteration | Debugging matchmaking |
+| Per-champion win rate over time | Without it, champion pool management is blind. The raw material is now in the episode record; nothing computes the rate |
 
 ### 2.6 The `info["NAV"]` string round-trip
 
@@ -607,58 +764,64 @@ chosen for, and it makes the info dict awkward for RLlib metric aggregation.
 
 | Issue | Impact |
 |---|---|
-| Per-episode `.pkl` files grow without rotation or size cap | Disk fills over long runs; the flag is off/on, not bounded |
-| Episode `.pkl` files carry no timestamp or iteration metadata | Hard to correlate with training progress |
-| `pickle` format | Arbitrary code execution on load; prefer `npz` / `parquet` / `jsonl` |
 | `progress.jsonl` grows without rotation | One line per iteration is small, but nothing bounds it across a run that pins its `run_id` and resumes repeatedly |
 | Rotation discards the *earliest* output first | `file_backup_count` × `file_max_bytes` caps the run log at 60 MB, which at DEBUG is reached quickly — and it is the start of a run, where divergence usually begins, that is dropped. A time-based handler, or archiving the run directory, keeps it |
 
-Four things are no longer in this table. Logging itself: output is levelled, attributable,
-switchable and now durable, written to a rotating file per process as well as stdout (§1.3, §1.9),
-and the `g_store` dead code is gone (§1.4). The absence of a per-iteration training history:
-`progress.jsonl` is that machine-readable record (§1.6). The run log does not re-create the
-unbounded-growth problem it would otherwise have added — `file_max_bytes` and `file_backup_count`
-bound it. And two runs no longer write into each other's files (§1.11), which was never listed here
-but was the more serious of the two: a shared `run.log` loses lines to a rotation race, and a
-shared `progress.jsonl` can interleave two writers inside one JSON line.
+Seven things are no longer in this table.
+
+The three about the episode record all went with `pickle` (§1.1): the files are Parquet, so there is
+no arbitrary code execution on load; every row carries `run_id`, `iteration` and `wall_time`, so
+correlating with training progress is a join rather than a filename sort; and growth is bounded by
+`episode_sample_every` and `episode_max_bytes` rather than being off/on.
+
+The other four: logging itself is levelled, attributable, switchable and durable, written to a
+rotating file per process as well as stdout (§1.3, §1.9), and the `g_store` dead code is gone
+(§1.4); `progress.jsonl` is the per-iteration machine-readable record (§1.6); the run log does not
+re-create the unbounded-growth problem it would otherwise have added, because `file_max_bytes` and
+`file_backup_count` bound it; and two runs no longer write into each other's files (§1.11) - never
+listed here, but the more serious of the two, since a shared `run.log` loses lines to a rotation
+race and a shared `progress.jsonl` can interleave two writers inside one JSON line.
+
+One new entry, from the same design: **the run log's file *count* is unbounded even though each file
+is capped.** Every restarted env runner opens a new `run.<pid>.<worker>.log`, and RLlib restarts
+runners as a matter of course. See [21 §2.5](21_logging_review.md).
 
 ---
 
 ## 4. Recommended additions
 
-Done, and no longer on this list: `logging` in place of `print`; raising on a NAV conservation
-violation with a `nav_conservation_error` metric; writing each iteration's result dict to
-`progress.jsonl` (§1.6); and logging `vf_explained_var` per trainable module with a CI assertion
-behind it (§2.1).
+Done, and no longer on this list: `logging` in place of `print`; stopping a run on a NAV
+conservation violation with a `nav_conservation_error` metric (§1.5 - the *stop* moved to the
+driver, the metric did not); writing each iteration's result dict to `progress.jsonl` (§1.6);
+logging `vf_explained_var` per trainable module with a CI assertion behind it (§2.1); and the four
+metric calls this section used to sketch, all four of which now exist:
 
 ```python
-# in on_train_result / on_episode_end
-metrics_logger.log_value("champions_promoted", self.champion_count, window=1)
+# in on_train_result / on_episode_end - all of these are live
+metrics_logger.log_value("champions_promoted", promoted, reduce="sum")
 metrics_logger.log_value("mean_agent_drawdown", dd, window=10)
 metrics_logger.log_value("pass_action_fraction", n_pass / n_actions, window=10)
-metrics_logger.log_value("vf_explained_var", ...,  window=1)
+metrics_logger.log_value(f"reward_term_var_share_{term}", variance / total, window=10)
 ```
 
-Item 3 is **done** — `pass_action_fraction` and `order_rejection_fraction` are metrics (§1.2).
-
-Items 1, 2 and 4 are **half done, and the half that is missing is the same one in each case**: the
-reward sub-components, the per-agent account state, and the market price and spread are all
-captured per step in `info` (§1.7), but none is reduced into a `metrics_logger` value. The data
-exists; nothing aggregates it. That is the shape of what is left across this whole document —
-capture is now good, aggregation is four league-and-NAV metrics plus the two above.
+The shape of this document has changed with them. It used to end "capture is now good, aggregation
+is four league-and-NAV metrics"; aggregation is now 27 metrics (§1.2), and what is left is
+genuinely different in kind - things that need a *new computation*, not a reduction of something
+already in hand.
 
 What remains, in order:
 
-1. **Reduce the reward sub-components into metrics** from `on_episode_end`, so the variance split
-   [07](07_reward_function.md) §6.4 prescribes is watchable during a run rather than computed
-   afterwards from `progress.jsonl`.
-2. **Reduce per-agent end-of-episode account state** — NAV, position, drawdown, VWAP — the same
-   way.
-3. **Surface the §2.1 training metrics** (`vf_loss` vs unclipped, KL, clip fraction, per-policy
-   reward spread, throughput) in the iteration log line. All are already in `progress.jsonl`.
-4. **League state** (§2.5): champion promotion as a metric rather than a log line, per-champion
-   win rate, time since last snapshot — the last of these is already computed in
-   `_should_create_champion` and discarded.
-5. **Per-episode desk metrics** (Sharpe, max drawdown, turnover, maker ratio, inventory) through
-   `metrics_logger`. The `on_episode_end` hook already has everything it needs. See
+1. **Surface the §2.1 training metrics** (`vf_loss` vs unclipped, KL, clip fraction, per-policy
+   reward spread, throughput) in the iteration log line. All are already in `progress.jsonl`; none
+   is in the one line a person actually reads while a run is going.
+2. **Per-champion win rate over time** (§2.5). The raw material is in the episode record now - the
+   `module_id` column says who played which slot in which episode - so this is a query someone has
+   to write, not instrumentation someone has to add.
+3. **Per-episode desk metrics** that need a series rather than an endpoint: Sharpe, max drawdown
+   over the episode, turnover. The account state at episode end is a metric now (§1.2), but these
+   need the whole NAV trajectory, which is what the episode record is for. See
    [13_perspective_financial_trader.md](13_perspective_financial_trader.md) §7.
+4. **Action-type counts per episode** (§2.2): the pass share is covered, the breakdown across
+   market / limit / modify / cancel is not.
+5. **Order book depth per level** (§2.2), the one item on this list that needs a new field in
+   `info` rather than a reduction of an existing one.

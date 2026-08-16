@@ -210,3 +210,57 @@ class TestEnvVars:
     def test_an_exported_value_wins_over_the_file(self, monkeypatch):
         monkeypatch.setenv("RAY_DEBUG_DISABLE_MEMORY_MONITOR", "False")
         assert runtime.apply_env_vars()["RAY_DEBUG_DISABLE_MEMORY_MONITOR"] == "False"
+
+
+class TestRayInitKwargsCarryTheLogging:
+    """The notebook's `ray.init` has to match `train.main`'s.
+
+    `configure_run_logging` turns propagation to the root logger *off* whenever
+    `ray_log_encoding` is set, on the reasoning that Ray is about to configure
+    root itself and both handlers would otherwise print every line twice. That
+    reasoning holds only if the `ray.init` which follows actually applies a
+    `LoggingConfig`. `train.main` does; the notebook path did not, so a notebook
+    run had propagation off with nothing taking its place.
+    """
+
+    def _rt(self):
+        return runtime.resolve(platform="local", use_gpu=False)
+
+    def test_the_runtime_env_is_merged(self, monkeypatch):
+        """The pre-existing job: the level and directory are the only way a
+        worker on a cluster this process did not start learns either."""
+        monkeypatch.setenv("CDA_LOG_LEVEL", "DEBUG")
+        monkeypatch.setenv("CDA_LOG_DIR", "/tmp/cda-test")
+
+        kwargs = runtime.ray_init_kwargs(self._rt())
+
+        assert kwargs["runtime_env"]["env_vars"]["CDA_LOG_LEVEL"] == "DEBUG"
+
+    def test_a_config_adds_the_logging_config(self):
+        cfg = TrainConfig(episode_data_dir=None, ray_log_encoding="JSON")
+
+        kwargs = runtime.ray_init_kwargs(self._rt(), cfg)
+
+        assert kwargs["logging_config"].encoding == "JSON"
+
+    def test_no_config_adds_nothing(self):
+        """Back-compatible: the argument is optional, and omitting it must not
+        invent a logging configuration."""
+        assert "logging_config" not in runtime.ray_init_kwargs(self._rt())
+
+    def test_an_empty_encoding_leaves_rays_logging_alone(self):
+        """"Off" has to be expressible - passing a LoggingConfig is not a
+        no-op, so an empty encoding must omit the key entirely."""
+        cfg = TrainConfig(episode_data_dir=None, ray_log_encoding="")
+
+        assert "logging_config" not in runtime.ray_init_kwargs(self._rt(), cfg)
+
+    def test_the_profile_keeps_its_own_ray_init_values(self):
+        cfg = TrainConfig(episode_data_dir=None)
+        rt = self._rt()
+
+        kwargs = runtime.ray_init_kwargs(rt, cfg)
+
+        for key, value in rt.ray_init_kwargs.items():
+            if key != "runtime_env":
+                assert kwargs[key] == value

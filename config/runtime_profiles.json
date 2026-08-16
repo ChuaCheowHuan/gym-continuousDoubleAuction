@@ -44,7 +44,7 @@
   },
 
   "platforms": {
-    "_note": "Filesystem shape per machine. `repo_path` is where the package and config/ live; null means 'the working directory already is it', which is the case on Colab (the notebook must chdir there before it can read this file at all) and for a local checkout. `results_root` and `episode_data_root` replace TrainConfig.log_base_dir and .episode_data_dir; null leaves the configured value alone, which keeps it relative to the working directory. Splitting the two matters on Colab: checkpoints are small and must survive a disconnect, while the per-episode pickles are ~10MB per 4096-step episode and have no business crossing the Drive FUSE layer.",
+    "_note": "Filesystem shape per machine. `repo_path` is where the package and config/ live; null means 'the working directory already is it', which is the case on Colab (the notebook must chdir there before it can read this file at all) and for a local checkout. `results_root` and `episode_data_root` replace TrainConfig.log_base_dir and .episode_data_dir; null leaves the configured value alone, which keeps it relative to the working directory. Splitting the two matters on Colab: checkpoints are small and must survive a disconnect, while the per-step episode record is ~34MB per 4096-step episode (measured at 8 agents) and has no business crossing the Drive FUSE layer. episode_sample_every and episode_max_bytes bound it; see the league_self_play group of train_config.json.",
 
     "colab": {
       "_description": "Colab VM with Google Drive mounted. Checkpoints stay in the Drive-backed repo so a disconnect is recoverable with is_restore; episode pickles go to the VM's local disk and die with the session.",

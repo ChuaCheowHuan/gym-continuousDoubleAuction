@@ -16,7 +16,8 @@ is read from the file.
 
     rt = resolve(platform="auto", use_gpu="auto")
     cfg = apply(TrainConfig(), rt)
-    ray.init(**rt.ray_init_kwargs)
+    configure_run_logging(cfg)
+    ray.init(**ray_init_kwargs(rt, cfg))
 
 `train_config.json` is untouched by any of this: `TrainConfig()` still supplies
 every training value, and a profile overlays only the resource fields it names.
@@ -304,8 +305,8 @@ def apply_env_vars() -> Dict[str, str]:
     return applied
 
 
-def ray_init_kwargs(rt: Runtime) -> Dict[str, Any]:
-    """`rt.ray_init_kwargs` with the logging settings added as a runtime_env.
+def ray_init_kwargs(rt: Runtime, cfg=None) -> Dict[str, Any]:
+    """`rt.ray_init_kwargs` with the logging settings added.
 
     A function rather than a field on `Runtime`, and called at the `ray.init`
     site rather than stored, because the variables it merges are exported by
@@ -315,11 +316,28 @@ def ray_init_kwargs(rt: Runtime) -> Dict[str, Any]:
     The profile's own `runtime_env`, if it ever grows one, is preserved: only
     the `env_vars` mapping is added to, and a name the profile set explicitly
     wins.
+
+    `cfg` adds `logging_config`, and passing it is what keeps this path honest.
+    `configure_run_logging` turns propagation to the root logger *off* whenever
+    `cfg.ray_log_encoding` is set, on the reasoning that Ray is about to
+    configure root itself and both handlers would otherwise print every line
+    twice. That reasoning holds only if the `ray.init` that follows actually
+    applies a `LoggingConfig` - which `train.main` does and this, without `cfg`,
+    did not. The result was a notebook run with propagation off and nothing
+    taking its place: no duplication, but no Ray-side formatting either, and a
+    `logging.basicConfig()` in a cell would have stopped showing package lines.
     """
     from gym_continuousDoubleAuction.logging_setup import merge_runtime_env
 
     kwargs = dict(rt.ray_init_kwargs)
     kwargs["runtime_env"] = merge_runtime_env(kwargs.get("runtime_env"))
+
+    if cfg is not None:
+        from gym_continuousDoubleAuction.train.train import ray_logging_config
+
+        logging_config = ray_logging_config(cfg)
+        if logging_config is not None:
+            kwargs["logging_config"] = logging_config
     return kwargs
 
 

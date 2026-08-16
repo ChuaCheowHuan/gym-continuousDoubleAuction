@@ -1,10 +1,7 @@
-from collections import defaultdict
 from decimal import Decimal
 
 import logging
 import numpy as np
-import os
-import pickle
 import zlib
 
 from ray.rllib.callbacks.callbacks import RLlibCallback
@@ -18,6 +15,10 @@ from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
 
 from gym_continuousDoubleAuction.config_loader import env_default, group
 from gym_continuousDoubleAuction.logging_setup import get_logger
+from gym_continuousDoubleAuction.train.episode_record import (
+    EpisodeRecorder,
+    REWARD_TERMS,
+)
 from gym_continuousDoubleAuction.train.policy.policy_handler import (
     CHAMPION_PREFIX,
     POLICY_PREFIX,
@@ -30,6 +31,72 @@ logger = get_logger(__name__)
 # new-API-stack replacement for the old `hist_stats["policy_<id>_reward"]` /
 # `policy_reward_mean`, neither of which exists any more.
 MODULE_EPISODE_RETURNS_MEAN = "module_episode_returns_mean"
+
+#: Count of episodes whose NAV conservation check failed, summed over the
+#: iteration. This is how a violation reaches the driver.
+#:
+#: Raising inside `on_episode_end` cannot serve that purpose once sampling is
+#: remote. The hook runs on the env runner, so the raise arrives as a
+#: `RayTaskError` from `sample()`, and `restart_failed_env_runners` - True by
+#: default - makes `EnvRunnerGroup` log it through Ray's own logger and restart
+#: the actor: `algo.train()` returns normally and the run carries on training on
+#: the ledger the check just condemned (doc/21 §2.1). Worse, the raise loses the
+#: evidence: `synchronous_parallel_sample` asks each runner for
+#: `(sample(), get_metrics())` in one call, so a `sample()` that throws means
+#: `get_metrics()` never runs and that runner's metrics - including this one -
+#: are discarded with the error.
+#:
+#: So the hook reports and returns, and `train._check_nav_conservation` raises
+#: on the driver, where an exception genuinely ends the run. `reduce="sum"`
+#: with no window makes it a per-iteration count across every runner.
+NAV_VIOLATIONS_METRIC = "nav_conservation_violations"
+
+
+def _new_tally() -> dict:
+    """A fresh per-episode tally.
+
+    Running sums rather than a retained series: the variance share in
+    `_log_reward_terms` needs only the first two moments, and an episode is
+    `max_step` x `num_agents` agent-steps - keeping them all to compute five
+    numbers at the end is the memory cost doc/21 §2.2 is about.
+    """
+    return {
+        # Env steps and agent-steps are different denominators: the fractions
+        # are per agent-step, while the episode record is keyed by env step.
+        "steps": 0,
+        "agent_steps": 0,
+        "passes": 0,
+        "rejections": 0,
+        # Per agent, because the maker share summed over *all* agents is a
+        # tautology: `process_acc` runs once per side of every trade, both
+        # sides increment `num_trades_step`, and only the passive side
+        # increments `num_passive_fills_step` - so the aggregate is exactly 0.5
+        # in every episode of a closed double auction, whatever anyone did.
+        # What carries information is whether one agent is specialising as a
+        # maker, which is a statement about the spread across agents.
+        #
+        # Accumulated here rather than read from the last step's info, because
+        # both are *per-step* counters that `exchg_helper` zeroes on every step.
+        # Only `num_trades` is cumulative, so pairing it with a step counter
+        # would divide an episode's trades by one step's passive fills.
+        "per_agent_fills": {},
+        "term_sum": {term: 0.0 for term in REWARD_TERMS},
+        "term_sq": {term: 0.0 for term in REWARD_TERMS},
+    }
+
+
+def _as_float(value):
+    """float(value), or None if it is absent or not a number.
+
+    `info["NAV"]` is a string by design (doc/11 §2.6) and `spread` is None on a
+    one-sided book, so both cases are ordinary here rather than exceptional.
+    """
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 class SelfPlayCallback(RLlibCallback):
@@ -47,6 +114,10 @@ class SelfPlayCallback(RLlibCallback):
         episode_data_dir=_DISABLED,
         nav_tolerance=None,
         strict_nav_check=None,
+        episode_sample_every=None,
+        episode_max_bytes=None,
+        episode_rows_per_file=None,
+        run_id="",
     ):
         """
         Initialize league-based self-play callback with generalized agent configuration.
@@ -59,16 +130,28 @@ class SelfPlayCallback(RLlibCallback):
             min_iterations_between_champions: Cooldown iterations between snapshots
             original_opponent_weight: Priority weight for original fixed policies (Agents k to n-1)
             champion_weight: Priority weight for frozen champion policies
-            episode_data_dir: Directory for per-episode step pickles, resolved
-                relative to the working directory. Set to None to disable - this
-                writes one file per episode containing every step's obs, action,
-                reward and info, which at a few thousand steps per episode is a
-                substantial amount of I/O and memory during training.
+            episode_data_dir: Where the per-step episode record is written, as
+                Parquet. Must be an absolute path: this object is pickled into
+                every env runner, and a relative one would be resolved against
+                whatever working directory that worker happened to inherit
+                (doc/21 §2.3). None disables the record entirely - and now
+                disables the *accumulation* too, which the flag previously did
+                not (doc/21 §2.2).
             nav_tolerance: Absolute cash tolerance for the episode-end NAV
                 conservation check.
-            strict_nav_check: Raise on a conservation violation instead of
-                logging one. The `nav_conservation_error` metric is emitted
-                either way.
+            strict_nav_check: Stop the run on a conservation violation. Acted on
+                by the driver, not here - see `NAV_VIOLATIONS_METRIC`. The
+                `nav_conservation_error` metric is emitted either way, and it is
+                carried on this object only so a restored callback keeps the
+                setting.
+            episode_sample_every: Record one episode in N. 1 records every one.
+            episode_max_bytes: Cap on the episode record each process keeps.
+                0 disables the cap.
+            episode_rows_per_file: Rows buffered before a Parquet file is
+                written. At `num_agents` rows per env step, this is
+                `episode_rows_per_file / num_agents` steps per file.
+            run_id: Written into every recorded row, so two runs sharing an
+                episode directory stay separable.
 
         Any argument left as None is read from `config/train_config.json`: the
         league knobs from its `league_self_play` group, and the two policy
@@ -105,10 +188,20 @@ class SelfPlayCallback(RLlibCallback):
             nav_tolerance = league["nav_tolerance"]
         if strict_nav_check is None:
             strict_nav_check = league["strict_nav_check"]
+        if episode_sample_every is None:
+            episode_sample_every = league["episode_sample_every"]
+        if episode_max_bytes is None:
+            episode_max_bytes = league["episode_max_bytes"]
+        if episode_rows_per_file is None:
+            episode_rows_per_file = league["episode_rows_per_file"]
 
         self.episode_data_dir = episode_data_dir
         self.nav_tolerance = nav_tolerance
         self.strict_nav_check = strict_nav_check
+        self.episode_sample_every = episode_sample_every
+        self.episode_max_bytes = episode_max_bytes
+        self.episode_rows_per_file = episode_rows_per_file
+        self.run_id = run_id
 
         self.num_trainable = num_trainable_policies
         self.num_random = num_random_policies
@@ -132,27 +225,72 @@ class SelfPlayCallback(RLlibCallback):
             policy_id(i) for i in range(self.num_trainable + self.num_random)
         ]
 
-        # Per-episode step data, keyed by episode ID.
+        # The per-step episode record, or None when it is switched off.
         #
-        # This used to be a single shared list plus a single `self.ID`. That is
-        # only safe with one env per EnvRunner: with
-        # `num_envs_per_env_runner > 1`, episodes on the same runner interleave,
-        # so steps from concurrent episodes were appended to one list and
-        # written into whichever episode happened to end first - and the first
-        # `on_episode_step` after any episode ended hit `None.append`, because
-        # `on_episode_end` reset the shared list to None.
-        self.store = defaultdict(list)
+        # Built lazily, per process, by `_recorder()`. It owns a writer thread
+        # and a queue, neither of which is state to ship to a worker, so it is
+        # dropped from `__getstate__` and rebuilt on the far side. That also
+        # makes it correct by construction under `num_env_runners > 0`: each
+        # runner gets its own recorder writing its own files, rather than a
+        # driver-side object pickled into eight processes that would all open
+        # the same paths.
+        #
+        # This used to be `self.store`, a dict of every step of every live
+        # episode, appended to unconditionally - so `--no-episode-data` bought
+        # only the I/O and kept the ~34 MB per episode of memory (doc/21 §2.2).
+        self._episode_recorder = None
 
-        # Per-episode activity tallies, keyed by episode ID like `store`, so
-        # concurrent episodes under a vectorised runner cannot mix.
+        # Per-episode activity tallies, keyed by episode ID, so concurrent
+        # episodes under a vectorised runner cannot mix.
         #
         # A plain dict, not defaultdict(lambda: ...): this callback is
         # cloudpickled into every checkpoint, and a lambda default_factory is
         # the kind of thing that survives locally and fails on a restore path
-        # nobody exercised. Three ints per live episode - the memory is nothing
-        # next to `store`.
+        # nobody exercised.
         self._activity = {}
 
+
+    #: How many unfinished episodes' tallies to keep. `on_episode_end` is not
+    #: called for episodes a force-reset discards (doc/21 §3.2), so a dict keyed
+    #: by episode id and pruned only there grows for the life of the process.
+    #: Generous next to any realistic `num_envs_per_env_runner`, and three ints
+    #: per entry, so the cap costs nothing and closes the leak.
+    _MAX_LIVE_EPISODES = 64
+
+    def __getstate__(self):
+        """State to pickle: everything except the per-process live objects.
+
+        RLlib cloudpickles this callback into every env runner and into every
+        checkpoint. The recorder holds a thread and a queue and must not travel;
+        the live episode tallies belong to whichever process was mid-episode and
+        mean nothing on the far side. Both are rebuilt lazily, so the configured
+        knobs - which *are* pickled - are all a restored or shipped copy needs.
+        """
+        state = dict(self.__dict__)
+        state["_episode_recorder"] = None
+        state["_activity"] = {}
+        return state
+
+    def _recorder(self):
+        """This process's `EpisodeRecorder`, built on first use, or None.
+
+        Constructed here rather than in `__init__` for two reasons: a recorder
+        built on the driver could not be shipped to a worker anyway, and one
+        built eagerly would start a writer thread and create a directory in
+        every process that merely *constructs* a callback - which the tests, the
+        checkpoint restore path and `build_config` all do without ever sampling.
+        """
+        if self.episode_data_dir is None:
+            return None
+        if self._episode_recorder is None:
+            self._episode_recorder = EpisodeRecorder(
+                self.episode_data_dir,
+                run_id=self.run_id,
+                sample_every=self.episode_sample_every,
+                max_bytes=self.episode_max_bytes,
+                rows_per_file=self.episode_rows_per_file,
+            )
+        return self._episode_recorder
 
     def _log_activity(self, episode, metrics_logger) -> None:
         """Emit the episode's pass and rejection fractions, then drop the tally.
@@ -190,11 +328,142 @@ class SelfPlayCallback(RLlibCallback):
             "order_rejection_fraction", rejection_fraction, window=10
         )
 
+        self._log_reward_terms(tally, agent_steps, metrics_logger)
+
+        self._log_maker_ratio(tally, metrics_logger)
+
         logger.debug(
             "episode %s activity: %s agent-steps, %.1f%% pass, %.1f%% rejected",
             episode.id_, agent_steps, 100 * pass_fraction,
             100 * rejection_fraction,
         )
+
+    #: Trades an agent needs before its maker share is worth reporting. Below
+    #: this the ratio is quantised to almost nothing - one passive fill out of
+    #: one trade reads as a perfect market maker - so the maximum across agents
+    #: would sit at 1.0 for the whole run on noise alone.
+    _MIN_TRADES_FOR_MAKER_RATIO = 5
+
+    def _log_maker_ratio(self, tally, metrics_logger) -> None:
+        """The most maker-like agent's share of its own fills.
+
+        doc/13 §7's market-making uptake, and the one shape of it that says
+        anything. The *aggregate* maker share is a tautology in a closed double
+        auction: `process_acc` runs once per side of every trade, both sides
+        increment `num_trades_step`, and only the passive side increments
+        `num_passive_fills_step` - so summed over all agents it is exactly 0.5
+        in every episode regardless of behaviour. A real 3-iteration run
+        reported 0.5000 three times, which is what exposed it.
+
+        The maximum across agents does carry information: 0.5 everywhere means
+        nobody is specialising, while one agent at 0.9 against the others'
+        0.3 is a policy that has learnt to quote and wait. It is reported only
+        for agents with enough fills to distinguish that from noise.
+
+        Nothing is emitted when no agent qualifies. 0.0 would read as "everyone
+        crossed the spread", which is a claim about behaviour an episode with no
+        trades gives no evidence for.
+        """
+        ratios = [
+            fills["passive"] / fills["trades"]
+            for fills in tally["per_agent_fills"].values()
+            if fills["trades"] >= self._MIN_TRADES_FOR_MAKER_RATIO
+        ]
+        if not ratios:
+            return
+        metrics_logger.log_value("maker_fill_ratio_max", max(ratios), window=10)
+
+    def _log_reward_terms(self, tally, agent_steps, metrics_logger) -> None:
+        """The reward decomposition, reduced to a mean and a variance share.
+
+        doc/07 §6.4 prescribes watching how the five signed contributions split
+        the reward's variance; doc/11 §2.4 recorded that the terms were captured
+        per step in `info` and never aggregated, so the split could only be
+        computed after the fact from a file. These two metrics are that
+        aggregation, and they are what makes "the drawdown penalty is now 80% of
+        the signal" a thing a run says while it is happening.
+
+        The variance is taken from running sums rather than a retained series:
+        an episode is thousands of agent-steps and holding all of them to
+        compute one number at the end is exactly the memory cost §2.2 was about.
+        `E[x²] - E[x]²` can go slightly negative on a near-constant term through
+        cancellation, so it is clamped - a negative variance is arithmetic, not
+        a finding.
+
+        The shares are normalised across the five terms, so they sum to 1 and
+        answer "which term is driving the reward" rather than "how big is the
+        reward", which the means already answer. An episode where every term is
+        constant has no variance to split and reports no share at all, rather
+        than dividing by zero or claiming an even split.
+        """
+        variances = {}
+        for term in REWARD_TERMS:
+            mean = tally["term_sum"][term] / agent_steps
+            variance = max(0.0, tally["term_sq"][term] / agent_steps - mean * mean)
+            variances[term] = variance
+            metrics_logger.log_value(
+                f"reward_term_mean_{term}", mean, window=10,
+            )
+
+        total = sum(variances.values())
+        if total <= 0.0:
+            return
+        for term, variance in variances.items():
+            metrics_logger.log_value(
+                f"reward_term_var_share_{term}", variance / total, window=10,
+            )
+
+    def _log_episode_account(self, last_info, metrics_logger) -> None:
+        """Per-agent account state at the end of the episode, as metrics.
+
+        doc/11 §2.3 and §4 item 2: every one of these is already in the per-step
+        `info`, and none of it was reduced into anything a run could watch. The
+        end of the episode is the right moment for the state ones - NAV,
+        drawdown, inventory are terminal quantities, not averages over a
+        trajectory - and the two counters are per-episode totals by
+        construction.
+
+        Aggregated across agents rather than emitted per agent, because the
+        league reassigns opponents every episode: a metric named for `agent_3`
+        would be a different policy each time, which is the same mislabelling
+        `module_episode_returns_mean` exists to avoid.
+        """
+        navs, drawdowns, positions, trades = [], [], [], []
+        for info in (last_info or {}).values():
+            if not isinstance(info, dict):
+                continue
+            nav = _as_float(info.get("NAV"))
+            if nav is not None:
+                navs.append(nav)
+            drawdown = _as_float(info.get("drawdown"))
+            if drawdown is not None:
+                drawdowns.append(drawdown)
+            position = _as_float(info.get("net_position"))
+            if position is not None:
+                positions.append(abs(position))
+            # `num_trades` is the episode total. Deliberately not paired here
+            # with `num_passive_fills_step`, which is a *per-step* counter that
+            # `exchg_helper` zeroes every step - `maker_fill_ratio` is computed
+            # from the running tally instead, where both sides span the same
+            # part of the episode.
+            trades.append(float(info.get("num_trades") or 0))
+
+        if navs:
+            metrics_logger.log_value("episode_nav_mean", sum(navs) / len(navs), window=10)
+            metrics_logger.log_value("episode_nav_min", min(navs), window=10)
+            metrics_logger.log_value("episode_nav_max", max(navs), window=10)
+        if drawdowns:
+            metrics_logger.log_value(
+                "mean_agent_drawdown", sum(drawdowns) / len(drawdowns), window=10,
+            )
+        if positions:
+            metrics_logger.log_value(
+                "mean_abs_net_position", sum(positions) / len(positions), window=10,
+            )
+        if trades:
+            metrics_logger.log_value(
+                "mean_num_trades", sum(trades) / len(trades), window=10,
+            )
 
     def _activity_for(self, episode_id) -> dict:
         """The tally for this episode, created if the start hook missed it.
@@ -203,9 +472,28 @@ class SelfPlayCallback(RLlibCallback):
         worker reports on - a restored run picks up mid-flight - and a counter
         that raises KeyError would take down training for the sake of a metric.
         """
-        return self._activity.setdefault(
-            episode_id, {"agent_steps": 0, "passes": 0, "rejections": 0}
-        )
+        tally = self._activity.get(episode_id)
+        if tally is None:
+            self._prune_activity()
+            tally = self._activity[episode_id] = _new_tally()
+        return tally
+
+    def _prune_activity(self) -> None:
+        """Drop the oldest tallies once too many episodes are open at once.
+
+        Insertion-ordered, so "oldest" is the episode that started first. An
+        episode discarded by a force-reset never reaches `on_episode_end` and so
+        never has its tally popped (doc/21 §3.2); this is what stops that
+        turning into a dict that grows for the life of the worker.
+        """
+        while len(self._activity) >= self._MAX_LIVE_EPISODES:
+            episode_id = next(iter(self._activity))
+            del self._activity[episode_id]
+            logger.debug(
+                "dropped the activity tally for episode %s, which never ended "
+                "(%s open, limit %s)",
+                episode_id, len(self._activity) + 1, self._MAX_LIVE_EPISODES,
+            )
 
 
     def on_episode_start(
@@ -247,10 +535,8 @@ class SelfPlayCallback(RLlibCallback):
             )
             logger.debug("episode %s started, policy map: %s", episode.id_, mapping)
 
-        self.store[episode.id_] = []
-        self._activity[episode.id_] = {
-            "agent_steps": 0, "passes": 0, "rejections": 0,
-        }
+        self._prune_activity()
+        self._activity[episode.id_] = _new_tally()
 
     def on_episode_step(
         self,
@@ -288,33 +574,55 @@ class SelfPlayCallback(RLlibCallback):
                 is a MultiRLModule.
             kwargs: Forward compatibility placeholder.
         """
-        # print('on_episode_step')
-
-        last_obs = episode.get_observations(-1)
-        last_act = episode.get_actions(-1)
-        last_reward = episode.get_rewards(-1)
         last_info = episode.get_infos(-1)
-        step_data = {
-            'episode_id': episode.id_,
-            'obs': last_obs,
-            'act': last_act,
-            'reward': last_reward,
-            'info': last_info,
-        }
-        self.store[episode.id_].append(step_data)
 
-        # Tally activity as the episode runs. Counted here rather than from
-        # `store` at episode end because `store` is only populated when
-        # episode_data_dir is set, and these metrics must not depend on the
-        # pickle dump being switched on.
+        # Tally activity as the episode runs, before anything that can be
+        # switched off. These metrics must not depend on the episode record
+        # being enabled - that is the whole point of counting here rather than
+        # reading the recorded rows back at episode end.
         tally = self._activity_for(episode.id_)
-        for agent_info in (last_info or {}).values():
+        tally["steps"] += 1
+        for agent_id, agent_info in (last_info or {}).items():
             if not isinstance(agent_info, dict):
                 continue
             tally["agent_steps"] += 1
             if agent_info.get("is_pass_action"):
                 tally["passes"] += 1
             tally["rejections"] += int(agent_info.get("num_rejected_step", 0) or 0)
+
+            trades = int(agent_info.get("num_trades_step", 0) or 0)
+            if trades:
+                fills = tally["per_agent_fills"].setdefault(
+                    agent_id, {"trades": 0, "passive": 0}
+                )
+                fills["trades"] += trades
+                fills["passive"] += int(
+                    agent_info.get("num_passive_fills_step", 0) or 0
+                )
+
+            terms = agent_info.get("reward_terms") or {}
+            for term in REWARD_TERMS:
+                value = _as_float(terms.get(term))
+                if value is None:
+                    continue
+                tally["term_sum"][term] += value
+                tally["term_sq"][term] += value * value
+
+        # The per-step record, if it is on. Nothing above this line touches the
+        # observations or actions, so a run with `episode_data_dir` unset now
+        # pays neither the I/O nor the memory - which is what the flag always
+        # claimed and never did (doc/21 §2.2).
+        recorder = self._recorder()
+        if recorder is not None:
+            # RLlib's own env timestep where it exists, because it is the
+            # episode's property rather than this process's: it survives a
+            # sample() boundary mid-episode, and it is right even when
+            # `on_episode_start` was never seen (a restored run picking up
+            # mid-flight) or the tally was evicted. The local count is the
+            # fallback for an episode type that does not carry one.
+            recorder.record_step(
+                episode, getattr(episode, "env_t", None) or tally["steps"]
+            )
 
     def on_episode_end(
         self,
@@ -329,19 +637,14 @@ class SelfPlayCallback(RLlibCallback):
     ) -> None:
         logger.debug("episode %s ended", episode.id_)
 
-        # Persist this episode's step data, then drop it from the in-memory
-        # store. Only this episode's steps are written - previously the whole
-        # shared store was pickled, which under vectorised env runners meant
-        # each file contained an interleaved mix of concurrent episodes.
-        if self.episode_data_dir is not None:
-            episode_steps = self.store.get(episode.id_, [])
-            os.makedirs(self.episode_data_dir, exist_ok=True)
-            path = os.path.join(self.episode_data_dir, f"{episode.id_}.pkl")
-            with open(path, 'wb') as f:
-                pickle.dump(episode_steps, f)
-
-        # Always release the memory, whether or not we wrote it out.
-        self.store.pop(episode.id_, None)
+        # Hand this episode's rows to the recorder's writer thread. The write
+        # itself happens off this thread and every failure inside it is a
+        # warning, so a full disk can no longer raise into a hook that runs on
+        # an env runner - which, with restart_failed_env_runners on, would have
+        # meant a killed and restarted worker (doc/21 §2.4).
+        recorder = self._recorder()
+        if recorder is not None:
+            recorder.finish_episode(episode.id_)
 
         self._log_activity(episode, metrics_logger)
 
@@ -411,6 +714,14 @@ class SelfPlayCallback(RLlibCallback):
             metrics_logger.log_value(
                 "nav_conservation_error", float(abs(error)), window=1
             )
+            # Emitted every episode, including the conserved ones, so the key is
+            # always present in the result and the driver's check reads a count
+            # rather than having to distinguish "no violations" from "the metric
+            # never arrived".
+            metrics_logger.log_value(
+                NAV_VIOLATIONS_METRIC, 0.0 if conserved else 1.0, reduce="sum",
+            )
+            self._log_episode_account(last_info, metrics_logger)
 
         report = "\n".join(
             [f"Episode {episode.id_} NAV verification"]
@@ -427,15 +738,21 @@ class SelfPlayCallback(RLlibCallback):
 
         # A conservation break means the ledger is corrupt: cash has been
         # created or destroyed, so every reward computed from NAV after this
-        # point is meaningless. Loud by default, downgradable for a run that
-        # would rather finish and be inspected afterwards.
+        # point is meaningless.
+        #
+        # Reported, not raised. This hook runs on the env runner whenever
+        # `num_env_runners > 0`, and a raise there is swallowed by RLlib's fault
+        # tolerance, restarts the worker, and takes this iteration's metrics
+        # down with it - see NAV_VIOLATIONS_METRIC. `strict_nav_check` is acted
+        # on by `train._check_nav_conservation`, on the driver, at the end of the
+        # iteration: later than a raise here would have been at
+        # `num_env_runners=0`, but it is the same answer at every runner count,
+        # and it is the only one that works at more than zero.
         message = (
             f"{report}\n  NAV conservation VIOLATED: difference "
             f"{error:,.2f} exceeds tolerance {self.nav_tolerance:g}"
         )
         logger.error(message)
-        if self.strict_nav_check:
-            raise AssertionError(message)
 
     def on_train_result(self, *, algorithm, metrics_logger=None, result, **kwargs):
         """
@@ -530,6 +847,14 @@ class SelfPlayCallback(RLlibCallback):
         logger.debug("iteration %s policy returns: %s", iteration, policy_returns)
 
 
+        # Iterations since the last champion snapshot. `_should_create_champion`
+        # has computed this since it was written and thrown it away every time
+        # (doc/11 §2.5); it is the number that says whether the cooldown or the
+        # threshold is what is holding the league still. None before the first
+        # champion, which is a different state from "0 iterations ago" - so no
+        # metric is emitted rather than a misleading zero.
+        promoted_before = self.champion_count
+
         # Check relative performance trigger
         if best_candidate and best_return > threshold:
             # Also check if it's better than previous champion (optional but good for progress)
@@ -540,7 +865,44 @@ class SelfPlayCallback(RLlibCallback):
                 self._create_champion_snapshot_from_policy(
                     algorithm, best_candidate, best_return, iteration)
         
-        # Log metrics
+        league_state = {
+            "size": self.num_trainable + self.num_random + self.champion_count,
+            "mean_return": float(league_mean),
+            "std_return": float(league_std),
+            "threshold": float(threshold),
+            "promoted": max(0, self.champion_count - promoted_before),
+            "available_modules": len(self.available_modules),
+            "idle_modules": len(idle_modules),
+            "champions": [c["id"] for c in self.champion_history],
+        }
+        if self.champion_history:
+            league_state["iterations_since_champion"] = (
+                iteration - self.champion_history[-1]["iteration"]
+            )
+
+        # Written straight into `result`, and this is the only one of the two
+        # channels below that lands in the row for the iteration it describes.
+        #
+        # Anything logged through `metrics_logger` here appears one iteration
+        # late: RLlib hands this hook a `result` it has already compiled, so a
+        # value logged now is reduced on the following pass. `champions_promoted`
+        # would read 1.0 in the row *after* the promotion. RLlib's own comment at
+        # the call site says the callback runs before `Trainable.log_result` "so
+        # that the user has a chance to mutate the result", and its TODO beside
+        # `metrics_logger` notes there is "probably no point in adding more Stats
+        # here" - so mutating is the sanctioned path, not a trick.
+        #
+        # `progress.jsonl` is the consumer that matters, and it writes the whole
+        # result dict, so a reader joining `result["league"]` on
+        # `training_iteration` gets values that describe that iteration. A
+        # dedicated sub-dict rather than top-level keys, so it cannot collide
+        # with the lagged metrics of the same name.
+        result["league"] = league_state
+
+        # The metrics channel is kept as well, unchanged, for anything reading
+        # RLlib's metrics rather than the result dict - Tune, a Prometheus
+        # exporter, `algo.metrics.peek`. Those readers get the one-iteration lag
+        # that has always applied to `league_size` and the return statistics.
         if metrics_logger:
             metrics_logger.log_value(
                 "league_size",
@@ -549,6 +911,29 @@ class SelfPlayCallback(RLlibCallback):
             )
             metrics_logger.log_value("league_mean_return", league_mean, window=10)
             metrics_logger.log_value("league_std_return", league_std, window=10)
+
+            # Promotion as a metric rather than only a log banner (doc/11 §2.5,
+            # §4 item 1). Counted from the champion count either side of the
+            # trigger rather than from the branch above, so a snapshot that
+            # raised and rolled itself back is correctly reported as *not*
+            # promoted.
+            metrics_logger.log_value(
+                "champions_promoted",
+                float(max(0, self.champion_count - promoted_before)),
+                reduce="sum",
+            )
+            metrics_logger.log_value(
+                "available_modules", float(len(self.available_modules)), window=1,
+            )
+            metrics_logger.log_value(
+                "idle_modules", float(len(idle_modules)), window=1,
+            )
+            if self.champion_history:
+                metrics_logger.log_value(
+                    "iterations_since_champion",
+                    float(iteration - self.champion_history[-1]["iteration"]),
+                    window=1,
+                )
     
     def _should_create_champion(self, return_value, iteration, algorithm):
         """

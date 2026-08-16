@@ -450,3 +450,82 @@ class TestIterationReachesTheEnvRunners:
         train(dataclasses.replace(cfg, num_iters=1))
 
         assert len(_lines(cfg)) == 1
+
+
+class TestIterationBroadcastReportsPartialDelivery:
+    """A runner that does not answer keeps the *previous* iteration.
+
+    `foreach_env_runner` defaults to `healthy_only=True` and silently skips a
+    runner that is restarting or slower than the 10s timeout. That runner is
+    still alive and still sampling, and `set_iteration` has left the last value
+    it was told in place - so its NAV tables and its recorded rows are labelled
+    with the wrong iteration rather than with `-`.
+
+    A stale but plausible number is worse than a missing one: nothing about it
+    looks wrong. Blocking sampling until every runner acknowledges a *log field*
+    is not the trade to make, so the broadcast stays best-effort and says when
+    it fell short.
+    """
+
+    class _Group:
+        def __init__(self, acked, healthy):
+            self._acked = acked
+            self._healthy = healthy
+            self.calls = 0
+
+        def foreach_env_runner(self, func, **kwargs):
+            self.calls += 1
+            return [True] * self._acked
+
+        def num_healthy_remote_env_runners(self):
+            return self._healthy
+
+    def _algo(self, acked, healthy):
+        group = self._Group(acked, healthy)
+        return SimpleNamespace(env_runner_group=group), group
+
+    def test_full_delivery_is_quiet(self, caplog):
+        algo, group = self._algo(acked=2, healthy=2)
+
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            train_mod._broadcast_iteration(algo, 7)
+
+        assert group.calls == 1
+        assert caplog.text == ""
+
+    def test_partial_delivery_is_reported(self, caplog):
+        algo, _ = self._algo(acked=1, healthy=3)
+
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            train_mod._broadcast_iteration(algo, 7)
+
+        assert "reached only 1 of 3 env runners" in caplog.text
+        assert "iteration 7" in caplog.text
+
+    def test_a_group_that_cannot_be_counted_stays_quiet(self, caplog):
+        """The count is itself best-effort - an RLlib rename here must not turn
+        a working broadcast into a warning on every iteration."""
+        class NoCount(self._Group):
+            def num_healthy_remote_env_runners(self):
+                raise AttributeError("renamed in this Ray")
+
+        algo = SimpleNamespace(env_runner_group=NoCount(1, 3))
+
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            train_mod._broadcast_iteration(algo, 7)
+
+        assert caplog.text == ""
+
+    def test_a_failed_broadcast_still_degrades_quietly(self, caplog):
+        """The pre-existing contract: a runner that is restarting must cost
+        `iter=-`, never the run."""
+        class Broken:
+            def foreach_env_runner(self, func, **kwargs):
+                raise RuntimeError("actor unreachable")
+
+        algo = SimpleNamespace(env_runner_group=Broken())
+
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            train_mod._broadcast_iteration(algo, 7)
+
+        assert caplog.text == ""

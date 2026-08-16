@@ -156,7 +156,7 @@ the Windows host driver provides `/dev/dxg`. A process named `/Xwayland` holding
 
 **Working tree location under WSL2 matters.** A repo on the Windows drive is reachable at
 `/mnt/c/...`, but that path goes through the 9p translation layer and is slow — both for the build
-context copy and, more importantly, for the per-episode pickles described below. For regular
+context copy and, more importantly, for the per-step episode record described below. For regular
 training, clone into the Linux filesystem (`~/code/...`) instead.
 
 ---

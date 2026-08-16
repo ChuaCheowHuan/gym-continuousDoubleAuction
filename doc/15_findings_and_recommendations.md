@@ -513,10 +513,15 @@ Roughly two to three weeks of work, ordered so each step unblocks the next.
 **Phase 4 — market realism (≈3 days)**
 13. Maker/taker fees in bps inside settlement (S2-3)
 14. Self-match prevention; mark to mid (S2-5)
-15. Per-episode desk metrics through `metrics_logger` (S3-9)
+15. ~~Per-episode desk metrics through `metrics_logger` (S3-9)~~ — **partly done**: NAV spread,
+    drawdown, inventory, trade count and maker ratio are metrics ([11 §1.2](11_logging_and_observability.md)).
+    Sharpe and max-drawdown-over-the-episode still need the NAV trajectory, which the per-step
+    record now holds
 
 **Phase 5 — engineering hygiene (≈3 days)**
-16. ~~`logging` replaces `print`; conservation violation raises (S2-8)~~ — **done**
+16. ~~`logging` replaces `print`; a conservation violation stops the run (S2-8)~~ — **done**. The
+    stop moved to the driver once [21 §2.1](21_logging_review.md) found that raising in the episode
+    hook stops nothing at `num_env_runners > 0`
 17. Fix `install_requires`; drop `six`, `sklearn` and the unused `import ray` (S3-6)
 18. `sys.exit` → `raise ValueError` (S3-7)
 19. Delete dead code (S4-1..4) — the `g_store` trio (S4-1) and the `build_algo` restore path (S3-8) are done

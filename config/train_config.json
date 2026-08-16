@@ -53,7 +53,9 @@
   },
 
   "league_self_play": {
-    "_note": "nav_tolerance is the absolute cash tolerance for the episode-end NAV conservation check. The ledger is Decimal end to end and the check now parses info['NAV'] back with Decimal rather than float, so conservation is exact by construction and the expected error is 0, not merely small. The tolerance is therefore headroom for a change that legitimately removes cash from the system, such as fees - it is not absorbing arithmetic noise. Widen it for such a change; it can be set to 0 for a run that wants the invariant enforced exactly. strict_nav_check true raises on a violation, because a broken conservation invariant means the ledger is corrupt and everything trained after it is meaningless; false downgrades it to an ERROR log plus the nav_conservation_error metric, for a run that would rather keep going and be inspected afterwards.",
+    "_note": "nav_tolerance is the absolute cash tolerance for the episode-end NAV conservation check. The ledger is Decimal end to end and the check now parses info['NAV'] back with Decimal rather than float, so conservation is exact by construction and the expected error is 0, not merely small. The tolerance is therefore headroom for a change that legitimately removes cash from the system, such as fees - it is not absorbing arithmetic noise. Widen it for such a change; it can be set to 0 for a run that wants the invariant enforced exactly. strict_nav_check true stops the run on a violation, because a broken conservation invariant means the ledger is corrupt and everything trained after it is meaningless; false downgrades it to an ERROR log plus the nav_conservation_error metric, for a run that would rather keep going and be inspected afterwards. The stop is decided on the driver at the end of the iteration, not raised inside the episode hook: that hook runs on the env runner, where RLlib's fault tolerance swallows the exception and restarts the worker instead of ending the run.",
+
+    "_note_episode_record": "episode_data_dir is the root of the per-step episode record, written as Parquet - one row per (episode, step, agent), carrying the whole info dict. null switches it off entirely, including the in-memory accumulation behind it. It is resolved to an absolute path with run_id appended before it reaches the callback, because the callback is pickled into every env runner and a relative path would be resolved against whatever working directory that worker inherited. episode_sample_every records one episode in N, chosen by a hash of the episode id so every runner samples the same subset without coordinating; the record is ~34MB per 4096-step episode, so this is what makes the default affordable. episode_max_bytes caps what each writer keeps, deleting its own oldest files first - per writer rather than per directory, because deleting another worker's files is a cross-process race for no benefit, so a run with N runners keeps up to N times this. episode_rows_per_file is the write batch: at num_agents rows per env step, a file is episode_rows_per_file / num_agents steps.",
 
     "std_dev_multiplier": 0.1,
     "max_champions": 8,
@@ -61,12 +63,15 @@
     "original_opponent_weight": 1.0,
     "champion_weight": 3.0,
     "episode_data_dir": "episode_data",
+    "episode_sample_every": 10,
+    "episode_max_bytes": 2147483648,
+    "episode_rows_per_file": 65536,
     "nav_tolerance": 1e-06,
     "strict_nav_check": true
   },
 
   "run": {
-    "_note": "log_level is Ray's, passed to PPOConfig.debugging; cda_log_level is this package's own, applied by logging_setup and exported as $CDA_LOG_LEVEL so Ray's worker processes pick it up. They are separate because Ray at INFO is noise while this package at INFO is the per-episode NAV table and the per-iteration league statistics - the output a run is meant to produce. Set cda_log_level to DEBUG for the per-step render and account tables, WARNING for a quiet run.",
+    "_note": "log_level is Ray's, passed to PPOConfig.debugging; cda_log_level is this package's own, applied by logging_setup and exported as $CDA_LOG_LEVEL so Ray's worker processes pick it up. They are separate because Ray at INFO is noise while this package at INFO is the per-episode NAV table and the per-iteration league statistics - the output a run is meant to produce. Set cda_log_level to DEBUG for the per-step render and account tables, WARNING for a quiet run. ray_log_encoding is handed to ray.LoggingConfig, which is the only lever that reaches a worker's Ray-side output - the env-runner restart notices and the traceback RLlib swallows when a runner dies are emitted by Ray's own loggers in processes this package never configures. TEXT keeps them human-readable with job and worker ids attached; JSON makes them machine-parseable; an empty string leaves Ray's logging entirely alone. Setting it also turns off propagation from this package's logger to the root one, since ray.LoggingConfig configures root and both handlers would otherwise print every line twice.",
 
     "_note_run": "num_iters is a target, not an amount: a restored run trains up to iteration num_iters, so a 16-iteration run that resumes at 9 does 7 more. Set num_iters_is_delta true for the old behaviour, where num_iters is how many iterations to run from wherever the restore landed. restore_path pins which checkpoint to resume from; null takes the newest under log_base_dir/chkpt, which is what a disconnect wants. It requires is_restore, and is deliberately recorded here rather than passed at the call site, so which checkpoint a run continued from is written down beside the run.",
 
@@ -82,6 +87,7 @@
     "restore_path": null,
     "log_level": "WARN",
     "cda_log_level": "INFO",
+    "ray_log_encoding": "TEXT",
     "seed": null
   }
 }

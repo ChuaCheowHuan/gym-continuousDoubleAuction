@@ -76,7 +76,7 @@ callback = SelfPlayCallback(
     min_iterations_between_champions=2,   # cooldown
     original_opponent_weight=1.0,         # baseline selection priority
     champion_weight=3.0,                  # favour champions 3:1
-    episode_data_dir="episode_data",      # None disables per-episode pickles
+    episode_data_dir="episode_data",      # None disables the per-step record
 )
 
 policies, policies_to_train, rl_module_spec = create_multi_agent_config(

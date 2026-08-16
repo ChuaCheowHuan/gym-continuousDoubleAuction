@@ -16,6 +16,7 @@ import importlib
 import json
 import logging
 import shutil
+import sys
 
 import pytest
 
@@ -879,3 +880,165 @@ class TestIterationAcrossThreads:
         thread.join()
 
         assert logging_setup.current_iteration() == 11
+
+
+class TestPropagation:
+    """Whether records also travel on to the root logger.
+
+    Left on by default, because that is what any root-attached handler depends
+    on - pytest's `caplog` among them, which is how most of this suite reads log
+    output at all. Turned off by `train.main` when it is about to hand
+    `ray.init` a `LoggingConfig`: that configures the *root* logger of this
+    process and of every worker Ray starts for the job, so a record travelling
+    on to root would be printed once by the handler attached here and once by
+    Ray's (doc/21 §6 item 7).
+    """
+
+    def teardown_method(self):
+        # Other tests in this file read through caplog, which needs it back on.
+        logging_setup.configure("INFO", force=True, propagate=True)
+
+    def test_propagation_is_on_by_default(self):
+        logging_setup.configure("INFO", force=True, propagate=True)
+        logging_setup.configure("DEBUG", force=True)
+
+        assert logging.getLogger(logging_setup.ROOT_NAME).propagate is True
+
+    def test_it_can_be_turned_off(self):
+        logging_setup.configure("INFO", force=True, propagate=False)
+
+        assert logging.getLogger(logging_setup.ROOT_NAME).propagate is False
+
+    def test_a_reconfigure_without_the_argument_leaves_it_alone(self):
+        """`get_logger` reconfigures processes that have not been set up, and
+        must not undo a decision the entry point made."""
+        logging_setup.configure("INFO", force=True, propagate=False)
+        logging_setup.configure("DEBUG", force=True)
+
+        assert logging.getLogger(logging_setup.ROOT_NAME).propagate is False
+
+    def test_the_package_handler_still_emits_when_propagation_is_off(self, tmp_path):
+        """Turning propagation off must not cost the run its own log - the
+        handler is on the package logger, not on root."""
+        logging_setup.configure(
+            "INFO", log_dir=str(tmp_path), force=True, propagate=False,
+        )
+        logging_setup.get_logger("gym_continuousDoubleAuction.test_prop").info(
+            "still recorded"
+        )
+        for handler in logging.getLogger(logging_setup.ROOT_NAME).handlers:
+            handler.flush()
+
+        assert "still recorded" in (tmp_path / "run.log").read_text()
+
+
+class TestRayLoggingConfig:
+    """The one lever that reaches a *worker's* Ray-side output.
+
+    This package's own logging crosses to the runners already, through
+    `$CDA_LOG_LEVEL`, `$CDA_LOG_DIR` and the `runtime_env`. Ray's does not: the
+    env-runner restart notices, and the traceback `EnvRunnerGroup` swallows when
+    a runner dies with `restart_failed_env_runners` on (doc/21 §2.1), are
+    emitted by Ray's loggers in processes this package never configures. A
+    `LoggingConfig` is applied by Ray to the driver and to every process it
+    starts for the job.
+    """
+
+    def _cfg(self, **kwargs):
+        from gym_continuousDoubleAuction.train.train import TrainConfig
+        return TrainConfig(episode_data_dir=None, **kwargs)
+
+    def test_it_is_built_from_the_config(self):
+        from gym_continuousDoubleAuction.train.train import ray_logging_config
+
+        built = ray_logging_config(self._cfg(ray_log_encoding="JSON"))
+
+        assert built is not None
+        assert built.encoding == "JSON"
+
+    def test_an_empty_encoding_leaves_rays_logging_alone(self):
+        """Not every run wants its Ray output reformatted, and "off" has to be
+        expressible - passing a LoggingConfig is not a no-op."""
+        from gym_continuousDoubleAuction.train.train import ray_logging_config
+
+        assert ray_logging_config(self._cfg(ray_log_encoding="")) is None
+
+    def test_a_ray_without_the_api_degrades(self, monkeypatch):
+        """It is a young API. A Ray that lacks it must cost this run its log
+        formatting and nothing else."""
+        import ray
+
+        from gym_continuousDoubleAuction.train.train import ray_logging_config
+
+        monkeypatch.delattr(ray, "LoggingConfig", raising=False)
+        assert ray_logging_config(self._cfg(ray_log_encoding="TEXT")) is None
+
+    def test_a_rejected_argument_degrades(self, monkeypatch):
+        import ray
+
+        from gym_continuousDoubleAuction.train.train import ray_logging_config
+
+        def _explode(**kwargs):
+            raise TypeError("unexpected keyword argument 'encoding'")
+
+        monkeypatch.setattr(ray, "LoggingConfig", _explode, raising=False)
+        assert ray_logging_config(self._cfg(ray_log_encoding="TEXT")) is None
+
+    def test_the_config_default_is_a_usable_encoding(self):
+        from gym_continuousDoubleAuction.train.train import ray_logging_config
+
+        assert ray_logging_config(self._cfg()) is not None
+
+
+class TestExcepthookInstallationIsGuarded:
+    """The idempotence guard is a check-then-act, like `_configured` was.
+
+    Two threads arriving in `configure` together both read
+    `_excepthooks_installed` as False and both chain a hook onto the previous
+    one, after which every unhandled exception is logged twice - and the second
+    copy is chained onto the first, so it never unwinds. `configure` calls
+    `install_excepthooks` while holding `_configure_lock` for exactly this.
+    """
+
+    def test_repeated_configuration_installs_one_hook(self):
+        logging_setup.configure("INFO", force=True)
+        first = sys.excepthook
+        for _ in range(5):
+            logging_setup.configure("INFO", force=True)
+
+        assert sys.excepthook is first
+
+    def test_concurrent_configuration_installs_one_hook(self):
+        import threading
+
+        logging_setup.configure("INFO", force=True)
+        before = sys.excepthook
+        barrier = threading.Barrier(8)
+
+        def configure():
+            barrier.wait()
+            logging_setup.configure("DEBUG", force=True)
+
+        threads = [threading.Thread(target=configure) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert sys.excepthook is before
+
+    def test_it_is_installed_under_the_configure_lock(self):
+        """Pins the mechanism, not just the outcome: a future edit that moves
+        the call back outside the lock restores the race without failing the
+        two tests above, which cannot reach a window this small reliably."""
+        import inspect
+
+        source = inspect.getsource(logging_setup.configure)
+        body = source[source.index("with _configure_lock:"):]
+        installed = body.index("install_excepthooks()")
+        # Everything inside the `with` block is indented past its own line.
+        line = body[:installed].rsplit("\n", 1)[-1]
+
+        assert line.startswith(" " * 8), (
+            "install_excepthooks() has moved out of the _configure_lock block"
+        )

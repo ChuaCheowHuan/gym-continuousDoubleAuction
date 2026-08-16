@@ -10,6 +10,8 @@ values arrive, not merely that the keys are accepted.
 
 See doc/18_configuration.md sections 2.1-2.3.
 """
+import os
+
 import pytest
 
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
@@ -144,3 +146,51 @@ class TestTrainConfigRoundTrip:
         env = continuousDoubleAuctionEnv(cfg.env_config)
         assert env.mkt_max_size == 55
         assert env.order_penalty == 0.7
+
+
+class TestEpisodeRecordPath:
+    """Where the per-step episode record is resolved to.
+
+    doc/21 §2.3: this was the one output path with no protection at all. It was
+    a bare relative string, pickled into every env runner and resolved there
+    against whatever working directory that worker inherited - which today is
+    usually the driver's, by accident rather than by guarantee. The run log has
+    had `abspath` and a per-run directory since doc/11 §1.11; this had not.
+    """
+
+    def test_it_is_absolute(self):
+        cfg = TrainConfig(episode_data_dir="episode_data")
+        assert os.path.isabs(cfg.episode_data_path)
+
+    def test_it_is_scoped_to_the_run(self):
+        """Two concurrent runs writing into one directory is the same problem
+        `run_dir` exists to solve for `run.log` and `progress.jsonl`."""
+        a = TrainConfig(episode_data_dir="episode_data")
+        b = TrainConfig(episode_data_dir="episode_data")
+
+        assert a.episode_data_path != b.episode_data_path
+        assert a.episode_data_path.endswith(a.run_id)
+
+    def test_a_pinned_run_id_resolves_to_the_same_place(self):
+        """A restored run extends what it left behind, as it does for
+        progress.jsonl."""
+        a = TrainConfig(episode_data_dir="episode_data", run_id="fixed")
+        b = TrainConfig(episode_data_dir="episode_data", run_id="fixed")
+
+        assert a.episode_data_path == b.episode_data_path
+
+    def test_an_absolute_root_is_respected(self):
+        """`runtime_profiles.json` points `episode_data_root` at the VM's local
+        disk on Colab, deliberately off the Drive FUSE mount."""
+        cfg = TrainConfig(episode_data_dir="/content/cda_episode_data")
+        assert cfg.episode_data_path.startswith("/content/cda_episode_data/")
+
+    def test_disabled_stays_disabled(self):
+        assert TrainConfig(episode_data_dir=None).episode_data_path is None
+
+    def test_it_is_not_under_the_run_directory(self):
+        """Deliberate: `runtime_profiles.json` splits `results_root` from
+        `episode_data_root` precisely so the bulky record can be kept off the
+        filesystem the checkpoints must survive on."""
+        cfg = TrainConfig(episode_data_dir="episode_data")
+        assert not cfg.episode_data_path.startswith(cfg.run_dir)

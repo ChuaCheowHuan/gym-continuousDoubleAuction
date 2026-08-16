@@ -120,3 +120,205 @@ class TestIdleModulesDoNotPoisonTheLeague:
         })
 
         assert [pid for pid, _r, _i in snapshots] == ["policy_1"]
+
+
+class TestLeagueMetrics:
+    """League state as metrics, not only as log banners.
+
+    doc/11 §2.5 listed four things the callback computes and discards, and §4
+    item 4 asked for them as metrics: promotion events, the matchmaking pool
+    size, and the time since the last snapshot - the last of which
+    `_should_create_champion` has computed since it was written and thrown away
+    every time. A banner in a worker's log file cannot be plotted against the
+    return series; a metric can.
+    """
+
+    def _metrics(self):
+        from unittest.mock import MagicMock
+        return MagicMock()
+
+    def _emitted(self, metrics, name):
+        for call in metrics.log_value.call_args_list:
+            if call.args and call.args[0] == name:
+                return call
+        return None
+
+    def test_a_quiet_iteration_reports_no_promotion(self, callback, snapshots):
+        metrics = self._metrics()
+        callback.on_train_result(
+            algorithm=object(), metrics_logger=metrics,
+            result=_result({"policy_0": 1.0, "policy_1": 1.0}),
+        )
+
+        call = self._emitted(metrics, "champions_promoted")
+        assert call.args[1] == 0.0
+        assert call.kwargs["reduce"] == "sum"
+
+    def test_the_pool_size_is_reported(self, callback, snapshots):
+        metrics = self._metrics()
+        callback.on_train_result(
+            algorithm=object(), metrics_logger=metrics,
+            result=_result({"policy_0": 1.0, "policy_1": 2.0}),
+        )
+
+        assert self._emitted(metrics, "available_modules").args[1] == float(
+            len(callback.available_modules)
+        )
+
+    def test_idle_modules_are_counted(self, callback, snapshots):
+        """The S3-12 signature as a number rather than a log line: a league that
+        is quietly shrinking to the modules the mapping fn happens to draw."""
+        metrics = self._metrics()
+        callback.on_train_result(
+            algorithm=object(), metrics_logger=metrics,
+            result=_result({
+                "policy_0": 1.0, "policy_1": 2.0,
+                "policy_5": float("nan"), "policy_6": float("nan"),
+            }),
+        )
+
+        assert self._emitted(metrics, "idle_modules").args[1] == 2.0
+
+    def test_the_time_since_the_last_champion_is_reported(self, callback):
+        """Computed by `_should_create_champion` since it was written, and
+        discarded every time. It is what says whether the cooldown or the
+        threshold is holding the league still."""
+        callback.champion_history.append(
+            {"id": "champion_1", "source_policy": "policy_0",
+             "iteration": 4, "return": 1.0}
+        )
+        metrics = self._metrics()
+        callback.on_train_result(
+            algorithm=object(), metrics_logger=metrics,
+            result=_result({"policy_0": 1.0, "policy_1": 1.0}, iteration=9),
+        )
+
+        assert self._emitted(metrics, "iterations_since_champion").args[1] == 5.0
+
+    def test_no_champion_yet_reports_no_interval(self):
+        """None-so-far and zero-iterations-ago are different states, and a 0
+        here would read as "one was just made"."""
+        cb = SelfPlayCallback(num_trainable_policies=2, num_random_policies=6)
+        metrics = self._metrics()
+        cb.on_train_result(
+            algorithm=object(), metrics_logger=metrics,
+            result=_result({"policy_0": 1.0, "policy_1": 1.0}),
+        )
+
+        assert self._emitted(metrics, "iterations_since_champion") is None
+
+    def test_a_promotion_is_counted(self, callback, monkeypatch):
+        """Counted from the champion count either side of the trigger, not from
+        the branch that decided to try: a snapshot that raised and rolled itself
+        back has not promoted anything, and `_create_champion_snapshot_from_policy`
+        swallows its own exceptions."""
+        def _promote(algorithm, pid, return_value, iteration):
+            callback.champion_count += 1
+
+        monkeypatch.setattr(
+            callback, "_create_champion_snapshot_from_policy", _promote,
+        )
+        metrics = self._metrics()
+        callback.on_train_result(
+            algorithm=object(), metrics_logger=metrics,
+            result=_result({"policy_0": 10.0, "policy_1": 0.0, "policy_5": 0.0}),
+        )
+
+        assert self._emitted(metrics, "champions_promoted").args[1] == 1.0
+
+    def test_a_failed_snapshot_is_not_counted_as_a_promotion(self, callback, snapshots):
+        """`snapshots` records the attempt without changing the count - which is
+        exactly the shape of a snapshot that raised and rolled back."""
+        metrics = self._metrics()
+        callback.on_train_result(
+            algorithm=object(), metrics_logger=metrics,
+            result=_result({"policy_0": 10.0, "policy_1": 0.0, "policy_5": 0.0}),
+        )
+
+        assert snapshots, "the trigger should have fired"
+        assert self._emitted(metrics, "champions_promoted").args[1] == 0.0
+
+
+class TestLeagueStateInTheResult:
+    """League state written into `result`, where it lands in the right row.
+
+    Anything logged through `metrics_logger` in `on_train_result` appears one
+    iteration late: RLlib hands the hook a `result` it has already compiled, so
+    the value is reduced on the following pass and `champions_promoted` reads
+    1.0 in the row *after* the promotion. `progress.jsonl` writes the result
+    dict, so a reader joining on `training_iteration` was getting values that
+    described the previous iteration.
+
+    RLlib's call site invokes this callback before `Trainable.log_result`
+    specifically "so that the user has a chance to mutate the result", and its
+    own TODO beside the `metrics_logger` argument notes there is "probably no
+    point in adding more Stats here". Mutating is the sanctioned path.
+    """
+
+    def test_the_result_carries_the_league_state(self, callback, snapshots):
+        result = _result({"policy_0": 2.0, "policy_1": 1.0})
+        callback.on_train_result(algorithm=object(), result=result)
+
+        league = result["league"]
+        assert league["size"] == callback.num_trainable + callback.num_random
+        assert league["available_modules"] == len(callback.available_modules)
+        assert league["mean_return"] == pytest.approx(1.5)
+
+    def test_a_promotion_lands_in_its_own_iteration(self, callback, monkeypatch):
+        """The whole point. Under the metrics channel alone this reads 0 here
+        and 1 in the next iteration's row."""
+        def _promote(algorithm, pid, return_value, iteration):
+            callback.champion_count += 1
+            callback.champion_history.append(
+                {"id": "champion_1", "source_policy": pid,
+                 "iteration": iteration, "return": return_value}
+            )
+
+        monkeypatch.setattr(
+            callback, "_create_champion_snapshot_from_policy", _promote,
+        )
+        result = _result(
+            {"policy_0": 10.0, "policy_1": 0.0, "policy_5": 0.0}, iteration=4,
+        )
+        callback.on_train_result(algorithm=object(), result=result)
+
+        assert result["league"]["promoted"] == 1
+        assert result["league"]["champions"] == ["champion_1"]
+        assert result["league"]["iterations_since_champion"] == 0
+
+    def test_idle_modules_are_counted_in_the_result(self, callback, snapshots):
+        result = _result({
+            "policy_0": 1.0, "policy_1": 2.0,
+            "policy_5": float("nan"), "policy_6": float("nan"),
+        })
+        callback.on_train_result(algorithm=object(), result=result)
+
+        assert result["league"]["idle_modules"] == 2
+
+    def test_no_champion_yet_omits_the_interval(self, callback, snapshots):
+        """None-so-far and zero-iterations-ago are different states."""
+        result = _result({"policy_0": 1.0, "policy_1": 1.0})
+        callback.on_train_result(algorithm=object(), result=result)
+
+        assert "iterations_since_champion" not in result["league"]
+
+    def test_it_survives_the_progress_json_round_trip(self, callback, snapshots):
+        """`_append_progress` is the consumer; a value it cannot serialise would
+        be dropped from the row it was added to fix."""
+        import json
+
+        from gym_continuousDoubleAuction.train.train import _json_safe
+
+        result = _result({"policy_0": 2.0, "policy_1": 1.0})
+        callback.on_train_result(algorithm=object(), result=result)
+
+        revived = json.loads(json.dumps(_json_safe(result)))
+        assert revived["league"]["size"] == result["league"]["size"]
+        assert revived["league"]["mean_return"] == pytest.approx(1.5)
+
+    def test_an_early_return_leaves_no_partial_state(self, callback, snapshots):
+        """A skipped iteration must not write a `league` key that looks real."""
+        result = {"training_iteration": 1, "env_runners": {}}
+        callback.on_train_result(algorithm=object(), result=result)
+
+        assert "league" not in result
