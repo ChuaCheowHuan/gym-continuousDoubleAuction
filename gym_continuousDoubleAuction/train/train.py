@@ -23,6 +23,8 @@ import json
 import math
 import os
 import shutil
+import time
+import uuid
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
@@ -41,7 +43,11 @@ from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
 )
 from gym_continuousDoubleAuction.logging_setup import configure as configure_logging
 from gym_continuousDoubleAuction.logging_setup import get_logger
-from gym_continuousDoubleAuction.logging_setup import log_file_path, set_iteration
+from gym_continuousDoubleAuction.logging_setup import (
+    log_file_path,
+    merge_runtime_env,
+    set_iteration,
+)
 from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
     SelfPlayCallback,
 )
@@ -58,12 +64,32 @@ ENV_NAME = "continuousDoubleAuction-v0"
 #: The file every TrainConfig default is read from.
 TRAIN_CONFIG_FILE = "train_config.json"
 
-#: Per-iteration result dicts, one JSON object per line, under `log_base_dir`.
+#: Per-iteration result dicts, one JSON object per line, under `run_dir`.
 #: `algo.train()` returns a full metrics dict every iteration and the loop used
 #: to read two keys out of it for a log line and drop the rest, so a finished
 #: run left behind checkpoints and no record of how it got there. This is the
 #: record. See doc/11 1.6.
 PROGRESS_FILE = "progress.jsonl"
+
+#: How long the driver waits for the runners to accept a new iteration tag.
+#: Short and non-fatal: this is a log field, and a runner that is slow to answer
+#: must delay sampling by as little as possible. Missing it costs `iter=-` on
+#: that runner's lines for one iteration, nothing more.
+_BROADCAST_TIMEOUT_S = 10.0
+
+
+def generate_run_id() -> str:
+    """A directory name unique to this run: local date, time, four hex digits.
+
+    The timestamp is what makes a listing readable and orderable; the random
+    suffix is what makes it *unique*, because two runs launched by the same
+    script in the same second would otherwise collide on the second - which is
+    exactly the shared-directory case `run_dir` exists to prevent.
+
+    Local time rather than UTC, to match the log timestamps a reader is
+    correlating this against.
+    """
+    return f"run_{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:4]}"
 
 #: `result["learners"][<module_id>]["vf_explained_var"]`: the fraction of return
 #: variance the critic accounts for. Defined by RLlib as
@@ -75,7 +101,7 @@ PROGRESS_FILE = "progress.jsonl"
 VF_EXPLAINED_VAR_KEY = "vf_explained_var"
 
 
-def _default(key: str):
+def _default(key: str, *, compare: bool = True):
     """A dataclass default read from `config/train_config.json`.
 
     The value is fetched when a TrainConfig is instantiated, not when this
@@ -83,6 +109,9 @@ def _default(key: str):
     effect without re-importing. A key missing from the file raises: the
     dataclass declares the schema, the file supplies every value in it, and a
     literal written here would be a second source that can disagree.
+
+    `compare=False` keeps a field out of `__eq__`, for the one field whose value
+    identifies the run rather than configuring it - see `run_id`.
     """
 
     def factory():
@@ -94,7 +123,7 @@ def _default(key: str):
             )
         return values[key]
 
-    return field(default_factory=factory)
+    return field(default_factory=factory, compare=compare)
 
 
 @dataclass
@@ -204,6 +233,22 @@ class TrainConfig:
     # a league that collapsed. <= 0 keeps all of them.
     chkpt_keep: int = _default("chkpt_keep")
     log_base_dir: str = _default("log_base_dir")
+    # Names the per-run directory under log_base_dir holding progress.jsonl and
+    # the run logs. null generates one, so two runs cannot land on the same
+    # files: sharing run.log is the cross-process RotatingFileHandler race the
+    # per-worker files already avoid for env runners, and sharing
+    # progress.jsonl lets two drivers interleave writes inside one JSON line
+    # (`json.dump` writes incrementally, and a result dict above the ~8KiB
+    # stream buffer is several write syscalls). Pin it to resume into an
+    # existing run directory. `__post_init__` resolves null to a real value, so
+    # this is a str by the time anything reads it.
+    #
+    # Out of __eq__: it names the run, it does not configure it, and since
+    # __post_init__ generates a fresh one per instance, comparing it would make
+    # no two TrainConfigs equal - including the checked-in file against its own
+    # defaults, and a restored checkpoint's config against the current one,
+    # which `config_divergence` reports on.
+    run_id: Optional[str] = _default("run_id", compare=False)
     is_restore: bool = _default("is_restore")
     # Which checkpoint to resume from. null takes the newest readable one under
     # checkpoint_dir, which is what a disconnect wants; a path pins one, which
@@ -218,6 +263,18 @@ class TrainConfig:
     # league statistics.
     cda_log_level: str = _default("cda_log_level")
     seed: Optional[int] = _default("seed")
+
+    def __post_init__(self) -> None:
+        """Resolve `run_id` once, here, rather than on each property read.
+
+        A property that generated a name per call would hand a different
+        directory to every caller, and `dataclasses.replace` - which the
+        runtime profiles and the tests both use - would silently re-roll it.
+        Resolving in the constructor makes the name a property of the config
+        object, so a replace()d copy keeps writing where the original did.
+        """
+        if not self.run_id:
+            self.run_id = generate_run_id()
 
     @classmethod
     def from_json(cls, path: str) -> "TrainConfig":
@@ -261,19 +318,51 @@ class TrainConfig:
 
     @property
     def checkpoint_dir(self) -> str:
-        """Root of the checkpoint tree. Individual saves are `iter_*` beneath it."""
+        """Root of the checkpoint tree. Individual saves are `iter_*` beneath it.
+
+        Under `log_base_dir` and *not* under `run_dir`, which is the one place
+        the per-run split is deliberately not applied. Restoring from a
+        disconnect means finding the newest `iter_*` written by an *earlier*
+        run; a per-run checkpoint tree would hide it, and every resumed run
+        would start from scratch. Checkpoints are therefore shared across runs
+        and the files that cannot tolerate sharing are not.
+
+        `warn_about_stale_checkpoints` covers the cost of that sharing: a fresh
+        run into a directory that already holds checkpoints says so.
+        """
         return os.path.abspath(os.path.join(self.log_base_dir, "chkpt"))
 
     @property
+    def run_dir(self) -> str:
+        """This run's own directory, holding progress.jsonl and the run logs.
+
+        Scoped per run rather than shared, because both files are written
+        without any cross-process interlock: two drivers sharing one
+        `log_base_dir` would rotate the same `run.log` underneath each other,
+        and interleave partial writes into the same `progress.jsonl` line.
+        Giving each run its own directory removes the sharing rather than
+        trying to make the writes atomic.
+
+        The checkpoint tree deliberately stays *outside* it - see
+        `checkpoint_dir`.
+        """
+        return os.path.abspath(os.path.join(self.log_base_dir, self.run_id))
+
+    @property
     def progress_path(self) -> str:
-        """The per-iteration JSONL log, beside the checkpoint tree.
+        """The per-iteration JSONL log, in this run's own directory.
 
         Under `log_base_dir` rather than `episode_data_dir` deliberately: this
         is one short line per iteration, so it belongs with the checkpoints that
         must survive a disconnect, not with the per-episode pickles that
         runtime_profiles.json keeps off the Drive FUSE layer.
+
+        Appending still matters within a run directory: the file is opened per
+        iteration, so a killed run keeps what it had finished, and a restore
+        that pins the same `run_id` extends that history rather than starting a
+        second file.
         """
-        return os.path.abspath(os.path.join(self.log_base_dir, PROGRESS_FILE))
+        return os.path.abspath(os.path.join(self.run_dir, PROGRESS_FILE))
 
     @property
     def env_config(self) -> dict:
@@ -935,6 +1024,10 @@ def train(cfg: TrainConfig) -> Tuple[Algorithm, dict]:
         # RLlib's own count is authoritative and replaces it below; the two
         # agree unless a restore left the counter somewhere unexpected.
         set_iteration(iteration + 1)
+        # And on the runners, before they sample: the episode callbacks run
+        # there, so the NAV tables and the conservation ERROR are emitted in a
+        # process that otherwise has no idea which iteration it is serving.
+        _broadcast_iteration(algo, iteration + 1)
         result = algo.train()
         iteration = int(result.get("training_iteration", iteration + 1))
         set_iteration(iteration)
@@ -953,6 +1046,54 @@ def train(cfg: TrainConfig) -> Tuple[Algorithm, dict]:
             "final checkpoint: %s", save_checkpoint(algo, cfg, iteration),
         )
     return algo, result
+
+
+def _apply_iteration(iteration: Optional[int]):
+    """A callable that tags an env runner's process with `iteration`.
+
+    Module level rather than a lambda in the loop so it is picklable by name
+    and readable in a traceback; the closure carries only an int.
+    """
+    def _apply(_env_runner):
+        set_iteration(iteration)
+        return True
+
+    return _apply
+
+
+def _broadcast_iteration(algo, iteration: int) -> None:
+    """Tell every env runner which iteration it is sampling for.
+
+    Until this existed, every line a runner logged read `iter=-`. That is the
+    half of the run log that matters most under `num_env_runners > 0`: the
+    episode callbacks run on the runners, so the per-episode NAV tables and the
+    conservation ERROR are emitted *only* there, and none of them could be
+    joined to a `progress.jsonl` row except by wall-clock order.
+
+    doc/11 1.9 described recovering that association as "a change to what RLlib
+    hands the callbacks". It is not - the driver already knows the number, and
+    `foreach_env_runner` already reaches every runner. It only had to be sent.
+
+    Best-effort, and quiet about it. This is instrumentation: a runner that is
+    restarting, or an RLlib version that renames the group, must degrade to the
+    old `iter=-` rather than stop a training run. `local_env_runner=False`
+    because the driver's own runner shares this process and `set_iteration` has
+    already tagged it.
+    """
+    group = getattr(algo, "env_runner_group", None)
+    if group is None:
+        return
+    try:
+        group.foreach_env_runner(
+            _apply_iteration(iteration),
+            local_env_runner=False,
+            timeout_seconds=_BROADCAST_TIMEOUT_S,
+        )
+    except Exception:
+        logger.debug(
+            "could not broadcast iteration %s to the env runners; their log "
+            "lines will read iter=-", iteration, exc_info=True,
+        )
 
 
 def _json_safe(value):
@@ -1146,6 +1287,13 @@ def _parse_args(argv=None) -> TrainConfig:
              "than the iteration to train through.",
     )
     p.add_argument("--log-base-dir", type=str, default=argparse.SUPPRESS)
+    p.add_argument(
+        "--run-id", type=str, dest="run_id", default=argparse.SUPPRESS,
+        help="Name of this run's directory under log_base_dir, holding "
+             "progress.jsonl and the run logs. Generated from the date, time "
+             "and four random hex digits when unset. Pass the id of an earlier "
+             "run to write into its directory and extend its progress.jsonl.",
+    )
     p.add_argument("--log-level", type=str, default=argparse.SUPPRESS)
     p.add_argument("--seed", type=int, default=argparse.SUPPRESS)
     p.add_argument(
@@ -1181,6 +1329,33 @@ def _parse_args(argv=None) -> TrainConfig:
     return dataclasses.replace(base, **overrides)
 
 
+def configure_run_logging(cfg: TrainConfig) -> None:
+    """Attach this run's log files and export the settings for Ray's workers.
+
+    Call it once, before `ray.init`, and before anything else logs. The order
+    matters in both directions: `configure` exports `$CDA_LOG_LEVEL` and
+    `$CDA_LOG_DIR`, which is what a locally started raylet passes to its
+    workers and what `merge_runtime_env` reads for a cluster that was already
+    running, so a `ray.init` that happens first gets neither.
+
+    Shared with the notebook, which calls `train()` directly rather than going
+    through `main()` and so used to leave no run log at all - the one output a
+    disconnected Colab session most needs.
+
+    `force=True` because importing the module already configured this process
+    from the environment or the config default, and neither of those knows
+    about `cfg.run_dir`.
+    """
+    # cfg.run_dir, not cfg.log_base_dir: the per-worker file names keep two
+    # processes of *this* run apart, but two concurrent runs would still have
+    # collided on the driver's own `run.log`, which carries no pid. The run
+    # directory is what keeps runs apart.
+    configure_logging(cfg.cda_log_level, log_dir=cfg.run_dir, force=True)
+    logger.info("run id: %s (%s)", cfg.run_id, cfg.run_dir)
+    if log_file_path():
+        logger.info("run log: %s", log_file_path())
+
+
 def main(argv=None) -> None:
     cfg = _parse_args(argv)
 
@@ -1193,9 +1368,8 @@ def main(argv=None) -> None:
     # log_dir is passed only here, and only by the driver: it adds the rotating
     # run log beside progress.jsonl, and RotatingFileHandler cannot be shared
     # across processes without workers racing each other's rotations.
-    configure_logging(cfg.cda_log_level, log_dir=cfg.log_base_dir, force=True)
-    if log_file_path():
-        logger.info("run log: %s", log_file_path())
+    #
+    configure_run_logging(cfg)
 
     # Shared with the notebook, which has to export these before it imports
     # ray. Imported here rather than at module scope: runtime.py reads
@@ -1204,9 +1378,26 @@ def main(argv=None) -> None:
 
     apply_env_vars()
 
-    ray.init(ignore_reinit_error=True, include_dashboard=False)
+    # runtime_env carries the log level and directory to the workers Ray starts
+    # for this job. The os.environ export configure() already did covers a
+    # cluster this process starts, because the raylet inherits our environment;
+    # it does not cover `ray.init(address=...)` against a cluster that was
+    # running first. See logging_setup.worker_env_vars.
+    ray.init(
+        ignore_reinit_error=True,
+        include_dashboard=False,
+        runtime_env=merge_runtime_env(),
+    )
     try:
         train(cfg)
+    except BaseException:
+        # The excepthook installed by configure() would catch this too, but only
+        # after `finally` has already run ray.shutdown() and cleared the
+        # iteration - so the traceback would be logged out of order, after the
+        # teardown lines, and untagged. Logging it here keeps it where it
+        # happened, with `iter=` still naming the iteration that failed.
+        logger.exception("run %s failed", cfg.run_id)
+        raise
     finally:
         # Shutdown is not part of any iteration; leaving the last one set would
         # tag teardown lines with a number they had nothing to do with.

@@ -304,6 +304,25 @@ def apply_env_vars() -> Dict[str, str]:
     return applied
 
 
+def ray_init_kwargs(rt: Runtime) -> Dict[str, Any]:
+    """`rt.ray_init_kwargs` with the logging settings added as a runtime_env.
+
+    A function rather than a field on `Runtime`, and called at the `ray.init`
+    site rather than stored, because the variables it merges are exported by
+    `configure_run_logging` - which runs after `resolve()`. A copy taken when
+    the Runtime was built would always be empty.
+
+    The profile's own `runtime_env`, if it ever grows one, is preserved: only
+    the `env_vars` mapping is added to, and a name the profile set explicitly
+    wins.
+    """
+    from gym_continuousDoubleAuction.logging_setup import merge_runtime_env
+
+    kwargs = dict(rt.ray_init_kwargs)
+    kwargs["runtime_env"] = merge_runtime_env(kwargs.get("runtime_env"))
+    return kwargs
+
+
 def summary(rt: Runtime) -> str:
     """A printable block describing what `resolve()` decided, and why."""
     lines = [

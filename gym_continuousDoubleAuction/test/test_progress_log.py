@@ -21,6 +21,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from gym_continuousDoubleAuction import logging_setup
 from gym_continuousDoubleAuction.logging_setup import ROOT_NAME as LOGGER
 from gym_continuousDoubleAuction.train import train as train_mod
 from gym_continuousDoubleAuction.train.train import (
@@ -107,14 +108,27 @@ def _lines(cfg):
 class TestProgressFile:
     """Where the file lands and what a run writes into it."""
 
-    def test_it_sits_beside_the_checkpoints(self, cfg):
-        """Under log_base_dir, so a runtime profile that redirects results moves it."""
+    def test_it_sits_in_the_run_directory(self, cfg):
+        """Under log_base_dir, so a runtime profile that redirects results moves
+        it - but in this run's own directory beneath it, so two runs sharing a
+        log_base_dir cannot interleave writes into one file."""
         assert cfg.progress_path == os.path.join(
-            os.path.abspath(cfg.log_base_dir), PROGRESS_FILE
+            os.path.abspath(cfg.log_base_dir), cfg.run_id, PROGRESS_FILE
         )
-        assert os.path.dirname(cfg.progress_path) == os.path.dirname(
-            cfg.checkpoint_dir
+        assert os.path.dirname(cfg.progress_path) == cfg.run_dir
+        assert cfg.run_dir.startswith(os.path.abspath(cfg.log_base_dir))
+
+    def test_the_checkpoint_tree_is_not_run_scoped(self, cfg):
+        """The one thing deliberately shared across runs.
+
+        Restoring from a disconnect means finding the newest `iter_*` written by
+        an *earlier* run. A per-run checkpoint tree would hide it and every
+        resumed run would start from nothing.
+        """
+        assert cfg.checkpoint_dir == os.path.join(
+            os.path.abspath(cfg.log_base_dir), "chkpt"
         )
+        assert not cfg.checkpoint_dir.startswith(cfg.run_dir)
 
     def test_one_line_per_iteration(self, cfg, looped):
         looped(4)
@@ -298,3 +312,141 @@ class TestVfExplainedVar:
             looped(1, algo=FakeAlgo(vf_values=()))
 
         assert "vf_explained_var: n/a" in caplog.text
+
+
+class TestRunDirectoryIsolation:
+    """Two runs must not write into each other's files.
+
+    The per-worker log name keeps the processes of one run apart, but nothing
+    kept two *runs* apart: `log_base_dir` defaulted to a fixed "results", so two
+    drivers - concurrent runs, or a notebook alongside a CLI run - both took the
+    un-suffixed `run.log` and both appended to one `progress.jsonl`. The first
+    is the cross-process RotatingFileHandler race; the second interleaves two
+    writers inside a single JSON line, because `json.dump` writes incrementally
+    and an RLlib result dict is larger than the stream buffer.
+    """
+
+    def test_each_config_gets_its_own_run_id(self):
+        assert TrainConfig().run_id != TrainConfig().run_id
+
+    def test_a_generated_id_is_a_readable_timestamp(self):
+        import re
+
+        assert re.fullmatch(r"run_\d{8}_\d{6}_[0-9a-f]{4}", TrainConfig().run_id)
+
+    def test_replace_keeps_the_id(self, cfg):
+        """The runtime profiles and half the tests build configs with
+        `dataclasses.replace`; re-rolling the id there would move the run's
+        output directory partway through a run."""
+        assert dataclasses.replace(cfg, num_iters=99).run_id == cfg.run_id
+
+    def test_the_id_is_not_part_of_the_configuration(self, cfg):
+        """It names the run, it does not configure it. In __eq__ it would make
+        no two TrainConfigs equal - including the checked-in file against its
+        own defaults, and a restored checkpoint's config against the current
+        one."""
+        assert dataclasses.replace(cfg, run_id="something-else") == cfg
+
+    def test_a_pinned_id_is_honoured(self, tmp_path):
+        """Which is how a restored run extends the progress history it left."""
+        pinned = TrainConfig(log_base_dir=str(tmp_path), run_id="pinned")
+        assert pinned.run_dir == os.path.join(str(tmp_path), "pinned")
+
+    def test_two_runs_write_separate_progress_files(self, cfg, monkeypatch):
+        first = dataclasses.replace(cfg, num_iters=2)
+        second = dataclasses.replace(cfg, num_iters=2, run_id="second")
+
+        for config in (first, second):
+            monkeypatch.setattr(
+                train_mod, "build_algo", lambda _cfg: (FakeAlgo(), None)
+            )
+            train(config)
+
+        assert first.progress_path != second.progress_path
+        assert len(_lines(first)) == 2
+        assert len(_lines(second)) == 2
+
+    def test_a_pinned_id_extends_rather_than_starting_over(self, cfg, monkeypatch):
+        """The append-mode property, still true inside a run directory."""
+        config = dataclasses.replace(cfg, run_id="resumed", num_iters=2)
+        monkeypatch.setattr(
+            train_mod, "build_algo", lambda _cfg: (FakeAlgo(), None)
+        )
+        train(config)
+        monkeypatch.setattr(
+            train_mod,
+            "build_algo",
+            lambda _cfg: (FakeAlgo(start_iteration=2), None),
+        )
+        train(dataclasses.replace(config, num_iters=4))
+
+        assert [line["training_iteration"] for line in _lines(config)] == [
+            1, 2, 3, 4
+        ]
+
+
+class TestIterationReachesTheEnvRunners:
+    """`iter=` on a worker's log lines.
+
+    The episode callbacks run on the env runners, so with `num_env_runners > 0`
+    the per-episode NAV tables and the conservation ERROR are emitted there and
+    nowhere else - and every one of those lines read `iter=-`, leaving them
+    joinable to a progress.jsonl row only by wall-clock order. The driver knew
+    the number the whole time; it just never sent it.
+    """
+
+    class FakeGroup:
+        def __init__(self, fail=False):
+            self.applied = []
+            self.fail = fail
+            self.local_flags = []
+
+        def foreach_env_runner(self, func, local_env_runner=True, **kwargs):
+            if self.fail:
+                raise RuntimeError("runner is restarting")
+            self.local_flags.append(local_env_runner)
+            runner = object()
+            func(runner)
+            self.applied.append(logging_setup.current_iteration())
+            return [True]
+
+    def test_every_iteration_is_broadcast_before_sampling(self, cfg, monkeypatch):
+        algo = FakeAlgo()
+        group = self.FakeGroup()
+        algo.env_runner_group = group
+        monkeypatch.setattr(train_mod, "build_algo", lambda _cfg: (algo, None))
+
+        train(dataclasses.replace(cfg, num_iters=3))
+
+        assert group.applied == [1, 2, 3]
+
+    def test_the_local_runner_is_skipped(self, cfg, monkeypatch):
+        """It shares this process, and set_iteration has already tagged it."""
+        algo = FakeAlgo()
+        group = self.FakeGroup()
+        algo.env_runner_group = group
+        monkeypatch.setattr(train_mod, "build_algo", lambda _cfg: (algo, None))
+
+        train(dataclasses.replace(cfg, num_iters=1))
+
+        assert group.local_flags == [False]
+
+    def test_a_failing_broadcast_does_not_stop_training(self, cfg, monkeypatch):
+        """Instrumentation. A runner that is restarting must cost `iter=-` on
+        its lines, not the run."""
+        algo = FakeAlgo()
+        algo.env_runner_group = self.FakeGroup(fail=True)
+        monkeypatch.setattr(train_mod, "build_algo", lambda _cfg: (algo, None))
+
+        train(dataclasses.replace(cfg, num_iters=2))
+
+        assert [line["training_iteration"] for line in _lines(cfg)] == [1, 2]
+
+    def test_an_algorithm_without_runners_is_fine(self, cfg, monkeypatch):
+        """The FakeAlgo everywhere else in this file has no env_runner_group."""
+        algo = FakeAlgo()
+        monkeypatch.setattr(train_mod, "build_algo", lambda _cfg: (algo, None))
+
+        train(dataclasses.replace(cfg, num_iters=1))
+
+        assert len(_lines(cfg)) == 1
