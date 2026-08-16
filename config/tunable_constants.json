@@ -59,10 +59,9 @@
 
   "visualize_paths": {
     "_source": "gym_continuousDoubleAuction/visualize/",
-    "_note": "Default arguments of the visualize entry points. nav_json_fallback is the bare filename tried when nav_json_path does not exist, which is what happens when the visualizer is run from inside visualize/.",
-    "nav_json_path": "visualize/latest_episode_data.json",
-    "nav_json_fallback": "latest_episode_data.json",
-    "episode_pickle_dir": "../gym_continuousDoubleAuction/episode_data",
+    "_note": "Default arguments of the visualize entry points. The per-step record is Parquet, written by train.episode_record.EpisodeRecorder under <episode_parquet_dir>/<run_id>/ (train_config.json's episode_data_dir). episode_parquet_fallback is the path tried when episode_parquet_dir does not exist, which is what happens when the visualizer is run from inside visualize/. The visualizer picks the most recently modified run_id directory unless one is passed explicitly.",
+    "episode_parquet_dir": "episode_data",
+    "episode_parquet_fallback": "../episode_data",
     "default_agent_id": "agent_0"
   },
 

@@ -1,54 +1,31 @@
-import json
 import matplotlib.pyplot as plt
-import os
-from collections import defaultdict
 import numpy as np
 
-from gym_continuousDoubleAuction.config_loader import constant
+from gym_continuousDoubleAuction.visualize.episode_data import load_episode
 
-def visualize_rewards(json_path=None):
+
+def visualize_rewards(run_dir=None, episode_id=None):
     """
-    Plots the cumulative rewards for each agent from the episode data JSON file.
+    Plots the cumulative reward for each agent over one episode, from the
+    per-step Parquet record (`train.episode_record.EpisodeRecorder`).
 
-    The default path comes from config/tunable_constants.json -> visualize_paths.
+    run_dir/episode_id default to the most recently recorded run/episode; see
+    `episode_data.load_episode`.
     """
-    if json_path is None:
-        json_path = constant("visualize_paths", "nav_json_path")
+    episode = load_episode(run_dir, episode_id, columns=["agent_id", "reward"])
+    print(
+        f"Episode {episode['episode_id'].iloc[0]}: {len(episode)} rows, "
+        f"{episode['agent_id'].nunique()} agents."
+    )
 
-    if not os.path.exists(json_path):
-        print(f"Error: {json_path} not found.")
-        return
-
-    print(f"Loading data from {json_path}...")
-    with open(json_path, 'r') as f:
-        data = json.load(f)
-
-    print(f"Processing {len(data)} steps...")
-    
-    # Use defaultdict to store individual rewards for each agent
-    agent_rewards = defaultdict(list)
-    
-    for step in data:
-        rewards = step.get('reward', {})
-        for agent_id, reward_val in rewards.items():
-            agent_rewards[agent_id].append(float(reward_val))
-
-    if not agent_rewards:
-        print("No reward data found for any agent.")
-        return
-
-    # Plotting
     plt.figure(figsize=(20, 10))
-    
-    # Sort agent IDs to ensure consistent legend order
-    sorted_agents = sorted(agent_rewards.keys())
-    
+
+    sorted_agents = sorted(episode["agent_id"].unique())
+
     for agent_id in sorted_agents:
-        rewards_history = agent_rewards[agent_id]
-        if rewards_history:
-            # Calculate cumulative rewards
-            cumulative_rewards = np.cumsum(rewards_history)
-            plt.plot(cumulative_rewards, label=agent_id, linewidth=1.5)
+        rewards_history = episode.loc[episode["agent_id"] == agent_id, "reward"].fillna(0.0).to_numpy()
+        cumulative_rewards = np.cumsum(rewards_history)
+        plt.plot(cumulative_rewards, label=agent_id, linewidth=1.5)
 
     plt.title('Agent Cumulative Rewards Over Time')
     plt.xlabel('Step')
