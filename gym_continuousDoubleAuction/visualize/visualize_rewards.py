@@ -8,7 +8,9 @@ from gym_continuousDoubleAuction.visualize.episode_data import load_episode
 #: The categorical palette's first five slots, in a fixed order that never
 #: changes with the data - each reward term keeps the same color across every
 #: episode and every run, which is what makes the legend readable at a glance.
-_TERM_COLORS = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4")
+#: Public (not `_`-prefixed) so `visualize_training.py` can plot the same
+#: terms, aggregated over training, in matching colors.
+TERM_COLORS = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4")
 
 
 def visualize_rewards(run_dir=None, episode_id=None):
@@ -82,7 +84,7 @@ def visualize_reward_decomposition(run_dir=None, episode_id=None, agent_id=None)
 
     plt.figure(figsize=(20, 10))
 
-    for term, color in zip(REWARD_TERMS, _TERM_COLORS):
+    for term, color in zip(REWARD_TERMS, TERM_COLORS):
         values = episode[f"reward_term_{term}"].fillna(0.0).to_numpy()
         plt.plot(np.cumsum(values), label=term, color=color, linewidth=2.0)
 
