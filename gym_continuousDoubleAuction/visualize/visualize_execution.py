@@ -4,16 +4,21 @@ import numpy as np
 from gym_continuousDoubleAuction.config_loader import constant
 from gym_continuousDoubleAuction.visualize.episode_data import load_episode
 
-#: Fixed per-quantity colors. `_rejected`/`_maker` deliberately match the
+#: Fixed per-quantity colors. `REJECTED`/`MAKER` deliberately match the
 #: rejection-rate/maker-share colors in the rates panel below - same concept,
 #: one a running count and the other a rate, so the same hue across both
 #: panels of this figure reads as the same thing rather than two unrelated
 #: series that happen to share a color.
+#:
+#: The three rate colors are public for the same reason `TERM_COLORS` is:
+#: `visualize_modules.py` plots these same three fractions aggregated per
+#: module, and a rate that changes color between the per-episode view and the
+#: per-module one reads as a different quantity.
 _PLACED_COLOR = "#008300"    # green - a successful, non-rejected order
-_REJECTED_COLOR = "#eb6834"  # orange
+REJECTED_COLOR = "#eb6834"   # orange
 _TRADES_COLOR = "#4a3aa7"    # violet - the "total fills" line, no rate counterpart
-_MAKER_COLOR = "#1baf7a"     # aqua
-_PASS_COLOR = "#2a78d6"      # blue - only appears in the rates panel
+MAKER_COLOR = "#1baf7a"      # aqua
+PASS_COLOR = "#2a78d6"       # blue - only appears in the rates panel
 
 
 def visualize_execution_quality(run_dir=None, episode_id=None, agent_id=None, window=50):
@@ -79,9 +84,9 @@ def visualize_execution_quality(run_dir=None, episode_id=None, agent_id=None, wi
 
     # --- Panel 1: cumulative counts ---
     ax_counts.plot(np.cumsum(placed), color=_PLACED_COLOR, linewidth=1.5, label="Orders placed")
-    ax_counts.plot(np.cumsum(rejected), color=_REJECTED_COLOR, linewidth=1.5, label="Orders rejected")
+    ax_counts.plot(np.cumsum(rejected), color=REJECTED_COLOR, linewidth=1.5, label="Orders rejected")
     ax_counts.plot(np.cumsum(trades), color=_TRADES_COLOR, linewidth=1.5, label="Trades (both sides)")
-    ax_counts.plot(np.cumsum(passive), color=_MAKER_COLOR, linewidth=1.5, label="Passive (maker) fills")
+    ax_counts.plot(np.cumsum(passive), color=MAKER_COLOR, linewidth=1.5, label="Passive (maker) fills")
     ax_counts.set_ylabel('Cumulative count')
     ax_counts.set_title(f'Order & Fill Activity ({agent_id})')
     ax_counts.grid(True, linestyle='--', alpha=0.5)
@@ -103,9 +108,9 @@ def visualize_execution_quality(run_dir=None, episode_id=None, agent_id=None, wi
     maker_share = rolling_ratio(passive, trades)
 
     x = np.arange(w - 1, steps)
-    ax_rates.plot(x, pass_rate, color=_PASS_COLOR, linewidth=1.5, label="Pass rate")
-    ax_rates.plot(x, rejection_rate, color=_REJECTED_COLOR, linewidth=1.5, label="Rejection rate")
-    ax_rates.plot(x, maker_share, color=_MAKER_COLOR, linewidth=1.5, label="Maker share")
+    ax_rates.plot(x, pass_rate, color=PASS_COLOR, linewidth=1.5, label="Pass rate")
+    ax_rates.plot(x, rejection_rate, color=REJECTED_COLOR, linewidth=1.5, label="Rejection rate")
+    ax_rates.plot(x, maker_share, color=MAKER_COLOR, linewidth=1.5, label="Maker share")
     ax_rates.set_ylim(0, 1)
     ax_rates.set_ylabel(f'Rate ({w}-step rolling)')
     ax_rates.set_xlabel('Step')

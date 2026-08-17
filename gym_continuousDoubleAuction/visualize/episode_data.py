@@ -43,6 +43,57 @@ def latest_run_dir(root):
     return max(run_dirs, key=os.path.getmtime)
 
 
+def load_run(run_dir=None, columns=None, complete_only=True):
+    """Every episode's rows from one run, for aggregating *across* episodes.
+
+    `load_episode` answers "what happened in this episode"; this answers
+    "what happened over this run", which is what a per-module comparison
+    needs - the league reassigns opponents every episode, so one episode is
+    one sample of one matchup.
+
+    complete_only: keep only rows whose episode actually ended. On by
+        default, and it is not a nicety: `EpisodeRecorder.flush` writes
+        whatever was still in flight when a run stopped, tagged
+        `episode_complete=False`, and those rows stop at whatever step
+        sampling stopped at with nothing else in them saying so. Every
+        per-episode aggregate - a return, a final NAV, a rate over an
+        episode - would silently count that fragment as a whole episode
+        (`EpisodeRecorder._release`). Pass False only to look at the
+        fragments deliberately.
+
+    run_dir/columns: as `load_episode`, except that `episode_complete` is
+        always read too, since the filter above needs it.
+    """
+    if run_dir is None:
+        root = default_parquet_root()
+        run_dir = latest_run_dir(root)
+        if run_dir is None:
+            raise FileNotFoundError(
+                f"no .parquet files under {root!r} - run training with "
+                "episode_data_dir set (config/train_config.json), or pass "
+                "run_dir explicitly"
+            )
+
+    needed = None
+    if columns is not None:
+        needed = sorted(set(columns) | {"episode_id", "step", "episode_complete"})
+    frame = pd.read_parquet(run_dir, columns=needed)
+    if frame.empty:
+        raise ValueError(f"{run_dir} contains no rows")
+
+    if complete_only:
+        total_episodes = frame["episode_id"].nunique()
+        frame = frame[frame["episode_complete"]]
+        if frame.empty:
+            raise ValueError(
+                f"{run_dir} has {total_episodes} episode(s) but none of them "
+                "completed - every row is from an episode that was still in "
+                "flight when the run stopped. Pass complete_only=False to "
+                "look at those fragments anyway."
+            )
+    return frame
+
+
 def load_episode(run_dir=None, episode_id=None, columns=None):
     """The rows of one episode from the per-step record, sorted by step.
 
