@@ -43,16 +43,26 @@ def latest_run_dir(root):
     return max(run_dirs, key=os.path.getmtime)
 
 
-def load_episode(run_dir=None, episode_id=None, columns=None):
-    """The rows of one episode from the per-step record, sorted by step.
+def load_run(run_dir=None, columns=None, complete_only=True):
+    """Every episode's rows from one run, for aggregating *across* episodes.
 
-    run_dir: a directory of `.parquet` files. Defaults to the most recently
-        written run under `config/tunable_constants.json` ->
-        `visualize_paths.episode_parquet_dir`.
-    episode_id: which episode. Defaults to the one holding the row with the
-        latest `wall_time`, i.e. the most recently recorded episode.
-    columns: restrict the read to these plus `episode_id`/`step`/`wall_time`,
-        which the selection above needs regardless of what the caller plots.
+    `load_episode` answers "what happened in this episode"; this answers
+    "what happened over this run", which is what a per-module comparison
+    needs - the league reassigns opponents every episode, so one episode is
+    one sample of one matchup.
+
+    complete_only: keep only rows whose episode actually ended. On by
+        default, and it is not a nicety: `EpisodeRecorder.flush` writes
+        whatever was still in flight when a run stopped, tagged
+        `episode_complete=False`, and those rows stop at whatever step
+        sampling stopped at with nothing else in them saying so. Every
+        per-episode aggregate - a return, a final NAV, a rate over an
+        episode - would silently count that fragment as a whole episode
+        (`EpisodeRecorder._release`). Pass False only to look at the
+        fragments deliberately.
+
+    run_dir/columns: as `load_episode`, except that `episode_complete` is
+        always read too, since the filter above needs it.
     """
     if run_dir is None:
         root = default_parquet_root()
@@ -66,13 +76,83 @@ def load_episode(run_dir=None, episode_id=None, columns=None):
 
     needed = None
     if columns is not None:
-        needed = sorted(set(columns) | {"episode_id", "step", "wall_time"})
+        needed = sorted(set(columns) | {"episode_id", "step", "episode_complete"})
+    frame = pd.read_parquet(run_dir, columns=needed)
+    if frame.empty:
+        raise ValueError(f"{run_dir} contains no rows")
+
+    if complete_only:
+        total_episodes = frame["episode_id"].nunique()
+        frame = frame[frame["episode_complete"]]
+        if frame.empty:
+            raise ValueError(
+                f"{run_dir} has {total_episodes} episode(s) but none of them "
+                "completed - every row is from an episode that was still in "
+                "flight when the run stopped. Pass complete_only=False to "
+                "look at those fragments anyway."
+            )
+    return frame
+
+
+def load_episode(run_dir=None, episode_id=None, columns=None):
+    """The rows of one episode from the per-step record, sorted by step.
+
+    run_dir: a directory of `.parquet` files. Defaults to the most recently
+        written run under `config/tunable_constants.json` ->
+        `visualize_paths.episode_parquet_dir`.
+    episode_id: which episode. Defaults to the most recently recorded episode
+        that actually *ended* - the latest `wall_time` among rows whose
+        `episode_complete` is true.
+
+        The completeness part is not incidental. `EpisodeRecorder.flush`
+        writes whatever was in flight when the run stopped, so the row with
+        the highest `wall_time` in a finished run is very often a fragment of
+        a few steps from an episode that never ended (`_release`). Picking it
+        by default drew a plot of that fragment while saying nothing about
+        it - a five-step chart of what should be a `max_step` episode. An
+        explicitly passed `episode_id` is always honoured, complete or not,
+        because asking for one by name is asking for that one.
+    columns: restrict the read to these plus `episode_id`/`step`/`wall_time`/
+        `episode_complete`, which the selection above needs regardless of what
+        the caller plots.
+    """
+    if run_dir is None:
+        root = default_parquet_root()
+        run_dir = latest_run_dir(root)
+        if run_dir is None:
+            raise FileNotFoundError(
+                f"no .parquet files under {root!r} - run training with "
+                "episode_data_dir set (config/train_config.json), or pass "
+                "run_dir explicitly"
+            )
+
+    needed = None
+    if columns is not None:
+        needed = sorted(
+            set(columns) | {"episode_id", "step", "wall_time", "episode_complete"}
+        )
     frame = pd.read_parquet(run_dir, columns=needed)
     if frame.empty:
         raise ValueError(f"{run_dir} contains no rows")
 
     if episode_id is None:
-        episode_id = frame.loc[frame["wall_time"].idxmax(), "episode_id"]
+        complete = frame[frame["episode_complete"]]
+        if complete.empty:
+            # Nothing finished. Better a fragment than nothing, but say so:
+            # every per-step chart drawn from it stops wherever sampling did.
+            print(
+                f"warning: no completed episode in {run_dir} - falling back to "
+                "an episode that was still in flight, so it stops wherever "
+                "sampling stopped rather than at the end of an episode."
+            )
+            complete = frame
+        if complete["wall_time"].notna().any():
+            episode_id = complete.loc[complete["wall_time"].idxmax(), "episode_id"]
+        else:
+            # `EpisodeRecorder` always stamps `wall_time`, so this is a
+            # hand-built or damaged file. File order is a worse answer than
+            # the newest episode, but it is an answer.
+            episode_id = complete["episode_id"].iloc[-1]
 
     episode = frame[frame["episode_id"] == episode_id].sort_values("step")
     if episode.empty:
