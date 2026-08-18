@@ -20,7 +20,7 @@ For a detailed breakdown of codebase modernizations, please refer to the [17_cha
 # Appendix:
 10) [Observation space](#observation-space)
 11) [Action space](#action-space)
-12) [Reward](#Reward)
+12) [Reward](#reward)
 13) [Making sense of the render output](#making-sense-of-the-render-output)
 14) [Generated LOB](#generated-lob)
 
