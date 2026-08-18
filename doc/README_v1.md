@@ -242,11 +242,11 @@ The two trailing scalars are market-level features carried by every frame in the
 - **`log_mid`** restores the price anchor that midpoint normalization discards. Without it, a market at price 10 and one at price 100 produce identical observations even though `min_tick` is absolute and therefore worth 10x more in the former.
 - **`log1p_spread_ticks`** reports the bid-ask spread in the same tick units the action space quotes in. A resting book can never be locked or crossed, so a two-sided book always has a spread of at least 1 tick (`log1p(1) = 0.693`), leaving `0.0` as an unambiguous sentinel for "no two-sided market".
 
-See [CHANGES_obs_market_features.md](gym_continuousDoubleAuction/doc/CHANGES_obs_market_features.md) for details.
+See [05_observation_space.md §3](05_observation_space.md#3-market-level-scalars) for details.
 
 *Note: While agents observe normalized LOB snapshots, their discrete price level choices (0–9) map to actual unnormalized orderbook prices in `self.agg_LOB_raw` when submitting orders into the market.*
 
-For a detailed mathematical description of observation normalization, see [CHANGES_obs_normalization.md](gym_continuousDoubleAuction/doc/CHANGES_obs_normalization.md). For temporal history stacking details, see [CHANGES_temporal_obs_history.md](gym_continuousDoubleAuction/doc/CHANGES_temporal_obs_history.md).
+For a detailed mathematical description of observation normalization, see [05_observation_space.md §2](05_observation_space.md#2-price-and-volume-normalization). For temporal history stacking details, see [05_observation_space.md §4](05_observation_space.md#4-temporal-history-stacking).
 
 ---
 
