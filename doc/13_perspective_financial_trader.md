@@ -243,40 +243,56 @@ imbalance was studied at some point; it just never became a model input.
 
 | Metric | Where |
 |---|---|
-| NAV per agent, per step | `info["NAV"]` ([`info_helper.py`](../gym_continuousDoubleAuction/envs/exchg/info_helper.py)) |
+| NAV per agent, per step | `info["NAV"]` ([`info_helper.py`](../gym_continuousDoubleAuction/envs/exchg/info_helper.py)), and the `nav` / `nav_str` columns of the Parquet record |
+| Inventory, VWAP, cash, cash-on-hold, position value | `info`, per agent per step, and their own columns |
+| Drawdown level and the running peak | `info["drawdown"]`, `info["max_nav"]` |
+| Top of book and the raw spread | `info["best_bid"]` / `["best_ask"]` / `["spread"]` — recorded rather than derived and discarded |
+| Per-step activity | `num_trades_step`, `num_passive_fills_step`, `order_step_placed`, `num_rejected_step`, `is_pass_action` |
+| Reward, decomposed | `info["reward"]` and `info["reward_terms"]` — five signed contributions summing to it |
 | Cumulative trade count | `info["num_trades"]` |
-| Reward | `info["reward"]` |
 | `total_profit` = NAV − initial NAV | [`calculate.py`](../gym_continuousDoubleAuction/envs/account/calculate.py) |
 | System NAV / system profit | [`exchg_helper.py`](../gym_continuousDoubleAuction/envs/exchg/exchg_helper.py) |
 | NAV conservation check | end of every episode, callback |
-| League mean/std return, league size | RLlib metrics (3 values total) |
-| NAV / cumulative-reward plots | `visualize/visualize_nav.py`, `visualize_rewards.py` |
+| Per-episode desk metrics | `episode_nav_mean/_min/_max`, `mean_agent_drawdown`, `mean_abs_net_position`, `mean_num_trades`, `maker_fill_ratio_max` |
+| League mean/std return, league size, promotions, idle modules | RLlib metrics |
+| NAV, drawdown, reward decomposition, execution-quality and order-book charts | `visualize/run_all.py` |
 
 ### What is absent
 
-Every risk-adjusted statistic a desk would use:
+The gap has narrowed from "nothing but NAV" to a specific list. The counters and levels a desk
+statistic is computed *from* are all captured now — inventory, drawdown, maker fills, spread — and
+the per-step Parquet record holds the NAV trajectory the path-dependent ones need. What is missing
+is the reduction, not the input:
 
-- **Sharpe / Sortino** on the per-step NAV return series
-- **Maximum drawdown** as a reported metric (it is penalised in the reward but never reported)
+- **Sharpe / Sortino** on the per-step NAV return series — computable from the record, not computed
+- **Maximum drawdown over the episode** — the per-step *level* is reported; the episode maximum is
+  not reduced into a metric
 - **Hit rate**, average win / average loss
 - **Turnover** and P&L per unit of turnover
-- **Inventory statistics** — mean and max |position|, time-weighted inventory
-- **Maker/taker fill ratio** — the counters exist (`num_passive_fills_step`) but are consumed by
-  the reward and reset, never logged
+- **Time-weighted inventory** — mean and max |position| are metrics; the time-weighted version is not
 - **Realised vs unrealised P&L split** — `profit` and `total_profit` exist on the account but are
   not exported to `info`
-- **Quote presence / time at the touch** — the basic market-making KPI
-- **Adverse selection** — mark-out P&L at t+k after a passive fill
+- **Quote presence / time at the touch** — the basic market-making KPI. This one genuinely needs
+  new computation: nothing tracks how long an agent's order rested at the best price
+- **Adverse selection** — mark-out P&L at t+k after a passive fill. Also new computation
 
-Note also that `info["NAV"]` is serialised as a **string** — presumably to survive `Decimal` JSON
-encoding — and every consumer parses it back with `float()`. That round trip discards the
-exactness `Decimal` was chosen for, and it makes the info dict awkward for RLlib metric
-aggregation.
+One caveat on the maker/taker ratio, because the obvious version of it is a tautology here: in a
+closed double auction exactly one side of every fill is passive, so the *aggregate* maker share is
+0.5 in every episode regardless of behaviour. A real 3-iteration run reported 0.5000 three times,
+which is what exposed it. `maker_fill_ratio_max` — the most maker-like agent's share of its own
+fills, among agents with enough fills for the ratio to mean anything — is the version that carries
+information.
 
-**Recommendation:** compute per-episode desk metrics in `SelfPlayCallback.on_episode_end` and
-push them through `metrics_logger.log_value` so they land in TensorBoard alongside returns. The
-episode-end hook already has everything it needs. See
-[11_logging_and_observability.md](11_logging_and_observability.md) §4.
+Note also that `info["NAV"]` is serialised as a **string**. That is deliberate: it is the exact
+`str()` of a `Decimal`, and the conservation check parses it back with `Decimal` rather than
+`float`, which is what makes the check exact instead of approximate. The other money fields are
+floats, because they are read for plots and diagnostics where a float is both sufficient and
+directly usable. The Parquet record carries both — `nav` for arithmetic and `nav_str` for the
+exact value.
+
+**Recommendation:** the remaining reductions belong in `SelfPlayCallback.on_episode_end` beside
+the ones already there, or in `visualize/` for anything that needs the whole trajectory. See
+[11_logging_and_observability.md](11_logging_and_observability.md) §1.2 and §2.
 
 ---
 

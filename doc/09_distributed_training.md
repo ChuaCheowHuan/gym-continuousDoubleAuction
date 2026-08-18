@@ -71,21 +71,33 @@ cfg = TrainConfig(
 This creates 2 actors, each running 2 environment copies — 4 CDA environments total, 8 agents
 each, split across 2 processes plus the driver.
 
-```
-Driver process
-  ├─ holds: Algorithm, LearnerGroup, the "real" SelfPlayCallback
-  │
-  ├─ EnvRunner actor #1 (separate process)
-  │     env copy A (8 agents)
-  │     env copy B (8 agents)
-  │     + its OWN pickled SelfPlayCallback
-  │     + its own copy of every module's weights
-  │
-  └─ EnvRunner actor #2 (separate process)
-        env copy C (8 agents)
-        env copy D (8 agents)
-        + its own pickled SelfPlayCallback
-        + its own copy of every module's weights
+```mermaid
+flowchart TB
+    subgraph D["Driver process"]
+        ALG["Algorithm"]
+        LGP["LearnerGroup (num_learners = 0: in-process)"]
+        CB["the real SelfPlayCallback<br/>the only champion pool"]
+        LER["local EnvRunner (idle for sampling)"]
+    end
+
+    subgraph R1["EnvRunner actor 1 — separate process"]
+        E1["env copy A, 8 agents"]
+        E2["env copy B, 8 agents"]
+        C1["its OWN pickled SelfPlayCallback<br/>+ its own EpisodeRecorder<br/>+ its own copy of every module's weights"]
+    end
+
+    subgraph R2["EnvRunner actor 2 — separate process"]
+        E3["env copy C, 8 agents"]
+        E4["env copy D, 8 agents"]
+        C2["its own pickled SelfPlayCallback<br/>+ its own EpisodeRecorder<br/>+ its own copy of every module's weights"]
+    end
+
+    ALG -->|"sample()"| R1
+    ALG -->|"sample()"| R2
+    R1 -->|"batch + metrics"| LGP
+    R2 -->|"batch + metrics"| LGP
+    CB -->|"add_module, force-pushed weights,<br/>refreshed mapping fn"| R1
+    CB -->|"add_module, force-pushed weights,<br/>refreshed mapping fn"| R2
 ```
 
 Per `algo.train()` call:

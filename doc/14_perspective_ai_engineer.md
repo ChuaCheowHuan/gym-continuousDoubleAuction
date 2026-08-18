@@ -19,7 +19,7 @@ production-deployable as a service, but as a research codebase it is above avera
 | Test LOC | ~2,430 |
 | Unit tests | 90, **all passing** |
 | Integration tests | 13 across 3 classes covering local / remote-EnvRunner / remote-Learner |
-| CI | GitHub Actions, Python 3.11 + 3.12 matrix, three staged jobs |
+| CI | GitHub Actions on Python 3.12: a `test` job (unit → random smoke run → RLlib integration) and a `packaging` job that installs the built wheel into a clean venv |
 | `logging` module usage | **0** — everything is `print()` |
 | `print()` calls in `envs/` + `train/` | ~86, incl. **42 in the self-play callback** and 13 in the env |
 | `sys.exit()` in library code | **6 live** (all in `orderbook.py`), 2 more commented out |
@@ -68,7 +68,7 @@ codebase most needs.
 
 ### The declared vs. actual import mismatch
 
-`setup.py:32-41` declares:
+[`setup.py`](../setup.py) declares:
 
 ```python
 install_requires = ["gymnasium==1.2.2", "numpy>=2.5,<3", "pandas>=3.0,<4",
@@ -83,9 +83,9 @@ packages:
 
 | Import | Location | Declared in `install_requires`? |
 |---|---|---|
-| `ray.rllib.env.multi_agent_env` | [`continuousDoubleAuction_env.py:6-7`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py#L6-L7) | **No** — it is in the `[rllib]` extra |
-| `sklearn.utils.shuffle` | [`action_helper.py:5`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py#L5) | **No** — `scikit-learn` is in the `[plot]` extra |
-| `six.moves.cStringIO` | [`orderbook.py:10`](../gym_continuousDoubleAuction/envs/orderbook/orderbook.py#L10), [`orderlist.py:101`](../gym_continuousDoubleAuction/envs/orderbook/orderlist.py#L101) | **No** — not in `requirements.txt` either |
+| `ray.rllib.env.multi_agent_env` | [`continuousDoubleAuction_env.py`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py) | **No** — it is in the `[rllib]` extra |
+| `sklearn.utils.shuffle` | [`action_helper.py`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py) | **No** — `scikit-learn` is in the `[plot]` extra |
+| `six.moves.cStringIO` | [`orderbook.py`](../gym_continuousDoubleAuction/envs/orderbook/orderbook.py), [`orderlist.py`](../gym_continuousDoubleAuction/envs/orderbook/orderlist.py) | **No** — not in `requirements.txt` either |
 
 `pip install gym_continuousDoubleAuction` without the extras produces an `ImportError` on the
 first `import`. CI never catches this because it always installs the full `requirements.txt`.
@@ -227,8 +227,8 @@ The concurrency reasoning in the callback is the strongest code in the repo:
 
 | Bottleneck | Detail |
 |---|---|
-| **Per-episode pickles** | `episode_data_dir` writes one file per episode containing every step's obs (168 floats), action, reward and info. At `max_step=4096` that is ~4,096 dicts × 8 agents held in memory then serialised, per episode, per worker. It is configurable to `None` (`--no-episode-data`) and the docstring warns about it, but the default in both `TrainConfig` and the notebook is **on**. |
-| **`_process_counter_party` linear scan** | [`trader.py:290-305`](../gym_continuousDoubleAuction/envs/agent/trader.py#L290-L305) scans all agents per fill → O(fills × agents). Fine at 8 agents; a dict lookup is the obvious fix. |
+| ~~**Per-episode pickles**~~ **— fixed** | This used to `pickle.dump` every step of every episode, synchronously, inside `on_episode_end`: ~34 MB per 4,096-step episode at 8 agents, held in memory and then serialised, per episode, per worker — and `--no-episode-data` disabled only the write, not the accumulation. It is now Parquet written by a background thread per process, bounded by `episode_sample_every` (one episode in 10) and `episode_max_bytes` (2 GiB per writer), and the off switch is genuinely off. Every failure inside the writer is a warning, so a full disk can no longer kill an env runner. See [11](11_logging_and_observability.md) §1.1. |
+| **`_process_counter_party` linear scan** | [`trader.py`](../gym_continuousDoubleAuction/envs/agent/trader.py) scans all agents per fill → O(fills × agents). Fine at 8 agents; a dict lookup is the obvious fix. |
 | **`set_agg_LOB` called twice per step** | Once pre-action (display only) and once post-action. The pre-action call is pure overhead when `is_render=False`. |
 | **`Decimal` arithmetic** | Correct but roughly an order of magnitude slower than float. Acceptable for a ledger; it is in the hot matching path. |
 | **`env.render()` string building** | Builds pandas DataFrames per step when enabled. Must stay off in training. |
@@ -279,7 +279,7 @@ Full inventory in [10_testing.md](10_testing.md). Engineering-relevant summary:
 | `OrderBook.__str__0`, `Order.__str__0`, `OrderList.to_str` | superseded |
 | `OrderBook.get_volume_at_price` | commented out |
 | `envs/orderbook/test/example.py`, `genOrders.py` (353 LOC) | standalone scripts, not collected by pytest |
-| ~200 LOC of commented-out code | e.g. `continuousDoubleAuction_env.py:100-133, 178-207`, `orderbook.py:260-318`, `action_helper.py:23-36` |
+| ~200 LOC of commented-out code | The old `step` and the old space getters in `continuousDoubleAuction_env.py`, the old `modify_order` and `get_volume_at_price` in `orderbook.py`, the old `Tuple` `act_space` in `action_helper.py` |
 | `CODEOWNER` **and** `CODEOWNERS` | duplicate files at the repo root |
 
 The ~270 LOC of unreachable telemetry in `train/` — three modules that looked like a working
@@ -298,7 +298,7 @@ observation rather than dropping (see [13](13_perspective_financial_trader.md) �
   note about Ray's object store using `/dev/shm`. Both are real operational lessons.
 - **Checkpointing** — `algo.save()` every `chkpt_freq` iterations plus a final save, with
   `--restore` and an Adam-`betas` deserialisation workaround
-  ([`train.py:230-242`](../gym_continuousDoubleAuction/train/train.py#L230-L242)).
+  ([`train.py`](../gym_continuousDoubleAuction/train/train.py)).
 - **A clean CLI** — `python -m gym_continuousDoubleAuction.train.train --help`.
 - **`.gitignore` covers the artefact paths**, including a comment explaining that `episode_data`
   is written relative to the *working directory* so it can land at the repo root. No build
@@ -385,12 +385,14 @@ is a reimplementation of retention and fault tolerance that `tune.Tuner` would p
 
 Low risk overall (a self-contained simulator), but two notes:
 
-1. **`pickle` for episode data** and the `visualize/inspect_latest_episode*.py` loaders. Pickle
-   executes arbitrary code on load. Fine for self-produced files; unsafe if episode data is ever
-   shared between users. Two `.pkl` fixtures are committed under `episode_data/`. Prefer
-   `npz` / `parquet` / `jsonl`.
+1. ~~**`pickle` for episode data**~~ — **fixed.** The per-step record is Parquet, read by
+   `ray.data.read_parquet`, pandas or DuckDB without this package installed, so the
+   arbitrary-code-execution-on-load surface is gone. The `visualize/inspect_latest_episode*.py`
+   loaders read Parquet too, and the two committed `.pkl` files are deleted.
 2. **`sys.exit` in a worker process** (§5.5) — a denial-of-availability path for a long training
-   run, not a security issue as such.
+   run, not a security issue as such. Still open (S3-7): it raises `SystemExit`, which derives
+   from `BaseException`, so inside a Ray actor it kills the worker rather than surfacing a
+   traceback.
 
 ---
 

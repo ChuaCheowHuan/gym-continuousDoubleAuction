@@ -6,6 +6,55 @@ marks a finding confirmed by executing the code; raw output is in
 
 ---
 
+## The register at a glance
+
+```mermaid
+mindmap
+  root((Findings))
+    S1 Blocking
+      S1-1 critic gets zero gradient
+        vf_clip_param 10 vs NAV-scale targets
+      S1-2 no private state in the observation
+      S1-3 doing nothing dominates
+      S1-4 bare env could not trade — fixed
+    S2 Major
+      S2-1 drawdown charged as a level
+      S2-2 observation scales saturate tanh
+      S2-3 cost proxies 10^5 too small
+      S2-4 bankrupt agents never terminated
+      S2-5 self-matching enables mark manipulation
+      S2-6 per-frame normalizer
+      S2-7 no trade-flow features
+      S2-8 no logging framework — fixed
+    S3 Moderate
+      action space
+        S3-1 half of size_mean is a no-op
+        S3-2 size_sigma is inert
+        S3-3 env-side sampling breaks the log-prob
+      simulator and config
+        S3-4 the book's tick_size is inert
+        S3-5 seeding — fixed
+        S3-7 sys.exit in the engine
+        S3-20 dead escrow path — fixed
+      training and league
+        S3-8 detached callback — fixed
+        S3-11 promotion cannot detect passivity
+        S3-12 returns not comparable across roles
+        S3-16 idle opponent killed promotion — fixed
+        S3-17 retention deleted fresh checkpoints — fixed
+      packaging
+        S3-6 install_requires — fixed
+        S3-18 config not in the wheel — fixed
+        S3-19 episodes ran one step long — fixed
+    S4 Minor
+      dead code, hygiene, tooling
+      S4-9 pickle episode data — fixed
+      S4-14 dead-action fraction — partly fixed
+      S4-18 duplicate CODEOWNER files
+```
+
+---
+
 ## Severity legend
 
 | Level | Meaning |
@@ -242,7 +291,7 @@ not part of the action whose log-probability PPO uses in the importance ratio �
 never observes the realisation. Irreducible advantage variance.
 **Fix:** emit size directly as a `Box` action.
 
-### S3-4 · `tick_size` config is silently discarded **[partly fixed]**
+### S3-4 · The order book's `tick_size` is inert **[partly fixed]**
 
 `tick_size` used to exist as two independent values: a hardcoded `min_tick = 1` in
 `Action_Helper` that actually drove prices, and an `OrderBook` argument that was stored and never
@@ -251,18 +300,21 @@ read. Setting the config key therefore changed nothing anywhere.
 **Fixed:** `Action_Helper.min_tick` now comes from the `tick_size` config key, so the key controls
 the price grid agents quote on. Both defaults were 1, so behaviour at default config is unchanged.
 
+**Also fixed:** `reset()` no longer rebuilds the book as `OrderBook(1, ...)`; it uses
+`self.tick_size`, the same tick `Exchg_Helper` built the first book with. The change is inert
+(the book never reads the value) but there is no reason to keep a second number in the env.
+
 **Deliberately not fixed — the action layer should be the single definition, and `OrderBook`'s
-copy should be deleted.** `OrderBook` still accepts a `tick_size`, stores it, and never reads it;
-`reset()` still hardcodes `OrderBook(1, ...)`. That argument makes it look as though the matching
-engine enforces a grid, which it does not — there is no rounding or tick validation anywhere in
-the matching path.
+copy should be deleted.** `OrderBook` still accepts a `tick_size`, stores it, and never reads it.
+That argument makes it look as though the matching engine enforces a grid, which it does not —
+there is no rounding or tick validation anywhere in the matching path.
 
 The reason to delete rather than enforce: there is exactly **one** price producer in the system.
 Every price reaching `process_order` comes from `_set_price` via `place_order`, and `_set_price`
 builds prices as `anchor ± k × min_tick`, so output is on the grid by construction. A snapping or
 validation step in the book would re-derive a guarantee the producer already provides. Deleting
 the parameter is also nearly free: 9 of the 11 `OrderBook(...)` call sites already use the no-arg
-form, and dropping it makes the hardcoded `1` in `reset()` disappear rather than need a fix.
+form.
 
 **This is deferred because the `envs/orderbook/` package is off-limits to changes.** It requires
 editing `orderbook.py` plus the two call sites in `exchg_helper.py` and
@@ -280,10 +332,12 @@ all anchors 10–100, ticks {0.01, 0.05, 0.1, 0.2, 0.25, 0.3} and 10 levels eith
 combination drifts (`10 − 9 × 0.3 → 7.300000000000001`). Worth a quantize step if non-integer
 ticks are ever used in earnest, but it is not the reason to make the change.
 
-Related, and still open: the price anchor is drawn from `randint(10, 100)`, so with a fixed tick
-the *relative* tick varies **10×** across episodes — a large uncontrolled non-stationarity, only
-partly mitigated by exposing `log_mid`. `initial_price_min/max` are read by `reset()` but omitted
-from `TrainConfig.env_config`, so training cannot narrow the range.
+Related, and still open as a *default*: the price anchor is drawn from `randint(10, 100)`, so with
+a fixed tick the *relative* tick varies **10×** across episodes — a large uncontrolled
+non-stationarity, only partly mitigated by exposing `log_mid`. What has changed is that this is
+now a choice rather than a limitation: `initial_price_min` / `initial_price_max` are `TrainConfig`
+fields and are forwarded by `env_config`, so a run can narrow the range. The checked-in config
+still ships the wide one.
 
 ### S3-5 · Seeding is entirely non-functional **[verified, fixed]**
 
@@ -544,18 +598,18 @@ Pinned by `TestRetention` and `TestForeignCheckpoints` in `test_checkpointing.py
 |---|---|
 | S4-1 | **Partly fixed.** The `g_store` trio (`store_handler`, `log_handler`, `plot_handler`, ~270 LOC) has been deleted; `helper.py`'s order-imbalance utilities are still unused (and would be valuable as observation features — S2-7) |
 | S4-2 | `envs/agent/random_agent.py` returns the **old 5-tuple** action format; superseded by `RandomRLModule` but still in `Trader`'s MRO **[verified]** |
-| S4-3 | Dead methods: `State_Helper.state_diff`, `Action_Helper._set_side/_set_type/_higher/_lower`, `OrderBook.__str__0`, `Order.__str__0`, `OrderList.to_str`; `max_price` is a parameter of `_set_price` that its body never reads |
-| S4-4 | ~200 LOC of commented-out code (`continuousDoubleAuction_env.py:100-133,178-207`; `orderbook.py:260-318`; `action_helper.py:23-36`) |
+| S4-3 | Dead methods: `State_Helper.state_diff`, `Action_Helper._set_side/_set_type/_higher/_lower`, `OrderBook.__str__0`, `Order.__str__0`, `OrderList.to_str`. The unread `max_price` parameter of `_set_price` has since been removed |
+| S4-4 | ~200 LOC of commented-out code: the old `step` and space getters in `continuousDoubleAuction_env.py`, the old `modify_order` and `get_volume_at_price` in `orderbook.py`, the old `Tuple` `act_space` in `action_helper.py` |
 | S4-5 | `test_accounting.py::test_insufficient_funds` is an empty `pass` with a 15-line comment debating the intended behaviour — a TODO shipped as a test |
 | S4-6 | No linter, formatter, pre-commit or coverage tooling; type hints only in `train/` and essentially absent from `envs/` |
 | S4-7 | `is_render` defaults to **`True`** on the env, so a direct instantiation prints a full book/tape/account dump per step. `_render` also has **side effects** — it nulls `model_actions`/`LOB_actions`/`shuffled_actions` and clears `seq_trades`, so toggling it changes state evolution |
 | S4-8 | The Docker image duplicates the dependency list instead of `COPY`ing `requirements.txt` |
-| S4-9 | Episode data is `pickle` (arbitrary code execution on load); two `.pkl` fixtures are committed |
+| S4-9 | **Fixed.** The per-step record is Parquet with a declared schema, written off the sampling thread and bounded by `episode_sample_every` / `episode_max_bytes`; the two committed `.pkl` files are deleted. Nothing in the repository writes a pickle |
 | S4-10 | Mixin-based env architecture: helpers read attributes they do not own, guarded by defensive `getattr` defaults; not independently testable |
 | S4-11 | `_process_counter_party` linear-scans all agents per fill; `set_agg_LOB` is called twice per step (the pre-action call is display-only) |
 | S4-12 | No `evaluate.py` / serving path — no way to *use* a trained checkpoint |
 | S4-13 | No property-based tests, despite the order book having clearly stated invariants (tree volume == Σ level volumes, no crossed book, Σ NAV == Σ initial cash) |
-| S4-14 | Rejected and unmatched orders return empty lists silently — nothing logged, penalised or surfaced in `infos`, so the dead-action fraction is unmeasurable |
+| S4-14 | **Partly fixed.** Refused orders increment `num_rejected_step`, which reaches `infos` and the `order_rejection_fraction` metric; `is_pass_action` separates a deliberate pass. Still open: `modify` / `cancel` with nothing to target has no counter, and no dead action is penalised or visible to the agent |
 | S4-15 | `Box(-inf, inf)` observation bounds, though every quantity is boundable; disables RLlib observation filters and space-based sanity checks |
 | S4-16 | `test_shared_history_multi_agent_uniformity` encodes S1-2 as a requirement and must be deleted when private state is added |
 | S4-17 | The sign convention on ask blocks is redundant (side is already encoded by block position) and prevents natural weight sharing between the two sides |
@@ -577,9 +631,9 @@ Recorded so nobody re-files them. Each was a real defect at the time.
 | Champion snapshots never reached the EnvRunners | Force-pushed with a `WEIGHTS_SEQ_NO`-free `set_state`, with the reasoning in a comment |
 | Matchmaking seeded from salted `hash()` | Seeds from `zlib.crc32` — reproducible across processes |
 | Evicted champions leaked memory | `Algorithm.remove_module` is called |
-| Per-episode pickles were unconditional | `episode_data_dir=None` / `--no-episode-data` disables them |
+| Per-episode pickles were unconditional | Replaced by a bounded Parquet record on a background thread; `episode_data_dir=None` / `--no-episode-data` now disables the accumulation as well as the write (S4-9) |
 | `episode_data/` was untracked noise | In `.gitignore`, both paths, with an explanatory comment |
-| **No CI** — dead `.travis.yml` | GitHub Actions, 3.11/3.12 matrix, three staged jobs |
+| **No CI** — dead `.travis.yml` | GitHub Actions on Python 3.12: a `test` job (unit → random smoke run → RLlib integration) and a `packaging` job that builds the wheel and uses it from a clean venv outside the checkout |
 | `setup.py` broken for non-editable installs | ~~`find_packages()`, real `install_requires` and extras, `__init__.py` files added~~ **Premature.** That pass fixed package discovery and left two defects that still made every non-editable install fail: `install_requires` did not name `ray[rllib]`, `scikit-learn` or `six` (S3-6), and no config JSON was in the distribution at all (S3-18). Both are fixed now, and a wheel built from this tree has been installed into a clean environment and used to construct an env |
 | `observation_space`/`action_space` were plain dicts | `observation_spaces`/`action_spaces` (plural, new stack) plus per-agent getters; agent ordering stable across processes |
 | Trainable network was an 8-unit bottleneck | `fcnet_hiddens=[256,256]`, `tanh`, `vf_share_layers=False` |
@@ -621,7 +675,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **90 unit tests pass**, covering every position-flip path, cash-check edge case, modify-order
+- **474 unit tests pass** (plus 36 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant.
 
 ---
@@ -641,7 +695,8 @@ Roughly two to three weeks of work, ordered so each step unblocks the next.
 6. Terminate and flatten bankrupt agents (S2-4)
 7. `size_mean → Box(0,1)`; scale or drop `size_sigma` (S3-1, S3-2)
 8. Positive decaying `entropy_coeff`; raise `std_dev_multiplier`; refuse zero-trade champions (S3-11)
-9. One `np.random.Generator` threaded through the env (S3-5)
+9. ~~One `np.random.Generator` threaded through the env (S3-5)~~ — **done**. All three draws read
+   `self.np_random`; `test_seeding.py` pins it, and `scikit-learn` left with the fix
 
 **Phase 3 — fix the observation pipeline (≈3 days)**
 10. Normalize the whole stack by the current `M_t`; expose `M_t / M_{t−1} − 1` (S2-6)
@@ -660,7 +715,9 @@ Roughly two to three weeks of work, ordered so each step unblocks the next.
 16. ~~`logging` replaces `print`; a conservation violation stops the run (S2-8)~~ — **done**. The
     stop moved to the driver once [21 §2.1](21_logging_review.md) found that raising in the episode
     hook stops nothing at `num_env_runners > 0`
-17. Fix `install_requires`; drop `six`, `sklearn` and the unused `import ray` (S3-6)
+17. ~~Fix `install_requires`; drop `sklearn` and the unused `import ray` (S3-6)~~ — **done**, with
+    a `packaging` CI job so an installed copy is exercised rather than assumed. `six` is declared
+    rather than dropped, because it is imported from the off-limits `envs/orderbook/`
 18. `sys.exit` → `raise ValueError` (S3-7)
 19. Delete dead code (S4-1..4) — the `g_store` trio (S4-1) and the `build_algo` restore path (S3-8) are done
 20. Add `ruff` / `black` / `pre-commit` / `pytest-cov`

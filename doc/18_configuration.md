@@ -25,6 +25,48 @@ beginning with `_`, at every level.
 | [`config/cli_defaults.json`](../config/cli_defaults.json) | Flag defaults with no other config home | `CDA_rand` |
 | [`config/runtime_profiles.json`](../config/runtime_profiles.json) | *Where* a run executes: the `gpu` / `cpu` hardware sets and per-platform paths | `train/runtime.py`, `CDA_train.ipynb` |
 
+```mermaid
+mindmap
+  root((config/))
+    train_config.json
+      what the run does
+      identical on every machine
+      environment
+        agent counts, cash, max_step
+        sizing, reward coefficients
+      rollouts
+        num_env_runners, sample_timeout_s
+      learner
+        num_learners, gpus per learner
+      ppo
+        lr, epochs, net shape
+      league_self_play
+        promotion, matchmaking
+        episode record bounds
+        NAV tolerance
+      run
+        iterations, checkpoints
+        run_id, log levels
+    env_defaults.json
+      fallbacks for a bare env
+      deliberately smaller and noisier
+      never reached by a training run
+    tunable_constants.json
+      structural, not per-run
+      observation_layout
+      action_space
+      module_id_prefixes
+      logging
+      visualize_paths
+    cli_defaults.json
+      CDA_rand flags only
+      train.py deliberately absent
+    runtime_profiles.json
+      where the run executes
+      hardware: gpu and cpu sets
+      platforms: colab, docker, local
+```
+
 The split between the first file and the last is the one worth holding on to: `train_config.json`
 is **what the run does** and is identical on every machine; `runtime_profiles.json` is **what the
 machine is** and changes with it. Moving a run between hardware sets changes wall-clock time and
@@ -59,6 +101,36 @@ fail.
 `max_step × num_episodes_per_iter`; `limit_max_size` is `mkt_max_size × limit_size_multiple`. None
 of these appear in any file. Writing a derived value down creates a second copy that can disagree
 with the first — the same failure the files exist to prevent, one level up.
+
+---
+
+### 1.3 Precedence
+
+```mermaid
+flowchart TD
+    subgraph T["A training run"]
+        A["config/train_config.json<br/>supplies every TrainConfig default"] --> B["--config other.json<br/>keys it omits fall back to the above"]
+        B --> C["explicit CLI flags<br/>(unset flags are absent, not defaulted)"]
+        C --> D["TrainConfig"]
+        D -->|"runtime profile, if one is applied"| E["dataclasses.replace<br/>hardware + path fields only"]
+        E --> F["env_config -> continuousDoubleAuctionEnv"]
+    end
+
+    subgraph S["A bare env"]
+        G["continuousDoubleAuctionEnv(config)"] --> H{"key in config?"}
+        H -->|"yes"| I["use it"]
+        H -->|"no"| J["config/env_defaults.json"]
+        J --> K{"key present there?"}
+        K -->|"no"| L["raise, naming the file and its keys"]
+    end
+
+    M["config/tunable_constants.json"] --> N["read directly at the point of use:<br/>state_helper, action_helper,<br/>policy_handler, logging_setup, visualize/"]
+```
+
+Two properties this arrangement buys. **An unset CLI flag is absent from the namespace** — every
+flag declares `argparse.SUPPRESS` — so the config file's value survives instead of being
+overwritten by an argparse default. And **a missing key raises** rather than falling back to a
+literal, which is what makes "no module holds a copy of a configured value" checkable: see §1.1.
 
 ---
 

@@ -44,7 +44,7 @@ all failures of the same plumbing applied to the other channels:
 * the level and the log directory travel to workers as `$CDA_LOG_LEVEL` / `$CDA_LOG_DIR`, exported
   by `configure()` **and** passed through `ray.init(runtime_env=...)` by `merge_runtime_env()`, so
   they arrive whether or not this process started the cluster;
-* the log directory is made **absolute** before export (`logging_setup.py:269`);
+* the log directory is made **absolute** before export (`configure` in `logging_setup.py`);
 * each process writes its own file, tagged with pid *and* Ray worker id, because
   `RotatingFileHandler` has no cross-process interlock;
 * the training iteration is pushed to the runners each iteration by `train._broadcast_iteration`,
@@ -89,9 +89,8 @@ assertion does stop the run. That is why this has never been observed.
 
 ### 2.2 The per-step store accumulates even when episode data is disabled
 
-`on_episode_step` appends to `self.store[episode.id_]` unconditionally
-(`league_based_self_play_callback.py:304`); only the *write* is guarded by `episode_data_dir is not
-None` (`:336`). So `--no-episode-data` / `episode_data_dir: null` removes the I/O and keeps the
+`on_episode_step` appended to `self.store[episode.id_]` unconditionally; only the *write* in
+`on_episode_end` was guarded by `episode_data_dir is not None`. So `--no-episode-data` / `episode_data_dir: null` removes the I/O and keeps the
 memory.
 
 **[verified]** by driving the callback with `episode_data_dir=None` for 1000 steps: 1000 step dicts
@@ -109,7 +108,7 @@ Compare the two paths a worker writes:
 
 | Path | Made absolute | Reaches the worker via | Run-scoped |
 |---|---|---|---|
-| log dir | yes, `os.path.abspath` at `logging_setup.py:269` | `$CDA_LOG_DIR` **and** `runtime_env` | yes (`run_dir`) |
+| log dir | yes, `os.path.abspath` in `logging_setup.configure` | `$CDA_LOG_DIR` **and** `runtime_env` | yes (`run_dir`) |
 | `episode_data_dir` | no | pickled into the callback | **no** |
 
 `episode_data_dir` defaults to the relative string `"episode_data"`, and `os.makedirs` +

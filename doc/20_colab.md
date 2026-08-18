@@ -44,6 +44,24 @@ The docker image is the other supported target and is documented separately in
 `PLATFORM` and `USE_GPU` are both `'auto'` and should stay that way: Colab is detected from
 `COLAB_RELEASE_TAG`, and the hardware set follows `torch.cuda.is_available()`.
 
+```mermaid
+flowchart TD
+    A["repo in Drive:<br/>MyDrive/Colab Notebooks/MARL/gym-continuousDoubleAuction"] --> B["open CDA_train.ipynb in Colab"]
+    B --> C["Runtime > Change runtime type > T4 GPU<br/>BEFORE running anything"]
+    C --> D["set COLAB_REPO_PATH if the folder differs<br/>the only value in the notebook you should edit"]
+    D --> E["run cell 1: mount Drive, chdir, pip install the pins"]
+    E --> F["cell 1 prints a banner and STOPS"]
+    F --> G["Runtime > Restart session"]
+    G --> H["run cell 1 again — the installs are already there,<br/>so it falls through"]
+    H --> I["run the rest top to bottom"]
+    I --> J["runtime.py: PLATFORM auto -> colab,<br/>USE_GPU auto -> gpu set from torch.cuda.is_available"]
+    J --> K["checkpoints to the Drive-backed repo — survive a disconnect"]
+    J --> L["episode Parquet to /content/cda_episode_data — dies with the VM"]
+    K --> M{"disconnected?"}
+    M -->|"yes"| N["set run.is_restore true in train_config.json,<br/>re-run the notebook"]
+    N --> I
+```
+
 ---
 
 ## 20.2 The restart, and why it is not optional

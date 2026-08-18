@@ -13,7 +13,7 @@ the reward makes passivity a dominant strategy.
 ## 1. Algorithm choice — PPO in a competitive multi-agent game
 
 **What is used.** Independent PPO (`PPOConfig`, `framework("torch")`,
-[`train.py:174-210`](../gym_continuousDoubleAuction/train/train.py#L174-L210)) with `k=2`
+[`train.py`](../gym_continuousDoubleAuction/train/train.py)) with `k=2`
 independently-parameterised learners, plus league-based self-play against frozen baselines and
 champion snapshots.
 
@@ -64,14 +64,14 @@ Nothing in the vector encodes:
 
 | Missing | Where it lives | Why the agent needs it |
 |---|---|---|
-| `net_position` | `account.py:20` | Sign and size of inventory determine whether a fill opens or closes risk |
-| `VWAP` | `account.py:21` | Entry price ⇒ unrealised P&L direction |
-| `nav`, `prev_nav` | `account.py:17-18` | **The reward is literally `nav − prev_nav`** |
-| `max_nav` | `account.py:28` | The drawdown penalty is `0.2·(max_nav − nav)` |
-| `cash`, `cash_on_hold` | `account.py:11-13` | Determines which orders `_order_approved` will reject |
+| `net_position` | `Account.__init__` | Sign and size of inventory determine whether a fill opens or closes risk |
+| `VWAP` | `Account.__init__` | Entry price ⇒ unrealised P&L direction |
+| `nav`, `prev_nav` | `Account.__init__`, re-derived in `Calculate.mark_to_mkt` | **The reward is literally `nav − prev_nav`** |
+| `max_nav` | `Account.__init__`, updated in `Calculate.cal_nav` | The drawdown penalty is `0.2·(max_nav − nav)` |
+| `cash`, `cash_on_hold` | `Account.__init__`, moved by `Cash_Processor` | Determines which orders `_order_approved` will reject |
 | own resting orders | `LOB.bids/asks.order_map` | Modify/cancel actions are meaningless without knowing what is resting |
 | agent identity | — | Two agents in the same state cannot differentiate roles |
-| `t_step` / time remaining | `continuousDoubleAuction_env.py:54` | End-of-episode inventory liquidation is a different problem than mid-episode trading |
+| `t_step` / time remaining | `continuousDoubleAuctionEnv.step` | End-of-episode inventory liquidation is a different problem than mid-episode trading |
 
 **Consequence.** The reward is a deterministic function of state variables the policy cannot see.
 This is not "hard to learn", it is **ill-posed**: two states with identical books but opposite
@@ -190,12 +190,17 @@ over-trading, reward providing liquidity) is not being expressed. Either scale t
 reward's natural units or express them as basis-point costs on notional — see
 [13_perspective_financial_trader.md](13_perspective_financial_trader.md) §4.
 
-### 3.6 Coefficients are not configurable
+### 3.6 Coefficients are configurable — **fixed**
 
-All five constants are function-local literals, with the code comment "Internal defaults, can be
-moved to config". For a research repository, reward-shaping coefficients are the primary
-experimental axis and should be in `env_config` so they are captured in checkpoints and sweepable
-by Tune.
+All five constants were function-local literals, with the code comment "Internal defaults, can be
+moved to config". They are now `env_config` keys, read from the `environment` group of
+`config/train_config.json` (falling back to `config/env_defaults.json` for a bare env), so they
+are captured in the checkpoint's config and sweepable by Tune. For a research repository, reward
+shaping is the primary experimental axis, and it is now the axis the config file exposes.
+
+What §3.1–3.5 says about the *values* is unchanged: making them reachable does not make them
+right. The recommended change is still to normalise the reward by `init_cash` and charge drawdown
+as an increment, which §4 argues is the highest-leverage edit in the repository.
 
 ---
 
@@ -325,26 +330,39 @@ non-stationary coordinate shared with the observation — see
 All agents act on the same observation, and arrival order is randomised per step. This makes the
 step a simultaneous-move stage game with a random tie-break — clean and defensible.
 
-Note that `rand_exec_seq(actions, None)` passes `random_state=None`, so the shuffle is **not**
-governed by RLlib's `seed`. `reset(seed=...)` forwards to `MultiAgentEnv.reset`, which seeds
-`self._np_random` — which nothing uses; the env draws initial price and order sizes from global
-`np.random`. **Runs are not bit-reproducible even with a seed set.** For a research environment
-whose entire output is simulated data this is disqualifying: none of the generated-LOB figures
-can be regenerated.
+**Reproducibility — fixed.** This section used to record the opposite. `reset(seed=...)` forwarded
+to `MultiAgentEnv.reset`, which seeded `self._np_random` — which nothing read; all three of the
+env's random draws went to the global `np.random` instead, including `rand_exec_seq`, whose
+`sklearn.utils.shuffle(..., random_state=None)` fell through to sklearn's own global stream. No
+episode was reproducible, which for an environment whose entire output is simulated data was
+disqualifying.
 
-The `rand_exec_seq` signature already accepts a seed. The fix is one `np.random.Generator` on the
-env, threaded through size sampling, initial price and the shuffle.
+The fix is the one this section proposed: one `Generator` on the env — gymnasium's own
+`self.np_random` — threaded through the price anchor, size sampling and the shuffle. It also
+removed the `scikit-learn` dependency, ~30 MB in every EnvRunner to shuffle at most eight dicts.
+`test_seeding.py` pins it, and seeds the *global* stream to two different values while asserting
+the seeded episode is unchanged — the direction that would otherwise hide a regression.
 
-### 5.6 Silent no-ops give no learning signal
+One limitation to keep in view: this makes an *episode* reproducible from its seed. A whole
+distributed training run is not, because RLlib seeds each worker from `config.seed + worker_index`
+once at construction and a restarted runner re-seeds from the same value, rewinding its stream
+mid-run.
 
-Rejected orders (insufficient cash, NAV ≤ 0) return empty lists; `modify` and `cancel` against a
-non-existent order do likewise. Nothing is logged, penalized, or surfaced in `infos`. Given that
-agents cannot see their own resting orders (§2), a large and unmeasured fraction of all actions
-is probably a no-op — and there is currently no way to know what that fraction is.
+### 5.6 Silent no-ops give no learning signal — **half fixed**
 
-At minimum, count rejections and no-ops per step and put them in `infos` so the fraction becomes
-measurable; ideally distinguish "rejected for cash" from "nothing to modify" so the two get
-different shaping.
+Rejected orders (insufficient cash, NAV ≤ 0) and `modify` / `cancel` against a non-existent order
+all return empty lists. None of them is penalised or visible to the agent, so the learning signal
+is unchanged: a no-op action and a deliberate pass are the same experience.
+
+What *is* fixed is the measurement half this section asked for. `num_rejected_step` counts refused
+orders, travels out in `info`, and is reduced into an `order_rejection_fraction` metric per
+episode; `is_pass_action` separates a deliberate pass, and becomes `pass_action_fraction`. So "a
+large and unmeasured fraction of all actions is probably a no-op" is now measurable for the cash
+half, and a policy that has collapsed to always-pass is visible while it happens rather than only
+in a post mortem (which matters for S1-3, since 0 beats a negative mean at promotion time).
+
+Still missing: the `modify` / `cancel`-with-nothing-to-target case has no counter, so the two
+kinds of dead action cannot be told apart, and neither is shaped.
 
 ---
 
@@ -379,14 +397,14 @@ whose trade count is ~0.
 
 | Quantity | Value | Source |
 |---|---|---|
-| `train_batch_size_per_learner` | `max_step × num_episodes_per_iter` = 4096 × 4 = **16,384** env steps | [`train.py:99-101`](../gym_continuousDoubleAuction/train/train.py#L99-L101) |
-| `num_epochs` | 4 | [`train.py:74`](../gym_continuousDoubleAuction/train/train.py#L74) |
-| `minibatch_size` | `None` → RLlib default 128 | [`train.py:80`](../gym_continuousDoubleAuction/train/train.py#L80) |
+| `train_batch_size_per_learner` | `max_step × num_episodes_per_iter` = 4096 × 4 = **16,384** env steps | [`train.py`](../gym_continuousDoubleAuction/train/train.py) |
+| `num_epochs` | 4 | [`train.py`](../gym_continuousDoubleAuction/train/train.py) |
+| `minibatch_size` | `None` → RLlib default 128 | [`train.py`](../gym_continuousDoubleAuction/train/train.py) |
 | Gradient steps / iteration | ≈ 16384/128 × 4 = **512** | derived |
-| `lr` | 5e-5, constant | [`train.py:75`](../gym_continuousDoubleAuction/train/train.py#L75) |
+| `lr` | 5e-5, constant | [`train.py`](../gym_continuousDoubleAuction/train/train.py) |
 | `gamma` | 0.99 (RLlib default) → effective horizon ~100 steps | **[verified]** |
 | `lambda_` | 1.0 (RLlib default) → Monte-Carlo advantages | **[verified]** |
-| Default run length | 16 iterations ≈ **262k env steps** | [`train.py:92`](../gym_continuousDoubleAuction/train/train.py#L92) |
+| Default run length | 16 iterations ≈ **262k env steps** | [`train.py`](../gym_continuousDoubleAuction/train/train.py) |
 
 Observations:
 
@@ -469,9 +487,12 @@ Observations:
    is the right mitigation — but the agent must then learn two very different regimes from 4
    episodes per iteration.
 
-5. **`initial_price_min/max` are unreachable from training.** They are read in `reset()` but
-   omitted from `TrainConfig.env_config`, so training always gets the wide `[10, 100]` range.
-   Only the unit tests narrow it.
+5. **`initial_price_min/max` are reachable now — the wide range is a choice.** They were read in
+   `reset()` but omitted from `TrainConfig.env_config`, so training always got `[10, 100]` and only
+   the unit tests could narrow it. Both are `TrainConfig` fields and are forwarded, so narrowing
+   the anchor range is a one-line config edit. The checked-in config still ships the wide range, so
+   the 10× relative-tick swing above is still what a default run experiences — but it is now
+   controllable, which makes it an experiment rather than a limitation.
 
 ---
 

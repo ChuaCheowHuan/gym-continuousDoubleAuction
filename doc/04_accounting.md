@@ -11,7 +11,7 @@ Related: [03_matching_engine.md](03_matching_engine.md) (what produces the fills
 
 ## 1. Quantities tracked per trader
 
-[`account.py:9-32`](../gym_continuousDoubleAuction/envs/account/account.py#L9-L32):
+[`account.py`](../gym_continuousDoubleAuction/envs/account/account.py):
 
 | Field | Meaning |
 |---|---|
@@ -26,7 +26,15 @@ Related: [03_matching_engine.md](03_matching_engine.md) (what produces the fills
 | `max_nav` | High-water mark of NAV, used for the drawdown penalty |
 | `profit`, `total_profit` | P&L on current holdings; NAV − `init_nav` |
 | `num_trades` | Cumulative fill count |
-| `num_trades_step`, `num_passive_fills_step`, `order_step_placed` | Per-step reward counters, reset at the end of each step |
+| `num_trades_step`, `num_passive_fills_step`, `order_step_placed`, `num_rejected_step` | Per-step counters, zeroed at the end of each step *after* the reward and the info dict have read them |
+| `reward`, `reward_terms` | The step's reward and the five signed contributions that sum to it |
+| `drawdown` | `max(0, max_nav − nav)` — the level the drawdown penalty charges, recorded rather than recomputed |
+
+**Types are deliberate, and pinned by `test_type_policy.py`.** Money and prices are `Decimal`
+everywhere; sizes and `net_position` are `int`, because a position is a count of contracts;
+`reward` and `drawdown` are `float`, because they are learning signal rather than money and RLlib
+requires float rewards. No field changes type mid-episode — `_covered` resets `position_val` and
+`VWAP` to `Decimal(0)` rather than a bare `0` for exactly that reason.
 
 All arithmetic is `Decimal`. This is what makes the simulation exactly zero-sum in NAV terms:
 total NAV across all traders is conserved and equals total initial cash, and `total_sys_profit
@@ -58,12 +66,39 @@ hold.
 **NAV is invariant across placement and cancellation.** Moving money between `cash` and
 `cash_on_hold` does not change wealth, and the tests assert this explicitly.
 
+```mermaid
+flowchart LR
+    subgraph NAV["NAV = cash + cash_on_hold + position_val — conserved across every arrow below"]
+        CASH["cash"]
+        HOLD["cash_on_hold"]
+        POS["position_val"]
+    end
+
+    CASH -->|"rest a limit order<br/>order_in_book_passive_party"| HOLD
+    HOLD -->|"cancel<br/>cancel_cash_transfer"| CASH
+    HOLD -->|"passive fill<br/>size_*_cash_transfer(counter_party)"| POS
+    CASH -->|"aggressive fill<br/>size_increase_cash_transfer(init_party)"| POS
+    POS -->|"close or cover<br/>size_zero_cash_transfer"| CASH
+    HOLD -->|"crossing your own order<br/>init_is_counter_cash_transfer"| CASH
+```
+
+Every arrow moves money between the three columns; none of them creates or destroys any. That is
+what makes the episode-end conservation check (`Σ NAV == num_agents × init_cash`) meaningful
+rather than approximate — it is exact in `Decimal`, and the tolerance exists as headroom for a
+future change that legitimately removes cash, such as fees.
+
+The one function that would have broken it was deleted rather than wired up: `modify_cash_transfer`
+computed an escrow delta with no term for a fill, so a modify that crossed the spread would have
+escrowed cash against quantity that was no longer resting. A modify is handled as
+cancel-and-reprocess instead. See S3-20 in
+[15_findings_and_recommendations.md](15_findings_and_recommendations.md).
+
 ---
 
 ## 3. Order approval
 
 `Trader._order_approved`
-([`trader.py:68-111`](../gym_continuousDoubleAuction/envs/agent/trader.py#L68-L111))
+([`trader.py`](../gym_continuousDoubleAuction/envs/agent/trader.py))
 gates every order on two conditions:
 
 1. **NAV must be positive.** A bankrupt trader can place nothing.
@@ -98,19 +133,23 @@ est_price = LOB.get_best_ask() or (LOB.tape[-1]['price'] if LOB.tape else 1)   #
 > This supersedes an older documentation claim that the system "only validates `nav > 0`,
 > potentially allowing high leverage." A real cash check exists and is tested seven ways.
 
-**Rejections are silent.** A rejected order returns `([], [])` with nothing logged, penalised, or
-surfaced in `infos`. So do `modify` and `cancel` against a non-existent order. Given that agents
-cannot see their own resting orders ([05](05_observation_space.md) §7.7), a large and unmeasured
-fraction of all actions is probably a no-op — and there is currently no way to know what that
-fraction is. Tracked as S4-14 in
-[15_findings_and_recommendations.md](15_findings_and_recommendations.md).
+**Rejections are counted now, but still cost nothing.** A refused order returns `([], [])`
+without a penalty and without reaching the book — but it increments `num_rejected_step`, which
+travels out in `info` and is reduced into the `order_rejection_fraction` metric per episode. That
+closes the measurement half of S4-14: an agent that is quiet because it chose to be and one whose
+every order is refused for want of cash are now distinguishable from the metrics alone, which
+they were not when both showed up only as an absent trade.
+
+Still silent: `modify` and `cancel` against a non-existent order return empty lists with no
+counter at all. Given that agents cannot see their own resting orders
+([05](05_observation_space.md) §7.7), that dead-action fraction remains unmeasured.
 
 ---
 
 ## 4. Position transitions
 
 `Account.process_acc`
-([`account.py:183-199`](../gym_continuousDoubleAuction/envs/account/account.py#L183-L199))
+([`account.py`](../gym_continuousDoubleAuction/envs/account/account.py))
 increments the trade counters — including `num_passive_fills_step` when the party is
 `counter_party` — then branches on the current position sign:
 
@@ -122,6 +161,24 @@ increments the trade counters — including `num_passive_fills_step` when the pa
 | Full cover (exactly flat) | `_size_decrease` | Realise everything; position and `position_val` go to zero |
 | **Flip** (opposite side, larger than position) | `_covered_side_chg` | Close the old position *and* open the new one atomically |
 
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> Flat: reset_acc
+    Flat --> Long: bid fill (_neutral)
+    Flat --> Short: ask fill (_neutral)
+
+    Long --> Long: bid fill (_size_increase)<br/>VWAP re-derived
+    Long --> Long: ask fill, size < position<br/>(_size_decrease) realise part
+    Long --> Flat: ask fill, size == position<br/>(_covered) realise all
+    Long --> Short: ask fill, size > position<br/>(_covered_side_chg) close then open
+
+    Short --> Short: ask fill (_size_increase)
+    Short --> Short: bid fill, size < position<br/>(_size_decrease)
+    Short --> Flat: bid fill, size == position<br/>(_covered)
+    Short --> Long: bid fill, size > position<br/>(_covered_side_chg)
+```
+
 The flip case is the one most toy exchanges get wrong. If a trader is long 1 and sells 2, the
 first unit closes the long (releasing capital) and the second opens a short (locking capital), in
 a single transaction, with `net_position` moving from +1 to −1 and cash/NAV preserved throughout.
@@ -132,7 +189,7 @@ Four dedicated tests cover it — aggressor and passive, in both directions.
 ## 5. Mark to market
 
 `Calculate.mark_to_mkt`
-([`calculate.py:34-55`](../gym_continuousDoubleAuction/envs/account/calculate.py#L34-L55))
+([`calculate.py`](../gym_continuousDoubleAuction/envs/account/calculate.py))
 revalues every account at the **last tape price** each step:
 
 ```python
