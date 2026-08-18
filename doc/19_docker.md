@@ -30,7 +30,7 @@ docker run --gpus all -it --rm -p 8888:8888 --shm-size=2g \
 
 PowerShell needs different quoting — `-v "${PWD}:/workspace/code"`. Then open the
 `http://127.0.0.1:8888/?token=...` URL from the container's output and run
-[`CDA_NSP.ipynb`](../gym_continuousDoubleAuction/CDA_NSP.ipynb) top to bottom. **Nothing in the
+[`CDA_train.ipynb`](../gym_continuousDoubleAuction/CDA_train.ipynb) top to bottom. **Nothing in the
 notebook needs editing for this image** — `PLATFORM` and `USE_GPU` are both `auto`, and the
 Colab bootstrap cell is a no-op here.
 
@@ -95,7 +95,7 @@ forever rather than failing.
 
 The last two layers `COPY` the source to `/workspace/code` and `pip install --no-deps -e` it. This
 matters because of where the notebook lives:
-[`CDA_NSP.ipynb`](../gym_continuousDoubleAuction/CDA_NSP.ipynb) sits *inside* the package directory,
+[`CDA_train.ipynb`](../gym_continuousDoubleAuction/CDA_train.ipynb) sits *inside* the package directory,
 so the path Jupyter puts on `sys.path` is the package directory itself, never the repository root.
 `import gym_continuousDoubleAuction` cannot resolve from there by accident — the package has to be
 genuinely installed.
@@ -171,7 +171,7 @@ things worth keeping, all of them **relative to the working directory** — `/wo
 | `episode_data/` — one pickle per episode | `SelfPlayCallback`, when `TrainConfig.episode_data_dir` is set |
 | `results/chkpt/iter_*/` | `save_checkpoint()` in `train()`, under `TrainConfig.checkpoint_dir` — `log_base_dir` + `chkpt`. The newest `chkpt_keep` are retained |
 
-`CDA_NSP.ipynb` gets there too: Jupyter starts a kernel in the *notebook's* directory, which is
+`CDA_train.ipynb` gets there too: Jupyter starts a kernel in the *notebook's* directory, which is
 `/workspace/code/gym_continuousDoubleAuction`, so the notebook calls `runtime.chdir_to_repo()` to
 move to the `repo_path` its platform declares. Without that, notebook runs and
 `python -m ...train` runs would write to two different `results/` directories one level apart.
@@ -212,5 +212,5 @@ WSL2.
 - [09_distributed_training.md](09_distributed_training.md) — Ray env runners and learner placement,
   which is what `--shm-size` and `--gpus` actually feed
 - [18_configuration.md](18_configuration.md) — `TrainConfig`, including `episode_data_dir` and
-  `num_gpus_per_learner`; §8 covers `runtime_profiles.json`, which is what makes `CDA_NSP.ipynb`
+  `num_gpus_per_learner`; §8 covers `runtime_profiles.json`, which is what makes `CDA_train.ipynb`
   run unchanged in this image and on Colab

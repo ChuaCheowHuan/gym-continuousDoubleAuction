@@ -75,7 +75,7 @@ For a detailed breakdown of codebase modernizations, please refer to the [17_cha
 
 **Running it on Colab**
 [20](doc/20_colab.md) → [18](doc/18_configuration.md) §8 (the `gpu` / `cpu` parameter sets
-`CDA_NSP.ipynb` selects between)
+`CDA_train.ipynb` selects between)
 
 **Running it on a local GPU box**
 [19](doc/19_docker.md) (the training image) → [18](doc/18_configuration.md) §8 →

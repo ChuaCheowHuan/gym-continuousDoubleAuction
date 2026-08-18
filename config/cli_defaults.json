@@ -1,10 +1,10 @@
 {
-  "_source": "gym_continuousDoubleAuction/CDA_env_rand.py (main) and gym_continuousDoubleAuction/train/train.py (_parse_args)",
+  "_source": "gym_continuousDoubleAuction/CDA_rand.py (main) and gym_continuousDoubleAuction/train/train.py (_parse_args)",
   "_description": "Defaults for command-line flags that have no other config home. Read through config_loader.cli_default; neither entry point holds a literal default.",
   "_note": "train.py is deliberately absent. Its flags declare argparse.SUPPRESS as their default, so an unset flag is absent from the namespace entirely and the value comes from TrainConfig - whose defaults are train_config.json. Duplicating them here would create a second set that can disagree. Precedence for train.py is: train_config.json -> --config <other file> -> explicit flags.",
 
   "cda_env_rand": {
-    "_module": "python -m gym_continuousDoubleAuction.CDA_env_rand",
+    "_module": "python -m gym_continuousDoubleAuction.CDA_rand",
     "_note": "Standalone random-agent simulation. It builds an env config directly rather than going through TrainConfig, so these are its own defaults; every env key it does not set falls back to env_defaults.json. log_level null defers to the logging group of tunable_constants.json; --render on its own raises the level to DEBUG, which is where the per-step render writes.",
     "num_agents": 4,
     "max_step": 1000,
