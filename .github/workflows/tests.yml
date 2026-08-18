@@ -35,7 +35,7 @@ jobs:
         run: python -m pytest gym_continuousDoubleAuction/test -q
 
       - name: Random-agent env smoke run
-        run: python gym_continuousDoubleAuction/CDA_env_rand.py
+        run: python gym_continuousDoubleAuction/CDA_rand.py
 
       - name: RLlib integration - build, train, and verify self-play wiring
         # This is the test that would have caught the silently-ignored
