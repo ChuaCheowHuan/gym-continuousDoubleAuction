@@ -34,9 +34,18 @@ class Done_Helper(object):
 
         # Check if all traders are done
         all_agents_done = len(self.done_set) == len(self.traders)
-        
-        # Check if max step has been reached
-        episode_timed_out = self.t_step > self.max_step - 1
+
+        # Check if max step has been reached.
+        #
+        # `t_step` is the 0-based index of the step being completed right now:
+        # `step()` increments it *after* this runs, so the number of steps the
+        # episode has taken is `t_step + 1`. Written that way rather than as a
+        # comparison against `max_step - 1`, which is what made this off by one
+        # - `t_step > max_step - 1` first held at `t_step == max_step`, i.e. on
+        # the (max_step + 1)-th step, so every episode ran one step long and
+        # TrainConfig.train_batch_size (`max_step * num_episodes_per_iter`)
+        # understated the batch by one step per episode.
+        episode_timed_out = self.t_step + 1 >= self.max_step
 
         # Set "__all__" to 1 if either condition is met
         # terminateds["__all__"] = 1 if all_agents_done or episode_timed_out else 0

@@ -1,0 +1,5 @@
+# The canonical config tree lives at the repo root, outside the package.
+# setup.py's build_py stages it into gym_continuousDoubleAuction/config/ at
+# build time, but an sdist is unpacked and *then* built - so the root copy has
+# to travel in the sdist for that staging to have anything to read.
+include config/*.json

@@ -2,10 +2,11 @@
   "_source": "gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py (__init__ and reset)",
   "_description": "Fallbacks applied when the env is constructed with a config dict that omits a key - a bare continuousDoubleAuctionEnv({}), a test fixture, or an RLlib env_config that only sets a few keys. Read through config_loader.env_default; the env holds no literal for any of them.",
   "_note": "These are STANDALONE defaults and deliberately differ from the training defaults in train_config.json: a bare env is small (num_of_agents 5, max_step 64) and renders, a training env is large and silent. Keys here use the env-side spelling: num_of_agents, not the TrainConfig field name num_agents. TrainConfig.env_config always supplies every key below, so a training run never reaches these.",
+  "_note_init_cash": "init_cash must be > 0. Trader._order_approved refuses on nav <= 0 before it inspects anything else, so a bare env built with init_cash 0 - as this file shipped until now - starts every trader bankrupt: no order is ever placed, Done_Helper.set_done puts every agent in done_set on the first pass, and terminateds['__all__'] is True after a single step(), so max_step is unreachable. It matches cli_defaults.json and train_config.json at 1,000,000 so all three agree. test_bare_env_is_tradable pins it.",
 
   "environment": {
     "num_of_agents": 5,
-    "init_cash": 0,
+    "init_cash": 1000000,
     "tick_size": 1,
     "tape_display_length": 10,
     "max_step": 64,

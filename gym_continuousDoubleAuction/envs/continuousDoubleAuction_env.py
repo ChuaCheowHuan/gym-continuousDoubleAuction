@@ -5,7 +5,6 @@ import pandas as pd
 
 import gymnasium as gym
 
-import ray
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 
 from .orderbook.orderbook import OrderBook

@@ -72,6 +72,33 @@ predicted outcome.
 scale the micro-penalties to reward units (S2-3), and reduce or drop the asymmetric multiplier.
 → [12 §3.3](12_perspective_rl_researcher.md#33-doing-nothing-is-a-dominant-strategy)
 
+### S1-4 · The default standalone env could not trade **[verified, fixed]**
+
+`config/env_defaults.json` shipped `init_cash: 0`. `Trader._order_approved` refuses on
+`nav <= 0` before it inspects anything else, so every trader in a bare env started bankrupt: no
+order was ever placed on any side, `Done_Helper.set_done` put all five agents in `done_set` on
+the first pass, and `terminateds["__all__"]` came back `True` after a single `step()`. The
+configured `max_step: 64` was unreachable.
+
+| `continuousDoubleAuctionEnv({})` | Before | After |
+|---|---|---|
+| Trades in 64 steps | **0** | 134 |
+| Steps before `terminateds["__all__"]` | **1** | 64 (truncated) |
+| Final NAVs | `['0','0','0','0','0']` | spread around 1,000,000 |
+
+This is the form `gymnasium.make("continuousDoubleAuction-v0")` produces and the one
+[01](01_overview.md) documents as "small, cheap and prints what it is doing". The value was
+written down in three places and its consequence in none of them.
+
+CI did not catch it: the only bare-env job is the `CDA_rand.py` smoke run, which builds its own
+env config from `cli_defaults.json` — where `init_cash` is 1,000,000 — and so overrode the one
+value that broke it.
+
+**Fixed:** `init_cash` is 1,000,000 in `env_defaults.json`, matching `cli_defaults.json` and
+`train_config.json` so all three agree. `test_env_lifecycle.py::TestBareEnvIsTradable` reads the
+checked-in file deliberately — a fixture supplying its own cash would reproduce exactly the blind
+spot the smoke run had.
+
 ---
 
 ## S2 — Major
@@ -271,15 +298,69 @@ this is disqualifying — none of the generated-LOB figures can be regenerated. 
 **Fix:** one `np.random.Generator` on the env, threaded through size sampling, initial price and
 the shuffle.
 
-### S3-6 · `install_requires` does not match the imports **[verified]**
+### S3-6 · `install_requires` does not match the imports **[verified, fixed]**
 
-`envs/` imports `ray`, `sklearn.utils`, and `six`, none of which are in `install_requires`.
+`envs/` imports `ray`, `sklearn.utils`, and `six`, none of which were in `install_requires`.
 `pip install gym_continuousDoubleAuction` without extras fails on first import. CI never catches
 it because it always installs the full `requirements.txt`.
 
-`import ray` in the env is entirely unused; `six` is a Python-2 shim replaceable by
-`io.StringIO`; `sklearn.utils.shuffle` pulls ~30 MB into every EnvRunner to shuffle ≤8 dicts —
-and is the same call that makes runs irreproducible (S3-5).
+One claim in the original entry was wrong and worth correcting, because acting on it as written
+would have left the real dependency in place: **`import ray` in the env is not entirely unused.**
+There were *two* ray imports in `continuousDoubleAuction_env.py` — a genuinely dead bare
+`import ray`, and `from ray.rllib.env.multi_agent_env import MultiAgentEnv`, which is the base
+class. A clean-venv install failed on the second, not the first.
+
+`six` is a Python-2 shim replaceable by `io.StringIO`, but it is imported from
+`envs/orderbook/`, which is off-limits to changes (see S3-4) — so it is declared rather than
+removed. `sklearn.utils.shuffle` pulls ~30 MB into every EnvRunner to shuffle ≤8 dicts, and is
+the same call that makes runs irreproducible (S3-5); it is likewise declared for now, and the
+declaration should go when the import does.
+
+**Fixed:** the dead `import ray` is gone; `ray[rllib]`, `scikit-learn` and `six` are in
+`install_requires`, which now matches what the package actually imports. The `rllib` extra keeps
+its name and carries the rest of the *training* stack (`torch`, `tensorboardX`), so
+`pip install -e ".[rllib]"` is unchanged. A second, independent packaging defect was found while
+fixing this one — see S3-18.
+
+### S3-18 · The config tree was not in the built distribution **[verified, fixed]**
+
+`setup.py` declared neither `package_data` nor `include_package_data`, and `config/` sits at the
+repo root rather than inside the package — so a wheel built from this tree carried **zero** JSON
+config files. `config_loader.config_dir()` searches `<pkg>/../config` and `<pkg>/config`; in
+`site-packages` neither exists.
+
+The failure lands at *import*, not at first use, because the config reads are default arguments
+evaluated at class-definition time in `Exchg_Helper`, `Reward_Helper`, `Action_Helper`,
+`State_Helper`, `Trader` and `Account`. Every non-editable install was therefore unusable, which
+is why the "Resolved since" entry claiming `setup.py` was fixed for non-editable installs has
+been corrected below — it fixed `find_packages()` and left this.
+
+**Fixed:** a `build_py` subclass stages `config/*.json` into `gym_continuousDoubleAuction/config/`
+at build time and `package_data` ships it — which is exactly the second location `config_dir()`
+already searched and never found. Nothing moves, no documented path changes, and the staged copy
+is git-ignored and never preferred in-tree (the repo root is checked first). `MANIFEST.in` carries
+the root tree into an sdist so the staging has something to read there too.
+
+### S3-19 · Every episode ran one step longer than `max_step` **[verified, fixed]**
+
+`Done_Helper.set_all_done` compared `self.t_step > self.max_step - 1`, but `step()` increments
+`t_step` *after* `set_step_outputs` has computed the flags. The condition first held at
+`t_step == max_step`, i.e. on the `max_step + 1`-th step, so `max_step=10` produced 11 calls to
+`step()`.
+
+The consequence is quiet rather than dramatic. `TrainConfig.train_batch_size` is defined as
+`max_step * num_episodes_per_iter`, so at the checked-in defaults the env delivered 16,388 steps
+against a declared batch of 16,384 — and the `sample_timeout_s` sizing note in
+`train_config.json` is derived from the same understated figure. Every episode length quoted in
+the documentation was off by one for the same reason.
+
+Nothing caught it because the existing loops all stop on `truncateds["__all__"]` without counting
+the steps taken to get there.
+
+**Fixed:** the test now reads `self.t_step + 1 >= self.max_step`, written in terms of *steps
+taken* rather than as a comparison against `max_step - 1`, which is what made it easy to get
+wrong. `test_env_lifecycle.py::TestEpisodeLength` pins the count at several horizons and asserts
+that truncation is reported *on* the final step rather than after it.
 
 ### S3-7 · `sys.exit()` used for error handling in the matching engine
 
@@ -442,7 +523,7 @@ Recorded so nobody re-files them. Each was a real defect at the time.
 | Per-episode pickles were unconditional | `episode_data_dir=None` / `--no-episode-data` disables them |
 | `episode_data/` was untracked noise | In `.gitignore`, both paths, with an explanatory comment |
 | **No CI** — dead `.travis.yml` | GitHub Actions, 3.11/3.12 matrix, three staged jobs |
-| `setup.py` broken for non-editable installs | `find_packages()`, real `install_requires` and extras, `__init__.py` files added |
+| `setup.py` broken for non-editable installs | ~~`find_packages()`, real `install_requires` and extras, `__init__.py` files added~~ **Premature.** That pass fixed package discovery and left two defects that still made every non-editable install fail: `install_requires` did not name `ray[rllib]`, `scikit-learn` or `six` (S3-6), and no config JSON was in the distribution at all (S3-18). Both are fixed now, and a wheel built from this tree has been installed into a clean environment and used to construct an env |
 | `observation_space`/`action_space` were plain dicts | `observation_spaces`/`action_spaces` (plural, new stack) plus per-agent getters; agent ordering stable across processes |
 | Trainable network was an 8-unit bottleneck | `fcnet_hiddens=[256,256]`, `tanh`, `vf_share_layers=False` |
 | `test_modify_order_price_change` was `@unittest.expectedFailure` | A normal passing test; the no-crossed-book invariant holds on every modification path |
