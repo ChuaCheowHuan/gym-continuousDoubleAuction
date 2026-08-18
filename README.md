@@ -8,6 +8,82 @@ For a detailed breakdown of codebase modernizations, please refer to the [17_cha
 
 # Version 2 README:
 
+## The system at a glance
+
+One environment step, end to end. Every box is a real function; the labels on the
+arrows are what actually crosses between them.
+
+```mermaid
+flowchart LR
+    subgraph RL["RLlib training stack (train/)"]
+        POL["RLModule per agent<br/>policy_* / champion_*"]
+        LRN["Learner<br/>PPO update"]
+        CB["SelfPlayCallback<br/>league + metrics + record"]
+    end
+
+    subgraph ENV["Environment (envs/)"]
+        ACT["Action_Helper<br/>decode Dict action"]
+        SHUF["rand_exec_seq<br/>random arrival order"]
+        LOB["OrderBook<br/>price-time priority"]
+        TRD["Trader<br/>approve, route, settle"]
+        ACC["Account<br/>cash / position / NAV"]
+        MTM["mark_to_mkt<br/>last tape price"]
+        OBS["State_Helper<br/>snapshot + history"]
+        REW["Reward_Helper<br/>five signed terms"]
+    end
+
+    POL -->|"action Dict"| ACT
+    ACT --> SHUF --> LOB
+    LOB -->|"trades + residue"| TRD
+    TRD --> ACC
+    ACC --> MTM
+    MTM --> OBS
+    MTM --> REW
+    OBS -->|"observation, 168 floats"| POL
+    REW -->|"reward"| POL
+    REW --> CB
+    CB -->|"agent to module mapping"| POL
+    POL --> LRN
+    LRN -->|"weights"| POL
+```
+
+Full detail: [02_architecture.md](doc/02_architecture.md) §2.5 for the step lifecycle,
+§2.9 for the same picture with the distributed boundaries drawn in.
+
+## Documentation map
+
+```mermaid
+mindmap
+  root(("gym-continuousDoubleAuction"))
+    Orientation
+      01 Overview
+      02 Architecture
+      17 Changelog
+    Simulator
+      03 Matching engine
+      04 Accounting
+    Learning problem
+      05 Observation space
+      06 Action space
+      07 Reward function
+    Training
+      08 Self-play league
+      09 Distributed training
+      11 Logging
+      21 Logging under runners
+    Operations
+      18 Configuration
+      19 Docker
+      20 Colab
+      10 Testing
+    Assessment
+      12 RL researcher
+      13 Financial trader
+      14 AI engineer
+      15 Findings
+      16 Verification log
+```
+
 ### Start here
 
 | # | Document | What it answers |
@@ -33,6 +109,7 @@ For a detailed breakdown of codebase modernizations, please refer to the [17_cha
 | 9 | [09_distributed_training.md](doc/09_distributed_training.md) | `num_env_runners` and `num_learners`: what each distributes, worked examples, and three now-fixed bugs that existed only at non-default values |
 | 10 | [10_testing.md](doc/10_testing.md) | Every test file, what each case pins down, CI, and the gaps |
 | 11 | [11_logging_and_observability.md](doc/11_logging_and_observability.md) | What training records, where it goes, and the gap between what is computed and what is surfaced |
+| 21 | [21_logging_review.md](doc/21_logging_review.md) | The same audit re-run with `num_env_runners > 0`: what breaks when the hooks stop running on the driver |
 
 ### Analysis
 

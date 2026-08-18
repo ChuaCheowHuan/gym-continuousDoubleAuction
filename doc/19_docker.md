@@ -49,7 +49,7 @@ docker run --gpus all -it --rm --shm-size=2g -v "$PWD":/workspace/code cda-ray-t
 
 No flags: `config/train_config.json` already supplies every value, so the bare command *is* the
 configured run. Flags are for deviating from it — `--iters 4` for a smoke test,
-`--no-episode-data` to suppress the pickles ([18_configuration.md](18_configuration.md) §2).
+`--no-episode-data` to suppress the per-step record ([18_configuration.md](18_configuration.md) §2).
 
 ### What to check on the first run
 
@@ -74,6 +74,23 @@ The profile decides the resource counts, not you: `gpu` gives 2 env runners and 
 2 CPUs and you want them used, raise `num_env_runners` and `num_cpus` in the `gpu` set together —
 runners are Ray actors, and asking for more CPUs than `ray.init()` was given leaves them pending
 forever rather than failing.
+
+---
+
+### The path a run takes through the image
+
+```mermaid
+flowchart TD
+    B["docker build -f docker/ml/dockerfile_ray_torch -t cda-ray-torch .<br/>context MUST be the repo root"] --> IM["image: CUDA 12.8 base, venv at /opt/venv,<br/>project installed editable at /workspace/code"]
+    IM --> R{"how are you running it?"}
+    R -->|"with -v mounting the repo at /workspace/code"| MNT["your working tree shadows the baked copy<br/>edits take effect immediately<br/>outputs land in the host tree"]
+    R -->|"no mount"| BAKE["the source as it was at build time<br/>outputs die with the container"]
+    MNT --> RT["train/runtime.py resolves PLATFORM=auto -> docker,<br/>USE_GPU=auto -> gpu set if torch.cuda.is_available()"]
+    BAKE --> RT
+    RT --> CFG["config/runtime_profiles.json<br/>gpu: 2 CPUs, 1 GPU, num_env_runners=2, num_learners=0"]
+    CFG --> RUN["CDA_train.ipynb, or<br/>python -m gym_continuousDoubleAuction.train.train"]
+    RUN --> OUT["results/&lt;run_id&gt;/ progress.jsonl + run.log<br/>results/chkpt/iter_* checkpoints<br/>episode_data/&lt;run_id&gt;/ Parquet record"]
+```
 
 ---
 

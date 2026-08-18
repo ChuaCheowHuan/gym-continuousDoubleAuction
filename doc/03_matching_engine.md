@@ -27,7 +27,7 @@ with the actual sum of order quantities is a real invariant with a dedicated reg
 
 **Exact money arithmetic.** Prices, quantities and cash are `Decimal` throughout, with
 `Decimal(str(x))` conversion at the float boundary
-([`orderbook.py:49`](../gym_continuousDoubleAuction/envs/orderbook/orderbook.py#L49)). There is
+([`orderbook.py`](../gym_continuousDoubleAuction/envs/orderbook/orderbook.py)). There is
 no float drift in the ledger, which is why NAV conservation holds to the cent.
 
 ---
@@ -37,7 +37,7 @@ no float drift in the ledger, which is why NAV conservation holds to the cent.
 ### 2.1 Limit orders
 
 `process_limit_order`
-([`orderbook.py:154-186`](../gym_continuousDoubleAuction/envs/orderbook/orderbook.py#L154-L186))
+([`orderbook.py`](../gym_continuousDoubleAuction/envs/orderbook/orderbook.py))
 walks the opposite tree while the incoming order crosses it, filling against each price level in
 time-priority order, then rests any residual quantity in the book.
 
@@ -50,16 +50,55 @@ filled on arrival, so a two-sided resting book always has `best_ask - best_bid >
 ### 2.2 Market orders
 
 `process_market_order`
-([`orderbook.py:136-152`](../gym_continuousDoubleAuction/envs/orderbook/orderbook.py#L136-L152))
+([`orderbook.py`](../gym_continuousDoubleAuction/envs/orderbook/orderbook.py))
 sweeps across price levels until the quantity is exhausted or the opposite side is empty. An
 empty book returns zero trades rather than raising.
+
+### 2.2.1 How an order reaches the book
+
+```mermaid
+flowchart TD
+    A["Trader.place_order(type, side, size, price)"] --> B{"side is None?"}
+    B -->|"yes"| Z["no-op, empty trades"]
+    B -->|"no"| C{"_order_approved?"}
+    C -->|"NAV <= 0, or opening portion<br/>exceeds free cash"| REJ["num_rejected_step += 1<br/>return ([], [])"]
+    C -->|"yes"| D["order_step_placed = 1<br/>(market and limit only)"]
+    D --> E{"type"}
+
+    E -->|"market"| M["OrderBook.process_order<br/>sweep the opposite side"]
+    E -->|"limit"| L{"already resting<br/>at this exact price?"}
+    E -->|"modify"| MO{"any resting order<br/>on this side?"}
+    E -->|"cancel"| CA{"order at this price?"}
+
+    L -->|"no"| LP["process_limit_order<br/>cross, then rest the residue"]
+    L -->|"yes"| UPS["upsert: treat as a modify<br/>of that order"]
+    MO -->|"no"| NOOP["silent no-op"]
+    MO -->|"yes, take the oldest (FIFO)"| UPS
+    CA -->|"no"| NOOP
+    CA -->|"yes"| CX["cancel_order + release the escrow"]
+
+    UPS --> UNDO["cancel_cash_transfer:<br/>release 100% of the old order"]
+    UNDO --> MOD["OrderBook.modify_order"]
+
+    M --> S["trades"]
+    LP --> S
+    MOD --> S
+    S --> N["_normalise_trade_sizes<br/>sizes back to int"]
+    N --> P["_process_trades:<br/>settle init_party and counter_party"]
+    P --> R["order_in_book_passive_party:<br/>escrow whatever still rests"]
+    LP --> R
+    MOD --> R
+```
+
+`market` never rests: `process_order` is called with the market path, so an unfilled remainder is
+simply not entered. Only `limit` and `modify` can leave a residue for the escrow step.
 
 ### 2.3 Queue-position economics
 
 `process_order_list`
-([`orderbook.py:58-133`](../gym_continuousDoubleAuction/envs/orderbook/orderbook.py#L58-L133))
+([`orderbook.py`](../gym_continuousDoubleAuction/envs/orderbook/orderbook.py))
 consumes strictly from the head of each `OrderList`, and
-[`order.py:29-36`](../gym_continuousDoubleAuction/envs/orderbook/order.py#L29-L36) implements the
+[`order.py`](../gym_continuousDoubleAuction/envs/orderbook/order.py) implements the
 real exchange rule for resting-order amendments:
 
 | Amendment | Queue priority |
@@ -119,6 +158,18 @@ occurred *during* a modification, so account balances drifted.
 | Quantity **decreases** at the **same price** | Updated in place | **Kept** |
 | Everything else (price move, price cross, quantity increase) | Removed and re-entered via `process_limit_order` | Lost |
 
+```mermaid
+flowchart TD
+    A["modify_order(order_id, update)"] --> B{"price unchanged?"}
+    B -->|"no"| RE["remove from the old level<br/>re-enter via process_limit_order"]
+    B -->|"yes"| C{"quantity decreased?"}
+    C -->|"yes"| IP["update in place<br/>priority KEPT"]
+    C -->|"no (increase)"| RE
+    RE --> D{"does the new price cross<br/>the opposite side?"}
+    D -->|"yes"| F["fills immediately, residue rests<br/>priority LOST"]
+    D -->|"no"| G["rests at the tail of the new level<br/>priority LOST"]
+```
+
 Re-processing is what makes the engine correct: it triggers matches if the new price crosses the
 book, produces proper `trades` and `residue` records, and moves the order to the back of the
 queue — which is what real exchanges do for price changes and size increases.
@@ -126,7 +177,7 @@ queue — which is what real exchanges do for price changes and size increases.
 ### 3.3 Trader-level "undo-then-process" accounting
 
 `Trader.__modify_limit_order`
-([`trader.py:177-192`](../gym_continuousDoubleAuction/envs/agent/trader.py#L177-L192))
+([`trader.py`](../gym_continuousDoubleAuction/envs/agent/trader.py))
 runs a three-step flow so balances stay exact regardless of whether the modification fills:
 
 1. **Undo** — `acc.cancel_cash_transfer(order)` releases 100% of the value held against the *old*
@@ -154,7 +205,7 @@ resting **ask at 100**.
 ### 3.5 Order identification
 
 The external API addresses orders by `trade_id`, not by a unique `order_id`. `_get_order_ID`
-([`trader.py:214-247`](../gym_continuousDoubleAuction/envs/agent/trader.py#L214-L247))
+([`trader.py`](../gym_continuousDoubleAuction/envs/agent/trader.py))
 collects every resting order whose `trade_id` matches the caller, then:
 
 - **`modify`** — deliberately **price-agnostic**: returns the trader's **oldest** matching order
@@ -203,7 +254,9 @@ These are asserted by the test suite and should be preserved by any change to th
 ## 5. Caveat: `sys.exit()` in the engine
 
 [`orderbook.py`](../gym_continuousDoubleAuction/envs/orderbook/orderbook.py) calls `sys.exit()`
-on six bad-input paths (lines 39, 55, 151, 185, 200, 225; two more are commented out):
+on six bad-input paths — a non-positive quantity, an order type that is neither market nor limit,
+and a `side` that is neither `bid` nor `ask` in each of `process_market_order`,
+`process_limit_order`, `cancel_order` and `modify_order` (two more are commented out):
 
 ```python
 if quote['quantity'] <= 0:

@@ -12,7 +12,7 @@ Related: [04_accounting.md](04_accounting.md) (where the inputs come from),
 ## 1. Stated objectives
 
 From the function's own docstring
-([`reward_helper.py:10-21`](../gym_continuousDoubleAuction/envs/exchg/reward_helper.py#L10-L21)),
+([`reward_helper.py`](../gym_continuousDoubleAuction/envs/exchg/reward_helper.py)),
 the reward is shaped to encourage five behaviours:
 
 1. **Maximize NAV** — the primary growth objective.
@@ -30,9 +30,9 @@ actually binds.
 ## 2. The formula
 
 From
-[`reward_helper.py:45-68`](../gym_continuousDoubleAuction/envs/exchg/reward_helper.py#L45-L68).
+[`reward_helper.py`](../gym_continuousDoubleAuction/envs/exchg/reward_helper.py).
 The five coefficients are `env_config` keys, set on the helper in
-[`reward_helper.py:6-25`](../gym_continuousDoubleAuction/envs/exchg/reward_helper.py#L6-L25) —
+[`reward_helper.py`](../gym_continuousDoubleAuction/envs/exchg/reward_helper.py) —
 see [18_configuration.md](18_configuration.md) §2.2:
 
 ```python
@@ -67,16 +67,62 @@ reward = (nav_term
 | Drawdown penalty | − | `max_nav - nav`, the *current* distance from the high-water mark |
 | Passive bonus | + | `num_passive_fills_step` — fills where this agent was the `counter_party` |
 
-The five coefficients are **function-local literals**, not configuration — with a code comment
-acknowledging they "can be moved to config". For a research repository, reward-shaping
-coefficients are the primary experimental axis and should live in `env_config` so they are
-captured in checkpoints and sweepable by Tune.
+The five coefficients **are** configuration now. They were function-local literals with a code
+comment acknowledging they "can be moved to config"; they are `env_config` keys, set on
+`Reward_Helper.__init__`, defaulting from `config/env_defaults.json` and supplied by
+`TrainConfig.env_config` from the `environment` group of `config/train_config.json`. They are
+therefore captured in the checkpoint's config and sweepable — which matters, because for a
+research repository reward shaping is the primary experimental axis.
+
+The formula is also accumulated **as a dict of signed terms**, not as one expression:
+
+```python
+terms = {"nav_term": ..., "order_penalty": ..., "trade_penalty": ...,
+         "drawdown_penalty": ..., "passive_bonus": ...}
+reward = 0.0
+for value in terms.values():
+    reward += value
+```
+
+Two deliberate consequences. Iterating the dict means a term added later cannot be logged but left
+out of the reward. And the left-to-right accumulation is *not* `sum()`: on Python 3.12+ the
+builtin applies Neumaier compensated summation to floats, which is more accurate and disagrees
+with the original expression on ~44% of random inputs — instrumenting the reward must not change
+what the agent is trained on.
 
 > **The reward is not zero-sum.** NAV *is* conserved across traders, but the four shaping terms
 > are not, so returns are not comparable across policies playing different roles. The league
 > callback nevertheless ranks policies against a pooled `mean + k·std` that includes the random
 > baselines. A policy can clear that threshold by trading *less*, not by trading *better* — see
 > [12_perspective_rl_researcher.md](12_perspective_rl_researcher.md) §3.2.
+
+---
+
+```mermaid
+flowchart LR
+    NAV["nav - prev_nav<br/>(set inside mark_to_mkt)"] --> LA{"< 0?"}
+    LA -->|"yes"| NT1["x loss_multiplier (1.5)"]
+    LA -->|"no"| NT2["x 1.0"]
+    NT1 --> T1["nav_term"]
+    NT2 --> T1
+
+    OSP["order_step_placed (0 or 1)"] --> T2["- order_penalty x it"]
+    NTS["num_trades_step"] --> T3["- trade_penalty x it"]
+    DD["max(0, max_nav - nav)"] --> T4["- drawdown_penalty x it"]
+    NPF["num_passive_fills_step"] --> T5["+ passive_bonus x it"]
+
+    T1 --> SUM["reward = sum of the five, left to right"]
+    T2 --> SUM
+    T3 --> SUM
+    T4 --> SUM
+    T5 --> SUM
+
+    SUM --> RD["rewards[agent_id]"]
+    SUM --> ACC["acc.reward, acc.reward_terms, acc.drawdown"]
+    ACC --> INFO["info['reward_terms']"]
+    INFO --> MET["reward_term_mean_* and<br/>reward_term_var_share_* metrics"]
+    INFO --> PARQ["reward_term_* columns in the Parquet record"]
+```
 
 ---
 
@@ -90,6 +136,10 @@ The formula needs per-step and high-water-mark state that the account did not or
 - `num_trades_step` — fill events within one environment step.
 - `num_passive_fills_step` — fills where the agent was the passive `counter_party`.
 - `order_step_placed` — flag (0/1), set when a new market or limit order is approved.
+- `num_rejected_step` — orders `_order_approved` refused this step. Not a reward input; it exists
+  because `order_step_placed` is 0 both for an agent that never tried and for one whose every
+  order was refused, and those are opposite behaviours.
+- `reward`, `reward_terms`, `drawdown` — what the reward *was*, kept so it can be reported.
 
 **[`calculate.py`](../gym_continuousDoubleAuction/envs/account/calculate.py)** — `cal_nav`
 updates `max_nav` automatically whenever a new peak is reached.
@@ -98,9 +148,14 @@ updates `max_nav` automatically whenever a new peak is reached.
 `order_step_placed` is set **only** for `market` and `limit` types. `modify` and `cancel` are
 cost-free, so an agent can manage risk without being penalised for it.
 
-**[`exchg_helper.py`](../gym_continuousDoubleAuction/envs/exchg/exchg_helper.py)** — the three
-per-step counters are reset to 0 at the end of each step, *after* rewards are computed. That
-ordering is correct and easy to break.
+**[`exchg_helper.py`](../gym_continuousDoubleAuction/envs/exchg/exchg_helper.py)** — the per-step
+counters (now four, with `num_rejected_step`) are reset to 0 at the end of each step, *after*
+`set_reward` **and** `set_info` have read them. That ordering is correct and easy to break.
+
+Two fields exist purely so the reward is observable rather than only computed: `acc.reward_terms`
+holds the five signed contributions, and `acc.drawdown` holds the level the penalty charged. Both
+were previously derived inside `set_reward` and thrown away, which is what made §6.4 impossible to
+measure.
 
 ---
 
@@ -239,11 +294,12 @@ During training, monitor each term's contribution to total reward variance. A he
 | Penalties | ~20% |
 | Bonuses | ~10% |
 
-All five terms are now logged individually, in `info["reward_terms"]`, as signed contributions
-that sum exactly to the reward — see
-[11_logging_and_observability.md](11_logging_and_observability.md) §1.7. The split above is
-therefore measurable from the per-step record; computing the variance share per episode is a
-reduction over that record, not a further instrumentation problem.
+All five terms are logged individually, in `info["reward_terms"]`, as signed contributions that
+sum exactly to the reward. They are also **already reduced**: `reward_term_mean_<term>` and
+`reward_term_var_share_<term>` are emitted per episode, the shares normalised across the five so
+they sum to 1. "The drawdown penalty is now 80% of the signal" is therefore something a run says
+while it is happening, not something recovered afterwards from a file. See
+[11_logging_and_observability.md](11_logging_and_observability.md) §1.2 and §2.4.
 
 ### 6.5 Make coefficients scale-invariant
 

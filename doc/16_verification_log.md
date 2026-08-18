@@ -2,11 +2,17 @@
 
 Every **[verified]** claim in this documentation set traces to one of the probes below.
 
-All probes were re-run against the working tree on branch `update_lib` during this merge, on
+All probes were re-run against the working tree on branch `update_lib` during that merge, on
 Python 3.12.1 / Ray 2.56.1 / torch 2.13.0+cpu / gymnasium 1.2.2 / NumPy 2.5.2. Where a probe had
 also been run for the earlier `doc_new/` analysis (at commit `3dcfc53`), both readings are shown
-— the absolute numbers differ because **the environment is not seedable** (finding S3-5), but
-every qualitative conclusion and every order of magnitude reproduced.
+— the absolute numbers differed because **the environment was not seedable at the time** (finding
+S3-5), but every qualitative conclusion and every order of magnitude reproduced.
+
+> **This document is a log, not a status page.** Entries are kept as they were recorded, including
+> the ones whose finding has since been fixed — S3-5 (seeding) and S3-6 (`install_requires`) are
+> the two that most change how a probe would read if re-run today. For current status see
+> [15_findings_and_recommendations.md](15_findings_and_recommendations.md); for what a probe
+> measures *now*, the re-measurements below are dated.
 
 ---
 
@@ -25,8 +31,23 @@ tabulate         0.10.0
 six              1.17.0
 ```
 
-`six` and `sklearn` are importable only because they are installed transitively / via
-`requirements.txt`; neither is in `setup.py::install_requires` (finding S3-6).
+At the time: `six` and `sklearn` were importable only because they were installed transitively or
+via `requirements.txt`; neither was in `setup.py::install_requires` (finding S3-6).
+
+**Re-measured, Python 3.12.3, same pins otherwise** (`pyarrow 25.0.1` is now in play for the
+Parquet record, via `ray[rllib]`):
+
+```
+$ python -c "import sys, gym_continuousDoubleAuction.envs.continuousDoubleAuction_env; \
+             print('sklearn imported:', 'sklearn' in sys.modules)"
+sklearn imported: False
+```
+
+`scikit-learn` is in neither `install_requires` nor `requirements.txt`, because nothing imports it
+— `rand_exec_seq` shuffles with the env's own `Generator.permutation`. `six` *is* declared now, as
+are `ray[rllib]`, `numpy`, `pandas`, `sortedcontainers` and `tabulate`. S3-6 is closed, and the
+`packaging` CI job builds a wheel and constructs an env from it in a clean venv so the claim stays
+true.
 
 ---
 
@@ -56,6 +77,21 @@ Integration: `integration/test_league_wiring.py` — 3 classes, 13 test methods.
 
 `grep -rn "expectedFailure"` over the repository returns **nothing**, contradicting the older
 documentation's description of `test_modify_order_price_change`.
+
+**Re-measured on the current tree:**
+
+```
+$ python -m pytest gym_continuousDoubleAuction/test -q
+509 passed, 1 xfailed, 7 warnings in 105.79s (0:01:45)
+
+$ python -m pytest gym_continuousDoubleAuction/test -q --collect-only | tail -1
+510 tests collected
+```
+
+474 unit and 36 integration. The one `xfail` is
+`integration/test_progress_and_vf.py::test_the_critic_actually_explains_something`, a **strict**
+xfail pinning S1-1: it will fail the build by XPASSing on the day the critic starts learning. The
+current per-file inventory is in [10_testing.md](10_testing.md) §0.
 
 **Supports:** the file inventory in [10_testing.md](10_testing.md), and the correction in
 [03_matching_engine.md](03_matching_engine.md) §4.
@@ -391,19 +427,26 @@ Dead-code confirmations (`grep`, `.py` files only):
 - `state_diff` is defined in `state_helper.py` and called nowhere.
 - `random_agent.Random_agent` is referenced only by `trader.py`'s `import` and class declaration;
   `select_random_action` is never called.
-- `sklearn` appears exactly once, at `action_helper.py:5`, for `shuffle(actions, random_state=...)`.
-- `six` appears at `orderbook.py:10` and `orderlist.py:101`, both for `cStringIO`.
-- `import ray` at `continuousDoubleAuction_env.py:6` is unused — the only `ray.`-prefixed
-  reference in the file is the `from ray.rllib...` import on line 7.
+- `sklearn` appears exactly once, in `action_helper.py`, for `shuffle(actions, random_state=...)`.
+  **Since removed** — `rand_exec_seq` uses `Generator.permutation`, and `scikit-learn` is in
+  neither `install_requires` nor `requirements.txt` (S3-5, S3-6).
+- `six` appears in `orderbook.py` and `orderlist.py`, both for `cStringIO`. **Still there**, and
+  now declared in `install_requires`: `envs/orderbook/` is off-limits to changes.
+- The bare `import ray` in `continuousDoubleAuction_env.py` is unused — the only `ray.`-prefixed
+  reference in the file is the `from ray.rllib...` import on the next line. **Since deleted**; the
+  `MultiAgentEnv` import is the real dependency, which is why `ray[rllib]` is now declared.
 
 Infrastructure confirmations:
 
 - `.github/workflows/tests.yml` exists: `push` to `master`/`update_lib`, `pull_request`,
   `workflow_dispatch`; matrix Python 3.11 + 3.12; three staged jobs (unit tests → random-agent
-  smoke run → RLlib integration).
+  smoke run → RLlib integration). **Since changed**: Python 3.12 only — numpy stopped shipping
+  3.11 wheels — and a second `packaging` job builds the wheel and constructs an env from it in a
+  clean venv outside the checkout.
 - `.gitignore` contains both `episode_data` and `gym_continuousDoubleAuction/episode_data`, with
   an explanatory comment.
-- `episode_data/` contains exactly two committed fixtures: `test_ep_failure.pkl`,
+- **Since removed**, along with `pickle` itself: `episode_data/` contained exactly two committed
+  fixtures at the time of this probe: `test_ep_failure.pkl`,
   `test_ep_success.pkl`.
 - `CODEOWNER` and `CODEOWNERS` both exist at the repo root.
 
@@ -489,7 +532,9 @@ through `build_config` and takes a few minutes. Neither writes into the reposito
 `episode_data_dir=None` is passed; with the default the rollout probes will create
 `episode_data/` in the working directory.
 
-Because seeding is non-functional (S3-5), **re-running will not reproduce the exact numbers
-above** — only the signs, ratios and orders of magnitude. That is itself a finding, and fixing it
-is item 9 of Phase 2 in
-[15_findings_and_recommendations.md](15_findings_and_recommendations.md#suggested-sequencing).
+When these were recorded, seeding was non-functional (S3-5), so **re-running would not reproduce
+the exact numbers above** — only the signs, ratios and orders of magnitude. That was itself a
+finding, and it is now fixed: all three of the env's random draws read `self.np_random`, so
+`reset(seed=...)` pins an episode and a probe written to seed the env *is* reproducible. The
+numbers recorded above were produced before that, from unseeded runs, and are left as they were —
+re-running the same script today will not match them digit for digit unless it seeds.

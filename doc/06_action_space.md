@@ -12,10 +12,8 @@ Related: [05_observation_space.md](05_observation_space.md) §5 (prices resolve 
 ## 1. Current structure
 
 Each agent's action is a `gymnasium.spaces.Dict`
-([`action_helper.py:56-66`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py#L56-L66)):
+([`action_helper.py`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py)):
 
-| Key | Space | Description |
-|---|---|---|
 | Key | Space | Config key | Description |
 |---|---|---|---|
 | `category` | `Discrete(9)` | `action_space.category_n` | Trade action — side and type combined |
@@ -31,6 +29,36 @@ the requirement that `price_offset_n` be odd so the neutral "join" code is the m
 value the decoder cannot honour raises rather than being silently ignored. See
 [18_configuration.md](18_configuration.md) §4.2.
 
+### 1.0 From network output to a book order
+
+```mermaid
+flowchart TD
+    NN["RLModule emits a Dict:<br/>category, size_mean, size_sigma, price, price_offset"] --> CAT{"_CATEGORY_MAP[category]"}
+    CAT -->|"0 -> (None, market)"| PASS["side is None:<br/>dropped by set_actions,<br/>agent recorded in pass_agents"]
+    CAT -->|"1-4 -> bid {market, limit, modify, cancel}"| SIZE
+    CAT -->|"5-8 -> ask {market, limit, modify, cancel}"| SIZE
+
+    SIZE["_set_size:<br/>rint(abs(N(mean_mul * size_mean, size_sigma)))<br/>drawn from self.np_random"] --> PLUS["+ min_size, cast to int"]
+    PLUS --> TYPE{"type is market?"}
+    TYPE -->|"yes"| MKT["price = -1.0<br/>price and price_offset ignored"]
+    TYPE -->|"no"| PR["_set_price(min_tick, side, price, price_offset)"]
+
+    PR --> LVL{"is agg_LOB_raw[level] occupied?"}
+    LVL -->|"yes"| REAL["base = that level's raw price"]
+    LVL -->|"no"| GHOST["base = last_price -/+ (level + 1) * min_tick<br/>(ghost level)"]
+    REAL --> OFF["apply price_offset:<br/>bid + k*tick, ask - k*tick"]
+    GHOST --> OFF
+    OFF --> CLAMP["max(min_tick, price)"]
+
+    MKT --> OUT["order dict {ID, side, type, size, price}"]
+    CLAMP --> OUT
+    OUT --> QUEUE["appended to acts, then shuffled by rand_exec_seq"]
+```
+
+`mean_mul` is 49.5 for market orders and 499.5 for limit orders, so the same `size_mean` means a
+10× larger order on the limit path. Note that the *realised* size is drawn by the **environment**,
+not by the policy distribution — §4.3 is about why that matters.
+
 ### 1.1 `category`
 
 | Value | Meaning |
@@ -45,7 +73,7 @@ or matching — so "do nothing" costs nothing.
 ### 1.2 Size
 
 Constants, from
-[`action_helper.py:9-14`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py#L9-L14):
+[`action_helper.py`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py):
 
 ```python
 min_size            = 1
@@ -148,11 +176,11 @@ price", not a fixed distance, so the coordinate system is non-stationary. See
 ### 4.1 Half the `size_mean` range is a no-op
 
 `_set_size`
-([`action_helper.py:206-226`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py#L206-L226)):
+([`action_helper.py`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py)):
 
 ```python
-sample = np.random.normal(mean_mul * mean, sigma, 1)
-return np.rint(np.abs(sample)).item()
+sample = self.np_random.normal(mean_mul * mean, sigma, 1)
+return int(np.rint(np.abs(sample)).item())
 ```
 
 The `abs()` folds the distribution. **[verified]**, same RNG seed:
@@ -200,8 +228,8 @@ control the spread.
 ### 4.4 Dead helper methods
 
 `_set_side`, `_set_type`, `_higher` and `_lower` are all superseded by the category mapping and
-the offset arithmetic, and are never called. `max_price` is a parameter of `_set_price` that its
-body never reads.
+the offset arithmetic, and are never called. (`_set_price` also used to carry a `max_price`
+parameter its body never read; that one is gone.)
 
 ---
 
@@ -228,7 +256,7 @@ The price code mapped as:
 | 0 | Behind the worst visible price | Worst bid − 1 tick | Worst ask + 1 tick |
 
 The commented-out `act_space` at
-[`action_helper.py:23-36`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py#L23-L36)
+[`action_helper.py`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py)
 still preserves it inline.
 
 ### 5.2 The flaws that motivated the redesign
@@ -274,11 +302,17 @@ for RLlib to handle than a nested `Tuple`.
 
 All agents act on the same observation, and arrival order is randomised per step by
 `rand_exec_seq`
-([`action_helper.py:88-96`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py#L88-L96)).
+([`action_helper.py`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py)).
 This makes the step a simultaneous-move stage game with a random tie-break — clean and
 defensible, and it means no agent can be systematically faster.
 
-Note that `step()` calls `rand_exec_seq(actions, None)`, so `random_state=None` and the shuffle
-is **not** governed by RLlib's `seed`. Combined with the env drawing initial price and order
-sizes from global `np.random`, **no episode is reproducible even with `--seed` set**. The
-`rand_exec_seq` signature already accepts a seed; nothing passes one. Tracked as S3-5.
+`step()` calls `rand_exec_seq(actions, None)`, and `None` now means "draw from the env's own
+generator" rather than "fall through to a global stream". All three of the env's random draws —
+the price anchor in `reset`, order sizes in `_set_size`, and this shuffle — read `self.np_random`,
+the per-env `Generator` that `super().reset(seed=...)` seeds, so `reset(seed=...)` means what the
+Gymnasium API says it means. `test_seeding.py` pins it, and deliberately seeds the *global* NumPy
+stream to two different values while asserting the seeded episode is unchanged — which is the
+direction that would have hidden the original bug. S3-5, fixed.
+
+The explicit `seed` parameter still works for a caller that wants to pin this one shuffle without
+touching the env's stream.

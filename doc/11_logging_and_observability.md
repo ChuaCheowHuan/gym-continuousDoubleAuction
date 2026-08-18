@@ -26,6 +26,53 @@ became.
 
 ## 1. What is currently logged
 
+Five channels, with different lifetimes and different readers. Nothing is written twice: each
+number has exactly one home, and the arrows below are where it goes.
+
+```mermaid
+flowchart LR
+    subgraph SRC["Sources"]
+        ENV["env.step -> info dict<br/>per agent, per step"]
+        HOOK["SelfPlayCallback<br/>episode hooks"]
+        DRV["train loop<br/>on the driver"]
+    end
+
+    subgraph CH["Channels"]
+        PARQ[("episode_data/run_id/<br/>episodes.pid.worker.n.parquet<br/>one row per episode-step-agent")]
+        MET["metrics_logger<br/>27 custom metrics"]
+        LOGF[("run_dir/run.log<br/>+ run.pid.worker.log")]
+        PROG[("run_dir/progress.jsonl<br/>one line per iteration")]
+        CHK[("chkpt/iter_NNNNN<br/>+ league_state.json")]
+    end
+
+    subgraph RD["Readers"]
+        TB["TensorBoard / result dict"]
+        STOP["_check_nav_conservation<br/>stops the run"]
+        VIZ["visualize/run_all.py"]
+        HUMAN["a person reading scrollback<br/>or a saved log"]
+    end
+
+    ENV --> HOOK
+    HOOK --> PARQ
+    HOOK --> MET
+    HOOK --> LOGF
+    DRV --> PROG
+    DRV --> LOGF
+    DRV --> CHK
+    MET --> TB
+    MET --> STOP
+    PARQ --> VIZ
+    PROG --> VIZ
+    LOGF --> HUMAN
+```
+
+Two things this picture is meant to make obvious. The episode hooks run on **whichever process
+sampled the episode**, so with `num_env_runners > 0` their log lines and their Parquet files are
+the worker's, not the driver's — which is why the run log carries `pid=` and `iter=`, and why the
+conservation check reports a *metric* instead of raising. And `progress.jsonl` is the driver's
+alone: one line per iteration, holding the whole result dict, written and closed per iteration so
+a killed run keeps what it had finished.
+
 ### 1.1 The per-step episode record (Parquet)
 
 **Where:** `on_episode_step` hands the step to
@@ -94,8 +141,9 @@ pyarrow is not a new dependency; `ray[rllib]` already requires it.
 pickled bytes, so an episode was **~34 MB** — held in memory and then serialised, per episode, per
 worker. `runtime_profiles.json` had estimated ~10 MB.
 
-Two `.pkl` files remain committed under `episode_data/`. They are leftover output from an older
-version of `test_nav_callback.py`, not fixtures anything reads, and nothing regenerates them.
+The two `.pkl` files that used to sit committed under `episode_data/` — leftover output from an
+older version of `test_nav_callback.py`, not fixtures anything read — have been removed. Nothing
+in the repository writes a pickle any more.
 
 ### 1.2 RLlib `metrics_logger` custom metrics
 
@@ -396,15 +444,17 @@ Everything above assumes a field means one thing and holds one type. Before this
 | Signal | `float` | `reward`, `drawdown` |
 
 **Why it is not cosmetic.** `Decimal * float` raises `TypeError`; `Decimal * int` does not. The
-orderbook carries two local workarounds for exactly that error, both commented with the traceback
-they came from (`orderbook.py:76-79`, `:99-100`), and `cash_processor.py:78` computes
-`Decimal(str(price)) * qoute['quantity']`, which would raise on the modify path with a float size.
-Sizes being `int` makes that class of failure unreachable rather than worked around.
+orderbook carries two local workarounds for exactly that error, both inside `process_order_list`
+and both commented with the traceback they came from
+(`TypeError: unsupported operand type(s) for -: 'decimal.Decimal' and 'float'`). The now-deleted
+`modify_cash_transfer` in `cash_processor.py` was a third site that would have raised on the modify
+path with a float size. Sizes being `int` makes that class of failure unreachable rather than
+worked around.
 
 The second failure is a field that changes type partway through an episode, which breaks any
 consumer that checks it. Measured over a real run, before the fix: `net_position` was `int` until
 the first fill and `Decimal` after; `VWAP` was `Decimal` until a position went flat, then `int`
-(a bare `0` at `account.py:136`); `reward` was `int` until the first `set_reward`; `drawdown` was
+(a bare `0` in `Account._covered`); `reward` was `int` until the first `set_reward`; `drawdown` was
 `Decimal` until the first step.
 
 **Signals are the deliberate exception.** `reward` must be a `float` — RLlib requires it — and
@@ -418,8 +468,8 @@ consumed only by `_set_price`'s NumPy arithmetic and by `state_helper`, which al
 exactness.
 
 **`envs/orderbook/` is deliberately not changed** — see `ec1f5ea`, "Intentional revert because I
-don't want code in orderbook folder to change." The book stores sizes as `Decimal` (`order.py:12`
-coerces on the way in), and a fill reports whichever type its branch happened to hold:
+don't want code in orderbook folder to change." The book stores sizes as `Decimal`
+(`Order.__init__` coerces on the way in), and a fill reports whichever type its branch happened to hold:
 `quantity_to_trade` (int) on a partial or exact fill, `head_order.quantity` (Decimal) when the
 incoming order is larger — 84 against 10 on one tape. That mixing is absorbed at the single point
 every trade passes through, `trader._normalise_trade_sizes`, before any account arithmetic sees
@@ -427,7 +477,7 @@ it. The coercion is lossless by construction rather than by luck: ints go in, th
 subtracts whole sizes from whole sizes, and a fractional size raises instead of truncating
 silently.
 
-Sizes are `int` at ingress too (`action_helper.py:250`), which is a separate guarantee: the old
+Sizes are `int` at ingress too (`_set_action_mkt_depth`), which is a separate guarantee: the old
 `(size + min_size) * 1.0` — commented *"\*1 for float"* — was the single character that made every
 downstream size a float. Egress normalisation hides an ingress regression completely, so both ends
 are pinned by `test_type_policy.py` (15 tests); the ingress tests exist precisely because a
@@ -753,7 +803,7 @@ missing field.
 ### 2.6 The `info["NAV"]` string round-trip
 
 `Info_Helper` serialises NAV as a **string**
-([`info_helper.py:18`](../gym_continuousDoubleAuction/envs/exchg/info_helper.py#L18)) —
+([`info_helper.py`](../gym_continuousDoubleAuction/envs/exchg/info_helper.py)) —
 presumably to survive `Decimal` JSON encoding — and every consumer parses it back with `float()`
 (the league callback, `visualize_nav.py`). That round trip discards the exactness `Decimal` was
 chosen for, and it makes the info dict awkward for RLlib metric aggregation.

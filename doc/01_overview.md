@@ -73,14 +73,14 @@ Evidence for that framing in the code:
 
 - There is **no exogenous price process**. The initial price is a single random integer anchor
   drawn per episode
-  ([`continuousDoubleAuction_env.py:164-166`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py#L164-L166));
+  ([`continuousDoubleAuction_env.py`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py));
   everything after that is endogenous.
 - There are **no non-learning market participants** beyond the frozen `RandomRLModule`
   baselines, which are themselves league members
   ([`model_handler.py`](../gym_continuousDoubleAuction/train/model/model_handler.py)).
 - The training callback explicitly **asserts NAV conservation** at the end of every episode —
   total NAV across all agents must equal total initial cash
-  ([`league_based_self_play_callback.py:236-263`](../gym_continuousDoubleAuction/train/callbk/league_based_self_play_callback.py#L236-L263)).
+  ([`league_based_self_play_callback.py`](../gym_continuousDoubleAuction/train/callbk/league_based_self_play_callback.py)).
   That check only makes sense for a closed zero-sum system, and it holds: **[verified]** 4 agents
   × 1,000,000 initial cash → final total NAV exactly 4,000,000.00.
 - Training is **league-based self-play** with champion snapshots, the standard tool for
@@ -104,16 +104,16 @@ other. The environment is a valid *game*; framing it as a market simulator overr
 
 | Aspect | Value | Source |
 |---|---|---|
-| Agents | 8 by default (2 trainable + 6 league opponents) | [`train.py:49-50`](../gym_continuousDoubleAuction/train/train.py#L49-L50) |
-| Episode length | 4,096 env steps (`max_step = 1024 * 4`) | [`train.py:54`](../gym_continuousDoubleAuction/train/train.py#L54) |
-| Initial cash | 1,000,000 per agent | [`train.py:51`](../gym_continuousDoubleAuction/train/train.py#L51) |
-| Initial price anchor | `randint(10, 100)` inclusive, per episode | [`continuousDoubleAuction_env.py:164-166`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py#L164-L166) |
-| Tick | 1.0, fixed (`min_tick`) | [`action_helper.py:17`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py#L17) |
-| Instrument | a single unnamed contract, no expiry, no carry | [`account.py:19-20`](../gym_continuousDoubleAuction/envs/account/account.py#L19-L20) |
-| Observation | 168 floats (4 stacked snapshots × 42), identical for every agent | [`state_helper.py:9-13`](../gym_continuousDoubleAuction/envs/exchg/state_helper.py#L9-L13) |
-| Action | `Dict{category:9, size_mean:Box, size_sigma:Box, price:10, price_offset:3}` | [`action_helper.py:56-66`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py#L56-L66) |
-| Termination | only when *every* agent is bankrupt | [`done_helper.py`](../gym_continuousDoubleAuction/envs/exchg/done_helper.py) |
-| Truncation | at `max_step` | [`done_helper.py`](../gym_continuousDoubleAuction/envs/exchg/done_helper.py) |
+| Agents | 8 by default (2 trainable + 6 league opponents) | `environment.num_agents` / `num_trained_agents`, [`train_config.json`](../config/train_config.json) |
+| Episode length | 4,096 env steps | `environment.max_step`, [`train_config.json`](../config/train_config.json) |
+| Initial cash | 1,000,000 per agent | `environment.init_cash`, [`train_config.json`](../config/train_config.json) |
+| Initial price anchor | `randint(10, 100)` inclusive, per episode, from the seeded `self.np_random` | `reset` in [`continuousDoubleAuction_env.py`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py) |
+| Tick | 1.0 (`Action_Helper.min_tick`, from the `tick_size` config key) | `environment.tick_size`, [`train_config.json`](../config/train_config.json) |
+| Instrument | a single unnamed contract, no expiry, no carry | [`account.py`](../gym_continuousDoubleAuction/envs/account/account.py) |
+| Observation | 168 floats (4 stacked snapshots × 42), identical for every agent | `observation_layout`, [`tunable_constants.json`](../config/tunable_constants.json) |
+| Action | `Dict{category:9, size_mean:Box, size_sigma:Box, price:10, price_offset:3}` | `action_space`, [`tunable_constants.json`](../config/tunable_constants.json) |
+| Termination | only when *every* agent is bankrupt | `set_all_done` in [`done_helper.py`](../gym_continuousDoubleAuction/envs/exchg/done_helper.py) |
+| Truncation | at `max_step` | `set_all_done` in [`done_helper.py`](../gym_continuousDoubleAuction/envs/exchg/done_helper.py) |
 
 Note the env's **own** defaults differ from what `TrainConfig` passes — a bare
 `continuousDoubleAuctionEnv({})` gets 5 agents, `init_cash=1,000,000`, `max_step=64` and
@@ -123,30 +123,65 @@ The full table is in [02_architecture.md](02_architecture.md) §6.
 
 Within one env step, all N agents' orders are collected, **randomly shuffled**, and then applied
 to the book one at a time
-([`action_helper.py:88-96`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py#L88-L96)).
+([`action_helper.py`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py)).
 The shuffle is the simulator's answer to "who gets there first": it randomises latency and
 queue-race outcomes rather than modelling them. The corresponding modelling assumption is that
 **all traders share the same lag** — nobody sees a new book snapshot until every order in the
 step has executed.
 
+### The shape of an episode
+
+```mermaid
+flowchart TD
+    R["reset(seed)"] --> A["draw price anchor<br/>randint(10, 100)"]
+    A --> B["empty book, every account at init_cash"]
+    B --> C["fill obs history with n_hist copies<br/>of the first snapshot"]
+    C --> S
+
+    S{"step t"} --> S1["all N agents act on the same observation"]
+    S1 --> S2["shuffle arrival order"]
+    S2 --> S3["apply orders to the book one at a time"]
+    S3 --> S4["settle fills on both sides"]
+    S4 --> S5["mark to market at the last tape price"]
+    S5 --> S6["build the next snapshot, reward, info"]
+    S6 --> D{"done?"}
+
+    D -->|"every agent NAV <= 0"| T["terminated __all__"]
+    D -->|"t + 1 >= max_step"| U["truncated __all__"]
+    D -->|"otherwise"| S
+
+    T --> E["on_episode_end:<br/>NAV conservation check + metrics"]
+    U --> E
+```
+
+Note what the two exits mean. Truncation at `max_step` is the normal ending; termination needs
+**every** agent bankrupt, and per-agent flags are rebuilt as all-`False` each step, so a single
+bust agent keeps being stepped (§S2-4 in
+[15_findings_and_recommendations.md](15_findings_and_recommendations.md)).
+
 ---
 
 ## 1.5 Project maturity and trajectory
 
-Reading `git log`, the project has three eras:
+Reading `git log`, the project has four eras:
 
 1. **Original environment** (through 2020-era commits) — the LOB, accounting, and a first RLlib
    integration.
 2. **Model/reward refinement** — the reward function, visualisation, the redesigned action space,
    observation normalization and stacking, and a probabilistic self-play league.
-3. **The current `update_lib` branch** — a substantial modernisation: `Upgrade to Ray 2.56.1 and
-   complete the RLlib new API stack migration`, followed by four commits fixing genuine
-   distributed-training defects (champion propagation to remote EnvRunners, champion snapshotting
-   with a remote LearnerGroup) and adding integration tests for them.
+3. **The Ray 2.56.1 / new-API-stack migration** — `Upgrade to Ray 2.56.1 and complete the RLlib
+   new API stack migration`, followed by commits fixing genuine distributed-training defects
+   (champion propagation to remote EnvRunners, champion snapshotting with a remote LearnerGroup)
+   and adding integration tests for them.
+4. **The operability era, since merged to `master`** — everything a run needs to be diagnosed
+   rather than merely launched: `config/` as the only place values live
+   ([18](18_configuration.md)), recoverable checkpointing, a logging framework replacing ~86
+   `print()` calls, the Parquet per-step record, 27 custom metrics
+   ([11](11_logging_and_observability.md)), and reproducible episodes.
 
 The recent commits are unusually high quality: narrow, each with a regression test, and with code
 comments that explain *why* the previous behaviour was wrong at the RLlib-internals level (see
-[`league_based_self_play_callback.py:474-499`](../gym_continuousDoubleAuction/train/callbk/league_based_self_play_callback.py#L474-L499)
+[`league_based_self_play_callback.py`](../gym_continuousDoubleAuction/train/callbk/league_based_self_play_callback.py)
 on the `WEIGHTS_SEQ_NO` force-push). The maintainer clearly debugged real silent-degradation bugs
 and encoded the lessons.
 
@@ -164,8 +199,9 @@ remaining high-impact issues are.
 | `python -m gym_continuousDoubleAuction.train.train --iters 4 --agents 4` | League self-play PPO training |
 | `python -m gym_continuousDoubleAuction.train.train --help` | Full CLI |
 | `python gym_continuousDoubleAuction/CDA_rand.py` | Random-agent smoke run, no learning (CI stage 2) |
-| `python -m pytest gym_continuousDoubleAuction/test -q` | 176 tests (163 unit + 13 integration) |
-| `python -m pytest gym_continuousDoubleAuction/test/integration -q` | 13 RLlib wiring integration tests |
+| `python -m pytest gym_continuousDoubleAuction/test -q` | 510 tests (474 unit + 36 integration) |
+| `python -m pytest gym_continuousDoubleAuction/test/integration -q` | 36 integration tests that build real `Algorithm`s |
+| `python -m gym_continuousDoubleAuction.CDA_rand --help` | Flags for the smoke run; defaults in `config/cli_defaults.json` |
 | `CDA_train.ipynb` | Notebook driver; imports `TrainConfig` / `train` from `train.py`. Runs unchanged on [Colab](20_colab.md) and in the [docker image](19_docker.md) — set `PLATFORM` / `USE_GPU` in its first cell, everything else comes from `config/runtime_profiles.json` |
 | `python -m gym_continuousDoubleAuction.visualize.run_all` | Regenerates every chart in `visualize/` from the latest episode Parquet record and `progress.jsonl` |
 
@@ -176,6 +212,8 @@ pip install -r requirements.txt
 pip install -e .            # or -e ".[rllib]" / ".[plot]" / ".[dev]"
 ```
 
-Note that `pip install gym_continuousDoubleAuction` **without** extras currently fails on first
-import — the environment package imports `ray`, `sklearn.utils` and `six`, none of which are in
-`install_requires`. See [14_perspective_ai_engineer.md](14_perspective_ai_engineer.md) §5.3.
+`pip install gym_continuousDoubleAuction` **without** extras used to fail on first import, because
+`install_requires` did not name `ray[rllib]` or `six` and no config JSON reached the wheel. Both
+are fixed (S3-6 and S3-18), and the `packaging` CI job now builds the wheel, installs it into a
+clean venv outside the checkout, and steps an env there — so the installed-package path is tested
+rather than assumed. See [14_perspective_ai_engineer.md](14_perspective_ai_engineer.md) §5.3.

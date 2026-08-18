@@ -51,9 +51,47 @@ the visualizers and the tests. See [18_configuration.md](18_configuration.md) §
 Ask prices and sizes are stored **negated**; the sign encodes side.
 
 The declared space is `Box(-inf, inf, shape=(n_hist * SNAPSHOT_DIM,), dtype=float32)`
-([`continuousDoubleAuction_env.py:80-87`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py#L80-L87)).
+([`continuousDoubleAuction_env.py`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py)).
 Every quantity here is in fact boundable; infinite bounds disable RLlib's observation filters and
 any space-based sanity checking. See §7.6.
+
+---
+
+### 1.1 How one snapshot is built
+
+```mermaid
+flowchart TD
+    LOB["OrderBook.bids / .asks<br/>SortedDict price -> OrderList"] --> TOP["take the top k_rows levels<br/>bids descending, asks ascending"]
+    TOP --> RAW["bid_price, bid_size,<br/>ask_price, ask_size (asks negated)"]
+    RAW --> KEEP["self.agg_LOB_raw<br/>BOOK_DIM = 40 floats, unnormalised"]
+    KEEP -.->|"read by Action_Helper._set_price<br/>to resolve a level into a real price"| ACT["action pricing"]
+
+    RAW --> M{"L1 sides present?"}
+    M -->|"both"| M1["M = (bid1 + ask1) / 2"]
+    M -->|"bid only"| M2["M = bid1"]
+    M -->|"ask only"| M3["M = ask1"]
+    M -->|"neither"| M4["M = last_price,<br/>or 100.0 if that is <= 0"]
+
+    M1 --> NORM
+    M2 --> NORM
+    M3 --> NORM
+    M4 --> NORM
+    NORM["prices -> (M - P)/M, asks negated<br/>sizes -> sqrt(V), asks negated"] --> EXTRA
+    M1 --> SPREAD["log1p((ask1 - bid1) / min_tick)"]
+    M2 --> SENT["0.0 sentinel"]
+    M3 --> SENT
+    M4 --> SENT
+    SPREAD --> EXTRA
+    SENT --> EXTRA
+    EXTRA["append log(M) and log1p_spread_ticks"] --> SNAP["snapshot: SNAPSHOT_DIM = 42 floats"]
+    SNAP --> DEQ["obs_history deque, maxlen = n_hist"]
+    DEQ --> OBS["concatenate -> 168 floats,<br/>the same array for every agent"]
+```
+
+Two things this picture makes concrete. The raw book is kept **beside** the normalised one and is
+`BOOK_DIM`, not `SNAPSHOT_DIM` — the market scalars are observation-only, so action pricing is
+untouched by them (§5). And the deque holds **already-normalised** frames, each with its own `M`,
+which is defect §7.1.
 
 ---
 
@@ -131,10 +169,12 @@ $$\texttt{log1p\_spread\_ticks} = \ln\!\left(1 + \frac{P_{ask,1} - P_{bid,1}}{\t
 Computed from the same `l1_bid` / `l1_ask` locals as `M`, so it is guaranteed consistent with the
 top of book actually present in the observation.
 
-**`min_tick`, not `tick_size` — deliberate.** `self.tick_size` is never stored on the env and
-`reset()` hardcodes `OrderBook(1, ...)`, so the `tick_size` config is silently discarded
-([02_architecture.md](02_architecture.md) §2.7). `Action_Helper.min_tick` (= 1) is the tick the
-action space actually quotes in, so this choice makes observation units match action units.
+**`min_tick`, not `tick_size` — deliberate, and now the same number.** `Action_Helper.min_tick`
+*is* the `tick_size` config key: it is the tick the action space quotes in, and `_set_price` is
+the only thing in the system that builds a price. Reading it here makes observation units match
+action units by construction. (When this was written the two were independent — `min_tick` was a
+hardcoded 1 and the config key was inert — so the choice was a workaround; it is now simply the
+right source. See [02_architecture.md](02_architecture.md) §2.7.)
 
 **The `0.0` sentinel is unambiguous.** A resting book can never be locked or crossed — any bid
 `>= best ask` is filled on arrival ([03_matching_engine.md](03_matching_engine.md) §2.1) — so a
@@ -259,6 +299,44 @@ all finite         = True
 
 The observation is where the largest remaining problems are. Ordered by cost.
 
+```mermaid
+mindmap
+  root((Observation defects))
+    Information missing
+      7.7 no private state
+        inventory, cash, NAV, own orders
+        the reward is a function of exactly these
+        S1-2
+      7.3 no trade flow
+        the tape loop discards every entry
+        S2-7
+      no time remaining
+        finite horizon, t_step / max_step unseen
+    Representation
+      7.1 per-frame normalizer
+        frames cannot be compared
+        stacking exposes nothing
+        S2-6
+      7.2 zero means three things
+        absent level
+        price exactly at M
+        L1 of a one-sided book
+        S3-14
+      7.4 level index is non-stationary
+        k-th occupied price, not a fixed distance
+        S3-15
+    Scaling
+      7.5 size block is 80-250x the price block
+        tanh first layer, no filter
+        S2-2
+      7.6 infinite observation bounds
+        disables RLlib filters
+        S4-15
+      redundant ask sign
+        blocks weight sharing
+        S4-17
+```
+
 ### 7.1 Each frame in the stack is normalized by a different denominator
 
 `set_agg_LOB` computes `M` from the book *at that moment*, and `prep_next_state` appends the
@@ -294,7 +372,7 @@ sentinel.
 ### 7.3 The tape loop is dead code — there is no trade-flow information at all
 
 In `set_agg_LOB`
-([`state_helper.py:104-112`](../gym_continuousDoubleAuction/envs/exchg/state_helper.py#L104-L112)):
+([`state_helper.py`](../gym_continuousDoubleAuction/envs/exchg/state_helper.py)):
 
 ```python
 if self.LOB.tape != None and len(self.LOB.tape) > 0:
@@ -415,8 +493,9 @@ log_mid = 4.269698; log1p_spread_ticks = 2.302585
 
 ## 10. Compatibility
 
-Any policy checkpoint or saved `episode_data` pickle built against an older observation width
-will not load against the current one. This is unavoidable whenever the observation dimension
+Any policy checkpoint built against an older observation width will not load against the current
+one, and an episode Parquet record written under one width has `obs` lists of a different length
+than the reader expects. This is unavoidable whenever the observation dimension
 changes; the width has changed twice (40 → 160 with stacking, 160 → 168 with market features).
 `SNAPSHOT_DIM` is a good constant but is not recorded in the checkpoint, so the mismatch is not
 detected — it just fails.

@@ -17,15 +17,15 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (349 tests: 323 unit + 26 integration)
+# everything (510 tests: 474 unit + 36 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
 python -m pytest gym_continuousDoubleAuction/test -q \
     --ignore=gym_continuousDoubleAuction/test/integration
 
-# RLlib wiring, the real save/restore, and the progress log (26 tests,
-# builds real Algorithms; one is an xfail pinning S1-1)
+# RLlib wiring, the real save/restore, the progress log and a real remote
+# runner (36 tests, builds real Algorithms; one is an xfail pinning S1-1)
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 
 # a single file
@@ -46,11 +46,11 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `458 passed, 1 xfailed` (the xfail pins S1-1; see §6.2.2).
+**[verified]** — `509 passed, 1 xfailed in 105.79s` (the xfail pins S1-1; see §6.2.2).
 
 ### File inventory
 
-Counts re-measured with `--collect-only`; the earlier `90` predated the config and runtime suites.
+Counts re-measured with `--collect-only`.
 
 | File | Tests | Area |
 |---|---|---|
@@ -59,43 +59,90 @@ Counts re-measured with `--collect-only`; the earlier `90` predated the config a
 | `test_orderbook_volume_sync.py` | 1 | Volume cache synchronization |
 | `test_accounting.py` | 13 | Cash, position, NAV, position flips |
 | `test_cash_check.py` | 7 | Order approval and cash gating |
-| `test_modify_order.py` | 6 | Modify-order accounting scenarios |
-| `test_new_action_space.py` | 10 | Action decoding and ghost pricing |
+| `test_modify_order.py` | 7 | The six modify-order accounting scenarios, plus a guard that the dead escrow helper stays deleted |
+| `test_new_action_space.py` | 10 | Action decoding, ghost pricing, `tick_size` reaching the action layer, price levels matching book depth |
 | `test_obs_normalization.py` | 12 | Price/volume normalization, action unnormalization |
-| `test_observation_history.py` | 3 | Temporal stacking |
-| `test_obs_market_features.py` | 17 | `log_mid`, `log1p_spread_ticks` |
+| `test_observation_history.py` | 3 | Temporal stacking (shape across `n_hist` moved to `test_obs_market_features.py`) |
+| `test_obs_market_features.py` | 17 | `log_mid`, `log1p_spread_ticks`, observation shape across `n_hist` |
 | `test_reward_logic.py` | 4 | Reward formula components |
+| `test_env_lifecycle.py` | 10 | The bare env is tradable (S1-4) and truncation lands exactly on `max_step` (S3-19) |
+| `test_seeding.py` | 11 | `reset(seed=...)` really seeds the episode: anchor, sizes, queueing order; the global NumPy stream is not the source; `sklearn` is not imported (S3-5, S3-6) |
 | `test_nav_callback.py` | 16 | Episode-end NAV conservation, in both halves: the hook counts a violation without raising, the driver stops the run from the count, tolerance, exactness at a scale `float` cannot resolve, a missing metric reading as "nothing seen" |
-| `test_logging_setup.py` | 58 | Level resolution and export, handler setup, no `print` in `envs/` or `train/`, the rotating run log, per-worker files, the `iter=` tag, dated stamps, concurrent configuration, two-process isolation, unhandled exceptions, warning capture, propagation control and `ray.LoggingConfig` |
+| `test_logging_setup.py` | 61 | Level resolution and export, handler setup, no `print` in `envs/` or `train/`, the rotating run log, per-worker files, the `iter=` tag, dated stamps, concurrent configuration, two-process isolation, unhandled exceptions, warning capture, propagation control and `ray.LoggingConfig` |
 | `test_probabilistic_mapping.py` | 1 | League matchmaking distribution |
 | `test_config_loading.py` | 15 | `train_config.json` → `TrainConfig` → env |
 | `test_config_sources.py` | 26 | No literal copy of a configured value survives in Python |
 | `test_config_wiring.py` | 17 | Config keys reaching their consumers; `episode_data_path` absolute and run-scoped |
-| `test_runtime_profiles.py` | 23 | `runtime_profiles.json` → hardware sets, platform paths |
+| `test_runtime_profiles.py` | 28 | `runtime_profiles.json` → hardware sets, platform paths |
 | `test_checkpointing.py` | 50 | Checkpoint retention, restore selection, league state across a save |
-| `test_champion_trigger.py` | 13 | League statistics with modules that played no episodes; promotion, pool size, idle count and time-since-champion as metrics |
-| `test_progress_log.py` | 31 | `progress.jsonl` writer, numpy/NaN handling, `vf_explained_var` extraction, per-run directory isolation, the iteration broadcast to env runners |
+| `test_champion_trigger.py` | 19 | League statistics with modules that played no episodes; promotion, pool size, idle count and time-since-champion as metrics |
+| `test_progress_log.py` | 35 | `progress.jsonl` writer, numpy/NaN handling, `vf_explained_var` extraction, per-run directory isolation, the iteration broadcast to env runners |
 | `test_info_dict.py` | 22 | Per-step `info`: back-compat, reward terms summing exactly, live counters, spread, pass/rejection fields, JSON |
 | `test_type_policy.py` | 15 | Decimal money/prices, int sizes, no field changing type mid-episode, book boundary |
-| `test_activity_metrics.py` | 24 | `pass_action_fraction` / `order_rejection_fraction`: the S1-3 detector, per-episode tallies, pickling; the reward-term variance split and the end-of-episode account metrics |
-| `test_episode_record.py` | 26 | The Parquet per-step record: declared schema and its drift guard against `Info_Helper`, identity columns, sampling rate, byte cap, eviction of episodes that never end, and the four ways it must fail without raising |
-| **unit total** | **355** | |
+| `test_activity_metrics.py` | 29 | `pass_action_fraction` / `order_rejection_fraction`: the S1-3 detector, per-episode tallies, pickling; the reward-term variance split, the maker-ratio metric and the end-of-episode account metrics |
+| `test_episode_record.py` | 32 | The Parquet per-step record: declared schema and its drift guard against `Info_Helper`, identity columns, sampling rate, byte cap, eviction of episodes that never end, and the ways it must fail without raising |
+| **unit total** | **474** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported and finite (1 xfail pins S1-1) |
 | `integration/test_distributed_observability.py` | 10 | A real `num_env_runners=1` iteration: every episode-hook metric arrives on the driver, and the episode record is written by the *worker* into the driver's absolute run-scoped path |
-| **integration total** | **26** | |
+| **integration total** | **36** | |
 
 > **Stale references in older docs.** `test_orderbook.py`, `repro_orderbook_crossed_book.py`,
 > `test_OrderBook.py`, `test_cda_nsp.py` and `test_orderbook_double_delete_order.py` do not exist.
 > The current names are in the table above.
 
-> **Side effect note, now resolved.** The suite no longer writes `episode_data/` at all:
-> `test_nav_callback` builds its callback with `episode_data_dir=None`, so the per-episode record
-> never runs. (Its predecessor is where the two committed `episode_data/test_ep_*.pkl` files came
-> from — output of the old tests, not fixtures anything reads.) Both `episode_data` and
-> `gym_continuousDoubleAuction/episode_data` remain in `.gitignore`, since a *training* run still
-> writes there by default.
+> **Side effect note, resolved.** The suite writes no `episode_data/` into the working tree:
+> `test_nav_callback` builds its callback with `episode_data_dir=None`, and `test_episode_record`
+> writes into `tmp_path`. The two `episode_data/test_ep_*.pkl` files an earlier revision noted as
+> committed — output of the old tests, not fixtures anything read — are gone from the repository.
+> Both `episode_data` and `gym_continuousDoubleAuction/episode_data` remain in `.gitignore`, since
+> a *training* run still writes there by default.
+
+### Coverage at a glance
+
+```mermaid
+mindmap
+  root((510 tests))
+    Simulator
+      orderbook 14
+        components, matching, invariants
+        crossed book, volume cache
+      accounting 27
+        escrow, flips, cash gating
+        modify scenarios
+      types 15
+        Decimal money, int sizes
+    Learning problem
+      observation 32
+        normalization, stacking
+        log_mid, spread sentinel
+      action 10
+        decoding, ghost pricing
+      reward 4
+        five terms, loss aversion
+      env lifecycle 21
+        bare env tradable
+        truncation on max_step
+        seeded episodes
+    Training
+      config 86
+        loading, wiring, no literals
+        runtime profiles
+      checkpointing 50
+        retention, restore, league sidecar
+      league 20
+        matchmaking, promotion triggers
+      observability 195
+        logging, progress log, info dict
+        activity metrics, episode record
+        NAV conservation
+    Integration 36
+      league wiring, 3 topologies
+      real save and restore
+      real progress.jsonl, 1 xfail pinning S1-1
+      real remote env runner
+```
 
 ---
 
@@ -210,7 +257,7 @@ is initialised with only $100.
 | `test_position_flip_insufficient_cash` | On a flip, only the *opening* portion beyond flattening is cash-checked |
 | `test_price_estimation_fallback_to_tape` | With no opposite-side quote, the market-order price estimate falls back to the last tape price |
 
-### 2.3 `test_modify_order.py` (6 tests)
+### 2.3 `test_modify_order.py` (7 tests)
 
 Mathematically verifies all six modify-order accounting scenarios — price cross, price move,
 quantity increase, quantity decrease, and the two cross-plus-quantity combinations — for both the
@@ -222,7 +269,7 @@ each. The scenario table with expected figures is in
 
 ## 3. Action space
 
-### `test_new_action_space.py` (8 tests)
+### `test_new_action_space.py` (10 tests)
 
 | Test | Verifies |
 |---|---|
@@ -286,12 +333,15 @@ Modify and cancel accounting (categories 3, 4, 7, 8) is verified separately in
 | `test_action_price_from_populated_book_is_raw` | With a bid resting at 99, selecting level 0 (join) resolves to `agg_LOB_raw[0]` = 99, **not** the normalized 0.01 |
 | `test_action_price_is_positive` | Over 10 random multi-agent steps, every resolved non-market price is strictly positive |
 
-### 4.2 `test_observation_history.py` (5 tests)
+### 4.2 `test_observation_history.py` (3 tests)
+
+Shape across `n_hist` values, including the default 4, moved to
+`test_obs_market_features.py::test_observation_shape_across_n_hist`; the MRO health check —
+asserting `mkt_size_mean_mul` is initialised, which it is not if `Action_Helper.__init__` aborts
+mid-body — moved to `test_config_wiring.py`. What is left here is the stacking behaviour itself.
 
 | Test | Verifies |
 |---|---|
-| `test_default_n_hist_observation_space` | Default `n_hist=4` gives a space and a `reset()` observation of `(4 × SNAPSHOT_DIM,)`. Also asserts `mkt_size_mean_mul` is initialised — an MRO chain health check |
-| `test_configurable_n_hist` | `n_hist ∈ {1, 2, 6, 10}` resizes the space correctly |
 | `test_reset_padding_identical_copies` | All *N* segments after reset are identical copies of *O₀* — no zero-padding artefacts |
 | `test_sliding_window_updates` | After each `step()`, the trailing `SNAPSHOT_DIM` elements match the newest snapshot and the total shape is unchanged |
 | `test_shared_history_multi_agent_uniformity` | All agents receive the same observation at reset and after each step |
@@ -469,7 +519,7 @@ that is entirely dead. Floating-point noise is not evidence of learning. The str
 carries the real claim: when S1-1 is fixed it XPASSes and fails the build, and removing the marker
 at that point turns it into a live regression guard.
 
-### 6.3 `test_runtime_profiles.py` — 23 tests
+### 6.3 `test_runtime_profiles.py` — 28 tests
 
 Covers [`config/runtime_profiles.json`](../config/runtime_profiles.json) and
 [`train/runtime.py`](../gym_continuousDoubleAuction/train/runtime.py), the pair that lets
@@ -506,15 +556,23 @@ machine with no GPU — and gives the same result on one with a GPU.
 
 | Trigger | `push` to `master` / `update_lib`, any `pull_request`, `workflow_dispatch` |
 |---|---|
-| Matrix | Python 3.11, 3.12 on `ubuntu-latest`, `fail-fast: false` |
+| Python | 3.12 on `ubuntu-latest` — the only version `python_requires` claims, after numpy stopped shipping 3.10/3.11 wheels |
 | Install | CPU torch wheel explicitly first (so the CUDA wheel is not pulled transitively), then `requirements.txt`, then `pip install -e ".[dev]"` |
 
-Three staged jobs, so an env-level break and an RLlib-level break are distinguishable from the
-job name alone:
+The `test` job runs three staged steps, so an env-level break and an RLlib-level break are
+distinguishable from the step name alone:
 
 1. **Env + order book unit tests** — `pytest gym_continuousDoubleAuction/test -q`
 2. **Random-agent env smoke run** — `python gym_continuousDoubleAuction/CDA_rand.py`
 3. **RLlib integration** — `pytest gym_continuousDoubleAuction/test/integration -q`
+
+A second job, **`packaging`**, covers what none of those can see: what a *user* gets from
+`pip install`. Every step above installs the full `requirements.txt` from a checkout, which is
+exactly why both halves of S3-6 / S3-18 went unnoticed — `install_requires` did not name
+`ray[rllib]` or `six`, and no config JSON reached the distribution at all, so an installed copy
+raised `FileNotFoundError` on import while CI stayed green. The job builds the wheel, asserts it
+carries `config/*.json`, installs it into a clean venv, and — from a directory with no checkout in
+it, so the import cannot resolve to the source tree — constructs an env and steps it.
 
 > **Correction.** `doc/known_issues.md` §4 and `doc/testing.md` §7 stated that "nothing enforces
 > the test suite — there is no CI". That has not been true since the Ray 2.56 migration.
@@ -531,7 +589,7 @@ Honest accounting of what the suite does **not** cover.
 | **`test_accounting.py::test_insufficient_funds` is an empty `pass`** | The body is a 15-line comment debating what the behaviour *should* be, ending "Will implement based on observed behavior or re-read code carefully." A TODO shipped as a test. The behaviour it was meant to cover is in fact tested by `test_cash_check.py`. |
 | **No information-content tests for the observation** | The suite would pass unchanged with the varying-denominator stack, the zero-collision ambiguity and the dead tape loop all present — and all three are present ([05](05_observation_space.md) §7). |
 | **`test_shared_history_multi_agent_uniformity` encodes a defect as a requirement** | See §4.2. |
-| **Reproducibility is untested because it does not work** | Seeding is non-functional (S3-5); no test asserts two identically-seeded runs match. |
+| ~~**Reproducibility is untested**~~ | **Closed.** `test_seeding.py` (11 tests) asserts two identically-seeded episodes match and two differently-seeded ones do not, across all three randomness sources — and does it while seeding the *global* NumPy stream to different values, so it cannot pass for the wrong reason. What remains untested is reproducibility of a whole multi-worker *training run*, which is a different claim. |
 | **Edge cases in league matchmaking** | Empty pools and zero weights are untested. |
 | **No property-based tests** | The order book is an ideal Hypothesis target: "tree volume == Σ level volumes", "no crossed book", "Σ NAV == Σ initial cash" hold for *any* order sequence. |
 | **No coverage measurement** | No `pytest-cov`, no threshold. |

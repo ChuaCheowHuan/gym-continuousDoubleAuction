@@ -236,7 +236,7 @@ The reconciliation table produced during that merge was not carried into the cur
 pointed at `gym_continuousDoubleAuction/doc/change.md` and three `CHANGES_*.md` redirect shims in
 a folder that no longer existed, and every entry in its own document table omitted the `doc/`
 prefix, so all 39 of those links resolved against the repository root and were broken. Both are
-fixed; the table now also lists §18 and §19.
+fixed; the table now lists every document, including [18](18_configuration.md), [19](19_docker.md), [20](20_colab.md) and [21](21_logging_review.md).
 
 ## 10. Test suite: unittest → pytest
 
@@ -852,7 +852,7 @@ aggregation is six metrics.
 
 ---
 
-## 18. Logging: concurrency, run isolation, and the traceback that was never logged
+## 23. Logging: concurrency, run isolation, and the traceback that was never logged
 
 A review of the logging *functionality* rather than its coverage — what happens when more than one
 thread or process writes at once, and what a run leaves behind when it dies. Six changes, in
@@ -860,7 +860,7 @@ descending order of how much they can cost.
 
 See [11_logging_and_observability.md](11_logging_and_observability.md) §1.10–§1.14.
 
-### 18.1 Two runs shared one `run.log` and one `progress.jsonl`
+### 23.1 Two runs shared one `run.log` and one `progress.jsonl`
 
 The per-worker file names (§1.9) kept the processes of *one* run apart, and the reasoning was
 explicit: `RotatingFileHandler` is not safe across processes, so two of them crossing the size
@@ -884,7 +884,7 @@ run would silently start from nothing. So what must be shared is, and what canno
 is not. `--run-id` re-enters an existing directory, which is how a restored run extends its own
 `progress.jsonl`.
 
-### 18.2 A run that died did not say why in its log
+### 23.2 A run that died did not say why in its log
 
 `main()` was `try: train(cfg) / finally: ray.shutdown()`, with no `except`. Python's default hook
 writes the traceback to `sys.stderr`, outside logging — so `run.log` ended mid-sentence and the
@@ -898,7 +898,7 @@ could reach; and `threading.excepthook` catches a thread dying, which Python han
 again. Previous hooks are chained, so stderr still gets what it always did. `KeyboardInterrupt` is
 one INFO line with no stack — these runs normally end by being killed.
 
-### 18.3 The log level and directory did not reach a pre-existing cluster
+### 23.3 The log level and directory did not reach a pre-existing cluster
 
 `configure()` exports `$CDA_LOG_LEVEL` and `$CDA_LOG_DIR`, which workers inherit because the raylet
 inherits the driver's environment. That holds only when this process *starts* the cluster. Against
@@ -908,7 +908,7 @@ runners, the NAV tables and the conservation ERROR would reach no file anywhere.
 passed as a `runtime_env`, which Ray applies to the workers it starts for the job regardless of who
 started the cluster.
 
-### 18.4 A pid is not a unique file name
+### 23.4 A pid is not a unique file name
 
 `run.<pid>.log` is unique per *node*. On a multi-node run with `log_base_dir` on a shared mount —
 NFS, or the Drive mount Colab uses — two workers on different nodes can hold the same pid and open
@@ -917,7 +917,7 @@ carries Ray's cluster-unique worker id behind the pid, which is kept because it 
 field of every line matches. Ray is read from `sys.modules` rather than imported: `apply_env_vars()`
 must run before ray is first imported, and `configure()` runs before that.
 
-### 18.5 Configuration was racy; nothing tested concurrency at all
+### 23.5 Configuration was racy; nothing tested concurrency at all
 
 The write path was always safe — `Handler.handle` takes the handler's lock around `emit`. The setup
 path was not: `get_logger` checks `_configured` then acts on it, and `configure` closes and removes
@@ -931,10 +931,10 @@ the one thing threads cannot stand in for.
 The `iter=` tag also stopped being a `ContextVar`. It was chosen to be per-thread, but a new thread
 starts from an empty context, so the driver's own lines read `iter=-` whenever they came from
 anywhere but the loop thread — and a value set inside a Ray actor task is not guaranteed to survive
-into the next task, which is what §18.6 depends on. One training loop per process makes the
+into the next task, which is what §23.6 depends on. One training loop per process makes the
 iteration a property of the process, so it is a module global.
 
-### 18.6 `iter=` now reaches the env runners
+### 23.6 `iter=` now reaches the env runners
 
 §1.9 recorded the worker's `iter=-` as needing "a change to what RLlib hands the callbacks". It did
 not: the driver knows the number and `foreach_env_runner` already reaches every runner, so it only
@@ -943,7 +943,7 @@ had to be sent, once per iteration, before sampling starts. Best-effort — a re
 `progress.jsonl` row under `num_env_runners > 0`, which is the configuration where those lines are
 emitted nowhere else.
 
-### 18.7 Two smaller corrections
+### 23.7 Two smaller corrections
 
 **Output went to stderr, not stdout.** `logging.StreamHandler()` defaults to stderr, while §1.3,
 §1.9 and `tunable_constants.json` all described stdout — so `train ... > run.txt` captured nothing.
@@ -957,15 +957,15 @@ through to stderr anyway; the handlers are mirrored onto it.
 
 ---
 
-## 19. Logging under multiple env runners
+## 24. Logging under multiple env runners
 
-§18 made the logging correct within a process and between two runs. It did not ask what happens
+§23 made the logging correct within a process and between two runs. It did not ask what happens
 once sampling moves off the driver — which is what `runtime_profiles.json`'s GPU profile does at
 `num_env_runners=2`, and what CI, at `num_env_runners=0`, never exercises.
 [21_logging_review.md](21_logging_review.md) is that audit. Three of its findings were defects
 rather than gaps, and all eight of its recommendations are implemented.
 
-### 19.1 The stop signal stopped nothing
+### 24.1 The stop signal stopped nothing
 
 `strict_nav_check` exists to end a run whose ledger is corrupt. It did that by raising inside
 `on_episode_end` — a hook that runs **on the env runner**. So the raise arrived as a `RayTaskError`
@@ -985,21 +985,21 @@ the driver, after the progress row is written and before the checkpoint. At `num
 stop is one iteration later than it used to be; that is the price of one code path that behaves the
 same at every runner count.
 
-### 19.2 The off switch turned off the write, not the work
+### 24.2 The off switch turned off the write, not the work
 
 `--no-episode-data` disabled the `pickle.dump` and left `on_episode_step` appending every step to an
 in-memory store regardless. At 8,314 pickled bytes per step and `max_step=4096` that is ~34 MB per
 episode of memory bought for nothing — `runtime_profiles.json` had estimated ~10 MB for the files,
 which was wrong by 3.4× as well.
 
-### 19.3 The episode record was the one path with no protection
+### 24.3 The episode record was the one path with no protection
 
-The run log had been made absolute and run-scoped in §18; `episode_data_dir` had not. It was a bare
+The run log had been made absolute and run-scoped in §23; `episode_data_dir` had not. It was a bare
 relative string, pickled into every env runner and resolved there against whatever working
 directory that worker inherited — today usually the driver's, by accident rather than by guarantee
 — and shared by every concurrent run.
 
-### 19.4 What replaced the pickles
+### 24.4 What replaced the pickles
 
 A Parquet record: one row per (episode, step, agent), a declared schema, and `run_id`, `iteration`,
 `wall_time` and `module_id` columns. That closes three separate entries from
@@ -1020,7 +1020,7 @@ Setting `output` selects a recording env runner whose class selection opens with
 multi-agent by construction. Past that, the columnar format writes no `info` — which is most of what
 this repository's per-step record exists to keep.
 
-### 19.5 Six metrics became 27
+### 24.5 Six metrics became 27
 
 The gap across [11 §2](11_logging_and_observability.md) was never capture; it was aggregation. The
 per-step `info` already held the reward decomposition and the account state, and the callback
@@ -1034,10 +1034,10 @@ On a real 2-iteration run the variance split reads `nav_term` 0.95, `drawdown_pe
 other three below 1e-8 — the [07 §6.4](07_reward_function.md) split, live, from a run rather than
 from a post mortem.
 
-### 19.6 Ray's own logging, and three things found while building this
+### 24.6 Ray's own logging, and three things found while building this
 
 `ray.init(logging_config=ray.LoggingConfig(...))` is the only lever that reaches a worker's Ray-side
-output — the restart notices and the traceback §19.1 describes being swallowed. `ray_log_encoding`
+output — the restart notices and the traceback §24.1 describes being swallowed. `ray_log_encoding`
 selects it, feature-detected so an older Ray degrades to its own formatting, and setting it turns
 propagation off on this package's logger since `LoggingConfig` configures root.
 
@@ -1057,7 +1057,7 @@ Three things the review had not predicted:
 
 ---
 
-## 20. Three defects at the edges of a working simulator
+## 25. Three defects at the edges of a working simulator
 
 A code review of the tree at `7e6e8fb` (see [15](15_findings_and_recommendations.md) S1-4, S3-6,
 S3-18, S3-19). The finding worth recording is not any one of these individually but what they had
@@ -1067,7 +1067,7 @@ the parts that are *easy* to get right were broken in ways that made both docume
 fail immediately. A 487-test suite exercised the env's parts thoroughly and never the shape of one
 whole default episode.
 
-### 20.1 The default env could not trade
+### 25.1 The default env could not trade
 
 `env_defaults.json` shipped `init_cash: 0`, and `_order_approved` gates on `nav <= 0`. A bare
 `continuousDoubleAuctionEnv({})` placed no order ever and terminated after one step. Its
@@ -1078,14 +1078,14 @@ smoke run, which supplies its own `init_cash` from `cli_defaults.json` — so th
 the default env overrode the value that broke it. The new tests read the checked-in file on
 purpose, because a fixture with its own cash would rebuild the same blind spot.
 
-### 20.2 An episode ran `max_step + 1` steps
+### 25.2 An episode ran `max_step + 1` steps
 
 `set_all_done` tested `t_step > max_step - 1` while `step()` increments `t_step` afterwards.
 `train_batch_size` is `max_step * num_episodes_per_iter`, so the env had been quietly delivering
 four more steps per iteration than the batch it was sized for. Now written as
 `t_step + 1 >= max_step` — in terms of steps taken, which is the quantity the caller counts.
 
-### 20.3 An installed package had no config and could not import
+### 25.3 An installed package had no config and could not import
 
 Two independent defects behind one symptom, and the "Resolved since" table in
 [15](15_findings_and_recommendations.md) had already claimed `setup.py` fixed for non-editable
@@ -1109,12 +1109,12 @@ that mattered was the base class.
 
 ---
 
-## 21. Reproducible episodes, and one deletion
+## 26. Reproducible episodes, and one deletion
 
-Two follow-ups to §20, from the same review (see [15](15_findings_and_recommendations.md) S3-5,
+Two follow-ups to §25, from the same review (see [15](15_findings_and_recommendations.md) S3-5,
 S3-6, S3-20).
 
-### 21.1 `reset(seed=...)` now seeds the episode
+### 26.1 `reset(seed=...)` now seeds the episode
 
 The env had three sources of randomness — the price anchor in `reset`, order sizes in
 `_set_size`, and the queueing order in `rand_exec_seq` — and all three drew from the *global*
@@ -1140,7 +1140,7 @@ It is honoured now, and the shuffle is `Generator.permutation` rather than
 reorder at most `num_agents` dicts, is out of the requirements entirely. Fixing the seeding and
 removing the dependency turned out to be the same edit.
 
-### 21.2 `modify_cash_transfer` deleted
+### 26.2 `modify_cash_transfer` deleted
 
 The one function in the accounting layer that computed the escrow delta of a size change
 directly, with no call sites. It is gone rather than wired up because it is only correct where
@@ -1151,6 +1151,69 @@ a modify *does* match — which `modify_order` fully supports, since it re-runs 
 quantity that is no longer resting. Measured divergence and the full table are in
 [15](15_findings_and_recommendations.md) S3-20.
 
-The lesson is the one §20 opened with. This is the third piece of code found in this review that
+The lesson is the one §25 opened with. This is the third piece of code found in this review that
 was plausible, documented, and unreachable; a reader extending modify handling would reasonably
 have changed it and seen no effect.
+
+---
+
+## 27. The documentation caught up with the code, and learned to draw
+
+A review pass over every markdown file in `doc/` (`README_v1.md` deliberately untouched, as the
+preserved 2020 README) against the source tree.
+
+### 27.1 Line-anchored links had all rotted
+
+Sixty-three code references carried a line range in both the link text and the anchor, in the
+form `` `file.py:154-186` `` linking to `...#L154-L186`. Almost none
+of them still pointed at the thing they named — `process_limit_order` had moved from 154 to 162,
+`process_market_order` from 136 to 144, `on_train_result` from 265 to 757 — and several landed
+inside an unrelated function or in a block comment. A line number is a reference that rots on the
+next edit and rots *silently*, since nothing checks it.
+
+All of them now point at the file, with the function or class named in the prose beside the link.
+That is one indirection worse to follow and does not go stale. Ray-internal citations in
+[21](21_logging_review.md) keep their line numbers: they cite a pinned version of somebody else's
+source, which is exactly the case where a line number is the right reference.
+
+### 27.2 What the docs said that the code no longer did
+
+The specific corrections, each verified against the tree:
+
+| Doc | Said | Actually |
+|---|---|---|
+| 02 §2.3 | `train/logger/`, `plotter/`, `storage/` exist as dead code; `test/` has 90 tests | Those three packages are deleted. 474 unit + 36 integration. `config/`, `config_loader.py`, `logging_setup.py`, `episode_record.py` and the eight `visualize/` scripts were missing from the map entirely |
+| 02 §2.7, 05 §3.2, 15 S3-4 | `reset()` hardcodes `OrderBook(1, ...)`; the env never stores `self.tick_size`; `min_tick` is a second independent hardcoded tick | `min_tick` *is* the `tick_size` config key and `reset()` uses `self.tick_size`. Only the book's own copy is still inert |
+| 02 §2.6 | `initial_price_min` / `initial_price_max` are unreachable from training | Both are `TrainConfig` fields, forwarded by `env_config` |
+| 06 §6, 12 §5.5, 10 §8 | No episode is reproducible even with a seed set | S3-5 is fixed; `test_seeding.py` pins it eleven ways |
+| 07 §2, 12 §3.6 | The five reward coefficients are function-local literals | They are `env_config` keys — the same document already said so two paragraphs earlier |
+| 08 §7 | "Six metrics is the entirety of what reaches RLlib's structured logger" | 27. [21 §8](21_logging_review.md) had already corrected the same sentence in doc 11 and missed the copy here |
+| 08 §9 | The NAV check raises `AssertionError` from the episode hook | The hook counts; the driver raises. That split is the whole point of [21 §2.1](21_logging_review.md) |
+| 08, 04 §1, 07 §3 | Three per-step counters | Four, plus `reward_terms` and `drawdown` |
+| 04 §3, 12 §5.6, 15 S4-14 | Rejections are silent and the dead-action fraction is unmeasurable | `num_rejected_step` and `is_pass_action` reach `info` and become metrics. The `modify` / `cancel`-with-no-target case is still uncounted |
+| 05 §10, 11 §1.1, 14, 15 S4-9 | Episode data is `pickle`; two `.pkl` fixtures are committed | Parquet, and the files are gone from the repository |
+| 02 §2.1, 10 §7 | CI is a 3.11 / 3.12 matrix of three jobs | Python 3.12 only, plus a second `packaging` job that installs the built wheel into a clean venv outside the checkout |
+| 10 §0, §4.2, 01 §1.6 | 349 / 458 / 176 tests, depending on which line you read | 510: `509 passed, 1 xfailed`. `test_env_lifecycle.py` and `test_seeding.py` were missing from the inventory, and two tests listed under `test_observation_history.py` had moved |
+| 08 §1 | The callback is 633 LOC | ~1,340 |
+
+[16](16_verification_log.md) is a log rather than a status page, so its entries are kept as
+recorded, with dated re-measurements added beside the two that read differently today.
+
+### 27.3 Diagrams
+
+Twenty-three Mermaid diagrams, because several things in this system are graphs that were being
+described in prose or in ASCII art that had drifted from the code. Flow diagrams for the step
+lifecycle, order routing, modify handling, action decoding, observation construction, reward
+accumulation, champion promotion, config precedence, the logging channels, and the Docker and
+Colab paths; a class diagram for the mixin chain; a state diagram for the position machine; a
+sequence diagram for one `env.step`; and mind maps for the documentation set, the observation
+defects, the findings register, the config tree and test coverage.
+
+Two of them replaced ASCII art that had gone stale — [02](02_architecture.md) §2.9's data-flow
+picture predated the Parquet record and the metrics path, and [09](09_distributed_training.md)
+§2.2's topology box predated the per-runner `EpisodeRecorder`.
+
+Every diagram is parsed by Mermaid 11 in CI-less form during authoring: the four that failed —
+`Box(-inf, inf)` and `(1 xfail = S1-1)` inside mind-map nodes, where a parenthesis is shape
+syntax, and a `-v "$PWD"` shell quote inside an edge label — were caught that way rather than by
+rendering wrong on GitHub.

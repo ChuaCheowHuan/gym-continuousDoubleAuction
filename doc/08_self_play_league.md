@@ -9,7 +9,7 @@ processes), [10_testing.md](10_testing.md) §6,
 
 All of it lives in
 [`league_based_self_play_callback.py`](../gym_continuousDoubleAuction/train/callbk/league_based_self_play_callback.py)
-(633 LOC) and
+(~1,340 LOC) and
 [`policy_handler.py`](../gym_continuousDoubleAuction/train/policy/policy_handler.py).
 
 ---
@@ -114,16 +114,28 @@ In practice you do not write this by hand —
 
 ## 4. Configuration parameters
 
-| Parameter | Constructor default | `TrainConfig` value | Description |
-|---|---|---|---|
-| `num_trainable_policies` | 2 | `num_trained_agents` = 2 | Trainable policies (agents 0 … k−1) |
-| `num_random_policies` | 2 | `num_agents - num_trained_agents` = 6 | Frozen baselines (agents k … n−1) |
-| `std_dev_multiplier` | 2.0 | **0.1** | Threshold multiplier for `mean + N × std` |
-| `max_champions` | 2 | **8** | Maximum champions in the league (rolling window) |
-| `min_iterations_between_champions` | 2 | 2 | Cooldown between snapshots |
-| `original_opponent_weight` | 1.0 | 1.0 | Selection priority for baselines |
-| `champion_weight` | 3.0 | 3.0 | Selection priority for champions |
-| `episode_data_dir` | `"episode_data"` | `"episode_data"` | Per-episode step pickles; `None` disables |
+Every constructor argument defaults to `None`, and a `None` is filled in from the
+`league_self_play` group of [`config/train_config.json`](../config/train_config.json) (the two
+policy counts from its `environment` group). There is no second set of defaults in Python — the
+"constructor default" column an earlier revision of this table carried was exactly the duplicate
+[18_configuration.md](18_configuration.md) exists to remove. `train.py` passes all of them
+explicitly, so the config lookup is what a direct instantiation gets.
+
+| Parameter | Value in `train_config.json` | Description |
+|---|---|---|
+| `num_trainable_policies` | `num_trained_agents` = 2 | Trainable policies (agents 0 … k−1) |
+| `num_random_policies` | `num_agents - num_trained_agents` = 6 | Frozen baselines (agents k … n−1) |
+| `std_dev_multiplier` | **0.1** | Threshold multiplier for `mean + N × std` |
+| `max_champions` | 8 | Maximum champions in the league (rolling window) |
+| `min_iterations_between_champions` | 2 | Cooldown between snapshots |
+| `original_opponent_weight` | 1.0 | Selection priority for baselines |
+| `champion_weight` | 3.0 | Selection priority for champions |
+| `episode_data_dir` | `"episode_data"` | `"episode_data"` | Root of the Parquet per-step record; `None` disables it *and* the accumulation behind it |
+| `episode_sample_every` | 10 | 10 | Record one episode in N, chosen by `crc32` of the episode id |
+| `episode_max_bytes` | 2 GiB | 2 GiB | Cap on what each writer keeps, oldest deleted first |
+| `episode_rows_per_file` | 65,536 | 65,536 | Rows buffered before a Parquet file is written |
+| `nav_tolerance` | 1e-06 | 1e-06 | Absolute cash tolerance for the episode-end conservation check |
+| `strict_nav_check` | `True` | `True` | Stop the run on a violation — acted on by the driver, not the hook |
 
 ### Tuning
 
@@ -158,7 +170,7 @@ play. **Recommended 3:1 to 5:1.**
 ### 5.1 The trigger
 
 `on_train_result`
-([`league_based_self_play_callback.py:265-354`](../gym_continuousDoubleAuction/train/callbk/league_based_self_play_callback.py#L265-L354)):
+([`league_based_self_play_callback.py`](../gym_continuousDoubleAuction/train/callbk/league_based_self_play_callback.py)):
 
 ```
 returns   = result[ENV_RUNNER_RESULTS]["module_episode_returns_mean"]   # keyed by real ModuleID
@@ -177,10 +189,36 @@ over those mislabelled entries.
 If the key is missing, the callback logs the available keys and skips the check rather than
 failing — a reasonable degradation.
 
+```mermaid
+flowchart TD
+    A["on_train_result"] --> B["returns = result[env_runners]<br/>module_episode_returns_mean<br/>(keyed by real ModuleID)"]
+    B --> C{"key present?"}
+    C -->|"no"| SKIP["log the available keys, skip"]
+    C -->|"yes"| D["threshold = mean + std_dev_multiplier * std<br/>over the whole league"]
+    D --> E["best trainable module above the threshold"]
+    E --> F{"cooldown satisfied?<br/>>= min_iterations_between_champions"}
+    F -->|"no"| SKIP2["no promotion this iteration"]
+    F -->|"yes"| G{"champion_count == max_champions?"}
+    G -->|"yes"| H["_remove_oldest_champion:<br/>drop from available_modules FIRST,<br/>then Algorithm.remove_module"]
+    G -->|"no"| I
+    H --> I["_create_champion_snapshot_from_policy"]
+
+    subgraph ORD["The four load-bearing steps, in this order"]
+        I1["1. read weights from learner_group.get_state<br/>NOT algorithm.get_module, NOT _learner"]
+        I2["2. append to available_modules BEFORE add_module<br/>(add_module pickles the mapping fn to the runners)"]
+        I3["3. add_module, then set_state the trained weights<br/>(add_module builds from a fresh spec)"]
+        I4["4. force-push to the EnvRunners without WEIGHTS_SEQ_NO<br/>NOT sync_weights, which is dropped silently"]
+        I1 --> I2 --> I3 --> I4
+    end
+    I --> ORD
+    ORD --> J["champion_N is now playing"]
+    ORD -.->|"any exception"| RB["roll back the pool entry,<br/>log the traceback, continue"]
+```
+
 ### 5.2 The four ordering constraints
 
 `_create_champion_snapshot_from_policy`
-([`league_based_self_play_callback.py:383-531`](../gym_continuousDoubleAuction/train/callbk/league_based_self_play_callback.py#L383-L531))
+([`league_based_self_play_callback.py`](../gym_continuousDoubleAuction/train/callbk/league_based_self_play_callback.py))
 is the most subtle code in the repository. Its four ordering constraints are **all** load-bearing,
 each was a real bug, and each now has a dedicated integration test:
 
@@ -237,7 +275,7 @@ to be deleted), and passes `new_agent_to_module_mapping_fn` so remote runners ar
 ## 6. Matchmaking
 
 `get_mapping_fn`
-([`league_based_self_play_callback.py:574-633`](../gym_continuousDoubleAuction/train/callbk/league_based_self_play_callback.py#L574-L633))
+([`league_based_self_play_callback.py`](../gym_continuousDoubleAuction/train/callbk/league_based_self_play_callback.py))
 returns a closure over the callback instance:
 
 ```python
@@ -271,7 +309,13 @@ If the pool is somehow empty, the function falls back to `policy_id(agent_num)`.
 
 ## 7. Monitoring
 
-### Console output
+### Log output
+
+Everything below goes through this package's logger, not `print` — the league statistics and the
+promotion banner at INFO, the per-episode policy map at DEBUG. `logging_setup` writes them to
+stdout and to a rotating `run.log` under the run directory, with `pid=` and `iter=` on every line
+so a remote runner's lines can be attributed. See
+[11_logging_and_observability.md](11_logging_and_observability.md) §1.3.
 
 ```
 ================================================================================
@@ -282,50 +326,51 @@ Best Trainable: policy_1 (-6777.32)
 ================================================================================
 
 ********************************************************************************
-🏆 CREATING CHAMPION SNAPSHOT 🏆
+CREATING CHAMPION SNAPSHOT
 Champion ID: champion_3
 Source Policy: policy_1
 Return: -6777.32
 Iteration: 25
 ********************************************************************************
 
-✓ Champion champion_3 created successfully!
-✓ League size now: 9 (2 trainable + 6 random + 1 champions)
-✓ Active champions: ['champion_1', 'champion_2', 'champion_3']
+Champion champion_3 created successfully
+League size now: 9 (2 trainable + 6 random + 1 champions)
+Active champions: ['champion_1', 'champion_2', 'champion_3']
 ```
 
-`on_episode_start` also prints the per-episode policy map:
+`on_episode_start` also logs the per-episode policy map, at DEBUG — and builds the line only when
+DEBUG is enabled, because formatting it means calling the mapping function once per agent:
 
 ```text
-========================================
-Episode 12345 Started - Policy Map:
-  agent_0 -> policy_0
-  agent_1 -> policy_1
-  agent_2 -> champion_1
-  agent_3 -> policy_3
-========================================
+episode 12345 started, policy map: agent_0 -> policy_0, agent_1 -> policy_1,
+  agent_2 -> champion_1, agent_3 -> policy_3
 ```
 
-> **This map is now trustworthy.** It calls `env_runner.config.policy_mapping_fn` — the mapping
-> the runner is actually using — rather than reimplementing selection or reading `self`. Both
-> matter: the old reimplementation used an unweighted
-> `(hash(episode.id_) + i) % len(candidates)` and named the wrong opponents, and on a remote
-> runner `self.available_modules` contains no champions at all. The older documentation's warning
-> that this printout is unreliable no longer applies.
+> **This map is trustworthy.** It calls `env_runner.config.policy_mapping_fn` — the mapping the
+> runner is actually using — rather than reimplementing selection or reading `self`. Both matter:
+> the old reimplementation used an unweighted `(hash(episode.id_) + i) % len(candidates)` and
+> named the wrong opponents, and on a remote runner `self.available_modules` contains no champions
+> at all. The older documentation's warning that this printout is unreliable no longer applies.
 
-### TensorBoard metrics
+### Metrics
+
+The callback's own metrics, the ones about the league:
 
 | Metric | Meaning | Window |
 |---|---|---|
 | `league_size` | `num_trainable + num_random + champion_count` | 1 |
 | `league_mean_return` | Mean module return across the league | 10 |
 | `league_std_return` | Std dev of module returns | 10 |
-| `nav_conservation_error` | `abs(total NAV − total initial cash)`; per *episode*, not per iteration | 1 |
-| `pass_action_fraction` | Share of agent-steps that chose to do nothing; per *episode* | 10 |
-| `order_rejection_fraction` | Share of agent-steps whose order was refused for want of cash; per *episode* | 10 |
+| `champions_promoted` | Champions created this iteration | `reduce="sum"` |
+| `available_modules` | Size of the matchmaking pool | 1 |
+| `idle_modules` | Modules that played no episode this iteration | 1 |
 
-**Six metrics is the entirety of what reaches RLlib's structured logger.** Still absent: NAV
-distribution, drawdown, trade counts, maker/taker ratio, champion promotions.
+Plus the per-episode ones this callback emits from `on_episode_end` — NAV conservation, the
+pass/rejection fractions, the reward-term split, the end-of-episode account state, the maker
+ratio. **27 metrics in total**; the full table is in
+[11_logging_and_observability.md](11_logging_and_observability.md) §1.2, which is the reference
+for what a run surfaces. (An earlier revision of this section said six, which was true before
+that work landed.)
 
 `pass_action_fraction` is the one to watch against this document's own warning: a league whose
 policies collapse to always-pass still clears the promotion threshold, because 0 beats a negative
@@ -414,16 +459,25 @@ normalize correctly, and that selection is stable given the episode and agent ID
 | Determinism | Moderate | Verifies the distribution, not per-episode stability |
 | Edge cases | Moderate | Empty pools and zero weights are not tested |
 
-`test/test_nav_callback.py` covers the callback's episode-end NAV conservation check: the passing
-direction logs a zero `nav_conservation_error`; the failing direction raises `AssertionError`
-under the default `strict_nav_check`, emits the metric before raising, and downgrades to an ERROR
-log when strict is off. The tolerance is tested from both sides, and both knobs are checked
-against `config/train_config.json`. See [11 §1.5](11_logging_and_observability.md).
+`test/test_nav_callback.py` (16 tests) covers **both halves** of the episode-end NAV conservation
+check. The hook half: a conserved episode logs a zero `nav_conservation_error` and a zero
+`nav_conservation_violations`; a violating one logs the error, counts the violation, and
+**returns** rather than raising. The driver half: `train._check_nav_conservation` raises
+`NavConservationError` from that count under the default `strict_nav_check`, and downgrades to a
+warning when strict is off. The split is the point — a raise inside the hook is swallowed by
+RLlib's fault tolerance once sampling is remote, which is how a run could carry on training on a
+ledger the check had already condemned. Tolerance is tested from both sides, exactness is tested
+at a scale `float` cannot resolve, and a missing metric is asserted to read as "nothing seen"
+rather than as a failure. See [11 §1.5](11_logging_and_observability.md).
 
 ### Integration tests
 
 `test/integration/test_league_wiring.py` — 3 classes, 13 tests, covering local, remote-EnvRunner
-and remote-Learner topologies. See [10_testing.md](10_testing.md) §6.
+and remote-Learner topologies. `test/integration/test_checkpoint_roundtrip.py` (7) does one real
+save and restore and asserts the champion comes back **on the EnvRunner** with its acting weights;
+`test/integration/test_distributed_observability.py` (10) runs a real `num_env_runners=1`
+iteration and asserts every episode-hook metric reaches the driver. See
+[10_testing.md](10_testing.md) §6.
 
 ---
 

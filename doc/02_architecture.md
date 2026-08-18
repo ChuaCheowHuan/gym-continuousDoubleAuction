@@ -11,16 +11,17 @@ For what each layer does in detail, follow the links into
 
 | Layer | Choice | Version | Notes |
 |---|---|---|---|
-| Language | Python | 3.10–3.14 declared; 3.12 in dev, 3.11/3.12 in CI | `setup.py:31`, `.github/workflows/tests.yml` |
+| Language | Python | `python_requires=">=3.12"`; 3.12 is the only version CI tests | [`setup.py`](../setup.py), [`.github/workflows/tests.yml`](../.github/workflows/tests.yml) |
 | RL framework | Ray RLlib **new API stack** | 2.56.1 | `RLModule` / `Learner` / `EnvRunner`, not `Policy` / `Trainer` |
-| Env API | Gymnasium `MultiAgentEnv` | 1.2.2 (hard-pinned by Ray) | `requirements.txt:13-15` documents the pin rationale |
+| Env API | Gymnasium `MultiAgentEnv` | 1.2.2 (hard-pinned by Ray) | [`requirements.txt`](../requirements.txt) documents the pin rationale |
 | DL backend | PyTorch | ≥2.13, <3 | `framework("torch")` |
 | Book data structure | `sortedcontainers.SortedDict` | ≥2.4 | price → `OrderList` map |
 | Numeric type for money | `decimal.Decimal` | stdlib | exact cash/quantity arithmetic |
 | Rendering | `tabulate`, `pandas` | | `env.render()` logs ASCII tables at DEBUG |
+| Per-step record | `pyarrow` (Parquet) | via `ray[rllib]` | one row per (episode, step, agent); see [11](11_logging_and_observability.md) §1.1 |
 | Plotting | `matplotlib` | ≥3.11 | offline scripts in `visualize/` |
 | Packaging | setuptools | | `install_requires` + `[rllib]` / `[plot]` / `[dev]` extras |
-| CI | GitHub Actions | matrix 3.11 / 3.12 | unit tests → random smoke run → RLlib integration |
+| CI | GitHub Actions | Python 3.12 | `test` job: unit tests → random smoke run → RLlib integration. `packaging` job: build the wheel, install it into a clean venv outside the checkout, step an env |
 | Containers | Docker | CUDA 12.8 + cu128 torch wheels | `docker/ml/dockerfile_ray_torch`; see [19_docker.md](19_docker.md) |
 
 ---
@@ -34,20 +35,32 @@ Four layers, each in its own package:
 | Matching engine | [`envs/orderbook/`](../gym_continuousDoubleAuction/envs/orderbook/) | Price–time priority limit order book |
 | Trader + accounting | [`envs/agent/`](../gym_continuousDoubleAuction/envs/agent/), [`envs/account/`](../gym_continuousDoubleAuction/envs/account/) | Order gating, cash escrow, position and NAV tracking |
 | Environment | [`continuousDoubleAuction_env.py`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py), [`envs/exchg/`](../gym_continuousDoubleAuction/envs/exchg/) | Gym API, observation / action / reward / termination |
-| Training | [`train/`](../gym_continuousDoubleAuction/train/) | Modules, league self-play callback, legacy telemetry |
+| Training | [`train/`](../gym_continuousDoubleAuction/train/) | Modules, league self-play callback, checkpointing, the per-step episode record |
+| Cross-cutting | [`config_loader.py`](../gym_continuousDoubleAuction/config_loader.py), [`logging_setup.py`](../gym_continuousDoubleAuction/logging_setup.py) | Every configured value; every log record. Imported by all three layers above |
+| Offline analysis | [`visualize/`](../gym_continuousDoubleAuction/visualize/) | Charts built from the episode Parquet record and `progress.jsonl` |
 
 ---
 
 ## 2.3 Package map
 
 ```
+config/                                 the only place values live - see 18_configuration.md
+├── train_config.json                     every TrainConfig value, including the env keys
+├── env_defaults.json                     fallbacks for an env built without a full config dict
+├── tunable_constants.json                space layout, ID prefixes, logging, visualize paths
+├── cli_defaults.json                     flag defaults with no other config home
+└── runtime_profiles.json                 where a run executes: hardware sets, platform paths
+
 gym_continuousDoubleAuction/
 ├── __init__.py                       gymnasium register("continuousDoubleAuction-v0")
+├── config_loader.py                  reads config/; a missing key raises, no Python defaults
+├── logging_setup.py                  one logging config per process, exported to Ray's workers
 ├── CDA_rand.py                       random-agent smoke driver (CI stage 2)
+├── CDA_train.ipynb                   notebook driver; imports TrainConfig / train from train.py
 ├── envs/
 │   ├── continuousDoubleAuction_env.py   MultiAgentEnv: reset / step / render
 │   ├── exchg/                           the "exchange" mixin family
-│   │   ├── exchg_helper.py                composition root + printing + mark-to-market
+│   │   ├── exchg_helper.py                composition root + render path + mark-to-market
 │   │   ├── state_helper.py                observation construction + history deque
 │   │   ├── action_helper.py               action space + action decoding + pricing
 │   │   ├── reward_helper.py               reward function
@@ -67,18 +80,23 @@ gym_continuousDoubleAuction/
 │       ├── trader.py                      order lifecycle + trade settlement
 │       └── random_agent.py                (legacy) random action sampler, still in Trader's MRO
 ├── train/
-│   ├── train.py                        TrainConfig dataclass, build_algo, CLI
+│   ├── train.py                        TrainConfig, build_algo, checkpointing, progress.jsonl, CLI
 │   ├── runtime.py                      platform + hardware profile resolution (Colab / docker)
+│   ├── episode_record.py               EpisodeRecorder: the Parquet per-step record
 │   ├── policy/policy_handler.py        MultiRLModuleSpec, module ID conventions
 │   ├── model/model_handler.py          RandomRLModule + DefaultModelConfig
-│   ├── callbk/…_self_play_callback.py  league: champions, matchmaking, logging
-│   ├── logger/, plotter/, storage/     legacy Ray-actor telemetry (dead code)
+│   ├── callbk/…_self_play_callback.py  league: champions, matchmaking, metrics, the record
 │   └── helper/helper.py                order-imbalance / mid-price utilities (unused)
-├── visualize/                          offline plots from episode pickles
-├── test/                               90 unit tests
-│   └── integration/                    13 RLlib wiring tests, 3 topologies
-└── doc/                                the older documentation set
+├── visualize/                          offline charts from the episode Parquet + progress.jsonl
+│   ├── run_all.py                        regenerates every chart
+│   ├── episode_data.py                   loads the newest run's Parquet record
+│   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
+└── test/                               474 unit tests
+    └── integration/                    36 tests that build real Algorithms
 ```
+
+`train/logger/`, `train/plotter/` and `train/storage/` — the legacy Ray-actor telemetry an earlier
+revision of this document listed — have been deleted.
 
 ---
 
@@ -86,29 +104,69 @@ gym_continuousDoubleAuction/
 
 The environment is assembled by **multiple inheritance**, not composition:
 
-```
-continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv)
-    └── Exchg_Helper
-            └── State_Helper      ← consumes n_hist, calls super().__init__()
-                    └── Action_Helper   ← initialises min_tick, mkt_size_mean_mul, ...
-                            └── Reward_Helper
-                                    └── Done_Helper
-                                            └── Info_Helper
-                                                    └── object
+```mermaid
+classDiagram
+    class continuousDoubleAuctionEnv {
+        +reset(seed, options)
+        +step(actions)
+        +render()
+        traders, LOB, agg_LOB
+    }
+    class Exchg_Helper {
+        composition root
+        +mark_to_mkt()
+        +set_market_snapshot()
+        +set_step_outputs()
+    }
+    class State_Helper {
+        consumes n_hist
+        +set_agg_LOB()
+        +prep_next_state()
+    }
+    class Action_Helper {
+        consumes min_tick, sizing
+        +act_space()
+        +set_actions()
+        +do_actions()
+    }
+    class Reward_Helper {
+        consumes the 5 coefficients
+        +set_reward()
+    }
+    class Done_Helper {
+        +set_done()
+        +set_all_done()
+    }
+    class Info_Helper {
+        +set_info()
+    }
+
+    MultiAgentEnv <|-- continuousDoubleAuctionEnv
+    Exchg_Helper <|-- continuousDoubleAuctionEnv
+    State_Helper <|-- Exchg_Helper
+    Action_Helper <|-- State_Helper
+    Reward_Helper <|-- Action_Helper
+    Done_Helper <|-- Reward_Helper
+    Info_Helper <|-- Done_Helper
 ```
 
+Read the arrows as "is a base of". The MRO is the reverse: `continuousDoubleAuctionEnv` →
+`Exchg_Helper` → `State_Helper` → `Action_Helper` → `Reward_Helper` → `Done_Helper` →
+`Info_Helper` → `object`, and each `__init__` consumes its own keyword arguments before calling
+`super().__init__(**kwargs)`.
+
 Declared at
-[`continuousDoubleAuction_env.py:17-19`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py#L17-L19)
+[`continuousDoubleAuction_env.py`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py)
 and
-[`exchg_helper.py:15`](../gym_continuousDoubleAuction/envs/exchg/exchg_helper.py#L15).
+[`exchg_helper.py`](../gym_continuousDoubleAuction/envs/exchg/exchg_helper.py).
 
 **MRO rule.** Every `__init__` in the chain must call `super().__init__()`, and each class must
 consume its own keyword arguments — nothing unrecognised may reach `object.__init__`, which
 raises `TypeError`. This was the root cause of a real bug: `State_Helper.__init__` forwarding
 `n_hist=4` down the chain aborted `Action_Helper.__init__` mid-body, surfacing as
 `AttributeError: 'continuousDoubleAuctionEnv' object has no attribute 'min_tick'`.
-`test_default_n_hist_observation_space` now asserts `mkt_size_mean_mul` is initialised as an MRO
-health check.
+`test_config_wiring.py` now asserts `mkt_size_mean_mul` is initialised on a built env, which is an
+MRO health check: it exists only if `Action_Helper.__init__` ran to completion.
 
 The trader side uses the same idiom:
 
@@ -119,8 +177,10 @@ Trader(Random_agent)         →  owns  Account(Calculate, Cash_Processor)
 **Cost of the pattern.** The five mixins are not behavioural variants — they are one class split
 five ways, sharing mutable state (`self.LOB`, `self.traders`, `self.last_price`, `self.min_tick`)
 with no declared contract. `State_Helper` reads attributes it neither owns nor declares, guarded
-by defensive fallbacks such as `getattr(self, 'n_hist', 4)` and
-`getattr(self, 'last_price', 100.0)`. Nothing is independently testable, and a name reused across
+by defensive fallbacks such as `getattr(self, 'last_price', self.midpoint_fallback)` and
+`getattr(self, 'min_tick', env_default("tick_size"))` — both of which are `Action_Helper`'s state,
+read from `State_Helper`. `Info_Helper` does the same for `pass_agents`, `best_bid`, `spread` and
+`model_actions`. Nothing is independently testable, and a name reused across
 two mixins would collide silently. See
 [14_perspective_ai_engineer.md](14_perspective_ai_engineer.md) §5.2.
 
@@ -129,24 +189,60 @@ two mixins would collide silently. See
 ## 2.5 The step lifecycle
 
 `step(actions)` at
-[`continuousDoubleAuction_env.py:210-254`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py#L210-L254):
+[`continuousDoubleAuction_env.py`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py):
 
 ```
  1. self.agg_LOB = set_agg_LOB()                 # pre-action book snapshot (display only)
- 2. actions = set_actions(actions)               # Dict action  →  LOB order dicts
- 3. actions = rand_exec_seq(actions, None)       # random arrival order this step
+ 2. actions = set_actions(actions)               # Dict action  →  LOB order dicts; record passes
+ 3. actions = rand_exec_seq(actions, None)       # random arrival order, from self.np_random
  4. seq_trades, seq_order_in_book = do_actions() # apply to book, settle fills
  5. mark_to_mkt()                                # prev_nav ← nav; re-mark all accounts
  6. state_input = prep_next_state()              # post-action snapshot, push into history
- 7. set_step_outputs(state_input)                # obs / reward / terminated / truncated / info
- 8. render()                                     # optional ASCII dump
+ 7. set_step_outputs(state_input)                # market snapshot, then obs / reward /
+                                                 # terminated / truncated / info per trader,
+                                                 # then zero the per-step counters
+ 8. render()                                     # optional ASCII dump, DEBUG only
  9. t_step += 1
+```
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant M as RLModule
+    participant E as env.step
+    participant A as Action_Helper
+    participant B as OrderBook
+    participant T as Trader
+    participant C as Account
+    participant S as State_Helper
+    participant R as Reward / Info
+
+    M->>E: actions {agent_id: Dict}
+    E->>A: set_actions
+    A-->>A: category 0 -> pass_agents, dropped
+    A->>A: rand_exec_seq (self.np_random)
+    loop one order at a time
+        A->>T: place_order
+        T->>T: _order_approved (NAV > 0, opening portion cash-backed)
+        alt refused
+            T-->>C: num_rejected_step += 1
+        else accepted
+            T->>B: market / limit / modify / cancel
+            B-->>T: trades + residue
+            T->>C: settle both parties, escrow the residue
+        end
+    end
+    E->>C: mark_to_mkt (last tape price)
+    E->>S: prep_next_state (snapshot -> history deque)
+    E->>R: set_market_snapshot, then per trader:<br/>obs, reward, done, info
+    R-->>C: zero num_trades_step / num_passive_fills_step /<br/>order_step_placed / num_rejected_step
+    E-->>M: obs, rewards, terminateds, truncateds, infos
 ```
 
 ### Step 2 — action decoding
 
 `_set_action_mkt_depth`
-([`action_helper.py:138-182`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py#L138-L182))
+([`action_helper.py`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py))
 turns the neural-network `Dict` output into an order dict:
 
 | Field | Meaning |
@@ -168,7 +264,7 @@ Actions with `side is None` (category 0) are dropped before reaching the book. F
 ### Step 4 — order handling and settlement
 
 `Trader.place_order`
-([`trader.py:15-66`](../gym_continuousDoubleAuction/envs/agent/trader.py#L15-L66)):
+([`trader.py`](../gym_continuousDoubleAuction/envs/agent/trader.py)):
 
 ```
 _order_approved()  ── reject if NAV ≤ 0, or if the *opening* portion of the
@@ -184,7 +280,7 @@ _order_approved()  ── reject if NAV ≤ 0, or if the *opening* portion of th
 ```
 
 `_process_trades`
-([`trader.py:263-288`](../gym_continuousDoubleAuction/envs/agent/trader.py#L263-L288))
+([`trader.py`](../gym_continuousDoubleAuction/envs/agent/trader.py))
 walks each fill and updates **both** parties: the aggressor via `process_acc(trade,
 'init_party')` and the resting side via `process_acc(trade, 'counter_party')`, found by ID scan
 across all agents. When both IDs are the same — an agent crossing its own resting order — it
@@ -194,7 +290,7 @@ routes to `init_is_counter_cash_transfer` instead. See
 ### Step 4b — position state machine
 
 `Account.process_acc`
-([`account.py:183-199`](../gym_continuousDoubleAuction/envs/account/account.py#L183-L199))
+([`account.py`](../gym_continuousDoubleAuction/envs/account/account.py))
 dispatches on current inventory sign:
 
 | Current | Fill direction | Handler | Effect |
@@ -213,10 +309,10 @@ order moves cash into `cash_on_hold` rather than out of the account, so
 ### Step 5 — mark to market
 
 `Exchg_Helper.mark_to_mkt`
-([`exchg_helper.py:42-52`](../gym_continuousDoubleAuction/envs/exchg/exchg_helper.py#L42-L52))
+([`exchg_helper.py`](../gym_continuousDoubleAuction/envs/exchg/exchg_helper.py))
 takes the **last trade price on the tape** as the mark, updates `self.last_price` (which is also
 the action-space price anchor), and re-marks every account. Per account
-([`calculate.py:34-55`](../gym_continuousDoubleAuction/envs/account/calculate.py#L34-L55)):
+([`calculate.py`](../gym_continuousDoubleAuction/envs/account/calculate.py)):
 
 ```
 profit       = |net_position| · (mkt − VWAP)   signed by position side
@@ -235,7 +331,7 @@ are exactly 0.
 ### Step 6 — observation construction
 
 `set_agg_LOB`
-([`state_helper.py:69-171`](../gym_continuousDoubleAuction/envs/exchg/state_helper.py#L69-L171))
+([`state_helper.py`](../gym_continuousDoubleAuction/envs/exchg/state_helper.py))
 builds one 42-float snapshot:
 
 ```
@@ -259,10 +355,13 @@ is handed to every agent — there is no per-agent view. Full spec and its defec
 ### Step 7 — outputs
 
 `set_step_outputs`
-([`exchg_helper.py:54-79`](../gym_continuousDoubleAuction/envs/exchg/exchg_helper.py#L54-L79))
-loops over traders building obs / reward / done / info, then **resets the per-step counters**
-(`num_trades_step`, `num_passive_fills_step`, `order_step_placed`) after the reward has consumed
-them. That ordering is correct and easy to break.
+([`exchg_helper.py`](../gym_continuousDoubleAuction/envs/exchg/exchg_helper.py))
+first calls `set_market_snapshot` once — best bid, best ask and the raw spread, which the info
+dict reports and which the observation's `log1p_spread_ticks` otherwise discarded — then loops
+over traders building obs / reward / done / info, and only then **resets the per-step counters**
+(`num_trades_step`, `num_passive_fills_step`, `order_step_placed`, `num_rejected_step`). That
+ordering is correct and easy to break: the reward reads three of those counters and the info dict
+reads all four.
 
 `set_all_done` then rebuilds `terminateds` and `truncateds` as all-`False` dicts and sets only
 `__all__`. This is why a bankrupt agent is never individually terminated — see
@@ -272,48 +371,80 @@ them. That ordering is correct and easy to break.
 
 ## 2.6 Configuration
 
-Passed as an `env_config` dict to `continuousDoubleAuctionEnv`
-([`continuousDoubleAuction_env.py:29-35, 164-165`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py#L29-L35)):
+The env is built from an `env_config` dict. **The env holds no literal default for any key**:
+`continuousDoubleAuctionEnv._cfg` returns `self.config[key]` when the caller supplied it and
+`config_loader.env_default(key)` otherwise, so a key absent from both raises by name rather than
+resolving to a number written in Python. The full rules are in
+[18_configuration.md](18_configuration.md); this is the env-side view.
 
-| Key | Env default | `TrainConfig` value | Meaning |
+| Key | Standalone default | `TrainConfig` value | Meaning |
 |---|---|---|---|
 | `num_of_agents` | 5 | 8 | Number of traders |
 | `init_cash` | 1,000,000 | 1,000,000 | Starting cash per trader — must be > 0, see `env_defaults.json` |
-| `tick_size` | 1 | 1 | Book tick — **silently discarded after the first reset**, see §2.7 |
+| `tick_size` | 1 | 1 | The price grid; reaches `Action_Helper.min_tick` and the book, see §2.7 |
 | `tape_display_length` | 10 | 10 | Tape rows kept for display |
 | `max_step` | 64 | 4,096 | Steps before truncation |
-| `is_render` | `True` | `False` | Print book, tape and accounts every step |
+| `is_render` | `True` | `False` | Log book, tape and accounts every step (DEBUG only) |
 | `n_hist` | 4 | 4 | Observation history window |
-| `initial_price_min` | 10 | *not passed* | Lower bound of the per-episode price anchor |
-| `initial_price_max` | 100 | *not passed* | Upper bound of the per-episode price anchor |
+| `initial_price_min` | 10 | 10 | Lower bound of the per-episode price anchor |
+| `initial_price_max` | 100 | 100 | Upper bound of the per-episode price anchor |
+| `min_size`, `mkt_max_size`, `limit_size_multiple` | 1 / 100 / 10 | same | Order sizing, consumed by `Action_Helper` |
+| `order_penalty`, `trade_penalty`, `drawdown_penalty`, `passive_bonus`, `loss_multiplier` | 0.1 / 0.05 / 0.2 / 0.1 / 1.5 | same | Reward coefficients, consumed by `Reward_Helper` |
+
+The standalone column is [`config/env_defaults.json`](../config/env_defaults.json) and the
+training column is the `environment` group of
+[`config/train_config.json`](../config/train_config.json). They differ deliberately: a bare env is
+small and renders, a training env is large and silent. `TrainConfig.env_config` supplies every key
+above, so a training run never reaches the fallbacks.
+
+```mermaid
+flowchart LR
+    TC["config/train_config.json<br/>environment group"] --> TCFG["TrainConfig"]
+    CLI["CLI flags<br/>(argparse.SUPPRESS defaults)"] --> TCFG
+    ALT["--config other.json"] --> TCFG
+    TCFG -->|"env_config property<br/>num_agents -> num_of_agents"| ENV["continuousDoubleAuctionEnv"]
+    ED["config/env_defaults.json"] -.->|"only for keys the caller omitted"| ENV
+    ENV --> AH["Action_Helper<br/>min_tick, sizing"]
+    ENV --> RH["Reward_Helper<br/>5 coefficients"]
+    ENV --> SH["State_Helper<br/>n_hist"]
+    TK["config/tunable_constants.json"] --> SH
+    TK --> AH
+```
 
 Two consequences worth flagging:
 
-- **`is_render` defaults to `True`.** `TrainConfig` overrides it, but any direct
-  `continuousDoubleAuctionEnv({...})` gets a full ASCII dump of the book, tape and every account
-  on every step.
-- **`initial_price_min` / `initial_price_max` are unreachable from training.** They are read in
-  `reset()` but omitted from `TrainConfig.env_config`
-  ([`train.py:108-117`](../gym_continuousDoubleAuction/train/train.py#L108-L117)), so training
-  always gets the wide `[10, 100]` range. Only the unit tests narrow it.
+- **`is_render` defaults to `True`.** `TrainConfig` overrides it, and `render()` is additionally
+  gated on the logger being enabled for DEBUG — so a direct `continuousDoubleAuctionEnv({...})`
+  at the default INFO level builds no tables at all. Raise the level and it dumps the book, the
+  tape and every account on every step.
+- **`initial_price_min` / `initial_price_max` are reachable from training now.** They are
+  `TrainConfig` fields and are forwarded by `env_config`, so a run can narrow the anchor range
+  instead of always drawing from `[10, 100]`. That range is still what the checked-in config ships
+  (S3-4 in [15_findings_and_recommendations.md](15_findings_and_recommendations.md) is about the
+  10× relative-tick swing it produces, not about reachability).
 
-### 2.7 `tick_size` is discarded
+### 2.7 `tick_size` reaches the action layer; the book's copy is inert
 
-**[verified]**:
+`tick_size` used to be two independent values — a hardcoded `min_tick = 1` in `Action_Helper` that
+actually drove prices, and an `OrderBook` argument that was stored and never read — so setting the
+key changed nothing anywhere. Two of the three halves are fixed:
 
-```
-config tick_size=0.25 | LOB.tick_size before reset=0.25 | after reset=1
-                      | action min_tick=1 | env has a self.tick_size attribute: False
-```
+| | Then | Now |
+|---|---|---|
+| `Action_Helper.min_tick` | hardcoded `1` | the `tick_size` config key — this is what builds every price |
+| `reset()` | `OrderBook(1, ...)` | `OrderBook(self.tick_size, ...)` |
+| `OrderBook.tick_size` | stored, never read | stored, never read — still inert |
 
-`Exchg_Helper.__init__` passes the configured tick to the *initial* `OrderBook`, but `reset()`
-hardcodes `OrderBook(1, ...)`
-([`continuousDoubleAuction_env.py:141`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py#L141)),
-and the env never stores `self.tick_size` at all. `Action_Helper.min_tick = 1` is a second,
-independent hardcoded tick.
+There is no rounding or tick validation anywhere in the matching path; the book's parameter makes
+it look as though there is. The recommendation is to **delete** the book's copy rather than
+enforce it, because there is exactly one price producer in the system and `_set_price` emits
+on-grid prices by construction. It is deferred only because `envs/orderbook/` is off-limits to
+changes. See [18_configuration.md](18_configuration.md) §6 and S3-4 in
+[15_findings_and_recommendations.md](15_findings_and_recommendations.md).
 
-This is why `log1p_spread_ticks` is deliberately computed against `min_tick` rather than
-`tick_size` — see [05_observation_space.md](05_observation_space.md) §3.2.
+`log1p_spread_ticks` is computed against `min_tick` because that is the tick the action space
+quotes in, which makes observation units match action units — see
+[05_observation_space.md](05_observation_space.md) §3.2.
 
 ---
 
@@ -332,6 +463,28 @@ champion_1, champion_2, …   frozen PPO snapshots       ┘ ← opponent pool, 
 
 Default: `n=8`, `k=2` → 2 learners against 6 pool slots.
 
+```mermaid
+flowchart LR
+    subgraph AG["Agents in the env"]
+        A0["agent_0"]
+        A1["agent_1"]
+        AK["agent_2 .. agent_7"]
+    end
+    subgraph MOD["Modules"]
+        P0["policy_0<br/>trainable"]
+        P1["policy_1<br/>trainable"]
+        subgraph POOL["Opponent pool, weighted draw per episode"]
+            PB["policy_2 .. policy_7<br/>frozen RandomRLModule<br/>weight 1.0"]
+            CH["champion_1 .. champion_N<br/>frozen PPO snapshots<br/>weight 3.0"]
+        end
+    end
+    A0 -->|"fixed 1:1"| P0
+    A1 -->|"fixed 1:1"| P1
+    AK -->|"crc32(episode_id) + agent_index"| POOL
+    P0 -->|"promoted above mean + k*std"| CH
+    P1 -->|"promoted above mean + k*std"| CH
+```
+
 Critically, module **classes** are declared through `MultiRLModuleSpec`, because on the new API
 stack `multi_agent(policies={...})` reads only the dict *keys*; a `PolicySpec(policy_class=...)`
 is silently discarded and every module is built as `DefaultPPOTorchRLModule`. The file's
@@ -349,7 +502,7 @@ and `vf_share_layers=False`.
 ### Matchmaking
 
 `SelfPlayCallback.get_mapping_fn`
-([`league_based_self_play_callback.py:574-633`](../gym_continuousDoubleAuction/train/callbk/league_based_self_play_callback.py#L574-L633))
+([`league_based_self_play_callback.py`](../gym_continuousDoubleAuction/train/callbk/league_based_self_play_callback.py))
 returns a closure that:
 
 - maps `agent_i → policy_i` for `i < k` (always the learners);
@@ -383,38 +536,61 @@ notebook. See [18_configuration.md](18_configuration.md) §8.
 
 ---
 
-## 2.9 Data flow diagram
+## 2.9 Data flow
 
+Where each value is produced and who consumes it, with the process boundary drawn in. Everything
+inside `Env runner process` exists once per runner; everything in `Driver process` exists once.
+At the `num_env_runners=0` default they are the same process — which is exactly the assumption
+that broke three separate times, see [09_distributed_training.md](09_distributed_training.md).
+
+```mermaid
+flowchart TB
+    subgraph DRV["Driver process"]
+        ALGO["PPO Algorithm"]
+        LG["LearnerGroup<br/>policy_0, policy_1 (+ frozen champions)"]
+        OTR["SelfPlayCallback.on_train_result<br/>league stats, champion promotion"]
+        PROG["progress.jsonl<br/>one line per iteration"]
+        NAVCHK["_check_nav_conservation<br/>the only place a run can be stopped"]
+        CHK["checkpoints: chkpt/iter_NNNNN<br/>+ league_state.json"]
+    end
+
+    subgraph RUN["Env runner process (x num_env_runners)"]
+        MAP["policy_mapping_fn<br/>agent_id -> module_id"]
+        RLM["RLModule forward"]
+        ENV["continuousDoubleAuctionEnv.step"]
+        BOOK["OrderBook + Trader + Account"]
+        OBSH["obs_history deque<br/>shared by all agents"]
+        HOOKS["on_episode_step / on_episode_end"]
+        REC["EpisodeRecorder<br/>queue -> writer thread"]
+        PARQ[("episodes.*.parquet")]
+        RLOG[("run.pid.worker.log")]
+    end
+
+    ALGO --> MAP
+    MAP --> RLM
+    RLM -->|"Dict action"| ENV
+    ENV --> BOOK
+    BOOK -->|"trades, residue"| BOOK
+    BOOK -->|"mark_to_mkt"| ENV
+    ENV --> OBSH
+    OBSH -->|"obs 168 floats"| RLM
+    ENV -->|"reward, info"| HOOKS
+    HOOKS --> REC --> PARQ
+    HOOKS -->|"NAV table, violation ERROR"| RLOG
+    HOOKS -->|"metrics: pass fraction, reward terms,<br/>nav_conservation_violations"| ALGO
+    ENV -->|"sampled batch"| LG
+    LG -->|"weights"| RLM
+    ALGO --> OTR
+    OTR -->|"add_module + force-push weights"| RLM
+    ALGO --> PROG
+    ALGO --> NAVCHK
+    ALGO --> CHK
 ```
-                 ┌──────────────────────── RLlib driver ─────────────────────────┐
-                 │  PPO Algorithm                                                │
-                 │    ├─ LearnerGroup ── policy_0, policy_1 (+ frozen champions) │
-                 │    └─ EnvRunnerGroup                                          │
-                 └───────────────────────────────┬───────────────────────────────┘
-                                                 │ agent_id → module_id (weighted draw)
-                                                 ▼
-   obs(168) ─► RLModule ─► Dict action ─► set_actions ─► shuffle ─► OrderBook
-      ▲                                                                │
-      │                                                        trades / residue
-      │                                                                ▼
-      │                                                     Trader._process_trades
-      │                                                                │
-      │                                                                ▼
-      │                                     Account: cash / cash_on_hold / VWAP / position
-      │                                                                │
-      │                                                        mark_to_mkt(last tape price)
-      │                                                                │
-      │                                    ┌───────────────────────────┼─────────────┐
-      │                                    ▼                           ▼             ▼
-      └──────────── set_agg_LOB ◄──── obs_history deque            set_reward     set_info
-                    (shared by all agents)                              │             │
-                                                                        ▼             ▼
-                                                                    reward dict   info dict
-                                                                                      │
-                                                        SelfPlayCallback.on_episode_* │
-                                                          ├─ per-episode step pickle ◄┘
-                                                          └─ NAV conservation check
-```
+
+The one arrow worth reading twice is `nav_conservation_violations`. The check runs in
+`on_episode_end`, which is on the **runner**; a raise there is swallowed by RLlib's fault
+tolerance and restarts the worker. So the hook reports a metric and the driver decides — see
+[11_logging_and_observability.md](11_logging_and_observability.md) §1.5.
 
 ---
 
@@ -425,9 +601,13 @@ notebook. See [18_configuration.md](18_configuration.md) §8.
 - **Rendering has side effects.** `_render` nulls `model_actions` / `LOB_actions` /
   `shuffled_actions` and clears `seq_trades` and `seq_order_in_book`, so toggling `is_render`
   changes state evolution.
-- **`import ray` in the env is unused.** Only the `MultiAgentEnv` import on the next line is
-  needed.
+- **The bare `import ray` in the env is gone** (S3-6); the `MultiAgentEnv` import is the real
+  dependency, and `ray[rllib]` is in `install_requires` because of it.
 - **A fair amount of commented-out dead code** (old `step`, old action space, old `modify_order`,
   old space getters) is left in place as inline history — roughly 200 LOC.
+- **No module holds a literal copy of a configured value.** `test_config_sources.py` proves it by
+  copying `config/` to a temp tree, changing values, pointing `$CDA_CONFIG_DIR` at it and
+  asserting the change comes out the far end. Add knobs the way
+  [18_configuration.md](18_configuration.md) §7 describes, not as a Python default.
 - **The test suite is the best executable spec for the tricky parts** — position flips, crossed
   books, volume sync, observation normalization, ghost pricing. See [10_testing.md](10_testing.md).
