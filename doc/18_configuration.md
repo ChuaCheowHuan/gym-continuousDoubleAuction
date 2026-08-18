@@ -106,7 +106,7 @@ bare `continuousDoubleAuctionEnv({})` — a test fixture, a notebook, an `env_co
 hand — falls back to `env_defaults.json`.
 
 Those standalone values deliberately differ from the training ones: `num_of_agents=5`,
-`max_step=64`, `init_cash=0`, `is_render=true`. A bare env is small, cheap and prints what it is
+`max_step=64`, `init_cash=1000000`, `is_render=true`. A bare env is small, cheap and prints what it is
 doing; a training env is large and silent. Keeping them in a separate file is what lets both be
 explicit instead of one being a literal buried in `__init__`.
 

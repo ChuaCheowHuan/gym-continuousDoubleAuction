@@ -278,7 +278,7 @@ Passed as an `env_config` dict to `continuousDoubleAuctionEnv`
 | Key | Env default | `TrainConfig` value | Meaning |
 |---|---|---|---|
 | `num_of_agents` | 5 | 8 | Number of traders |
-| `init_cash` | 0 | 1,000,000 | Starting cash per trader |
+| `init_cash` | 1,000,000 | 1,000,000 | Starting cash per trader — must be > 0, see `env_defaults.json` |
 | `tick_size` | 1 | 1 | Book tick — **silently discarded after the first reset**, see §2.7 |
 | `tape_display_length` | 10 | 10 | Tape rows kept for display |
 | `max_step` | 64 | 4,096 | Steps before truncation |

@@ -24,3 +24,11 @@ gym_continuousDoubleAuction/*.txt
 gym_continuousDoubleAuction/*.json
 gym_continuousDoubleAuction/visualize/json/latest_episode_data.json
 gym_continuousDoubleAuction/visualize/json/latest_episode_data.txt
+# Build artefacts. `python setup.py bdist_wheel` / `pip install .` stage into
+# build/ and drop the result in dist/; neither is source.
+build
+dist
+# Staged copy of the root config/ tree, written into the package by setup.py's
+# build_py so the wheel carries it. Generated, never edited - the canonical
+# tree is ./config/, which config_dir() finds first when running in-tree.
+gym_continuousDoubleAuction/config

@@ -41,3 +41,69 @@ jobs:
         # This is the test that would have caught the silently-ignored
         # RandomPolicy and the champion weights never reaching the EnvRunners.
         run: python -m pytest gym_continuousDoubleAuction/test/integration -q
+
+
+  # Every job above installs the full requirements.txt from a checkout, so none
+  # of them can see what a *user* gets from `pip install`. That is why both
+  # halves of doc/15 S3-6/S3-18 went unnoticed: install_requires did not name
+  # ray[rllib], scikit-learn or six, and no config JSON was in the distribution
+  # at all - so an installed copy raised FileNotFoundError on import, while CI
+  # stayed green. This job is the missing coverage: build the wheel, install it
+  # somewhere with no repo and no requirements.txt, and construct an env.
+  packaging:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Build the wheel
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel --outdir dist
+
+      - name: The wheel must carry the config tree
+        # config/ lives at the repo root, outside the package; setup.py's
+        # build_py stages it in. If that staging stops working the failure is
+        # otherwise silent until someone installs the result.
+        run: |
+          python - <<'PY'
+          import glob, sys, zipfile
+          wheel = glob.glob("dist/*.whl")[0]
+          shipped = sorted(
+              n for n in zipfile.ZipFile(wheel).namelist()
+              if n.endswith(".json") and "/config/" in n
+          )
+          print(f"{wheel}: {len(shipped)} config file(s)")
+          for name in shipped:
+              print("  ", name)
+          if len(shipped) < 5:
+              sys.exit("the wheel is missing config/*.json - see doc/15 S3-18")
+          PY
+
+      - name: Install into a clean environment and build an env
+        # Deliberately run from a directory with no checkout in it, so the
+        # import resolves to the installed copy rather than the source tree.
+        run: |
+          python -m venv /tmp/clean
+          /tmp/clean/bin/pip install --upgrade pip
+          /tmp/clean/bin/pip install dist/*.whl
+          mkdir -p /tmp/elsewhere
+          cd /tmp/elsewhere
+          /tmp/clean/bin/python - <<'PY'
+          import gymnasium, gym_continuousDoubleAuction  # noqa: F401
+          from gym_continuousDoubleAuction.config_loader import config_dir
+          from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
+              continuousDoubleAuctionEnv,
+          )
+          print("config_dir:", config_dir())
+          env = continuousDoubleAuctionEnv({})
+          env.reset()
+          for _ in range(8):
+              env.step({a: env.action_spaces[a].sample() for a in env.agents})
+          print("stepped an installed env with", env.num_of_agents, "agents")
+          PY

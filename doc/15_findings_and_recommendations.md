@@ -72,6 +72,33 @@ predicted outcome.
 scale the micro-penalties to reward units (S2-3), and reduce or drop the asymmetric multiplier.
 → [12 §3.3](12_perspective_rl_researcher.md#33-doing-nothing-is-a-dominant-strategy)
 
+### S1-4 · The default standalone env could not trade **[verified, fixed]**
+
+`config/env_defaults.json` shipped `init_cash: 0`. `Trader._order_approved` refuses on
+`nav <= 0` before it inspects anything else, so every trader in a bare env started bankrupt: no
+order was ever placed on any side, `Done_Helper.set_done` put all five agents in `done_set` on
+the first pass, and `terminateds["__all__"]` came back `True` after a single `step()`. The
+configured `max_step: 64` was unreachable.
+
+| `continuousDoubleAuctionEnv({})` | Before | After |
+|---|---|---|
+| Trades in 64 steps | **0** | 134 |
+| Steps before `terminateds["__all__"]` | **1** | 64 (truncated) |
+| Final NAVs | `['0','0','0','0','0']` | spread around 1,000,000 |
+
+This is the form `gymnasium.make("continuousDoubleAuction-v0")` produces and the one
+[01](01_overview.md) documents as "small, cheap and prints what it is doing". The value was
+written down in three places and its consequence in none of them.
+
+CI did not catch it: the only bare-env job is the `CDA_rand.py` smoke run, which builds its own
+env config from `cli_defaults.json` — where `init_cash` is 1,000,000 — and so overrode the one
+value that broke it.
+
+**Fixed:** `init_cash` is 1,000,000 in `env_defaults.json`, matching `cli_defaults.json` and
+`train_config.json` so all three agree. `test_env_lifecycle.py::TestBareEnvIsTradable` reads the
+checked-in file deliberately — a fixture supplying its own cash would reproduce exactly the blind
+spot the smoke run had.
+
 ---
 
 ## S2 — Major
@@ -258,28 +285,139 @@ the *relative* tick varies **10×** across episodes — a large uncontrolled non
 partly mitigated by exposing `log_mid`. `initial_price_min/max` are read by `reset()` but omitted
 from `TrainConfig.env_config`, so training cannot narrow the range.
 
-### S3-5 · Seeding is entirely non-functional
+### S3-5 · Seeding is entirely non-functional **[verified, fixed]**
 
-`reset(seed=...)` forwards to `MultiAgentEnv.reset`, which seeds `self._np_random` — which
-nothing uses. The env draws initial price and order sizes from global `np.random`, and
-`rand_exec_seq(actions, None)` always passes `random_state=None`, so the shuffle ignores RLlib's
-`seed` too.
+`reset(seed=...)` forwarded to `MultiAgentEnv.reset`, which seeds `self._np_random` — which
+nothing read. All three of the env's random draws went to the global `np.random` instead: the
+initial price anchor in `reset`, order sizes in `Action_Helper._set_size`, and the queueing order
+in `rand_exec_seq`, whose one caller passes `seed=None` and whose
+`sklearn.utils.shuffle(..., random_state=None)` falls through to sklearn's own global
+`np.random.mtrand._rand`.
 
-**No episode is reproducible.** For a research environment whose entire output is simulated data
-this is disqualifying — none of the generated-LOB figures can be regenerated. The
-`rand_exec_seq` signature already accepts a seed; nothing passes one.
-**Fix:** one `np.random.Generator` on the env, threaded through size sampling, initial price and
-the shuffle.
+**No episode was reproducible**, which for a research environment whose entire output is
+simulated data is disqualifying — none of the generated-LOB figures could be regenerated.
 
-### S3-6 · `install_requires` does not match the imports **[verified]**
+One correction to the original entry, because it changes how urgent this is. **Training runs
+were reproducible** — by accident rather than by design. RLlib's `EnvRunner.__init__` calls
+`update_global_seed_if_necessary`, which seeds global `random` and `np.random` from
+`config.seed + worker_index`, and that covered all three sources. Measured: with global NumPy
+seeded, two runs of the same env and actions were identical; with only `reset(seed=123)`, they
+diverged. Three caveats made it worth fixing anyway:
 
-`envs/` imports `ray`, `sklearn.utils`, and `six`, none of which are in `install_requires`.
+* `run.seed` is `null` in the checked-in `train_config.json`, so nothing was seeded by default;
+* the seeding happens once per worker at construction, so episode *N* could not be reproduced
+  without replaying 1..*N*−1;
+* `restart_failed_env_runners` is on by default, and a restarted runner re-seeds from the same
+  value — rewinding its stream mid-run, so a run that loses a worker was not reproducible even
+  in principle.
+
+**Fixed:** all three sources now read `self.np_random`, gymnasium's per-env `Generator`, which
+`super().reset(seed=...)` seeds. `seed=None` deliberately does not re-seed, per the Gymnasium
+contract, so consecutive episodes still differ. `rand_exec_seq` honours its `seed` parameter —
+accepted since it was written and never used — and shuffles with `Generator.permutation`, which
+removed the `scikit-learn` dependency along with it (see S3-6). `test_seeding.py` pins this;
+its load-bearing case seeds the *global* stream to two different values and asserts the seeded
+episode is unchanged, which fails against the old code in the direction that hid the bug.
+
+### S3-6 · `install_requires` does not match the imports **[verified, fixed]**
+
+`envs/` imports `ray`, `sklearn.utils`, and `six`, none of which were in `install_requires`.
 `pip install gym_continuousDoubleAuction` without extras fails on first import. CI never catches
 it because it always installs the full `requirements.txt`.
 
-`import ray` in the env is entirely unused; `six` is a Python-2 shim replaceable by
-`io.StringIO`; `sklearn.utils.shuffle` pulls ~30 MB into every EnvRunner to shuffle ≤8 dicts —
-and is the same call that makes runs irreproducible (S3-5).
+One claim in the original entry was wrong and worth correcting, because acting on it as written
+would have left the real dependency in place: **`import ray` in the env is not entirely unused.**
+There were *two* ray imports in `continuousDoubleAuction_env.py` — a genuinely dead bare
+`import ray`, and `from ray.rllib.env.multi_agent_env import MultiAgentEnv`, which is the base
+class. A clean-venv install failed on the second, not the first.
+
+`six` is a Python-2 shim replaceable by `io.StringIO`, but it is imported from
+`envs/orderbook/`, which is off-limits to changes (see S3-4) — so it is declared rather than
+removed.
+
+`sklearn` is gone entirely. It pulled ~30 MB into every EnvRunner to shuffle ≤8 dicts, and was
+the same call that made runs irreproducible; `rand_exec_seq` now uses the env's own
+`Generator.permutation`, so fixing S3-5 removed the dependency rather than merely declaring it.
+
+**Fixed:** the dead `import ray` is gone; `ray[rllib]` and `six` are in `install_requires`, which
+now matches what the package actually imports, and `scikit-learn` is in neither
+`install_requires` nor `requirements.txt` because nothing imports it. The `rllib` extra keeps its
+name and carries the rest of the *training* stack (`torch`, `tensorboardX`), so
+`pip install -e ".[rllib]"` is unchanged. A second, independent packaging defect was found while
+fixing this one — see S3-18.
+
+### S3-18 · The config tree was not in the built distribution **[verified, fixed]**
+
+`setup.py` declared neither `package_data` nor `include_package_data`, and `config/` sits at the
+repo root rather than inside the package — so a wheel built from this tree carried **zero** JSON
+config files. `config_loader.config_dir()` searches `<pkg>/../config` and `<pkg>/config`; in
+`site-packages` neither exists.
+
+The failure lands at *import*, not at first use, because the config reads are default arguments
+evaluated at class-definition time in `Exchg_Helper`, `Reward_Helper`, `Action_Helper`,
+`State_Helper`, `Trader` and `Account`. Every non-editable install was therefore unusable, which
+is why the "Resolved since" entry claiming `setup.py` was fixed for non-editable installs has
+been corrected below — it fixed `find_packages()` and left this.
+
+**Fixed:** a `build_py` subclass stages `config/*.json` into `gym_continuousDoubleAuction/config/`
+at build time and `package_data` ships it — which is exactly the second location `config_dir()`
+already searched and never found. Nothing moves, no documented path changes, and the staged copy
+is git-ignored and never preferred in-tree (the repo root is checked first). `MANIFEST.in` carries
+the root tree into an sdist so the staging has something to read there too.
+
+### S3-19 · Every episode ran one step longer than `max_step` **[verified, fixed]**
+
+`Done_Helper.set_all_done` compared `self.t_step > self.max_step - 1`, but `step()` increments
+`t_step` *after* `set_step_outputs` has computed the flags. The condition first held at
+`t_step == max_step`, i.e. on the `max_step + 1`-th step, so `max_step=10` produced 11 calls to
+`step()`.
+
+The consequence is quiet rather than dramatic. `TrainConfig.train_batch_size` is defined as
+`max_step * num_episodes_per_iter`, so at the checked-in defaults the env delivered 16,388 steps
+against a declared batch of 16,384 — and the `sample_timeout_s` sizing note in
+`train_config.json` is derived from the same understated figure. Every episode length quoted in
+the documentation was off by one for the same reason.
+
+Nothing caught it because the existing loops all stop on `truncateds["__all__"]` without counting
+the steps taken to get there.
+
+**Fixed:** the test now reads `self.t_step + 1 >= self.max_step`, written in terms of *steps
+taken* rather than as a comparison against `max_step - 1`, which is what made it easy to get
+wrong. `test_env_lifecycle.py::TestEpisodeLength` pins the count at several horizons and asserts
+that truncation is reported *on* the final step rather than after it.
+
+### S3-20 · The escrow-delta path for order modification was dead **[verified, fixed]**
+
+`Cash_Processor.modify_cash_transfer` computed `diff = order_val - qoute_val` and moved `diff`
+between `cash` and `cash_on_hold` — a modify treated as a pure escrow adjustment. Nothing called
+it, verified by grep across the package.
+
+It was deleted rather than wired up, because **it is only correct where the live path already
+is.** A modify is handled as cancel-and-reprocess: `cancel_cash_transfer` returns the whole old
+order value to cash, `OrderBook.modify_order` re-runs the quote through `process_limit_order`,
+and whatever is left resting is re-escrowed by `order_in_book_passive_party` — net cash movement
+`order_val - residual_val`. When the modify does not match, `residual_val == qoute_val` and the
+two are the same expression, which is why NAV conservation never told them apart:
+
+| Modify (bid 10@100) | Escrow-delta would do | Live path does |
+|---|---|---|
+| → 6@100, no match | cash **+400**, hold −400 | cash **+400**, hold −400 |
+| → 14@100, no match | cash **−400**, hold +400 | cash **−400**, hold +400 |
+| → 10@101, hits ask@101 | cash −10, hold **+10** | cash −10, hold **−394** |
+| → 10@103, hits ask@101 | cash **−30**, hold **+30** | cash **−22**, hold **−382** |
+
+Row 3 shows the escrow leg wrong by the traded value; the cash leg coincides there only because
+the fill happened *at* the quoted price, so `residual_val + trade_val == qoute_val` exactly. Row
+4 breaks that identity — the fill is 2 ticks better than quoted — and both legs are wrong.
+
+The function has no term for a fill, so it holds cash against quantity no longer in the book.
+Re-processing is not an implementation detail of modify; it is what lets a modify cross the
+spread, which this function assumes never happens.
+
+**Fixed:** deleted, with the reasoning left at the call site. The six scenarios in
+`test_modify_order.py` already constrain the behaviour — three of them cross the book and assert
+exact `cash` / `cash_on_hold` / `net_position`, which an escrow-shuffle cannot produce — and a
+seventh test now asserts the helper stays gone.
 
 ### S3-7 · `sys.exit()` used for error handling in the matching engine
 
@@ -442,7 +580,7 @@ Recorded so nobody re-files them. Each was a real defect at the time.
 | Per-episode pickles were unconditional | `episode_data_dir=None` / `--no-episode-data` disables them |
 | `episode_data/` was untracked noise | In `.gitignore`, both paths, with an explanatory comment |
 | **No CI** — dead `.travis.yml` | GitHub Actions, 3.11/3.12 matrix, three staged jobs |
-| `setup.py` broken for non-editable installs | `find_packages()`, real `install_requires` and extras, `__init__.py` files added |
+| `setup.py` broken for non-editable installs | ~~`find_packages()`, real `install_requires` and extras, `__init__.py` files added~~ **Premature.** That pass fixed package discovery and left two defects that still made every non-editable install fail: `install_requires` did not name `ray[rllib]`, `scikit-learn` or `six` (S3-6), and no config JSON was in the distribution at all (S3-18). Both are fixed now, and a wheel built from this tree has been installed into a clean environment and used to construct an env |
 | `observation_space`/`action_space` were plain dicts | `observation_spaces`/`action_spaces` (plural, new stack) plus per-agent getters; agent ordering stable across processes |
 | Trainable network was an 8-unit bottleneck | `fcnet_hiddens=[256,256]`, `tanh`, `vf_share_layers=False` |
 | `test_modify_order_price_change` was `@unittest.expectedFailure` | A normal passing test; the no-crossed-book invariant holds on every modification path |

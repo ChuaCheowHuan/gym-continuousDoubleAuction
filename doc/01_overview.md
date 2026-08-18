@@ -116,7 +116,9 @@ other. The environment is a valid *game*; framing it as a market simulator overr
 | Truncation | at `max_step` | [`done_helper.py`](../gym_continuousDoubleAuction/envs/exchg/done_helper.py) |
 
 Note the env's **own** defaults differ from what `TrainConfig` passes — a bare
-`continuousDoubleAuctionEnv({})` gets 5 agents, `init_cash=0`, `max_step=64` and `is_render=True`.
+`continuousDoubleAuctionEnv({})` gets 5 agents, `init_cash=1,000,000`, `max_step=64` and
+`is_render=True`. (`init_cash` was `0` until it was found to make the bare env inert — every
+order refused, every agent bankrupt on step 1.)
 The full table is in [02_architecture.md](02_architecture.md) §6.
 
 Within one env step, all N agents' orders are collected, **randomly shuffled**, and then applied
