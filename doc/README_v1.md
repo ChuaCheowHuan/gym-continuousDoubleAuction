@@ -2,7 +2,7 @@
 
 This repository has undergone significant modernization since the `original_v1` branch (the original release from 2020).
 
-For a detailed breakdown of codebase modernizations, please refer to the [17_changelog.md](doc/17_changelog.md) document.
+For a detailed breakdown of codebase modernizations, please refer to the [17_changelog.md](17_changelog.md) document.
 
 ---
 
