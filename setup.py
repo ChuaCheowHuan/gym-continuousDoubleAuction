@@ -95,10 +95,9 @@ setup(
         # list used to be "deliberately narrow" on the stated reasoning that
         # the env stays usable without the RL stack - which was not true of the
         # code: `continuousDoubleAuction_env` subclasses `MultiAgentEnv`, so
-        # ray[rllib] is a hard import, and `action_helper` imports
-        # `sklearn.utils.shuffle` at module scope. Both were reachable only via
-        # extras, so `pip install gym_continuousDoubleAuction` produced a
-        # package that could not be imported. The list now matches the imports.
+        # ray[rllib] is a hard import. It was reachable only via an extra, so
+        # `pip install gym_continuousDoubleAuction` produced a package that
+        # could not be imported. The list now matches the imports.
         "gymnasium==1.2.2",
         # See requirements.txt for why the floor is 2.2, not 2.5: numpy has no
         # 3.10 wheels from 2.3.0 onward, and no 3.11 wheels from 2.5.0 onward.
@@ -110,12 +109,6 @@ setup(
         # pins, because Ray 2.56.x hard-pins gymnasium==1.2.2 and the two
         # cannot be bumped independently.
         "ray[rllib]==2.56.1",
-        # `Action_Helper.rand_exec_seq` only. A ~30MB dependency to shuffle at
-        # most `num_agents` dicts, and the same call that makes runs
-        # irreproducible - see doc/15 S3-5/S3-6, where replacing it with
-        # `random.Random(seed).shuffle` is the recommended fix. Declared here
-        # because it is imported today; drop the declaration with the import.
-        "scikit-learn>=1.9,<2",
         # `six.moves.cStringIO` in envs/orderbook/{orderbook,orderlist}.py.
         # A Python-2 shim that `io.StringIO` replaces, but envs/orderbook/ is
         # off-limits to changes (doc/15 S3-4), so the dependency is declared

@@ -285,18 +285,39 @@ the *relative* tick varies **10×** across episodes — a large uncontrolled non
 partly mitigated by exposing `log_mid`. `initial_price_min/max` are read by `reset()` but omitted
 from `TrainConfig.env_config`, so training cannot narrow the range.
 
-### S3-5 · Seeding is entirely non-functional
+### S3-5 · Seeding is entirely non-functional **[verified, fixed]**
 
-`reset(seed=...)` forwards to `MultiAgentEnv.reset`, which seeds `self._np_random` — which
-nothing uses. The env draws initial price and order sizes from global `np.random`, and
-`rand_exec_seq(actions, None)` always passes `random_state=None`, so the shuffle ignores RLlib's
-`seed` too.
+`reset(seed=...)` forwarded to `MultiAgentEnv.reset`, which seeds `self._np_random` — which
+nothing read. All three of the env's random draws went to the global `np.random` instead: the
+initial price anchor in `reset`, order sizes in `Action_Helper._set_size`, and the queueing order
+in `rand_exec_seq`, whose one caller passes `seed=None` and whose
+`sklearn.utils.shuffle(..., random_state=None)` falls through to sklearn's own global
+`np.random.mtrand._rand`.
 
-**No episode is reproducible.** For a research environment whose entire output is simulated data
-this is disqualifying — none of the generated-LOB figures can be regenerated. The
-`rand_exec_seq` signature already accepts a seed; nothing passes one.
-**Fix:** one `np.random.Generator` on the env, threaded through size sampling, initial price and
-the shuffle.
+**No episode was reproducible**, which for a research environment whose entire output is
+simulated data is disqualifying — none of the generated-LOB figures could be regenerated.
+
+One correction to the original entry, because it changes how urgent this is. **Training runs
+were reproducible** — by accident rather than by design. RLlib's `EnvRunner.__init__` calls
+`update_global_seed_if_necessary`, which seeds global `random` and `np.random` from
+`config.seed + worker_index`, and that covered all three sources. Measured: with global NumPy
+seeded, two runs of the same env and actions were identical; with only `reset(seed=123)`, they
+diverged. Three caveats made it worth fixing anyway:
+
+* `run.seed` is `null` in the checked-in `train_config.json`, so nothing was seeded by default;
+* the seeding happens once per worker at construction, so episode *N* could not be reproduced
+  without replaying 1..*N*−1;
+* `restart_failed_env_runners` is on by default, and a restarted runner re-seeds from the same
+  value — rewinding its stream mid-run, so a run that loses a worker was not reproducible even
+  in principle.
+
+**Fixed:** all three sources now read `self.np_random`, gymnasium's per-env `Generator`, which
+`super().reset(seed=...)` seeds. `seed=None` deliberately does not re-seed, per the Gymnasium
+contract, so consecutive episodes still differ. `rand_exec_seq` honours its `seed` parameter —
+accepted since it was written and never used — and shuffles with `Generator.permutation`, which
+removed the `scikit-learn` dependency along with it (see S3-6). `test_seeding.py` pins this;
+its load-bearing case seeds the *global* stream to two different values and asserts the seeded
+episode is unchanged, which fails against the old code in the direction that hid the bug.
 
 ### S3-6 · `install_requires` does not match the imports **[verified, fixed]**
 
@@ -312,13 +333,16 @@ class. A clean-venv install failed on the second, not the first.
 
 `six` is a Python-2 shim replaceable by `io.StringIO`, but it is imported from
 `envs/orderbook/`, which is off-limits to changes (see S3-4) — so it is declared rather than
-removed. `sklearn.utils.shuffle` pulls ~30 MB into every EnvRunner to shuffle ≤8 dicts, and is
-the same call that makes runs irreproducible (S3-5); it is likewise declared for now, and the
-declaration should go when the import does.
+removed.
 
-**Fixed:** the dead `import ray` is gone; `ray[rllib]`, `scikit-learn` and `six` are in
-`install_requires`, which now matches what the package actually imports. The `rllib` extra keeps
-its name and carries the rest of the *training* stack (`torch`, `tensorboardX`), so
+`sklearn` is gone entirely. It pulled ~30 MB into every EnvRunner to shuffle ≤8 dicts, and was
+the same call that made runs irreproducible; `rand_exec_seq` now uses the env's own
+`Generator.permutation`, so fixing S3-5 removed the dependency rather than merely declaring it.
+
+**Fixed:** the dead `import ray` is gone; `ray[rllib]` and `six` are in `install_requires`, which
+now matches what the package actually imports, and `scikit-learn` is in neither
+`install_requires` nor `requirements.txt` because nothing imports it. The `rllib` extra keeps its
+name and carries the rest of the *training* stack (`torch`, `tensorboardX`), so
 `pip install -e ".[rllib]"` is unchanged. A second, independent packaging defect was found while
 fixing this one — see S3-18.
 
@@ -361,6 +385,39 @@ the steps taken to get there.
 taken* rather than as a comparison against `max_step - 1`, which is what made it easy to get
 wrong. `test_env_lifecycle.py::TestEpisodeLength` pins the count at several horizons and asserts
 that truncation is reported *on* the final step rather than after it.
+
+### S3-20 · The escrow-delta path for order modification was dead **[verified, fixed]**
+
+`Cash_Processor.modify_cash_transfer` computed `diff = order_val - qoute_val` and moved `diff`
+between `cash` and `cash_on_hold` — a modify treated as a pure escrow adjustment. Nothing called
+it, verified by grep across the package.
+
+It was deleted rather than wired up, because **it is only correct where the live path already
+is.** A modify is handled as cancel-and-reprocess: `cancel_cash_transfer` returns the whole old
+order value to cash, `OrderBook.modify_order` re-runs the quote through `process_limit_order`,
+and whatever is left resting is re-escrowed by `order_in_book_passive_party` — net cash movement
+`order_val - residual_val`. When the modify does not match, `residual_val == qoute_val` and the
+two are the same expression, which is why NAV conservation never told them apart:
+
+| Modify (bid 10@100) | Escrow-delta would do | Live path does |
+|---|---|---|
+| → 6@100, no match | cash **+400**, hold −400 | cash **+400**, hold −400 |
+| → 14@100, no match | cash **−400**, hold +400 | cash **−400**, hold +400 |
+| → 10@101, hits ask@101 | cash −10, hold **+10** | cash −10, hold **−394** |
+| → 10@103, hits ask@101 | cash **−30**, hold **+30** | cash **−22**, hold **−382** |
+
+Row 3 shows the escrow leg wrong by the traded value; the cash leg coincides there only because
+the fill happened *at* the quoted price, so `residual_val + trade_val == qoute_val` exactly. Row
+4 breaks that identity — the fill is 2 ticks better than quoted — and both legs are wrong.
+
+The function has no term for a fill, so it holds cash against quantity no longer in the book.
+Re-processing is not an implementation detail of modify; it is what lets a modify cross the
+spread, which this function assumes never happens.
+
+**Fixed:** deleted, with the reasoning left at the call site. The six scenarios in
+`test_modify_order.py` already constrain the behaviour — three of them cross the book and assert
+exact `cash` / `cash_on_hold` / `net_position`, which an escrow-shuffle cannot produce — and a
+seventh test now asserts the helper stays gone.
 
 ### S3-7 · `sys.exit()` used for error handling in the matching engine
 

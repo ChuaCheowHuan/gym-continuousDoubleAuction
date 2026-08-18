@@ -61,35 +61,26 @@ class Cash_Processor(object):
         self.cash += trade_val
         return 0
 
-    def modify_cash_transfer(self, qoute, order):
-        """
-        Update account of trader accordingly if his orders in LOB changes.
-
-        note:
-            Changes in LOB orders refer to changes in size.
-            If size decrease, deduct from cash_on_hold, return to cash.
-            If size increase, deduct from cash, add to cash_on_hold.
-        """
-
-        order_val = (order.price) * (order.quantity)
-
-
-
-        qoute_val = Decimal(str(qoute['price'])) * qoute['quantity']
-        
-        
-        
-        if order_val >= qoute_val: # reducing size
-            diff = order_val - qoute_val
-            # deduct from cash_on_hold, return to cash
-            self.cash_on_hold -= diff
-            self.cash += diff
-        else: # order_val < qoute_val, increasing size
-            diff = qoute_val - order_val
-            # deduct from cash, add to cash_on_hold
-            self.cash -= diff
-            self.cash_on_hold += diff
-        return 0
+    # `modify_cash_transfer` used to sit here: it moved
+    # `order_val - qoute_val` between cash and cash_on_hold, as the escrow
+    # delta of a size change. Nothing called it, and it is deleted rather than
+    # wired up because it is only correct where the live path already is.
+    #
+    # A modify is handled as cancel-and-reprocess: `cancel_cash_transfer`
+    # returns the whole old order value to cash, `OrderBook.modify_order`
+    # re-runs the quote through `process_limit_order`, and whatever is left
+    # resting is re-escrowed by `order_in_book_passive_party`. Net cash movement
+    # is `order_val - residual_val`. When the modify does not match,
+    # `residual_val == qoute_val` and the two are the same expression - which is
+    # why NAV conservation never distinguished them.
+    #
+    # When it *does* match they diverge, and the deleted function is the wrong
+    # one: it has no term for a fill, so it escrows cash against quantity that
+    # is no longer resting. Modifying a bid of 10@100 to 10@101 into a resting
+    # ask at 101 moves cash_on_hold by -394 on the live path and would have
+    # moved it by +10 here. Re-processing is not an implementation detail of
+    # modify - it is what lets a modify cross the spread, which this function
+    # assumes never happens. See doc/15 S3-20.
 
     def cancel_cash_transfer(self, order):
         """

@@ -84,3 +84,33 @@ class TestModifyOrderAccounting:
         assert self.trader_b.acc.cash == Decimal('9500')
         assert self.trader_b.acc.cash_on_hold == Decimal('0')
         assert self.trader_b.acc.net_position == Decimal('5')
+
+
+class TestModifyIsCancelAndReprocess:
+    """The escrow-shuffle implementation of modify must not come back.
+
+    `Cash_Processor.modify_cash_transfer` moved `order_val - qoute_val` between
+    cash and cash_on_hold - a pure escrow adjustment. It was never called, and
+    was deleted rather than wired up because it is only correct where the live
+    path already is: when the modify does not match, the residual left resting
+    equals the whole new quote, so `cancel_cash_transfer` plus re-escrow comes
+    to the same number. When the modify *does* match they diverge, and the
+    escrow-shuffle is the wrong one - it has no term for a fill, so it holds
+    cash against quantity that is no longer in the book.
+
+    Scenarios 1, 5 and 6 above are what actually constrain this: each crosses
+    the book and asserts exact cash, cash_on_hold and net_position afterwards,
+    which an escrow-shuffle cannot produce. This test only stops the function
+    being reintroduced alongside them. See doc/15 S3-20.
+    """
+
+    def test_the_escrow_shuffle_helper_is_gone(self):
+        from gym_continuousDoubleAuction.envs.account.cash_processor import (
+            Cash_Processor,
+        )
+
+        assert not hasattr(Cash_Processor, "modify_cash_transfer"), (
+            "modify_cash_transfer is back. A modify is handled as "
+            "cancel-and-reprocess so that it can cross the spread; an escrow "
+            "delta cannot express a fill. See the six scenarios above."
+        )

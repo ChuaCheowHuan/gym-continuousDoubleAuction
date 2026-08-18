@@ -1106,3 +1106,51 @@ into a clean environment, construct an env.
 The prior entry's remediation note was also wrong in a way that would have preserved the bug —
 it said `import ray` in the env was "entirely unused". There were two ray imports, and the one
 that mattered was the base class.
+
+---
+
+## 21. Reproducible episodes, and one deletion
+
+Two follow-ups to §20, from the same review (see [15](15_findings_and_recommendations.md) S3-5,
+S3-6, S3-20).
+
+### 21.1 `reset(seed=...)` now seeds the episode
+
+The env had three sources of randomness — the price anchor in `reset`, order sizes in
+`_set_size`, and the queueing order in `rand_exec_seq` — and all three drew from the *global*
+`np.random`. The `seed` argument reached `gymnasium.Env`, which set `self._np_random`, which
+nothing read. All three now use `self.np_random`.
+
+Worth recording because it changes how the old behaviour should be understood: **training runs
+were already reproducible**, by accident. RLlib seeds global `random` and `np.random` per
+EnvRunner from `config.seed + worker_index`, which happened to cover all three sources. What was
+broken was reproducibility for anything that is *not* RLlib — the probes in
+[16](16_verification_log.md), the generated-LOB figures, and any test that wants to pin what a
+specific episode does rather than an invariant that holds for every episode. That last absence
+is visible in the shape of the suite: it tests conservation and structure, and had nothing
+pinning a trajectory.
+
+Three things also made the accidental version unreliable: `run.seed` is `null` by default, the
+seeding happens once per worker rather than per episode, and a runner restarted by
+`restart_failed_env_runners` re-seeds from the same value and rewinds its stream mid-run.
+
+`rand_exec_seq` had accepted a `seed` parameter since it was written that nothing ever passed.
+It is honoured now, and the shuffle is `Generator.permutation` rather than
+`sklearn.utils.shuffle` — so `scikit-learn`, a ~30 MB dependency in every EnvRunner used to
+reorder at most `num_agents` dicts, is out of the requirements entirely. Fixing the seeding and
+removing the dependency turned out to be the same edit.
+
+### 21.2 `modify_cash_transfer` deleted
+
+The one function in the accounting layer that computed the escrow delta of a size change
+directly, with no call sites. It is gone rather than wired up because it is only correct where
+the live cancel-and-reprocess path already is: when a modify does not match, the two are
+algebraically the same expression, which is why NAV conservation never distinguished them. When
+a modify *does* match — which `modify_order` fully supports, since it re-runs the quote through
+`process_limit_order` — the escrow-delta form has no term for the fill and holds cash against
+quantity that is no longer resting. Measured divergence and the full table are in
+[15](15_findings_and_recommendations.md) S3-20.
+
+The lesson is the one §20 opened with. This is the third piece of code found in this review that
+was plausible, documented, and unreachable; a reader extending modify handling would reasonably
+have changed it and seen no effect.

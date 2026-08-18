@@ -173,7 +173,19 @@ class continuousDoubleAuctionEnv(
                 
     # Updated reset method to return proper format for new API
     def reset(self, *, seed=None, options=None):
-        # Call parent reset if it exists
+        # Call parent reset if it exists.
+        #
+        # This is what seeds `self.np_random`, gymnasium's per-env Generator,
+        # and it is the only thing the `seed` argument does. It used to do
+        # nothing observable, because every random draw in the env went to the
+        # global `np.random` instead: the price anchor here, order sizes in
+        # `_set_size`, and the queueing order in `rand_exec_seq`. All three now
+        # read `self.np_random`, so `reset(seed=...)` means what the Gymnasium
+        # API says it means (doc/15 S3-5).
+        #
+        # `seed=None` deliberately does not re-seed - the contract is that an
+        # env which already has a generator keeps its stream across resets, so
+        # consecutive episodes differ.
         if hasattr(super(), 'reset'):
             super().reset(seed=seed)
 
@@ -203,10 +215,10 @@ class continuousDoubleAuctionEnv(
 
         self.t_step = 0
 
-        # Establish initial price anchor
+        # Establish initial price anchor, from the seeded generator.
         low = self._cfg("initial_price_min")
         high = self._cfg("initial_price_max")
-        self.last_price = float(np.random.randint(low, high + 1))
+        self.last_price = float(self.np_random.integers(low, high + 1))
 
         self.reset_traders_acc()
 

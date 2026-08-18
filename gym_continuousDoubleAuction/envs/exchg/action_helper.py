@@ -2,7 +2,6 @@ import numpy as np
 import random
 
 from gymnasium import spaces
-from sklearn.utils import shuffle
 
 from ...config_loader import constant, constants, env_default
 from .state_helper import BOOK_ROW_ORDER
@@ -172,15 +171,32 @@ class Action_Helper():
 
         return acts
 
-    def rand_exec_seq(self, actions, seed):
+    def rand_exec_seq(self, actions, seed=None):
         """
         Shuffle actions execution sequence.
 
+        Which agent's order reaches the book first inside a step is the one
+        piece of the env's randomness that decides who gets a fill, so it has
+        to come from the seeded stream like the rest of it.
+
+        This was `sklearn.utils.shuffle(actions, random_state=seed)` with the
+        one caller passing `seed=None`, which falls through to sklearn's global
+        `np.random.mtrand._rand` - so the queueing order ignored the seed
+        entirely (doc/15 S3-5), and shuffling at most `num_agents` dicts cost a
+        ~30MB dependency in every EnvRunner (S3-6).
+
         Arguments:
             actions: A list of actions acceptable by the LOB.
+            seed: Pins this one shuffle, for a caller that wants a fixed order
+                  without touching the env's stream. `None` - what `step` passes
+                  - draws from the env RNG, which `reset(seed=...)` seeds.
+
+        Returns:
+            A new list; the argument is not reordered in place, as before.
         """
 
-        return shuffle(actions, random_state=seed) # seed for reproducible behavior
+        rng = np.random.default_rng(seed) if seed is not None else self.np_random
+        return [actions[i] for i in rng.permutation(len(actions))]
 
     def do_actions(self, actions):
         """
@@ -306,10 +322,15 @@ class Action_Helper():
         Returns:
             A size sampled from the distribution.
         """
+        # self.np_random, not the global np.random: this is gymnasium's own
+        # per-env Generator, seeded by `reset(seed=...)`. Drawing from the
+        # global stream is what made episodes irreproducible (doc/15 S3-5) -
+        # order size is sampled every step for every agent, so it is the
+        # heaviest consumer of randomness in the env.
         if type == 'market':
-            sample = np.random.normal(mkt_size_mean_mul * mean, sigma, 1)
+            sample = self.np_random.normal(mkt_size_mean_mul * mean, sigma, 1)
         else:
-            sample = np.random.normal(limit_size_mean_mul * mean, sigma, 1)
+            sample = self.np_random.normal(limit_size_mean_mul * mean, sigma, 1)
 
         # return np.asscalar(np.rint(np.abs(sample)))
         # int(): np.rint already rounds to a whole number, but .item() hands
