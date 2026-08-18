@@ -1,3 +1,5 @@
+import os
+
 import matplotlib.pyplot as plt
 
 from gym_continuousDoubleAuction.visualize.episode_data import load_episode
@@ -35,7 +37,8 @@ def visualize_nav(run_dir=None, episode_id=None):
     plt.grid(True, linestyle='--', alpha=0.7)
     plt.tight_layout()
 
-    output_file = 'visualize/nav_visualization.png'
+    output_file = 'visualize/chart/nav_visualization.png'
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
     plt.savefig(output_file)
     print(f"Visualization saved to {output_file}")
     plt.show()
@@ -91,7 +94,8 @@ def visualize_nav_drawdown(run_dir=None, episode_id=None):
     fig.suptitle('Agent NAV vs. Running Peak (drawdown shaded)')
     plt.tight_layout()
 
-    output_file = 'visualize/nav_drawdown_visualization.png'
+    output_file = 'visualize/chart/nav_drawdown_visualization.png'
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
     plt.savefig(output_file)
     print(f"Visualization saved to {output_file}")
     plt.show()

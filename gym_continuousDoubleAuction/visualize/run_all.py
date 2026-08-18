@@ -9,7 +9,7 @@ script's own public function directly, so a script that gains a new plot is
 picked up here for free with no second place to update.
 
 Run from the `gym_continuousDoubleAuction` directory - the scripts save to a
-relative `visualize/*.png` - e.g.:
+relative `visualize/chart/*.png` - e.g.:
 
     cd gym_continuousDoubleAuction
     python -m visualize.run_all

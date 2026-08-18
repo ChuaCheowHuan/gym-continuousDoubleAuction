@@ -1,3 +1,5 @@
+import os
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -44,7 +46,8 @@ def visualize_rewards(run_dir=None, episode_id=None):
     plt.grid(True, linestyle='--', alpha=0.7)
     plt.tight_layout()
 
-    output_file = 'visualize/cumulative_rewards_visualization.png'
+    output_file = 'visualize/chart/cumulative_rewards_visualization.png'
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
     plt.savefig(output_file)
     print(f"Visualization saved to {output_file}")
     plt.show()
@@ -102,7 +105,8 @@ def visualize_reward_decomposition(run_dir=None, episode_id=None, agent_id=None)
     plt.grid(True, linestyle='--', alpha=0.7)
     plt.tight_layout()
 
-    output_file = 'visualize/reward_decomposition_visualization.png'
+    output_file = 'visualize/chart/reward_decomposition_visualization.png'
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
     plt.savefig(output_file)
     print(f"Visualization saved to {output_file}")
     plt.show()

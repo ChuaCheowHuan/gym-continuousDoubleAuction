@@ -1,3 +1,5 @@
+import os
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -120,7 +122,8 @@ def visualize_execution_quality(run_dir=None, episode_id=None, agent_id=None, wi
 
     plt.tight_layout()
 
-    output_file = 'visualize/execution_quality_visualization.png'
+    output_file = 'visualize/chart/execution_quality_visualization.png'
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
     plt.savefig(output_file)
     print(f"Visualization saved to {output_file}")
     plt.show()

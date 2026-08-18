@@ -1,3 +1,5 @@
+import os
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -252,7 +254,8 @@ def visualize_modules(run_dir=None, num_trained_agents=None):
     fig.suptitle('League Module Comparison')
     plt.tight_layout(rect=[0, 0, 1, 0.98])
 
-    output_file = 'visualize/modules_visualization.png'
+    output_file = 'visualize/chart/modules_visualization.png'
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
     plt.savefig(output_file)
     print(f"Visualization saved to {output_file}")
     plt.show()

@@ -1,3 +1,4 @@
+import os
 import pprint
 import sys
 
@@ -7,7 +8,7 @@ from gym_continuousDoubleAuction.visualize.episode_data import load_episode
 def inspect_latest_episode(run_dir=None):
     """
     Finds the latest episode in the per-step Parquet record and writes its
-    rows, as plain Python dicts, to visualize/latest_episode_data.txt.
+    rows, as plain Python dicts, to visualize/json/latest_episode_data.txt.
 
     run_dir defaults to the most recently written run under
     config/tunable_constants.json -> visualize_paths.episode_parquet_dir; see
@@ -22,7 +23,8 @@ def inspect_latest_episode(run_dir=None):
     episode_id = episode["episode_id"].iloc[0]
     print(f"Latest episode: {episode_id} ({len(episode)} rows)")
 
-    output_filename = 'visualize/latest_episode_data.txt'
+    output_filename = 'visualize/json/latest_episode_data.txt'
+    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
     with open(output_filename, 'w') as out_f:
         out_f.write(f"--- Episode {episode_id} ---\n")
         pprint.pprint(episode.to_dict(orient="records"), stream=out_f)
