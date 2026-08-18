@@ -102,9 +102,9 @@ rest are random agents.
 
 The results with 10 agents are shown in the figures below:
 
-![Cumulative rewards](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/penalize_r.png)
+![Cumulative rewards](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/doc/pic/penalize_r.png)
 
-![Cumulative P & L](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/penalize_PandL.png)
+![Cumulative P & L](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/doc/pic/penalize_PandL.png)
 
 ---
 
@@ -623,16 +623,16 @@ TERMINATED trials:
 
 # Generated LOB:
 
-![bid_price](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/bid_price.png)
-![ask_price](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/ask_price.png)
+![bid_price](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/doc/pic/ten_k/bid_price.png)
+![ask_price](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/doc/pic/ten_k/ask_price.png)
 
-![midpt_price](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/midpt_price.png)
+![midpt_price](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/doc/pic/ten_k/midpt_price.png)
 
-![bid_size](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/bid_size.png)
-![ask_size](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/ask_size.png)
+![bid_size](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/doc/pic/ten_k/bid_size.png)
+![ask_size](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/doc/pic/ten_k/ask_size.png)
 
-![ord_imb](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/ord_imb.png)
-![sum_imb](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/pic/ten_k/sum_imb.png)
+![ord_imb](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/doc/pic/ten_k/ord_imb.png)
+![sum_imb](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/doc/pic/ten_k/sum_imb.png)
 
 ---
 
