@@ -165,7 +165,7 @@ remaining high-impact issues are.
 | `python -m pytest gym_continuousDoubleAuction/test -q` | 176 tests (163 unit + 13 integration) |
 | `python -m pytest gym_continuousDoubleAuction/test/integration -q` | 13 RLlib wiring integration tests |
 | `CDA_NSP.ipynb` | Notebook driver; imports `TrainConfig` / `train` from `train.py`. Runs unchanged on [Colab](20_colab.md) and in the [docker image](19_docker.md) — set `PLATFORM` / `USE_GPU` in its first cell, everything else comes from `config/runtime_profiles.json` |
-| `visualize.ipynb` | Runs the `visualize/` scripts against the latest episode pickle |
+| `python -m gym_continuousDoubleAuction.visualize.run_all` | Regenerates every chart in `visualize/` from the latest episode Parquet record and `progress.jsonl` |
 
 Installation:
 
