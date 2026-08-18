@@ -1,6 +1,6 @@
 # Changes from original_v1 to Current Version 2 (update 20251224)
 
-This repository has undergone significant modernization since the `original_v1` branch (the original release from 2020, [README_v1.md](README_v1.md)).
+This repository has undergone significant modernization since the `original_v1` branch (the original release from 2020, [README_v1.md](doc/README_v1.md)).
 
 For a detailed breakdown of codebase modernizations, please refer to the [17_changelog.md](doc/17_changelog.md) document.
 
