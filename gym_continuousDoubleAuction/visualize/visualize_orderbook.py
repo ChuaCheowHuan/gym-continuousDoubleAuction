@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -76,7 +78,8 @@ def visualize_episode_data(run_dir=None, episode_id=None, agent_id=None):
     plt.tight_layout()
 
     # Save or show
-    output_plot = 'visualize/orderbook_visualization.png'
+    output_plot = 'visualize/chart/orderbook_visualization.png'
+    os.makedirs(os.path.dirname(output_plot), exist_ok=True)
     plt.savefig(output_plot)
     print(f"Plot saved to {output_plot}")
     plt.show()

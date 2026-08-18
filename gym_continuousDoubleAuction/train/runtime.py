@@ -1,6 +1,6 @@
 """Where a run executes: platform detection and hardware profile selection.
 
-`CDA_NSP.ipynb` has to work unchanged on two machines with different shapes:
+`CDA_train.ipynb` has to work unchanged on two machines with different shapes:
 
 * a **Colab** VM - 2 vCPUs, an optional T4, the repo on a Drive mount;
 * the **docker/ml/dockerfile_ray_torch** image - repo at `/workspace/code`,

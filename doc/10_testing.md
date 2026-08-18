@@ -473,7 +473,7 @@ at that point turns it into a live regression guard.
 
 Covers [`config/runtime_profiles.json`](../config/runtime_profiles.json) and
 [`train/runtime.py`](../gym_continuousDoubleAuction/train/runtime.py), the pair that lets
-`CDA_NSP.ipynb` run unchanged on Colab and in the docker image
+`CDA_train.ipynb` run unchanged on Colab and in the docker image
 ([18_configuration.md](18_configuration.md) §8). Four groups:
 
 | Group | Asserts |
@@ -513,7 +513,7 @@ Three staged jobs, so an env-level break and an RLlib-level break are distinguis
 job name alone:
 
 1. **Env + order book unit tests** — `pytest gym_continuousDoubleAuction/test -q`
-2. **Random-agent env smoke run** — `python gym_continuousDoubleAuction/CDA_env_rand.py`
+2. **Random-agent env smoke run** — `python gym_continuousDoubleAuction/CDA_rand.py`
 3. **RLlib integration** — `pytest gym_continuousDoubleAuction/test/integration -q`
 
 > **Correction.** `doc/known_issues.md` §4 and `doc/testing.md` §7 stated that "nothing enforces

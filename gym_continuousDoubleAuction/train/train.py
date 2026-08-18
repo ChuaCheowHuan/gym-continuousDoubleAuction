@@ -1,7 +1,7 @@
 """
 Training entry point for the CDA environment with league-based self-play.
 
-This was extracted from CDA_NSP.ipynb so the training path is importable and
+This was extracted from CDA_train.ipynb so the training path is importable and
 testable. The notebook now imports from here rather than defining the config
 inline; see `gym_continuousDoubleAuction/test/integration/` for the tests that
 exercise it.

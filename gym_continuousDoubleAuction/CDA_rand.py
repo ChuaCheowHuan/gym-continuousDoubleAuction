@@ -4,8 +4,8 @@ Run the CDA environment with uniformly-random agents, no learning involved.
 This is the quickest way to check the environment and matching engine still
 work end to end:
 
-    python -m gym_continuousDoubleAuction.CDA_env_rand
-    python gym_continuousDoubleAuction/CDA_env_rand.py --steps 500 --agents 4
+    python -m gym_continuousDoubleAuction.CDA_rand
+    python gym_continuousDoubleAuction/CDA_rand.py --steps 500 --agents 4
 
 Previously this script was broken in three separate ways and had been for a
 while (it failed identically on the older Ray/gymnasium pin):
@@ -29,7 +29,7 @@ from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
 from gym_continuousDoubleAuction.logging_setup import configure as configure_logging
 from gym_continuousDoubleAuction.logging_setup import get_logger
 
-logger = get_logger("gym_continuousDoubleAuction.CDA_env_rand")
+logger = get_logger("gym_continuousDoubleAuction.CDA_rand")
 
 
 def _cli(key):

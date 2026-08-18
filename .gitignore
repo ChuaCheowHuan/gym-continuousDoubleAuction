@@ -22,5 +22,5 @@ gym_continuousDoubleAuction/episode_data
 results
 gym_continuousDoubleAuction/*.txt
 gym_continuousDoubleAuction/*.json
-gym_continuousDoubleAuction/visualize/latest_episode_data.json
-gym_continuousDoubleAuction/visualize/latest_episode_data.txt
+gym_continuousDoubleAuction/visualize/json/latest_episode_data.json
+gym_continuousDoubleAuction/visualize/json/latest_episode_data.txt

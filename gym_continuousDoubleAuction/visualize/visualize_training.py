@@ -272,7 +272,8 @@ def visualize_training(run_dir=None):
     fig.suptitle('Training Health')
     plt.tight_layout(rect=[0, 0, 1, 0.98])
 
-    output_file = 'visualize/training_visualization.png'
+    output_file = 'visualize/chart/training_visualization.png'
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
     plt.savefig(output_file)
     print(f"Visualization saved to {output_file}")
     plt.show()

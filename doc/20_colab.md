@@ -1,6 +1,6 @@
 # 20. Google Colab
 
-[`CDA_NSP.ipynb`](../gym_continuousDoubleAuction/CDA_NSP.ipynb) runs on a free Colab VM with no
+[`CDA_train.ipynb`](../gym_continuousDoubleAuction/CDA_train.ipynb) runs on a free Colab VM with no
 edits beyond one path. This document covers getting there, the one restart Colab forces on you,
 what to expect from the free tier, and how to survive a disconnect.
 
@@ -20,7 +20,7 @@ The docker image is the other supported target and is documented separately in
    MyDrive/Colab Notebooks/MARL/gym-continuousDoubleAuction
    ```
 
-2. **Open `gym_continuousDoubleAuction/CDA_NSP.ipynb`** in Colab (File → Open notebook → Google
+2. **Open `gym_continuousDoubleAuction/CDA_train.ipynb`** in Colab (File → Open notebook → Google
    Drive).
 
 3. **Select a GPU runtime *before* running anything** — Runtime → Change runtime type →

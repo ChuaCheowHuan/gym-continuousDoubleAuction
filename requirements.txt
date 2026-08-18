@@ -47,6 +47,6 @@ tensorboardX>=2.6.5        # pulled in by ray[rllib], pinned here as it is used 
 # GPUtil is only used by Ray for GPU system monitoring; harmless to omit on CPU.
 GPUtil>=1.4
 
-# --- Notebook (optional, for CDA_NSP.ipynb / visualize.ipynb) -----------------
+# --- Notebook (optional, for CDA_train.ipynb) --------------------------------
 # Install separately if you want the notebooks:
 #     pip install jupyterlab notebook ipywidgets

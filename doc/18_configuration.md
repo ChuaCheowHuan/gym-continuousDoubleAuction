@@ -22,8 +22,8 @@ beginning with `_`, at every level.
 | [`config/train_config.json`](../config/train_config.json) | Every `TrainConfig` value, **including the env keys** | `TrainConfig`, `default_model_config`, `SelfPlayCallback` |
 | [`config/env_defaults.json`](../config/env_defaults.json) | Fallbacks for an env built without a full config dict | `continuousDoubleAuctionEnv` and the env mixins |
 | [`config/tunable_constants.json`](../config/tunable_constants.json) | Structural constants: space layout, ID prefixes, logging setup, path defaults | `state_helper`, `action_helper`, `policy_handler`, `logging_setup`, `visualize/` |
-| [`config/cli_defaults.json`](../config/cli_defaults.json) | Flag defaults with no other config home | `CDA_env_rand` |
-| [`config/runtime_profiles.json`](../config/runtime_profiles.json) | *Where* a run executes: the `gpu` / `cpu` hardware sets and per-platform paths | `train/runtime.py`, `CDA_NSP.ipynb` |
+| [`config/cli_defaults.json`](../config/cli_defaults.json) | Flag defaults with no other config home | `CDA_rand` |
+| [`config/runtime_profiles.json`](../config/runtime_profiles.json) | *Where* a run executes: the `gpu` / `cpu` hardware sets and per-platform paths | `train/runtime.py`, `CDA_train.ipynb` |
 
 The split between the first file and the last is the one worth holding on to: `train_config.json`
 is **what the run does** and is identical on every machine; `runtime_profiles.json` is **what the
@@ -502,7 +502,7 @@ anything.
 ## 8. Runtime profiles
 
 [`config/runtime_profiles.json`](../config/runtime_profiles.json) answers a question the other four
-files deliberately do not: *what machine is this?* It exists because `CDA_NSP.ipynb` has to run
+files deliberately do not: *what machine is this?* It exists because `CDA_train.ipynb` has to run
 unchanged on a [Colab VM](20_colab.md) and inside the
 [docker/ml image](19_docker.md), which differ in core count, GPU presence and filesystem layout —
 and in nothing else. Resolved by

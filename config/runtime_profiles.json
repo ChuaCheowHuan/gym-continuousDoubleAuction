@@ -1,5 +1,5 @@
 {
-  "_source": "gym_continuousDoubleAuction/train/runtime.py, driven from CDA_NSP.ipynb",
+  "_source": "gym_continuousDoubleAuction/train/runtime.py, driven from CDA_train.ipynb",
   "_description": "Where a run executes, as opposed to what it does. train_config.json holds the training values - agents, batch sizes, reward coefficients - and is identical on every machine. This file holds the two things that are not: how much hardware is available, and where the filesystem is. Resolved by train/runtime.py; the notebook selects a platform and a GPU toggle and reads everything else from here.",
   "_note": "Nothing here changes the learning problem. Moving a run between the sets below changes wall-clock time and output paths, not the trained policy (up to sampling nondeterminism). Values that would change the result belong in train_config.json.",
 

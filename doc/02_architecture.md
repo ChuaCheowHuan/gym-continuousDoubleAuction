@@ -43,7 +43,7 @@ Four layers, each in its own package:
 ```
 gym_continuousDoubleAuction/
 ├── __init__.py                       gymnasium register("continuousDoubleAuction-v0")
-├── CDA_env_rand.py                   random-agent smoke driver (CI stage 2)
+├── CDA_rand.py                       random-agent smoke driver (CI stage 2)
 ├── envs/
 │   ├── continuousDoubleAuction_env.py   MultiAgentEnv: reset / step / render
 │   ├── exchg/                           the "exchange" mixin family
@@ -378,7 +378,7 @@ printed notice instead of failing. The integration suite covers all three topolo
 Which values those knobs actually take on a given machine is a separate decision, made by
 [`train/runtime.py`](../gym_continuousDoubleAuction/train/runtime.py) from the two hardware sets in
 `config/runtime_profiles.json` — 2 CPUs + 1 GPU, or 1 CPU and none. That is what lets
-`CDA_NSP.ipynb` run unchanged on Colab and in the docker image without a resource literal in the
+`CDA_train.ipynb` run unchanged on Colab and in the docker image without a resource literal in the
 notebook. See [18_configuration.md](18_configuration.md) §8.
 
 ---

@@ -281,7 +281,7 @@ class TestStructuralConstantsComeFromTheFile:
 class TestCliDefaultsComeFromTheFile:
 
     def test_random_runner_defaults(self, config_tree):
-        from gym_continuousDoubleAuction.CDA_env_rand import _cli
+        from gym_continuousDoubleAuction.CDA_rand import _cli
         config_tree(
             "cli_defaults.json",
             lambda raw: raw["cda_env_rand"].update(num_agents=3, max_step=5),
