@@ -1,11 +1,28 @@
 """
 RLModules for the CDA environment (RLlib new API stack).
 
-Two things live here:
+Four things live here:
 
   RandomRLModule   - a genuinely uniform-random, non-trainable policy, used for
                      the fixed baseline opponents in league-based self-play.
-  default_model_config() - the network config for the *trainable* PPO modules.
+  default_model_config() - the stock MLP network config for the *trainable* PPO
+                     modules.
+  CDACatalog       - a PPO catalog whose encoder comes from
+                     `train/model/encoders/` instead of RLlib's default decision
+                     tree.
+  build_trainable_module_spec() - builds one trainable module's RLModuleSpec,
+                     routing to either of the two above depending on the
+                     `encoder` group of `config/train_config.json`.
+
+------------------------------------------------------------------------------
+Swapping the network
+------------------------------------------------------------------------------
+`encoder_type: "mlp"` is the default and is a *pass-through*: it returns the
+same stock `DefaultModelConfig` spec this module returned before encoders were
+selectable, with no `catalog_class`, so a default run and every checkpoint
+written by one are unaffected. Any other value routes the trainable modules
+through `CDACatalog`. See `train/model/encoders/__init__.py` for why the catalog
+is the right seam and what an encoder has to implement.
 
 ------------------------------------------------------------------------------
 Why there is no custom trainable module any more
@@ -26,13 +43,22 @@ If you want a genuinely custom architecture later, subclass
 `DefaultPPOTorchRLModule` and pass it as `RLModuleSpec(module_class=...)` in
 policy_handler.build_multi_rl_module_spec - not via ModelCatalog.
 """
+from ray.rllib.algorithms.ppo.ppo_catalog import PPOCatalog
 from ray.rllib.core.columns import Columns
+from ray.rllib.core.models.configs import ModelConfig
 from ray.rllib.core.rl_module.default_model_config import DefaultModelConfig
-from ray.rllib.core.rl_module.rl_module import RLModule
+from ray.rllib.core.rl_module.rl_module import RLModule, RLModuleSpec
 from ray.rllib.utils.annotations import override
 from ray.rllib.utils.spaces.space_utils import batch as batch_func
 
 from gym_continuousDoubleAuction.config_loader import group
+from gym_continuousDoubleAuction.train.model.encoders import (
+    MLP_ENCODER_TYPE,
+    CDAModelConfig,
+    build_encoder_config,
+    known_encoder_type,
+    validate_encoder_type,
+)
 
 
 class RandomRLModule(RLModule):
@@ -108,4 +134,86 @@ def default_model_config(fcnet_hiddens=None, fcnet_activation=None,
         fcnet_hiddens=list(fcnet_hiddens),
         fcnet_activation=fcnet_activation,
         vf_share_layers=vf_share_layers,
+    )
+
+
+class CDACatalog(PPOCatalog):
+    """PPO catalog whose encoder comes from `train.model.encoders`.
+
+    Only the encoder changes. `PPOCatalog.__init__` still wraps whatever
+    `_get_encoder_config` returns in an `ActorCriticEncoderConfig` - which is
+    what supplies the `ENCODER_OUT/{ACTOR, CRITIC}` contract, the
+    `.critic_encoder` attribute `compute_values` looks for, `inference_only`
+    handling, and the stateful wrapper for a recurrent config - and the pi and
+    vf heads are still the stock ones, sized off `latent_dims`.
+
+    Only reached when `encoder_type` is not `mlp`; see
+    `build_trainable_module_spec`.
+    """
+
+    @classmethod
+    @override(PPOCatalog)
+    def _get_encoder_config(cls, observation_space, model_config_dict,
+                            action_space=None, **kwargs) -> ModelConfig:
+        return build_encoder_config(observation_space, model_config_dict)
+
+
+def build_trainable_module_spec(obs_space, act_space, encoder_type=None,
+                                encoder_specs=None, fcnet_hiddens=None,
+                                fcnet_activation=None, vf_share_layers=None):
+    """The `RLModuleSpec` for one trainable PPO module.
+
+    Args:
+        obs_space: Single-agent observation space.
+        act_space: Single-agent action space.
+        encoder_type: Which encoder to use. None reads the `encoder` group of
+            `config/train_config.json`.
+        encoder_specs: Per-encoder hyperparameter blocks, keyed by encoder type.
+            None reads the same group.
+        fcnet_hiddens: Passed to `default_model_config`; `mlp` only.
+        fcnet_activation: Ditto.
+        vf_share_layers: Ditto. Also honoured by custom encoders, since
+            `ActorCriticEncoderConfig` reads it to decide whether the actor and
+            critic share a trunk.
+
+    Returns:
+        An `RLModuleSpec` with `module_class` left None, so RLlib fills in the
+        algorithm's default PPO module. For `mlp` the spec is exactly what this
+        function returned before encoders were selectable - stock
+        `DefaultModelConfig`, no `catalog_class` - so a default run and the
+        checkpoints it writes are unaffected.
+    """
+    encoder = group("train_config.json", "encoder")
+    if encoder_type is None:
+        # Read from config, so hold it to the config rules: no test fixtures.
+        encoder_type = validate_encoder_type(encoder["encoder_type"])
+    else:
+        known_encoder_type(encoder_type)
+    if encoder_specs is None:
+        encoder_specs = encoder["encoder_specs"]
+
+    model_config = default_model_config(
+        fcnet_hiddens=fcnet_hiddens,
+        fcnet_activation=fcnet_activation,
+        vf_share_layers=vf_share_layers,
+    )
+
+    if encoder_type == MLP_ENCODER_TYPE:
+        return RLModuleSpec(
+            observation_space=obs_space,
+            action_space=act_space,
+            model_config=model_config,
+        )
+
+    return RLModuleSpec(
+        observation_space=obs_space,
+        action_space=act_space,
+        catalog_class=CDACatalog,
+        model_config=CDAModelConfig(
+            fcnet_hiddens=model_config.fcnet_hiddens,
+            fcnet_activation=model_config.fcnet_activation,
+            vf_share_layers=model_config.vf_share_layers,
+            encoder_type=encoder_type,
+            encoder_spec=encoder_specs.get(encoder_type, {}),
+        ),
     )

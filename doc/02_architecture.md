@@ -84,7 +84,8 @@ gym_continuousDoubleAuction/
 │   ├── runtime.py                      platform + hardware profile resolution (Colab / docker)
 │   ├── episode_record.py               EpisodeRecorder: the Parquet per-step record
 │   ├── policy/policy_handler.py        MultiRLModuleSpec, module ID conventions
-│   ├── model/model_handler.py          RandomRLModule + DefaultModelConfig
+│   ├── model/model_handler.py          RandomRLModule + DefaultModelConfig + CDACatalog
+│   ├── model/encoders/                 selectable observation encoders for the trainable modules
 │   ├── callbk/…_self_play_callback.py  league: champions, matchmaking, metrics, the record
 │   └── helper/helper.py                order-imbalance / mid-price utilities (unused)
 ├── visualize/                          offline charts from the episode Parquet + progress.jsonl

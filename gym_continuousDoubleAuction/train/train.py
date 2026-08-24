@@ -26,7 +26,7 @@ import shutil
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import ray
 import torch
@@ -51,6 +51,10 @@ from gym_continuousDoubleAuction.logging_setup import (
 from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
     NAV_VIOLATIONS_METRIC,
     SelfPlayCallback,
+)
+from gym_continuousDoubleAuction.train.model.encoders import (
+    MLP_ENCODER_TYPE,
+    validate_encoder_type,
 )
 from gym_continuousDoubleAuction.train.policy.policy_handler import (
     CHAMPION_PREFIX,
@@ -203,6 +207,14 @@ class TrainConfig:
     # run, so this is exposed rather than left implicit.
     minibatch_size: Optional[int] = _default("minibatch_size")
 
+    # --- Encoder -------------------------------------------------------------
+    # Which network the trainable modules encode observations with. "mlp" is a
+    # pass-through to the stock RLlib path built from fcnet_* above; any other
+    # value routes them through CDACatalog. See train/model/encoders/.
+    # Both are STRUCTURAL_CONFIG_KEYS - a restore cannot change them.
+    encoder_type: str = _default("encoder_type")
+    encoder_specs: Dict[str, Any] = _default("encoder_specs")
+
     # --- League self-play ----------------------------------------------------
     std_dev_multiplier: float = _default("std_dev_multiplier")
     max_champions: int = _default("max_champions")
@@ -286,9 +298,17 @@ class TrainConfig:
         runtime profiles and the tests both use - would silently re-roll it.
         Resolving in the constructor makes the name a property of the config
         object, so a replace()d copy keeps writing where the original did.
+
+        Also the boundary at which `encoder_type` stops being a config value
+        and becomes an argument. Everything downstream takes it as a parameter
+        and so only checks that it names something buildable; the config rules
+        - no test fixtures - are enforced once, here, where the value arrives
+        from a file.
         """
         if not self.run_id:
             self.run_id = generate_run_id()
+
+        validate_encoder_type(self.encoder_type)
 
     @classmethod
     def from_json(cls, path: str) -> "TrainConfig":
@@ -471,6 +491,8 @@ def build_config(cfg: TrainConfig):
         fcnet_hiddens=cfg.fcnet_hiddens,
         fcnet_activation=cfg.fcnet_activation,
         vf_share_layers=cfg.vf_share_layers,
+        encoder_type=cfg.encoder_type,
+        encoder_specs=cfg.encoder_specs,
     )
 
     callback_instance = SelfPlayCallback(
@@ -806,11 +828,18 @@ def _reconcile_league_state(algo, path: str) -> None:
 # make the divergence loud, and fatal where it would invalidate the weights.
 
 #: Keys whose value the restored weights depend on. A change here is a hard error.
+#:
+#: `encoder_type` and `encoder_spec` are here for the same reason `n_hist` is:
+#: they decide the shape of the trainable modules' network, so a checkpoint's
+#: weights simply do not fit a config that changed one. Comparing architectures
+#: means separate runs, not editing the encoder group with is_restore set.
 STRUCTURAL_CONFIG_KEYS = (
     "policies",
     "policies_to_train",
     "env_config.num_of_agents",
     "env_config.n_hist",
+    "encoder_type",
+    "encoder_spec",
 )
 
 
@@ -848,7 +877,65 @@ def _config_fingerprint(config) -> dict:
     for key, value in (getattr(config, "env_config", None) or {}).items():
         fingerprint[f"env_config.{key}"] = value
 
+    fingerprint.update(_encoder_fingerprint(config))
+
     return fingerprint
+
+
+def _encoder_fingerprint(config) -> dict:
+    """The trainable modules' encoder identity, as comparable scalars.
+
+    The encoder is not an `AlgorithmConfig` attribute - it lives on the
+    `model_config` of each trainable module's spec - so it has to be dug out
+    before `_check_restored_config` can compare it. Read from the first
+    trainable module: `build_multi_rl_module_spec` gives them all the same
+    encoder, and a champion's is cloned from whichever module it snapshotted.
+
+    Returns an empty dict when there is no spec to read - a config built before
+    the encoder group existed, or one whose modules are all baselines - so a
+    fingerprint never gains a key that would compare against nothing.
+    """
+    spec = getattr(config, "rl_module_spec", None)
+    module_specs = getattr(spec, "rl_module_specs", None) or {}
+
+    for module_id in sorted(module_specs):
+        if str(module_id).startswith(CHAMPION_PREFIX):
+            continue
+        model_config = getattr(module_specs[module_id], "model_config", None)
+        if model_config is None:
+            # A baseline RandomRLModule, which has no network at all.
+            continue
+        encoder_spec = _model_config_get(model_config, "encoder_spec", None) or {}
+        return {
+            "encoder_type": _model_config_get(
+                model_config, "encoder_type", MLP_ENCODER_TYPE
+            ),
+            # Sorted items rather than the dict itself: the fingerprint is
+            # compared with `!=`, and two dicts differing only in key order
+            # would otherwise read as a change.
+            "encoder_spec": tuple(sorted(encoder_spec.items())),
+        }
+
+    return {}
+
+
+def _model_config_get(model_config, key, default):
+    """Read one key from a module spec's model config, dataclass or dict.
+
+    Both forms occur, and which one is in hand is not something the caller
+    controls: a freshly built spec holds a `CDAModelConfig`, but `add_module` -
+    which every champion snapshot calls - normalises every spec's model config
+    to a plain dict. Reading with `getattr` alone silently returned the default
+    from that point on, which quietly disabled the structural check on
+    `encoder_type` for the whole rest of a run.
+
+    A config with no such key is a stock `DefaultModelConfig`, i.e. the mlp
+    pass-through, so the caller's default is the right answer for it - including
+    for a checkpoint written before the encoder group existed.
+    """
+    if isinstance(model_config, dict):
+        return model_config.get(key, default)
+    return getattr(model_config, key, default)
 
 
 def _check_restored_config(restored, desired) -> None:

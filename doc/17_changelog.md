@@ -1217,3 +1217,58 @@ Every diagram is parsed by Mermaid 11 in CI-less form during authoring: the four
 `Box(-inf, inf)` and `(1 xfail = S1-1)` inside mind-map nodes, where a parenthesis is shape
 syntax, and a `-v "$PWD"` shell quote inside an edge label — were caught that way rather than by
 rendering wrong on GitHub.
+
+---
+
+## 28. The observation encoder became selectable
+
+The trainable modules' network was RLlib's stock MLP, and the only way to change it was to edit
+`model_handler`. The `encoder` group in [`train_config.json`](../config/train_config.json) now
+selects it, so an LSTM or a transformer becomes a config change and a new file rather than a
+rewrite of the module wiring. See [18](18_configuration.md) §5.4.
+
+### 28.1 The catalog was already the seam
+
+`DefaultPPOTorchRLModule.setup` builds three things from its catalog — the actor/critic encoder,
+the pi head, the vf head — and `Catalog._determine_components_hook` reads `latent_dims` off
+whatever `_get_encoder_config` returns. Overriding that one classmethod therefore replaces the
+network without touching PPO, the heads, or the league.
+
+Two consequences that kept this small. `PPOCatalog.__init__` wraps the result in an
+`ActorCriticEncoderConfig`, which is what supplies the `ENCODER_OUT/{ACTOR, CRITIC}` contract, the
+`.critic_encoder` attribute `compute_values` reaches for, `inference_only` handling, and the
+stateful wrapper a recurrent config gets — none of which has to be written per encoder. And
+`Catalog.__init__` converts a dataclass `model_config` with `dataclasses.asdict`, so a
+`DefaultModelConfig` subclass carrying two extra fields survives into `_model_config_dict` where
+the catalog can dispatch on it. An encoder is consequently just a `ModelConfig` and an `Encoder`;
+`DefaultPPOTorchRLModule` needs no subclass.
+
+`RLModuleSpec.from_module` already clones the module class, catalog and model config, so champion
+snapshots inherit the encoder with no change to `SelfPlayCallback`.
+
+### 28.2 `mlp` is a pass-through, and is tested as one
+
+The default resolves to the same stock `DefaultModelConfig` spec as before, with no
+`catalog_class`, so a default run and every checkpoint written by one are unaffected. That is
+pinned by a test comparing the spec against `default_model_config()`.
+
+The cost of that guarantee is that `mlp` exercises none of the new code — it can pass while the
+whole custom path is broken. `_passthrough`, a registered test fixture too simple to be the cause
+of a failure, is what travels the full route instead. It is buildable but refused from a config
+file, which is the distinction between `known_encoder_type` and `validate_encoder_type`:
+config is validated once at the `TrainConfig` boundary, and everything downstream takes the
+encoder as a parameter.
+
+### 28.3 The restore guard had to learn a second shape
+
+`encoder_type` and `encoder_spec` joined `STRUCTURAL_CONFIG_KEYS`, for the reason `n_hist` is
+there: `Algorithm.from_checkpoint` discards the freshly built config, so changing the architecture
+in the same pass as `is_restore` would otherwise be a silent no-op.
+
+Writing that check surfaced a live bug in it. The encoder is not an `AlgorithmConfig` attribute —
+it sits on each trainable module spec's `model_config` — and reading it with `getattr` worked only
+until the first champion, because `add_module` normalises every spec's `model_config` to a plain
+dict. From that point the fingerprint reported the `mlp` default whatever was actually running,
+which disabled the structural check for the rest of the run. Every real run creates champions, so
+this was the normal path, not an edge case. `_model_config_get` reads both shapes;
+`test_the_fingerprint_survives_a_champion_snapshot` pins it.

@@ -337,6 +337,8 @@ threaded to `default_model_config` via `create_multi_agent_config`. Called witho
 `vf_share_layers` is `False` deliberately: the learners train against non-stationary league
 opponents, where sharing a trunk between policy and value tends to destabilise the value estimate.
 
+Which *kind* of network sits underneath that is the separate `encoder` group — see §5.4.
+
 `SelfPlayCallback` does the same with the `league_self_play` group and the two agent counts. That
 group also carries the two knobs on the episode-end NAV conservation check: `nav_tolerance`, the
 absolute cash tolerance, and `strict_nav_check` (`--no-strict-nav-check`), which decides whether a
@@ -500,13 +502,40 @@ and said nothing.
 
 It is now loud in both directions:
 
-- **A structural change is fatal.** `num_agents`, `n_hist` or the policy set changing means the
-  restored weights do not fit the requested problem, so the restore raises rather than training
-  something other than what was asked for. Revert the key, or start a fresh run.
+- **A structural change is fatal.** `num_agents`, `n_hist`, `encoder_type`, `encoder_spec` or the
+  policy set changing means the restored weights do not fit the requested problem, so the restore
+  raises rather than training something other than what was asked for. Revert the key, or start a
+  fresh run.
 - **Everything else warns.** `lr`, reward coefficients, batch sizes and runner counts print as
   "will NOT take effect" with both values, and the run continues on the checkpoint's config.
 
 To train with new values, start a fresh run — `is_restore` false, or a new `log_base_dir`.
+
+---
+
+## 5.4. The `encoder` group
+
+Selects the network the **trainable** modules encode observations with. The frozen
+`RandomRLModule` baselines have no network and ignore it.
+
+| Key | Meaning |
+|---|---|
+| `encoder_type` | Which encoder. `mlp` (default) plus whatever is registered in [`train/model/encoders/`](../gym_continuousDoubleAuction/train/model/encoders/). |
+| `encoder_specs` | Per-encoder hyperparameter blocks, keyed by encoder type. A block existing is the signal that its encoder is implemented. |
+
+`mlp` is a **pass-through**: it resolves to the stock RLlib `DefaultModelConfig` built from the
+`ppo` group's `fcnet_*` keys and touches none of the encoder machinery, so a default run — and
+every checkpoint written by one — is unaffected by this group existing. Any other value routes the
+trainable modules through `CDACatalog`, which replaces only the encoder; the pi and vf heads stay
+the stock ones, sized off the encoder's `latent_dims`.
+
+An unregistered `encoder_type` raises when the `TrainConfig` is built, naming the ones that are
+available. Names beginning with `_` are test fixtures: buildable, so a test can exercise the custom
+path, but refused from a config file.
+
+Both keys are **structural** (§5.3). Changing either with `is_restore` set is a hard error, for the
+same reason `n_hist` is: the restored weights are that architecture's weights. Comparing
+architectures means separate runs, not a resume.
 
 ---
 

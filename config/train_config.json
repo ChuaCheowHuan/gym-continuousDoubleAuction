@@ -52,6 +52,19 @@
     "minibatch_size": null
   },
 
+  "encoder": {
+    "_source": "gym_continuousDoubleAuction/train/model/encoders/ (ENCODER_REGISTRY)",
+
+    "_note": "Selects the network the *trainable* PPO modules encode observations with. The frozen RandomRLModule baselines have no network and ignore this entirely. `mlp` is the default and is a pass-through: it resolves to the stock RLlib DefaultModelConfig built from the `ppo` group's fcnet_hiddens / fcnet_activation / vf_share_layers, touching none of the custom encoder machinery, so a default run and every checkpoint written by one are unaffected by this group existing. Any other value routes the trainable modules through CDACatalog and a custom encoder. An unregistered name raises at config-build time, naming the ones that are registered.",
+
+    "_note_structural": "encoder_type and everything in encoder_specs are STRUCTURAL_CONFIG_KEYS: the restored weights depend on them, so changing one in the same pass as is_restore is a hard error rather than a silent no-op. Comparing architectures means separate runs, not a resume.",
+
+    "_note_specs": "Per-architecture hyperparameters, keyed by encoder_type. `mlp` has no block: its shape comes from the `ppo` group, which is where it has always lived and where STRUCTURAL_CONFIG_KEYS already guards it. A block is added here alongside each new encoder, so an entry existing is the signal that its encoder is implemented.",
+
+    "encoder_type": "mlp",
+    "encoder_specs": {}
+  },
+
   "league_self_play": {
     "_note": "nav_tolerance is the absolute cash tolerance for the episode-end NAV conservation check. The ledger is Decimal end to end and the check now parses info['NAV'] back with Decimal rather than float, so conservation is exact by construction and the expected error is 0, not merely small. The tolerance is therefore headroom for a change that legitimately removes cash from the system, such as fees - it is not absorbing arithmetic noise. Widen it for such a change; it can be set to 0 for a run that wants the invariant enforced exactly. strict_nav_check true stops the run on a violation, because a broken conservation invariant means the ledger is corrupt and everything trained after it is meaningless; false downgrades it to an ERROR log plus the nav_conservation_error metric, for a run that would rather keep going and be inspected afterwards. The stop is decided on the driver at the end of the iteration, not raised inside the episode hook: that hook runs on the env runner, where RLlib's fault tolerance swallows the exception and restarts the worker instead of ending the run.",
 
