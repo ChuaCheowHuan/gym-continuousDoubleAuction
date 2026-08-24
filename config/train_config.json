@@ -62,7 +62,24 @@
     "_note_specs": "Per-architecture hyperparameters, keyed by encoder_type. `mlp` has no block: its shape comes from the `ppo` group, which is where it has always lived and where STRUCTURAL_CONFIG_KEYS already guards it. A block is added here alongside each new encoder, so an entry existing is the signal that its encoder is implemented.",
 
     "encoder_type": "mlp",
-    "encoder_specs": {}
+
+    "encoder_specs": {
+      "transformer": {
+        "_note": "tokenization decides what a token is: 'time' = one per snapshot (n_hist of them - too few to attend over at n_hist 4, kept for ablation), 'level' = one per book level from the newest snapshot, 'both' = one per (snapshot, level) cell. Under 'level' and 'both' a token is that level's [bid_price, bid_size, ask_price, ask_size] and the market-level scalars ride on an extra global token per snapshot, so the sequence is n_hist * (k_rows + 1) long, not n_hist * k_rows.",
+
+        "_note_dropout": "Leave at 0 for PPO. The ratio exp(logp_new - logp_old) compares a log-prob recorded during rollout with one recomputed on the learner; dropout is active for the second and not the first, so a non-zero value injects mask noise directly into the policy-gradient ratio. The knob exists because it is standard on this component, not because it is advisable here.",
+
+        "_note_cost": "vf_share_layers in the ppo group is false, which builds two independent trunks - so a transformer here costs twice these numbers. That default is deliberate (a shared value trunk destabilises against non-stationary league opponents), so it is a real trade-off rather than a free saving.",
+
+        "tokenization": "both",
+        "d_model": 128,
+        "num_heads": 4,
+        "num_layers": 2,
+        "ff_dim": 256,
+        "dropout": 0.0,
+        "pool": "attention"
+      }
+    }
   },
 
   "league_self_play": {

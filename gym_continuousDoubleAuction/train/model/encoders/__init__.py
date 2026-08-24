@@ -185,4 +185,7 @@ def build_encoder_config(
 
 # Encoder modules are imported for their `@register` side effect, at the bottom
 # so they can import the registry above without a cycle.
-from gym_continuousDoubleAuction.train.model.encoders import passthrough  # noqa: E402,F401
+from gym_continuousDoubleAuction.train.model.encoders import (  # noqa: E402,F401
+    passthrough,
+    transformer,
+)

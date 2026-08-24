@@ -523,6 +523,37 @@ Selects the network the **trainable** modules encode observations with. The froz
 | `encoder_type` | Which encoder. `mlp` (default) plus whatever is registered in [`train/model/encoders/`](../gym_continuousDoubleAuction/train/model/encoders/). |
 | `encoder_specs` | Per-encoder hyperparameter blocks, keyed by encoder type. A block existing is the signal that its encoder is implemented. |
 
+Available encoders:
+
+| `encoder_type` | Network |
+|---|---|
+| `mlp` | RLlib's stock MLP over the flat observation. The default and the pass-through. |
+| `transformer` | Pre-norm self-attention over the order-book grid, with a learned two-axis positional encoding and attention pooling. |
+
+#### What a token is
+
+The observation is a flat `n_hist * snapshot_dim` vector, but it is really a
+chronological stack of book snapshots, each a `book_rows x k_rows` grid plus two
+market-level scalars. `mlp` discards that; every other encoder recovers it through
+`ObsLayout`, and the `tokenization` key decides what it slices into:
+
+| `tokenization` | Tokens | Attention relates |
+|---|---|---|
+| `time` | `n_hist` | times only. At `n_hist` 4 that is four tokens — kept for ablation, not expected to be useful. |
+| `level` | `k_rows + 1` | book levels, newest snapshot only. No history. |
+| `both` (default) | `n_hist * (k_rows + 1)` | both axes. |
+
+Under `level` and `both` a token is one level's `[bid_price, bid_size, ask_price,
+ask_size]`, and the two market-level scalars have no per-level home — they ride on
+one extra **global token** per snapshot. That is where the `+ 1` comes from, so
+`both` is 44 tokens at the shipped settings, not 40.
+
+Every non-`mlp` encoder LayerNorms immediately after its input projection, and that
+is deliberately not configurable. Measured on real steps, the four channels in a
+token have standard deviations of `[1.27, 8.17, 0.046, 9.52]` — `sqrt(volume)` runs
+~200× the ask-price channel. Unnormalised, attention puts a mean 47% of its mass on
+a single token; with the norm, 9.5%. It does not degrade gracefully.
+
 `mlp` is a **pass-through**: it resolves to the stock RLlib `DefaultModelConfig` built from the
 `ppo` group's `fcnet_*` keys and touches none of the encoder machinery, so a default run — and
 every checkpoint written by one — is unaffected by this group existing. Any other value routes the

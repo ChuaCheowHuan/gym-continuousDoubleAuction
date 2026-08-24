@@ -1272,3 +1272,53 @@ dict. From that point the fingerprint reported the `mlp` default whatever was ac
 which disabled the structural check for the rest of the run. Every real run creates champions, so
 this was the normal path, not an edge case. `_model_config_get` reads both shapes;
 `test_the_fingerprint_survives_a_champion_snapshot` pins it.
+
+### 28.4 `transformer`
+
+Self-attention over the order-book grid, and the first encoder to use the seam.
+
+The flat observation is a `(time, level, field)` grid that the MLP was
+discarding. `ObsLayout` recovers it and `tokenize` slices it three ways — `time`
+(one token per snapshot), `level` (one per book level), `both` (one per cell,
+the default). Under `level` and `both` a token is one level's four fields, and
+the two market-level scalars, which are per-snapshot rather than per-level, ride
+on an extra global token per snapshot — so `both` is `n_hist * (k_rows + 1)`
+tokens, 44 at the shipped settings.
+
+Positions are two learned embeddings, time and level, summed. A single flat
+embedding over 44 indices would have to learn the factorisation from scratch
+before it could tell "level 3 at t=0" from "level 0 at t=3". Learned rather than
+sinusoidal on both axes: the level axis is 11 long and ordered by book depth,
+where the touch is qualitatively unlike level 9 rather than merely earlier, so
+translation-invariance buys nothing.
+
+Blocks are hand-written rather than `nn.TransformerEncoderLayer`, because the
+MoE encoder is this stack with each block's feed-forward replaced and a factory
+parameter makes that substitution one line. Pre-norm, since nothing in this
+project's PPO config does learning-rate warmup and a post-norm stack without one
+fails in a way that reads as "the architecture doesn't work".
+
+**The input LayerNorm is not a knob.** Measured over 40 real steps, the four
+channels of a token have standard deviations `[1.27, 8.17, 0.046, 9.52]` —
+`sqrt(volume)` runs some 200× the ask-price channel, and all four sit inside the
+same 4-wide token. Through an untrained projection that puts a mean 47% of the
+attention mass on one token (entropy 1.62 of a possible 3.78); with the norm,
+9.5% and 2.76. Removing it does not degrade the transformer, it stops it
+attending.
+
+`dropout` ships at 0 and should stay there. PPO's ratio compares a log-prob
+recorded during rollout against one recomputed on the learner; dropout is live
+for the second and not the first, so a non-zero value feeds mask noise straight
+into the policy gradient. `test_eval_forward_is_deterministic` pins the
+consequence for every encoder.
+
+### 28.5 A parametrised architecture suite
+
+`test_encoder_architectures.py` runs the shared contract over every registered
+encoder automatically — usable pi/vf outputs, a state dict that round trips,
+`vf_share_layers` honoured both ways, the `get_non_inference_attributes`
+naming contract, a deterministic eval forward, and gradients actually reaching
+the encoder. A new encoder is covered when it is registered, not when someone
+remembers to write its tests. Two further checks close the loop between code and
+config: every selectable encoder must have an `encoder_specs` block, and that
+block's keys must be exactly what its builder accepts.
