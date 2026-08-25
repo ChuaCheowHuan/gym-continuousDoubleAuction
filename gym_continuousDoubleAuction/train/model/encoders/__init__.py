@@ -46,7 +46,7 @@ is implemented.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 import gymnasium as gym
 from ray.rllib.core.models.configs import ModelConfig
@@ -63,6 +63,14 @@ EncoderConfigBuilder = Callable[[ObsLayout, Dict[str, Any], List[int]], ModelCon
 
 #: `encoder_type` -> builder. Populated by `@register` at import time.
 ENCODER_REGISTRY: Dict[str, EncoderConfigBuilder] = {}
+
+#: `encoder_type` -> that encoder's full spec schema and its default values.
+#: Also populated by `@register`; it is what `encoder_settings` validates against.
+ENCODER_DEFAULTS: Dict[str, Dict[str, Any]] = {}
+
+#: Spec keys applied to the top-level model config rather than to the encoder,
+#: because RLlib reads them itself. See `model_config_overrides`.
+MODEL_CONFIG_SPEC_KEYS = ("max_seq_len",)
 
 
 @dataclass
@@ -82,13 +90,22 @@ class CDAModelConfig(DefaultModelConfig):
     encoder_spec: Dict[str, Any] = field(default_factory=dict)
 
 
-def register(name: str) -> Callable[[EncoderConfigBuilder], EncoderConfigBuilder]:
+def register(
+    name: str,
+    defaults: Optional[Dict[str, Any]] = None,
+) -> Callable[[EncoderConfigBuilder], EncoderConfigBuilder]:
     """Register an encoder config builder under an `encoder_type`.
 
-    A name starting with `_` is a test fixture: it is registered and buildable,
-    but `validate_encoder_type` rejects it, so it cannot be selected from
-    config. That is how the plumbing gets an end-to-end test without shipping an
-    architecture nobody asked for.
+    Args:
+        name: The `encoder_type` config selects on. A name starting with `_` is
+            a test fixture: registered and buildable, but `validate_encoder_type`
+            rejects it, so it cannot be named in a config file. That is how the
+            plumbing gets an end-to-end test without shipping an architecture
+            nobody asked for.
+        defaults: The encoder's full spec schema. Declaring it here rather than
+            inside each builder is what lets `encoder_settings` do the merge and
+            the unknown-key check once, and lets `model_config_overrides` see a
+            default the config file happened to omit.
     """
 
     def decorate(builder: EncoderConfigBuilder) -> EncoderConfigBuilder:
@@ -99,9 +116,42 @@ def register(name: str) -> Callable[[EncoderConfigBuilder], EncoderConfigBuilder
                 "unique - the registry is what config selects on."
             )
         ENCODER_REGISTRY[name] = builder
+        ENCODER_DEFAULTS[name] = dict(defaults or {})
         return builder
 
     return decorate
+
+
+def encoder_settings(encoder_type: str, spec: Dict[str, Any]) -> Dict[str, Any]:
+    """An encoder's spec merged over its defaults, with unknown keys refused.
+
+    A misspelled knob resolving to the default silently is exactly the failure
+    `config_loader` exists to prevent, so it raises here too.
+    """
+    defaults = ENCODER_DEFAULTS.get(encoder_type, {})
+    unknown = sorted(set(spec) - set(defaults))
+    if unknown:
+        raise ValueError(
+            f"Unknown key(s) {unknown} in the {encoder_type!r} encoder spec. "
+            f"Valid keys: {sorted(defaults)}."
+        )
+    return {**defaults, **spec}
+
+
+def model_config_overrides(encoder_type: str, spec: Dict[str, Any]) -> Dict[str, Any]:
+    """The part of an encoder's settings that belongs on the model config.
+
+    Some knobs are read by RLlib itself rather than by an encoder, so they
+    cannot ride on a custom encoder config. `max_seq_len` is the only one today:
+    the connectors read it to decide how a recurrent module's batch is cut into
+    sequences, long before any encoder is called.
+
+    Merged against the encoder's defaults, not read raw from `spec`, so a config
+    file that omits the key still gets the encoder's intended value rather than
+    `DefaultModelConfig`'s unrelated one.
+    """
+    settings = encoder_settings(encoder_type, spec)
+    return {k: settings[k] for k in MODEL_CONFIG_SPEC_KEYS if k in settings}
 
 
 def selectable_encoder_types() -> List[str]:
@@ -186,6 +236,8 @@ def build_encoder_config(
 # Encoder modules are imported for their `@register` side effect, at the bottom
 # so they can import the registry above without a cycle.
 from gym_continuousDoubleAuction.train.model.encoders import (  # noqa: E402,F401
+    lstm,
     passthrough,
     transformer,
 )
+

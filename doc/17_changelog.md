@@ -1322,3 +1322,45 @@ the encoder. A new encoder is covered when it is registered, not when someone
 remembers to write its tests. Two further checks close the loop between code and
 config: every selectable encoder must have an `encoder_specs` block, and that
 block's keys must be exactly what its builder accepts.
+
+### 28.6 `lstm`, and the bug it found in the info dict
+
+The structured recurrent encoder: a `TokenEmbedConfig` tokenizer embeds one
+observation's book grid per step, and an LSTM recurs over the *rollout* axis on
+top of that. The alternative — RLlib's `use_lstm=True` — feeds the raw 168-float
+observation to a stock MLP tokenizer and discards the structure exactly as `mlp`
+does, which would have made the recurrent run an ablation of the MLP rather than
+of the transformer.
+
+It needs no custom `Encoder` class. `RecurrentEncoderConfig` already takes a
+`tokenizer_config`, and `TorchLSTMEncoder` already does the fold / tokenize /
+unfold / recur sequence, `get_initial_state`, and the batch-first to
+layers-first state transposition. So the encoder is a stock
+`RecurrentEncoderConfig` holding our tokenizer — the same shape RLlib's own
+`use_lstm` path builds. Being an instance of `RecurrentEncoderConfig` is also
+load-bearing twice over, both by `isinstance`: `DefaultPPORLModule.setup` forces
+`inference_only=False` so the critic's states are collected, and
+`ActorCriticEncoderConfig.build` returns the stateful wrapper.
+
+`max_seq_len` is the one knob that could not live on the encoder config, because
+RLlib's connectors read it to cut batches into sequences before any encoder
+exists. It is declared in the `lstm` spec block and lifted onto the top-level
+model config, which is what `model_config_overrides` is for.
+
+**The env broke before the model did.** Selecting `lstm` made every env step
+fail with `'int' object is not iterable`, from `info_helper._plain` — which
+assumed a numpy array is at least 1-D, when `tolist()` on a 0-d array returns a
+bare scalar. No stateless module had ever produced a 0-d array; the
+time-dimension connectors hand back the Discrete action components that way. The
+bug was pre-existing and latent, reachable only by making a module stateful.
+
+Registering an encoder now also declares its full spec schema, so
+`encoder_settings` does the merge and the unknown-key check once instead of each
+builder repeating it, and `model_config_overrides` sees a default the config
+file omitted rather than silently inheriting an unrelated one from
+`DefaultModelConfig`.
+
+The parametrised suite learned about statefulness at the same time: it builds
+`(B, T, obs)` batches with a `STATE_IN` tree for a recurrent module, and expects
+one value per timestep rather than per row. Without that it could not have
+covered a recurrent encoder at all — it would just have failed on shape.

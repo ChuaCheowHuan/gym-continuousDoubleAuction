@@ -13,6 +13,7 @@ mode - which PPO's ratio depends on, and which a stray dropout would break.
 """
 import numpy as np
 import pytest
+import tree
 import torch
 import torch.nn as nn
 from ray.rllib.algorithms.ppo.torch.default_ppo_torch_rl_module import (
@@ -41,6 +42,10 @@ from gym_continuousDoubleAuction.train.model.encoders.transformer import (
 from gym_continuousDoubleAuction.train.model.model_handler import (
     build_trainable_module_spec,
 )
+
+#: Time steps per sequence in a stateful forward batch. Arbitrary - RLlib pads
+#: to max_seq_len in a real run, but a manual forward accepts any length.
+SEQ_LEN = 3
 
 #: Every encoder, fixtures included: all of them must meet the contract.
 ALL_ENCODERS = [MLP_ENCODER_TYPE] + sorted(ENCODER_REGISTRY)
@@ -71,10 +76,30 @@ def build_module(spaces, encoder_type, spec=None, **kwargs):
     return module_spec.build()
 
 
-def sample_batch(obs_space, n=4, seed=0):
+def sample_batch(obs_space, n=4, seed=0, module=None, seq_len=SEQ_LEN):
+    """A forward batch shaped for `module`, stateful or not.
+
+    A stateless module takes `(B, obs)`. A stateful one takes `(B, T, obs)` plus
+    a `STATE_IN` tree, because RLlib's connectors add the time dimension and
+    thread the recurrent state through - so a test that only ever builds the
+    stateless shape silently cannot cover a recurrent encoder at all.
+    """
     rng = np.random.default_rng(seed)
     obs_space.seed(int(rng.integers(1 << 30)))
-    return {Columns.OBS: torch.from_numpy(np.stack([obs_space.sample() for _ in range(n)]))}
+
+    if module is None or not module.is_stateful():
+        obs = np.stack([obs_space.sample() for _ in range(n)])
+        return {Columns.OBS: torch.from_numpy(obs)}
+
+    obs = np.stack(
+        [[obs_space.sample() for _ in range(seq_len)] for _ in range(n)]
+    )
+    # Initial states come back unbatched; give every sequence its own copy.
+    state_in = tree.map_structure(
+        lambda s: s.unsqueeze(0).expand(n, *s.shape).contiguous(),
+        module.get_initial_state(),
+    )
+    return {Columns.OBS: torch.from_numpy(obs), Columns.STATE_IN: state_in}
 
 
 # --- The contract, for every encoder ----------------------------------------
@@ -84,22 +109,36 @@ class TestEveryEncoder:
     def test_produces_usable_policy_and_value_outputs(self, spaces, encoder_type):
         obs_space, _ = spaces
         module = build_module(spaces, encoder_type)
-        batch = sample_batch(obs_space)
+        batch = sample_batch(obs_space, module=module)
 
         out = module.forward_train(batch)
         values = module.compute_values(batch)
 
+        # A recurrent module keeps the time axis, so it emits one value per
+        # (sequence, timestep) rather than one per row.
+        expected_values = (4, SEQ_LEN) if module.is_stateful() else (4,)
+
         assert out[Columns.ACTION_DIST_INPUTS].shape[0] == 4
-        assert tuple(values.shape) == (4,)
+        assert tuple(values.shape) == expected_values
         assert torch.isfinite(out[Columns.ACTION_DIST_INPUTS]).all()
         assert torch.isfinite(values).all()
+
+    def test_state_out_is_emitted_only_when_stateful(self, spaces, encoder_type):
+        """A recurrent module must return the state the connectors carry
+        forward; a stateless one must not pretend to have any."""
+        obs_space, _ = spaces
+        module = build_module(spaces, encoder_type)
+
+        out = module.forward_train(sample_batch(obs_space, module=module))
+
+        assert (Columns.STATE_OUT in out) is module.is_stateful()
 
     def test_inference_forward_works(self, spaces, encoder_type):
         """The rollout path, which is a different method from the train one."""
         obs_space, _ = spaces
         module = build_module(spaces, encoder_type)
 
-        out = module.forward_inference(sample_batch(obs_space))
+        out = module.forward_inference(sample_batch(obs_space, module=module))
 
         assert torch.isfinite(out[Columns.ACTION_DIST_INPUTS]).all()
 
@@ -108,7 +147,7 @@ class TestEveryEncoder:
         obs_space, _ = spaces
         source = build_module(spaces, encoder_type)
         target = build_module(spaces, encoder_type)
-        batch = sample_batch(obs_space)
+        batch = sample_batch(obs_space, module=source)
 
         target.set_state(source.get_state())
 
@@ -146,7 +185,7 @@ class TestEveryEncoder:
         obs_space, _ = spaces
         module = build_module(spaces, encoder_type)
         module.eval()
-        batch = sample_batch(obs_space)
+        batch = sample_batch(obs_space, module=module)
 
         first = module.forward_train(batch)[Columns.ACTION_DIST_INPUTS]
         second = module.forward_train(batch)[Columns.ACTION_DIST_INPUTS]
@@ -157,7 +196,7 @@ class TestEveryEncoder:
         """An encoder detached from the loss would train silently as a constant."""
         obs_space, _ = spaces
         module = build_module(spaces, encoder_type)
-        batch = sample_batch(obs_space)
+        batch = sample_batch(obs_space, module=module)
 
         module.forward_train(batch)[Columns.ACTION_DIST_INPUTS].sum().backward()
 
@@ -299,3 +338,127 @@ class TestPositionalIndex:
 
         assert int(time_idx.max()) == 0
         assert list(level_idx) == list(range(layout.k_rows + 1))
+
+
+# --- LSTM specifics ----------------------------------------------------------
+
+class TestLSTM:
+    ENCODER = "lstm"
+
+    def test_is_stateful(self, spaces):
+        """Nothing else in this class means anything if this is False."""
+        assert build_module(spaces, self.ENCODER).is_stateful()
+
+    def test_gets_the_stateful_actor_critic_wrapper(self, spaces):
+        """`ActorCriticEncoderConfig.build` dispatches on isinstance of
+        `RecurrentEncoderConfig`, which is why the config derives from it
+        rather than wrapping one."""
+        module = build_module(spaces, self.ENCODER)
+
+        assert type(module.encoder).__name__ == "TorchStatefulActorCriticEncoder"
+
+    def test_inference_only_is_forced_off(self, spaces):
+        """`DefaultPPORLModule.setup` does this for a recurrent base config.
+
+        Without it the critic's states are never collected during sampling and
+        `compute_values` has nothing to run on.
+        """
+        assert build_module(spaces, self.ENCODER).inference_only is False
+
+    def test_actor_and_critic_have_separate_states(self, spaces):
+        module = build_module(spaces, self.ENCODER, vf_share_layers=False)
+
+        state = module.get_initial_state()
+
+        assert set(state) == {"actor", "critic"}
+        assert set(state["actor"]) == {"h", "c"}
+
+    def test_initial_state_is_shaped_by_the_spec(self, spaces):
+        module = build_module(
+            spaces, self.ENCODER, spec={"hidden_dim": 64, "num_layers": 2}
+        )
+
+        h = module.get_initial_state()["actor"]["h"]
+
+        assert tuple(h.shape) == (2, 64)
+
+    def test_state_out_matches_state_in(self, spaces):
+        """The connectors feed STATE_OUT back in as the next STATE_IN."""
+        obs_space, _ = spaces
+        module = build_module(spaces, self.ENCODER)
+        batch = sample_batch(obs_space, module=module)
+
+        state_out = module.forward_train(batch)[Columns.STATE_OUT]
+
+        assert tree.map_structure(lambda t: tuple(t.shape), state_out) == (
+            tree.map_structure(lambda t: tuple(t.shape), batch[Columns.STATE_IN])
+        )
+
+    def test_memory_actually_carries(self, spaces):
+        """Different incoming state must change the output.
+
+        An LSTM wired up so that STATE_IN never reached it would still train,
+        still emit STATE_OUT, and simply have no memory - which no shape check
+        would catch.
+        """
+        obs_space, _ = spaces
+        module = build_module(spaces, self.ENCODER)
+        module.eval()
+        batch = sample_batch(obs_space, module=module)
+
+        zeroed = module.forward_train(batch)[Columns.ACTION_DIST_INPUTS]
+        perturbed = dict(batch)
+        perturbed[Columns.STATE_IN] = tree.map_structure(
+            lambda t: t + 1.0, batch[Columns.STATE_IN]
+        )
+        shifted = module.forward_train(perturbed)[Columns.ACTION_DIST_INPUTS]
+
+        assert not torch.allclose(zeroed, shifted)
+
+    def test_tokenizer_is_the_structured_one(self, spaces):
+        """The whole point of the structured LSTM: the per-step embedding reads
+        the book grid rather than the raw flat observation."""
+        from gym_continuousDoubleAuction.train.model.encoders.token_embed import (
+            TorchTokenEmbedEncoder,
+        )
+
+        module = build_module(spaces, self.ENCODER)
+
+        assert isinstance(
+            module.encoder.actor_encoder.tokenizer, TorchTokenEmbedEncoder
+        )
+
+    def test_max_seq_len_reaches_the_model_config(self, spaces):
+        """It configures RLlib's connectors, not the encoder, so it has to be
+        lifted out of the encoder spec onto the top-level model config."""
+        obs_space, act_space = spaces
+        spec = build_trainable_module_spec(
+            obs_space,
+            act_space,
+            encoder_type=self.ENCODER,
+            encoder_specs={self.ENCODER: {"max_seq_len": 7}},
+        )
+
+        assert spec.model_config.max_seq_len == 7
+
+    def test_max_seq_len_defaults_even_when_the_spec_omits_it(self, spaces):
+        """Merged against the encoder's declared defaults, not read raw, so an
+        omitted key does not silently fall back to DefaultModelConfig's."""
+        from gym_continuousDoubleAuction.train.model.encoders.lstm import (
+            LSTM_DEFAULTS,
+        )
+
+        obs_space, act_space = spaces
+        spec = build_trainable_module_spec(
+            obs_space, act_space, encoder_type=self.ENCODER, encoder_specs={}
+        )
+
+        assert spec.model_config.max_seq_len == LSTM_DEFAULTS["max_seq_len"]
+
+    def test_zero_layers_raises(self, spaces):
+        with pytest.raises(ValueError, match="num_layers"):
+            build_module(spaces, self.ENCODER, spec={"num_layers": 0})
+
+    def test_unknown_spec_key_raises(self, spaces):
+        with pytest.raises(ValueError, match="Unknown key"):
+            build_module(spaces, self.ENCODER, spec={"hidden_size": 64})

@@ -45,7 +45,10 @@ from ray.rllib.core.models.configs import ModelConfig
 from ray.rllib.core.models.torch.base import TorchModel
 from ray.rllib.utils.annotations import override
 
-from gym_continuousDoubleAuction.train.model.encoders import register
+from gym_continuousDoubleAuction.train.model.encoders import (
+    encoder_settings,
+    register,
+)
 from gym_continuousDoubleAuction.train.model.encoders.blocks import (
     AttentionPool,
     TransformerBlock,
@@ -190,17 +193,11 @@ class TorchTransformerEncoder(TorchModel, Encoder):
         return {ENCODER_OUT: latent}
 
 
-@register("transformer")
+@register("transformer", defaults=TRANSFORMER_DEFAULTS)
 def build_transformer_config(
     layout: ObsLayout,
     spec: Dict[str, Any],
     input_dims: List[int],
 ) -> TransformerEncoderConfig:
-    settings = {**TRANSFORMER_DEFAULTS, **spec}
-    unknown = sorted(set(settings) - set(TRANSFORMER_DEFAULTS))
-    if unknown:
-        raise ValueError(
-            f"Unknown key(s) {unknown} in the 'transformer' encoder spec. "
-            f"Valid keys: {sorted(TRANSFORMER_DEFAULTS)}."
-        )
+    settings = encoder_settings("transformer", spec)
     return TransformerEncoderConfig(input_dims=input_dims, layout=layout, **settings)

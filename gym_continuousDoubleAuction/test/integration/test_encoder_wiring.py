@@ -21,6 +21,7 @@ field directly.
 """
 import pytest
 import ray
+import torch
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 
 from gym_continuousDoubleAuction.train.model.encoders import MLP_ENCODER_TYPE
@@ -183,3 +184,67 @@ class TestRestoreCannotChangeTheEncoder:
         desired, _ = build_config(TrainConfig(**TEST_CFG, run_id="other"))
 
         _check_restored_config(restored, desired)
+
+
+class TestRecurrentEncoderTrainsEndToEnd:
+    """The stateful path, which only exists once a real Algorithm samples.
+
+    Everything about a recurrent module that can break lives outside the module:
+    the connectors adding a time dimension, the states being carried between
+    steps, the env receiving actions shaped differently from the stateless case.
+    None of it is reachable from a unit test that calls `forward_train` by hand,
+    and the first thing it broke was the *info dict* - `_plain` could not handle
+    the 0-d arrays the time-dimension connectors produce, so every env step
+    failed with `'int' object is not iterable`.
+    """
+
+    @classmethod
+    def setup_class(cls):
+        ray.init(
+            ignore_reinit_error=True,
+            include_dashboard=False,
+            log_to_driver=False,
+            num_cpus=2,
+        )
+        cls.cfg = config_with_encoder("lstm")
+        ppo_config, cls.callback = build_config(cls.cfg)
+        cls.algo = ppo_config.build_algo()
+        cls.pid = trainable_policy_ids(cls.cfg.num_trained_agents)[0]
+        cls.before = {
+            k: v.detach().clone()
+            for k, v in cls.algo.env_runner.module[cls.pid].named_parameters()
+        }
+        cls.result = cls.algo.train()
+
+    @classmethod
+    def teardown_class(cls):
+        cls.algo.stop()
+        ray.shutdown()
+
+    def test_the_module_is_stateful(self):
+        assert self.algo.env_runner.module[self.pid].is_stateful()
+
+    def test_an_iteration_completes(self):
+        """Sampling, the env steps, and the learner update all survived."""
+        assert self.result["learners"][self.pid]["policy_loss"] is not None
+
+    def test_the_recurrent_weights_are_trained(self):
+        after = dict(self.algo.env_runner.module[self.pid].named_parameters())
+        changed = {
+            k for k, v in after.items() if not torch.equal(self.before[k], v)
+        }
+
+        assert any("lstm" in k for k in changed), "the LSTM itself did not update"
+        assert any("tokenizer" in k for k in changed), "the tokenizer did not update"
+
+    def test_a_champion_snapshot_of_a_recurrent_module_works(self):
+        """Champions are cloned with `RLModuleSpec.from_module`, which has to
+        carry statefulness across as well as the architecture."""
+        self.callback._create_champion_snapshot_from_policy(
+            self.algo, self.pid, return_value=0.0, iteration=1
+        )
+        champion_id = self.callback.champion_history[-1]["id"]
+        champion = self.algo.env_runner.module[champion_id]
+
+        assert champion.is_stateful()
+        assert type(champion) is type(self.algo.env_runner.module[self.pid])

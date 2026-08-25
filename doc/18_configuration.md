@@ -529,6 +529,7 @@ Available encoders:
 |---|---|
 | `mlp` | RLlib's stock MLP over the flat observation. The default and the pass-through. |
 | `transformer` | Pre-norm self-attention over the order-book grid, with a learned two-axis positional encoding and attention pooling. |
+| `lstm` | A per-step embedding of the book grid, then an LSTM over the rollout axis. Stateful. |
 
 #### What a token is
 
@@ -697,3 +698,31 @@ CDA_PLATFORM=docker CDA_USE_GPU=false python -m gym_continuousDoubleAuction.trai
 Note the asymmetry, which is intentional: `CDA_USE_GPU=true` does **not** force the gpu set onto a
 machine without CUDA. It falls back to the cpu set and says so, because the alternative is RLlib
 placing a learner on a device that is not there.
+
+#### The `lstm` encoder and its two time axes
+
+`lstm` is the *structured* recurrent encoder, not RLlib's `use_lstm` shortcut. The
+shortcut feeds the raw 168-float observation to a stock MLP tokenizer, discarding
+the book structure exactly as `mlp` does. This one's tokenizer reads the grid.
+
+Two different time axes are involved and they are easy to confuse:
+
+- **`n_hist`** is a window *inside a single observation*, already stacked by the env.
+  The tokenizer collapses it.
+- **The rollout axis** is consecutive env steps. That is what the LSTM's memory runs
+  along, and what `max_seq_len` cuts into training sequences.
+
+They overlap: at `n_hist` 4 the LSTM re-reads the last four snapshots every step, so
+its memory is partly redundant with the observation itself. Setting `n_hist` to 1 for
+a recurrent run removes the redundancy — at the cost of invalidating checkpoints,
+since `n_hist` is structural.
+
+`max_seq_len` is declared in the `lstm` spec block but applied to the **top-level**
+model config, because RLlib's connectors read it before any encoder is called.
+`build_trainable_module_spec` lifts it across.
+
+Selecting `lstm` makes the trainable modules stateful, which changes more than the
+network: RLlib forces `inference_only=False` so the critic's states are collected,
+wraps the encoder in `TorchStatefulActorCriticEncoder`, and adds a time dimension to
+every batch. The frozen `RandomRLModule` baselines stay stateless throughout, which
+is fine — statefulness is per-module.

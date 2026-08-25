@@ -57,6 +57,7 @@ from gym_continuousDoubleAuction.train.model.encoders import (
     CDAModelConfig,
     build_encoder_config,
     known_encoder_type,
+    model_config_overrides,
     validate_encoder_type,
 )
 
@@ -205,6 +206,7 @@ def build_trainable_module_spec(obs_space, act_space, encoder_type=None,
             model_config=model_config,
         )
 
+    encoder_spec = encoder_specs.get(encoder_type, {})
     return RLModuleSpec(
         observation_space=obs_space,
         action_space=act_space,
@@ -214,6 +216,11 @@ def build_trainable_module_spec(obs_space, act_space, encoder_type=None,
             fcnet_activation=model_config.fcnet_activation,
             vf_share_layers=model_config.vf_share_layers,
             encoder_type=encoder_type,
-            encoder_spec=encoder_specs.get(encoder_type, {}),
+            encoder_spec=encoder_spec,
+            # A few spec keys configure RLlib rather than the encoder - today
+            # just `max_seq_len`, which the connectors read to cut a recurrent
+            # module's batch into sequences before any encoder is called. They
+            # cannot ride on a custom encoder config, so they are lifted here.
+            **model_config_overrides(encoder_type, encoder_spec),
         ),
     )

@@ -24,7 +24,10 @@ from ray.rllib.core.models.configs import ModelConfig
 from ray.rllib.core.models.torch.base import TorchModel
 from ray.rllib.utils.annotations import override
 
-from gym_continuousDoubleAuction.train.model.encoders import register
+from gym_continuousDoubleAuction.train.model.encoders import (
+    encoder_settings,
+    register,
+)
 from gym_continuousDoubleAuction.train.model.encoders.obs_layout import ObsLayout
 from gym_continuousDoubleAuction.train.model.encoders.tokenize import (
     token_shape,
@@ -79,15 +82,18 @@ class TorchPassthroughEncoder(TorchModel, Encoder):
         return {ENCODER_OUT: latent.mean(dim=-2)}
 
 
-@register("_passthrough")
+#: Full spec schema for the fixture.
+PASSTHROUGH_DEFAULTS = {
+    "tokenization": "both",
+    "latent_dim": _PASSTHROUGH_LATENT,
+}
+
+
+@register("_passthrough", defaults=PASSTHROUGH_DEFAULTS)
 def build_passthrough_config(
     layout: ObsLayout,
     spec: Dict[str, Any],
     input_dims: List[int],
 ) -> PassthroughEncoderConfig:
-    return PassthroughEncoderConfig(
-        input_dims=input_dims,
-        layout=layout,
-        tokenization=spec.get("tokenization", "both"),
-        latent_dim=spec.get("latent_dim", _PASSTHROUGH_LATENT),
-    )
+    settings = encoder_settings("_passthrough", spec)
+    return PassthroughEncoderConfig(input_dims=input_dims, layout=layout, **settings)

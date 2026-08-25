@@ -78,6 +78,22 @@
         "ff_dim": 256,
         "dropout": 0.0,
         "pool": "attention"
+      },
+
+      "lstm": {
+        "_note": "The structured LSTM, not RLlib's use_lstm shortcut. tokenization / d_model / pool / num_heads configure the per-step tokenizer, which embeds one observation's book grid; hidden_dim / num_layers configure the LSTM that then recurs over the ROLLOUT axis on top of those embeddings. Two different time axes: the tokenizer collapses n_hist, which is a window inside one observation, while the LSTM's memory runs across env steps.",
+
+        "_note_n_hist": "Those two axes overlap. With n_hist 4 the LSTM re-reads the last four snapshots at every step, so its memory is partly redundant with the observation. Setting n_hist to 1 for a recurrent run removes that, at the cost of invalidating checkpoints - n_hist is structural.",
+
+        "_note_max_seq_len": "Applied to the top-level model config, not to the encoder: RLlib's connectors read it to cut a batch into training sequences before any encoder is called. It is declared in this block because it belongs to this encoder conceptually, and build_trainable_module_spec lifts it across.",
+
+        "tokenization": "both",
+        "d_model": 128,
+        "pool": "mean",
+        "num_heads": 4,
+        "hidden_dim": 256,
+        "num_layers": 1,
+        "max_seq_len": 20
       }
     }
   },
