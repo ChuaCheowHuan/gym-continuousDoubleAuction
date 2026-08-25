@@ -208,6 +208,21 @@ def build_trainable_module_spec(obs_space, act_space, encoder_type=None,
         )
 
     encoder_spec = encoder_specs.get(encoder_type, {})
+    fields = {
+        "fcnet_hiddens": model_config.fcnet_hiddens,
+        "fcnet_activation": model_config.fcnet_activation,
+        "vf_share_layers": model_config.vf_share_layers,
+        "encoder_type": encoder_type,
+        "encoder_spec": encoder_spec,
+    }
+    # Some spec keys configure RLlib rather than the encoder and cannot ride on
+    # a custom encoder config: `max_seq_len`, which the connectors read to cut a
+    # recurrent module's batch into sequences before any encoder is called, and
+    # `vf_share_layers`, which an encoder may override because the `ppo` group's
+    # value was chosen for the MLP. Applied last so an encoder that sets one
+    # wins over the group.
+    fields.update(model_config_overrides(encoder_type, encoder_spec))
+
     return RLModuleSpec(
         # The stock module would do for every encoder except moe_transformer,
         # whose auxiliary loss needs a hop through `_forward_train` to reach the
@@ -218,16 +233,5 @@ def build_trainable_module_spec(obs_space, act_space, encoder_type=None,
         observation_space=obs_space,
         action_space=act_space,
         catalog_class=CDACatalog,
-        model_config=CDAModelConfig(
-            fcnet_hiddens=model_config.fcnet_hiddens,
-            fcnet_activation=model_config.fcnet_activation,
-            vf_share_layers=model_config.vf_share_layers,
-            encoder_type=encoder_type,
-            encoder_spec=encoder_spec,
-            # A few spec keys configure RLlib rather than the encoder - today
-            # just `max_seq_len`, which the connectors read to cut a recurrent
-            # module's batch into sequences before any encoder is called. They
-            # cannot ride on a custom encoder config, so they are lifted here.
-            **model_config_overrides(encoder_type, encoder_spec),
-        ),
+        model_config=CDAModelConfig(**fields),
     )

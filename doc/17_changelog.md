@@ -1401,3 +1401,45 @@ helpers overwrote `module_class` with the stock `DefaultPPOTorchRLModule`, which
 had been correct when every spec left it `None`. Once custom encoders set their
 own it silently swapped `CDAPPOTorchRLModule` back out, taking the auxiliary
 loss with it. They now only fill it in when the spec left it unset.
+
+### 28.8 Making the comparison mean something
+
+Three additions aimed at the failure where a run compares architectures and
+actually measures something else.
+
+**Per-encoder `lr` and `vf_share_layers`.** Both `ppo` defaults were chosen for
+the MLP. `lr = 5e-05` was tuned for a 2x256 tanh net, and holding an attention
+stack to it measures the learning rate; `vf_share_layers: false` costs an MLP
+little and doubles a transformer. Either may now be set in any encoder's spec
+block, overriding the group for that encoder only. They are accepted everywhere
+and consumed centrally, so no encoder has to know about them, and absent means
+inherit — a null would be indistinguishable from a value nobody chose.
+
+**Parameter counts at startup.** Each trainable module logs its own. At the
+shipped settings the alternatives run 3-6.5x the MLP (225k, 672k, 799k, 1.46M),
+which is the difference between "this architecture is better" and "this
+architecture had six times the parameters". RLlib already reports sampling
+throughput per iteration, which is the other half.
+
+**A comparison protocol**, written down in [18](18_configuration.md) §5.5: fix
+the seed and use several, one run per architecture rather than a resume, re-tune
+the learning rate or say you didn't, and read the parameter counts.
+
+### 28.9 Checkpoint round-trip for a custom encoder
+
+`Algorithm.from_checkpoint` rebuilds from the config stored in the checkpoint,
+so a custom encoder's module class, catalog class and spec all have to survive
+serialisation and re-import. The unit suite's `get_state` / `set_state` cannot
+show that — it never leaves the process and both ends were built by the same
+code path — so there is now an integration test that saves and restores for
+real.
+
+Writing it surfaced a wrong assumption worth recording. The first version
+compared every parameter on the EnvRunner and failed on
+`encoder.critic_encoder`. That is correct behaviour, not a bug:
+`get_non_inference_attributes` marks `vf` and `encoder.critic_encoder` as
+training-only, so they are never synced out and each runner's copy keeps its own
+random initialisation. The authoritative weights are the Learner's, which is
+what the checkpoint persists and what the test now compares; the EnvRunner is
+checked for the actor-side tensors only, which is what actually acts in the
+environment.

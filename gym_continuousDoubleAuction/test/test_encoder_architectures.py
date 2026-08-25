@@ -28,6 +28,8 @@ from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
 from gym_continuousDoubleAuction.train.model.encoders import (
     ENCODER_REGISTRY,
     MLP_ENCODER_TYPE,
+    common_settings,
+    training_overrides,
 )
 from gym_continuousDoubleAuction.train.model.encoders.obs_layout import ObsLayout
 from gym_continuousDoubleAuction.train.model.encoders.tokenize import (
@@ -594,3 +596,50 @@ class TestMoETransformer:
         _, stats = moe(torch.randn(3, 5, 8))
 
         assert float(stats["aux_loss"].detach()) == pytest.approx(2.0, abs=1e-4)
+
+
+# --- Common spec keys --------------------------------------------------------
+
+class TestCommonSpecKeys:
+    """`lr` and `vf_share_layers` are accepted in every encoder's spec block.
+
+    Both defaults in the `ppo` group were chosen for the MLP. Holding an
+    attention stack to a learning rate tuned for a 2x256 tanh net measures the
+    learning rate rather than the architecture, and `vf_share_layers: false`
+    doubles a transformer where it barely costs an MLP anything.
+    """
+
+    @pytest.mark.parametrize("encoder_type", SHIPPED_ENCODERS)
+    def test_every_encoder_accepts_them(self, encoder_type):
+        settings = common_settings(encoder_type, {"lr": 1e-4, "vf_share_layers": True})
+
+        assert settings == {"lr": 1e-4, "vf_share_layers": True}
+
+    @pytest.mark.parametrize("encoder_type", SHIPPED_ENCODERS)
+    def test_unset_means_inherit(self, encoder_type):
+        """Null must not override the ppo group with a None."""
+        assert common_settings(encoder_type, {}) == {}
+        assert training_overrides(encoder_type, {}) == {}
+
+    def test_they_do_not_leak_into_the_encoder_config(self, spaces):
+        """A builder splats its own settings, so a common key reaching it would
+        be an unexpected keyword rather than a silent no-op."""
+        module = build_module(spaces, "transformer", spec={"lr": 1e-4})
+
+        assert not hasattr(module.encoder.actor_encoder.config, "lr")
+
+    def test_vf_share_layers_override_takes_effect(self, spaces):
+        """The ppo group ships false; an encoder setting true must win."""
+        module = build_module(
+            spaces, "transformer", spec={"vf_share_layers": True},
+            vf_share_layers=False,
+        )
+
+        assert getattr(module.encoder, "critic_encoder", None) is None
+
+    def test_lr_override_is_reported_for_the_algorithm_config(self):
+        assert training_overrides("transformer", {"lr": 3e-4}) == {"lr": 3e-4}
+
+    def test_a_misspelled_common_key_still_raises(self, spaces):
+        with pytest.raises(ValueError, match="Unknown key"):
+            build_module(spaces, "transformer", spec={"learning_rate": 1e-4})

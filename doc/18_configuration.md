@@ -760,3 +760,56 @@ league is small, so MoE's premise — capacity you cannot afford densely — may
 not apply. A collapsed mixture and a healthy one have identical losses and identical
 throughput; the only difference is `moe_max_expert_share` and `moe_min_expert_share`
 in the learner metrics, which a healthy mixture holds near `top_k / num_experts`.
+
+#### Two keys every encoder accepts
+
+`lr` and `vf_share_layers` may appear in **any** `encoder_specs` block and are handled
+centrally rather than by the encoder. Omit them to inherit the `ppo` group; set either
+to override it for that encoder only.
+
+They exist because both `ppo` defaults were chosen for the MLP. `lr = 5e-05` was tuned
+for a 2×256 tanh net, and holding an attention stack to it measures the learning rate
+rather than the architecture. `vf_share_layers: false` costs an MLP little and doubles
+a transformer — a real trade-off, since the `false` is itself deliberate (a shared
+value trunk destabilises against non-stationary league opponents).
+
+Neither is listed in the shipped blocks: absent means inherit, and a `null` would be
+indistinguishable from a value nobody chose.
+
+---
+
+## 5.5. Comparing architectures
+
+The `encoder` group exists to make architectures comparable, and a comparison is easy
+to run in a way that measures the wrong thing. Four points, in rough order of how much
+damage getting them wrong does:
+
+1. **Fix the seed, and use more than one.** `run.seed` ships as `null`, so each run
+   draws its own. Single-seed RL comparisons are mostly noise, and self-play league
+   dynamics are noisier than most — the champion pool amplifies an early divergence for
+   the rest of the run. Pin `seed` and run at least three per architecture.
+
+2. **Separate runs, never a resume.** `encoder_type` and `encoder_spec` are structural
+   (§5.3), so switching them with `is_restore` set is a hard error by design. Give each
+   architecture its own `run_id`.
+
+3. **Re-tune, or say you didn't.** See the two common keys above. Comparing at a single
+   learning rate is a legitimate experiment, but it answers "which architecture is best
+   at `lr=5e-05`", not "which architecture is best".
+
+4. **Read the parameter counts.** Each trainable module logs its own at startup:
+
+   ```
+   policy_0: encoder mlp             | 225,051 parameters
+   policy_0: encoder transformer     | 671,899 parameters
+   policy_0: encoder lstm            | 799,259 parameters
+   policy_0: encoder moe_transformer | 1,464,987 parameters
+   ```
+
+   At the shipped settings the alternatives are 3–6.5× the MLP. A win at 6.5× the
+   parameters and a fraction of the throughput is a different claim from a win at
+   parity, and the per-iteration line reports `env steps sampled` for the other half.
+
+For `moe_transformer` also watch `moe_max_expert_share` and `moe_min_expert_share` in
+the learner metrics — a collapsed mixture is indistinguishable from a healthy one by
+loss or throughput alone.

@@ -72,6 +72,20 @@ ENCODER_DEFAULTS: Dict[str, Dict[str, Any]] = {}
 #: because RLlib reads them itself. See `model_config_overrides`.
 MODEL_CONFIG_SPEC_KEYS = ("max_seq_len",)
 
+#: Keys accepted in *every* encoder's spec block and handled centrally rather
+#: than by the encoder. Null means "inherit", so an encoder that says nothing
+#: about one of these gets the `ppo` group's value.
+#:
+#: They exist because the `ppo` group's `lr` and `vf_share_layers` were both
+#: chosen for the MLP. Holding a transformer to a learning rate tuned for a
+#: 2x256 tanh net measures the learning rate, not the architecture; and
+#: `vf_share_layers: false` doubles an attention stack, which is a real cost
+#: rather than the small one it is for an MLP.
+COMMON_SPEC_KEYS = {
+    "lr": None,
+    "vf_share_layers": None,
+}
+
 
 @dataclass
 class CDAModelConfig(DefaultModelConfig):
@@ -122,36 +136,74 @@ def register(
     return decorate
 
 
-def encoder_settings(encoder_type: str, spec: Dict[str, Any]) -> Dict[str, Any]:
-    """An encoder's spec merged over its defaults, with unknown keys refused.
+def _valid_keys(encoder_type: str) -> set:
+    return set(ENCODER_DEFAULTS.get(encoder_type, {})) | set(COMMON_SPEC_KEYS)
 
-    A misspelled knob resolving to the default silently is exactly the failure
-    `config_loader` exists to prevent, so it raises here too.
-    """
-    defaults = ENCODER_DEFAULTS.get(encoder_type, {})
-    unknown = sorted(set(spec) - set(defaults))
+
+def _check_keys(encoder_type: str, spec: Dict[str, Any]) -> None:
+    """A misspelled knob resolving to its default silently is exactly the
+    failure `config_loader` exists to prevent, so it raises here too."""
+    unknown = sorted(set(spec) - _valid_keys(encoder_type))
     if unknown:
         raise ValueError(
             f"Unknown key(s) {unknown} in the {encoder_type!r} encoder spec. "
-            f"Valid keys: {sorted(defaults)}."
+            f"Valid keys: {sorted(_valid_keys(encoder_type))}."
         )
-    return {**defaults, **spec}
+
+
+def encoder_settings(encoder_type: str, spec: Dict[str, Any]) -> Dict[str, Any]:
+    """An encoder's *own* settings: its spec merged over its declared defaults.
+
+    Excludes `COMMON_SPEC_KEYS`, which every encoder accepts but none consumes,
+    so a builder can splat this straight into its config dataclass.
+    """
+    _check_keys(encoder_type, spec)
+    defaults = ENCODER_DEFAULTS.get(encoder_type, {})
+    return {**defaults, **{k: v for k, v in spec.items() if k in defaults}}
+
+
+def common_settings(encoder_type: str, spec: Dict[str, Any]) -> Dict[str, Any]:
+    """The `COMMON_SPEC_KEYS` an encoder spec set, dropping the ones left null.
+
+    Null means "inherit", so an encoder that says nothing about `lr` gets the
+    `ppo` group's value rather than overriding it with a None.
+    """
+    _check_keys(encoder_type, spec)
+    given = {k: v for k, v in spec.items() if k in COMMON_SPEC_KEYS}
+    merged = {**COMMON_SPEC_KEYS, **given}
+    return {k: v for k, v in merged.items() if v is not None}
 
 
 def model_config_overrides(encoder_type: str, spec: Dict[str, Any]) -> Dict[str, Any]:
-    """The part of an encoder's settings that belongs on the model config.
+    """Settings that belong on the top-level model config, not on the encoder.
 
-    Some knobs are read by RLlib itself rather than by an encoder, so they
-    cannot ride on a custom encoder config. `max_seq_len` is the only one today:
-    the connectors read it to decide how a recurrent module's batch is cut into
-    sequences, long before any encoder is called.
+    Two sources. `MODEL_CONFIG_SPEC_KEYS` are the encoder's own knobs that RLlib
+    reads itself - `max_seq_len` is the only one, and the connectors read it to
+    cut a recurrent module's batch into sequences long before any encoder is
+    called. `vf_share_layers` is a common key, overriding the `ppo` group only
+    when an encoder explicitly sets it.
 
-    Merged against the encoder's defaults, not read raw from `spec`, so a config
-    file that omits the key still gets the encoder's intended value rather than
-    `DefaultModelConfig`'s unrelated one.
+    Merged against declared defaults rather than read raw from `spec`, so a
+    config file that omits `max_seq_len` still gets the encoder's intended value
+    instead of `DefaultModelConfig`'s unrelated one.
     """
-    settings = encoder_settings(encoder_type, spec)
-    return {k: settings[k] for k in MODEL_CONFIG_SPEC_KEYS if k in settings}
+    own = encoder_settings(encoder_type, spec)
+    common = common_settings(encoder_type, spec)
+    overrides = {k: own[k] for k in MODEL_CONFIG_SPEC_KEYS if k in own}
+    if "vf_share_layers" in common:
+        overrides["vf_share_layers"] = common["vf_share_layers"]
+    return overrides
+
+
+def training_overrides(encoder_type: str, spec: Dict[str, Any]) -> Dict[str, Any]:
+    """Settings for `AlgorithmConfig.training`, i.e. `lr`.
+
+    `lr = 5e-05` in the `ppo` group was tuned for a 2x256 tanh MLP. A
+    transformer generally wants a different one, and comparing architectures at
+    a learning rate that suits only one of them measures the learning rate.
+    """
+    common = common_settings(encoder_type, spec)
+    return {k: common[k] for k in ("lr",) if k in common}
 
 
 def selectable_encoder_types() -> List[str]:

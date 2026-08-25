@@ -54,6 +54,7 @@ from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback im
 )
 from gym_continuousDoubleAuction.train.model.encoders import (
     MLP_ENCODER_TYPE,
+    training_overrides,
     validate_encoder_type,
 )
 from gym_continuousDoubleAuction.train.model.moe_learner import CDAPPOTorchLearner
@@ -542,7 +543,13 @@ def build_config(cfg: TrainConfig):
         .training(
             train_batch_size_per_learner=cfg.train_batch_size,
             num_epochs=cfg.num_epochs,
-            lr=cfg.lr,
+            # `lr` last, so an encoder that sets one in its spec block wins over
+            # the `ppo` group's. The group's value was tuned for the 2x256 tanh
+            # MLP; holding an attention stack to it measures the learning rate
+            # rather than the architecture.
+            **{"lr": cfg.lr, **training_overrides(
+                cfg.encoder_type, cfg.encoder_specs.get(cfg.encoder_type, {})
+            )},
             # PPO's loss plus the MoE load-balancing term. Identical to the
             # stock learner for every encoder that produces no such term, which
             # is all of them but moe_transformer - so it is wired
@@ -1086,6 +1093,7 @@ def build_algo(cfg: TrainConfig):
         restored_callback = algo_callback(algo)
         if restored_callback is None:
             logger.warning("restored algorithm exposes no SelfPlayCallback")
+        log_module_sizes(algo, cfg)
         return algo, restored_callback
 
     if cfg.is_restore:
@@ -1097,7 +1105,38 @@ def build_algo(cfg: TrainConfig):
         logger.info("starting from scratch")
         warn_about_foreign_checkpoints(cfg)
 
-    return ppo.build_algo(), callback_instance
+    algo = ppo.build_algo()
+    log_module_sizes(algo, cfg)
+    return algo, callback_instance
+
+
+def log_module_sizes(algo, cfg: TrainConfig) -> None:
+    """Report each trainable module's parameter count, once, at startup.
+
+    Comparing architectures is the point of the `encoder` group, and a
+    comparison that does not say how big each one was cannot distinguish "this
+    architecture is better" from "this architecture had eight times the
+    parameters". RLlib already reports sampling throughput per iteration
+    (`num_env_steps_sampled`, in the per-iteration line), which is the other
+    half; this is the half nothing else prints.
+
+    Best-effort: a module the local EnvRunner cannot produce is skipped rather
+    than failing a run over a log line.
+    """
+    modules = getattr(getattr(algo, "env_runner", None), "module", None)
+    if modules is None:
+        return
+
+    for pid in trainable_policy_ids(cfg.num_trained_agents):
+        module = modules.get(pid) if hasattr(modules, "get") else None
+        if module is None:
+            continue
+        total = sum(p.numel() for p in module.parameters())
+        trainable = sum(p.numel() for p in module.parameters() if p.requires_grad)
+        logger.info(
+            "%s: encoder %s | %s parameters (%s trainable)",
+            pid, cfg.encoder_type, f"{total:,}", f"{trainable:,}",
+        )
 
 
 def _fix_checkpoint_optimizer_betas(algo) -> None:

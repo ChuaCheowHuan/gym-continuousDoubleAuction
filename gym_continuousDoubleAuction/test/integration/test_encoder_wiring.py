@@ -19,14 +19,22 @@ tests in `test_encoder_registry.py` cannot make:
 config file, which is why these build a `TrainConfig` and then override the
 field directly.
 """
+import shutil
+import tempfile
+
 import pytest
 import ray
 import torch
+from ray.rllib.algorithms.algorithm import Algorithm
+from ray.rllib.core import COMPONENT_LEARNER, COMPONENT_RL_MODULE
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 
 from gym_continuousDoubleAuction.train.model.encoders import MLP_ENCODER_TYPE
 from gym_continuousDoubleAuction.train.model.encoders.passthrough import (
     TorchPassthroughEncoder,
+)
+from gym_continuousDoubleAuction.train.model.encoders.transformer import (
+    TorchTransformerEncoder,
 )
 from gym_continuousDoubleAuction.train.model.model_handler import CDACatalog
 from gym_continuousDoubleAuction.train.model.moe_learner import (
@@ -47,6 +55,17 @@ from gym_continuousDoubleAuction.train.train import (
 )
 
 FIXTURE = "_passthrough"
+
+
+def _learner_module_state(algo, module_id):
+    """Full module state from the LearnerGroup, local or remote.
+
+    Deliberately not `learner_group._learner.module[...]`: that private
+    attribute is None whenever num_learners > 0.
+    """
+    return algo.learner_group.get_state(
+        components=f"{COMPONENT_LEARNER}/{COMPONENT_RL_MODULE}/{module_id}",
+    )[COMPONENT_LEARNER][COMPONENT_RL_MODULE][module_id]
 
 TEST_CFG = dict(
     num_agents=4,
@@ -334,3 +353,92 @@ class TestMoEAuxLossReachesTheOptimiser:
             algo.stop()
 
         assert MOE_AUX_LOSS_KEY not in results
+
+
+class TestCustomEncoderCheckpointRoundTrip:
+    """A checkpoint has to carry the custom classes, not just the weights.
+
+    `Algorithm.from_checkpoint` rebuilds from the config stored in the
+    checkpoint, so the module class, the catalog class and the encoder spec all
+    have to survive serialisation and re-import. A unit test's `get_state` /
+    `set_state` cannot show that: it never leaves the process, and both ends
+    were constructed by the same code path.
+    """
+
+    ENCODER = "transformer"
+
+    @classmethod
+    def setup_class(cls):
+        ray.init(
+            ignore_reinit_error=True,
+            include_dashboard=False,
+            log_to_driver=False,
+            num_cpus=2,
+        )
+        cls.tmp = tempfile.mkdtemp()
+        cfg = config_with_encoder(cls.ENCODER, run_id="ckpt-roundtrip")
+        ppo_config, _ = build_config(cfg)
+        cls.algo = ppo_config.build_algo()
+        cls.pid = trainable_policy_ids(cfg.num_trained_agents)[0]
+
+        cls.algo.save(cls.tmp)
+        cls.restored = Algorithm.from_checkpoint(cls.tmp)
+
+    @classmethod
+    def teardown_class(cls):
+        cls.restored.stop()
+        cls.algo.stop()
+        ray.shutdown()
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def test_the_restored_module_is_the_custom_class(self):
+        restored = self.restored.env_runner.module[self.pid]
+
+        assert type(restored) is type(self.algo.env_runner.module[self.pid])
+        assert isinstance(
+            restored.encoder.actor_encoder, TorchTransformerEncoder
+        )
+
+    def test_the_encoder_spec_survives(self):
+        spec = self.restored.config.rl_module_spec.rl_module_specs[self.pid]
+
+        assert _model_config_get(spec.model_config, "encoder_type", None) == (
+            self.ENCODER
+        )
+
+    def test_the_weights_are_identical(self):
+        """Compared on the Learner, which is where the authoritative weights
+        live and what the checkpoint actually persists.
+
+        Not on the EnvRunner: `get_non_inference_attributes` marks `vf` and
+        `encoder.critic_encoder` as training-only, so they are never synced out
+        and each runner's copy keeps its own random initialisation. Comparing
+        those would be asserting something that is not true by design.
+        """
+        original = _learner_module_state(self.algo, self.pid)
+        restored = _learner_module_state(self.restored, self.pid)
+
+        assert set(original) == set(restored)
+        for name, tensor in original.items():
+            assert torch.equal(
+                torch.as_tensor(tensor), torch.as_tensor(restored[name])
+            ), f"{name} differs"
+
+    def test_the_actor_side_weights_reach_the_env_runner(self):
+        """What actually acts in the environment after a restore."""
+        original = dict(self.algo.env_runner.module[self.pid].named_parameters())
+        restored = dict(self.restored.env_runner.module[self.pid].named_parameters())
+
+        acting = [n for n in original if "critic" not in n and not n.startswith("vf.")]
+        assert acting
+        for name in acting:
+            assert torch.equal(original[name], restored[name]), f"{name} differs"
+
+    def test_the_restore_guard_accepts_its_own_checkpoint(self):
+        """The structural check must not fire on an unchanged config - that
+        would make every custom-encoder run unresumable."""
+        desired, _ = build_config(
+            config_with_encoder(self.ENCODER, run_id="ckpt-roundtrip-2")
+        )
+
+        _check_restored_config(self.restored.config, desired)
