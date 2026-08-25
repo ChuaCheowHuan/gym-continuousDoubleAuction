@@ -92,8 +92,8 @@ gym_continuousDoubleAuction/
 │   ├── run_all.py                        regenerates every chart
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               474 unit tests
-    └── integration/                    36 tests that build real Algorithms
+└── test/                               623 unit tests
+    └── integration/                    59 tests that build real Algorithms
 ```
 
 `train/logger/`, `train/plotter/` and `train/storage/` — the legacy Ray-actor telemetry an earlier
@@ -497,8 +497,12 @@ uniform sampler rather than a frozen randomly-initialised network — which for 
 space with `Box` components is a materially different opponent distribution. It must be excluded
 from `policies_to_train`; `_forward_train` raises.
 
-Trainable modules use RLlib's default PPO torch module with `fcnet_hiddens=[256,256]`, `tanh`,
-and `vf_share_layers=False`.
+Trainable modules use RLlib's default PPO torch module. What that module *encodes with* is
+selected by the `encoder` group ([18](18_configuration.md) §5.4): the default `mlp` is a
+pass-through to `fcnet_hiddens=[256,256]`, `tanh`, `vf_share_layers=False`, and the alternatives
+(`transformer`, `lstm`, `moe_transformer`) route through `CDACatalog` instead. Only the encoder
+changes — the pi and vf heads stay the stock ones either way, and the frozen baselines have no
+network at all.
 
 ### Matchmaking
 

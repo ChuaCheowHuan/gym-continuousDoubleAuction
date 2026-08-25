@@ -453,6 +453,16 @@ Observations:
    `MeanStdFilter` or normalisation connector is configured. `sqrt` was the right instinct — it
    just is not enough. Divide sizes by a reference scale, and centre `log_mid` on `log(55)`.
 
+   > **Partially mitigated, for the non-default encoders only.** This finding stands unchanged for
+   > `encoder_type: mlp`, which is still the default and still has no normalisation in front of it.
+   > But every other encoder ([18](18_configuration.md) §5.4) LayerNorms immediately after its
+   > input projection, and that is deliberately not configurable. The same phenomenon was measured
+   > from the other end while building them: per-channel standard deviations of `[1.27, 8.17,
+   > 0.046, 9.52]`, and an untrained attention layer putting a mean **47%** of its mass on a single
+   > token (entropy 1.62 of a possible 3.78 over 44 tokens), falling to 9.5% and 2.76 with the norm.
+   > Two independent measurements of one problem. Fixing it at the source — in the observation, as
+   > this finding recommends — would still be better than every encoder compensating for it.
+
 2. **`grad_clip=None`** (RLlib default, **[verified]**). With the reward scale in §4 and no
    critic gradient, the policy gradient is the only path — but if the reward is normalised
    without also setting `grad_clip`, the restored critic gradient will be large. Set `grad_clip`

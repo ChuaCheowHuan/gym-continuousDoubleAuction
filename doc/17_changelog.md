@@ -1505,3 +1505,43 @@ six combinations.
 This changes what a given `aux_loss_coeff` does. Nothing has been trained with
 the old behaviour, so there is nothing to migrate; if there had been, the
 equivalent old coefficient is this one divided by the block count.
+
+### 28.12 The existing docs caught up
+
+28.1-28.11 documented the *new* subsystem thoroughly and left the docs describing
+the old world untouched. An audit found four places still describing a
+single-architecture codebase.
+
+**[10](10_testing.md) was wrong by 172 tests and three files.** It claimed "510
+tests: 474 unit + 36 integration" in both the run command and its mind map, when
+the suite is 682 (623 + 59). Worse, its stated purpose is "every test file, what
+each case pins down", and the three encoder suites were absent entirely. They now
+have a §6.4 in the same per-file, per-class style, and every count in the file
+inventory was re-verified against `--collect-only` rather than trusted.
+
+Two of those tests were worth describing rather than just counting, because they
+exist for bugs a unit test could not have reached:
+`test_the_fingerprint_survives_a_champion_snapshot` (the `add_module`
+dict-normalisation that silently disabled the restore check from the first
+champion onward) and the recurrent class (selecting `lstm` broke the *info dict*,
+not the model).
+
+**[02](02_architecture.md) still said the trainable modules use the default PPO
+module "with `fcnet_hiddens=[256,256]`, `tanh`".** True only for `mlp` now. The
+package tree had been updated in 28.1 and this sentence four hundred lines away
+had not - the usual way a doc goes stale.
+
+**[12](12_perspective_rl_researcher.md)'s "unnormalised observations into a `tanh`
+MLP" finding is now partially mitigated**, and says so. It stands unchanged for
+`mlp`, which is still the default and still has nothing in front of it; every
+other encoder LayerNorms after its input projection. The finding's own table
+(sqrt size to 47.01 against normalised price 0.40) and the measurement taken while
+building the transformer (channel stds `[1.27, 8.17, 0.046, 9.52]`; 47% of
+attention mass on one token) are two independent measurements of one problem, and
+the note says the source fix that finding asks for would still be better than
+every encoder compensating for it.
+
+A new gap is recorded in [10](10_testing.md) §8: the suite proves every encoder
+builds, trains for an iteration and checkpoints - mechanics, not merit. Nothing
+runs long enough to say whether any of them beats the MLP, which is the question
+the whole group exists to answer.

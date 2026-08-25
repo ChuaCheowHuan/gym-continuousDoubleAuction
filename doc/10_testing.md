@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (510 tests: 474 unit + 36 integration)
+# everything (682 tests: 623 unit + 59 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -46,7 +46,7 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `509 passed, 1 xfailed in 105.79s` (the xfail pins S1-1; see §6.2.2).
+**[verified]** — `681 passed, 1 xfailed in 122.32s` (the xfail pins S1-1; see §6.2.2).
 
 ### File inventory
 
@@ -77,16 +77,19 @@ Counts re-measured with `--collect-only`.
 | `test_checkpointing.py` | 50 | Checkpoint retention, restore selection, league state across a save |
 | `test_champion_trigger.py` | 19 | League statistics with modules that played no episodes; promotion, pool size, idle count and time-since-champion as metrics |
 | `test_progress_log.py` | 35 | `progress.jsonl` writer, numpy/NaN handling, `vf_explained_var` extraction, per-run directory isolation, the iteration broadcast to env runners |
-| `test_info_dict.py` | 22 | Per-step `info`: back-compat, reward terms summing exactly, live counters, spread, pass/rejection fields, JSON |
+| `test_info_dict.py` | 23 | Per-step `info`: back-compat, reward terms summing exactly, live counters, spread, pass/rejection fields, JSON, and 0-d numpy arrays — which only a *recurrent* module produces |
 | `test_type_policy.py` | 15 | Decimal money/prices, int sizes, no field changing type mid-episode, book boundary |
 | `test_activity_metrics.py` | 29 | `pass_action_fraction` / `order_rejection_fraction`: the S1-3 detector, per-episode tallies, pickling; the reward-term variance split, the maker-ratio metric and the end-of-episode account metrics |
 | `test_episode_record.py` | 32 | The Parquet per-step record: declared schema and its drift guard against `Info_Helper`, identity columns, sampling rate, byte cap, eviction of episodes that never end, and the ways it must fail without raising |
-| **unit total** | **474** | |
+| `test_encoder_registry.py` | 38 | The selectable-encoder seam: registry, `CDACatalog`, the `mlp` pass-through staying byte-for-byte what it was, `ObsLayout`, tokenisation |
+| `test_encoder_architectures.py` | 110 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
+| **unit total** | **623** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported and finite (1 xfail pins S1-1) |
 | `integration/test_distributed_observability.py` | 10 | A real `num_env_runners=1` iteration: every episode-hook metric arrives on the driver, and the episode record is written by the *worker* into the driver's absolute run-scoped path |
-| **integration total** | **36** | |
+| `integration/test_encoder_wiring.py` | 23 | Champions inherit the encoder; a restore cannot change it; the recurrent and MoE paths train end to end; a real checkpoint round-trip with a custom encoder |
+| **integration total** | **59** | |
 
 > **Stale references in older docs.** `test_orderbook.py`, `repro_orderbook_crossed_book.py`,
 > `test_OrderBook.py`, `test_cda_nsp.py` and `test_orderbook_double_delete_order.py` do not exist.
@@ -103,7 +106,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((510 tests))
+  root((682 tests))
     Simulator
       orderbook 14
         components, matching, invariants
@@ -133,15 +136,22 @@ mindmap
         retention, restore, league sidecar
       league 20
         matchmaking, promotion triggers
+      encoders 148
+        registry, catalog, mlp pass-through
+        obs layout, tokenisation
+        the contract every encoder meets
+        transformer, lstm, MoE specifics
       observability 195
         logging, progress log, info dict
         activity metrics, episode record
         NAV conservation
-    Integration 36
+    Integration 59
       league wiring, 3 topologies
       real save and restore
       real progress.jsonl, 1 xfail pinning S1-1
       real remote env runner
+      champions inherit the encoder
+      recurrent and MoE train end to end
 ```
 
 ---
@@ -549,6 +559,83 @@ machine with no GPU — and gives the same result on one with a GPU.
 
 ---
 
+### 6.4 Selectable encoders
+
+Three files, added with the `encoder` group ([18](18_configuration.md) §5.4). What makes them
+worth reading is the shape of the problem: the shipped default, `mlp`, is a **pass-through** that
+touches none of the new code, so it can pass while every line of the custom path is broken. The
+suite is built around that gap.
+
+### 6.4.1 `test_encoder_registry.py` — 38 tests
+
+The seam itself, not the architectures.
+
+| Group | Pins |
+|---|---|
+| Registry | `mlp` is selectable but not registered; an unknown `encoder_type` raises naming the alternatives; `_passthrough` is buildable yet refused from config |
+| `ObsLayout` | The `(time, level, field)` grid derives from the declared observation space; a space that is not a whole number of snapshots raises; a non-flat space raises |
+| Tokenisation | All three tokenisations match their declared shape; `time` is a pure reshape that loses nothing; a level token really is that level's four fields — which is what pins the field-major transpose the right way round; the market scalars ride on their own global token |
+| `mlp` pass-through | No `catalog_class`, a plain `DefaultModelConfig`, and a spec equal to `default_model_config()` — the compatibility guarantee for every checkpoint written before encoders existed |
+| Review regressions | Token width fits both kinds of token, so a fifth market scalar is not silently dropped; an `mlp` spec block is validated rather than ignored; `model_config_get` has one definition |
+
+**`_passthrough` is the load-bearing idea here.** It is a registered *test fixture* — an encoder
+too simple to be the cause of a failure — that `validate_encoder_type` refuses from a config file
+but `known_encoder_type` allows a test to build. It exists solely to travel the whole custom route
+(`CDAModelConfig` → `CDACatalog` → `build_encoder_config` → `ActorCriticEncoderConfig` → the stock
+pi/vf heads) so that route is covered without shipping an architecture nobody asked for.
+
+### 6.4.2 `test_encoder_architectures.py` — 6 classes, 110 tests
+
+`TestEveryEncoder` is parametrised over **every registered encoder**, so a new one is covered the
+moment it is registered rather than when someone remembers to write its tests. What it pins is the
+contract the rest of RLlib depends on:
+
+| Test | Why it exists |
+|---|---|
+| `test_produces_usable_policy_and_value_outputs` | Real spaces, finite outputs; a recurrent module emits one value per timestep, not per row |
+| `test_state_out_is_emitted_only_when_stateful` | A stateless encoder must not pretend to carry state, and a recurrent one must |
+| `test_state_round_trips` | Checkpointing and champion snapshots both depend on it |
+| `test_vf_share_layers_is_honoured` | `compute_values` reaches for `encoder.critic_encoder`; an encoder that lost it would silently recompute the shared path |
+| `test_non_inference_attributes_contract` | The inference-only optimisation strips by *name*; a hand-rolled wrapper would break it silently rather than fail |
+| `test_eval_forward_is_deterministic` | PPO's ratio compares a rollout log-prob against a recomputed one — a live dropout shows up as noise in the gradient, not as an error |
+| `test_gradients_reach_the_encoder` | An encoder detached from the loss trains as a constant and reports nothing |
+
+`sample_batch` builds `(B, T, obs)` with a `STATE_IN` tree for a stateful module and `(B, obs)`
+otherwise. Without that the harness could not cover a recurrent encoder at all — it would just
+fail on shape.
+
+The per-architecture classes then cover what is specific: `TestTransformer` (every tokenisation
+and pooling, the mandatory input LayerNorm, `d_model` divisibility, a misspelled knob raising),
+`TestPositionalIndex` (that `positional_index` and `tokenize` *agree* on what token *i* is — a
+mismatch would give every token the wrong position, silently), `TestLSTM` (statefulness, the
+stateful wrapper, `inference_only` forced off, separate actor/critic states, and that memory
+actually carries — an LSTM wired so `STATE_IN` never reached it would still train and simply have
+no memory), `TestMoETransformer` (the auxiliary loss reaching `fwd_out` and carrying gradient,
+routing fractions summing to `top_k`, stats cleared when taken, and that the term does not scale
+with `num_layers` or `vf_share_layers`), and `TestCommonSpecKeys`.
+
+### 6.4.3 `integration/test_encoder_wiring.py` — 5 classes, 23 tests
+
+The claims that only hold once a real `Algorithm` exists.
+
+| Class | Covers |
+|---|---|
+| `TestChampionsInheritTheEncoder` | `RLModuleSpec.from_module` clones the module class, catalog and model config, so a league running a custom encoder does not quietly fill with stock-MLP champions |
+| `TestRestoreCannotChangeTheEncoder` | `encoder_type` / `encoder_spec` are structural, so changing one alongside `is_restore` is a hard error — and an *unchanged* one still restores cleanly |
+| `TestRecurrentEncoderTrainsEndToEnd` | Sampling, the env steps and the learner update all survive a stateful module |
+| `TestMoEAuxLossReachesTheOptimiser` | The load-balancing term is computed three layers from the loss; every link is invisible from either end |
+| `TestCustomEncoderCheckpointRoundTrip` | A real save and `from_checkpoint`, which `get_state`/`set_state` cannot show because it never leaves the process |
+
+Two of these were written *because* the unit tests could not have caught what they found.
+`test_the_fingerprint_survives_a_champion_snapshot` pins a live bug: `add_module` normalises every
+`model_config` to a plain dict, so a `getattr`-based read reported the `mlp` default from the first
+champion onward — silently disabling the structural restore check for the rest of the run, on the
+normal path, since every real run creates champions. And the recurrent class exists because
+selecting `lstm` broke the **info dict** — `_plain` could not handle the 0-d arrays the
+time-dimension connectors produce, so every env step failed nowhere near the model.
+
+---
+
 ## 7. Continuous integration
 
 [`.github/workflows/tests.yml`](../.github/workflows/tests.yml), replacing the old `.travis.yml`
@@ -590,6 +677,7 @@ Honest accounting of what the suite does **not** cover.
 | **No information-content tests for the observation** | The suite would pass unchanged with the varying-denominator stack, the zero-collision ambiguity and the dead tape loop all present — and all three are present ([05](05_observation_space.md) §7). |
 | **`test_shared_history_multi_agent_uniformity` encodes a defect as a requirement** | See §4.2. |
 | ~~**Reproducibility is untested**~~ | **Closed.** `test_seeding.py` (11 tests) asserts two identically-seeded episodes match and two differently-seeded ones do not, across all three randomness sources — and does it while seeding the *global* NumPy stream to different values, so it cannot pass for the wrong reason. What remains untested is reproducibility of a whole multi-worker *training run*, which is a different claim. |
+| **No encoder is tested for whether it *learns*** | §6.4 proves every encoder builds, trains for an iteration, checkpoints and survives a champion snapshot — mechanics, not merit. Nothing runs long enough to say whether the transformer or the LSTM beats the MLP, which is the question the `encoder` group exists to answer. The comparison protocol is written down ([18](18_configuration.md) §5.5); no run has followed it. |
 | **Edge cases in league matchmaking** | Empty pools and zero weights are untested. |
 | **No property-based tests** | The order book is an ideal Hypothesis target: "tree volume == Σ level volumes", "no crossed book", "Σ NAV == Σ initial cash" hold for *any* order sequence. |
 | **No coverage measurement** | No `pytest-cov`, no threshold. |
