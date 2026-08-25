@@ -1217,3 +1217,291 @@ Every diagram is parsed by Mermaid 11 in CI-less form during authoring: the four
 `Box(-inf, inf)` and `(1 xfail = S1-1)` inside mind-map nodes, where a parenthesis is shape
 syntax, and a `-v "$PWD"` shell quote inside an edge label — were caught that way rather than by
 rendering wrong on GitHub.
+
+---
+
+## 28. The observation encoder became selectable
+
+The trainable modules' network was RLlib's stock MLP, and the only way to change it was to edit
+`model_handler`. The `encoder` group in [`train_config.json`](../config/train_config.json) now
+selects it, so an LSTM or a transformer becomes a config change and a new file rather than a
+rewrite of the module wiring. See [18](18_configuration.md) §5.4.
+
+### 28.1 The catalog was already the seam
+
+`DefaultPPOTorchRLModule.setup` builds three things from its catalog — the actor/critic encoder,
+the pi head, the vf head — and `Catalog._determine_components_hook` reads `latent_dims` off
+whatever `_get_encoder_config` returns. Overriding that one classmethod therefore replaces the
+network without touching PPO, the heads, or the league.
+
+Two consequences that kept this small. `PPOCatalog.__init__` wraps the result in an
+`ActorCriticEncoderConfig`, which is what supplies the `ENCODER_OUT/{ACTOR, CRITIC}` contract, the
+`.critic_encoder` attribute `compute_values` reaches for, `inference_only` handling, and the
+stateful wrapper a recurrent config gets — none of which has to be written per encoder. And
+`Catalog.__init__` converts a dataclass `model_config` with `dataclasses.asdict`, so a
+`DefaultModelConfig` subclass carrying two extra fields survives into `_model_config_dict` where
+the catalog can dispatch on it. An encoder is consequently just a `ModelConfig` and an `Encoder`;
+`DefaultPPOTorchRLModule` needs no subclass.
+
+`RLModuleSpec.from_module` already clones the module class, catalog and model config, so champion
+snapshots inherit the encoder with no change to `SelfPlayCallback`.
+
+### 28.2 `mlp` is a pass-through, and is tested as one
+
+The default resolves to the same stock `DefaultModelConfig` spec as before, with no
+`catalog_class`, so a default run and every checkpoint written by one are unaffected. That is
+pinned by a test comparing the spec against `default_model_config()`.
+
+The cost of that guarantee is that `mlp` exercises none of the new code — it can pass while the
+whole custom path is broken. `_passthrough`, a registered test fixture too simple to be the cause
+of a failure, is what travels the full route instead. It is buildable but refused from a config
+file, which is the distinction between `known_encoder_type` and `validate_encoder_type`:
+config is validated once at the `TrainConfig` boundary, and everything downstream takes the
+encoder as a parameter.
+
+### 28.3 The restore guard had to learn a second shape
+
+`encoder_type` and `encoder_spec` joined `STRUCTURAL_CONFIG_KEYS`, for the reason `n_hist` is
+there: `Algorithm.from_checkpoint` discards the freshly built config, so changing the architecture
+in the same pass as `is_restore` would otherwise be a silent no-op.
+
+Writing that check surfaced a live bug in it. The encoder is not an `AlgorithmConfig` attribute —
+it sits on each trainable module spec's `model_config` — and reading it with `getattr` worked only
+until the first champion, because `add_module` normalises every spec's `model_config` to a plain
+dict. From that point the fingerprint reported the `mlp` default whatever was actually running,
+which disabled the structural check for the rest of the run. Every real run creates champions, so
+this was the normal path, not an edge case. `_model_config_get` reads both shapes;
+`test_the_fingerprint_survives_a_champion_snapshot` pins it.
+
+### 28.4 `transformer`
+
+Self-attention over the order-book grid, and the first encoder to use the seam.
+
+The flat observation is a `(time, level, field)` grid that the MLP was
+discarding. `ObsLayout` recovers it and `tokenize` slices it three ways — `time`
+(one token per snapshot), `level` (one per book level), `both` (one per cell,
+the default). Under `level` and `both` a token is one level's four fields, and
+the two market-level scalars, which are per-snapshot rather than per-level, ride
+on an extra global token per snapshot — so `both` is `n_hist * (k_rows + 1)`
+tokens, 44 at the shipped settings.
+
+Positions are two learned embeddings, time and level, summed. A single flat
+embedding over 44 indices would have to learn the factorisation from scratch
+before it could tell "level 3 at t=0" from "level 0 at t=3". Learned rather than
+sinusoidal on both axes: the level axis is 11 long and ordered by book depth,
+where the touch is qualitatively unlike level 9 rather than merely earlier, so
+translation-invariance buys nothing.
+
+Blocks are hand-written rather than `nn.TransformerEncoderLayer`, because the
+MoE encoder is this stack with each block's feed-forward replaced and a factory
+parameter makes that substitution one line. Pre-norm, since nothing in this
+project's PPO config does learning-rate warmup and a post-norm stack without one
+fails in a way that reads as "the architecture doesn't work".
+
+**The input LayerNorm is not a knob.** Measured over 40 real steps, the four
+channels of a token have standard deviations `[1.27, 8.17, 0.046, 9.52]` —
+`sqrt(volume)` runs some 200× the ask-price channel, and all four sit inside the
+same 4-wide token. Through an untrained projection that puts a mean 47% of the
+attention mass on one token (entropy 1.62 of a possible 3.78); with the norm,
+9.5% and 2.76. Removing it does not degrade the transformer, it stops it
+attending.
+
+`dropout` ships at 0 and should stay there. PPO's ratio compares a log-prob
+recorded during rollout against one recomputed on the learner; dropout is live
+for the second and not the first, so a non-zero value feeds mask noise straight
+into the policy gradient. `test_eval_forward_is_deterministic` pins the
+consequence for every encoder.
+
+### 28.5 A parametrised architecture suite
+
+`test_encoder_architectures.py` runs the shared contract over every registered
+encoder automatically — usable pi/vf outputs, a state dict that round trips,
+`vf_share_layers` honoured both ways, the `get_non_inference_attributes`
+naming contract, a deterministic eval forward, and gradients actually reaching
+the encoder. A new encoder is covered when it is registered, not when someone
+remembers to write its tests. Two further checks close the loop between code and
+config: every selectable encoder must have an `encoder_specs` block, and that
+block's keys must be exactly what its builder accepts.
+
+### 28.6 `lstm`, and the bug it found in the info dict
+
+The structured recurrent encoder: a `TokenEmbedConfig` tokenizer embeds one
+observation's book grid per step, and an LSTM recurs over the *rollout* axis on
+top of that. The alternative — RLlib's `use_lstm=True` — feeds the raw 168-float
+observation to a stock MLP tokenizer and discards the structure exactly as `mlp`
+does, which would have made the recurrent run an ablation of the MLP rather than
+of the transformer.
+
+It needs no custom `Encoder` class. `RecurrentEncoderConfig` already takes a
+`tokenizer_config`, and `TorchLSTMEncoder` already does the fold / tokenize /
+unfold / recur sequence, `get_initial_state`, and the batch-first to
+layers-first state transposition. So the encoder is a stock
+`RecurrentEncoderConfig` holding our tokenizer — the same shape RLlib's own
+`use_lstm` path builds. Being an instance of `RecurrentEncoderConfig` is also
+load-bearing twice over, both by `isinstance`: `DefaultPPORLModule.setup` forces
+`inference_only=False` so the critic's states are collected, and
+`ActorCriticEncoderConfig.build` returns the stateful wrapper.
+
+`max_seq_len` is the one knob that could not live on the encoder config, because
+RLlib's connectors read it to cut batches into sequences before any encoder
+exists. It is declared in the `lstm` spec block and lifted onto the top-level
+model config, which is what `model_config_overrides` is for.
+
+**The env broke before the model did.** Selecting `lstm` made every env step
+fail with `'int' object is not iterable`, from `info_helper._plain` — which
+assumed a numpy array is at least 1-D, when `tolist()` on a 0-d array returns a
+bare scalar. No stateless module had ever produced a 0-d array; the
+time-dimension connectors hand back the Discrete action components that way. The
+bug was pre-existing and latent, reachable only by making a module stateful.
+
+Registering an encoder now also declares its full spec schema, so
+`encoder_settings` does the merge and the unknown-key check once instead of each
+builder repeating it, and `model_config_overrides` sees a default the config
+file omitted rather than silently inheriting an unrelated one from
+`DefaultModelConfig`.
+
+The parametrised suite learned about statefulness at the same time: it builds
+`(B, T, obs)` batches with a `STATE_IN` tree for a recurrent module, and expects
+one value per timestep rather than per row. Without that it could not have
+covered a recurrent encoder at all — it would just have failed on shape.
+
+### 28.7 `moe_transformer`
+
+The transformer with each block's feed-forward replaced by a top-k gated
+mixture of experts. Everything else — tokenisation, positional encoding,
+pooling, the mandatory input LayerNorm — is inherited, which is what
+`TransformerBlock`'s feed-forward factory was for.
+
+The interesting part is not the mixture, it is getting its auxiliary loss to the
+optimiser. `ActorCriticEncoder._forward` returns only `ENCODER_OUT` and discards
+every other key its inner encoders produced, so an encoder cannot simply return
+a second term. The chain is: `MoEFeedForward` returns `(output, stats)`, the
+block passes the tuple through, the encoder stages it, `CDAPPOTorchRLModule`
+moves it into `fwd_out` — the one channel from a forward pass to the loss — and
+`CDAPPOTorchLearner` adds `aux_loss_coeff * aux` to PPO's total.
+
+The staging is taken, not read: `take_moe_stats` clears as it returns. A stale
+auxiliary loss silently added to a later batch's gradient would be invisible;
+getting `None` because a link broke is not.
+
+Both the module and the learner are wired unconditionally rather than only for
+this encoder. They are exactly their base classes when no stats exist, which is
+every other encoder, so this is one code path instead of a branch.
+
+Per-expert routing fractions are logged as `moe_max_expert_share` and
+`moe_min_expert_share`. This is not decoration: a collapsed mixture and a
+healthy one produce identical losses and identical throughput, and differ only
+in those numbers. Given a 168-float observation and a small league, the honest
+prior is that the experts specialise weakly — the metric is what makes that
+finding falsifiable rather than assumed either way.
+
+One test-harness bug surfaced here and is worth recording, because it was the
+kind that makes a test pass while testing nothing: both suites' `build_module`
+helpers overwrote `module_class` with the stock `DefaultPPOTorchRLModule`, which
+had been correct when every spec left it `None`. Once custom encoders set their
+own it silently swapped `CDAPPOTorchRLModule` back out, taking the auxiliary
+loss with it. They now only fill it in when the spec left it unset.
+
+### 28.8 Making the comparison mean something
+
+Three additions aimed at the failure where a run compares architectures and
+actually measures something else.
+
+**Per-encoder `lr` and `vf_share_layers`.** Both `ppo` defaults were chosen for
+the MLP. `lr = 5e-05` was tuned for a 2x256 tanh net, and holding an attention
+stack to it measures the learning rate; `vf_share_layers: false` costs an MLP
+little and doubles a transformer. Either may now be set in any encoder's spec
+block, overriding the group for that encoder only. They are accepted everywhere
+and consumed centrally, so no encoder has to know about them, and absent means
+inherit — a null would be indistinguishable from a value nobody chose.
+
+**Parameter counts at startup.** Each trainable module logs its own. At the
+shipped settings the alternatives run 3-6.5x the MLP (225k, 672k, 799k, 1.46M),
+which is the difference between "this architecture is better" and "this
+architecture had six times the parameters". RLlib already reports sampling
+throughput per iteration, which is the other half.
+
+**A comparison protocol**, written down in [18](18_configuration.md) §5.5: fix
+the seed and use several, one run per architecture rather than a resume, re-tune
+the learning rate or say you didn't, and read the parameter counts.
+
+### 28.9 Checkpoint round-trip for a custom encoder
+
+`Algorithm.from_checkpoint` rebuilds from the config stored in the checkpoint,
+so a custom encoder's module class, catalog class and spec all have to survive
+serialisation and re-import. The unit suite's `get_state` / `set_state` cannot
+show that — it never leaves the process and both ends were built by the same
+code path — so there is now an integration test that saves and restores for
+real.
+
+Writing it surfaced a wrong assumption worth recording. The first version
+compared every parameter on the EnvRunner and failed on
+`encoder.critic_encoder`. That is correct behaviour, not a bug:
+`get_non_inference_attributes` marks `vf` and `encoder.critic_encoder` as
+training-only, so they are never synced out and each runner's copy keeps its own
+random initialisation. The authoritative weights are the Learner's, which is
+what the checkpoint persists and what the test now compares; the EnvRunner is
+checked for the actor-side tensors only, which is what actually acts in the
+environment.
+
+### 28.10 Review pass
+
+Three findings from a review of the five commits above, all of the same shape:
+something silently doing the wrong thing where this codebase's rule is that a
+bad configuration raises.
+
+**A token is now `max(book_rows, extra_dim)` channels wide**, not `book_rows`.
+The global token carrying the market-level scalars was right-padded to
+`book_rows` and truncated to fit, so a scalar past the fourth was dropped with
+no error. Unreachable at the shipped layout — 4 book fields against 2 scalars —
+but `extra_dim` is a `tunable_constants.json` knob whose own note anticipates
+more market features being added. The failure it would have produced is the
+nastiest kind for this particular change: the dropped feature would still reach
+`mlp`, which does not tokenise, so the architectures would have been compared on
+different observations with nothing anywhere to say so.
+
+**An `mlp` block in `encoder_specs` is validated rather than ignored.** `mlp`
+returned from `build_trainable_module_spec` before any spec validation, so a
+block written for it was accepted and had no effect. Validation now happens
+before the branch, which also means `mlp` honours the two common keys (`lr`,
+`vf_share_layers`) like every other encoder instead of dropping them.
+
+**`model_config_get` has one definition.** Reading a spec's `model_config` with
+`getattr` is wrong once `add_module` has normalised it to a dict — that was the
+bug in 28.3 — and `policy_handler`'s log line still had the same pattern. It was
+not reachable there (the spec is a dataclass at that point, and it is only a log
+line), but the helper now lives in the encoders package with both callers
+sharing it, so the pattern cannot be reintroduced by copying a call site.
+
+Also worth recording, since 28.2 claimed more than it should have: the `mlp`
+*module* is byte-for-byte what it was, but 28.7 set `learner_class` for every
+run, `mlp` included. `CDAPPOTorchLearner` is exactly `PPOTorchLearner` when no
+auxiliary loss exists, so the loss is unchanged — but "bit-identical" was true
+of the module spec, not of every field of the algorithm config.
+
+### 28.11 The MoE auxiliary loss is averaged, not summed
+
+`aux_loss_coeff` did not mean a fixed thing. The load-balancing term was summed
+over every MoE block, and both the actor's and the critic's blocks route
+independently, so at `num_layers: 2` with the shipped `vf_share_layers: false`
+four feed-forwards contributed: the aux loss read ~8.6 where a single block's
+floor is `top_k` = 2. Flipping `vf_share_layers` halved it to ~4.2; doubling
+`num_layers` would have doubled it again.
+
+Nothing about that is incorrect - summing per layer is what Switch Transformer
+does - but it makes the coefficient depth-dependent. Two consequences, both
+silent: a coefficient tuned at one depth applies different balancing pressure at
+another, and comparing two MoE configs of different depths confounds depth with
+how hard the gate is being pushed. That second one is the same confound the
+per-encoder `lr` override was added to remove in 28.8, so it had no business
+surviving in the encoder that override was written alongside.
+
+`_collect` now averages. The floor is `top_k` in every configuration, and the
+measured value sits at ~2.1 across `num_layers` 1, 2 and 4 with
+`vf_share_layers` either way - pinned by
+`test_aux_loss_does_not_scale_with_the_stack`, which is parametrised over all
+six combinations.
+
+This changes what a given `aux_loss_coeff` does. Nothing has been trained with
+the old behaviour, so there is nothing to migrate; if there had been, the
+equivalent old coefficient is this one divided by the block count.

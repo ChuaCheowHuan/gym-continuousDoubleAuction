@@ -35,9 +35,13 @@ from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 
 from gym_continuousDoubleAuction.config_loader import constants
 from gym_continuousDoubleAuction.logging_setup import get_logger
+from gym_continuousDoubleAuction.train.model.encoders import (
+    MLP_ENCODER_TYPE,
+    model_config_get,
+)
 from gym_continuousDoubleAuction.train.model.model_handler import (
     RandomRLModule,
-    default_model_config,
+    build_trainable_module_spec,
 )
 
 # Module ID conventions, from config/tunable_constants.json ->
@@ -74,6 +78,8 @@ def build_multi_rl_module_spec(
     fcnet_hiddens=None,
     fcnet_activation="tanh",
     vf_share_layers=False,
+    encoder_type=None,
+    encoder_specs=None,
 ):
     """Build the MultiRLModuleSpec for a league-based self-play run.
 
@@ -82,9 +88,13 @@ def build_multi_rl_module_spec(
         act_space: Single-agent action space.
         num_agents: Total number of agents, n.
         num_trained_agents: Number of trainable PPO modules, k.
-        fcnet_hiddens: Hidden sizes for the trainable modules.
-        fcnet_activation: Activation for the hidden layers.
+        fcnet_hiddens: Hidden sizes for the trainable modules. `mlp` only.
+        fcnet_activation: Activation for the hidden layers. `mlp` only.
         vf_share_layers: Whether policy and value share a trunk.
+        encoder_type: Which observation encoder the trainable modules use.
+            None reads the `encoder` group of `config/train_config.json`.
+        encoder_specs: Per-encoder hyperparameter blocks. None reads the same
+            group.
 
     Returns:
         MultiRLModuleSpec covering policy_0..policy_(n-1).
@@ -100,18 +110,19 @@ def build_multi_rl_module_spec(
             f"num_trained_agents={num_trained_agents}, num_agents={num_agents}"
         )
 
-    model_config = default_model_config(
-        fcnet_hiddens=fcnet_hiddens,
-        fcnet_activation=fcnet_activation,
-        vf_share_layers=vf_share_layers,
-    )
-
     specs = {}
     for pid in trainable_policy_ids(num_trained_agents):
-        specs[pid] = RLModuleSpec(
-            observation_space=obs_space,
-            action_space=act_space,
-            model_config=model_config,
+        # Every trainable module gets its own spec object rather than a shared
+        # one: `add_module` mutates a spec's `inference_only` when snapshotting
+        # a champion, and modules must not alias each other's config.
+        specs[pid] = build_trainable_module_spec(
+            obs_space,
+            act_space,
+            encoder_type=encoder_type,
+            encoder_specs=encoder_specs,
+            fcnet_hiddens=fcnet_hiddens,
+            fcnet_activation=fcnet_activation,
+            vf_share_layers=vf_share_layers,
         )
     for pid in baseline_policy_ids(num_agents, num_trained_agents):
         specs[pid] = RLModuleSpec(
@@ -131,6 +142,8 @@ def create_multi_agent_config(
     fcnet_hiddens=None,
     fcnet_activation="tanh",
     vf_share_layers=False,
+    encoder_type=None,
+    encoder_specs=None,
 ):
     """Everything `AlgorithmConfig.multi_agent(...)` / `.rl_module(...)` needs.
 
@@ -151,13 +164,21 @@ def create_multi_agent_config(
         fcnet_hiddens,
         fcnet_activation=fcnet_activation,
         vf_share_layers=vf_share_layers,
+        encoder_type=encoder_type,
+        encoder_specs=encoder_specs,
     )
     policies = set(spec.rl_module_specs.keys())
     policies_to_train = trainable_policy_ids(num_trained_agents)
 
+    trainable_spec = spec.rl_module_specs[policies_to_train[0]]
     logger.info(
-        "modules: %s | trainable: %s | frozen random baselines: %s",
+        "modules: %s | trainable: %s (encoder %s) | frozen random baselines: %s",
         sorted(policies), policies_to_train,
+        # Not `getattr`: a spec's model_config is a dataclass when freshly
+        # built but a plain dict once `add_module` has normalised it, and
+        # reading the wrong one silently reports "mlp" for every encoder.
+        model_config_get(trainable_spec.model_config, "encoder_type",
+                         MLP_ENCODER_TYPE),
         baseline_policy_ids(num_agents, num_trained_agents),
     )
     return policies, policies_to_train, spec

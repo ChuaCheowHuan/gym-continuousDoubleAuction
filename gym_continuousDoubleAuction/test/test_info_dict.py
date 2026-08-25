@@ -307,6 +307,23 @@ class TestSerialisation:
         assert _plain(None) is None
         assert _plain(3) == 3
 
+    def test_plain_handles_zero_dimensional_arrays(self):
+        """Regression: `tolist()` on a 0-d array returns a scalar, not a list,
+        so iterating it raised `'int' object is not iterable`.
+
+        No stateless module ever produced one. A *recurrent* one does - RLlib's
+        time-dimension connectors hand back the Discrete action components 0-d -
+        so every env step failed the moment an LSTM encoder was selected, in the
+        info dict rather than anywhere near the model.
+        """
+        import numpy as np
+
+        assert _plain(np.array(3, dtype=np.int32)) == 3
+        assert _plain(np.array(1.5, dtype=np.float32)) == pytest.approx(1.5)
+
+        action = {"category": np.array(2), "size_mean": np.array([0.5], np.float32)}
+        json.dumps(_plain(action))
+
 
 class TestActivityFields:
     """doc/11 2.2: the two things a return series cannot distinguish."""

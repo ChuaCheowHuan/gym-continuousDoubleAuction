@@ -52,6 +52,75 @@
     "minibatch_size": null
   },
 
+  "encoder": {
+    "_source": "gym_continuousDoubleAuction/train/model/encoders/ (ENCODER_REGISTRY)",
+
+    "_note": "Selects the network the *trainable* PPO modules encode observations with. The frozen RandomRLModule baselines have no network and ignore this entirely. `mlp` is the default and is a pass-through: it resolves to the stock RLlib DefaultModelConfig built from the `ppo` group's fcnet_hiddens / fcnet_activation / vf_share_layers, touching none of the custom encoder machinery, so a default run and every checkpoint written by one are unaffected by this group existing. Any other value routes the trainable modules through CDACatalog and a custom encoder. An unregistered name raises at config-build time, naming the ones that are registered.",
+
+    "_note_structural": "encoder_type and everything in encoder_specs are STRUCTURAL_CONFIG_KEYS: the restored weights depend on them, so changing one in the same pass as is_restore is a hard error rather than a silent no-op. Comparing architectures means separate runs, not a resume.",
+
+    "_note_specs": "Per-architecture hyperparameters, keyed by encoder_type. `mlp` has no block: its shape comes from the `ppo` group, which is where it has always lived and where STRUCTURAL_CONFIG_KEYS already guards it. A block is added here alongside each new encoder, so an entry existing is the signal that its encoder is implemented.",
+
+    "_note_common_keys": "Two further keys are accepted in EVERY spec block and handled centrally: `lr` and `vf_share_layers`. Both defaults in the `ppo` group were chosen for the 2x256 tanh MLP - holding an attention stack to that learning rate measures the learning rate rather than the architecture, and vf_share_layers false doubles a transformer where it barely costs an MLP anything. Omit them to inherit the `ppo` group; set either to override it for that encoder only. They are not listed in the blocks below because absent means inherit, and a null would be indistinguishable from a value nobody chose.",
+
+    "encoder_type": "mlp",
+
+    "encoder_specs": {
+      "transformer": {
+        "_note": "tokenization decides what a token is: 'time' = one per snapshot (n_hist of them - too few to attend over at n_hist 4, kept for ablation), 'level' = one per book level from the newest snapshot, 'both' = one per (snapshot, level) cell. Under 'level' and 'both' a token is that level's [bid_price, bid_size, ask_price, ask_size] and the market-level scalars ride on an extra global token per snapshot, so the sequence is n_hist * (k_rows + 1) long, not n_hist * k_rows.",
+
+        "_note_dropout": "Leave at 0 for PPO. The ratio exp(logp_new - logp_old) compares a log-prob recorded during rollout with one recomputed on the learner; dropout is active for the second and not the first, so a non-zero value injects mask noise directly into the policy-gradient ratio. The knob exists because it is standard on this component, not because it is advisable here.",
+
+        "_note_cost": "vf_share_layers in the ppo group is false, which builds two independent trunks - so a transformer here costs twice these numbers. That default is deliberate (a shared value trunk destabilises against non-stationary league opponents), so it is a real trade-off rather than a free saving.",
+
+        "tokenization": "both",
+        "d_model": 128,
+        "num_heads": 4,
+        "num_layers": 2,
+        "ff_dim": 256,
+        "dropout": 0.0,
+        "pool": "attention"
+      },
+
+      "lstm": {
+        "_note": "The structured LSTM, not RLlib's use_lstm shortcut. tokenization / d_model / pool / num_heads configure the per-step tokenizer, which embeds one observation's book grid; hidden_dim / num_layers configure the LSTM that then recurs over the ROLLOUT axis on top of those embeddings. Two different time axes: the tokenizer collapses n_hist, which is a window inside one observation, while the LSTM's memory runs across env steps.",
+
+        "_note_n_hist": "Those two axes overlap. With n_hist 4 the LSTM re-reads the last four snapshots at every step, so its memory is partly redundant with the observation. Setting n_hist to 1 for a recurrent run removes that, at the cost of invalidating checkpoints - n_hist is structural.",
+
+        "_note_max_seq_len": "Applied to the top-level model config, not to the encoder: RLlib's connectors read it to cut a batch into training sequences before any encoder is called. It is declared in this block because it belongs to this encoder conceptually, and build_trainable_module_spec lifts it across.",
+
+        "tokenization": "both",
+        "d_model": 128,
+        "pool": "mean",
+        "num_heads": 4,
+        "hidden_dim": 256,
+        "num_layers": 1,
+        "max_seq_len": 20
+      },
+
+      "moe_transformer": {
+        "_note": "The transformer above with each block's dense feed-forward replaced by a top-k gated mixture of experts. Every transformer key means the same thing here, except that ff_dim is now each EXPERT's width - so the feed-forward parameter count is roughly num_experts times what the same ff_dim buys in `transformer`, while the per-token compute is top_k times it.",
+
+        "_note_aux": "aux_loss_coeff weights the Switch-Transformer load-balancing term, which is the only thing pushing the gate to use more than one expert - nothing in the policy gradient rewards it for doing so, and collapsing onto a single expert is a perfectly good local optimum that yields a dense feed-forward you paid num_experts times over for. Read by CDAPPOTorchLearner, not by the encoder.",
+
+        "_note_aux_scale": "The term is AVERAGED over MoE blocks, not summed, so this coefficient means the same thing whatever the stack looks like. Summed - which is what Switch Transformer does - it would scale with num_layers and double when vf_share_layers is false, because the critic's blocks route separately and count too: a coefficient tuned at num_layers 2 would apply twice the pressure at 4, silently, and comparing two MoE configs of different depths would confound depth with how hard the gate was being pushed. Averaged, the floor is top_k (2 at these settings) at perfectly uniform routing, so an untrained gate reads just above 2.",
+
+        "_note_expect_collapse": "Set expectations. This env's observation is 168 floats and the league is small, so MoE's premise - capacity you cannot afford densely - may not apply. Watch moe_max_expert_share and moe_min_expert_share in the learner metrics: a healthy mixture holds both near 1/num_experts, and a collapsed one is indistinguishable from a healthy one by loss or throughput alone.",
+
+        "tokenization": "both",
+        "d_model": 128,
+        "num_heads": 4,
+        "num_layers": 2,
+        "ff_dim": 256,
+        "dropout": 0.0,
+        "pool": "attention",
+        "num_experts": 4,
+        "top_k": 2,
+        "aux_loss_coeff": 0.01
+      }
+    }
+  },
+
   "league_self_play": {
     "_note": "nav_tolerance is the absolute cash tolerance for the episode-end NAV conservation check. The ledger is Decimal end to end and the check now parses info['NAV'] back with Decimal rather than float, so conservation is exact by construction and the expected error is 0, not merely small. The tolerance is therefore headroom for a change that legitimately removes cash from the system, such as fees - it is not absorbing arithmetic noise. Widen it for such a change; it can be set to 0 for a run that wants the invariant enforced exactly. strict_nav_check true stops the run on a violation, because a broken conservation invariant means the ledger is corrupt and everything trained after it is meaningless; false downgrades it to an ERROR log plus the nav_conservation_error metric, for a run that would rather keep going and be inspected afterwards. The stop is decided on the driver at the end of the iteration, not raised inside the episode hook: that hook runs on the env runner, where RLlib's fault tolerance swallows the exception and restarts the worker instead of ending the run.",
 

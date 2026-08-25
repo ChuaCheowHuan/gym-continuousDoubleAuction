@@ -337,6 +337,8 @@ threaded to `default_model_config` via `create_multi_agent_config`. Called witho
 `vf_share_layers` is `False` deliberately: the learners train against non-stationary league
 opponents, where sharing a trunk between policy and value tends to destabilise the value estimate.
 
+Which *kind* of network sits underneath that is the separate `encoder` group — see §5.4.
+
 `SelfPlayCallback` does the same with the `league_self_play` group and the two agent counts. That
 group also carries the two knobs on the episode-end NAV conservation check: `nav_tolerance`, the
 absolute cash tolerance, and `strict_nav_check` (`--no-strict-nav-check`), which decides whether a
@@ -500,13 +502,80 @@ and said nothing.
 
 It is now loud in both directions:
 
-- **A structural change is fatal.** `num_agents`, `n_hist` or the policy set changing means the
-  restored weights do not fit the requested problem, so the restore raises rather than training
-  something other than what was asked for. Revert the key, or start a fresh run.
+- **A structural change is fatal.** `num_agents`, `n_hist`, `encoder_type`, `encoder_spec` or the
+  policy set changing means the restored weights do not fit the requested problem, so the restore
+  raises rather than training something other than what was asked for. Revert the key, or start a
+  fresh run.
 - **Everything else warns.** `lr`, reward coefficients, batch sizes and runner counts print as
   "will NOT take effect" with both values, and the run continues on the checkpoint's config.
 
 To train with new values, start a fresh run — `is_restore` false, or a new `log_base_dir`.
+
+---
+
+## 5.4. The `encoder` group
+
+Selects the network the **trainable** modules encode observations with. The frozen
+`RandomRLModule` baselines have no network and ignore it.
+
+| Key | Meaning |
+|---|---|
+| `encoder_type` | Which encoder. `mlp` (default) plus whatever is registered in [`train/model/encoders/`](../gym_continuousDoubleAuction/train/model/encoders/). |
+| `encoder_specs` | Per-encoder hyperparameter blocks, keyed by encoder type. A block existing is the signal that its encoder is implemented. |
+
+Available encoders:
+
+| `encoder_type` | Network |
+|---|---|
+| `mlp` | RLlib's stock MLP over the flat observation. The default and the pass-through. |
+| `transformer` | Pre-norm self-attention over the order-book grid, with a learned two-axis positional encoding and attention pooling. |
+| `lstm` | A per-step embedding of the book grid, then an LSTM over the rollout axis. Stateful. |
+| `moe_transformer` | The transformer with each block's feed-forward replaced by a top-k gated mixture of experts. |
+
+#### What a token is
+
+The observation is a flat `n_hist * snapshot_dim` vector, but it is really a
+chronological stack of book snapshots, each a `book_rows x k_rows` grid plus two
+market-level scalars. `mlp` discards that; every other encoder recovers it through
+`ObsLayout`, and the `tokenization` key decides what it slices into:
+
+| `tokenization` | Tokens | Attention relates |
+|---|---|---|
+| `time` | `n_hist` | times only. At `n_hist` 4 that is four tokens — kept for ablation, not expected to be useful. |
+| `level` | `k_rows + 1` | book levels, newest snapshot only. No history. |
+| `both` (default) | `n_hist * (k_rows + 1)` | both axes. |
+
+Under `level` and `both` a token is one level's `[bid_price, bid_size, ask_price,
+ask_size]`, and the two market-level scalars have no per-level home — they ride on
+one extra **global token** per snapshot. That is where the `+ 1` comes from, so
+`both` is 44 tokens at the shipped settings, not 40.
+
+A token is `max(book_rows, extra_dim)` channels wide — wide enough for either kind,
+with the narrower one right-padded with zeros. At the shipped layout those are 4 and
+2, so the width is 4 and only the global token is padded. The `max` matters if you
+add market features: sizing to `book_rows` would silently drop every scalar past the
+fourth, and only for the encoders that tokenise, so `mlp` would go on seeing a
+feature the transformer and LSTM no longer received.
+
+Every non-`mlp` encoder LayerNorms immediately after its input projection, and that
+is deliberately not configurable. Measured on real steps, the four channels in a
+token have standard deviations of `[1.27, 8.17, 0.046, 9.52]` — `sqrt(volume)` runs
+~200× the ask-price channel. Unnormalised, attention puts a mean 47% of its mass on
+a single token; with the norm, 9.5%. It does not degrade gracefully.
+
+`mlp` is a **pass-through**: it resolves to the stock RLlib `DefaultModelConfig` built from the
+`ppo` group's `fcnet_*` keys and touches none of the encoder machinery, so a default run — and
+every checkpoint written by one — is unaffected by this group existing. Any other value routes the
+trainable modules through `CDACatalog`, which replaces only the encoder; the pi and vf heads stay
+the stock ones, sized off the encoder's `latent_dims`.
+
+An unregistered `encoder_type` raises when the `TrainConfig` is built, naming the ones that are
+available. Names beginning with `_` are test fixtures: buildable, so a test can exercise the custom
+path, but refused from a config file.
+
+Both keys are **structural** (§5.3). Changing either with `is_restore` set is a hard error, for the
+same reason `n_hist` is: the restored weights are that architecture's weights. Comparing
+architectures means separate runs, not a resume.
 
 ---
 
@@ -637,3 +706,127 @@ CDA_PLATFORM=docker CDA_USE_GPU=false python -m gym_continuousDoubleAuction.trai
 Note the asymmetry, which is intentional: `CDA_USE_GPU=true` does **not** force the gpu set onto a
 machine without CUDA. It falls back to the cpu set and says so, because the alternative is RLlib
 placing a learner on a device that is not there.
+
+#### The `lstm` encoder and its two time axes
+
+`lstm` is the *structured* recurrent encoder, not RLlib's `use_lstm` shortcut. The
+shortcut feeds the raw 168-float observation to a stock MLP tokenizer, discarding
+the book structure exactly as `mlp` does. This one's tokenizer reads the grid.
+
+Two different time axes are involved and they are easy to confuse:
+
+- **`n_hist`** is a window *inside a single observation*, already stacked by the env.
+  The tokenizer collapses it.
+- **The rollout axis** is consecutive env steps. That is what the LSTM's memory runs
+  along, and what `max_seq_len` cuts into training sequences.
+
+They overlap: at `n_hist` 4 the LSTM re-reads the last four snapshots every step, so
+its memory is partly redundant with the observation itself. Setting `n_hist` to 1 for
+a recurrent run removes the redundancy — at the cost of invalidating checkpoints,
+since `n_hist` is structural.
+
+`max_seq_len` is declared in the `lstm` spec block but applied to the **top-level**
+model config, because RLlib's connectors read it before any encoder is called.
+`build_trainable_module_spec` lifts it across.
+
+Selecting `lstm` makes the trainable modules stateful, which changes more than the
+network: RLlib forces `inference_only=False` so the critic's states are collected,
+wraps the encoder in `TorchStatefulActorCriticEncoder`, and adds a time dimension to
+every batch. The frozen `RandomRLModule` baselines stay stateless throughout, which
+is fine — statefulness is per-module.
+
+#### `moe_transformer` and its second loss term
+
+Identical to `transformer` except that each block's dense feed-forward becomes a
+top-k gated mixture. `ff_dim` is now each **expert's** width, so the feed-forward
+parameter count is roughly `num_experts ×` what the same `ff_dim` buys in
+`transformer`, while per-token compute is `top_k ×` it.
+
+An MoE needs a second loss term. Nothing in the policy gradient rewards a gate for
+using more than one expert — collapsing onto one is a perfectly good local optimum
+that leaves you with a dense feed-forward you paid `num_experts` times over for. The
+Switch-Transformer load-balancing term, weighted by `aux_loss_coeff`, is the only
+pressure against that. Getting it from the encoder to the optimiser takes a chain,
+because no link can see both ends:
+
+```
+MoEFeedForward.forward   returns (output, stats)
+TransformerBlock.forward passes the tuple through
+the encoder              stages per-block stats
+CDAPPOTorchRLModule      moves them into fwd_out
+CDAPPOTorchLearner       adds aux_loss_coeff * aux to PPO's total
+```
+
+The hop through the module is unavoidable: `ActorCriticEncoder._forward` keeps only
+`ENCODER_OUT` and discards anything else an encoder returns. Both the module and the
+learner are wired unconditionally and are inert for every other encoder, so there is
+one code path rather than two.
+
+The term is **averaged over MoE blocks, not summed**, so `aux_loss_coeff` means the
+same thing whatever the stack looks like. Summed — which is what Switch Transformer
+does — it would scale with `num_layers` and *double* when `vf_share_layers` is false,
+because the critic's blocks route separately and count too. A coefficient tuned at
+`num_layers: 2` would then apply twice the pressure at 4, silently, and comparing two
+MoE configs of different depths would confound depth with how hard the gate was being
+pushed — the same confound the per-encoder `lr` override exists to remove. Averaged,
+the floor is `top_k` at perfectly uniform routing, so an untrained gate reads just
+above 2 at the shipped settings regardless of depth.
+
+**Expect collapse, and watch for it.** This env's observation is 168 floats and the
+league is small, so MoE's premise — capacity you cannot afford densely — may simply
+not apply. A collapsed mixture and a healthy one have identical losses and identical
+throughput; the only difference is `moe_max_expert_share` and `moe_min_expert_share`
+in the learner metrics, which a healthy mixture holds near `top_k / num_experts`.
+
+#### Two keys every encoder accepts
+
+`lr` and `vf_share_layers` may appear in **any** `encoder_specs` block and are handled
+centrally rather than by the encoder. Omit them to inherit the `ppo` group; set either
+to override it for that encoder only.
+
+They exist because both `ppo` defaults were chosen for the MLP. `lr = 5e-05` was tuned
+for a 2×256 tanh net, and holding an attention stack to it measures the learning rate
+rather than the architecture. `vf_share_layers: false` costs an MLP little and doubles
+a transformer — a real trade-off, since the `false` is itself deliberate (a shared
+value trunk destabilises against non-stationary league opponents).
+
+Neither is listed in the shipped blocks: absent means inherit, and a `null` would be
+indistinguishable from a value nobody chose.
+
+---
+
+## 5.5. Comparing architectures
+
+The `encoder` group exists to make architectures comparable, and a comparison is easy
+to run in a way that measures the wrong thing. Four points, in rough order of how much
+damage getting them wrong does:
+
+1. **Fix the seed, and use more than one.** `run.seed` ships as `null`, so each run
+   draws its own. Single-seed RL comparisons are mostly noise, and self-play league
+   dynamics are noisier than most — the champion pool amplifies an early divergence for
+   the rest of the run. Pin `seed` and run at least three per architecture.
+
+2. **Separate runs, never a resume.** `encoder_type` and `encoder_spec` are structural
+   (§5.3), so switching them with `is_restore` set is a hard error by design. Give each
+   architecture its own `run_id`.
+
+3. **Re-tune, or say you didn't.** See the two common keys above. Comparing at a single
+   learning rate is a legitimate experiment, but it answers "which architecture is best
+   at `lr=5e-05`", not "which architecture is best".
+
+4. **Read the parameter counts.** Each trainable module logs its own at startup:
+
+   ```
+   policy_0: encoder mlp             | 225,051 parameters
+   policy_0: encoder transformer     | 671,899 parameters
+   policy_0: encoder lstm            | 799,259 parameters
+   policy_0: encoder moe_transformer | 1,464,987 parameters
+   ```
+
+   At the shipped settings the alternatives are 3–6.5× the MLP. A win at 6.5× the
+   parameters and a fraction of the throughput is a different claim from a win at
+   parity, and the per-iteration line reports `env steps sampled` for the other half.
+
+For `moe_transformer` also watch `moe_max_expert_share` and `moe_min_expert_share` in
+the learner metrics — a collapsed mixture is indistinguishable from a healthy one by
+loss or throughput alone.

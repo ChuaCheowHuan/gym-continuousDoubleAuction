@@ -26,7 +26,7 @@ import shutil
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import ray
 import torch
@@ -52,6 +52,13 @@ from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback im
     NAV_VIOLATIONS_METRIC,
     SelfPlayCallback,
 )
+from gym_continuousDoubleAuction.train.model.encoders import (
+    MLP_ENCODER_TYPE,
+    model_config_get,
+    training_overrides,
+    validate_encoder_type,
+)
+from gym_continuousDoubleAuction.train.model.moe_learner import CDAPPOTorchLearner
 from gym_continuousDoubleAuction.train.policy.policy_handler import (
     CHAMPION_PREFIX,
     create_multi_agent_config,
@@ -203,6 +210,14 @@ class TrainConfig:
     # run, so this is exposed rather than left implicit.
     minibatch_size: Optional[int] = _default("minibatch_size")
 
+    # --- Encoder -------------------------------------------------------------
+    # Which network the trainable modules encode observations with. "mlp" is a
+    # pass-through to the stock RLlib path built from fcnet_* above; any other
+    # value routes them through CDACatalog. See train/model/encoders/.
+    # Both are STRUCTURAL_CONFIG_KEYS - a restore cannot change them.
+    encoder_type: str = _default("encoder_type")
+    encoder_specs: Dict[str, Any] = _default("encoder_specs")
+
     # --- League self-play ----------------------------------------------------
     std_dev_multiplier: float = _default("std_dev_multiplier")
     max_champions: int = _default("max_champions")
@@ -286,9 +301,17 @@ class TrainConfig:
         runtime profiles and the tests both use - would silently re-roll it.
         Resolving in the constructor makes the name a property of the config
         object, so a replace()d copy keeps writing where the original did.
+
+        Also the boundary at which `encoder_type` stops being a config value
+        and becomes an argument. Everything downstream takes it as a parameter
+        and so only checks that it names something buildable; the config rules
+        - no test fixtures - are enforced once, here, where the value arrives
+        from a file.
         """
         if not self.run_id:
             self.run_id = generate_run_id()
+
+        validate_encoder_type(self.encoder_type)
 
     @classmethod
     def from_json(cls, path: str) -> "TrainConfig":
@@ -471,6 +494,8 @@ def build_config(cfg: TrainConfig):
         fcnet_hiddens=cfg.fcnet_hiddens,
         fcnet_activation=cfg.fcnet_activation,
         vf_share_layers=cfg.vf_share_layers,
+        encoder_type=cfg.encoder_type,
+        encoder_specs=cfg.encoder_specs,
     )
 
     callback_instance = SelfPlayCallback(
@@ -519,7 +544,18 @@ def build_config(cfg: TrainConfig):
         .training(
             train_batch_size_per_learner=cfg.train_batch_size,
             num_epochs=cfg.num_epochs,
-            lr=cfg.lr,
+            # `lr` last, so an encoder that sets one in its spec block wins over
+            # the `ppo` group's. The group's value was tuned for the 2x256 tanh
+            # MLP; holding an attention stack to it measures the learning rate
+            # rather than the architecture.
+            **{"lr": cfg.lr, **training_overrides(
+                cfg.encoder_type, cfg.encoder_specs.get(cfg.encoder_type, {})
+            )},
+            # PPO's loss plus the MoE load-balancing term. Identical to the
+            # stock learner for every encoder that produces no such term, which
+            # is all of them but moe_transformer - so it is wired
+            # unconditionally rather than branching on the encoder.
+            learner_class=CDAPPOTorchLearner,
             **({"minibatch_size": cfg.minibatch_size}
                if cfg.minibatch_size is not None else {}),
         )
@@ -806,11 +842,18 @@ def _reconcile_league_state(algo, path: str) -> None:
 # make the divergence loud, and fatal where it would invalidate the weights.
 
 #: Keys whose value the restored weights depend on. A change here is a hard error.
+#:
+#: `encoder_type` and `encoder_spec` are here for the same reason `n_hist` is:
+#: they decide the shape of the trainable modules' network, so a checkpoint's
+#: weights simply do not fit a config that changed one. Comparing architectures
+#: means separate runs, not editing the encoder group with is_restore set.
 STRUCTURAL_CONFIG_KEYS = (
     "policies",
     "policies_to_train",
     "env_config.num_of_agents",
     "env_config.n_hist",
+    "encoder_type",
+    "encoder_spec",
 )
 
 
@@ -848,7 +891,55 @@ def _config_fingerprint(config) -> dict:
     for key, value in (getattr(config, "env_config", None) or {}).items():
         fingerprint[f"env_config.{key}"] = value
 
+    fingerprint.update(_encoder_fingerprint(config))
+
     return fingerprint
+
+
+def _encoder_fingerprint(config) -> dict:
+    """The trainable modules' encoder identity, as comparable scalars.
+
+    The encoder is not an `AlgorithmConfig` attribute - it lives on the
+    `model_config` of each trainable module's spec - so it has to be dug out
+    before `_check_restored_config` can compare it. Read from the first
+    trainable module: `build_multi_rl_module_spec` gives them all the same
+    encoder, and a champion's is cloned from whichever module it snapshotted.
+
+    Returns an empty dict when there is no spec to read - a config built before
+    the encoder group existed, or one whose modules are all baselines - so a
+    fingerprint never gains a key that would compare against nothing.
+    """
+    spec = getattr(config, "rl_module_spec", None)
+    module_specs = getattr(spec, "rl_module_specs", None) or {}
+
+    for module_id in sorted(module_specs):
+        if str(module_id).startswith(CHAMPION_PREFIX):
+            continue
+        model_config = getattr(module_specs[module_id], "model_config", None)
+        if model_config is None:
+            # A baseline RandomRLModule, which has no network at all.
+            continue
+        encoder_spec = _model_config_get(model_config, "encoder_spec", None) or {}
+        return {
+            "encoder_type": _model_config_get(
+                model_config, "encoder_type", MLP_ENCODER_TYPE
+            ),
+            # Sorted items rather than the dict itself: the fingerprint is
+            # compared with `!=`, and two dicts differing only in key order
+            # would otherwise read as a change.
+            "encoder_spec": tuple(sorted(encoder_spec.items())),
+        }
+
+    return {}
+
+
+def _model_config_get(model_config, key, default):
+    """Alias for `encoders.model_config_get`; see there for why both shapes occur.
+
+    Kept as a module-level name because the tests and `_encoder_fingerprint`
+    both reach for it here.
+    """
+    return model_config_get(model_config, key, default)
 
 
 def _check_restored_config(restored, desired) -> None:
@@ -993,6 +1084,7 @@ def build_algo(cfg: TrainConfig):
         restored_callback = algo_callback(algo)
         if restored_callback is None:
             logger.warning("restored algorithm exposes no SelfPlayCallback")
+        log_module_sizes(algo, cfg)
         return algo, restored_callback
 
     if cfg.is_restore:
@@ -1004,7 +1096,38 @@ def build_algo(cfg: TrainConfig):
         logger.info("starting from scratch")
         warn_about_foreign_checkpoints(cfg)
 
-    return ppo.build_algo(), callback_instance
+    algo = ppo.build_algo()
+    log_module_sizes(algo, cfg)
+    return algo, callback_instance
+
+
+def log_module_sizes(algo, cfg: TrainConfig) -> None:
+    """Report each trainable module's parameter count, once, at startup.
+
+    Comparing architectures is the point of the `encoder` group, and a
+    comparison that does not say how big each one was cannot distinguish "this
+    architecture is better" from "this architecture had eight times the
+    parameters". RLlib already reports sampling throughput per iteration
+    (`num_env_steps_sampled`, in the per-iteration line), which is the other
+    half; this is the half nothing else prints.
+
+    Best-effort: a module the local EnvRunner cannot produce is skipped rather
+    than failing a run over a log line.
+    """
+    modules = getattr(getattr(algo, "env_runner", None), "module", None)
+    if modules is None:
+        return
+
+    for pid in trainable_policy_ids(cfg.num_trained_agents):
+        module = modules.get(pid) if hasattr(modules, "get") else None
+        if module is None:
+            continue
+        total = sum(p.numel() for p in module.parameters())
+        trainable = sum(p.numel() for p in module.parameters() if p.requires_grad)
+        logger.info(
+            "%s: encoder %s | %s parameters (%s trainable)",
+            pid, cfg.encoder_type, f"{total:,}", f"{trainable:,}",
+        )
 
 
 def _fix_checkpoint_optimizer_betas(algo) -> None:

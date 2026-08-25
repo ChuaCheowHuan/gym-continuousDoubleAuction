@@ -8,8 +8,16 @@ def _plain(value):
     single-element `float32` arrays. `json.dumps` handles none of that, and the
     per-iteration progress log (doc/11 1.6) is only useful if what goes into
     `info` can actually be written out.
+
+    The 0-d case is not hypothetical: `tolist()` on a 0-d array returns a bare
+    scalar rather than a list, so iterating it raises. A stateless module never
+    produced one, but a stateful one does - RLlib's time-dimension connectors
+    hand back the Discrete action components 0-d - which made every recurrent
+    encoder fail on the first env step until this branch existed.
     """
     if isinstance(value, np.ndarray):
+        if value.ndim == 0:
+            return value.item()
         return [_plain(v) for v in value.tolist()]
     if isinstance(value, np.generic):
         return value.item()
