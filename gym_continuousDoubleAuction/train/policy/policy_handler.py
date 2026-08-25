@@ -35,7 +35,10 @@ from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 
 from gym_continuousDoubleAuction.config_loader import constants
 from gym_continuousDoubleAuction.logging_setup import get_logger
-from gym_continuousDoubleAuction.train.model.encoders import MLP_ENCODER_TYPE
+from gym_continuousDoubleAuction.train.model.encoders import (
+    MLP_ENCODER_TYPE,
+    model_config_get,
+)
 from gym_continuousDoubleAuction.train.model.model_handler import (
     RandomRLModule,
     build_trainable_module_spec,
@@ -171,7 +174,11 @@ def create_multi_agent_config(
     logger.info(
         "modules: %s | trainable: %s (encoder %s) | frozen random baselines: %s",
         sorted(policies), policies_to_train,
-        getattr(trainable_spec.model_config, "encoder_type", MLP_ENCODER_TYPE),
+        # Not `getattr`: a spec's model_config is a dataclass when freshly
+        # built but a plain dict once `add_module` has normalised it, and
+        # reading the wrong one silently reports "mlp" for every encoder.
+        model_config_get(trainable_spec.model_config, "encoder_type",
+                         MLP_ENCODER_TYPE),
         baseline_policy_ids(num_agents, num_trained_agents),
     )
     return policies, policies_to_train, spec

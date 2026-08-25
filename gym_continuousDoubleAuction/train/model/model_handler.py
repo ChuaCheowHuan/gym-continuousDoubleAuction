@@ -194,10 +194,19 @@ def build_trainable_module_spec(obs_space, act_space, encoder_type=None,
     if encoder_specs is None:
         encoder_specs = encoder["encoder_specs"]
 
+    encoder_spec = encoder_specs.get(encoder_type, {})
+    # Validated for every encoder including `mlp`, which has no registered
+    # defaults and so accepts only the common keys. Doing it before the branch
+    # is what stops an `mlp` block being silently ignored: `mlp` returns early,
+    # and a misspelled knob that reaches no builder would otherwise have no
+    # symptom at all - the one failure the config loader exists to remove.
+    overrides = model_config_overrides(encoder_type, encoder_spec)
+
     model_config = default_model_config(
         fcnet_hiddens=fcnet_hiddens,
         fcnet_activation=fcnet_activation,
-        vf_share_layers=vf_share_layers,
+        # An encoder may override the `ppo` group's value; see COMMON_SPEC_KEYS.
+        vf_share_layers=overrides.get("vf_share_layers", vf_share_layers),
     )
 
     if encoder_type == MLP_ENCODER_TYPE:
@@ -207,7 +216,6 @@ def build_trainable_module_spec(obs_space, act_space, encoder_type=None,
             model_config=model_config,
         )
 
-    encoder_spec = encoder_specs.get(encoder_type, {})
     fields = {
         "fcnet_hiddens": model_config.fcnet_hiddens,
         "fcnet_activation": model_config.fcnet_activation,
@@ -221,7 +229,7 @@ def build_trainable_module_spec(obs_space, act_space, encoder_type=None,
     # `vf_share_layers`, which an encoder may override because the `ppo` group's
     # value was chosen for the MLP. Applied last so an encoder that sets one
     # wins over the group.
-    fields.update(model_config_overrides(encoder_type, encoder_spec))
+    fields.update(overrides)
 
     return RLModuleSpec(
         # The stock module would do for every encoder except moe_transformer,

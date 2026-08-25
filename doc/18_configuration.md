@@ -550,6 +550,13 @@ ask_size]`, and the two market-level scalars have no per-level home — they rid
 one extra **global token** per snapshot. That is where the `+ 1` comes from, so
 `both` is 44 tokens at the shipped settings, not 40.
 
+A token is `max(book_rows, extra_dim)` channels wide — wide enough for either kind,
+with the narrower one right-padded with zeros. At the shipped layout those are 4 and
+2, so the width is 4 and only the global token is padded. The `max` matters if you
+add market features: sizing to `book_rows` would silently drop every scalar past the
+fourth, and only for the encoders that tokenise, so `mlp` would go on seeing a
+feature the transformer and LSTM no longer received.
+
 Every non-`mlp` encoder LayerNorms immediately after its input projection, and that
 is deliberately not configurable. Measured on real steps, the four channels in a
 token have standard deviations of `[1.27, 8.17, 0.046, 9.52]` — `sqrt(volume)` runs

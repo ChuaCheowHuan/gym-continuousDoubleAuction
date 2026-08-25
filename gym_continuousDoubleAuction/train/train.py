@@ -54,6 +54,7 @@ from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback im
 )
 from gym_continuousDoubleAuction.train.model.encoders import (
     MLP_ENCODER_TYPE,
+    model_config_get,
     training_overrides,
     validate_encoder_type,
 )
@@ -933,22 +934,12 @@ def _encoder_fingerprint(config) -> dict:
 
 
 def _model_config_get(model_config, key, default):
-    """Read one key from a module spec's model config, dataclass or dict.
+    """Alias for `encoders.model_config_get`; see there for why both shapes occur.
 
-    Both forms occur, and which one is in hand is not something the caller
-    controls: a freshly built spec holds a `CDAModelConfig`, but `add_module` -
-    which every champion snapshot calls - normalises every spec's model config
-    to a plain dict. Reading with `getattr` alone silently returned the default
-    from that point on, which quietly disabled the structural check on
-    `encoder_type` for the whole rest of a run.
-
-    A config with no such key is a stock `DefaultModelConfig`, i.e. the mlp
-    pass-through, so the caller's default is the right answer for it - including
-    for a checkpoint written before the encoder group existed.
+    Kept as a module-level name because the tests and `_encoder_fingerprint`
+    both reach for it here.
     """
-    if isinstance(model_config, dict):
-        return model_config.get(key, default)
-    return getattr(model_config, key, default)
+    return model_config_get(model_config, key, default)
 
 
 def _check_restored_config(restored, desired) -> None:

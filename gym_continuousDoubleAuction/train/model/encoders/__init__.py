@@ -136,6 +136,25 @@ def register(
     return decorate
 
 
+def model_config_get(model_config, key, default):
+    """Read one key from a module spec's model config, dataclass or dict.
+
+    Both forms occur and the caller does not get to choose: a freshly built
+    spec holds a `CDAModelConfig`, but `add_module` - which every champion
+    snapshot calls - normalises every spec's model config to a plain dict.
+    Reading with `getattr` alone silently returns the default from that point
+    on, which is how the structural check on `encoder_type` came to be disabled
+    for the whole of a run once its first champion appeared.
+
+    A config with no such key is a stock `DefaultModelConfig`, i.e. the mlp
+    pass-through, so the caller's default is the right answer for it - including
+    for a checkpoint written before the encoder group existed.
+    """
+    if isinstance(model_config, dict):
+        return model_config.get(key, default)
+    return getattr(model_config, key, default)
+
+
 def _valid_keys(encoder_type: str) -> set:
     return set(ENCODER_DEFAULTS.get(encoder_type, {})) | set(COMMON_SPEC_KEYS)
 

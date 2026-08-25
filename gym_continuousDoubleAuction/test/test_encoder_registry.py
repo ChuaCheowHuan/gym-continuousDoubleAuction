@@ -33,6 +33,7 @@ from gym_continuousDoubleAuction.train.model.encoders import (
     MLP_ENCODER_TYPE,
     CDAModelConfig,
     known_encoder_type,
+    model_config_get,
     selectable_encoder_types,
     validate_encoder_type,
 )
@@ -308,3 +309,110 @@ def test_custom_encoder_latent_dim_sizes_the_heads(spaces):
     )
 
     assert tuple(catalog.latent_dims) == (_PASSTHROUGH_LATENT,)
+
+
+# --- Review findings ---------------------------------------------------------
+
+class TestTokenWidthFitsBothKindsOfToken:
+    """Regression: the global token was right-padded to `book_rows`, so the
+    market-level scalars past the fourth were silently dropped.
+
+    Unreachable at the shipped layout (4 book fields, 2 scalars), but
+    `extra_dim` is a `tunable_constants.json` knob whose note anticipates more
+    market features. A fifth would have stopped reaching the tokenising
+    encoders while `mlp` kept seeing it - so the architectures would have been
+    compared on different observations, with nothing to say so.
+    """
+
+    def test_wide_extras_are_not_truncated(self):
+        layout = ObsLayout(n_hist=2, book_rows=4, k_rows=3, extra_dim=5)
+        obs = torch.arange(layout.flat_dim, dtype=torch.float32).unsqueeze(0)
+
+        tokens = tokenize(obs, layout, "both")
+
+        extras = obs[0, layout.book_dim : layout.snapshot_dim]
+        assert torch.equal(tokens[0, layout.k_rows, : layout.extra_dim], extras)
+
+    @pytest.mark.parametrize("tokenization", TOKENIZATIONS)
+    def test_declared_shape_still_matches_for_wide_extras(self, tokenization):
+        layout = ObsLayout(n_hist=2, book_rows=4, k_rows=3, extra_dim=5)
+        obs = torch.zeros(1, layout.flat_dim)
+
+        tokens = tokenize(obs, layout, tokenization)
+
+        assert tuple(tokens.shape) == (1,) + token_shape(layout, tokenization)
+
+    def test_book_tokens_are_padded_when_extras_are_wider(self):
+        """The narrower kind keeps trailing zeros rather than being reshaped."""
+        layout = ObsLayout(n_hist=1, book_rows=2, k_rows=3, extra_dim=5)
+        obs = torch.arange(layout.flat_dim, dtype=torch.float32).unsqueeze(0)
+
+        tokens = tokenize(obs, layout, "level")
+
+        assert tokens.shape[-1] == layout.extra_dim
+        assert torch.equal(
+            tokens[0, 0, layout.book_rows :],
+            torch.zeros(layout.extra_dim - layout.book_rows),
+        )
+
+    def test_shipped_layout_is_unchanged(self):
+        """4 fields and 2 scalars: the width was already correct, so this fix
+        must not move it."""
+        layout = ObsLayout(n_hist=4, book_rows=4, k_rows=10, extra_dim=2)
+
+        assert token_shape(layout, "both") == (44, 4)
+        assert token_shape(layout, "level") == (11, 4)
+
+
+class TestMlpSpecBlockIsValidated:
+    """Regression: `mlp` returned before any spec validation, so a block for it
+    was accepted and silently ignored - the one failure the config loader
+    exists to remove."""
+
+    def test_an_unknown_key_raises(self, spaces):
+        obs_space, act_space = spaces
+
+        with pytest.raises(ValueError, match="Unknown key"):
+            build_trainable_module_spec(
+                obs_space, act_space, encoder_type=MLP_ENCODER_TYPE,
+                encoder_specs={MLP_ENCODER_TYPE: {"utter_nonsense": 1}},
+            )
+
+    def test_the_common_keys_are_accepted_and_applied(self, spaces):
+        """`mlp` has no registered defaults, so these are all it accepts - and
+        it should honour them like every other encoder rather than drop them."""
+        obs_space, act_space = spaces
+
+        spec = build_trainable_module_spec(
+            obs_space, act_space, encoder_type=MLP_ENCODER_TYPE,
+            encoder_specs={MLP_ENCODER_TYPE: {"vf_share_layers": True}},
+            vf_share_layers=False,
+        )
+
+        assert spec.model_config.vf_share_layers is True
+
+    def test_an_empty_block_leaves_the_pass_through_alone(self, spaces):
+        obs_space, act_space = spaces
+
+        spec = build_trainable_module_spec(
+            obs_space, act_space, encoder_type=MLP_ENCODER_TYPE,
+            encoder_specs={MLP_ENCODER_TYPE: {}},
+        )
+
+        assert spec.catalog_class is None
+        assert dataclasses.asdict(spec.model_config) == dataclasses.asdict(
+            default_model_config()
+        )
+
+
+def test_model_config_get_is_shared_by_both_readers():
+    """Regression: `getattr` on a spec's model_config silently returns the
+    default once `add_module` has normalised it to a dict. There is now one
+    helper, so the pattern cannot be reintroduced by copying a call site."""
+    from gym_continuousDoubleAuction.train import train as train_module
+    from gym_continuousDoubleAuction.train.policy import policy_handler
+
+    assert policy_handler.model_config_get is model_config_get
+    assert train_module._model_config_get({"encoder_type": "lstm"},
+                                          "encoder_type", "mlp") == "lstm"
+    assert model_config_get({}, "encoder_type", "mlp") == "mlp"

@@ -1443,3 +1443,38 @@ random initialisation. The authoritative weights are the Learner's, which is
 what the checkpoint persists and what the test now compares; the EnvRunner is
 checked for the actor-side tensors only, which is what actually acts in the
 environment.
+
+### 28.10 Review pass
+
+Three findings from a review of the five commits above, all of the same shape:
+something silently doing the wrong thing where this codebase's rule is that a
+bad configuration raises.
+
+**A token is now `max(book_rows, extra_dim)` channels wide**, not `book_rows`.
+The global token carrying the market-level scalars was right-padded to
+`book_rows` and truncated to fit, so a scalar past the fourth was dropped with
+no error. Unreachable at the shipped layout — 4 book fields against 2 scalars —
+but `extra_dim` is a `tunable_constants.json` knob whose own note anticipates
+more market features being added. The failure it would have produced is the
+nastiest kind for this particular change: the dropped feature would still reach
+`mlp`, which does not tokenise, so the architectures would have been compared on
+different observations with nothing anywhere to say so.
+
+**An `mlp` block in `encoder_specs` is validated rather than ignored.** `mlp`
+returned from `build_trainable_module_spec` before any spec validation, so a
+block written for it was accepted and had no effect. Validation now happens
+before the branch, which also means `mlp` honours the two common keys (`lr`,
+`vf_share_layers`) like every other encoder instead of dropping them.
+
+**`model_config_get` has one definition.** Reading a spec's `model_config` with
+`getattr` is wrong once `add_module` has normalised it to a dict — that was the
+bug in 28.3 — and `policy_handler`'s log line still had the same pattern. It was
+not reachable there (the spec is a dataclass at that point, and it is only a log
+line), but the helper now lives in the encoders package with both callers
+sharing it, so the pattern cannot be reintroduced by copying a call site.
+
+Also worth recording, since 28.2 claimed more than it should have: the `mlp`
+*module* is byte-for-byte what it was, but 28.7 set `learner_class` for every
+run, `mlp` included. `CDAPPOTorchLearner` is exactly `PPOTorchLearner` when no
+auxiliary loss exists, so the loss is unchanged — but "bit-identical" was true
+of the module spec, not of every field of the algorithm config.

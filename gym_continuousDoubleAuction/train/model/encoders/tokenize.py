@@ -46,6 +46,24 @@ from gym_continuousDoubleAuction.train.model.encoders.obs_layout import ObsLayou
 TOKENIZATIONS = ("time", "level", "both")
 
 
+def token_width(layout: ObsLayout) -> int:
+    """Channels in a level/global token: wide enough for either kind.
+
+    A level token needs `book_rows` channels and a global token needs
+    `extra_dim`, and both share one sequence, so the width is the larger of the
+    two and the shorter kind is right-padded with zeros.
+
+    `max`, not `book_rows`: at the shipped layout (4 fields, 2 scalars) they are
+    the same number, but `extra_dim` is a `tunable_constants.json` knob whose
+    note anticipates more market features being added. Sizing to `book_rows`
+    would silently truncate the scalars past the fourth - and only for the
+    encoders that tokenise, so `mlp` would keep seeing a feature the transformer
+    and LSTM no longer received, which is a difference between architectures
+    that nothing would report.
+    """
+    return max(layout.book_rows, layout.extra_dim)
+
+
 def token_shape(layout: ObsLayout, tokenization: str) -> Tuple[int, int]:
     """(num_tokens, token_dim) a tokenisation produces, global token included.
 
@@ -57,9 +75,9 @@ def token_shape(layout: ObsLayout, tokenization: str) -> Tuple[int, int]:
         return layout.n_hist, layout.snapshot_dim
     if tokenization == "level":
         # k_rows level tokens + 1 global token carrying that snapshot's scalars.
-        return layout.k_rows + 1, layout.book_rows
+        return layout.k_rows + 1, token_width(layout)
     # "both": every (snapshot, level) cell, + 1 global token per snapshot.
-    return layout.n_hist * (layout.k_rows + 1), layout.book_rows
+    return layout.n_hist * (layout.k_rows + 1), token_width(layout)
 
 
 def tokenize(obs: torch.Tensor, layout: ObsLayout, tokenization: str) -> torch.Tensor:
@@ -93,17 +111,16 @@ def tokenize(obs: torch.Tensor, layout: ObsLayout, tokenization: str) -> torch.T
     book = book.reshape(batch, layout.n_hist, layout.book_rows, layout.k_rows)
     book = book.transpose(-1, -2)  # (B, n_hist, k_rows, book_rows)
 
-    # The global token is the snapshot's extra_dim scalars, right-padded to
-    # book_rows so it can sit in the same sequence as the level tokens.
-    global_token = torch.zeros(
-        batch, layout.n_hist, 1, layout.book_rows,
+    # One zero-filled sequence per snapshot, `token_width` channels wide, into
+    # which both kinds of token are written at their own width. Whichever kind
+    # is narrower keeps trailing zeros; neither is ever truncated.
+    width = token_width(layout)
+    tokens = torch.zeros(
+        batch, layout.n_hist, layout.k_rows + 1, width,
         dtype=book.dtype, device=book.device,
     )
-    width = min(layout.extra_dim, layout.book_rows)
-    global_token[..., 0, :width] = extras[..., :width]
-
-    # (B, n_hist, k_rows + 1, book_rows)
-    tokens = torch.cat([book, global_token], dim=-2)
+    tokens[..., : layout.k_rows, : layout.book_rows] = book
+    tokens[..., layout.k_rows, : layout.extra_dim] = extras
 
     if tokenization == "level":
         # Newest snapshot only.
@@ -111,7 +128,7 @@ def tokenize(obs: torch.Tensor, layout: ObsLayout, tokenization: str) -> torch.T
 
     # "both": flatten (time, level) into one sequence, time-major so a token's
     # index is `t * (k_rows + 1) + level`.
-    return tokens.reshape(batch, layout.n_hist * (layout.k_rows + 1), layout.book_rows)
+    return tokens.reshape(batch, layout.n_hist * (layout.k_rows + 1), width)
 
 
 def _check(tokenization: str) -> None:
