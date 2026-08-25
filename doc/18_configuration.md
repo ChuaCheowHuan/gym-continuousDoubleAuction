@@ -762,6 +762,16 @@ The hop through the module is unavoidable: `ActorCriticEncoder._forward` keeps o
 learner are wired unconditionally and are inert for every other encoder, so there is
 one code path rather than two.
 
+The term is **averaged over MoE blocks, not summed**, so `aux_loss_coeff` means the
+same thing whatever the stack looks like. Summed — which is what Switch Transformer
+does — it would scale with `num_layers` and *double* when `vf_share_layers` is false,
+because the critic's blocks route separately and count too. A coefficient tuned at
+`num_layers: 2` would then apply twice the pressure at 4, silently, and comparing two
+MoE configs of different depths would confound depth with how hard the gate was being
+pushed — the same confound the per-encoder `lr` override exists to remove. Averaged,
+the floor is `top_k` at perfectly uniform routing, so an untrained gate reads just
+above 2 at the shipped settings regardless of depth.
+
 **Expect collapse, and watch for it.** This env's observation is 168 floats and the
 league is small, so MoE's premise — capacity you cannot afford densely — may simply
 not apply. A collapsed mixture and a healthy one have identical losses and identical

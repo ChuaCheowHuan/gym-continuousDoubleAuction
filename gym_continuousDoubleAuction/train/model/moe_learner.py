@@ -46,6 +46,16 @@ def _collect(encoder) -> Dict[str, Any]:
 
     The actor and critic are separate encoder instances unless
     `vf_share_layers`, and both route independently, so both contribute.
+
+    Averaged over blocks, not summed, so `aux_loss_coeff` means the same thing
+    whatever the stack looks like. Summing - which is what Switch Transformer
+    does, and what this did first - makes the term scale with `num_layers` and
+    *double* when `vf_share_layers` is false, because the critic's blocks route
+    separately and count too. A coefficient tuned at `num_layers: 2` would then
+    apply twice the balancing pressure at 4, silently, and comparing two MoE
+    configs of different depths would confound depth with how hard the gate was
+    being pushed - the same class of confound the per-encoder `lr` override
+    exists to remove. The mean's floor is `top_k` regardless.
     """
     candidates = [
         getattr(encoder, name, None)
@@ -65,7 +75,7 @@ def _collect(encoder) -> Dict[str, Any]:
     if not aux_terms:
         return {}
     return {
-        MOE_AUX_LOSS: torch.stack(aux_terms).sum(),
+        MOE_AUX_LOSS: torch.stack(aux_terms).mean(),
         MOE_EXPERT_FRACTIONS: torch.stack(fraction_terms).mean(dim=0),
     }
 

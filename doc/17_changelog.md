@@ -1478,3 +1478,30 @@ Also worth recording, since 28.2 claimed more than it should have: the `mlp`
 run, `mlp` included. `CDAPPOTorchLearner` is exactly `PPOTorchLearner` when no
 auxiliary loss exists, so the loss is unchanged — but "bit-identical" was true
 of the module spec, not of every field of the algorithm config.
+
+### 28.11 The MoE auxiliary loss is averaged, not summed
+
+`aux_loss_coeff` did not mean a fixed thing. The load-balancing term was summed
+over every MoE block, and both the actor's and the critic's blocks route
+independently, so at `num_layers: 2` with the shipped `vf_share_layers: false`
+four feed-forwards contributed: the aux loss read ~8.6 where a single block's
+floor is `top_k` = 2. Flipping `vf_share_layers` halved it to ~4.2; doubling
+`num_layers` would have doubled it again.
+
+Nothing about that is incorrect - summing per layer is what Switch Transformer
+does - but it makes the coefficient depth-dependent. Two consequences, both
+silent: a coefficient tuned at one depth applies different balancing pressure at
+another, and comparing two MoE configs of different depths confounds depth with
+how hard the gate is being pushed. That second one is the same confound the
+per-encoder `lr` override was added to remove in 28.8, so it had no business
+surviving in the encoder that override was written alongside.
+
+`_collect` now averages. The floor is `top_k` in every configuration, and the
+measured value sits at ~2.1 across `num_layers` 1, 2 and 4 with
+`vf_share_layers` either way - pinned by
+`test_aux_loss_does_not_scale_with_the_stack`, which is parametrised over all
+six combinations.
+
+This changes what a given `aux_loss_coeff` does. Nothing has been trained with
+the old behaviour, so there is nothing to migrate; if there had been, the
+equivalent old coefficient is this one divided by the block count.

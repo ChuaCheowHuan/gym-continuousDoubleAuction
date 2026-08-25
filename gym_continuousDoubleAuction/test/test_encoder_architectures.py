@@ -582,6 +582,35 @@ class TestMoETransformer:
         with pytest.raises(ValueError, match="Unknown key"):
             build_module(spaces, self.ENCODER, spec={"n_experts": 4})
 
+    @pytest.mark.parametrize("num_layers", [1, 2, 4])
+    @pytest.mark.parametrize("vf_share_layers", [False, True])
+    def test_aux_loss_does_not_scale_with_the_stack(
+        self, spaces, num_layers, vf_share_layers
+    ):
+        """`aux_loss_coeff` must mean the same thing whatever the stack is.
+
+        The term is averaged over MoE blocks, not summed. Summed - which is
+        what Switch Transformer does, and what this did first - it scales with
+        `num_layers` and doubles when `vf_share_layers` is false, since the
+        critic's blocks route separately and count too. A coefficient tuned at
+        one depth would then apply different pressure at another, silently, and
+        comparing MoE configs of different depths would confound depth with how
+        hard the gate was pushed.
+
+        The floor is `top_k`, reached at perfectly uniform routing, so an
+        untrained gate sits just above it in every configuration.
+        """
+        obs_space, _ = spaces
+        module = build_module(
+            spaces, self.ENCODER,
+            spec={"num_layers": num_layers, "top_k": 2},
+            vf_share_layers=vf_share_layers,
+        )
+
+        out = module.forward_train(sample_batch(obs_space, module=module))
+
+        assert float(out[MOE_AUX_LOSS].detach()) == pytest.approx(2.0, abs=0.5)
+
     def test_balanced_routing_gives_the_minimum_aux_loss(self, spaces):
         """The term is minimised at uniform load, which is the only reason it
         pushes the gate away from collapse. Its floor is `top_k`."""

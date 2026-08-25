@@ -103,6 +103,8 @@
 
         "_note_aux": "aux_loss_coeff weights the Switch-Transformer load-balancing term, which is the only thing pushing the gate to use more than one expert - nothing in the policy gradient rewards it for doing so, and collapsing onto a single expert is a perfectly good local optimum that yields a dense feed-forward you paid num_experts times over for. Read by CDAPPOTorchLearner, not by the encoder.",
 
+        "_note_aux_scale": "The term is AVERAGED over MoE blocks, not summed, so this coefficient means the same thing whatever the stack looks like. Summed - which is what Switch Transformer does - it would scale with num_layers and double when vf_share_layers is false, because the critic's blocks route separately and count too: a coefficient tuned at num_layers 2 would apply twice the pressure at 4, silently, and comparing two MoE configs of different depths would confound depth with how hard the gate was being pushed. Averaged, the floor is top_k (2 at these settings) at perfectly uniform routing, so an untrained gate reads just above 2.",
+
         "_note_expect_collapse": "Set expectations. This env's observation is 168 floats and the league is small, so MoE's premise - capacity you cannot afford densely - may not apply. Watch moe_max_expert_share and moe_min_expert_share in the learner metrics: a healthy mixture holds both near 1/num_experts, and a collapsed one is indistinguishable from a healthy one by loss or throughput alone.",
 
         "tokenization": "both",
