@@ -530,6 +530,7 @@ Available encoders:
 | `mlp` | RLlib's stock MLP over the flat observation. The default and the pass-through. |
 | `transformer` | Pre-norm self-attention over the order-book grid, with a learned two-axis positional encoding and attention pooling. |
 | `lstm` | A per-step embedding of the book grid, then an LSTM over the rollout axis. Stateful. |
+| `moe_transformer` | The transformer with each block's feed-forward replaced by a top-k gated mixture of experts. |
 
 #### What a token is
 
@@ -726,3 +727,36 @@ network: RLlib forces `inference_only=False` so the critic's states are collecte
 wraps the encoder in `TorchStatefulActorCriticEncoder`, and adds a time dimension to
 every batch. The frozen `RandomRLModule` baselines stay stateless throughout, which
 is fine — statefulness is per-module.
+
+#### `moe_transformer` and its second loss term
+
+Identical to `transformer` except that each block's dense feed-forward becomes a
+top-k gated mixture. `ff_dim` is now each **expert's** width, so the feed-forward
+parameter count is roughly `num_experts ×` what the same `ff_dim` buys in
+`transformer`, while per-token compute is `top_k ×` it.
+
+An MoE needs a second loss term. Nothing in the policy gradient rewards a gate for
+using more than one expert — collapsing onto one is a perfectly good local optimum
+that leaves you with a dense feed-forward you paid `num_experts` times over for. The
+Switch-Transformer load-balancing term, weighted by `aux_loss_coeff`, is the only
+pressure against that. Getting it from the encoder to the optimiser takes a chain,
+because no link can see both ends:
+
+```
+MoEFeedForward.forward   returns (output, stats)
+TransformerBlock.forward passes the tuple through
+the encoder              stages per-block stats
+CDAPPOTorchRLModule      moves them into fwd_out
+CDAPPOTorchLearner       adds aux_loss_coeff * aux to PPO's total
+```
+
+The hop through the module is unavoidable: `ActorCriticEncoder._forward` keeps only
+`ENCODER_OUT` and discards anything else an encoder returns. Both the module and the
+learner are wired unconditionally and are inert for every other encoder, so there is
+one code path rather than two.
+
+**Expect collapse, and watch for it.** This env's observation is 168 floats and the
+league is small, so MoE's premise — capacity you cannot afford densely — may simply
+not apply. A collapsed mixture and a healthy one have identical losses and identical
+throughput; the only difference is `moe_max_expert_share` and `moe_min_expert_share`
+in the learner metrics, which a healthy mixture holds near `top_k / num_experts`.

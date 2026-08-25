@@ -42,6 +42,10 @@ from gym_continuousDoubleAuction.train.model.encoders.transformer import (
 from gym_continuousDoubleAuction.train.model.model_handler import (
     build_trainable_module_spec,
 )
+from gym_continuousDoubleAuction.train.model.moe_learner import (
+    MOE_AUX_LOSS,
+    MOE_EXPERT_FRACTIONS,
+)
 
 #: Time steps per sequence in a stateful forward batch. Arbitrary - RLlib pads
 #: to max_seq_len in a real run, but a manual forward accepts any length.
@@ -72,7 +76,12 @@ def build_module(spaces, encoder_type, spec=None, **kwargs):
         encoder_specs={encoder_type: spec} if spec else {},
         **kwargs,
     )
-    module_spec.module_class = DefaultPPOTorchRLModule
+    # Only the `mlp` path leaves module_class None, for RLlib to fill in from
+    # the algorithm's default spec. Custom encoders set it themselves, and
+    # overwriting that would silently swap CDAPPOTorchRLModule back out - taking
+    # the MoE auxiliary loss with it.
+    if module_spec.module_class is None:
+        module_spec.module_class = DefaultPPOTorchRLModule
     return module_spec.build()
 
 
@@ -462,3 +471,126 @@ class TestLSTM:
     def test_unknown_spec_key_raises(self, spaces):
         with pytest.raises(ValueError, match="Unknown key"):
             build_module(spaces, self.ENCODER, spec={"hidden_size": 64})
+
+
+# --- Mixture-of-experts specifics --------------------------------------------
+
+class TestMoETransformer:
+    ENCODER = "moe_transformer"
+
+    def test_the_feedforward_is_a_mixture(self, spaces):
+        from gym_continuousDoubleAuction.train.model.encoders.moe import (
+            MoEFeedForward,
+        )
+
+        module = build_module(spaces, self.ENCODER)
+
+        for block in module.encoder.actor_encoder.blocks:
+            assert isinstance(block.ff, MoEFeedForward)
+
+    def test_the_aux_loss_reaches_fwd_out(self, spaces):
+        """`ActorCriticEncoder` drops every key but ENCODER_OUT, so the module
+        has to collect the stats itself - this is what proves it does."""
+        obs_space, _ = spaces
+        module = build_module(spaces, self.ENCODER)
+
+        out = module.forward_train(sample_batch(obs_space, module=module))
+
+        assert MOE_AUX_LOSS in out
+        assert torch.isfinite(out[MOE_AUX_LOSS])
+
+    def test_the_aux_loss_carries_gradient(self, spaces):
+        """It learns through the mean gate probability. Detached, it would be a
+        logged number that trains nothing."""
+        obs_space, _ = spaces
+        module = build_module(spaces, self.ENCODER)
+
+        out = module.forward_train(sample_batch(obs_space, module=module))
+        out[MOE_AUX_LOSS].backward()
+
+        gate_grads = [
+            p.grad for name, p in module.named_parameters() if ".gate." in name
+        ]
+        assert gate_grads
+        assert any(g is not None and g.abs().sum() > 0 for g in gate_grads)
+
+    def test_routing_fractions_sum_to_top_k(self, spaces):
+        """Each token is dispatched to exactly `top_k` experts."""
+        obs_space, _ = spaces
+        module = build_module(spaces, self.ENCODER, spec={"top_k": 2})
+
+        out = module.forward_train(sample_batch(obs_space, module=module))
+
+        assert float(out[MOE_EXPERT_FRACTIONS].sum()) == pytest.approx(2.0, abs=1e-4)
+
+    def test_stats_are_cleared_when_taken(self, spaces):
+        """Taking rather than reading: a stale aux loss silently added to a
+        later batch would be invisible, a None is not.
+
+        Driven through the encoder directly, because by the time
+        `forward_train` returns the module has already taken them - which the
+        next test is what pins.
+        """
+        obs_space, _ = spaces
+        module = build_module(spaces, self.ENCODER)
+        encoder = module.encoder.actor_encoder
+
+        encoder(sample_batch(obs_space))
+
+        assert encoder.take_moe_stats() is not None
+        assert encoder.take_moe_stats() is None
+
+    def test_the_module_consumes_the_stats_it_forwards(self, spaces):
+        """Nothing may be left staged behind `forward_train`, or the next batch
+        could pick up this one's auxiliary loss."""
+        obs_space, _ = spaces
+        module = build_module(spaces, self.ENCODER)
+
+        module.forward_train(sample_batch(obs_space, module=module))
+
+        assert module.encoder.actor_encoder.take_moe_stats() is None
+        assert module.encoder.critic_encoder.take_moe_stats() is None
+
+    def test_a_dense_encoder_produces_no_aux_loss(self, spaces):
+        """The module and learner are wired unconditionally, so they must be
+        inert for everything that is not an MoE."""
+        obs_space, _ = spaces
+        module = build_module(spaces, "transformer")
+
+        out = module.forward_train(sample_batch(obs_space, module=module))
+
+        assert MOE_AUX_LOSS not in out
+        assert module.encoder.actor_encoder.take_moe_stats() is None
+
+    def test_a_single_expert_raises(self, spaces):
+        """A one-expert mixture is a dense feed-forward with a gate bolted on."""
+        with pytest.raises(ValueError, match="num_experts"):
+            build_module(spaces, self.ENCODER, spec={"num_experts": 1})
+
+    def test_top_k_above_num_experts_raises(self, spaces):
+        with pytest.raises(ValueError, match="top_k"):
+            build_module(spaces, self.ENCODER, spec={"num_experts": 4, "top_k": 5})
+
+    def test_num_experts_is_respected(self, spaces):
+        module = build_module(spaces, self.ENCODER, spec={"num_experts": 6})
+
+        assert len(module.encoder.actor_encoder.blocks[0].ff.experts) == 6
+
+    def test_unknown_spec_key_raises(self, spaces):
+        with pytest.raises(ValueError, match="Unknown key"):
+            build_module(spaces, self.ENCODER, spec={"n_experts": 4})
+
+    def test_balanced_routing_gives_the_minimum_aux_loss(self, spaces):
+        """The term is minimised at uniform load, which is the only reason it
+        pushes the gate away from collapse. Its floor is `top_k`."""
+        from gym_continuousDoubleAuction.train.model.encoders.moe import (
+            MoEFeedForward,
+        )
+
+        moe = MoEFeedForward(d_model=8, ff_dim=8, num_experts=4, top_k=2)
+        # A gate with zero weights routes every token identically and uniformly.
+        torch.nn.init.zeros_(moe.gate.weight)
+
+        _, stats = moe(torch.randn(3, 5, 8))
+
+        assert float(stats["aux_loss"].detach()) == pytest.approx(2.0, abs=1e-4)

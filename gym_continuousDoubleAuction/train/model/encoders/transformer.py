@@ -161,13 +161,7 @@ class TorchTransformerEncoder(TorchModel, Encoder):
         )
 
         self.blocks = nn.ModuleList(
-            TransformerBlock(
-                d_model=config.d_model,
-                num_heads=config.num_heads,
-                ff_dim=config.ff_dim,
-                dropout=config.dropout,
-            )
-            for _ in range(config.num_layers)
+            self._make_block(config) for _ in range(config.num_layers)
         )
         self.norm_out = nn.LayerNorm(config.d_model)
         self.pool = (
@@ -175,6 +169,34 @@ class TorchTransformerEncoder(TorchModel, Encoder):
             if config.pool == "attention"
             else None
         )
+        #: Per-block MoE statistics from the most recent forward, or None for a
+        #: dense stack. Written by `_forward`, taken by `take_moe_stats`.
+        self._moe_stats = None
+
+    def _make_block(self, config: TransformerEncoderConfig) -> TransformerBlock:
+        """One block. Overridden by the MoE encoder to swap the feed-forward."""
+        return TransformerBlock(
+            d_model=config.d_model,
+            num_heads=config.num_heads,
+            ff_dim=config.ff_dim,
+            dropout=config.dropout,
+        )
+
+    def take_moe_stats(self):
+        """The stats from the last forward, clearing them.
+
+        The auxiliary loss cannot ride out through `ENCODER_OUT`:
+        `ActorCriticEncoder._forward` keeps only that key and discards anything
+        else an encoder returns. So it is left here for
+        `CDAPPOTorchRLModule._forward_train` to collect immediately after it
+        calls the encoder.
+
+        Taking rather than reading is the safety property. A stale aux loss
+        silently added to a later batch's gradient would be invisible; getting
+        `None` because the plumbing broke is not.
+        """
+        stats, self._moe_stats = self._moe_stats, None
+        return stats
 
     @override(Model)
     def _forward(self, inputs: dict, **kwargs) -> dict:
@@ -185,8 +207,16 @@ class TorchTransformerEncoder(TorchModel, Encoder):
             self.level_idx
         )
 
+        stats = []
         for block in self.blocks:
-            x = block(x)
+            out = block(x)
+            # An MoE block returns (output, stats); a dense one a bare tensor.
+            if isinstance(out, tuple):
+                x, block_stats = out
+                stats.append(block_stats)
+            else:
+                x = out
+        self._moe_stats = stats or None
 
         x = self.norm_out(x)
         latent = self.pool(x) if self.pool is not None else x.mean(dim=-2)

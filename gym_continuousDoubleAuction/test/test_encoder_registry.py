@@ -64,9 +64,11 @@ def build_module(spaces, encoder_type, **kwargs):
     spec = build_trainable_module_spec(
         obs_space, act_space, encoder_type=encoder_type, encoder_specs={}, **kwargs
     )
-    # `module_class` is left None so RLlib fills in the algorithm's default;
-    # building a spec standalone needs it set.
-    spec.module_class = DefaultPPOTorchRLModule
+    # The `mlp` path leaves module_class None for RLlib to fill in from the
+    # algorithm's default spec; building a spec standalone needs it set. Custom
+    # encoders set their own, which must not be overwritten.
+    if spec.module_class is None:
+        spec.module_class = DefaultPPOTorchRLModule
     return spec, spec.build()
 
 

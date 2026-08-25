@@ -237,6 +237,7 @@ def build_encoder_config(
 # so they can import the registry above without a cycle.
 from gym_continuousDoubleAuction.train.model.encoders import (  # noqa: E402,F401
     lstm,
+    moe_transformer,
     passthrough,
     transformer,
 )

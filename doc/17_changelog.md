@@ -1364,3 +1364,40 @@ The parametrised suite learned about statefulness at the same time: it builds
 `(B, T, obs)` batches with a `STATE_IN` tree for a recurrent module, and expects
 one value per timestep rather than per row. Without that it could not have
 covered a recurrent encoder at all — it would just have failed on shape.
+
+### 28.7 `moe_transformer`
+
+The transformer with each block's feed-forward replaced by a top-k gated
+mixture of experts. Everything else — tokenisation, positional encoding,
+pooling, the mandatory input LayerNorm — is inherited, which is what
+`TransformerBlock`'s feed-forward factory was for.
+
+The interesting part is not the mixture, it is getting its auxiliary loss to the
+optimiser. `ActorCriticEncoder._forward` returns only `ENCODER_OUT` and discards
+every other key its inner encoders produced, so an encoder cannot simply return
+a second term. The chain is: `MoEFeedForward` returns `(output, stats)`, the
+block passes the tuple through, the encoder stages it, `CDAPPOTorchRLModule`
+moves it into `fwd_out` — the one channel from a forward pass to the loss — and
+`CDAPPOTorchLearner` adds `aux_loss_coeff * aux` to PPO's total.
+
+The staging is taken, not read: `take_moe_stats` clears as it returns. A stale
+auxiliary loss silently added to a later batch's gradient would be invisible;
+getting `None` because a link broke is not.
+
+Both the module and the learner are wired unconditionally rather than only for
+this encoder. They are exactly their base classes when no stats exist, which is
+every other encoder, so this is one code path instead of a branch.
+
+Per-expert routing fractions are logged as `moe_max_expert_share` and
+`moe_min_expert_share`. This is not decoration: a collapsed mixture and a
+healthy one produce identical losses and identical throughput, and differ only
+in those numbers. Given a 168-float observation and a small league, the honest
+prior is that the experts specialise weakly — the metric is what makes that
+finding falsifiable rather than assumed either way.
+
+One test-harness bug surfaced here and is worth recording, because it was the
+kind that makes a test pass while testing nothing: both suites' `build_module`
+helpers overwrote `module_class` with the stock `DefaultPPOTorchRLModule`, which
+had been correct when every spec left it `None`. Once custom encoders set their
+own it silently swapped `CDAPPOTorchRLModule` back out, taking the auxiliary
+loss with it. They now only fill it in when the spec left it unset.

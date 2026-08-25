@@ -94,6 +94,25 @@
         "hidden_dim": 256,
         "num_layers": 1,
         "max_seq_len": 20
+      },
+
+      "moe_transformer": {
+        "_note": "The transformer above with each block's dense feed-forward replaced by a top-k gated mixture of experts. Every transformer key means the same thing here, except that ff_dim is now each EXPERT's width - so the feed-forward parameter count is roughly num_experts times what the same ff_dim buys in `transformer`, while the per-token compute is top_k times it.",
+
+        "_note_aux": "aux_loss_coeff weights the Switch-Transformer load-balancing term, which is the only thing pushing the gate to use more than one expert - nothing in the policy gradient rewards it for doing so, and collapsing onto a single expert is a perfectly good local optimum that yields a dense feed-forward you paid num_experts times over for. Read by CDAPPOTorchLearner, not by the encoder.",
+
+        "_note_expect_collapse": "Set expectations. This env's observation is 168 floats and the league is small, so MoE's premise - capacity you cannot afford densely - may not apply. Watch moe_max_expert_share and moe_min_expert_share in the learner metrics: a healthy mixture holds both near 1/num_experts, and a collapsed one is indistinguishable from a healthy one by loss or throughput alone.",
+
+        "tokenization": "both",
+        "d_model": 128,
+        "num_heads": 4,
+        "num_layers": 2,
+        "ff_dim": 256,
+        "dropout": 0.0,
+        "pool": "attention",
+        "num_experts": 4,
+        "top_k": 2,
+        "aux_loss_coeff": 0.01
       }
     }
   },

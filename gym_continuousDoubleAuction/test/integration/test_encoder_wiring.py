@@ -29,6 +29,12 @@ from gym_continuousDoubleAuction.train.model.encoders.passthrough import (
     TorchPassthroughEncoder,
 )
 from gym_continuousDoubleAuction.train.model.model_handler import CDACatalog
+from gym_continuousDoubleAuction.train.model.moe_learner import (
+    MOE_AUX_LOSS_KEY,
+    MOE_MAX_EXPERT_SHARE_KEY,
+    MOE_MIN_EXPERT_SHARE_KEY,
+    CDAPPOTorchLearner,
+)
 from gym_continuousDoubleAuction.train.policy.policy_handler import (
     trainable_policy_ids,
 )
@@ -248,3 +254,83 @@ class TestRecurrentEncoderTrainsEndToEnd:
 
         assert champion.is_stateful()
         assert type(champion) is type(self.algo.env_runner.module[self.pid])
+
+
+class TestMoEAuxLossReachesTheOptimiser:
+    """The load-balancing term is computed three layers away from the loss.
+
+    `MoEFeedForward` returns it, the block passes it up, the encoder stages it,
+    `CDAPPOTorchRLModule` moves it into `fwd_out`, and `CDAPPOTorchLearner` adds
+    it to PPO's total. Every link is invisible from either end - a break
+    anywhere leaves training running normally with a gate nothing pushes towards
+    balance, which is a silent regression to a very expensive dense layer.
+    """
+
+    @classmethod
+    def setup_class(cls):
+        ray.init(
+            ignore_reinit_error=True,
+            include_dashboard=False,
+            log_to_driver=False,
+            num_cpus=2,
+        )
+        cls.cfg = config_with_encoder("moe_transformer")
+        ppo_config, cls.callback = build_config(cls.cfg)
+        cls.algo = ppo_config.build_algo()
+        cls.pid = trainable_policy_ids(cls.cfg.num_trained_agents)[0]
+        cls.before = {
+            k: v.detach().clone()
+            for k, v in cls.algo.env_runner.module[cls.pid].named_parameters()
+        }
+        cls.result = cls.algo.train()
+
+    @classmethod
+    def teardown_class(cls):
+        cls.algo.stop()
+        ray.shutdown()
+
+    def test_the_custom_learner_is_in_use(self):
+        assert self.algo.config.learner_class is CDAPPOTorchLearner
+
+    def test_the_aux_loss_is_logged(self):
+        """If the module stopped forwarding it, the learner would add nothing
+        and this metric would simply be absent."""
+        learner_results = self.result["learners"][self.pid]
+
+        assert MOE_AUX_LOSS_KEY in learner_results
+        assert learner_results[MOE_AUX_LOSS_KEY] > 0
+
+    def test_expert_utilisation_is_reported(self):
+        """A collapsed mixture and a healthy one have identical losses and
+        identical throughput. These two numbers are the only difference."""
+        learner_results = self.result["learners"][self.pid]
+
+        assert MOE_MAX_EXPERT_SHARE_KEY in learner_results
+        assert MOE_MIN_EXPERT_SHARE_KEY in learner_results
+        assert (
+            learner_results[MOE_MIN_EXPERT_SHARE_KEY]
+            <= learner_results[MOE_MAX_EXPERT_SHARE_KEY]
+        )
+
+    def test_the_gates_are_trained(self):
+        """Nothing but the auxiliary loss trains a gate towards balance."""
+        after = dict(self.algo.env_runner.module[self.pid].named_parameters())
+        changed = {
+            k for k, v in after.items() if not torch.equal(self.before[k], v)
+        }
+
+        assert any(".gate." in k for k in changed), "no gate was updated"
+        assert any(".experts." in k for k in changed), "no expert was updated"
+
+    def test_a_non_moe_encoder_logs_no_moe_metrics(self):
+        """The module and learner are wired unconditionally, so they have to be
+        inert for the other encoders rather than merely harmless."""
+        cfg = config_with_encoder(MLP_ENCODER_TYPE, run_id="mlp-moe-check")
+        ppo_config, _ = build_config(cfg)
+        algo = ppo_config.build_algo()
+        try:
+            results = algo.train()["learners"][self.pid]
+        finally:
+            algo.stop()
+
+        assert MOE_AUX_LOSS_KEY not in results

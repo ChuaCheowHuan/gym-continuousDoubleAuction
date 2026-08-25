@@ -52,6 +52,7 @@ from ray.rllib.utils.annotations import override
 from ray.rllib.utils.spaces.space_utils import batch as batch_func
 
 from gym_continuousDoubleAuction.config_loader import group
+from gym_continuousDoubleAuction.train.model.moe_learner import CDAPPOTorchRLModule
 from gym_continuousDoubleAuction.train.model.encoders import (
     MLP_ENCODER_TYPE,
     CDAModelConfig,
@@ -208,6 +209,12 @@ def build_trainable_module_spec(obs_space, act_space, encoder_type=None,
 
     encoder_spec = encoder_specs.get(encoder_type, {})
     return RLModuleSpec(
+        # The stock module would do for every encoder except moe_transformer,
+        # whose auxiliary loss needs a hop through `_forward_train` to reach the
+        # Learner. CDAPPOTorchRLModule is identical to its base when there is no
+        # such loss, so it is used for all custom encoders rather than
+        # branching on one of them.
+        module_class=CDAPPOTorchRLModule,
         observation_space=obs_space,
         action_space=act_space,
         catalog_class=CDACatalog,

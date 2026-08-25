@@ -56,6 +56,7 @@ from gym_continuousDoubleAuction.train.model.encoders import (
     MLP_ENCODER_TYPE,
     validate_encoder_type,
 )
+from gym_continuousDoubleAuction.train.model.moe_learner import CDAPPOTorchLearner
 from gym_continuousDoubleAuction.train.policy.policy_handler import (
     CHAMPION_PREFIX,
     create_multi_agent_config,
@@ -542,6 +543,11 @@ def build_config(cfg: TrainConfig):
             train_batch_size_per_learner=cfg.train_batch_size,
             num_epochs=cfg.num_epochs,
             lr=cfg.lr,
+            # PPO's loss plus the MoE load-balancing term. Identical to the
+            # stock learner for every encoder that produces no such term, which
+            # is all of them but moe_transformer - so it is wired
+            # unconditionally rather than branching on the encoder.
+            learner_class=CDAPPOTorchLearner,
             **({"minibatch_size": cfg.minibatch_size}
                if cfg.minibatch_size is not None else {}),
         )
