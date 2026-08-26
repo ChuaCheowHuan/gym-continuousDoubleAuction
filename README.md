@@ -82,6 +82,8 @@ mindmap
       14 AI engineer
       15 Findings
       16 Verification log
+    Research
+      22 JEPA integration
 ```
 
 ### Start here
@@ -121,6 +123,7 @@ mindmap
 | 15 | [15_findings_and_recommendations.md](doc/15_findings_and_recommendations.md) | Consolidated, severity-ranked findings with fixes and a suggested sequence |
 | 16 | [16_verification_log.md](doc/16_verification_log.md) | Every executed probe and its raw output |
 | 17 | [17_changelog.md](doc/17_changelog.md) | What changed since `original_v1` (2020) and why |
+| 22 | [22_jepa_integration.md](doc/22_jepa_integration.md) | What JEPA is, why this observation suits it and this reward does not, and four ways it could be used |
 
 ### Configuration and deployment
 
@@ -144,6 +147,10 @@ mindmap
 **Planning changes to the RL layer**
 [15](doc/15_findings_and_recommendations.md) (severity order) → [12](doc/12_perspective_rl_researcher.md) →
 [05](doc/05_observation_space.md) → [07](doc/07_reward_function.md)
+
+**Weighing a representation-learning change (JEPA)**
+[22](doc/22_jepa_integration.md) → [05](doc/05_observation_space.md) →
+[18](doc/18_configuration.md) §5.4–5.5 → [12](doc/12_perspective_rl_researcher.md) §4, §7
 
 **Setting up training**
 [18](doc/18_configuration.md) (where every value lives) → [08](doc/08_self_play_league.md) →
