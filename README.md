@@ -84,6 +84,7 @@ mindmap
       16 Verification log
     Research
       22 JEPA integration
+      23 Probe harness
 ```
 
 ### Start here
@@ -124,6 +125,7 @@ mindmap
 | 16 | [16_verification_log.md](doc/16_verification_log.md) | Every executed probe and its raw output |
 | 17 | [17_changelog.md](doc/17_changelog.md) | What changed since `original_v1` (2020) and why |
 | 22 | [22_jepa_integration.md](doc/22_jepa_integration.md) | What JEPA is, why this observation suits it and this reward does not, and four ways it could be used |
+| 23 | [23_probe_harness.md](doc/23_probe_harness.md) | Scoring an encoder on microstructure targets without the reward: how to run it, how to read it, why the probe is linear |
 
 ### Configuration and deployment
 
@@ -151,6 +153,10 @@ mindmap
 **Weighing a representation-learning change (JEPA)**
 [22](doc/22_jepa_integration.md) → [05](doc/05_observation_space.md) →
 [18](doc/18_configuration.md) §5.4–5.5 → [12](doc/12_perspective_rl_researcher.md) §4, §7
+
+**Comparing encoders**
+[23](doc/23_probe_harness.md) (a metric that does not go through the reward) →
+[18](doc/18_configuration.md) §5.5 (seeds, separate runs, parameter counts)
 
 **Setting up training**
 [18](doc/18_configuration.md) (where every value lives) → [08](doc/08_self_play_league.md) →

@@ -1,0 +1,147 @@
+"""CLI: `python -m gym_continuousDoubleAuction.train.probe`.
+
+Defaults come from `config/cli_defaults.json` -> `cda_probe`; this module holds
+no literal default, on the same rule as `CDA_rand`.
+"""
+from __future__ import annotations
+
+import argparse
+import sys
+from typing import Dict, List
+
+import numpy as np
+
+from gym_continuousDoubleAuction.config_loader import cli_default
+from gym_continuousDoubleAuction.logging_setup import configure as configure_logging
+from gym_continuousDoubleAuction.logging_setup import get_logger
+from gym_continuousDoubleAuction.train.model.encoders import selectable_encoder_types
+from gym_continuousDoubleAuction.train.probe import corpus as corpus_module
+from gym_continuousDoubleAuction.train.probe import features as features_module
+from gym_continuousDoubleAuction.train.probe import report as report_module
+from gym_continuousDoubleAuction.train.probe import targets as targets_module
+
+logger = get_logger("gym_continuousDoubleAuction.train.probe")
+
+
+def _cli(key):
+    return cli_default("cda_probe", key)
+
+
+def build_features(
+    corpus,
+    encoders: List[str],
+    checkpoint: str = None,
+    module_id: str = None,
+) -> Dict[str, np.ndarray]:
+    """The feature matrices to compare: `raw`, each encoder, and a checkpoint.
+
+    The checkpoint contributes one extra set, named for the module it came
+    from. Its architecture is whatever the run trained, which need not be any
+    of `encoders` - that is the point of restoring rather than rebuilding.
+    """
+    # Imported here so `--help` and a target listing do not pay for the env.
+    from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
+        continuousDoubleAuctionEnv,
+    )
+
+    env = continuousDoubleAuctionEnv({})
+    agent_id = env.agents[0]
+    obs_space = env.get_observation_space(agent_id)
+    act_space = env.get_action_space(agent_id)
+
+    features = {features_module.RAW_FEATURES: features_module.raw(corpus)}
+
+    for encoder_type in encoders:
+        module = features_module.build_module(obs_space, act_space, encoder_type)
+        features[encoder_type] = features_module.latents(module, corpus)
+        logger.info(
+            "%s: untrained latents %s", encoder_type, features[encoder_type].shape
+        )
+
+    if checkpoint:
+        module = features_module.load_module(checkpoint, module_id)
+        name = f"{module_id}@ckpt"
+        features[name] = features_module.latents(module, corpus)
+        logger.info("%s: trained latents %s", name, features[name].shape)
+
+    return features
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(
+        description="Score observation encoders on reward-free microstructure "
+                    "targets. See doc/23_probe_harness.md.",
+    )
+    p.add_argument(
+        "--encoders", nargs="*", default=_cli("encoders"),
+        help=f"Architectures to score untrained. Available: "
+             f"{', '.join(selectable_encoder_types())}.",
+    )
+    p.add_argument(
+        "--targets", nargs="*", default=_cli("targets"),
+        help=f"Available: {', '.join(targets_module.selectable_targets())}.",
+    )
+    p.add_argument(
+        "--horizons", nargs="*", type=int, default=_cli("horizons"),
+        help="Steps ahead each target looks.",
+    )
+    p.add_argument("--episodes", type=int, default=_cli("num_episodes"))
+    p.add_argument("--steps", type=int, default=_cli("max_step"))
+    p.add_argument("--agents", type=int, default=_cli("num_agents"))
+    p.add_argument("--seed", type=int, default=_cli("seed"))
+    p.add_argument(
+        "--parquet", type=str, default=None,
+        help="Read the corpus from episode_record output instead of running "
+             "rollouts. A file or a directory searched recursively.",
+    )
+    p.add_argument(
+        "--max-rows", type=int, default=None,
+        help="Cap on rows read from --parquet.",
+    )
+    p.add_argument(
+        "--checkpoint", type=str, default=None,
+        help="An iter_<n> checkpoint directory, scored alongside the "
+             "untrained encoders.",
+    )
+    p.add_argument("--module-id", type=str, default=_cli("module_id"))
+    p.add_argument("--out", type=str, default=None, help="Write the report here too.")
+    p.add_argument("--log-level", type=str, default=_cli("log_level"))
+    args = p.parse_args(argv)
+
+    configure_logging(args.log_level, force=True)
+
+    if args.parquet:
+        corpus = corpus_module.from_parquet(args.parquet, max_rows=args.max_rows)
+    else:
+        corpus = corpus_module.from_rollouts(
+            num_episodes=args.episodes,
+            max_step=args.steps,
+            num_agents=args.agents,
+            seed=args.seed,
+        )
+
+    features = build_features(
+        corpus, args.encoders, args.checkpoint, args.module_id
+    )
+    rows = report_module.run(corpus, features, args.targets, args.horizons)
+    text = "\n".join([
+        f"Corpus: {corpus.describe()}",
+        f"Source: {args.parquet or 'random-agent rollouts'}",
+        "",
+        report_module.render(rows, list(features)),
+    ])
+
+    # Through the logger, not `print`: everything under `train/` reports that
+    # way (`test_no_module_calls_print`), and it means the report also lands in
+    # the run log rather than only in scrollback - which for a comparison
+    # anyone will want to cite later is the point.
+    logger.info("probe report\n%s", text)
+    if args.out:
+        with open(args.out, "w") as handle:
+            handle.write(text + "\n")
+        logger.info("wrote %s", args.out)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

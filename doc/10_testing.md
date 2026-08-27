@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (682 tests: 623 unit + 59 integration)
+# everything (748 tests: 664 unit + 84 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -83,13 +83,15 @@ Counts re-measured with `--collect-only`.
 | `test_episode_record.py` | 32 | The Parquet per-step record: declared schema and its drift guard against `Info_Helper`, identity columns, sampling rate, byte cap, eviction of episodes that never end, and the ways it must fail without raising |
 | `test_encoder_registry.py` | 38 | The selectable-encoder seam: registry, `CDACatalog`, the `mlp` pass-through staying byte-for-byte what it was, `ObsLayout`, tokenisation |
 | `test_encoder_architectures.py` | 110 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
-| **unit total** | **623** | |
+| `test_probe.py` | 41 | The reward-free probe harness's arithmetic on synthetic observations: target definitions, episode-boundary masking, the splits, the metrics, unscoreable cells |
+| **unit total** | **664** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported and finite (1 xfail pins S1-1) |
 | `integration/test_distributed_observability.py` | 10 | A real `num_env_runners=1` iteration: every episode-hook metric arrives on the driver, and the episode record is written by the *worker* into the driver's absolute run-scoped path |
 | `integration/test_encoder_wiring.py` | 23 | Champions inherit the encoder; a restore cannot change it; the recurrent and MoE paths train end to end; a real checkpoint round-trip with a custom encoder |
-| **integration total** | **59** | |
+| `integration/test_probe_harness.py` | 25 | The probe against the real env: a usable rollout corpus, every registered encoder frozen and read, the LSTM's state reset per episode, a real checkpoint restored with its weights |
+| **integration total** | **84** | |
 
 > **Stale references in older docs.** `test_orderbook.py`, `repro_orderbook_crossed_book.py`,
 > `test_OrderBook.py`, `test_cda_nsp.py` and `test_orderbook_double_delete_order.py` do not exist.
@@ -106,7 +108,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((682 tests))
+  root((748 tests))
     Simulator
       orderbook 14
         components, matching, invariants
@@ -145,13 +147,19 @@ mindmap
         logging, progress log, info dict
         activity metrics, episode record
         NAV conservation
-    Integration 59
+      probe 41
+        targets, episode masking
+        splits never shuffled
+        unscoreable vs zero
+    Integration 84
       league wiring, 3 topologies
       real save and restore
       real progress.jsonl, 1 xfail pinning S1-1
       real remote env runner
       champions inherit the encoder
       recurrent and MoE train end to end
+      every encoder frozen and probed
+      a real checkpoint restored, not re-initialised
 ```
 
 ---
@@ -636,6 +644,53 @@ time-dimension connectors produce, so every env step failed nowhere near the mod
 
 ---
 
+### 6.5 The probe harness
+
+Two files, added with `train/probe/` ([23](23_probe_harness.md)). The harness produces *numbers
+people will cite*, so what these pin is not that it runs but the handful of properties that decide
+whether its numbers mean anything.
+
+#### 6.5.1 `test_probe.py` — 41 tests
+
+Runs on synthetic observations built by hand, not on env rollouts: the arithmetic is the subject,
+and a target checked against the same expression that computes it checks nothing.
+
+| Area | What it pins |
+|---|---|
+| Snapshot readers | `snapshots` is the *newest* frame of the stack; `depth_imbalance` uses the `+sqrt(V)` / `-sqrt(V)` sign convention rather than working around it (a balanced book is exactly 0, a one-sided one exactly ±1); an empty book is neutral, not a sentinel |
+| Targets | `mid_return` is the `log_mid` difference; `realized_vol` of a constant drift is exactly zero and refuses `horizon` 1; every registered target builds and is finite |
+| `horizon_mask` | **Never crosses an episode boundary.** A return read across a reset is a jump between unrelated random price anchors — the largest "signal" in the corpus and entirely artificial |
+| Splits | No episode appears in two splits; the fallback below three episodes is contiguous; **no split is ever shuffled**; the three partition the rows |
+| Metrics | R² of the mean predictor is 0 and of a constant target is 0 (not 1); balanced accuracy of a constant predictor is 0.5 — the reason it is balanced, since `two_sided` is true in almost every step |
+| `fit_and_score` | A linearly readable target scores > 0.99; pure noise does **not** score hugely negative, because the alpha grid reaches far enough to decline the overfit; a single-class or constant target is *unscoreable* rather than a floor value; the intercept is not penalised |
+| Report | Every feature set is scored on identical rows with an identical split; a misaligned set raises; a target below its `min_horizon` is skipped, not fatal; a tie names no winner |
+| Parquet | The per-agent copies are **deduplicated** — an 8-agent run writes eight copies of every observation, and stacking them leaks a row's exact duplicates into both the training and the test split |
+
+The two most load-bearing are `test_pure_noise_does_not_score_above_zero` and the deduplication
+test. Both pin the difference between a harness that reports representation quality and one that
+reports overfitting while looking identical.
+
+#### 6.5.2 `integration/test_probe_harness.py` — 25 tests
+
+The parts that can only break where the harness meets the rest of the system.
+
+| Class | Covers |
+|---|---|
+| `TestRolloutCorpus` | The stream is `max_step + 1` per episode (the reset observation is a real book state), matches the env's width, is seed-reproducible, and **the book is not empty** — a corpus of empty books scores every feature set at the floor and says nothing, which is exactly what `init_cash: 0` produces (S1-4) |
+| `TestEveryEncoderIsProbeable` | Parametrised over every registered encoder: latents are one per observation and finite, **deterministic** (a live dropout makes the score irreproducible rather than wrong), and probing does not change a single weight |
+| `TestStatefulEncodersSeeTheirEpisode` | The LSTM's latent moves along its episode and its state resets at every boundary — batched like a stateless encoder it would silently score a memory re-initialised at every row, which would look completely normal in the report |
+| `TestCheckpointRestore` | A checkpoint is found in RLlib's layout, restores **its weights** rather than a fresh initialisation, and a missing module id raises naming what is there |
+| `TestEndToEnd` | The matrix scores `raw` against a real encoder on identical rows and renders |
+
+`test_restores_the_weights_not_a_fresh_initialisation` is the one worth reading. A re-initialised
+encoder produces perfectly good latents and a perfectly plausible score — the report would simply
+credit the run's training with its initialisation, and nothing would look wrong. The missing-module
+test found a live bug while being written: the path resolver fell back to loading the checkpoint
+*root* as a module, so a mistyped `--module-id` surfaced as a missing-file error about an internal
+pickle instead of naming the modules that were there.
+
+---
+
 ## 7. Continuous integration
 
 [`.github/workflows/tests.yml`](../.github/workflows/tests.yml), replacing the old `.travis.yml`
@@ -677,7 +732,7 @@ Honest accounting of what the suite does **not** cover.
 | **No information-content tests for the observation** | The suite would pass unchanged with the varying-denominator stack, the zero-collision ambiguity and the dead tape loop all present — and all three are present ([05](05_observation_space.md) §7). |
 | **`test_shared_history_multi_agent_uniformity` encodes a defect as a requirement** | See §4.2. |
 | ~~**Reproducibility is untested**~~ | **Closed.** `test_seeding.py` (11 tests) asserts two identically-seeded episodes match and two differently-seeded ones do not, across all three randomness sources — and does it while seeding the *global* NumPy stream to different values, so it cannot pass for the wrong reason. What remains untested is reproducibility of a whole multi-worker *training run*, which is a different claim. |
-| **No encoder is tested for whether it *learns*** | §6.4 proves every encoder builds, trains for an iteration, checkpoints and survives a champion snapshot — mechanics, not merit. Nothing runs long enough to say whether the transformer or the LSTM beats the MLP, which is the question the `encoder` group exists to answer. The comparison protocol is written down ([18](18_configuration.md) §5.5); no run has followed it. |
+| ~~**No encoder is tested for whether it *learns***~~ | **Partly closed.** §6.4 still proves only mechanics, and no *training* run has followed the comparison protocol ([18](18_configuration.md) §5.5). But the reason it could not be followed usefully — the reward cannot rank encoders while S1-1 and S1-3 stand — is now routed around: `train/probe/` scores an encoder on public microstructure targets with no reward, policy or value function involved ([23](23_probe_harness.md)). What remains open is the original question in its strong form: whether a better-scoring encoder makes a better *trader*, which still needs S1-1 and S1-3 fixed. |
 | **Edge cases in league matchmaking** | Empty pools and zero weights are untested. |
 | **No property-based tests** | The order book is an ideal Hypothesis target: "tree volume == Σ level volumes", "no crossed book", "Σ NAV == Σ initial cash" hold for *any* order sequence. |
 | **No coverage measurement** | No `pytest-cov`, no threshold. |

@@ -12,5 +12,21 @@
     "is_render": false,
     "log_level": null,
     "seed": null
+  },
+"cda_probe": {
+    "_module": "python -m gym_continuousDoubleAuction.train.probe",
+    "_note": "Reward-free encoder scoring - see doc/23_probe_harness.md. Independent of TrainConfig on purpose: the harness exists because the reward cannot currently settle an encoder comparison (S1-1, S1-3), so it must not read the same group whose defaults were chosen for training. log_level null defers to the logging group of tunable_constants.json.",
+    "_note_corpus": "num_episodes / max_step / num_agents describe the random-agent rollouts used when --parquet is not given. The product is the corpus size, and the split is contiguous, so more EPISODES buys more independent price anchors while more STEPS only lengthens each one - three short episodes generalise better than one long one.",
+    "_note_encoders": "Scored untrained, i.e. at initialisation. That is the inductive-bias baseline a trained encoder from --checkpoint has to beat; reporting a trained encoder without it credits the architecture with whatever its initialisation was already worth.",
+    "_note_horizons": "Steps ahead. realized_vol declares min_horizon 2 and is skipped at horizon 1 rather than reporting a column of zeros.",
+    "num_episodes": 3,
+    "max_step": 512,
+    "num_agents": 4,
+    "seed": 0,
+    "encoders": ["mlp", "transformer"],
+    "targets": ["mid_return", "mid_moves", "spread_change", "imbalance_change", "two_sided", "realized_vol"],
+    "horizons": [1, 5, 20],
+    "module_id": "policy_0",
+    "log_level": null
   }
 }

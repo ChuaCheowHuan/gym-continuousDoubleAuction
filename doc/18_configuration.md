@@ -22,7 +22,7 @@ beginning with `_`, at every level.
 | [`config/train_config.json`](../config/train_config.json) | Every `TrainConfig` value, **including the env keys** | `TrainConfig`, `default_model_config`, `SelfPlayCallback` |
 | [`config/env_defaults.json`](../config/env_defaults.json) | Fallbacks for an env built without a full config dict | `continuousDoubleAuctionEnv` and the env mixins |
 | [`config/tunable_constants.json`](../config/tunable_constants.json) | Structural constants: space layout, ID prefixes, logging setup, path defaults | `state_helper`, `action_helper`, `policy_handler`, `logging_setup`, `visualize/` |
-| [`config/cli_defaults.json`](../config/cli_defaults.json) | Flag defaults with no other config home | `CDA_rand` |
+| [`config/cli_defaults.json`](../config/cli_defaults.json) | Flag defaults with no other config home | `CDA_rand`, `train/probe` |
 | [`config/runtime_profiles.json`](../config/runtime_profiles.json) | *Where* a run executes: the `gpu` / `cpu` hardware sets and per-platform paths | `train/runtime.py`, `CDA_train.ipynb` |
 
 ```mermaid
@@ -827,6 +827,27 @@ damage getting them wrong does:
    parameters and a fraction of the throughput is a different claim from a win at
    parity, and the per-iteration line reports `env steps sampled` for the other half.
 
+5. **Score them without the reward first.** Points 1–4 are about running the comparison
+   well; this one is about whether the comparison can answer anything at all. While S1-1
+   holds, `vf_explained_var` is ~9e-05 and PPO is REINFORCE with a batch baseline; while
+   S1-3 holds, passivity is the joint optimum. An architecture ranking taken from returns
+   under those two is a ranking of how fast each architecture descends to doing nothing.
+
+   ```bash
+   python -m gym_continuousDoubleAuction.train.probe --encoders mlp transformer lstm
+   ```
+
+   That ranks encoders on public microstructure targets — the next midpoint move, the
+   spread change, depth imbalance — with no reward, policy or value function in the path.
+   It runs in seconds, needs no training run, and scores each architecture *untrained* as
+   well, which is the inductive-bias baseline a trained encoder has to beat. See
+   [23_probe_harness.md](23_probe_harness.md).
+
+   It does not replace a training comparison. It answers "does this architecture represent
+   the market better", not "does it trade better", and the second question genuinely needs
+   S1-1 and S1-3 fixed.
+
 For `moe_transformer` also watch `moe_max_expert_share` and `moe_min_expert_share` in
 the learner metrics — a collapsed mixture is indistinguishable from a healthy one by
 loss or throughput alone.
+

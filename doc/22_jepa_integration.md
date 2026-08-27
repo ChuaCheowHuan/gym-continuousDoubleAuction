@@ -286,8 +286,9 @@ and emergence is currently reported only through NAV and trade counts. A linear 
 order-flow imbalance or price impact on a learned latent is evidence about what the agents have
 come to represent — which is a stronger claim about emergence than a P&L table.
 
-**Cost:** small. A standalone script under `visualize/` or a `train/probe/` module, plus a
-Parquet reader. No changes to `train.py`, the encoder registry, or the league.
+**Implemented.** `train/probe/`, documented in [23_probe_harness.md](23_probe_harness.md). No
+changes to `train.py`, the encoder registry, or the league — it builds encoders through
+`build_trainable_module_spec`, freezes them, and reads them.
 
 ### 4.2 Proposal B — a `jepa` encoder with a masked-latent auxiliary loss
 
@@ -480,7 +481,7 @@ is the piece worth starting.
 | Step | Work | Depends on | Effort |
 |---|---|---|---|
 | 0 | S1-1 (`vf_clip_param` / reward scaling), S1-3 (reward sign), S2-6 (shared normalizer) | — | S–M |
-| 1 | **Proposal A** — offline probe harness and reward-free encoder scores | **nothing** | S |
+| 1 | ~~**Proposal A** — offline probe harness and reward-free encoder scores~~ — **done**, see [23](23_probe_harness.md) | **nothing** | S |
 | 2 | Generalise the aux-loss seam: `ENCODER_AUX_LOSS`, encoder-aware `_collect` and `get_non_inference_attributes` | — | S |
 | 3 | **Proposal B** — the `jepa` encoder, level/side masking only | 2 | M |
 | 4 | Time-axis masking in Proposal B | 0 (S2-6), 3 | S |
