@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (807 tests: 705 unit + 102 integration)
+# everything (827 tests: 725 unit + 102 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -83,8 +83,9 @@ Counts re-measured with `--collect-only`.
 | `test_episode_record.py` | 32 | The Parquet per-step record: declared schema and its drift guard against `Info_Helper`, identity columns, sampling rate, byte cap, eviction of episodes that never end, and the ways it must fail without raising |
 | `test_encoder_registry.py` | 38 | The selectable-encoder seam: registry, `CDACatalog`, the `mlp` pass-through staying byte-for-byte what it was, `ObsLayout`, tokenisation |
 | `test_encoder_architectures.py` | 140 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
+| `test_pretrain.py` | 20 | Offline JEPA pretraining: the loop trains only the trunk and predictor, a collapse is reported rather than hidden, and the checkpoint's fingerprint refuses a mismatched architecture |
 | `test_probe.py` | 43 | The reward-free probe harness's arithmetic on synthetic observations: target definitions, episode-boundary masking, the splits, the metrics, unscoreable cells, and that `snapshots` reads the book rather than the private tail |
-| **unit total** | **705** | |
+| **unit total** | **725** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported and finite (1 xfail pins S1-1) |
@@ -108,7 +109,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((807 tests))
+  root((827 tests))
     Simulator
       orderbook 14
         components, matching, invariants
@@ -151,6 +152,10 @@ mindmap
         targets, episode masking
         splits never shuffled
         unscoreable vs zero
+      pretrain 20
+        trains trunk + predictor only
+        collapse reported not hidden
+        fingerprint refuses a mismatch
     Integration 102
       league wiring, 3 topologies
       real save and restore

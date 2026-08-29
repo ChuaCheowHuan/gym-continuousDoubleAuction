@@ -11,7 +11,7 @@ from typing import Dict, List
 
 import numpy as np
 
-from gym_continuousDoubleAuction.config_loader import cli_default
+from gym_continuousDoubleAuction.config_loader import cli_default, group
 from gym_continuousDoubleAuction.logging_setup import configure as configure_logging
 from gym_continuousDoubleAuction.logging_setup import get_logger
 from gym_continuousDoubleAuction.train.model.encoders import selectable_encoder_types
@@ -32,6 +32,8 @@ def build_features(
     encoders: List[str],
     checkpoint: str = None,
     module_id: str = None,
+    pretrained: str = None,
+    pretrained_encoder: str = None,
 ) -> Dict[str, np.ndarray]:
     """The feature matrices to compare: `raw`, each encoder, and a checkpoint.
 
@@ -63,6 +65,20 @@ def build_features(
         name = f"{module_id}@ckpt"
         features[name] = features_module.latents(module, corpus)
         logger.info("%s: trained latents %s", name, features[name].shape)
+
+    if pretrained:
+        # Built from the config file's spec block, so the fingerprint written
+        # beside the weights is comparable with the one being built here - a
+        # mismatch raises rather than loading partially.
+        spec = group("train_config.json", "encoder")["encoder_specs"].get(
+            pretrained_encoder, {}
+        )
+        module = features_module.pretrained_module(
+            obs_space, act_space, pretrained_encoder, pretrained, spec
+        )
+        name = f"{pretrained_encoder}@pretrained"
+        features[name] = features_module.latents(module, corpus)
+        logger.info("%s: pretrained latents %s", name, features[name].shape)
 
     return features
 
@@ -104,6 +120,18 @@ def main(argv=None):
              "untrained encoders.",
     )
     p.add_argument("--module-id", type=str, default=_cli("module_id"))
+    p.add_argument(
+        "--pretrained", type=str, default=None,
+        help="A directory written by `train.pretrain`, scored alongside the "
+             "untrained encoders. Putting the same architecture in the report "
+             "twice - once at initialisation, once pretrained - is what "
+             "isolates what the self-supervised objective actually taught it.",
+    )
+    p.add_argument(
+        "--pretrained-encoder", type=str, default="jepa",
+        help="Which architecture --pretrained holds. Its spec comes from "
+             "train_config.json, so the fingerprint check is meaningful.",
+    )
     p.add_argument("--out", type=str, default=None, help="Write the report here too.")
     p.add_argument("--log-level", type=str, default=_cli("log_level"))
     args = p.parse_args(argv)
@@ -121,7 +149,8 @@ def main(argv=None):
         )
 
     features = build_features(
-        corpus, args.encoders, args.checkpoint, args.module_id
+        corpus, args.encoders, args.checkpoint, args.module_id,
+        args.pretrained, args.pretrained_encoder,
     )
     rows = report_module.run(corpus, features, args.targets, args.horizons)
     text = "\n".join([

@@ -1754,3 +1754,78 @@ encoders **untrained**, so it measures JEPA's *architecture* - essentially the t
 not its *objective*, which has had no chance to train. Scoring the objective needs `--checkpoint`
 after a real run, or the offline pretraining of doc/22 4.4.
 
+---
+
+## 32. An encoder can be taught before a policy exists
+
+`train/pretrain/` trains a JEPA encoder's self-supervised objective on observations alone - no
+reward, no policy, no opponents - and writes weights a training run starts from. See
+[24_pretraining.md](24_pretraining.md).
+
+### 32.1 Almost entirely reuse
+
+Nothing in it reads a Parquet file or steps an env. `train/probe/corpus.py` already reads both
+sources, deduplicates the per-agent copies, marks episode boundaries and validates widths;
+`probe.probe.split_masks` already splits by episode; `probe.features.build_module` already builds
+the module *training* would build. What was added is the optimiser, the checkpoint format and the
+guard on it.
+
+Building the whole `RLModuleSpec` and training the encoder inside it - rather than instantiating a
+`TorchJEPAEncoder` directly - is what makes the pretrained architecture provably the one training
+will use. The pi and vf heads are built and never touched.
+
+### 32.2 The fingerprint, and one definition of it
+
+A checkpoint holds `encoder.pt`, `encoder_fingerprint.json` and `rl_module/`. The fingerprint is
+the point of the format: `train.py` already refuses a restore whose `encoder_type` or
+`encoder_spec` differs from the checkpoint's, because the weights are that architecture's weights,
+and pretrained weights need the same guard.
+
+`encoders.encoder_fingerprint` is now the single definition, called by both
+`train._encoder_fingerprint` and the pretrainer, so the two cannot drift. That function exists at
+all because a `getattr`-only read once reported the `mlp` default from the first champion onward,
+silently disabling the structural check for a whole run.
+
+The check runs at *spec-build* time, before the path reaches any encoder, so a mismatch names the
+architectures rather than surfacing as a shape error on some env runner.
+
+### 32.3 Not `RLModuleSpec.load_state_path`
+
+There is a field that looks made for carrying a pretrained path. In RLlib 2.56 it is stored, merged
+and copied, and never read back - setting it would have silently done nothing, which is the same
+dead-config-key shape as `OrderBook`'s `tick_size`.
+
+The path rides on the model config instead, and `TorchJEPAEncoder.__init__` loads its own weights,
+so every process that builds an encoder loads them itself with no state to synchronise. The load is
+last in `__init__`, so anything explicit afterwards wins - which is what makes it safe on the two
+paths that would otherwise surprise: a champion snapshot constructs the encoder and then
+`set_state`s trained weights over it, and a restored run does the same with its checkpoint.
+
+`mlp` refuses a pretrained encoder outright, having no objective that could have produced one.
+
+### 32.4 Watch latent_std, not the loss
+
+The report carries the training loss, a validation loss split by episode, and `latent_std`. Only the
+last is load-bearing: a collapsed JEPA maps every observation to one vector, which makes its
+prediction *perfect* - the loss goes to zero and reads as success. `PretrainReport.collapsed`
+detects it and the CLI exits non-zero rather than leaving a flattering number beside unusable
+weights.
+
+### 32.5 The first measurement
+
+`--pretrained` was added to the probe so the same architecture appears twice in one report, on
+identical rows with an identical split. On a 150-step run over 4 random-agent episodes the result is
+directional rather than uniform:
+
+| target | untrained | pretrained |
+|---|---|---|
+| `spread_change` h=1 | -0.0094 | **+0.0165** |
+| `imbalance_change` h=20 | -0.3529 | **+0.1090** |
+| `realized_vol` h=5 | +0.1292 | **-0.4961** |
+
+It won on the structural targets and lost on the temporal one, which is what `mask_axis: level`
+should do - level masking only ever asks what depth is consistent with the rest of the book, so
+nothing in the objective preserves temporal structure in the latent. The obvious next experiment is
+`mask_axis: time`. This is a smoke-sized budget and establishes that the mechanism works and its
+effect is legible, not that pretraining pays at scale.
+

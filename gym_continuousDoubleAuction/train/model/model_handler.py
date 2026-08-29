@@ -163,7 +163,8 @@ class CDACatalog(PPOCatalog):
 
 def build_trainable_module_spec(obs_space, act_space, encoder_type=None,
                                 encoder_specs=None, fcnet_hiddens=None,
-                                fcnet_activation=None, vf_share_layers=None):
+                                fcnet_activation=None, vf_share_layers=None,
+                                pretrained_path=None):
     """The `RLModuleSpec` for one trainable PPO module.
 
     Args:
@@ -178,6 +179,12 @@ def build_trainable_module_spec(obs_space, act_space, encoder_type=None,
         vf_share_layers: Ditto. Also honoured by custom encoders, since
             `ActorCriticEncoderConfig` reads it to decide whether the actor and
             critic share a trunk.
+        pretrained_path: A directory written by `train.pretrain`, whose weights
+            the module starts from. The checkpoint's encoder fingerprint is
+            verified against the encoder being built *here*, before the path
+            reaches RLlib - a mismatch is a hard error rather than a shape
+            failure several frames later. Ignored for `mlp`, which has no
+            self-supervised objective to have been pretrained on.
 
     Returns:
         An `RLModuleSpec` with `module_class` left None, so RLlib fills in the
@@ -211,6 +218,13 @@ def build_trainable_module_spec(obs_space, act_space, encoder_type=None,
     )
 
     if encoder_type == MLP_ENCODER_TYPE:
+        if pretrained_path:
+            raise ValueError(
+                "encoder_type 'mlp' cannot use a pretrained encoder: it has no "
+                "self-supervised objective, so there is nothing that could have "
+                "produced those weights. Set encoder_type to the architecture "
+                "the checkpoint was trained for."
+            )
         return RLModuleSpec(
             observation_space=obs_space,
             action_space=act_space,
@@ -224,6 +238,26 @@ def build_trainable_module_spec(obs_space, act_space, encoder_type=None,
         "encoder_type": encoder_type,
         "encoder_spec": encoder_spec,
     }
+
+    if pretrained_path:
+        # Verified HERE, before the path reaches the model config, so a
+        # checkpoint for a different architecture fails while there is still a
+        # name to put in the message - not as a shape error inside an encoder
+        # constructor on some env runner.
+        #
+        # The path rides on the model config rather than on `RLModuleSpec`'s
+        # `load_state_path`, which looks like the field for exactly this and is
+        # not: nothing in RLlib 2.56 ever reads it back, so setting it would
+        # have silently done nothing. Carrying it on the model config means
+        # every process that constructs the encoder - env runners and learners
+        # alike - loads the weights itself, with no state to synchronise.
+        #
+        # Imported here rather than at module scope: `train.pretrain` imports
+        # the probe, which imports this module.
+        from gym_continuousDoubleAuction.train.pretrain import verify_fingerprint
+
+        verify_fingerprint(pretrained_path, encoder_type, encoder_spec)
+        fields["pretrained_path"] = pretrained_path
     # Some spec keys configure RLlib rather than the encoder and cannot ride on
     # a custom encoder config: `max_seq_len`, which the connectors read to cut a
     # recurrent module's batch into sequences before any encoder is called, and

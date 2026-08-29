@@ -167,6 +167,31 @@ def _available_modules(checkpoint: str) -> list:
     )
 
 
+def pretrained_module(obs_space, act_space, encoder_type: str,
+                     path: str, encoder_spec: Optional[Dict] = None) -> RLModule:
+    """A module of the configured architecture, carrying pretrained weights.
+
+    The measurement offline pretraining exists to make: the same architecture
+    appears twice in a report, once at initialisation and once after the
+    self-supervised objective has trained it, on identical rows with an
+    identical split. Everything between those two columns is what pretraining
+    taught the encoder.
+
+    Imported lazily because `train.pretrain` imports this module - the probe is
+    the corpus reader pretraining reuses, so the dependency only runs one way
+    at import time.
+
+    Raises:
+        FileNotFoundError: if `path` is not a pretrain checkpoint.
+        ValueError: if its fingerprint does not match the encoder being built.
+    """
+    from gym_continuousDoubleAuction.train.pretrain import load_into
+
+    module = build_module(obs_space, act_space, encoder_type, encoder_spec)
+    load_into(module, path, encoder_type, encoder_spec)
+    return module
+
+
 def latents(module: RLModule, corpus: ProbeCorpus) -> np.ndarray:
     """Frozen encoder latents for every row of `corpus`, as `(N, d)` float64.
 

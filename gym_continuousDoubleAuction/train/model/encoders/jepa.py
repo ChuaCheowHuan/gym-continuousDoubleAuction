@@ -57,6 +57,7 @@ duplicates from `transformer` are the deliberate price of that.
 from __future__ import annotations
 
 import copy
+import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -321,6 +322,12 @@ class JEPAEncoderConfig(ModelConfig):
     #: Weight on the variance hinge that guards against collapse.
     variance_coeff: float = JEPA_DEFAULTS["variance_coeff"]
 
+    #: A `train.pretrain` checkpoint to initialise from, or None. Set by
+    #: `build_encoder_config`, never by the spec block - it is not a
+    #: hyperparameter and must stay out of `encoder_spec`, which is what the
+    #: encoder fingerprint hashes.
+    pretrained_path: Optional[str] = None
+
     @property
     def output_dims(self):
         """Becomes `Catalog.latent_dims`, which sizes the pi and vf heads."""
@@ -405,6 +412,30 @@ class TorchJEPAEncoder(TorchModel, Encoder):
         #: `_forward`, taken by `take_jepa_stats`.
         self._jepa_stats = None
         self._num_tokens = num_tokens
+
+        # Pretrained weights are an *initialisation*, so they load last in
+        # `__init__` and anything explicit afterwards wins. That ordering is
+        # what makes them safe on the two paths that would otherwise be
+        # surprising: a champion snapshot constructs the encoder (loading these)
+        # and then `set_state`s the trained weights over them, and a restored
+        # run does the same with the checkpoint's. Neither ends up running
+        # pretrained weights it did not ask for.
+        #
+        # Loaded here rather than by the caller because every process that
+        # builds an encoder needs them - env runners included - and doing it at
+        # construction means there is no window in which some worker holds a
+        # differently-initialised trunk.
+        if config.pretrained_path:
+            from gym_continuousDoubleAuction.train.pretrain import (
+                WEIGHTS_FILE,
+            )
+
+            state = torch.load(
+                os.path.join(config.pretrained_path, WEIGHTS_FILE),
+                map_location="cpu",
+                weights_only=True,
+            )
+            self.load_state_dict(state)
 
     # --- The auxiliary objective -----------------------------------------
 

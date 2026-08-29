@@ -87,6 +87,7 @@ gym_continuousDoubleAuction/
 │   ├── model/model_handler.py          RandomRLModule + DefaultModelConfig + CDACatalog
 │   ├── model/encoders/                 selectable observation encoders for the trainable modules
 │   ├── probe/                          reward-free encoder scoring (doc/23)
+│   ├── pretrain/                       offline JEPA pretraining (doc/24)
 │   ├── model/jepa_learner.py           JEPA module + learner (doc/22 4.2)
 │   ├── callbk/…_self_play_callback.py  league: champions, matchmaking, metrics, the record
 │   └── helper/helper.py                order-imbalance / mid-price utilities (unused)
@@ -94,7 +95,7 @@ gym_continuousDoubleAuction/
 │   ├── run_all.py                        regenerates every chart
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               705 unit tests
+└── test/                               725 unit tests
     └── integration/                    59 tests that build real Algorithms
 ```
 

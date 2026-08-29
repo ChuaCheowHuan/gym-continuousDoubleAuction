@@ -117,6 +117,15 @@ class CDAModelConfig(DefaultModelConfig):
     #: That encoder's block from `encoder_specs`, passed through to its builder.
     encoder_spec: Dict[str, Any] = field(default_factory=dict)
 
+    #: A `train.pretrain` checkpoint whose weights the encoder starts from.
+    #:
+    #: A field of its own rather than a key inside `encoder_spec`, deliberately:
+    #: `encoder_spec` is what `encoder_fingerprint` hashes, and a fingerprint
+    #: that depended on *where the weights came from* could never match the one
+    #: stored beside those weights. It is also not an architecture knob - it
+    #: changes where training starts, not what shape anything is.
+    pretrained_path: Optional[str] = None
+
 
 def register(
     name: str,
@@ -334,6 +343,45 @@ def validate_encoder_type(encoder_type: str) -> str:
     return known_encoder_type(encoder_type)
 
 
+def encoder_fingerprint(encoder_type: str, encoder_spec: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """The encoder's identity, as something two callers can compare with `!=`.
+
+    One definition, because there are now two places that need it and they must
+    agree exactly: `train._encoder_fingerprint`, which digs it out of an
+    `AlgorithmConfig` so a restore cannot silently change the architecture, and
+    the offline pretrainer, which writes it beside the weights so loading a
+    `d_model: 128` checkpoint into a `d_model: 256` encoder is a hard error
+    rather than a shape mismatch several frames later.
+
+    `encoder_spec` is normalised to sorted items rather than kept as a dict:
+    the fingerprint is compared with `!=`, and two dicts differing only in key
+    order would otherwise read as a change. Round-tripping through JSON turns
+    those tuples into lists, so `fingerprints_match` compares the normalised
+    form of both sides rather than the raw values.
+    """
+    return {
+        "encoder_type": encoder_type,
+        "encoder_spec": tuple(sorted((encoder_spec or {}).items())),
+    }
+
+
+def fingerprints_match(left: Dict[str, Any], right: Dict[str, Any]) -> bool:
+    """Whether two fingerprints describe the same encoder, across JSON.
+
+    `json.dump` turns the spec's tuple of pairs into a list of lists, so a
+    naive `==` between a freshly built fingerprint and one read back from disk
+    is always False. Both sides are re-normalised here.
+    """
+    def normalise(fingerprint):
+        spec = fingerprint.get("encoder_spec") or ()
+        return (
+            fingerprint.get("encoder_type"),
+            tuple(sorted((str(k), v) for k, v in dict(spec).items())),
+        )
+
+    return normalise(left) == normalise(right)
+
+
 def build_encoder_config(
     obs_space: gym.Space,
     model_config_dict: Dict[str, Any],
@@ -363,7 +411,22 @@ def build_encoder_config(
 
     layout = ObsLayout.from_obs_space(obs_space)
     spec = model_config_dict.get("encoder_spec") or {}
-    return ENCODER_REGISTRY[encoder_type](layout, spec, [layout.flat_dim])
+    config = ENCODER_REGISTRY[encoder_type](layout, spec, [layout.flat_dim])
+
+    # Set after building rather than passed to the builder: the builder's
+    # signature is `(layout, spec, input_dims)` for every encoder, and this is
+    # not part of any encoder's spec. An encoder with no `pretrained_path`
+    # field simply never sees it.
+    pretrained = model_config_dict.get("pretrained_path")
+    if pretrained:
+        if not hasattr(config, "pretrained_path"):
+            raise ValueError(
+                f"encoder_type {encoder_type!r} was given a pretrained "
+                f"checkpoint but has no `pretrained_path` field, so it cannot "
+                "load one. Only encoders with a self-supervised objective can."
+            )
+        config.pretrained_path = pretrained
+    return config
 
 
 # Encoder modules are imported for their `@register` side effect, at the bottom

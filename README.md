@@ -85,6 +85,7 @@ mindmap
     Research
       22 JEPA integration
       23 Probe harness
+      24 Pretraining
 ```
 
 ### Start here
@@ -126,6 +127,7 @@ mindmap
 | 17 | [17_changelog.md](doc/17_changelog.md) | What changed since `original_v1` (2020) and why |
 | 22 | [22_jepa_integration.md](doc/22_jepa_integration.md) | What JEPA is, why this observation suits it and this reward does not, and four ways it could be used |
 | 23 | [23_probe_harness.md](doc/23_probe_harness.md) | Scoring an encoder on microstructure targets without the reward: how to run it, how to read it, why the probe is linear |
+| 24 | [24_pretraining.md](doc/24_pretraining.md) | Training a JEPA encoder on observations alone before any PPO run, the fingerprint that guards its weights, and why to watch `latent_std` rather than the loss |
 
 ### Configuration and deployment
 
@@ -157,6 +159,10 @@ mindmap
 **Comparing encoders**
 [23](doc/23_probe_harness.md) (a metric that does not go through the reward) →
 [18](doc/18_configuration.md) §5.5 (seeds, separate runs, parameter counts)
+
+**Pretraining an encoder before training a policy**
+[22](doc/22_jepa_integration.md) §4.2 (the objective) → [24](doc/24_pretraining.md) (running it) →
+[23](doc/23_probe_harness.md) (measuring what it taught)
 
 **Setting up training**
 [18](doc/18_configuration.md) (where every value lives) → [08](doc/08_self_play_league.md) →
