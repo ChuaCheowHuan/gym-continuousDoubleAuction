@@ -510,17 +510,17 @@ Observations:
 
 | # | Change | Effort | Expected impact |
 |---|---|---|---|
-| 1 | Scale rewards by `init_cash`; or raise `vf_clip_param` + set `grad_clip` | S | **Unblocks the critic.** Nothing else matters until this is done |
+| 1 | ~~Scale rewards by `init_cash`~~ — **done**, by `acc.init_nav` | S | **Critic unblocked.** `vf_explained_var` guard is live, no longer an xfail |
 | 2 | Add private state to the observation (§2) | M | Makes the reward learnable at all |
-| 3 | Make the drawdown penalty an increment, not a level (§3.4) | S | Removes the episode-length-dependent risk tax |
-| 4 | Re-scale or remove the micro-penalties; express costs in bps | S | Restores the intended economic incentives |
+| 3 | ~~Make the drawdown penalty an increment~~ — **done**, as a *signed* change | S | Removes the episode-length-dependent risk tax; see [07 §4.1](07_reward_function.md) on why clipping it would not have |
+| 4 | ~~Re-scale the micro-penalties; express costs in bps~~ — **done** | S | Restores the intended incentives. Real fees charged through NAV remain open (S2-3) |
 | 5 | `size_mean → Box(0,1)`; scale or drop `size_sigma` | S | Recovers half the action range, removes a null control |
 | 6 | Normalise observation feature scales | S | Removes `tanh` saturation |
 | 7 | Terminate bankrupt agents individually | S | Stops zombie transitions polluting returns |
 | 8 | `entropy_coeff > 0` with decay; raise `std_dev_multiplier`; refuse champions with ~0 trades | S | Guards against passivity collapse |
 | 9 | Normalise the whole obs stack by the current `M_t`; add trade-flow features | M | Makes frame stacking actually informative |
 | 10 | Emit size directly as an action instead of distribution parameters | M | Removes unrecorded env-side stochasticity from the ratio |
-| 11 | Assert `vf_explained_var > 0` in the integration suite | S | Prevents §4 from silently regressing |
+| 11 | ~~Assert `vf_explained_var > 0` in the integration suite~~ — **done** | S | Prevents §4 from silently regressing |
 | 12 | Raise γ toward 0.999 or shorten episodes | S | Makes long-horizon strategies expressible |
 | 13 | One `np.random.Generator` on the env, threaded through everything | S | Reproducibility |
 | 14 | Surface rejected / no-op order counts in `infos` | S | Makes the dead-action fraction measurable |

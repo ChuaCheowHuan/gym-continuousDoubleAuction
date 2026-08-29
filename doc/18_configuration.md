@@ -204,18 +204,37 @@ The `environment` group of `train_config.json`, forwarded as an `env_config` dic
 
 ### 3.2 Reward coefficients
 
+Every coefficient multiplies a quantity already expressed as a **fraction of the trader's
+starting NAV** — `set_reward` divides by `acc.init_nav` — so they are all in units of "reward per
+unit of initial capital", and `1e-05` is one basis point of it.
+
 | Key | Value | Meaning |
 |---|---|---|
-| `order_penalty` | 0.1 | Per order placed this step |
-| `trade_penalty` | 0.05 | Per trade filled this step |
-| `drawdown_penalty` | 0.2 | Per unit of NAV below the running peak |
-| `passive_bonus` | 0.1 | Per passive (liquidity-providing) fill this step |
-| `loss_multiplier` | 1.5 | Extra weight on negative NAV changes |
+| `order_penalty` | 1e-05 | Per order placed this step (0.1 bps of initial capital) |
+| `trade_penalty` | 2e-05 | Per trade filled this step (0.2 bps) |
+| `drawdown_penalty` | 0.2 | Per unit of *change* in NAV below the running peak |
+| `passive_bonus` | 2e-05 | Per passive (liquidity-providing) fill this step (0.2 bps) |
+| `loss_multiplier` | 1.0 | Extra weight on negative NAV changes |
+
+Two of these are less free than they look:
+
+- **`loss_multiplier` must be 1.0** to keep the game zero-sum. Total NAV is conserved exactly, so
+  `Σ nav_change = 0` across agents; any value above 1 makes `Σ reward < 0`, which makes passing
+  dominant for every agent and collapses the market. That is S1-3, measured: all-pass scored
+  exactly 0.0 while random trading scored −591,027. It shipped at 1.5.
+- **`drawdown_penalty` multiplies a signed change, not a level.** The level was charged on all
+  4,096 steps of an episode, so one early loss taxed every later step even from an idle agent
+  (S2-1). Clipping the change at zero would not have been the fix — see
+  [07 §4.1](07_reward_function.md).
+
+The micro-penalties were calibrated against measurement, not chosen: over 8,000 random-agent steps
+a step that moves NAV at all moves it by a median 1.9e-03 of starting capital, so they sit at
+0.5–1% of that. `passive_bonus` equals `trade_penalty`, making a passive fill net-free while an
+aggressive one costs 0.2 bps.
 
 These were literals inside `Reward_Helper.set_reward` until they were promoted to config — the
 parameters most worth sweeping were the least reachable in the project. The formula they feed is
-documented in [07_reward_function.md](07_reward_function.md) §2, including why
-`drawdown_penalty` in particular dominates the reward at the current scale.
+documented in [07_reward_function.md](07_reward_function.md) §2.
 
 ### 3.3 How the keys reach their consumers
 

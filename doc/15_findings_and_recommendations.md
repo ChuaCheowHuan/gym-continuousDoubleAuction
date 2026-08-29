@@ -83,10 +83,14 @@ total_loss         9.25        /  9.48          ← 10.0 of which is a constant
 PPO degenerates to REINFORCE with a batch-standardised baseline. Silent: the reported
 `total_loss` looks small and stable because 10.0 of it is a constant.
 
-**Fix.** Normalise `nav_change` by `init_cash` in the reward (preferred — also fixes S2-1 and
-S2-3), or set `vf_clip_param` to a commensurate value and add `grad_clip`. Then assert
-`vf_explained_var > 0` in CI.
-→ [12 §4](12_perspective_rl_researcher.md#4-the-critic-cannot-learn--vf_clip_param-saturation)
+**Fixed.** Every NAV-derived quantity in `set_reward` is now divided by `trader.acc.init_nav` —
+the account's own record of what the trader started with, rather than a second copy of `init_cash`
+that could drift from it. Value targets are O(1), the clamp no longer binds, and the substantive
+`vf_explained_var` assertion in `integration/test_progress_and_vf.py` — which was a *strict xfail*
+pinning this finding — XPASSed on the first real run after the change and is now a live regression
+guard. The same change also closed S2-3 and made S2-1's fix expressible.
+→ [12 §4](12_perspective_rl_researcher.md#4-the-critic-cannot-learn--vf_clip_param-saturation),
+[07 §2.1](07_reward_function.md)
 
 ### S1-2 · Observation contains no private state **[verified]**
 
@@ -117,9 +121,20 @@ loss-aversion multiplier and the drawdown level make the reward strictly negativ
 early because the fastest way to raise return is to stop trading. Empty-market collapse is the
 predicted outcome.
 
-**Fix.** Remove the systematic negative bias: make the drawdown penalty an increment (S2-1),
-scale the micro-penalties to reward units (S2-3), and reduce or drop the asymmetric multiplier.
-→ [12 §3.3](12_perspective_rl_researcher.md#33-doing-nothing-is-a-dominant-strategy)
+**Fixed.** `loss_multiplier` 1.5 → **1.0**, the drawdown level → a signed change (S2-1), and the
+micro-penalties rescaled to reward units (S2-3). Re-measured on the same 4 agents × 300 steps:
+
+| | before | after |
+|---|---|---|
+| all agents pass | `0.0` | `0.0` |
+| random trading | **−591,027** | **−0.0104** |
+
+Passing still scores exactly zero, which is correct rather than residual: in a zero-sum market no
+reward can make trading positive-sum *on average*. What changed is that the friction is now ~0.5%
+of a typical NAV move instead of dominating it, so trading is no longer dominated for an agent with
+any edge. Measured over 1,000 steps, `nav_term` sums to **exactly 0.000000** across agents.
+→ [12 §3.3](12_perspective_rl_researcher.md#33-doing-nothing-is-a-dominant-strategy),
+[07 §4.3](07_reward_function.md)
 
 ### S1-4 · The default standalone env could not trade **[verified, fixed]**
 
@@ -162,8 +177,15 @@ exceeds the old peak. Measured over 300 steps × 4 random agents: drawdown = **�
 Side effects: not potential-based (changes the optimum, not just the shaping); magnitude scales
 with `max_step`, making episode length a hidden risk-aversion knob; non-Markov in the observation.
 
-**Fix.** `-drawdown_penalty * max(0, new_dd - prev_dd)`.
-→ [12 §3.4](12_perspective_rl_researcher.md#34-the-drawdown-term-is-a-level-not-a-delta)
+**Fixed — but not with the fix this entry used to propose.** `max(0, new_dd - prev_dd)` charges
+`nav_term` a second time on every losing step below the peak and refunds nothing on the way back
+up, so a round trip costs `drawdown_penalty × X`: an asymmetric loss multiplier by another name,
+which would have left S1-3 half-open while looking like a fix for this. What shipped is the
+**signed** change, `(current_drawdown - previous_drawdown) / init_nav`, whose per-step charges
+telescope to `-drawdown_penalty × final_drawdown` over an episode regardless of path. A round trip
+is free, ending in drawdown is still penalised, and the term cannot be farmed.
+→ [12 §3.4](12_perspective_rl_researcher.md#34-the-drawdown-term-is-a-level-not-a-delta),
+[07 §4.1](07_reward_function.md)
 
 ### S2-2 · Unnormalised observation scales saturate the `tanh` MLP **[verified]**
 
@@ -188,9 +210,19 @@ features contribute almost nothing.
 fees anywhere in the simulator, so market making has no revenue model and crossing the spread has
 no cost.
 
-**Fix.** Charge maker/taker fees in basis points of notional inside settlement so they flow
-through NAV; relax the NAV-conservation assertion to account for fees.
-→ [13 §4](13_perspective_financial_trader.md#4-there-are-no-transaction-costs)
+**Half fixed.** The *scale* problem is closed: the coefficients now multiply quantities already
+expressed as fractions of starting capital, so `1e-05` is one basis point of it, and they were
+calibrated against measurement rather than chosen — over 8,000 random-agent steps, 37% of steps
+move NAV at all and one that does moves it by a median 1.9e-03 of starting capital, so the
+penalties sit at 0.5–1% of that. `passive_bonus` is set equal to `trade_penalty`, making a passive
+fill net-free while an aggressive one costs 0.2 bps, which expresses "capture spread" as a price.
+
+**Still open:** these remain *proxies charged against the reward*, not fees charged against NAV.
+Real maker/taker fees in basis points of notional, applied inside settlement so they flow through
+the ledger, would also require relaxing the NAV-conservation assertion to account for them. That
+is a simulator change, not a reward change, and it is unaffected by this fix.
+→ [13 §4](13_perspective_financial_trader.md#4-there-are-no-transaction-costs),
+[07 §4.2](07_reward_function.md)
 
 ### S2-4 · Bankrupt agents are never terminated **[verified]**
 

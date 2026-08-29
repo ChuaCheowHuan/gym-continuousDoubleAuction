@@ -1545,3 +1545,76 @@ A new gap is recorded in [10](10_testing.md) §8: the suite proves every encoder
 builds, trains for an iteration and checkpoints - mechanics, not merit. Nothing
 runs long enough to say whether any of them beats the MLP, which is the question
 the whole group exists to answer.
+
+---
+
+## 29. The reward stops fighting the learner
+
+Three of the four blocking findings were one arithmetic problem wearing three hats: the reward was
+denominated in dollars of NAV. See [07 §2.1 and §4](07_reward_function.md).
+
+### 29.1 Rewards are a fraction of starting capital (S1-1)
+
+`set_reward` divides every NAV-derived quantity by `trader.acc.init_nav`. Value targets are now
+O(1), so PPO's `vf_clip_param` — RLlib's default 10.0, set nowhere in this repo — stops binding.
+It had been clamping a value loss of ~1.3e7 to a flat constant, which has zero derivative: the
+critic received **no gradient at all** and `vf_explained_var` sat at ~9e-05 while `total_loss`
+looked small and stable because 10.0 of it never moved.
+
+`acc.init_nav` rather than the configured `init_cash`: the account already records what the trader
+actually started with, so the scale cannot drift from the ledger it normalises. A second copy of
+that number is how S1-4 happened.
+
+`integration/test_progress_and_vf.py` had pinned this as a **strict xfail**, with a note saying
+that fixing S1-1 would make it XPASS and that the marker should then be deleted. That is exactly
+what happened, on the first real run after the change. It is now a live regression guard.
+
+### 29.2 Drawdown is charged on the signed change, not the level (S2-1)
+
+`max_nav` never decreases within an episode, so charging the level billed one early loss on every
+one of the remaining ~4,000 steps — even to an agent that never traded again — and the total scaled
+with episode length, making `max_step` a hidden risk-aversion knob.
+
+The fix is the *signed* change, and the sign is the interesting part. Charging only newly opened
+drawdown — `max(0, Δ)`, which is what doc/15 and doc/12 had both recommended — bills `nav_term` a
+second time on every losing step below the peak and refunds nothing on recovery, so a round trip
+costs `drawdown_penalty × X`. That is an asymmetric loss multiplier by another name, and it would
+have left S1-3 half-open while looking like a fix for S2-1. Signed, the charges telescope to
+`-drawdown_penalty × final_drawdown` over an episode regardless of path.
+
+`trader.acc.drawdown` is now load-bearing twice — the recorded diagnostic *and* the next step's
+`previous_drawdown` — and carries a comment saying so, because dropping it would silently restore
+the level penalty.
+
+### 29.3 The market is zero-sum again (S1-3)
+
+`loss_multiplier` 1.5 → **1.0**. Total NAV is conserved exactly, so any multiplier above 1 makes
+the summed reward negative even though the summed NAV change is zero — which made passing dominant
+for every agent and predicted empty-market collapse.
+
+| 4 agents × 300 steps | before | after |
+|---|---|---|
+| all agents pass | `0.0` | `0.0` |
+| random trading | **−591,027** | **−0.0104** |
+
+Measured over 1,000 steps, `nav_term` now sums to **exactly 0.000000** across agents: the zero-sum
+property is visible in the reward, not only in the ledger.
+
+### 29.4 The micro-penalties mean something again (S2-3)
+
+They were 0.1 and 0.05 against per-step NAV moves of ±10⁴ — five orders of magnitude too small to
+express any of the three economic objectives they encoded. Now in the same units as everything
+else, and calibrated against measurement rather than chosen: over 8,000 random-agent steps, 37% of
+steps move NAV at all and one that does moves it by a median 1.9e-03 of starting capital, so the
+penalties sit at 0.5–1% of that. `passive_bonus` equals `trade_penalty`, making a passive fill
+net-free while an aggressive one costs 0.2 bps — "capture spread" expressed as a price.
+
+Charging real maker/taker fees through NAV rather than through the reward remains open.
+
+### 29.5 What this does not fix
+
+Passing still scores exactly zero, and that is correct: in a zero-sum market no reward can make
+trading positive-sum on average. What changed is that the residual friction is ~0.5% of a typical
+NAV move rather than dominating it, so trading is no longer dominated for an agent with an edge.
+S1-2 — no private state in the observation — is untouched and is the next blocker.
+

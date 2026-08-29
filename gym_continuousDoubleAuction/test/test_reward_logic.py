@@ -56,20 +56,20 @@ class TestRewardLogic:
         assert acc.num_passive_fills_step == 1
 
     def test_reward_formula_components(self):
-        """Verify the multi-factor reward formula in Reward_Helper."""
-        helper = Reward_Helper()
+        """Verify the multi-factor reward formula in Reward_Helper.
+
+        Every NAV quantity is a fraction of `acc.init_nav` (S1-1), and the
+        drawdown term is the signed *change* in the level (S2-1).
+        """
+        helper = Reward_Helper(order_penalty=1e-5, trade_penalty=2e-5,
+                               drawdown_penalty=0.2, passive_bonus=2e-5,
+                               loss_multiplier=1.0)
         trader = MockTrader(0, 1000)
         acc = trader.acc
         rewards = {}
 
-        # Setup scenario:
-        # prev_nav = 1000
-        # nav = 1050 (nav_change = +50)
-        # order_step_placed = 1
-        # num_trades_step = 2
-        # peak_nav = 1100 (drawdown = 50)
-        # passive_fills = 1
-
+        # prev_nav 1000 -> nav 1050 against a peak of 1100, from a step that
+        # placed one order, filled two trades, one of them passive.
         acc.prev_nav = Decimal(1000)
         acc.nav = Decimal(1050)
         acc.max_nav = Decimal(1100)
@@ -77,38 +77,106 @@ class TestRewardLogic:
         acc.num_trades_step = 2
         acc.num_passive_fills_step = 1
 
-        # Coeffs from reward_helper.py:
-        # nav_change = 50
-        # multiplier = 1.0 (positive) -> nav_term = 50
-        # order_penalty = 0.1 * 1 = -0.1
-        # trade_penalty = 0.05 * 2 = -0.1
-        # drawdown_penalty = 0.2 * 50 = -10.0
-        # passive_bonus = 0.1 * 1 = +0.1
-        # Expected Reward = 50 - 0.1 - 0.1 - 10 + 0.1 = 39.9
-
+        # nav_change      = +50/1000                   = +0.05
+        # drawdown_change = (50 - 0)/1000              = +0.05
+        # order_penalty   = -1e-5 * 1                  = -0.00001
+        # trade_penalty   = -2e-5 * 2                  = -0.00004
+        # drawdown        = -0.2 * 0.05                = -0.01
+        # passive_bonus   = +2e-5 * 1                  = +0.00002
         helper.set_reward(rewards, trader)
-        assert float(rewards['agent_0']) == pytest.approx(39.9, abs=1e-5)
+        assert float(rewards['agent_0']) == pytest.approx(0.03997, abs=1e-9)
 
-    def test_asymmetric_loss_reward(self):
-        """Verify that losses are penalized more heavily."""
+    def test_losses_and_gains_are_symmetric(self):
+        """`loss_multiplier` 1.0 is the only value that keeps the game zero-sum.
+
+        Total NAV is conserved exactly, so `sum(nav_change) == 0` across
+        agents. Any multiplier above 1 makes `sum(reward) < 0`, which is what
+        made passing dominant for everyone (S1-3).
+        """
+        helper = Reward_Helper(order_penalty=0.0, trade_penalty=0.0,
+                               drawdown_penalty=0.0, passive_bonus=0.0,
+                               loss_multiplier=1.0)
+
+        winner, loser = MockTrader(0, 1000), MockTrader(1, 1000)
+        winner.acc.prev_nav, winner.acc.nav = Decimal(1000), Decimal(1100)
+        winner.acc.max_nav = Decimal(1100)
+        loser.acc.prev_nav, loser.acc.nav = Decimal(1000), Decimal(900)
+        loser.acc.max_nav = Decimal(1000)
+
+        rewards = {}
+        helper.set_reward(rewards, winner)
+        helper.set_reward(rewards, loser)
+
+        assert sum(rewards.values()) == pytest.approx(0.0, abs=1e-12)
+
+    def test_the_reward_is_scale_invariant(self):
+        """The same *relative* move pays the same, at any starting capital.
+
+        This is the property normalising by `init_nav` buys, and it is what
+        keeps value targets O(1) whatever `init_cash` is set to - so
+        `vf_clip_param` cannot silently start binding again because someone
+        raised the starting cash (S1-1).
+        """
+        helper = Reward_Helper()
+        rewards = {}
+
+        for ID, cash in enumerate((1_000, 1_000_000)):
+            trader = MockTrader(ID, cash)
+            trader.acc.prev_nav = Decimal(cash)
+            trader.acc.nav = Decimal(cash) * Decimal("1.05")
+            trader.acc.max_nav = Decimal(cash) * Decimal("1.10")
+            helper.set_reward(rewards, trader)
+
+        assert rewards['agent_0'] == pytest.approx(rewards['agent_1'], rel=1e-12)
+
+    def test_an_idle_step_below_the_peak_costs_nothing(self):
+        """S2-1: the drawdown term charged the *level* on all 4,096 steps.
+
+        One early loss therefore taxed every later step of the episode even
+        from an agent that never traded again. The signed change is zero when
+        nothing moves, so standing still is free.
+        """
         helper = Reward_Helper()
         trader = MockTrader(0, 1000)
         acc = trader.acc
+
+        # Already 100 below a peak of 1100, and nothing happens this step.
+        acc.prev_nav = acc.nav = Decimal(1000)
+        acc.max_nav = Decimal(1100)
+        acc.drawdown = 100.0
+
         rewards = {}
-
-        # NAV change = -100
-        acc.prev_nav = Decimal(1000)
-        acc.nav = Decimal(900)
-        acc.max_nav = Decimal(1000)
-        acc.order_step_placed = 0
-        acc.num_trades_step = 0
-        acc.num_passive_fills_step = 0
-
-        # Loss multiplier = 1.5
-        # nav_term = -100 * 1.5 = -150
-        # drawdown = 100
-        # drawdown_penalty = 0.2 * 100 = -20
-        # Expected Reward = -150 - 20 = -170
-
         helper.set_reward(rewards, trader)
-        assert float(rewards['agent_0']) == pytest.approx(-170.0, abs=1e-5)
+        assert float(rewards['agent_0']) == pytest.approx(0.0, abs=1e-12)
+
+    def test_a_drawdown_round_trip_is_free(self):
+        """The signed change telescopes; a clipped one would not.
+
+        Charging only *newly opened* drawdown would bill `nav_term` a second
+        time on the way down and refund nothing on the way back up - an
+        asymmetric loss multiplier by another name, reintroducing the
+        negative-sum bias `loss_multiplier: 1.0` exists to remove.
+        """
+        helper = Reward_Helper(order_penalty=0.0, trade_penalty=0.0,
+                               drawdown_penalty=0.2, passive_bonus=0.0,
+                               loss_multiplier=1.0)
+        trader = MockTrader(0, 1000)
+        acc = trader.acc
+        acc.max_nav = Decimal(1000)
+
+        total = 0.0
+        for nav in (Decimal(900), Decimal(950), Decimal(1000)):
+            acc.prev_nav, acc.nav = acc.nav, nav
+            rewards = {}
+            helper.set_reward(rewards, trader)
+            total += rewards['agent_0']
+
+        # Down 100 and back: NAV nets to zero and so does the drawdown charge.
+        assert total == pytest.approx(0.0, abs=1e-12)
+
+    def test_a_non_positive_starting_nav_raises(self):
+        """Rather than dividing by zero and poisoning training with inf/nan."""
+        helper = Reward_Helper()
+        trader = MockTrader(0, 0)
+        with pytest.raises(ValueError, match="init_nav"):
+            helper.set_reward({}, trader)
