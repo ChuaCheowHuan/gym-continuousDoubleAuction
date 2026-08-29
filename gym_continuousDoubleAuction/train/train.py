@@ -57,6 +57,7 @@ from gym_continuousDoubleAuction.train.model.encoders import (
     encoder_fingerprint,
     learner_class_for,
     model_config_get,
+    needs_next_obs,
     training_overrides,
     validate_encoder_type,
 )
@@ -485,6 +486,23 @@ def make_spaces(cfg: TrainConfig):
     return env.get_observation_space(agent_id), env.get_action_space(agent_id)
 
 
+def _next_obs_connector(observation_space, action_space):
+    """Adds `Columns.NEXT_OBS` to the train batch.
+
+    A module-level function rather than a lambda because RLlib pickles the
+    config out to remote learners, and a lambda would not survive that.
+
+    RLlib fills each episode's next observations from the episode itself, so
+    the boundary needs no masking here: the last step of an episode takes that
+    episode's final observation, never the next episode's reset.
+    """
+    from ray.rllib.connectors.learner import (
+        AddNextObservationsFromEpisodesToTrainBatch,
+    )
+
+    return [AddNextObservationsFromEpisodesToTrainBatch()]
+
+
 def build_config(cfg: TrainConfig):
     """Build the PPOConfig, the callback instance, and the module spec.
 
@@ -553,6 +571,16 @@ def build_config(cfg: TrainConfig):
         .learners(
             num_learners=cfg.num_learners,
             num_gpus_per_learner=cfg.resolved_gpus_per_learner(),
+            # PPO's train batch carries no NEXT_OBS. An encoder that predicts
+            # the next observation's latent needs one, and gets it from RLlib's
+            # own connector - attached ONLY for that encoder, so no other
+            # architecture pays for a column it never reads. `learner_connector`
+            # returns a list that RLlib appends to the default pipeline; the
+            # connector early-outs if NEXT_OBS is already present.
+            **({"learner_connector": _next_obs_connector}
+               if needs_next_obs(cfg.encoder_type,
+                                 cfg.encoder_specs.get(cfg.encoder_type))
+               else {}),
         )
         .training(
             train_batch_size_per_learner=cfg.train_batch_size,

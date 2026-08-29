@@ -102,6 +102,7 @@
         "_note_mask_axis": "What a mask hides. 'level' hides a contiguous depth band in every snapshot (what depth is consistent with this touch?); 'time' hides whole snapshots (where is the book heading?); 'random' uses no structure and is the ablation baseline. Under 'level' tokenisation there is only one snapshot, so all three degenerate to random.",
         "_note_collapse": "WATCH jepa_latent_std IN THE LEARNER METRICS. A collapsed JEPA drives its prediction loss to ZERO, which reads as success - loss and throughput look identical to a working one. latent_std goes to 0 exactly when every observation maps to the same latent and should sit near 1.0. variance_coeff weights a hinge that pushes back once it starts falling; jepa_offdiag_cov catches dimensional collapse, where variance holds up but the dimensions become redundant.",
         "_note_ema_decay": "How slowly the target encoder follows the online one. The asymmetry - a frozen, lagging target the predictor has to chase - is the primary anti-collapse mechanism; a constant encoder cannot satisfy a moving target. Higher is slower and more stable; too high and the target carries no signal.",
+        "_note_world_model": "world_model turns on the ACTION-CONDITIONED term: predict the next observation's latent from this one's plus the action taken, z_hat_t+1 = P(z_t, a_t), scored against the EMA target encoder's view of o_t+1. What it learns is the latent market impact of an order - how the book responds to a market order versus a passive quote versus a cancel - which is a microstructure quantity this env generates endogenously. Off by default because it needs Columns.NEXT_OBS in the train batch, which PPO does not add; train.py attaches RLlib's learner connector for it ONLY when this is on, so no other architecture pays for a column it never reads. Honest bound: z_t+1 depends on every agent's action and this conditions on one of them, so the predictor fits a conditional expectation over the opponents. The loss therefore has a non-zero floor which is NOT underfitting - it is an opponent model, and tuning it away would mean overfitting to noise.",
         "tokenization": "both",
         "d_model": 128,
         "num_heads": 4,
@@ -115,7 +116,9 @@
         "predictor_dim": 64,
         "ema_decay": 0.996,
         "aux_loss_coeff": 0.1,
-        "variance_coeff": 1.0
+        "variance_coeff": 1.0,
+        "world_model": false,
+        "world_model_coeff": 0.1
       }
     }
   },

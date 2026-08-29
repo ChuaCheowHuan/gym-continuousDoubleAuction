@@ -158,7 +158,12 @@ class CDACatalog(PPOCatalog):
     @override(PPOCatalog)
     def _get_encoder_config(cls, observation_space, model_config_dict,
                             action_space=None, **kwargs) -> ModelConfig:
-        return build_encoder_config(observation_space, model_config_dict)
+        # `action_space` is forwarded because the JEPA world model needs it to
+        # size its action embedding. Every other encoder ignores it - the
+        # catalog has always passed it and nothing read it until now.
+        return build_encoder_config(
+            observation_space, model_config_dict, action_space
+        )
 
 
 def build_trainable_module_spec(obs_space, act_space, encoder_type=None,

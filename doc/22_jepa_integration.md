@@ -382,7 +382,7 @@ disappointment: the probe scores encoders **untrained**, so it is measuring JEPA
 which is essentially the transformer's — and not its *objective*, which has had no chance to train.
 Scoring the objective needs `--checkpoint` after a real run, or Phase 4's pretraining.
 
-### 4.3 Proposal C — an action-conditioned latent world model
+### 4.3 Proposal C — an action-conditioned latent world model — **implemented**
 
 The V-JEPA 2-AC analogue, and the proposal most specific to what this project is *for*. Predict
 `ẑ_{t+1} = P_φ(z_t, a_t)` against `sg(E_θ̄(o_{t+1}))`, where `a_t` is this agent's `Dict` action.
@@ -403,6 +403,18 @@ describes.
   information than their shape suggests.
 - Care at episode boundaries: `o_{t+1}` across a `truncated` step is the next episode's reset
   observation and must be masked out of the loss.
+
+**As built.** `world_model: true` in the `jepa` spec block. `train.py` attaches RLlib's
+`AddNextObservationsFromEpisodesToTrainBatch` only when that is on, through
+`encoders.needs_next_obs`, so no other architecture pays for the extra column. The encoder reads
+`NEXT_OBS` and `ACTIONS` straight off the batch it is already handed, and returns no world-model
+term at all when they are absent — which is every path but the connector-fed training one, and is
+why `compute_values` and a hand-built batch keep working.
+
+The prediction reuses the trunk output already computed for the policy latent, so the term costs
+one extra *target* pass rather than two more. Its target is mean-pooled rather than run through
+`self.pool`: the pool is trained by the policy gradient, and putting it inside the target path
+would make the world model's target move for reasons unrelated to the market.
 
 **The optional, and more speculative, extension.** The predictor's error is a curiosity signal.
 RLlib ships the pattern as a learner connector that adds
@@ -516,7 +528,7 @@ is the piece worth starting.
 | 3 | ~~**Proposal B** — the `jepa` encoder~~ — **done**, all three mask axes | — | M |
 | 4 | Time-axis masking in Proposal B | 0 (S2-6), 3 | S |
 | 5 | ~~**Proposal D** — offline pretraining, with a fingerprint guard~~ — **done**, see [24](24_pretraining.md) | 3 | M |
-| 6 | **Proposal C** — action-conditioned world model via the `NEXT_OBS` connector | 0, 3 | M–L |
+| 6 | ~~**Proposal C** — action-conditioned world model~~ — **done**, `world_model: true` | 0, 3 | M–L |
 | 7 | Intrinsic reward from predictor error | 0, 6 | M, and only if S1-3 is genuinely fixed first |
 
 Steps 1 and 2 are worth doing whatever is decided about the rest: one closes a documented testing

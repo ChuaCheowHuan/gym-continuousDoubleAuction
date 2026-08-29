@@ -61,6 +61,7 @@ import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -108,6 +109,8 @@ JEPA_DEFAULTS = {
     "ema_decay": 0.996,
     "aux_loss_coeff": 0.1,
     "variance_coeff": 1.0,
+    "world_model": False,
+    "world_model_coeff": 0.1,
 }
 
 #: How a token sequence is reduced to one latent vector. Same set as
@@ -116,6 +119,17 @@ POOLINGS = ("mean", "attention")
 
 #: What a mask hides. See the module docstring.
 MASK_AXES = ("level", "time", "random")
+
+#: Action components and their sizes, for the world model's action embedding.
+#: Matches the env's `Dict` action space; a mismatch raises rather than
+#: embedding the wrong thing, since the space is config-derived
+#: (`tunable_constants.json` -> action_space) and could change under it.
+#:
+#: Note S3-1 and S3-2 while reading this: half of `size_mean`'s range is a
+#: no-op and `size_sigma` is inert, so two of the five components carry less
+#: information than their shapes suggest.
+DISCRETE_ACTIONS = ("category", "price", "price_offset")
+BOX_ACTIONS = ("size_mean", "size_sigma")
 
 #: Floor the variance hinge pushes each latent dimension's standard deviation
 #: above. Not a knob: it is the unit scale that LayerNormed targets already sit
@@ -300,6 +314,84 @@ class _Predictor(nn.Module):
         return self.leave(self.norm(x[:, -num_masked:]))
 
 
+class _ActionEmbed(nn.Module):
+    """Embed one `Dict` action into `d_model`.
+
+    The three discrete components get embedding tables and the two `Box` ones a
+    linear layer; the results are summed, so the module is indifferent to the
+    order the space happens to enumerate them in.
+    """
+
+    def __init__(self, action_space, d_model: int) -> None:
+        super().__init__()
+        missing = [
+            name for name in DISCRETE_ACTIONS + BOX_ACTIONS
+            if name not in action_space.spaces
+        ]
+        if missing:
+            raise ValueError(
+                f"The action space is missing {missing}, so the world model "
+                "cannot embed an action. DISCRETE_ACTIONS/BOX_ACTIONS in "
+                "`jepa` must match the space `Action_Helper.act_space` builds."
+            )
+
+        self.discrete = nn.ModuleDict({
+            name: nn.Embedding(int(action_space[name].n), d_model)
+            for name in DISCRETE_ACTIONS
+        })
+        box_width = sum(
+            int(np.prod(action_space[name].shape)) for name in BOX_ACTIONS
+        )
+        self.box = nn.Linear(box_width, d_model)
+        self.norm = nn.LayerNorm(d_model)
+
+    def forward(self, actions: Dict[str, torch.Tensor]) -> torch.Tensor:
+        embedded = None
+        for name, table in self.discrete.items():
+            part = table(actions[name].long().reshape(actions[name].shape[0]))
+            embedded = part if embedded is None else embedded + part
+
+        box = torch.cat(
+            [actions[name].float().reshape(actions[name].shape[0], -1)
+             for name in BOX_ACTIONS],
+            dim=-1,
+        )
+        return self.norm(embedded + self.box(box))
+
+
+class _WorldModel(nn.Module):
+    """Predict the next observation's latent from this one's, plus the action.
+
+    `z_hat_{t+1} = P(z_t, a_t)`, scored against the EMA target encoder's view of
+    `o_{t+1}`. What it learns is the **latent market impact of an order** - how
+    the book responds to a market order versus a passive quote versus a cancel -
+    which is a first-class microstructure quantity this environment generates
+    endogenously.
+
+    The honest bound on it: `z_{t+1}` depends on all `num_agents` actions and
+    this conditions on one of them, so the predictor is fitting a conditional
+    expectation over the opponents. That is interesting in itself - it is an
+    opponent model - but it means the loss has a non-zero floor which is not
+    underfitting and should not be tuned away.
+    """
+
+    def __init__(self, action_space, d_model: int, hidden: int,
+                 dropout: float) -> None:
+        super().__init__()
+        self.action_embed = _ActionEmbed(action_space, d_model)
+        self.predict = nn.Sequential(
+            nn.Linear(d_model * 2, hidden),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden, d_model),
+        )
+
+    def forward(self, latent: torch.Tensor,
+                actions: Dict[str, torch.Tensor]) -> torch.Tensor:
+        action = self.action_embed(actions)
+        return self.predict(torch.cat([latent, action], dim=-1))
+
+
 @dataclass
 class JEPAEncoderConfig(ModelConfig):
     """Config for `TorchJEPAEncoder`."""
@@ -321,6 +413,19 @@ class JEPAEncoderConfig(ModelConfig):
     aux_loss_coeff: float = JEPA_DEFAULTS["aux_loss_coeff"]
     #: Weight on the variance hinge that guards against collapse.
     variance_coeff: float = JEPA_DEFAULTS["variance_coeff"]
+
+    #: Whether to also train the action-conditioned world model. Off by
+    #: default: it needs `Columns.NEXT_OBS` in the train batch, which PPO does
+    #: not add, so turning it on without the learner connector would train
+    #: nothing and say nothing.
+    world_model: bool = JEPA_DEFAULTS["world_model"]
+    #: Weight on the world-model term. Read by the Learner, not here.
+    world_model_coeff: float = JEPA_DEFAULTS["world_model_coeff"]
+
+    #: The env's action space, needed to size the action embedding. Set by
+    #: `build_encoder_config`, not by the spec block - it is not a
+    #: hyperparameter and must stay out of the encoder fingerprint.
+    action_space: Any = None
 
     #: A `train.pretrain` checkpoint to initialise from, or None. Set by
     #: `build_encoder_config`, never by the spec block - it is not a
@@ -407,6 +512,25 @@ class TorchJEPAEncoder(TorchModel, Encoder):
             parameter.requires_grad_(False)
 
         self.predictor = _Predictor(config, time_size, level_size)
+
+        # The action-conditioned world model, when asked for. Off by default:
+        # it needs Columns.NEXT_OBS in the train batch, which PPO does not add,
+        # so `train.py` attaches the learner connector that supplies it only
+        # when this is on.
+        self.world_model = None
+        if config.world_model:
+            if config.action_space is None:
+                raise ValueError(
+                    "world_model needs the action space to size its action "
+                    "embedding, and none reached the encoder config. It is set "
+                    "by `build_encoder_config`, so this means the encoder was "
+                    "built by hand."
+                )
+            self.world_model = _WorldModel(
+                config.action_space, config.d_model,
+                config.predictor_dim * 2, config.dropout,
+            )
+        self.world_model_coeff = config.world_model_coeff
 
         #: Stats from the most recent training forward, or None. Written by
         #: `_forward`, taken by `take_jepa_stats`.
@@ -548,9 +672,49 @@ class TorchJEPAEncoder(TorchModel, Encoder):
         # latent above is not affected by it either way.
         if self.training:
             self._update_target()
-            self._jepa_stats = self._jepa_loss(tokens)
+            stats = self._jepa_loss(tokens)
+
+            # The world-model term, when it is on AND the batch carries what it
+            # needs. Both conditions matter: `Columns.NEXT_OBS` is added by a
+            # learner connector, so it is present on the training path and
+            # absent everywhere else - `compute_values`, a manual forward, a
+            # test that built a batch by hand. Reading it defensively is what
+            # keeps those paths working rather than raising on a key PPO never
+            # promised.
+            if (self.world_model is not None
+                    and Columns.NEXT_OBS in inputs
+                    and Columns.ACTIONS in inputs):
+                stats.update(self._world_model_loss(inputs, x))
+
+            self._jepa_stats = stats
 
         return {ENCODER_OUT: latent}
+
+    def _world_model_loss(self, inputs: dict,
+                          encoded: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """`z_hat_{t+1} = P(z_t, a_t)` against the target encoder's `o_{t+1}`.
+
+        `encoded` is the online trunk's output for `o_t`, already computed for
+        the policy latent - reused rather than recomputed, so the world model
+        costs one extra *target* pass rather than two more passes.
+
+        Mean-pooled rather than run through `self.pool`: the pool is trained by
+        the policy gradient, and putting it inside the target path would make
+        the world model's target move for reasons that have nothing to do with
+        the market.
+        """
+        next_tokens = tokenize(
+            inputs[Columns.NEXT_OBS], self.layout, self.tokenization
+        )
+
+        with torch.no_grad():
+            target = self.target_trunk(
+                next_tokens, self.time_idx, self.level_idx
+            ).mean(dim=-2)
+            target = F.layer_norm(target, target.shape[-1:])
+
+        predicted = self.world_model(encoded.mean(dim=-2), inputs[Columns.ACTIONS])
+        return {"world_loss": F.smooth_l1_loss(predicted, target)}
 
 
 @register(

@@ -593,6 +593,24 @@ two plus the target's.
 | `ema_decay` | How slowly the target trunk follows the online one. The lagging, frozen target is the primary anti-collapse mechanism — a constant encoder cannot satisfy a moving target |
 | `aux_loss_coeff` | Weight on the latent-prediction term in PPO's total loss |
 | `variance_coeff` | Weight on a VICReg-style hinge that pushes back once the latent's spread starts falling |
+| `world_model` | Also train the **action-conditioned** term: `ẑ_{t+1} = P(z_t, a_t)`, scored against the target encoder's view of `o_{t+1}`. Off by default |
+| `world_model_coeff` | Weight on that term |
+
+#### The world model
+
+What it learns is the **latent market impact of an order** — how the book responds to a market
+order versus a passive quote versus a cancel. That is a first-class microstructure quantity, and
+this environment generates it endogenously, which is the setting [01](01_overview.md) §1.3
+describes.
+
+It needs `Columns.NEXT_OBS` in the train batch and PPO does not add it, so `train.py` attaches
+RLlib's `AddNextObservationsFromEpisodesToTrainBatch` **only when `world_model` is on**. No other
+architecture pays for an observation-sized column per row that it never reads.
+
+**The honest bound.** `z_{t+1}` depends on every agent's action and the predictor conditions on one
+of them, so it is fitting a conditional expectation over the opponents. Its loss therefore has a
+non-zero floor. That is not underfitting — it is an opponent model, and tuning the floor away would
+mean overfitting to noise.
 
 **Watch `jepa_latent_std`.** This is the same class of trap as `moe_max_expert_share`, and worse.
 A collapsed JEPA maps every observation to the same latent, which makes the prediction *perfect* —

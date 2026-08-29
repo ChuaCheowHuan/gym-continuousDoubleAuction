@@ -45,6 +45,10 @@ from gym_continuousDoubleAuction.train.model.moe_learner import (
 #: `fwd_out` key holding the latent-prediction loss (plus its variance hinge).
 JEPA_AUX_LOSS = "jepa_aux_loss"
 
+#: `fwd_out` key holding the action-conditioned world-model loss, present only
+#: when that is enabled AND the batch carried `Columns.NEXT_OBS`.
+JEPA_WORLD_LOSS = "jepa_world_loss"
+
 #: `fwd_out` keys holding the collapse metrics.
 JEPA_LATENT_STD = "jepa_latent_std"
 JEPA_OFFDIAG_COV = "jepa_offdiag_cov"
@@ -55,6 +59,7 @@ JEPA_AUX_LOSS_KEY = "jepa_aux_loss"
 JEPA_LATENT_STD_KEY = "jepa_latent_std"
 JEPA_OFFDIAG_COV_KEY = "jepa_offdiag_cov"
 JEPA_PREDICT_LOSS_KEY = "jepa_predict_loss"
+JEPA_WORLD_LOSS_KEY = "jepa_world_loss"
 
 #: Where a JEPA encoder may sit inside an `ActorCriticEncoder`, in the order
 #: they are tried. `encoder` is the shared trunk under `vf_share_layers: true`;
@@ -97,6 +102,10 @@ class JEPARLModule(CDAPPOTorchRLModule):
             out[JEPA_LATENT_STD] = stats["latent_std"]
             out[JEPA_OFFDIAG_COV] = stats["offdiag_cov"]
             out[JEPA_PREDICT_LOSS] = stats["predict_loss"]
+            # Absent unless the world model is on and the batch carried
+            # NEXT_OBS, which only the learner connector supplies.
+            if "world_loss" in stats:
+                out[JEPA_WORLD_LOSS] = stats["world_loss"]
         return out
 
     @override(CDAPPOTorchRLModule)
@@ -156,23 +165,41 @@ class CDAJEPALearner(CDAPPOTorchLearner):
             key=module_id,
             window=1,
         )
-        return total_loss + self._jepa_aux_loss_coeff(module_id) * aux_loss
+        total_loss = total_loss + self._jepa_aux_loss_coeff(module_id) * aux_loss
+
+        world_loss = fwd_out.get(JEPA_WORLD_LOSS)
+        if world_loss is not None:
+            self.metrics.log_dict(
+                {JEPA_WORLD_LOSS_KEY: world_loss}, key=module_id, window=1
+            )
+            total_loss = total_loss + (
+                self._encoder_setting(module_id, "world_model_coeff")
+                * world_loss
+            )
+        return total_loss
 
     def _jepa_aux_loss_coeff(self, module_id) -> float:
-        """The module's own `aux_loss_coeff`, read off its encoder config.
+        return self._encoder_setting(module_id, "aux_loss_coeff")
 
-        Off the module rather than the algorithm config because it is an
-        encoder-level knob, and because in a league different modules could in
+    def _encoder_setting(self, module_id, name: str) -> float:
+        """One coefficient, read off the module's own encoder config.
+
+        Off the module rather than the algorithm config because these are
+        encoder-level knobs, and because in a league different modules could in
         principle carry different encoders.
+
+        Raises rather than defaulting: a term that reached the loss but found no
+        coefficient would be added unweighted, which is a silent change to what
+        is being optimised.
         """
         _name, sub = _jepa_sub_encoder(
             getattr(self.module[module_id], "encoder", None)
         )
-        coeff = getattr(getattr(sub, "config", None), "aux_loss_coeff", None)
-        if coeff is None:
+        value = getattr(getattr(sub, "config", None), name, None)
+        if value is None:
             raise ValueError(
-                f"Module {module_id!r} produced a JEPA auxiliary loss but no "
-                "encoder config carrying `aux_loss_coeff`. The loss term would "
-                "be silently unweighted."
+                f"Module {module_id!r} produced a JEPA loss term but its "
+                f"encoder config carries no `{name}`. The term would be "
+                "silently unweighted."
             )
-        return coeff
+        return value

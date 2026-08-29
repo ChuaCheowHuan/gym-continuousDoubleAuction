@@ -49,7 +49,10 @@ from gym_continuousDoubleAuction.train.model.encoders.transformer import (
 from gym_continuousDoubleAuction.train.model.model_handler import (
     build_trainable_module_spec,
 )
-from gym_continuousDoubleAuction.train.model.jepa_learner import JEPA_AUX_LOSS
+from gym_continuousDoubleAuction.train.model.jepa_learner import (
+    JEPA_AUX_LOSS,
+    JEPA_WORLD_LOSS,
+)
 from gym_continuousDoubleAuction.train.model.moe_learner import (
     MOE_AUX_LOSS,
     MOE_EXPERT_FRACTIONS,
@@ -898,3 +901,148 @@ class TestJEPA:
         module.train()
         out = module._forward_train(sample_batch(obs_space, n=4, module=module))
         assert JEPA_AUX_LOSS not in out
+
+
+class TestJEPAWorldModel:
+    """`z_hat_{t+1} = P(z_t, a_t)`, the action-conditioned term.
+
+    Off by default, so most of what matters is that turning it on adds a term
+    that reaches the loss - and that leaving it off, or running on a batch
+    without `Columns.NEXT_OBS`, adds nothing rather than raising. PPO's batch
+    carries no NEXT_OBS, so every path except the connector-fed training one
+    has to keep working.
+    """
+
+    @staticmethod
+    def _batch(obs_space, act_space, n=6, with_next=True):
+        rng = np.random.default_rng(0)
+        obs_space.seed(int(rng.integers(1 << 30)))
+        act_space.seed(int(rng.integers(1 << 30)))
+
+        batch = {
+            Columns.OBS: torch.from_numpy(
+                np.stack([obs_space.sample() for _ in range(n)])
+            )
+        }
+        if with_next:
+            batch[Columns.NEXT_OBS] = torch.from_numpy(
+                np.stack([obs_space.sample() for _ in range(n)])
+            )
+            sampled = [act_space.sample() for _ in range(n)]
+            batch[Columns.ACTIONS] = {
+                key: torch.from_numpy(np.stack([a[key] for a in sampled]))
+                for key in act_space.spaces
+            }
+        return batch
+
+    def test_off_by_default(self, spaces):
+        module = build_module(spaces, "jepa")
+        assert module.encoder.actor_encoder.world_model is None
+
+    def test_the_term_reaches_fwd_out_and_carries_gradient(self, spaces):
+        obs_space, act_space = spaces
+        module = build_module(spaces, "jepa", spec={"world_model": True})
+        module.train()
+
+        out = module._forward_train(self._batch(obs_space, act_space))
+
+        assert JEPA_WORLD_LOSS in out
+        assert out[JEPA_WORLD_LOSS].requires_grad
+
+        out[JEPA_WORLD_LOSS].backward()
+        world = module.encoder.actor_encoder.world_model
+        assert any(
+            p.grad is not None and p.grad.abs().sum() > 0
+            for p in world.parameters()
+        )
+
+    def test_a_batch_without_next_obs_is_not_an_error(self, spaces):
+        """PPO's own batch has none, and `compute_values` runs on one. Raising
+        on a key PPO never promised would break every path but training."""
+        obs_space, act_space = spaces
+        module = build_module(spaces, "jepa", spec={"world_model": True})
+        module.train()
+
+        out = module._forward_train(
+            self._batch(obs_space, act_space, with_next=False)
+        )
+
+        assert JEPA_WORLD_LOSS not in out
+        # The masked objective still ran; only the world-model term is absent.
+        assert JEPA_AUX_LOSS in out
+
+    def test_the_target_takes_no_gradient(self, spaces):
+        """The world model's target comes from the EMA trunk, same as the
+        masked objective's. A gradient reaching it would end the asymmetry."""
+        obs_space, act_space = spaces
+        module = build_module(spaces, "jepa", spec={"world_model": True})
+        module.train()
+
+        out = module._forward_train(self._batch(obs_space, act_space))
+        out[JEPA_WORLD_LOSS].backward()
+
+        target = module.encoder.actor_encoder.target_trunk
+        assert all(p.grad is None for p in target.parameters())
+
+    def test_the_prediction_depends_on_the_action(self, spaces):
+        """Otherwise it is not action-conditioned at all - it would be
+        predicting the next book from the current one and ignoring what the
+        agent did, which is a different and much less interesting model."""
+        obs_space, act_space = spaces
+        module = build_module(spaces, "jepa", spec={"world_model": True})
+        module.eval()
+        world = module.encoder.actor_encoder.world_model
+
+        batch = self._batch(obs_space, act_space, n=4)
+        latent = torch.zeros(4, module.encoder.actor_encoder.config.d_model)
+
+        actions = batch[Columns.ACTIONS]
+        other = dict(actions)
+        # A different category is a different order type entirely.
+        other["category"] = (actions["category"] + 1) % 9
+
+        with torch.no_grad():
+            assert not torch.allclose(
+                world(latent, actions), world(latent, other)
+            )
+
+    def test_the_policy_latent_is_unchanged_by_it(self, spaces):
+        """The world model is an auxiliary term, not a change to what the agent
+        acts on."""
+        obs_space, act_space = spaces
+        plain = build_module(spaces, "jepa")
+        with_world = build_module(spaces, "jepa", spec={"world_model": True})
+        with_world.encoder.actor_encoder.trunk.load_state_dict(
+            plain.encoder.actor_encoder.trunk.state_dict()
+        )
+        with_world.encoder.actor_encoder.pool.load_state_dict(
+            plain.encoder.actor_encoder.pool.state_dict()
+        )
+        if plain.encoder.actor_encoder.private_token is not None:
+            with_world.encoder.actor_encoder.private_token.load_state_dict(
+                plain.encoder.actor_encoder.private_token.state_dict()
+            )
+
+        batch = self._batch(obs_space, act_space, n=4)
+        plain.eval()
+        with_world.eval()
+        with torch.no_grad():
+            assert torch.allclose(
+                plain.encoder(batch)[ENCODER_OUT][ACTOR],
+                with_world.encoder(batch)[ENCODER_OUT][ACTOR],
+                atol=1e-6,
+            )
+
+    def test_an_action_space_missing_a_component_raises(self, spaces):
+        """The space is config-derived, so it can change under this."""
+        import gymnasium as gym
+
+        obs_space, act_space = spaces
+        trimmed = gym.spaces.Dict({
+            k: v for k, v in act_space.spaces.items() if k != "price_offset"
+        })
+        with pytest.raises(ValueError, match="missing"):
+            build_trainable_module_spec(
+                obs_space, trimmed, encoder_type="jepa",
+                encoder_specs={"jepa": {"world_model": True}},
+            ).build()

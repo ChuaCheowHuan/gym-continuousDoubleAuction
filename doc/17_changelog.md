@@ -1829,3 +1829,61 @@ nothing in the objective preserves temporal structure in the latent. The obvious
 `mask_axis: time`. This is a smoke-sized budget and establishes that the mechanism works and its
 effect is legible, not that pretraining pays at scale.
 
+---
+
+## 33. An action-conditioned world model
+
+`world_model: true` in the `jepa` spec block adds a second self-supervised term:
+`z_hat_t+1 = P(z_t, a_t)`, the next observation's latent predicted from this one's plus the action
+taken, scored against the EMA target encoder's view of `o_t+1`. See
+[22 4.3](22_jepa_integration.md) and [18 5.4](18_configuration.md).
+
+What it learns is the **latent market impact of an order** - how the book responds to a market
+order versus a passive quote versus a cancel. That is a first-class microstructure quantity, and
+this environment generates it endogenously, which is exactly the setting [01](01_overview.md) 1.3
+describes.
+
+### 33.1 The connector is attached only for it
+
+PPO's train batch carries no `Columns.NEXT_OBS`. RLlib ships
+`AddNextObservationsFromEpisodesToTrainBatch`, and `train.py` attaches it through
+`encoders.needs_next_obs` - true only for a `jepa` encoder with `world_model` on. Attaching it
+unconditionally would put an observation-sized tensor per row into every other architecture's train
+batch, for a column none of them reads.
+
+The connector fills each episode's next observations from that episode, so the boundary needs no
+masking: the last step of an episode takes that episode's final observation, never the next
+episode's reset.
+
+### 33.2 Absent is not an error
+
+The encoder reads `NEXT_OBS` and `ACTIONS` off the batch it is already handed, and returns no
+world-model term when either is missing. That is every path except the connector-fed training one -
+`compute_values`, a manual forward, a test that built a batch by hand - and raising on a key PPO
+never promised would have broken all of them.
+
+### 33.3 Two economies in the implementation
+
+The prediction reuses the trunk output already computed for the policy latent, so the term costs
+one extra *target* pass rather than two more.
+
+Its target is mean-pooled rather than run through `self.pool`. The pool is trained by the policy
+gradient, so putting it inside the target path would make the world model's target move for reasons
+that have nothing to do with the market.
+
+### 33.4 The floor is not underfitting
+
+`z_t+1` depends on every agent's action and the predictor conditions on one of them, so it is
+fitting a conditional expectation over the opponents. Its loss has a non-zero floor. That is
+interesting rather than wrong - it is an opponent model - and tuning the floor away would mean
+overfitting to noise. Both the config note and the code say so, because a loss that will not reach
+zero invites exactly that.
+
+### 33.5 Still not included: the intrinsic reward
+
+The predictor's error would make a curiosity signal, and RLlib ships the connector pattern for it.
+It stays out, for the reasons doc/22 4.3 records - chiefly that it would destroy Phase 1's control
+(you could no longer tell whether the reward fix worked or curiosity was papering over it) and that
+it would invert champion selection, since an agent with a *better* world model earns *less*
+intrinsic reward.
+

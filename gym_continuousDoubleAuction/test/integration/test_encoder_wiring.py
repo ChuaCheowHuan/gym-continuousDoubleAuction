@@ -42,6 +42,7 @@ from gym_continuousDoubleAuction.train.model.encoders import (
     ENCODER_MODULE_CLASSES,
     learner_class_for,
     module_class_for,
+    needs_next_obs,
 )
 from gym_continuousDoubleAuction.train.model.jepa_learner import (
     CDAJEPALearner,
@@ -50,6 +51,7 @@ from gym_continuousDoubleAuction.train.model.jepa_learner import (
     JEPA_LATENT_STD_KEY,
     JEPA_OFFDIAG_COV_KEY,
     JEPA_PREDICT_LOSS_KEY,
+    JEPA_WORLD_LOSS_KEY,
 )
 from gym_continuousDoubleAuction.train.model.moe_learner import (
     CDAPPOTorchRLModule,
@@ -577,3 +579,82 @@ class TestOtherEncodersAreUnaffectedByJEPA:
     def test_jepa_is_the_only_encoder_that_overrides_either(self):
         assert set(ENCODER_MODULE_CLASSES) == {"jepa"}
         assert set(ENCODER_LEARNER_CLASSES) == {"jepa"}
+
+
+class TestJEPAWorldModelReachesTheOptimiser:
+    """The action-conditioned term, end to end through a real Algorithm.
+
+    It needs `Columns.NEXT_OBS`, which PPO's train batch does not carry, so this
+    also pins the conditional connector: it must be attached when the world
+    model is on, and the term must actually arrive at the loss. Attached but
+    unread, or read but never added, both look exactly like a working run.
+    """
+
+    @classmethod
+    def setup_class(cls):
+        ray.init(
+            ignore_reinit_error=True,
+            include_dashboard=False,
+            log_to_driver=False,
+            num_cpus=2,
+        )
+        cls.cfg = config_with_encoder(
+            "jepa", encoder_specs={"jepa": {"world_model": True}}
+        )
+        ppo_config, cls.callback = build_config(cls.cfg)
+        cls.algo = ppo_config.build_algo()
+        cls.pid = trainable_policy_ids(cls.cfg.num_trained_agents)[0]
+        cls.result = cls.algo.train()
+
+    @classmethod
+    def teardown_class(cls):
+        cls.algo.stop()
+        ray.shutdown()
+
+    def test_the_world_loss_is_logged(self):
+        """Absent if the connector did not run, or if the encoder never saw
+        NEXT_OBS - neither of which raises anywhere."""
+        learner_results = self.result["learners"][self.pid]
+
+        assert JEPA_WORLD_LOSS_KEY in learner_results
+        assert learner_results[JEPA_WORLD_LOSS_KEY] > 0
+
+    def test_the_masked_objective_still_runs_alongside_it(self):
+        """The world model is an addition, not a replacement."""
+        learner_results = self.result["learners"][self.pid]
+
+        assert JEPA_AUX_LOSS_KEY in learner_results
+        assert JEPA_LATENT_STD_KEY in learner_results
+
+    def test_the_action_embedding_is_trained(self):
+        module = self.algo.env_runner.module[self.pid]
+        world = module.encoder.actor_encoder.world_model
+
+        assert world is not None
+        assert any(p.requires_grad for p in world.action_embed.parameters())
+
+
+class TestTheNextObsConnectorIsConditional:
+    """Attached for the world model and for nothing else.
+
+    Every other architecture would otherwise pay for a column it never reads -
+    an extra observation-sized tensor per row of every train batch.
+    """
+
+    @pytest.mark.parametrize(
+        "encoder_type", ["mlp", "transformer", "lstm", "moe_transformer"]
+    )
+    def test_other_encoders_do_not_ask_for_it(self, encoder_type):
+        assert not needs_next_obs(encoder_type, None)
+
+    def test_jepa_without_the_world_model_does_not_ask_for_it(self):
+        assert not needs_next_obs("jepa", {"world_model": False})
+
+    def test_jepa_with_the_world_model_does(self):
+        assert needs_next_obs("jepa", {"world_model": True})
+
+    def test_the_default_is_read_when_the_spec_omits_it(self):
+        """A config file that never mentions `world_model` must resolve to the
+        registered default, not to a missing key."""
+        assert not needs_next_obs("jepa", {})
+        assert not needs_next_obs("jepa", None)

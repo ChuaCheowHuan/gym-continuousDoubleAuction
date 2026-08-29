@@ -343,6 +343,24 @@ def validate_encoder_type(encoder_type: str) -> str:
     return known_encoder_type(encoder_type)
 
 
+def needs_next_obs(encoder_type: str, encoder_spec: Optional[Dict[str, Any]]) -> bool:
+    """Whether this encoder's train batch must carry `Columns.NEXT_OBS`.
+
+    PPO does not add it, so an encoder that predicts the next observation needs
+    a learner connector attached - and attaching one unconditionally would make
+    every other architecture pay for a column it never reads.
+
+    True only for a `jepa` encoder with `world_model` on. Read from the merged
+    settings rather than the raw spec block, so a config file that omits the key
+    still gets the registered default.
+    """
+    if encoder_type not in ENCODER_DEFAULTS:
+        return False
+    return bool(
+        encoder_settings(encoder_type, encoder_spec or {}).get("world_model")
+    )
+
+
 def encoder_fingerprint(encoder_type: str, encoder_spec: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """The encoder's identity, as something two callers can compare with `!=`.
 
@@ -385,6 +403,7 @@ def fingerprints_match(left: Dict[str, Any], right: Dict[str, Any]) -> bool:
 def build_encoder_config(
     obs_space: gym.Space,
     model_config_dict: Dict[str, Any],
+    action_space: Optional[gym.Space] = None,
 ) -> ModelConfig:
     """Build the encoder `ModelConfig` a `CDAModelConfig` asks for.
 
@@ -417,6 +436,11 @@ def build_encoder_config(
     # signature is `(layout, spec, input_dims)` for every encoder, and this is
     # not part of any encoder's spec. An encoder with no `pretrained_path`
     # field simply never sees it.
+    # Only an encoder that asks for it - the world model needs the action
+    # space to size its action embedding, and nothing else does.
+    if action_space is not None and hasattr(config, "action_space"):
+        config.action_space = action_space
+
     pretrained = model_config_dict.get("pretrained_path")
     if pretrained:
         if not hasattr(config, "pretrained_path"):
