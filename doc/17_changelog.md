@@ -1887,3 +1887,96 @@ It stays out, for the reasons doc/22 4.3 records - chiefly that it would destroy
 it would invert champion selection, since an agent with a *better* world model earns *less*
 intrinsic reward.
 
+---
+
+## 34. Review of sections 29-33, and what it found
+
+Seven defects, all of which built, trained and reported plausible numbers.
+
+### 34.1 An inference-only `jepa` module could not be built
+
+Champions are inference-only copies, so a `jepa` league failed at its first
+snapshot. Two causes stacked:
+
+`JEPARLModule.get_non_inference_attributes` read `self.encoder` unguarded, and
+RLlib calls that method from `TorchRLModule.__init__` - *before* `setup()` has
+created the encoder. `RLModuleSpec.build` catches `AttributeError` in order to
+fall back to a deprecated constructor, so the real error was swallowed and
+resurfaced as a confusing complaint about `RLModuleConfig`.
+
+Underneath it, RLlib's own stripping loop mishandles a dotted path whose target
+actually exists: it traverses to the leaf and then calls `delattr` on the
+**module** rather than on the leaf's parent. PPO's own `encoder.critic_encoder`
+escapes only because inference-only setup never creates it, so the loop's
+"absent, skip" branch runs first. `JEPARLModule.setup` now deletes the
+training-only submodules itself, which makes them absent by that same route; the
+dotted paths stay in `get_non_inference_attributes`, where `get_state` still
+needs them to filter the state dict and handles dots correctly.
+
+An inference-only `jepa` module is now 339K parameters against 1.42M.
+
+### 34.2 A `time` mask could hide the whole sequence
+
+The clamp was against `n_hist - 1`, which bounds *snapshots* rather than tokens.
+At `n_hist: 1` - a value the `lstm` block explicitly recommends - it masked
+every token, leaving the context encoder no input while the objective went on
+reporting a loss. Both structural branches now check the token count, and a
+tokenisation that yields a single token is refused at construction, since one
+token cannot be both hidden and visible.
+
+### 34.3 `time_left` was off by one step
+
+`step()` increments `t_step` *after* `set_step_outputs` builds the observations,
+so reading it raw made the reset observation and the one after the first step
+both report 1.0, and the terminal observation report `1/max_step` remaining
+rather than 0. `set_private_state` now takes the completed-step count, and
+`reset` passes 0.
+
+### 34.4 The critic ran the objective and it was thrown away
+
+`vf_share_layers` is false by default, so the critic gets its own encoder - and
+`_jepa_sub_encoder` only ever collects the actor's stats, to avoid
+double-counting the term. The critic's copy therefore ran a mask pass, a target
+pass, the predictor and the world model on every training forward, had all of it
+discarded, and retained the autograd graph in `_jepa_stats` until the next
+forward overwrote it. `JEPARLModule.setup` now switches `objective_enabled` off
+on the branch whose stats are not collected.
+
+### 34.5 The Parquet reader's premise had been invalidated by section 30
+
+`from_parquet` deduplicated on `(episode_id, step)` because every agent received
+the byte-identical observation - which is precisely what the private block
+removed. The deduplication kept working and silently discarded N-1 agents'
+private state.
+
+One row per step is still the right default, for a reason that outlived the
+original: every target is a public book quantity, so N agents at one step carry
+N identical targets over a shared book prefix, and keeping them all would put
+near-identical rows across the held-out split. But that is now a *choice* rather
+than a lossless collapse, the docstring says so, and `per_agent=True` keeps
+every row for pretraining, where the private block is part of what the objective
+encodes.
+
+### 34.6 Validation EMA-stepped the target encoder
+
+The objective only exists in train mode, so the pretrainer evaluates it in train
+mode under `no_grad`. The EMA update fired there too, moving the target with no
+corresponding update to the online trunk - making the saved weights a function
+of `log_every` and the validation split size. The update is now gated on
+`torch.is_grad_enabled()`.
+
+### 34.7 `world_model` was not declared training-only
+
+It computes an auxiliary loss and is never read on the inference path, so an
+inference-only copy carried it. Added to `_TRAINING_ONLY` - and declared only
+when it exists, since it is an attribute set to None when off and `hasattr`
+alone would have declared a submodule that `setup` would then try to delete.
+
+### 34.8 One thing the review got wrong
+
+It attributed 34.1 solely to the nested-`delattr` mechanism. That is real and is
+the *second* failure, but the first is the unguarded `self.encoder` read, and
+fixing only the mechanism the review named would have left the module still
+unbuildable. Worth recording because the finding was correct while its stated
+cause was not - the reproduction is what separated them.
+

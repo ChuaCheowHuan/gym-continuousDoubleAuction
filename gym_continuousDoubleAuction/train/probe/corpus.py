@@ -18,16 +18,28 @@ scored on random-agent data is being asked how well it represents a market it
 will never see. Rollouts are the *default* because they always work; Parquet is
 the one to use once a run exists.
 
-The shared-observation subtlety
--------------------------------
-S1-2: every agent receives the byte-identical public book vector. For rollouts
-that means one agent's stream is the whole story, and the other N-1 are exact
-duplicates. For Parquet it means the file has `num_agents` copies of every
-observation, and stacking it naively inflates the apparent corpus size by the
-agent count while adding no information - the probe's held-out split would then
-be leaking, because a row's duplicates land on both sides of it. So the Parquet
-reader deduplicates on `(episode_id, step)` and the rollout reader keeps one
-agent.
+One row per step, not one per agent
+-----------------------------------
+Both readers keep **one agent per (episode, step)**, and what that means changed
+under them.
+
+It used to be lossless: S1-2 meant every agent received the byte-identical
+public book vector, so the other N-1 rows were exact duplicates and dropping
+them removed nothing. That is no longer true - an observation now ends with a
+per-agent private block, so the rows differ.
+
+Keeping one is still the right default, for a reason that outlived the original
+one. Every target these corpora are scored on is a **public book** quantity, so
+N agents at the same step carry N identical targets over a shared book prefix.
+Stacking them multiplies the apparent corpus by the agent count without adding
+an independent observation of anything the targets measure, and puts N
+near-identical rows across the probe's held-out split - which is the leak the
+split exists to prevent.
+
+What it costs is that only one agent's private state is represented. For the
+probe that is free: private state is an input, never a target. For pretraining
+it is a real if modest loss of variety, since the private block is part of what
+the JEPA objective encodes - `per_agent=True` keeps every row for that case.
 
 Episode boundaries
 ------------------
@@ -135,9 +147,10 @@ def from_rollouts(
     Args:
         num_episodes: How many episodes to run.
         max_step: Steps per episode, before truncation.
-        num_agents: Traders in the market. Affects the book, not the corpus
-            width - every agent sees the same observation (S1-2), so only one
-            copy is kept.
+        num_agents: Traders in the market. Affects the book that gets made, not
+            the corpus width: one agent's row is kept per step. The others
+            differ only in their private tail, and every target is a public book
+            quantity - see the module docstring.
         init_cash: Starting cash per trader. None leaves the key unset so
             `env_defaults.json` decides, which is the right layering - the
             probe does not own how much cash a trader starts with, and a
@@ -188,7 +201,9 @@ def from_rollouts(
             for agent_id in env.agents:
                 env.action_spaces[agent_id].seed(episode_seed)
 
-        # Every agent's observation is the same array (S1-2); keep one.
+        # One agent's stream. The others share its book prefix and differ only
+        # in the private tail; see the module docstring on why that is the
+        # default rather than a loss.
         keep = env.agents[0]
         rows.append(np.asarray(observations[keep], dtype=np.float32))
         episodes.append(episode)
@@ -223,19 +238,24 @@ def from_parquet(
     path: str,
     max_rows: Optional[int] = None,
     obs_column: str = "obs",
+    per_agent: bool = False,
 ) -> ProbeCorpus:
     """Read an observation stream from `episode_record`'s Parquet output.
 
     Args:
         path: A `.parquet` file, or a directory searched recursively for them.
-        max_rows: Stop after this many *deduplicated* observations. None reads
-            everything.
+        max_rows: Stop after this many observations. None reads everything.
         obs_column: Column holding the flat observation.
+        per_agent: Keep every agent's row rather than one per step. Off by
+            default - see the module docstring: the rows differ only in their
+            private tail, while every target is a public book quantity, so
+            keeping all of them multiplies the corpus without adding an
+            independent observation of anything scored and puts near-identical
+            rows across the held-out split. Worth turning on for pretraining,
+            where the private block is part of what the objective encodes.
 
     Returns:
-        A `ProbeCorpus` in `(episode_id, step)` order, one row per step rather
-        than one per (step, agent) - see the module docstring on why the
-        deduplication is load-bearing rather than an optimisation.
+        A `ProbeCorpus` in `(episode_id, step)` order.
 
     Raises:
         FileNotFoundError: if `path` matches no Parquet file.
@@ -247,7 +267,7 @@ def from_parquet(
     if not files:
         raise FileNotFoundError(f"No .parquet file at or under {path!r}.")
 
-    columns = [obs_column, "episode_id", "step"]
+    columns = [obs_column, "episode_id", "step", "agent_id"]
     seen = set()
     rows: List[np.ndarray] = []
     keys: List[str] = []
@@ -258,13 +278,16 @@ def from_parquet(
         obs_col = table.column(obs_column).to_pylist()
         episode_col = table.column("episode_id").to_pylist()
         step_col = table.column("step").to_pylist()
+        agent_col = table.column("agent_id").to_pylist()
 
-        for obs, episode_id, step in zip(obs_col, episode_col, step_col):
+        for obs, episode_id, step, agent_id in zip(
+            obs_col, episode_col, step_col, agent_col
+        ):
             # `episode_record` writes an empty list when the observation was
             # not available for that row; those rows carry no probe input.
             if not obs:
                 continue
-            key = (episode_id, step)
+            key = (episode_id, step, agent_id) if per_agent else (episode_id, step)
             if key in seen:
                 continue
             seen.add(key)
@@ -293,6 +316,9 @@ def from_parquet(
         episode_numbers.setdefault(episode_id, len(episode_numbers))
     episode_index = np.asarray([episode_numbers[k] for k in keys], dtype=np.int32)
 
+    # Sorted by step within episode. With `per_agent` the agents at one step
+    # keep whatever order the file had, which is fine - they share a step, so
+    # nothing downstream distinguishes them by position.
     order = np.lexsort((np.asarray(steps), episode_index))
     corpus = ProbeCorpus(
         obs=obs[order],

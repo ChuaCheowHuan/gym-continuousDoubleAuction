@@ -199,7 +199,7 @@ remaining high-impact issues are.
 | `python -m gym_continuousDoubleAuction.train.train --iters 4 --agents 4` | League self-play PPO training |
 | `python -m gym_continuousDoubleAuction.train.train --help` | Full CLI |
 | `python gym_continuousDoubleAuction/CDA_rand.py` | Random-agent smoke run, no learning (CI stage 2) |
-| `python -m pytest gym_continuousDoubleAuction/test -q` | 844 tests (732 unit + 112 integration) |
+| `python -m pytest gym_continuousDoubleAuction/test -q` | 864 tests (752 unit + 112 integration) |
 | `python -m pytest gym_continuousDoubleAuction/test/integration -q` | 59 integration tests that build real `Algorithm`s |
 | `python -m gym_continuousDoubleAuction.CDA_rand --help` | Flags for the smoke run; defaults in `config/cli_defaults.json` |
 | `CDA_train.ipynb` | Notebook driver; imports `TrainConfig` / `train` from `train.py`. Runs unchanged on [Colab](20_colab.md) and in the [docker image](19_docker.md) — set `PLATFORM` / `USE_GPU` in its first cell, everything else comes from `config/runtime_profiles.json` |

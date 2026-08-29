@@ -119,7 +119,9 @@ class State_Helper(object):
         # it behaved oddly at step 0.
         states = {}
         for trader in self.traders:
-            states = self.set_next_state(states, trader, stacked_obs)
+            # No step has completed at reset, so `time_left` is a full 1.0.
+            states = self.set_next_state(states, trader, stacked_obs,
+                                         elapsed_steps=0)
 
         return states
         
@@ -172,7 +174,7 @@ class State_Helper(object):
         M = float(getattr(self, 'last_price', self.midpoint_fallback))
         return M if M > 0 else self.midpoint_fallback
 
-    def set_private_state(self, trader):
+    def set_private_state(self, trader, elapsed_steps=None):
         """This trader's private block: `private_dim` floats, all O(1).
 
         Everything here is normalised by the trader's own `init_nav` or is
@@ -189,10 +191,15 @@ class State_Helper(object):
 
         Args:
             trader: The trader whose private state to encode.
+            elapsed_steps: Steps completed, for `time_left`. None means "read it
+                off the env", which is `t_step + 1` because `step()` has not
+                incremented yet - see the note at that line. `reset` passes 0.
 
         Returns:
             `(private_dim,)` float32.
         """
+        if elapsed_steps is None:
+            elapsed_steps = self.t_step + 1
         acc = trader.acc
 
         # Guarded on the same rule as `Reward_Helper.set_reward`: a
@@ -219,9 +226,19 @@ class State_Helper(object):
         vwap = float(acc.VWAP)
         vwap_vs_mid = (midpoint - vwap) / midpoint if vwap > 0 else 0.0
 
+        # `t_step + 1`, not `t_step`. `step()` increments it *after*
+        # `set_step_outputs` has built the observations, so at the moment this
+        # runs `t_step` still names the step being finished rather than the one
+        # about to start. Reading it raw made the reset observation and the one
+        # after the first step both report 1.0, and the terminal observation
+        # report `1/max_step` remaining instead of 0.
+        #
+        # The reset path has no completed step, so it passes `elapsed_steps=0`
+        # explicitly and gets the 1.0 it should.
+        #
         # `max_step` can be 0 in a degenerate config; treat that as "no time
         # left" rather than dividing by it.
-        elapsed = (float(self.t_step) / float(self.max_step)
+        elapsed = (float(elapsed_steps) / float(self.max_step)
                    if self.max_step else 1.0)
 
         private = np.array([
@@ -244,7 +261,8 @@ class State_Helper(object):
             )
         return private
 
-    def set_next_state(self, next_states, trader, state_input):
+    def set_next_state(self, next_states, trader, state_input,
+                       elapsed_steps=None):
         """
         Set next state.
 
@@ -263,7 +281,7 @@ class State_Helper(object):
             next_states: Dictionary of states for each trader.
         """
         next_states[f'agent_{trader.ID}'] = np.concatenate(
-            [state_input, self.set_private_state(trader)]
+            [state_input, self.set_private_state(trader, elapsed_steps)]
         ).astype(np.float32)
 
         return next_states

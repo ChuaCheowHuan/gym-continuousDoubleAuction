@@ -222,6 +222,8 @@ class TestEveryEncoder:
                 f"{extra}; only encoders with training-only submodules should."
             )
         else:
+            # `world_model` is off by default, and a submodule that does not
+            # exist must not be declared - `setup` would then try to delete it.
             assert extra == [
                 "encoder.actor_encoder.target_trunk",
                 "encoder.actor_encoder.predictor",
@@ -1045,4 +1047,150 @@ class TestJEPAWorldModel:
             build_trainable_module_spec(
                 obs_space, trimmed, encoder_type="jepa",
                 encoder_specs={"jepa": {"world_model": True}},
+            ).build()
+
+
+class TestJEPAReviewRegressions:
+    """Findings from the review of the branch that introduced this encoder.
+
+    Each one built, trained and reported plausible numbers while being wrong,
+    which is why they are pinned individually rather than left to the contract
+    tests above.
+    """
+
+    def test_an_inference_only_module_builds(self, spaces):
+        """Champions are inference-only copies, so this failed a `jepa` league
+        at its first snapshot.
+
+        Two causes, both silent. `get_non_inference_attributes` read
+        `self.encoder` unguarded, and RLlib calls it from `__init__` before
+        `setup()` has created it - `RLModuleSpec.build` catches AttributeError
+        to fall back to a deprecated constructor, so the real error was
+        swallowed and resurfaced as a complaint about `RLModuleConfig`. Then
+        RLlib's own stripping loop, for a dotted path whose target *exists*,
+        traverses to the leaf and calls `delattr` on the **module** rather than
+        the leaf's parent.
+        """
+        obs_space, act_space = spaces
+        spec = build_trainable_module_spec(
+            obs_space, act_space, encoder_type="jepa"
+        )
+        spec.inference_only = True
+
+        module = spec.build()
+        encoder = module.encoder.actor_encoder
+        for part in ("target_trunk", "predictor"):
+            assert getattr(encoder, part, None) is None, part
+
+    def test_the_world_model_is_declared_only_when_it_exists(self, spaces):
+        """It is an attribute set to None when off, so `hasattr` alone would
+        declare a submodule that is not there - and `setup` would then try to
+        delete it."""
+        off = build_module(spaces, "jepa", vf_share_layers=False)
+        on = build_module(
+            spaces, "jepa", spec={"world_model": True}, vf_share_layers=False
+        )
+
+        assert "encoder.actor_encoder.world_model" not in (
+            off.get_non_inference_attributes()
+        )
+        assert "encoder.actor_encoder.world_model" in (
+            on.get_non_inference_attributes()
+        )
+
+    def test_an_inference_only_module_is_smaller(self, spaces):
+        """The point of declaring them: a champion should not carry a second
+        encoder it never runs."""
+        obs_space, act_space = spaces
+        full = build_trainable_module_spec(
+            obs_space, act_space, encoder_type="jepa",
+            encoder_specs={"jepa": {"world_model": True}},
+        ).build()
+
+        spec = build_trainable_module_spec(
+            obs_space, act_space, encoder_type="jepa",
+            encoder_specs={"jepa": {"world_model": True}},
+        )
+        spec.inference_only = True
+        stripped = spec.build()
+
+        assert sum(p.numel() for p in stripped.parameters()) < 0.5 * sum(
+            p.numel() for p in full.parameters()
+        )
+
+    def test_only_one_branch_runs_the_objective(self, spaces):
+        """`vf_share_layers` is false by default, so the critic gets its own
+        encoder - and only the actor's stats are ever collected. The critic's
+        copy would run a mask pass, a target pass, the predictor and the world
+        model on every training forward, have all of it discarded, and hold the
+        autograd graph until the next forward overwrote it."""
+        obs_space, _ = spaces
+        module = build_module(spaces, "jepa", vf_share_layers=False)
+        module.train()
+        module._forward_train(sample_batch(obs_space, n=4, module=module))
+
+        assert module.encoder.actor_encoder.objective_enabled
+        assert not module.encoder.critic_encoder.objective_enabled
+        assert module.encoder.critic_encoder._jepa_stats is None
+
+    def test_evaluation_does_not_step_the_ema(self, spaces):
+        """The objective only exists in train mode, so evaluating it runs in
+        train mode too - under `no_grad`, with no optimiser step to follow. An
+        EMA step there makes the trained weights a function of how often
+        validation ran and how much data it covered."""
+        obs_space, _ = spaces
+        module = build_module(spaces, "jepa")
+        encoder = module.encoder.actor_encoder
+        module.train()
+        batch = sample_batch(obs_space, n=4, module=module)
+
+        before = next(encoder.target_trunk.parameters()).clone()
+        with torch.no_grad():
+            for _ in range(5):
+                encoder(batch)
+        assert torch.equal(before, next(encoder.target_trunk.parameters()))
+
+        encoder(batch)
+        assert not torch.equal(before, next(encoder.target_trunk.parameters()))
+
+    @pytest.mark.parametrize("mask_axis", MASK_AXES)
+    @pytest.mark.parametrize("n_hist", [1, 2, 3, 4])
+    def test_a_mask_leaves_context_at_every_n_hist(self, mask_axis, n_hist):
+        """`time` masking clamped against `n_hist - 1`, which bounds SNAPSHOTS
+        and not tokens: at `n_hist` 1 it masked the whole sequence, leaving the
+        context encoder no input. `n_hist: 1` is a setting the `lstm` block
+        explicitly recommends, so it was reachable."""
+        layout = ObsLayout(
+            n_hist=n_hist, book_rows=4, k_rows=10, extra_dim=2, private_dim=9
+        )
+        for tokenization in TOKENIZATIONS:
+            total = token_shape(layout, tokenization)[0]
+            if total < 2:
+                continue  # refused at construction; see the next test
+            for ratio in (0.01, 0.5, 0.99):
+                masked = sample_mask(
+                    total, layout, tokenization, mask_axis, ratio
+                )
+                assert 0 < len(masked) < total, (
+                    tokenization, mask_axis, ratio, len(masked), total
+                )
+
+    def test_a_single_token_sequence_is_refused(self, spaces):
+        """One token cannot be both hidden and visible, so the contract
+        `sample_mask` documents is unsatisfiable there. Refuse it at build
+        rather than return a degenerate mask."""
+        import gymnasium as gym
+
+        _obs_space, act_space = spaces
+        layout = group("tunable_constants.json", "observation_layout")
+        snapshot = layout["book_rows"] * layout["k_rows"] + layout["extra_dim"]
+        one_frame = gym.spaces.Box(
+            -np.inf, np.inf,
+            shape=(snapshot + layout["private_dim"],), dtype=np.float32,
+        )
+
+        with pytest.raises(ValueError, match="at least two"):
+            build_trainable_module_spec(
+                one_frame, act_space, encoder_type="jepa",
+                encoder_specs={"jepa": {"tokenization": "time"}},
             ).build()

@@ -475,40 +475,72 @@ def write_parquet(path, layout, episodes=3, steps=6, agents=4):
     import pyarrow as pa
     import pyarrow.parquet as pq
 
-    obs, episode_id, step_no = [], [], []
+    obs, episode_id, step_no, agent_id = [], [], [], []
     for episode in range(episodes):
         for step in range(steps):
-            row = np.full(layout.flat_dim, float(episode * 100 + step),
-                          dtype=np.float32)
-            for _ in range(agents):
-                # Every agent sees the byte-identical vector (S1-2).
+            for agent in range(agents):
+                # A shared book prefix and a per-agent tail, as the env now
+                # emits: the rows at one step are NOT identical any more, which
+                # is what makes "keep one per step" a choice rather than a
+                # lossless collapse.
+                row = np.full(layout.flat_dim, float(episode * 100 + step),
+                              dtype=np.float32)
+                row[layout.book_flat_dim:] = float(agent)
                 obs.append(row.tolist())
                 episode_id.append(f"ep-{episode}")
                 step_no.append(step)
+                agent_id.append(f"agent_{agent}")
 
     pq.write_table(
         pa.table({
             "obs": pa.array(obs, type=pa.list_(pa.float32())),
             "episode_id": pa.array(episode_id, type=pa.string()),
             "step": pa.array(step_no, type=pa.int32()),
+            "agent_id": pa.array(agent_id, type=pa.string()),
         }),
         path,
     )
 
 
 class TestParquetCorpus:
-    def test_deduplicates_the_per_agent_copies(self, layout, tmp_path):
-        """`episode_record` writes one row per (episode, step, agent) and every
-        agent sees the same observation (S1-2). Stacking them naively inflates
-        the corpus by the agent count while adding nothing - and it *leaks*,
-        because a row's exact duplicates would land in both the training and
-        the test split.
+    def test_one_row_per_step_by_default(self, layout, tmp_path):
+        """`episode_record` writes one row per (episode, step, agent).
+
+        The rows at one step share a book prefix and differ only in their
+        private tail, while every target is a public book quantity - so keeping
+        all of them multiplies the corpus without adding an independent
+        observation of anything scored, and puts near-identical rows across the
+        held-out split.
         """
         file = tmp_path / "record.parquet"
         write_parquet(str(file), layout, episodes=3, steps=6, agents=4)
         corpus = corpus_module.from_parquet(str(file))
         assert len(corpus) == 3 * 6
         assert corpus.num_episodes == 3
+
+    def test_per_agent_keeps_every_row(self, layout, tmp_path):
+        """For pretraining, where the private block is part of what the
+        objective encodes rather than an input to a book target."""
+        file = tmp_path / "record.parquet"
+        write_parquet(str(file), layout, episodes=3, steps=6, agents=4)
+        corpus = corpus_module.from_parquet(str(file), per_agent=True)
+
+        assert len(corpus) == 3 * 6 * 4
+        tails = corpus.obs[:, layout.book_flat_dim:]
+        assert len(np.unique(tails[:, 0])) == 4
+
+    def test_the_rows_at_one_step_are_not_identical(self, layout, tmp_path):
+        """The premise the old deduplication rested on, which S1-2's fix
+        removed: agents no longer see the byte-identical vector."""
+        file = tmp_path / "record.parquet"
+        write_parquet(str(file), layout, episodes=1, steps=2, agents=4)
+        corpus = corpus_module.from_parquet(str(file), per_agent=True)
+
+        first_step = corpus.obs[:4]
+        book = first_step[:, :layout.book_flat_dim]
+        tail = first_step[:, layout.book_flat_dim:]
+        assert np.array_equal(book, np.tile(book[0], (4, 1)))   # shared prefix
+        assert len(np.unique(tail[:, 0])) == 4                  # distinct tails
 
     def test_rows_come_back_in_episode_then_step_order(self, layout, tmp_path):
         file = tmp_path / "record.parquet"
@@ -546,6 +578,7 @@ class TestParquetCorpus:
                 "obs": pa.array([[], []], type=pa.list_(pa.float32())),
                 "episode_id": pa.array(["ep-0", "ep-0"], type=pa.string()),
                 "step": pa.array([0, 1], type=pa.int32()),
+                "agent_id": pa.array(["agent_0", "agent_0"], type=pa.string()),
             }),
             str(file),
         )

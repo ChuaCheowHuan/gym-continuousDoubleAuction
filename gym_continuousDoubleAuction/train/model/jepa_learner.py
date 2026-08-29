@@ -66,15 +66,23 @@ JEPA_WORLD_LOSS_KEY = "jepa_world_loss"
 #: otherwise the actor's is the one the policy acts through.
 _SUB_ENCODERS = ("encoder", "actor_encoder", "critic_encoder")
 
-#: Submodules of a JEPA encoder that exist only to train it.
-_TRAINING_ONLY = ("target_trunk", "predictor")
+#: Submodules of a JEPA encoder that exist only to train it. `world_model` is
+#: here for the same reason as the other two: it computes an auxiliary loss and
+#: is never read on the inference path, so an inference-only copy or a champion
+#: snapshot carrying it is carrying dead weight.
+_TRAINING_ONLY = ("target_trunk", "predictor", "world_model")
 
 
 def _jepa_sub_encoder(encoder):
     """The first sub-encoder carrying JEPA machinery, or None.
 
     First, not all of them: see the module docstring on double-counting.
+
+    Accepts None, because callers may run before `setup()` has built the
+    encoder - `get_non_inference_attributes` does.
     """
+    if encoder is None:
+        return None, None
     for name in _SUB_ENCODERS:
         sub = getattr(encoder, name, None)
         if sub is not None and hasattr(sub, "take_jepa_stats"):
@@ -109,6 +117,55 @@ class JEPARLModule(CDAPPOTorchRLModule):
         return out
 
     @override(CDAPPOTorchRLModule)
+    def setup(self):
+        """Build the module, then drop the training-only parts if inference-only.
+
+        Dropping them *here* rather than leaving it to RLlib is not a
+        preference. `TorchRLModule.__init__` deletes the names
+        `get_non_inference_attributes` returns, but for a dotted path it
+        traverses to the leaf and then calls `delattr(self, leaf_name)` - on the
+        *module*, not on the leaf's parent - so a nested attribute that actually
+        exists raises `AttributeError` instead of being removed. PPO's own
+        `encoder.critic_encoder` escapes that only because inference-only setup
+        never creates it, so the loop's "absent, skip" branch runs first.
+
+        So this makes ours absent by the same route. Once these are gone the
+        loop skips them exactly as it skips the critic encoder, and the dotted
+        paths stay in `get_non_inference_attributes` where they are still needed
+        - `get_state` filters the state dict by those prefixes, and that part
+        handles dots correctly.
+
+        Without this, building an inference-only `jepa` module raises, and
+        champions are inference-only copies: a `jepa` league failed on its first
+        champion snapshot.
+        """
+        super().setup()
+
+        # Only the first JEPA sub-encoder's stats are ever collected, so any
+        # other copy would compute the whole objective - mask pass, target
+        # pass, predictor, world model - and have it discarded, keeping the
+        # autograd graph alive in `_jepa_stats` until the next forward. With
+        # `vf_share_layers` false, which is the shipped default, that is the
+        # critic's copy on every single training forward.
+        collected, _sub = _jepa_sub_encoder(getattr(self, "encoder", None))
+        for name in _SUB_ENCODERS:
+            other = getattr(getattr(self, "encoder", None), name, None)
+            if (name != collected and other is not None
+                    and hasattr(other, "objective_enabled")):
+                other.objective_enabled = False
+
+        if not self.inference_only:
+            return
+
+        for name in _SUB_ENCODERS:
+            sub = getattr(getattr(self, "encoder", None), name, None)
+            if sub is None or not hasattr(sub, "take_jepa_stats"):
+                continue
+            for part in _TRAINING_ONLY:
+                if getattr(sub, part, None) is not None:
+                    delattr(sub, part)
+
+    @override(CDAPPOTorchRLModule)
     def get_non_inference_attributes(self) -> List[str]:
         """The base list, plus the JEPA encoder's training-only submodules.
 
@@ -123,14 +180,24 @@ class JEPARLModule(CDAPPOTorchRLModule):
         """
         attributes = super().get_non_inference_attributes()
 
-        name, sub = _jepa_sub_encoder(self.encoder)
+        # `getattr`, not `self.encoder`: RLlib calls this from `TorchRLModule
+        # .__init__`, which runs BEFORE `setup()` has created the encoder. An
+        # unguarded read raises AttributeError there, and `RLModuleSpec.build`
+        # catches AttributeError to fall back to a deprecated constructor - so
+        # the real error is swallowed and resurfaces as a confusing complaint
+        # about `RLModuleConfig`. Champions are inference-only copies, so this
+        # made a `jepa` league fail on its first snapshot.
+        name, sub = _jepa_sub_encoder(getattr(self, "encoder", None))
         if sub is None:
             return attributes
 
+        # `getattr(...) is not None`, matching `setup`'s deletion condition:
+        # `world_model` is an attribute set to None when it is off, so `hasattr`
+        # alone would declare a submodule that does not exist.
         return attributes + [
             f"encoder.{name}.{part}"
             for part in _TRAINING_ONLY
-            if hasattr(sub, part)
+            if getattr(sub, part, None) is not None
         ]
 
 

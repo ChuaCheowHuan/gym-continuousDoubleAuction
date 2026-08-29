@@ -165,6 +165,10 @@ def sample_mask(
         sequence - a mask covering everything leaves the context encoder no
         input, and an empty one leaves the objective nothing to predict.
 
+        That guarantee needs `num_tokens >= 2`, which is unsatisfiable at 1 and
+        is why `TorchJEPAEncoder.__init__` refuses a one-token sequence rather
+        than letting this quietly return a degenerate mask.
+
     Raises:
         ValueError: on an unknown `mask_axis`.
     """
@@ -197,12 +201,23 @@ def sample_mask(
     stride = layout.k_rows + 1
 
     if mask_axis == "time":
+        # `n_hist - 1` bounds the SNAPSHOTS, which is not the same as bounding
+        # the tokens: at n_hist 1 it clamps to 1 of 1 snapshot, and since a
+        # snapshot is `stride` tokens that masks the entire sequence - leaving
+        # the context encoder no input at all, silently. `n_hist: 1` is a
+        # configuration the lstm block explicitly recommends, so this is
+        # reachable rather than theoretical.
         snapshots = max(1, min(
             int(round(layout.n_hist * mask_ratio)), layout.n_hist - 1
         ))
         chosen = draw(layout.n_hist, snapshots)
         offsets = torch.arange(stride)
-        return (chosen.unsqueeze(1) * stride + offsets).reshape(-1)
+        masked = (chosen.unsqueeze(1) * stride + offsets).reshape(-1)
+        if len(masked) >= num_tokens:
+            # No whole-snapshot mask can leave context here; fall back to the
+            # token-level draw, which `count` already bounds below the total.
+            return draw(num_tokens, count)
+        return masked
 
     # "level" under `both`: hide the same contiguous depth band in every
     # snapshot, so the question is "what depth is consistent with this touch"
@@ -212,7 +227,12 @@ def sample_mask(
                               generator=generator).item())
     band = torch.arange(start, start + levels)
     times = torch.arange(layout.n_hist)
-    return (times.unsqueeze(1) * stride + band).reshape(-1)
+    masked = (times.unsqueeze(1) * stride + band).reshape(-1)
+    # `k_rows - 1` leaves at least the global token plus one level per snapshot,
+    # so this cannot cover everything - but the check is cheap and the contract
+    # this function documents is worth enforcing at its exit rather than
+    # inferring from the arithmetic above.
+    return masked if len(masked) < num_tokens else draw(num_tokens, count)
 
 
 class _Trunk(nn.Module):
@@ -483,6 +503,18 @@ class TorchJEPAEncoder(TorchModel, Encoder):
         self.variance_coeff = config.variance_coeff
 
         num_tokens, token_dim = token_shape(self.layout, self.tokenization)
+        if num_tokens < 2:
+            # The objective needs at least one hidden token and one visible one,
+            # so a single-token sequence cannot produce a usable mask - it would
+            # leave the context encoder empty, silently. `tokenization: "time"`
+            # at `n_hist: 1` is the reachable case, and `n_hist: 1` is a setting
+            # the `lstm` block explicitly recommends.
+            raise ValueError(
+                f"tokenization {self.tokenization!r} gives {num_tokens} token "
+                f"at n_hist={self.layout.n_hist}, and the JEPA objective needs "
+                "at least two - one to hide and one to predict from. Use "
+                "'both' or 'level' tokenisation, or raise n_hist."
+            )
         time_idx, level_idx = positional_index(self.layout, self.tokenization)
         self.register_buffer("time_idx", time_idx, persistent=False)
         self.register_buffer("level_idx", level_idx, persistent=False)
@@ -535,6 +567,22 @@ class TorchJEPAEncoder(TorchModel, Encoder):
         #: Stats from the most recent training forward, or None. Written by
         #: `_forward`, taken by `take_jepa_stats`.
         self._jepa_stats = None
+
+        #: Whether this instance runs the objective at all.
+        #:
+        #: `ActorCriticEncoder` builds two encoders from one config when
+        #: `vf_share_layers` is false - the shipped default - and only the
+        #: actor's stats are ever collected (`jepa_learner._jepa_sub_encoder`
+        #: takes the first, to avoid double-counting the term). The critic's
+        #: copy would therefore run a mask pass, a target pass, the predictor
+        #: and the world model on every training forward, and have all of it
+        #: discarded - while retaining the autograd graph in `_jepa_stats`
+        #: until the next forward overwrote it.
+        #:
+        #: `JEPARLModule.setup` switches this off on the branch whose stats are
+        #: not collected. Left on here so an encoder built outside a module -
+        #: the pretrainer builds one, tests build several - still trains.
+        self.objective_enabled = True
         self._num_tokens = num_tokens
 
         # Pretrained weights are an *initialisation*, so they load last in
@@ -576,7 +624,15 @@ class TorchJEPAEncoder(TorchModel, Encoder):
 
     @torch.no_grad()
     def _update_target(self) -> None:
-        """One EMA step of the target trunk toward the online one."""
+        """One EMA step of the target trunk toward the online one.
+
+        Callers must only invoke this where a gradient step is about to follow;
+        `_forward` gates it on `torch.is_grad_enabled()` for that reason. An
+        EMA step taken during a `no_grad` evaluation moves the target without
+        any corresponding update to the online trunk, which makes the resulting
+        weights a function of how often - and on how much data - the evaluation
+        happened to run.
+        """
         decay = self.ema_decay
         for target, online in zip(self.target_trunk.parameters(),
                                   self.trunk.parameters()):
@@ -670,8 +726,15 @@ class TorchJEPAEncoder(TorchModel, Encoder):
         # error, which is what `test_eval_forward_is_deterministic` exists to
         # catch. The objective therefore runs in train mode only, and the
         # latent above is not affected by it either way.
-        if self.training:
-            self._update_target()
+        if self.training and self.objective_enabled:
+            # `is_grad_enabled`, not just `self.training`: the objective has to
+            # run in train mode to exist at all, so an evaluation of it runs
+            # here too - under `no_grad`, and with no optimiser step to follow.
+            # EMA-stepping there would make the checkpoint depend on how often
+            # validation ran and how many batches it covered. The pretrainer's
+            # `_evaluate` is exactly that caller.
+            if torch.is_grad_enabled():
+                self._update_target()
             stats = self._jepa_loss(tokens)
 
             # The world-model term, when it is on AND the batch carries what it
