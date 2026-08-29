@@ -20,6 +20,7 @@ from ray.rllib.algorithms.ppo.torch.default_ppo_torch_rl_module import (
     DefaultPPOTorchRLModule,
 )
 from ray.rllib.core.columns import Columns
+from ray.rllib.core.models.base import ACTOR, ENCODER_OUT
 
 from gym_continuousDoubleAuction.config_loader import group
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
@@ -30,6 +31,10 @@ from gym_continuousDoubleAuction.train.model.encoders import (
     MLP_ENCODER_TYPE,
     common_settings,
     training_overrides,
+)
+from gym_continuousDoubleAuction.train.model.encoders.jepa import (
+    MASK_AXES,
+    sample_mask,
 )
 from gym_continuousDoubleAuction.train.model.encoders.obs_layout import ObsLayout
 from gym_continuousDoubleAuction.train.model.encoders.tokenize import (
@@ -44,6 +49,7 @@ from gym_continuousDoubleAuction.train.model.encoders.transformer import (
 from gym_continuousDoubleAuction.train.model.model_handler import (
     build_trainable_module_spec,
 )
+from gym_continuousDoubleAuction.train.model.jepa_learner import JEPA_AUX_LOSS
 from gym_continuousDoubleAuction.train.model.moe_learner import (
     MOE_AUX_LOSS,
     MOE_EXPERT_FRACTIONS,
@@ -67,6 +73,13 @@ def spaces():
     env = continuousDoubleAuctionEnv({})
     agent_id = env.agents[0]
     return env.get_observation_space(agent_id), env.get_action_space(agent_id)
+
+
+@pytest.fixture(scope="module")
+def layout_for_spaces(spaces):
+    """The shipped `ObsLayout`, for tests that work on the grid directly."""
+    obs_space, _ = spaces
+    return ObsLayout.from_obs_space(obs_space)
 
 
 def build_module(spaces, encoder_type, spec=None, **kwargs):
@@ -180,12 +193,36 @@ class TestEveryEncoder:
         assert has_critic is (not vf_share_layers)
 
     def test_non_inference_attributes_contract(self, spaces, encoder_type):
-        module = build_module(spaces, encoder_type, vf_share_layers=False)
+        """The base list for every encoder; an encoder may only *extend* it.
 
-        assert module.get_non_inference_attributes() == [
-            "vf",
-            "encoder.critic_encoder",
-        ]
+        `vf` and the critic encoder are training-only for all of them. An
+        encoder that carries its own training-only submodules - `jepa`, whose
+        EMA target trunk and predictor exist solely to compute the auxiliary
+        loss - appends them, so an inference-only copy and every champion
+        snapshot drop them rather than carrying a second encoder they never
+        run.
+
+        Asserted as prefix-plus-extension rather than as one fixed list,
+        because a fixed list would make adding any such encoder look like a
+        regression in every other one.
+        """
+        module = build_module(spaces, encoder_type, vf_share_layers=False)
+        attributes = module.get_non_inference_attributes()
+
+        base = ["vf", "encoder.critic_encoder"]
+        assert attributes[: len(base)] == base
+
+        extra = attributes[len(base):]
+        if encoder_type != "jepa":
+            assert extra == [], (
+                f"{encoder_type} declared extra non-inference attributes "
+                f"{extra}; only encoders with training-only submodules should."
+            )
+        else:
+            assert extra == [
+                "encoder.actor_encoder.target_trunk",
+                "encoder.actor_encoder.predictor",
+            ]
 
     def test_eval_forward_is_deterministic(self, spaces, encoder_type):
         """PPO's ratio compares a rollout log-prob against a recomputed one.
@@ -672,3 +709,192 @@ class TestCommonSpecKeys:
     def test_a_misspelled_common_key_still_raises(self, spaces):
         with pytest.raises(ValueError, match="Unknown key"):
             build_module(spaces, "transformer", spec={"learning_rate": 1e-4})
+
+
+# --- JEPA --------------------------------------------------------------------
+
+class TestJEPA:
+    """The latent-prediction objective and the collapse metrics.
+
+    What is worth pinning is not that it runs - `TestEveryEncoder` covers the
+    encoder contract for it automatically - but the handful of properties that
+    decide whether the objective is doing anything: that the policy latent is
+    unaffected by masking, that the loss carries gradient to the online trunk
+    and *not* to the EMA target, and that a collapse is visible in a metric
+    rather than only in a loss that reads as success.
+    """
+
+    def test_the_policy_latent_ignores_the_mask(self, spaces):
+        """The agent acts on everything it was given.
+
+        Masking exists only for the auxiliary loss. If it reached the policy
+        latent, the agent would be acting on a random subset of the book and
+        PPO's ratio would compare log-probs computed under different masks.
+        """
+        obs_space, _ = spaces
+        module = build_module(spaces, "jepa")
+        batch = sample_batch(obs_space, n=6, module=module)
+
+        module.train()
+        with torch.no_grad():
+            first = module.encoder(batch)[ENCODER_OUT][ACTOR]
+            second = module.encoder(batch)[ENCODER_OUT][ACTOR]
+
+        # Two training forwards draw two different masks; the latent must not
+        # move between them.
+        assert torch.allclose(first, second, atol=1e-6)
+
+    def test_the_objective_runs_only_in_train_mode(self, spaces):
+        """`eval()` must produce no stats at all.
+
+        Mask sampling is stochastic, so an objective that ran on the inference
+        path would put noise into PPO's ratio rather than raise - the failure
+        `test_eval_forward_is_deterministic` exists to catch.
+        """
+        obs_space, _ = spaces
+        module = build_module(spaces, "jepa")
+        batch = sample_batch(obs_space, n=4, module=module)
+        encoder = module.encoder.actor_encoder
+
+        module.eval()
+        with torch.no_grad():
+            module.encoder(batch)
+        assert encoder.take_jepa_stats() is None
+
+        module.train()
+        module.encoder(batch)
+        assert encoder.take_jepa_stats() is not None
+
+    def test_the_aux_loss_reaches_fwd_out_and_carries_gradient(self, spaces):
+        obs_space, _ = spaces
+        module = build_module(spaces, "jepa")
+        module.train()
+        out = module._forward_train(sample_batch(obs_space, n=6, module=module))
+
+        assert JEPA_AUX_LOSS in out
+        assert out[JEPA_AUX_LOSS].requires_grad
+
+        out[JEPA_AUX_LOSS].backward()
+        trunk = module.encoder.actor_encoder.trunk
+        assert any(
+            p.grad is not None and p.grad.abs().sum() > 0
+            for p in trunk.parameters()
+        ), "the online trunk took no gradient from the objective"
+
+    def test_the_target_trunk_takes_no_gradient(self, spaces):
+        """It is an EMA copy, not a trained one. If it learned by gradient it
+        would stop being a lagging target, and the asymmetry that discourages
+        collapse would be gone."""
+        obs_space, _ = spaces
+        module = build_module(spaces, "jepa")
+        module.train()
+        out = module._forward_train(sample_batch(obs_space, n=6, module=module))
+        out[JEPA_AUX_LOSS].backward()
+
+        target = module.encoder.actor_encoder.target_trunk
+        assert all(not p.requires_grad for p in target.parameters())
+        assert all(p.grad is None for p in target.parameters())
+
+    def test_the_target_trails_the_online_trunk(self, spaces):
+        """One EMA step per training forward, and it must actually move."""
+        obs_space, _ = spaces
+        module = build_module(spaces, "jepa")
+        encoder = module.encoder.actor_encoder
+
+        # Push the online trunk somewhere the target is not.
+        with torch.no_grad():
+            for parameter in encoder.trunk.parameters():
+                parameter.add_(1.0)
+
+        before = next(encoder.target_trunk.parameters()).clone()
+        module.train()
+        module.encoder(sample_batch(obs_space, n=4, module=module))
+        after = next(encoder.target_trunk.parameters())
+
+        assert not torch.equal(before, after), "the target never moved"
+        # It trails: one step of decay 0.996 closes 0.4% of a gap of 1.0.
+        assert (after - before).abs().max() < 0.1
+
+    def test_stats_are_cleared_when_taken(self, spaces):
+        """Taking rather than reading. A stale auxiliary loss silently added to
+        a later batch's gradient would be invisible; a None is not."""
+        obs_space, _ = spaces
+        module = build_module(spaces, "jepa")
+        module.train()
+        module.encoder(sample_batch(obs_space, n=4, module=module))
+
+        encoder = module.encoder.actor_encoder
+        assert encoder.take_jepa_stats() is not None
+        assert encoder.take_jepa_stats() is None
+
+    def test_collapse_is_visible_in_latent_std(self, spaces):
+        """The metric that exists because the loss cannot tell.
+
+        A collapsed JEPA maps every observation to the same latent, which makes
+        the prediction *perfect* - loss near zero, which reads as success.
+        `latent_std` goes to zero at the same time, and is the only signal that
+        distinguishes the two.
+        """
+        obs_space, _ = spaces
+        # ema_decay 1.0 freezes the target completely, so the zeroing below
+        # survives the EMA step `_forward` takes before computing the loss.
+        module = build_module(spaces, "jepa", spec={"ema_decay": 1.0})
+        encoder = module.encoder.actor_encoder
+
+        # Force the collapse: a target trunk whose weights are all zero emits
+        # the same vector for every input.
+        with torch.no_grad():
+            for parameter in encoder.target_trunk.parameters():
+                parameter.zero_()
+
+        module.train()
+        module.encoder(sample_batch(obs_space, n=8, module=module))
+        stats = encoder.take_jepa_stats()
+
+        assert float(stats["latent_std"]) < 0.1, (
+            "a collapsed encoder must show a near-zero latent_std"
+        )
+        # And the hinge pushes back, so the reported aux loss is NOT near zero
+        # even though the prediction problem became trivial.
+        assert float(stats["aux_loss"].detach()) > float(stats["predict_loss"])
+
+    @pytest.mark.parametrize("mask_axis", MASK_AXES)
+    def test_every_mask_axis_builds_and_runs(self, spaces, mask_axis):
+        obs_space, _ = spaces
+        module = build_module(spaces, "jepa", spec={"mask_axis": mask_axis})
+        module.train()
+        out = module._forward_train(sample_batch(obs_space, n=4, module=module))
+        assert torch.isfinite(out[JEPA_AUX_LOSS])
+
+    @pytest.mark.parametrize("mask_axis", MASK_AXES)
+    def test_a_mask_never_hides_everything_or_nothing(self, layout_for_spaces, mask_axis):
+        """An empty mask leaves the objective nothing to predict; a full one
+        leaves the context encoder no input. Both are silent degeneracies."""
+        layout = layout_for_spaces
+        for ratio in (0.01, 0.5, 0.99):
+            for tokenization in TOKENIZATIONS:
+                total = token_shape(layout, tokenization)[0]
+                masked = sample_mask(total, layout, tokenization, mask_axis, ratio)
+                assert 0 < len(masked) < total, (tokenization, mask_axis, ratio)
+                assert len(set(masked.tolist())) == len(masked), "duplicate indices"
+
+    def test_an_out_of_range_mask_ratio_raises(self, spaces):
+        for ratio in (0.0, 1.0, -0.1, 1.5):
+            with pytest.raises(ValueError, match="mask_ratio"):
+                build_module(spaces, "jepa", spec={"mask_ratio": ratio})
+
+    def test_unknown_mask_axis_raises(self, spaces):
+        with pytest.raises(ValueError, match="mask_axis"):
+            build_module(spaces, "jepa", spec={"mask_axis": "diagonal"})
+
+    def test_unknown_spec_key_raises(self, spaces):
+        with pytest.raises(ValueError, match="Unknown key"):
+            build_module(spaces, "jepa", spec={"mask_rate": 0.5})
+
+    def test_a_dense_encoder_produces_no_jepa_loss(self, spaces):
+        """The plumbing is inert for every other architecture."""
+        obs_space, _ = spaces
+        module = build_module(spaces, "transformer")
+        module.train()
+        out = module._forward_train(sample_batch(obs_space, n=4, module=module))
+        assert JEPA_AUX_LOSS not in out

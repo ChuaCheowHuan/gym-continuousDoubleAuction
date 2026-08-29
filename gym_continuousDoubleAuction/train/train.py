@@ -54,6 +54,7 @@ from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback im
 )
 from gym_continuousDoubleAuction.train.model.encoders import (
     MLP_ENCODER_TYPE,
+    learner_class_for,
     model_config_get,
     training_overrides,
     validate_encoder_type,
@@ -555,7 +556,16 @@ def build_config(cfg: TrainConfig):
             # stock learner for every encoder that produces no such term, which
             # is all of them but moe_transformer - so it is wired
             # unconditionally rather than branching on the encoder.
-            learner_class=CDAPPOTorchLearner,
+            #
+            # An encoder may name a *different* Learner through `@register`;
+            # `jepa` does, to add its latent-prediction term. Nothing did when
+            # that mechanism was added, so every encoder registered before it
+            # still resolves to exactly CDAPPOTorchLearner. Unlike the module
+            # class this is algorithm-wide - RLlib takes one Learner for the
+            # whole run - which is why every Learner registered this way
+            # subclasses CDAPPOTorchLearner rather than replacing it, so a
+            # league mixing encoders keeps every term it needs.
+            learner_class=learner_class_for(cfg.encoder_type, CDAPPOTorchLearner),
             **({"minibatch_size": cfg.minibatch_size}
                if cfg.minibatch_size is not None else {}),
         )

@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (759 tests: 675 unit + 84 integration)
+# everything (807 tests: 705 unit + 102 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -82,16 +82,16 @@ Counts re-measured with `--collect-only`.
 | `test_activity_metrics.py` | 29 | `pass_action_fraction` / `order_rejection_fraction`: the S1-3 detector, per-episode tallies, pickling; the reward-term variance split, the maker-ratio metric and the end-of-episode account metrics |
 | `test_episode_record.py` | 32 | The Parquet per-step record: declared schema and its drift guard against `Info_Helper`, identity columns, sampling rate, byte cap, eviction of episodes that never end, and the ways it must fail without raising |
 | `test_encoder_registry.py` | 38 | The selectable-encoder seam: registry, `CDACatalog`, the `mlp` pass-through staying byte-for-byte what it was, `ObsLayout`, tokenisation |
-| `test_encoder_architectures.py` | 110 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
+| `test_encoder_architectures.py` | 140 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
 | `test_probe.py` | 43 | The reward-free probe harness's arithmetic on synthetic observations: target definitions, episode-boundary masking, the splits, the metrics, unscoreable cells, and that `snapshots` reads the book rather than the private tail |
-| **unit total** | **675** | |
+| **unit total** | **705** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported and finite (1 xfail pins S1-1) |
 | `integration/test_distributed_observability.py` | 10 | A real `num_env_runners=1` iteration: every episode-hook metric arrives on the driver, and the episode record is written by the *worker* into the driver's absolute run-scoped path |
-| `integration/test_encoder_wiring.py` | 23 | Champions inherit the encoder; a restore cannot change it; the recurrent and MoE paths train end to end; a real checkpoint round-trip with a custom encoder |
+| `integration/test_encoder_wiring.py` | 38 | Champions inherit the encoder; a restore cannot change it; the recurrent and MoE paths train end to end; a real checkpoint round-trip with a custom encoder |
 | `integration/test_probe_harness.py` | 25 | The probe against the real env: a usable rollout corpus, every registered encoder frozen and read, the LSTM's state reset per episode, a real checkpoint restored with its weights |
-| **integration total** | **84** | |
+| **integration total** | **102** | |
 
 > **Stale references in older docs.** `test_orderbook.py`, `repro_orderbook_crossed_book.py`,
 > `test_OrderBook.py`, `test_cda_nsp.py` and `test_orderbook_double_delete_order.py` do not exist.
@@ -108,7 +108,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((759 tests))
+  root((807 tests))
     Simulator
       orderbook 14
         components, matching, invariants
@@ -138,7 +138,7 @@ mindmap
         retention, restore, league sidecar
       league 20
         matchmaking, promotion triggers
-      encoders 148
+      encoders 178
         registry, catalog, mlp pass-through
         obs layout, tokenisation
         the contract every encoder meets
@@ -151,7 +151,7 @@ mindmap
         targets, episode masking
         splits never shuffled
         unscoreable vs zero
-    Integration 84
+    Integration 102
       league wiring, 3 topologies
       real save and restore
       real progress.jsonl, 1 xfail pinning S1-1
@@ -603,7 +603,7 @@ but `known_encoder_type` allows a test to build. It exists solely to travel the 
 (`CDAModelConfig` → `CDACatalog` → `build_encoder_config` → `ActorCriticEncoderConfig` → the stock
 pi/vf heads) so that route is covered without shipping an architecture nobody asked for.
 
-### 6.4.2 `test_encoder_architectures.py` — 6 classes, 110 tests
+### 6.4.2 `test_encoder_architectures.py` — 7 classes, 140 tests
 
 `TestEveryEncoder` is parametrised over **every registered encoder**, so a new one is covered the
 moment it is registered rather than when someone remembers to write its tests. What it pins is the
@@ -633,7 +633,7 @@ no memory), `TestMoETransformer` (the auxiliary loss reaching `fwd_out` and carr
 routing fractions summing to `top_k`, stats cleared when taken, and that the term does not scale
 with `num_layers` or `vf_share_layers`), and `TestCommonSpecKeys`.
 
-### 6.4.3 `integration/test_encoder_wiring.py` — 5 classes, 23 tests
+### 6.4.3 `integration/test_encoder_wiring.py` — 7 classes, 38 tests
 
 The claims that only hold once a real `Algorithm` exists.
 
@@ -645,6 +645,12 @@ The claims that only hold once a real `Algorithm` exists.
 | `TestMoEAuxLossReachesTheOptimiser` | The load-balancing term is computed three layers from the loss; every link is invisible from either end |
 | `TestCustomEncoderCheckpointRoundTrip` | A real save and `from_checkpoint`, which `get_state`/`set_state` cannot show because it never leaves the process |
 
+`TestJEPAAuxLossReachesTheOptimiser` makes the same claim for the latent-prediction term, and adds
+one the MoE class does not need: that selecting `jepa` swaps in **both** its RLModule and its
+Learner. `TestOtherEncodersAreUnaffectedByJEPA` is the other half — every encoder that existed
+first must still resolve to the default module and learner classes. Together they are the
+mechanical form of the isolation claim, alongside a `git diff` over the eight shared files.
+
 Two of these were written *because* the unit tests could not have caught what they found.
 `test_the_fingerprint_survives_a_champion_snapshot` pins a live bug: `add_module` normalises every
 `model_config` to a plain dict, so a `getattr`-based read reported the `mlp` default from the first
@@ -652,6 +658,27 @@ champion onward — silently disabling the structural restore check for the rest
 normal path, since every real run creates champions. And the recurrent class exists because
 selecting `lstm` broke the **info dict** — `_plain` could not handle the 0-d arrays the
 time-dimension connectors produce, so every env step failed nowhere near the model.
+
+---
+
+### 6.4.4 `TestJEPA` — 30 tests
+
+The JEPA encoder is covered by `TestEveryEncoder` for the contract automatically. `TestJEPA` covers
+what decides whether the *objective* is doing anything.
+
+| Test | What it pins |
+|---|---|
+| `test_the_policy_latent_ignores_the_mask` | Two training forwards draw two masks; the latent must not move between them. If masking reached the policy, the agent would act on a random subset of the book and PPO's ratio would compare log-probs taken under different masks |
+| `test_the_objective_runs_only_in_train_mode` | `eval()` produces no stats at all. Mask sampling is stochastic, so an objective on the inference path injects noise into the ratio rather than raising |
+| `test_the_target_trunk_takes_no_gradient` | It moves by EMA and never by gradient. If it learned by gradient it would stop lagging, and the asymmetry that discourages collapse would be gone |
+| `test_the_target_trails_the_online_trunk` | It does move, and by roughly one decay step — a target that never moved would make the objective trivial |
+| `test_collapse_is_visible_in_latent_std` | **The load-bearing one.** A collapsed encoder maps everything to one latent, which makes the prediction *perfect* — loss near zero, reading as success. Only `latent_std` separates that from a working encoder |
+| `test_a_mask_never_hides_everything_or_nothing` | Over every (tokenisation × axis × ratio): an empty mask leaves nothing to predict, a total one leaves no context. Both are silent |
+| `test_a_dense_encoder_produces_no_jepa_loss` | The plumbing is inert for every other architecture |
+
+`test_a_mask_never_hides_everything_or_nothing` found a real bug while being written: a `level`
+mask under `time` tokenisation indexed a level axis that tokenisation does not have. It now falls
+back to a random mask, so a `tokenization × mask_axis` sweep needs no special cases.
 
 ---
 

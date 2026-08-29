@@ -59,6 +59,7 @@ from gym_continuousDoubleAuction.train.model.encoders import (
     build_encoder_config,
     known_encoder_type,
     model_config_overrides,
+    module_class_for,
     validate_encoder_type,
 )
 
@@ -235,9 +236,14 @@ def build_trainable_module_spec(obs_space, act_space, encoder_type=None,
         # The stock module would do for every encoder except moe_transformer,
         # whose auxiliary loss needs a hop through `_forward_train` to reach the
         # Learner. CDAPPOTorchRLModule is identical to its base when there is no
-        # such loss, so it is used for all custom encoders rather than
-        # branching on one of them.
-        module_class=CDAPPOTorchRLModule,
+        # such loss, so it is the default for all custom encoders rather than a
+        # branch on one of them.
+        #
+        # An encoder may name a different one through `@register`. Nothing did
+        # when that mechanism was added, so every encoder registered before it
+        # still resolves to exactly this class - which is what lets a new
+        # architecture bring its own module without editing any existing one.
+        module_class=module_class_for(encoder_type, CDAPPOTorchRLModule),
         observation_space=obs_space,
         action_space=act_space,
         catalog_class=CDACatalog,

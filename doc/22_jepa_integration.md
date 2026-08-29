@@ -290,7 +290,7 @@ come to represent — which is a stronger claim about emergence than a P&L table
 changes to `train.py`, the encoder registry, or the league — it builds encoders through
 `build_trainable_module_spec`, freezes them, and reads them.
 
-### 4.2 Proposal B — a `jepa` encoder with a masked-latent auxiliary loss
+### 4.2 Proposal B — a `jepa` encoder with a masked-latent auxiliary loss — **implemented**
 
 Register a new `encoder_type: "jepa"` that is the existing transformer plus a training-only
 head, and let PPO and the JEPA objective share one trunk.
@@ -353,6 +353,34 @@ flowchart TD
 
 **Expected effect:** a better-conditioned trunk and a dense gradient that survives S1-1. Not a fix
 for S1-3.
+
+**As built.** `encoders/jepa.py` plus `train/model/jepa_learner.py`, and nothing else on any other
+encoder's path — verified by `git diff` over the eight shared files, which is a test in
+`TestOtherEncodersAreUnaffectedByJEPA`.
+
+Two things came out differently from this section's plan, both for the better:
+
+- **The aux-loss seam was not generalised.** §3a proposed renaming `moe_learner` into a shared
+  seam, on the reasoning that two consumers is when that pays. It would have edited code on every
+  custom encoder's path, which the isolation requirement forbids. `JEPARLModule` and
+  `CDAJEPALearner` *subclass* the MoE ones instead, so `CDAJEPALearner` still adds the MoE term and
+  a league mixing the two works. The refactor remains the better design in the abstract and is
+  still available later.
+- **The encoder composes rather than subclasses `TorchTransformerEncoder`.** Subclassing would have
+  needed an `_encode_tokens()` hook extracted from the parent that `moe_transformer` inherits.
+  Instead `jepa.py` imports `tokenize`, `positional_index`, `TransformerBlock`, `AttentionPool` and
+  `PrivateToken` as they stand and duplicates ~15 lines of the forward sequence. That duplication
+  is the price of the isolation, paid deliberately.
+
+An encoder can now declare its own RLModule and Learner through `@register(module_class_path=…,
+learner_class_path=…)`. Nothing else declares either, so every previously registered encoder
+resolves to exactly the classes it resolved to before — which is what made this additive.
+
+**What the probe says so far.** Scored against `mlp` and `transformer` on the reward-free targets,
+`jepa` is competitive and wins nothing decisively. That is the expected reading rather than a
+disappointment: the probe scores encoders **untrained**, so it is measuring JEPA's *architecture* —
+which is essentially the transformer's — and not its *objective*, which has had no chance to train.
+Scoring the objective needs `--checkpoint` after a real run, or Phase 4's pretraining.
 
 ### 4.3 Proposal C — an action-conditioned latent world model
 
@@ -485,7 +513,7 @@ is the piece worth starting.
 | 0 | S1-1 (`vf_clip_param` / reward scaling), S1-3 (reward sign), S2-6 (shared normalizer) | — | S–M |
 | 1 | ~~**Proposal A** — offline probe harness and reward-free encoder scores~~ — **done**, see [23](23_probe_harness.md) | **nothing** | S |
 | 2 | Generalise the aux-loss seam: `ENCODER_AUX_LOSS`, encoder-aware `_collect` and `get_non_inference_attributes` | — | S |
-| 3 | **Proposal B** — the `jepa` encoder, level/side masking only | 2 | M |
+| 3 | ~~**Proposal B** — the `jepa` encoder~~ — **done**, all three mask axes | — | M |
 | 4 | Time-axis masking in Proposal B | 0 (S2-6), 3 | S |
 | 5 | **Proposal D** — offline pretraining on the Parquet corpus, with a fingerprint guard | 3 | M |
 | 6 | **Proposal C** — action-conditioned world model via the `NEXT_OBS` connector | 0, 3 | M–L |

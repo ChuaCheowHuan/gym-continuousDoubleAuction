@@ -1676,3 +1676,81 @@ Own resting orders and agent identity are not in the block. Resting orders are t
 `modify` and `cancel` remain partly blind, because an agent can see its escrowed cash but not which
 orders that cash is committed to.
 
+---
+
+## 31. A JEPA encoder, added without touching any of the others
+
+`encoder_type: "jepa"` is a transformer that also trains a self-supervised objective: mask part of
+the book, predict the masked part's *representation* from the rest, and score that against a
+slowly-updated copy of the encoder itself. Nothing reconstructs the input. See
+[22 4.2](22_jepa_integration.md) and [18 5.4](18_configuration.md).
+
+### 31.1 Why latent prediction rather than reconstruction
+
+The measured per-channel standard deviations of a `both` token
+`[bid_price, bid_size, ask_price, ask_size]` are `[1.27, 8.17, 0.046, 9.52]`. The size channels are
+`sqrt(volume)` and run some 200x the ask-price channel, so a squared-error loss in *input* space is
+dominated by queue-size jitter - the least predictable and least economically meaningful quantity
+in the observation. Predicting in representation space removes that structurally: the target comes
+from an encoder that is itself being trained, so anything genuinely unpredictable is free to drop
+out of the representation and the loss stops paying attention to it.
+
+### 31.2 Added without editing a single existing encoder
+
+The requirement was that `mlp`, `transformer`, `lstm` and `moe_transformer` keep behaving exactly
+as they did. Two design choices follow from it, and both differ from what doc/22 4.2 originally
+proposed:
+
+- **The aux-loss seam was not generalised.** Renaming `moe_learner` into a shared seam is the
+  better design in the abstract - two consumers is usually when that pays - but it edits code on
+  every custom encoder's path. `JEPARLModule` and `CDAJEPALearner` *subclass* the MoE ones instead,
+  so `CDAJEPALearner` still adds the MoE term and a league mixing the two works.
+- **The encoder composes rather than subclasses.** Subclassing `TorchTransformerEncoder` would have
+  needed an `_encode_tokens()` hook extracted from the class `moe_transformer` inherits. Instead
+  `jepa.py` imports `tokenize`, `positional_index`, `TransformerBlock`, `AttentionPool` and
+  `PrivateToken` as they stand and duplicates ~15 lines of the forward sequence. That duplication
+  is the price of the isolation, paid deliberately.
+
+`@register` gained optional `module_class_path` and `learner_class_path`, resolved lazily because
+those classes live in `train/model/`, which imports the encoder package. Nothing else declares
+either, so every previously registered encoder resolves to exactly the classes it did before.
+
+Eight files were required to stay untouched and did:
+`transformer.py`, `moe_transformer.py`, `lstm.py`, `token_embed.py`, `moe.py`, `blocks.py`,
+`tokenize.py`, `moe_learner.py`. `TestOtherEncodersAreUnaffectedByJEPA` asserts the same claim from
+the registry side.
+
+Exactly one existing test changed. `test_non_inference_attributes_contract` asserted the literal
+list `["vf", "encoder.critic_encoder"]` for every encoder; it now asserts that list as a *prefix*
+and requires every encoder except `jepa` to add nothing to it. A fixed list would make adding any
+encoder with training-only submodules look like a regression in all the others.
+
+### 31.3 The policy never sees a mask
+
+The policy latent is computed from the **unmasked** observation - the agent acts on everything it
+was given - and the objective runs in train mode only. Inference therefore costs one trunk pass,
+the same as `transformer`; a training step costs two plus the target's. That matters beyond
+throughput: mask sampling is stochastic, and PPO's ratio compares a log-prob recorded during
+rollout against one recomputed on the learner, so anything stochastic on the inference path becomes
+noise in the ratio rather than an error.
+
+### 31.4 Watch `jepa_latent_std`
+
+This is the `moe_max_expert_share` trap, and worse. A collapsed JEPA maps every observation to the
+same latent, which makes the prediction *perfect*: its loss goes to **zero**, which reads as
+success, and throughput is unchanged. `jepa_latent_std` goes to zero at the same moment and is the
+only thing separating the two; it should sit near 1.0, the scale LayerNormed targets already have.
+`jepa_offdiag_cov` catches the slower variant where variance holds up but the dimensions become
+redundant, and `variance_coeff` weights a VICReg-style hinge that pushes back once either starts.
+
+Anti-collapse rests on the asymmetry: the target trunk moves only by EMA, never by gradient, so the
+predictor is chasing a target that keeps moving - which a constant encoder cannot satisfy.
+
+### 31.5 What the probe says, and what it does not
+
+Scored against `mlp` and `transformer` on the reward-free targets, `jepa` is competitive and wins
+nothing decisively. That is the expected reading rather than a disappointment: the probe scores
+encoders **untrained**, so it measures JEPA's *architecture* - essentially the transformer's - and
+not its *objective*, which has had no chance to train. Scoring the objective needs `--checkpoint`
+after a real run, or the offline pretraining of doc/22 4.4.
+

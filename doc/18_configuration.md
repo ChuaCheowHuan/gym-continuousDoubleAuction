@@ -550,6 +550,7 @@ Available encoders:
 | `transformer` | Pre-norm self-attention over the order-book grid, with a learned two-axis positional encoding and attention pooling. |
 | `lstm` | A per-step embedding of the book grid, then an LSTM over the rollout axis. Stateful. |
 | `moe_transformer` | The transformer with each block's feed-forward replaced by a top-k gated mixture of experts. |
+| `jepa` | A transformer that also trains a self-supervised objective: mask part of the book, predict the masked part's *representation* from the rest, scored against an EMA copy of itself. |
 
 #### What a token is
 
@@ -575,6 +576,34 @@ with the narrower one right-padded with zeros. At the shipped layout those are 4
 add market features: sizing to `book_rows` would silently drop every scalar past the
 fourth, and only for the encoders that tokenise, so `mlp` would go on seeing a
 feature the transformer and LSTM no longer received.
+
+#### What `jepa` adds
+
+It is the only encoder that trains on something other than the reward. The policy latent is
+computed from the **unmasked** observation exactly as `transformer`'s is — the agent acts on
+everything it was given — and the masking exists only for the auxiliary loss, which runs in train
+mode only. So inference costs one trunk pass, the same as `transformer`; a training step costs
+two plus the target's.
+
+| Key | Meaning |
+|---|---|
+| `mask_axis` | What a mask hides. `level` hides a contiguous depth band in every snapshot ("what depth is consistent with this touch?"); `time` hides whole snapshots ("where is the book heading?"); `random` uses no structure and is the ablation baseline. A tokenisation that lacks the requested axis falls back to `random` rather than raising, so a `tokenization × mask_axis` sweep needs no special cases |
+| `mask_ratio` | Fraction of tokens hidden. Clamped so a mask is never empty (nothing to predict) or total (no context) |
+| `predictor_layers`, `predictor_dim` | The predictor is deliberately narrower than the trunk. A predictor able to invert any encoding would let the trunk emit anything at all, a constant included |
+| `ema_decay` | How slowly the target trunk follows the online one. The lagging, frozen target is the primary anti-collapse mechanism — a constant encoder cannot satisfy a moving target |
+| `aux_loss_coeff` | Weight on the latent-prediction term in PPO's total loss |
+| `variance_coeff` | Weight on a VICReg-style hinge that pushes back once the latent's spread starts falling |
+
+**Watch `jepa_latent_std`.** This is the same class of trap as `moe_max_expert_share`, and worse.
+A collapsed JEPA maps every observation to the same latent, which makes the prediction *perfect* —
+its loss goes to **zero**, which reads as success, and throughput is unchanged. `jepa_latent_std`
+goes to zero at the same moment and is the only thing that distinguishes the two; it should sit
+near 1.0, the scale LayerNormed targets already have. `jepa_offdiag_cov` catches the slower
+variant, where variance holds up while the dimensions become redundant.
+
+`jepa` is also the only encoder that brings its own RLModule and Learner classes, declared through
+`@register`. Both subclass the defaults, so nothing about the other architectures changes — see
+[22 §4.2](22_jepa_integration.md).
 
 Every non-`mlp` encoder LayerNorms immediately after its input projection, and that
 is deliberately not configurable. Measured on real steps, the four channels in a

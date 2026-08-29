@@ -68,6 +68,20 @@ ENCODER_REGISTRY: Dict[str, EncoderConfigBuilder] = {}
 #: Also populated by `@register`; it is what `encoder_settings` validates against.
 ENCODER_DEFAULTS: Dict[str, Dict[str, Any]] = {}
 
+#: `encoder_type` -> `(module path, attribute)` for an RLModule class that
+#: encoder needs instead of the default, or absent if it needs none.
+#:
+#: A *path* rather than the class, resolved on demand by `module_class_for`.
+#: The classes live in `train/model/`, which imports this package, so importing
+#: one here would be circular. Deferring the import is what lets an encoder
+#: name its own module class without inverting that dependency.
+ENCODER_MODULE_CLASSES: Dict[str, tuple] = {}
+
+#: `encoder_type` -> `(module path, attribute)` for a Learner class, same rules.
+#: The learner is algorithm-wide rather than per-module, so `train.py` resolves
+#: this once from the configured encoder; see `learner_class_for`.
+ENCODER_LEARNER_CLASSES: Dict[str, tuple] = {}
+
 #: Spec keys applied to the top-level model config rather than to the encoder,
 #: because RLlib reads them itself. See `model_config_overrides`.
 MODEL_CONFIG_SPEC_KEYS = ("max_seq_len",)
@@ -107,6 +121,8 @@ class CDAModelConfig(DefaultModelConfig):
 def register(
     name: str,
     defaults: Optional[Dict[str, Any]] = None,
+    module_class_path: Optional[tuple] = None,
+    learner_class_path: Optional[tuple] = None,
 ) -> Callable[[EncoderConfigBuilder], EncoderConfigBuilder]:
     """Register an encoder config builder under an `encoder_type`.
 
@@ -120,6 +136,17 @@ def register(
             inside each builder is what lets `encoder_settings` do the merge and
             the unknown-key check once, and lets `model_config_overrides` see a
             default the config file happened to omit.
+        module_class_path: `(module, attribute)` naming an RLModule class this
+            encoder needs instead of the default. Omit it and the encoder gets
+            whatever `build_trainable_module_spec` uses for everyone - which is
+            why adding this parameter changed nothing for the encoders that
+            were already registered.
+        learner_class_path: `(module, attribute)` naming a Learner class, same
+            rules. Resolved by `train.py`, once, from the configured encoder.
+
+    Both paths are strings resolved on demand rather than imported classes:
+    those classes live in `train/model/`, which imports this package, so an
+    import here would be circular.
     """
 
     def decorate(builder: EncoderConfigBuilder) -> EncoderConfigBuilder:
@@ -131,9 +158,44 @@ def register(
             )
         ENCODER_REGISTRY[name] = builder
         ENCODER_DEFAULTS[name] = dict(defaults or {})
+        if module_class_path is not None:
+            ENCODER_MODULE_CLASSES[name] = module_class_path
+        if learner_class_path is not None:
+            ENCODER_LEARNER_CLASSES[name] = learner_class_path
         return builder
 
     return decorate
+
+
+def _resolve(path: tuple):
+    """Import `(module, attribute)` and return the attribute."""
+    import importlib
+
+    module_name, attribute = path
+    return getattr(importlib.import_module(module_name), attribute)
+
+
+def module_class_for(encoder_type: str, default):
+    """The RLModule class an encoder needs, or `default` if it needs none.
+
+    `default` is what every encoder resolved to before any of them declared one,
+    so an encoder that says nothing is unaffected by this mechanism existing.
+    """
+    path = ENCODER_MODULE_CLASSES.get(encoder_type)
+    return _resolve(path) if path else default
+
+
+def learner_class_for(encoder_type: str, default):
+    """The Learner class an encoder needs, or `default` if it needs none.
+
+    Unlike the module class this is algorithm-wide - RLlib takes one Learner for
+    the whole run - so it is resolved from the *configured* encoder. A league
+    whose modules carried different encoders would need the union of their
+    learners, which is why every Learner registered here subclasses the default
+    rather than replacing it.
+    """
+    path = ENCODER_LEARNER_CLASSES.get(encoder_type)
+    return _resolve(path) if path else default
 
 
 def model_config_get(model_config, key, default):
@@ -307,6 +369,7 @@ def build_encoder_config(
 # Encoder modules are imported for their `@register` side effect, at the bottom
 # so they can import the registry above without a cycle.
 from gym_continuousDoubleAuction.train.model.encoders import (  # noqa: E402,F401
+    jepa,
     lstm,
     moe_transformer,
     passthrough,
