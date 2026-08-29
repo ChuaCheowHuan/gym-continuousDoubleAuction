@@ -3,7 +3,11 @@ import pytest
 from decimal import Decimal
 
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import continuousDoubleAuctionEnv
-from gym_continuousDoubleAuction.envs.exchg.state_helper import BOOK_DIM, SNAPSHOT_DIM
+from gym_continuousDoubleAuction.envs.exchg.state_helper import (
+    BOOK_DIM,
+    PRIVATE_DIM,
+    SNAPSHOT_DIM,
+)
 
 
 class TestObsNormalization:
@@ -50,8 +54,16 @@ class TestObsNormalization:
         return env.step(action)
 
     def _get_snapshot(self, obs, agent_id="agent_0"):
-        """Extract the most recent snapshot (book block + scalars) from a stacked observation."""
-        return obs[agent_id][-SNAPSHOT_DIM:]
+        """The most recent snapshot (book block + scalars) from an observation.
+
+        Sliced against the end of the *book*, not the end of the vector: an
+        observation ends with the per-agent private block, so `[-SNAPSHOT_DIM:]`
+        would return that block plus a truncated snapshot and misalign every
+        field this file asserts on.
+        """
+        vector = obs[agent_id]
+        end = len(vector) - PRIVATE_DIM
+        return vector[end - SNAPSHOT_DIM:end]
 
     # ------------------------------------------------------------------
     # 1. agg_LOB_raw is always populated after reset and step

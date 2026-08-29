@@ -1618,3 +1618,61 @@ trading positive-sum on average. What changed is that the residual friction is ~
 NAV move rather than dominating it, so trading is no longer dominated for an agent with an edge.
 S1-2 — no private state in the observation — is untouched and is the next blocker.
 
+---
+
+## 30. The observation stops hiding the agent from itself
+
+S1-2: every agent received the byte-identical public book vector, while the reward is
+`f(nav, prev_nav, max_nav, ...)`. An agent long 100 lots and one short 100 lots saw the same input
+and needed opposite actions — which a policy, being a function of its observation, cannot do. See
+[05 §1.0](05_observation_space.md).
+
+### 30.1 A per-agent private block
+
+The observation is now `[ n_hist x snapshot | private ]`, 4x42 + 9 = **177 floats**. The book
+prefix is still shared and computed once per step; only the tail differs.
+`State_Helper.PRIVATE_FIELDS` names its nine entries in order and is the single definition of the
+layout — `__init__` checks its length against `private_dim` from `tunable_constants.json`, on the
+same rule `book_rows` already followed.
+
+Every field is normalised by the trader's own `init_nav` or is already a ratio. That is not
+cosmetic: the block shares a vector, and a `tanh` MLP, with the normalised book, so an unbounded
+private field would saturate it exactly as the raw sizes do (S2-2).
+
+`drawdown` is the entry that could not have been supplied any other way. The reward's drawdown
+term depends on `max_nav`, a path functional over the whole episode, so no amount of recurrence
+could have recovered it from a stream that never showed it.
+
+### 30.2 The private block is not tokenised with the book
+
+`tokenize` builds tokens `max(book_rows, extra_dim)` channels wide. Folding `private_dim` into that
+width would take every book token from 4 channels to 9 and right-pad each with five zeros —
+attention over padding on every level of every snapshot, to carry nine numbers belonging to none of
+them.
+
+So `split_private` splits before tokenisation, `tokenize` never sees the tail, and
+`blocks.PrivateToken` projects it into a single extra token. Every tokenising encoder uses that one
+class rather than its own copy: two architectures reading private state through differently-shaped
+heads would differ by the head as much as by the architecture. The token deliberately receives no
+positional embedding — the two axes are time and book level, and the agent's own state belongs to
+neither.
+
+`mlp` needed no change at all; it sees a wider flat vector.
+
+### 30.3 `obs[-SNAPSHOT_DIM:]` is now wrong everywhere
+
+The newest book frame no longer ends where the vector does. Slicing off the end returns the private
+block plus a truncated snapshot — an array of exactly the right *shape* with every field
+misaligned, which is the same failure `[-40:]` produced before `EXTRA_DIM` existed.
+
+`ObsLayout.book_flat_dim` and `split_private` exist so the correct slice has a name. Four test
+files and the probe harness held the old assumption; `from_obs_space` refusing a width that is not
+`private_dim` plus a whole number of snapshots is what surfaced all of them at once, rather than
+letting them reshape into garbage.
+
+### 30.4 What is still missing
+
+Own resting orders and agent identity are not in the block. Resting orders are the larger gap:
+`modify` and `cancel` remain partly blind, because an agent can see its escrowed cash but not which
+orders that cash is committed to.
+

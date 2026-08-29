@@ -3,7 +3,7 @@ import pytest
 
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import continuousDoubleAuctionEnv
 from gym_continuousDoubleAuction.envs.exchg.state_helper import (
-    BOOK_DIM, EXTRA_DIM, SNAPSHOT_DIM,
+    BOOK_DIM, EXTRA_DIM, PRIVATE_DIM, SNAPSHOT_DIM,
 )
 
 LOG_MID_IDX = BOOK_DIM
@@ -56,7 +56,7 @@ class TestObsMarketFeatures:
             env = continuousDoubleAuctionEnv({"num_of_agents": 2, "is_render": False,
                                               "n_hist": n_hist})
             obs, _ = env.reset()
-            expected = (n_hist * SNAPSHOT_DIM,)
+            expected = (n_hist * SNAPSHOT_DIM + PRIVATE_DIM,)
             for agent_id in env.agents:
                 assert env.observation_spaces[agent_id].shape == expected
                 assert obs[agent_id].shape == expected
@@ -224,4 +224,4 @@ class TestObsMarketFeatures:
             obs, _, _, _, _ = env.step(actions)
             for agent_id, vector in obs.items():
                 assert np.isfinite(vector).all(), f"non-finite observation for {agent_id}"
-                assert vector.shape == (env.n_hist * SNAPSHOT_DIM,)
+                assert vector.shape == (env.n_hist * SNAPSHOT_DIM + PRIVATE_DIM,)

@@ -93,7 +93,7 @@ gym_continuousDoubleAuction/
 │   ├── run_all.py                        regenerates every chart
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               664 unit tests
+└── test/                               675 unit tests
     └── integration/                    59 tests that build real Algorithms
 ```
 
@@ -347,7 +347,8 @@ builds one 42-float snapshot:
 
 `M` is the L1 midpoint with a documented fallback chain (one-sided book → that side's best;
 empty book → `last_price`; degenerate → 100.0), so `log(M)` is always defined. The final
-observation is `n_hist` snapshots concatenated, default 4 → **168 floats**. On reset the deque is
+observation is `n_hist` snapshots concatenated plus a per-agent private block, default
+4 × 42 + 9 → **177 floats**. On reset the deque is
 pre-filled with `n_hist` copies of the initial snapshot so the shape is constant from step 0.
 
 **The history deque is a single shared object on the environment**, and the same stacked vector
@@ -579,7 +580,7 @@ flowchart TB
     BOOK -->|"trades, residue"| BOOK
     BOOK -->|"mark_to_mkt"| ENV
     ENV --> OBSH
-    OBSH -->|"obs 168 floats"| RLM
+    OBSH -->|"obs 177 floats"| RLM
     ENV -->|"reward, info"| HOOKS
     HOOKS --> REC --> PARQ
     HOOKS -->|"NAV table, violation ERROR"| RLOG

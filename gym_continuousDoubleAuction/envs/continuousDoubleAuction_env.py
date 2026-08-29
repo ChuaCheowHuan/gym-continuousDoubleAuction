@@ -98,8 +98,15 @@ class continuousDoubleAuctionEnv(
         # Each snapshot is self.snapshot_dim floats (book_rows * k_rows book
         # features + extra_dim market scalars, all from
         # config/tunable_constants.json -> observation_layout, and set on the
-        # instance by State_Helper); n_hist of them are stacked into one flat
-        # observation.
+        # instance by State_Helper); n_hist of them are stacked, then
+        # self.private_dim per-agent floats are appended.
+        #
+        # The book prefix is shared - it is the same public order book for
+        # every agent - and only the private tail differs. See
+        # State_Helper.PRIVATE_FIELDS for what is in it and why: the reward is
+        # f(nav, prev_nav, max_nav, ...) and none of that was observable, so
+        # two agents holding opposite positions saw the byte-identical vector
+        # and needed opposite actions (finding S1-2).
         #
         # NOTE: these are the *plural* attributes (`observation_spaces` /
         # `action_spaces`) that RLlib's new API stack reads. The singular
@@ -110,7 +117,7 @@ class continuousDoubleAuctionEnv(
             agent_id: gym.spaces.Box(
                 low=-np.inf,
                 high=np.inf,
-                shape=(self.n_hist * self.snapshot_dim,),
+                shape=(self.n_hist * self.snapshot_dim + self.private_dim,),
                 dtype=np.float32
             ) for agent_id in agent_ids
         }

@@ -39,7 +39,7 @@ flowchart LR
     ACC --> MTM
     MTM --> OBS
     MTM --> REW
-    OBS -->|"observation, 168 floats"| POL
+    OBS -->|"observation, 177 floats"| POL
     REW -->|"reward"| POL
     REW --> CB
     CB -->|"agent to module mapping"| POL

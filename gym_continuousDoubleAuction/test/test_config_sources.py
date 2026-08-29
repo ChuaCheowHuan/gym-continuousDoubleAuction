@@ -176,11 +176,13 @@ class TestStructuralConstantsComeFromTheFile:
         assert env.k_rows == 6
         assert env.book_dim == 4 * 6
         assert env.snapshot_dim == 4 * 6 + 2
-        assert env.observation_spaces["agent_0"].shape == (2 * (4 * 6 + 2),)
+        # + the per-agent private block, whose width k_rows does not touch.
+        expected = (2 * (4 * 6 + 2) + env.private_dim,)
+        assert env.observation_spaces["agent_0"].shape == expected
         assert env.action_spaces["agent_0"]["price"].n == 6
 
         obs, _ = env.reset()
-        assert obs["agent_0"].shape == (2 * (4 * 6 + 2),)
+        assert obs["agent_0"].shape == expected
 
     def test_extra_dim_widens_the_snapshot(self, config_tree):
         config_tree(

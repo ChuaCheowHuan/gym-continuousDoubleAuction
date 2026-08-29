@@ -95,20 +95,28 @@ class ProbeCorpus:
 
     @property
     def snapshots(self) -> np.ndarray:
-        """`(N, snapshot_dim)` - the *newest* frame of each observation.
+        """`(N, snapshot_dim)` - the *newest* book frame of each observation.
 
-        The stack is oldest-first and the most recent frame is always the last
-        `snapshot_dim` elements ([05](../../../doc/05_observation_space.md) §1),
-        so row `i` here is the book as of step `i`. Every target is built from
-        this, never from the older frames, which are earlier rows of this same
-        array.
+        The stack is oldest-first, so row `i` here is the book as of step `i`.
+        Every target is built from this, never from the older frames, which are
+        earlier rows of this same array.
+
+        Sliced against `book_flat_dim`, **not** off the end of the observation.
+        An observation ends with the per-agent private block, so `[-snapshot_dim:]`
+        would return the private tail plus a truncated final snapshot - every
+        target then silently reading misaligned fields. That is the same failure
+        mode as the `[-40:]` slicing [05](../../../doc/05_observation_space.md) §1
+        records, which returned 38 book values and 2 scalars and still passed
+        several assertions.
         """
-        return self.obs[:, -self.layout.snapshot_dim:]
+        end = self.layout.book_flat_dim
+        return self.obs[:, end - self.layout.snapshot_dim:end]
 
     def describe(self) -> str:
         return (
             f"{len(self)} observations over {self.num_episodes} episode(s), "
-            f"{self.layout.n_hist}x{self.layout.snapshot_dim} floats each"
+            f"{self.layout.n_hist}x{self.layout.snapshot_dim} book floats "
+            f"+ {self.layout.private_dim} private = {self.layout.flat_dim} each"
         )
 
 

@@ -37,7 +37,10 @@ from gym_continuousDoubleAuction.train.model.encoders import (
     selectable_encoder_types,
     validate_encoder_type,
 )
-from gym_continuousDoubleAuction.train.model.encoders.obs_layout import ObsLayout
+from gym_continuousDoubleAuction.train.model.encoders.obs_layout import (
+    ObsLayout,
+    split_private,
+)
 from gym_continuousDoubleAuction.train.model.encoders.tokenize import (
     TOKENIZATIONS,
     token_shape,
@@ -141,15 +144,38 @@ def test_tokenize_rejects_an_unknown_tokenization(spaces):
         tokenize(obs, layout, "sideways")
 
 
-def test_time_tokenization_preserves_the_observation(spaces):
-    """`time` is a pure reshape, so nothing may be dropped or reordered."""
+def test_time_tokenization_preserves_the_book(spaces):
+    """`time` is a pure reshape of the book part, dropping nothing, reordering
+    nothing - and carrying none of the private tail, which is not tokenised."""
     obs_space, _ = spaces
     layout = ObsLayout.from_obs_space(obs_space)
     obs = torch.from_numpy(np.stack([obs_space.sample() for _ in range(2)]))
+    book, _private = split_private(obs, layout)
 
     tokens = tokenize(obs, layout, "time")
 
-    assert torch.equal(tokens.reshape(2, -1), obs)
+    assert torch.equal(tokens.reshape(2, -1), book)
+
+
+def test_tokenize_ignores_the_private_block(spaces):
+    """Changing an agent's private state must not move a single book token.
+
+    The tail is per-agent and the book prefix is shared, so a tokeniser that
+    let the tail leak in would make one agent's attention depend on another's
+    inventory - and it would do so silently.
+    """
+    obs_space, _ = spaces
+    layout = ObsLayout.from_obs_space(obs_space)
+    obs = torch.from_numpy(np.stack([obs_space.sample()]))
+
+    other = obs.clone()
+    other[0, layout.book_flat_dim :] += 1.0
+
+    for tokenization in TOKENIZATIONS:
+        assert torch.equal(
+            tokenize(obs, layout, tokenization),
+            tokenize(other, layout, tokenization),
+        ), tokenization
 
 
 def test_level_tokens_carry_one_level_per_token(spaces):
@@ -163,7 +189,7 @@ def test_level_tokens_carry_one_level_per_token(spaces):
     obs = torch.from_numpy(np.stack([obs_space.sample()]))
 
     tokens = tokenize(obs, layout, "level")
-    newest = obs[0, -layout.snapshot_dim :]
+    newest = split_private(obs, layout)[0][0, -layout.snapshot_dim :]
 
     for level in range(layout.k_rows):
         expected = torch.tensor(
@@ -179,7 +205,7 @@ def test_level_tokenization_appends_a_global_token(spaces):
     obs = torch.from_numpy(np.stack([obs_space.sample()]))
 
     tokens = tokenize(obs, layout, "level")
-    newest = obs[0, -layout.snapshot_dim :]
+    newest = split_private(obs, layout)[0][0, -layout.snapshot_dim :]
     extras = newest[layout.book_dim :]
 
     assert tokens.shape[1] == layout.k_rows + 1
@@ -322,10 +348,14 @@ class TestTokenWidthFitsBothKindsOfToken:
     market features. A fifth would have stopped reaching the tokenising
     encoders while `mlp` kept seeing it - so the architectures would have been
     compared on different observations, with nothing to say so.
+
+    Each layout here carries a non-zero `private_dim` as well: these are token
+    *width* tests, so a private tail that is present and correctly ignored is a
+    stronger fixture than one that is absent.
     """
 
     def test_wide_extras_are_not_truncated(self):
-        layout = ObsLayout(n_hist=2, book_rows=4, k_rows=3, extra_dim=5)
+        layout = ObsLayout(n_hist=2, book_rows=4, k_rows=3, extra_dim=5, private_dim=3)
         obs = torch.arange(layout.flat_dim, dtype=torch.float32).unsqueeze(0)
 
         tokens = tokenize(obs, layout, "both")
@@ -335,7 +365,7 @@ class TestTokenWidthFitsBothKindsOfToken:
 
     @pytest.mark.parametrize("tokenization", TOKENIZATIONS)
     def test_declared_shape_still_matches_for_wide_extras(self, tokenization):
-        layout = ObsLayout(n_hist=2, book_rows=4, k_rows=3, extra_dim=5)
+        layout = ObsLayout(n_hist=2, book_rows=4, k_rows=3, extra_dim=5, private_dim=3)
         obs = torch.zeros(1, layout.flat_dim)
 
         tokens = tokenize(obs, layout, tokenization)
@@ -344,7 +374,7 @@ class TestTokenWidthFitsBothKindsOfToken:
 
     def test_book_tokens_are_padded_when_extras_are_wider(self):
         """The narrower kind keeps trailing zeros rather than being reshaped."""
-        layout = ObsLayout(n_hist=1, book_rows=2, k_rows=3, extra_dim=5)
+        layout = ObsLayout(n_hist=1, book_rows=2, k_rows=3, extra_dim=5, private_dim=3)
         obs = torch.arange(layout.flat_dim, dtype=torch.float32).unsqueeze(0)
 
         tokens = tokenize(obs, layout, "level")
@@ -358,7 +388,7 @@ class TestTokenWidthFitsBothKindsOfToken:
     def test_shipped_layout_is_unchanged(self):
         """4 fields and 2 scalars: the width was already correct, so this fix
         must not move it."""
-        layout = ObsLayout(n_hist=4, book_rows=4, k_rows=10, extra_dim=2)
+        layout = ObsLayout(n_hist=4, book_rows=4, k_rows=10, extra_dim=2, private_dim=9)
 
         assert token_shape(layout, "both") == (44, 4)
         assert token_shape(layout, "level") == (11, 4)

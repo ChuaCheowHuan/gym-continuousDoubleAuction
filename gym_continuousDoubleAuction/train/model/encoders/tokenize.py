@@ -40,7 +40,10 @@ from typing import Tuple
 
 import torch
 
-from gym_continuousDoubleAuction.train.model.encoders.obs_layout import ObsLayout
+from gym_continuousDoubleAuction.train.model.encoders.obs_layout import (
+    ObsLayout,
+    split_private,
+)
 
 #: Valid values for an encoder spec's `tokenization` key.
 TOKENIZATIONS = ("time", "level", "both")
@@ -84,7 +87,8 @@ def tokenize(obs: torch.Tensor, layout: ObsLayout, tokenization: str) -> torch.T
     """Reshape a flat observation batch into `(B, num_tokens, token_dim)`.
 
     Args:
-        obs: `(B, layout.flat_dim)` float tensor.
+        obs: `(B, layout.flat_dim)` float tensor - the whole observation; the
+            private tail is split off and discarded here.
         layout: the grid to read `obs` as.
         tokenization: one of `TOKENIZATIONS`.
 
@@ -94,9 +98,15 @@ def tokenize(obs: torch.Tensor, layout: ObsLayout, tokenization: str) -> torch.T
     _check(tokenization)
     batch = obs.shape[0]
 
+    # The book part only. A full observation carries `private_dim` per-agent
+    # floats after the stack, and they are deliberately not tokenised - see
+    # `obs_layout`. Slicing here rather than demanding a pre-split input keeps
+    # every caller's contract "pass the observation".
+    book, _private = split_private(obs, layout)
+
     # (B, n_hist, snapshot_dim) - snapshots are stacked oldest-first by
     # State_Helper's obs_history deque, so this axis is time ascending.
-    snapshots = obs.reshape(batch, layout.n_hist, layout.snapshot_dim)
+    snapshots = book.reshape(batch, layout.n_hist, layout.snapshot_dim)
 
     if tokenization == "time":
         return snapshots

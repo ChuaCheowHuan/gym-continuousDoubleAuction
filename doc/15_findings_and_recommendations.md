@@ -94,19 +94,43 @@ guard. The same change also closed S2-3 and made S2-1's fix expressible.
 
 ### S1-2 · Observation contains no private state **[verified]**
 
-Every agent receives the byte-identical 168-float public book vector (`distinct obs vectors
+Every agent received the byte-identical 168-float public book vector (`distinct obs vectors
 across agents: 1`). Absent: `net_position`, `VWAP`, `nav`, `max_nav`, `cash`, own resting orders,
 agent identity, time remaining.
 
 The reward is literally `f(nav, prev_nav, max_nav, …)` — all unobserved. Two states with
-identical books but opposite inventory require opposite optimal actions and are
+identical books but opposite inventory require opposite optimal actions and were
 indistinguishable. The drawdown term depends on `max_nav`, a path functional over the whole
-episode, so this is not partial observability a recurrent net can recover. It also makes the
+episode, so this was not partial observability a recurrent net could recover. It also made the
 `modify` and `cancel` categories (4 of 9) blind.
 
-**Fix.** Append a ~9-float normalised private block per agent and stop broadcasting one shared
-vector. Delete `test_shared_history_multi_agent_uniformity`, which currently asserts the defect.
-→ [12 §2](12_perspective_rl_researcher.md#2-the-observation-contains-no-private-state)
+**Fixed.** The observation is now `[ n_hist × snapshot | private ]`, 177 floats: the book prefix
+is still shared and computed once, and a 9-float per-agent block is appended.
+`State_Helper.PRIVATE_FIELDS` is the single definition of its layout and `__init__` checks its
+length against `private_dim`. Every field is normalised by the trader's own `init_nav` or is
+already a ratio, so the block is O(1) and cannot saturate the `tanh` MLP the way raw sizes do
+(S2-2).
+
+`test_shared_history_multi_agent_uniformity` — which asserted the defect as a requirement — is
+replaced by `test_agents_see_distinct_private_state`, plus a test that the book prefix is *still*
+shared, since that half was never the bug.
+
+Three consequences worth knowing:
+
+- **The observation width is structural.** No checkpoint written before this loads.
+- **`obs[-SNAPSHOT_DIM:]` is now wrong everywhere.** It returns the private block plus a truncated
+  final snapshot. Slice against `n_hist * SNAPSHOT_DIM` — `ObsLayout.book_flat_dim` and
+  `split_private` exist for this. Four test files and the probe harness held that assumption.
+- **The private block is not tokenised with the book.** Token width is
+  `max(book_rows, extra_dim)`, so folding it in would widen every book token to 9 channels and
+  right-pad with zeros. It gets its own projection and joins as one token — `blocks.PrivateToken`,
+  shared by every tokenising encoder so they stay comparable.
+
+**Still open:** own resting orders and agent identity are not in the block. Resting orders are the
+larger gap — `modify` and `cancel` remain partly blind, since an agent can see its escrowed cash
+but not which orders that cash is committed to.
+→ [12 §2](12_perspective_rl_researcher.md#2-the-observation-contains-no-private-state),
+[05 §1.0](05_observation_space.md)
 
 ### S1-3 · Doing nothing is a dominant strategy **[verified]**
 
@@ -707,7 +731,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **664 unit tests pass** (plus 84 integration), covering every position-flip path, cash-check edge case, modify-order
+- **675 unit tests pass** (plus 84 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 

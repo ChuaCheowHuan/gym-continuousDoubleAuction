@@ -791,7 +791,7 @@ pushed — the same confound the per-encoder `lr` override exists to remove. Ave
 the floor is `top_k` at perfectly uniform routing, so an untrained gate reads just
 above 2 at the shipped settings regardless of depth.
 
-**Expect collapse, and watch for it.** This env's observation is 168 floats and the
+**Expect collapse, and watch for it.** This env's observation is 177 floats and the
 league is small, so MoE's premise — capacity you cannot afford densely — may simply
 not apply. A collapsed mixture and a healthy one have identical losses and identical
 throughput; the only difference is `moe_max_expert_share` and `moe_min_expert_share`

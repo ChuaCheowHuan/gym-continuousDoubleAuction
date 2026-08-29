@@ -184,6 +184,15 @@ level away everywhere else in the snapshot, so without that scalar a market at 1
 would be indistinguishable and "did the price move" would have no answer
 ([05](05_observation_space.md) §2).
 
+**Targets read the newest *book* frame, not the end of the observation.** An observation ends with
+the per-agent private block, so `corpus.snapshots` slices against `layout.book_flat_dim`. Slicing
+off the end would hand every target the private tail plus a truncated snapshot — an array of the
+right shape with every field misaligned.
+
+Private state is deliberately *not* a target. These score how well an encoder represents **the
+market**, and an agent's own inventory is an input to the encoder, not a fact about the book. A
+target read from the private block would be scoring the encoder on copying its own input.
+
 **Episode boundaries are masked out.** A return read across a reset is a jump between unrelated
 random price anchors — the largest "signal" in the corpus, and entirely artificial.
 

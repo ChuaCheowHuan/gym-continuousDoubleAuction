@@ -297,7 +297,9 @@ head, and let PPO and the JEPA objective share one trunk.
 
 ```mermaid
 flowchart TD
-    OBS["observation, 168 floats"] --> TOK["tokenize (both)<br/>44 tokens x 4"]
+    OBS["observation, 177 floats"] --> SPLIT["split_private"]
+    SPLIT -->|"168 book"| TOK["tokenize (both)<br/>44 tokens x 4"]
+    SPLIT -->|"9 private"| PTOK["PrivateToken<br/>1 token"]
     TOK --> MASK{"training?"}
     MASK -->|"yes"| CTX["mask a block<br/>context tokens only"]
     MASK -->|"no"| FULL["all tokens"]

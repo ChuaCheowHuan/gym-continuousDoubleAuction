@@ -124,3 +124,44 @@ class AttentionPool(nn.Module):
         query = self.query.expand(x.shape[0], -1, -1)
         pooled, _ = self.attn(query, x, x, need_weights=False)
         return pooled.squeeze(-2)
+
+
+class PrivateToken(nn.Module):
+    """Project the per-agent private block into one extra token.
+
+    The observation is a shared book prefix plus a `private_dim` per-agent tail
+    (see `obs_layout`). The tail is not tokenised with the book: token width is
+    `max(book_rows, extra_dim)`, so folding it in would widen every book token
+    to `private_dim` channels and right-pad each with zeros - attention over
+    padding on every level of every snapshot, to carry nine numbers that belong
+    to none of them.
+
+    So it gets its own projection and joins the sequence as a single token.
+    Every encoder that tokenises uses this rather than its own copy, which is
+    what keeps them comparable: two architectures reading private state through
+    differently-shaped heads would differ by the head as much as by the
+    architecture.
+
+    No positional embedding is added to it, deliberately. The two axes are time
+    and book level, and the private block belongs to neither - it is the
+    agent's own state as of now.
+
+    LayerNorm for the same reason the book projection has one: the fields are
+    bounded and O(1) by construction in `set_private_state`, but they are not
+    on the *same* scale as each other (a NAV ratio near 1.0 beside a drawdown
+    near 0.0), and this token shares a softmax with the book's.
+    """
+
+    def __init__(self, private_dim: int, d_model: int) -> None:
+        super().__init__()
+        if private_dim < 1:
+            raise ValueError(
+                f"PrivateToken needs private_dim >= 1; got {private_dim}. "
+                "Build it only when the layout has a private block."
+            )
+        self.project = nn.Linear(private_dim, d_model)
+        self.norm = nn.LayerNorm(d_model)
+
+    def forward(self, private: torch.Tensor) -> torch.Tensor:
+        """`(B, private_dim)` -> `(B, 1, d_model)`, ready to concatenate."""
+        return self.norm(self.project(private)).unsqueeze(-2)

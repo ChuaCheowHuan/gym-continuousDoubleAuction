@@ -21,11 +21,32 @@ snapshot (one frame) = 42 floats
              40   log_mid
              41   log1p_spread_ticks
 
-observation = n_hist frames concatenated, flat 1-D float32
-  default n_hist = 4  →  shape (168,)
-  layout: [ O_{t-3} | O_{t-2} | O_{t-1} | O_t ]
-  the most recent frame is always the last SNAPSHOT_DIM elements
+private block (per agent) = 9 floats
+             0   position        tanh(net_position / limit_max_size)
+             1   position_val    mark-to-market exposure / init_nav
+             2   cash            free cash / init_nav
+             3   cash_on_hold    escrowed against live orders / init_nav
+             4   nav             nav / init_nav, so 1.0 at reset
+             5   drawdown        (nav - max_nav) / init_nav, <= 0
+             6   vwap_vs_mid     (M - VWAP) / M when a position is open, else 0
+             7   realised_pnl    total_profit / init_nav
+             8   time_left       1 - t_step / max_step
+
+observation = n_hist frames concatenated, then the private block
+  default n_hist = 4  →  shape (177,) = 4x42 + 9
+  layout: [ O_{t-3} | O_{t-2} | O_{t-1} | O_t | private ]
+  the most recent frame ends at index n_hist * SNAPSHOT_DIM, NOT at the end
 ```
+
+**The book prefix is shared; only the private tail differs between agents.** The book is computed
+once per step and handed to everyone — it is the public order book, and that half was never the
+defect.
+
+**Never slice the newest frame off the end of the vector.** `obs[-SNAPSHOT_DIM:]` returns the
+private block plus a truncated final snapshot, and every field read from it is then misaligned.
+Slice against `n_hist * SNAPSHOT_DIM` instead. This is the same failure that `[-40:]` produced
+before `EXTRA_DIM` existed — 38 book values plus 2 scalars, silently misaligning every block slice
+while still passing several assertions.
 
 Widths are defined once, in
 [`config/tunable_constants.json`](../config/tunable_constants.json) under `observation_layout`:
@@ -33,8 +54,26 @@ Widths are defined once, in
 ```jsonc
 "k_rows": 10,      // book depth, price levels per side
 "book_rows": 4,    // bid_price, bid_size, ask_price, ask_size
-"extra_dim": 2     // log_mid, log1p_spread_ticks
+"extra_dim": 2,    // log_mid, log1p_spread_ticks
+"private_dim": 9   // the per-agent block; State_Helper.PRIVATE_FIELDS names them
 ```
+
+### 1.0 Why there is a private block at all
+
+The reward is literally `f(nav, prev_nav, max_nav, …)` and, until this block existed, **none of
+those were observable**. Every agent received the byte-identical public vector — measured,
+`distinct obs vectors across agents: 1`. An agent long 100 lots and one short 100 lots therefore
+saw the same input and needed opposite actions, which a policy, being a function of its
+observation, cannot do. That is finding **S1-2**.
+
+`drawdown` is the entry that could not have been recovered any other way: the reward's drawdown
+term depends on `max_nav`, a path functional over the entire episode, so no amount of recurrence
+could reconstruct it from a stream that never showed it.
+
+Every field is normalised by the trader's own `init_nav` or is already a ratio, so the block is on
+the same O(1) scale as the normalised book. An unbounded private field would saturate the `tanh`
+MLP exactly as the raw sizes do (§7, S2-2). `State_Helper.PRIVATE_FIELDS` is the single definition
+of the layout, and `__init__` checks its length against `private_dim`.
 
 `book_dim` (= `book_rows × k_rows` = 40) and `snapshot_dim` (= 42) are **derived** in
 `state_helper`, not stored, so they cannot disagree with `k_rows`. Inside the env, use the
@@ -43,14 +82,14 @@ instance attributes `self.k_rows` / `self.book_dim` / `self.snapshot_dim`, which
 `SNAPSHOT_DIM` names read the same config at import and exist for consumers with no env instance —
 the visualizers and the tests. See [18_configuration.md](18_configuration.md) §4.1.
 
-**Never hardcode 40, 42, 160, or 168.** Use `self.snapshot_dim`, or import `SNAPSHOT_DIM` (and
+**Never hardcode 40, 42, 160, 168, or 177.** Use `self.snapshot_dim`, or import `SNAPSHOT_DIM` (and
 `BOOK_DIM` when you specifically mean the book block). The `[-40:]` slicing that predated `EXTRA_DIM` failed
 *silently* rather than loudly when the width changed — it returned the last 38 book values plus
 2 scalars, misaligning every block slice by 2 while still passing several assertions.
 
 Ask prices and sizes are stored **negated**; the sign encodes side.
 
-The declared space is `Box(-inf, inf, shape=(n_hist * SNAPSHOT_DIM,), dtype=float32)`
+The declared space is `Box(-inf, inf, shape=(n_hist * SNAPSHOT_DIM + PRIVATE_DIM,), dtype=float32)`
 ([`continuousDoubleAuction_env.py`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py)).
 Every quantity here is in fact boundable; infinite bounds disable RLlib's observation filters and
 any space-based sanity checking. See §7.6.
@@ -85,7 +124,9 @@ flowchart TD
     SENT --> EXTRA
     EXTRA["append log(M) and log1p_spread_ticks"] --> SNAP["snapshot: SNAPSHOT_DIM = 42 floats"]
     SNAP --> DEQ["obs_history deque, maxlen = n_hist"]
-    DEQ --> OBS["concatenate -> 168 floats,<br/>the same array for every agent"]
+    DEQ --> OBS["concatenate -> 168 book floats,<br/>shared by every agent"]
+    OBS --> PRIV["+ 9 private floats per agent<br/>position, cash, NAV, drawdown, ..."]
+    PRIV --> FULL["observation: 177 floats"]
 ```
 
 Two things this picture makes concrete. The raw book is kept **beside** the normalised one and is
@@ -210,7 +251,7 @@ patterns, and distinguishes a stable book from a rapidly evolving one.
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Observation format | Flat 1-D `(N × SNAPSHOT_DIM,)` | Maximum compatibility with RLlib built-in policies (FCNet, LSTM expect flat inputs) |
+| Observation format | Flat 1-D `(N × SNAPSHOT_DIM + PRIVATE_DIM,)` | Maximum compatibility with RLlib built-in policies (FCNet, LSTM expect flat inputs) |
 | History scope | One shared environment-level `obs_history` deque | All agents observe the same public market; per-agent history would be redundant |
 | Default window *N* | 4 | Balances temporal context against input dimensionality |
 | Configurability | `config["n_hist"]` | Consistent with the existing RLlib config pattern |
@@ -478,7 +519,7 @@ Anything that slices an observation must use `SNAPSHOT_DIM` / `BOOK_DIM`:
 
 | Site | Usage |
 |---|---|
-| [`continuousDoubleAuction_env.py`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py) | `Box` shape is `(n_hist * SNAPSHOT_DIM,)` |
+| [`continuousDoubleAuction_env.py`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py) | `Box` shape is `(n_hist * SNAPSHOT_DIM + PRIVATE_DIM,)` |
 | [`exchg_helper.py`](../gym_continuousDoubleAuction/envs/exchg/exchg_helper.py) `print_table` | Slices the book block before `reshape(4, K_ROWS)`, then prints trailing scalars on their own line. Without the slice, `reshape` raises `ValueError` on **every rendered step**. |
 | [`visualize_orderbook.py`](../gym_continuousDoubleAuction/visualize/visualize_orderbook.py) | Takes `agent_obs[-SNAPSHOT_DIM:]` for the current book state |
 | `test_obs_normalization.py`, `test_observation_history.py`, `test_obs_market_features.py` | All shape literals derive from the constants |
@@ -496,6 +537,7 @@ log_mid = 4.269698; log1p_spread_ticks = 2.302585
 Any policy checkpoint built against an older observation width will not load against the current
 one, and an episode Parquet record written under one width has `obs` lists of a different length
 than the reader expects. This is unavoidable whenever the observation dimension
-changes; the width has changed twice (40 → 160 with stacking, 160 → 168 with market features).
+changes; the width has changed three times (40 → 160 with stacking, 160 → 168 with market
+features, 168 → 177 with the private block).
 `SNAPSHOT_DIM` is a good constant but is not recorded in the checkpoint, so the mismatch is not
 detected — it just fails.

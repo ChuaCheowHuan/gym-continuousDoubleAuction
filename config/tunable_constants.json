@@ -1,15 +1,15 @@
 {
   "_description": "Structural constants: values that shape the observation and action spaces, the module-ID naming contract, and the paths the visualizers read. These are real inputs - every module named by a _source key reads them through gym_continuousDoubleAuction/config_loader.py and holds no literal of its own. Per-run knobs live in train_config.json; env fallbacks live in env_defaults.json.",
   "_note": "Derived quantities are not listed. book_dim is book_rows * k_rows, snapshot_dim is book_dim + extra_dim, and the action space's price cardinality is k_rows. Writing a derived value here would create a second copy that can disagree with the first.",
-
   "observation_layout": {
     "_source": "gym_continuousDoubleAuction/envs/exchg/state_helper.py (State_Helper.__init__)",
     "_note": "One observation snapshot is book_rows stacked rows of k_rows price levels - [bid_price, bid_size, ask_price, ask_size] - followed by extra_dim market-level scalars [log_mid, log1p_spread_ticks]. k_rows is the single definition of book depth: the observation exposes it, the action space's price code indexes it, and _set_price reshapes against it. book_rows is fixed by the four lists set_agg_LOB builds; changing it requires changing that function.",
+    "_note_private_dim": "private_dim is the width of the PER-AGENT block appended after the n_hist stacked snapshots, so an observation is n_hist * snapshot_dim + private_dim floats. The book prefix is still shared and computed once; only this tail differs between agents. It exists because the reward is f(nav, prev_nav, max_nav, ...) and none of those were observable - two agents holding opposite positions saw the byte-identical vector and needed opposite actions, which no policy can do (finding S1-2). Changing this number means changing State_Helper.set_private_state to match; PRIVATE_FIELDS there is the single definition of what the block contains, and its length is checked against this value at construction.",
     "k_rows": 10,
     "book_rows": 4,
-    "extra_dim": 2
+    "extra_dim": 2,
+    "private_dim": 9
   },
-
   "action_space": {
     "_source": "gym_continuousDoubleAuction/envs/exchg/action_helper.py (Action_Helper.act_space)",
     "_note": "category_n is checked against the side/type mapping in _set_action_mkt_depth at construction, so a value that disagrees with that mapping raises instead of silently doing nothing. price_offset_n must be odd: the neutral 'join' code is the middle one, and offsets run from -(n//2) to +(n//2) ticks. The price code's cardinality is not here - it is observation_layout.k_rows.",
@@ -20,27 +20,23 @@
     "size_sigma_low": 0.0,
     "size_sigma_high": 1.0
   },
-
   "price_anchor_fallbacks": {
     "_source": "gym_continuousDoubleAuction/envs/exchg/action_helper.py (Action_Helper.__init__) and state_helper.py (set_agg_LOB)",
     "_note": "Two fallbacks for the price anchor, both normally overwritten by reset(). action_helper_last_price seeds self.last_price before the first reset; state_helper_midpoint is used when the book has no two-sided market and last_price is unusable. They are read from one place now, so they cannot drift apart.",
     "action_helper_last_price": 100.0,
     "state_helper_midpoint": 100.0
   },
-
   "module_id_prefixes": {
     "_source": "gym_continuousDoubleAuction/train/policy/policy_handler.py",
     "_note": "A naming contract, not a knob: SelfPlayCallback parses these prefixes to tell baseline opponents from champion snapshots. Changing them invalidates existing checkpoints, whose module directories are named with the old prefix.",
     "policy_prefix": "policy_",
     "champion_prefix": "champion_"
   },
-
   "runtime_env_vars": {
     "_source": "gym_continuousDoubleAuction/train/train.py (main)",
     "_note": "Set with setdefault before ray.init, so an existing value in the environment wins. Add entries here rather than in code.",
     "RAY_DEBUG_DISABLE_MEMORY_MONITOR": "True"
   },
-
   "logging": {
     "_source": "gym_continuousDoubleAuction/logging_setup.py",
     "_note": "How the package configures the standard library logging module, applied once per process by the first get_logger call. level is the fallback: $CDA_LOG_LEVEL wins over it, which is how the level reaches Ray's worker processes - they are separate interpreters that never run train.main, so train.py exports the variable and each worker's first import picks it up. env_var is named here so the exporter and the reader agree on one string. The format carries the pid because with num_env_runners > 0 every worker logs into the same stream, and without it the episode hooks are unattributable. It also carries iter=, the training iteration, so a log line can be joined to the progress.jsonl row for the same iteration; it reads '-' in any process that does not know the iteration, which is every env runner. datefmt carries the date because a training run outlasts a day and a time-only stamp cannot be ordered across midnight.",
@@ -48,7 +44,6 @@
     "env_var": "CDA_LOG_LEVEL",
     "format": "%(asctime)s %(levelname)-7s pid=%(process)d iter=%(iteration)s %(name)s: %(message)s",
     "datefmt": "%Y-%m-%d %H:%M:%S",
-
     "_file_note": "The run log. Until this existed the package logged only to stdout, so the narrative a run is diagnosed from - the per-episode NAV tables, the league statistics, the ERROR that precedes a strict_nav_check raise - survived only in scrollback, while progress.jsonl kept the numbers. file_name is written under log_base_dir, beside progress.jsonl. Rotation bounds it: file_max_bytes per file, file_backup_count old files kept, so a long or resumed run cannot fill the disk. Set file_name to an empty string to disable file logging entirely.",
     "_file_worker_note": "Every process writes its own file rather than sharing one, because RotatingFileHandler is not safe across processes - two of them crossing the size threshold together rename and truncate the same file underneath each other. The driver writes file_name; a worker writes the same name with its pid before the suffix (run.log -> run.4231.log). This matters rather than being a detail: the episode callbacks run on the env runners, so with num_env_runners > 0 the NAV tables and the conservation ERROR are emitted there and nowhere else. dir_env_var carries log_base_dir to those workers the same way env_var carries the level - they are separate interpreters that never run train.main.",
     "dir_env_var": "CDA_LOG_DIR",
@@ -56,7 +51,6 @@
     "file_max_bytes": 10485760,
     "file_backup_count": 5
   },
-
   "visualize_paths": {
     "_source": "gym_continuousDoubleAuction/visualize/",
     "_note": "Default arguments of the visualize entry points. The per-step record is Parquet, written by train.episode_record.EpisodeRecorder under <episode_parquet_dir>/<run_id>/ (train_config.json's episode_data_dir). episode_parquet_fallback is the path tried when episode_parquet_dir does not exist, which is what happens when the visualizer is run from inside visualize/. The visualizer picks the most recently modified run_id directory unless one is passed explicitly. training_log_dir/training_log_fallback are the same pattern for progress.jsonl, one per-iteration JSON line written under <training_log_dir>/<run_id>/ (train_config.json's log_base_dir).",
@@ -66,7 +60,6 @@
     "training_log_fallback": "../results",
     "default_agent_id": "agent_0"
   },
-
   "inert_tick_size_copy": {
     "_source": "gym_continuousDoubleAuction/envs/orderbook/orderbook.py (OrderBook.__init__)",
     "_note": "DOCUMENTATION ONLY - the one value in this file that is not read from here. OrderBook accepts and stores a tick_size it never reads, and the envs/orderbook/ package is off-limits to changes, so its literal default stays in that module. The live tick is Action_Helper.min_tick, which comes from the tick_size config key. Deleting the dead parameter is the documented recommendation (doc/15 S3-4). The env side of this is fixed: reset() now builds the book with the configured tick_size instead of a literal 1.",

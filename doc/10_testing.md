@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (748 tests: 664 unit + 84 integration)
+# everything (759 tests: 675 unit + 84 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -62,9 +62,9 @@ Counts re-measured with `--collect-only`.
 | `test_modify_order.py` | 7 | The six modify-order accounting scenarios, plus a guard that the dead escrow helper stays deleted |
 | `test_new_action_space.py` | 10 | Action decoding, ghost pricing, `tick_size` reaching the action layer, price levels matching book depth |
 | `test_obs_normalization.py` | 12 | Price/volume normalization, action unnormalization |
-| `test_observation_history.py` | 3 | Temporal stacking (shape across `n_hist` moved to `test_obs_market_features.py`) |
+| `test_observation_history.py` | 6 | Temporal stacking, and the shared-book / private-tail split (S1-2) |
 | `test_obs_market_features.py` | 17 | `log_mid`, `log1p_spread_ticks`, observation shape across `n_hist` |
-| `test_reward_logic.py` | 4 | Reward formula components |
+| `test_reward_logic.py` | 8 | Reward formula components: normalisation by `init_nav`, scale invariance, the signed drawdown telescoping, zero-sum symmetry |
 | `test_env_lifecycle.py` | 10 | The bare env is tradable (S1-4) and truncation lands exactly on `max_step` (S3-19) |
 | `test_seeding.py` | 11 | `reset(seed=...)` really seeds the episode: anchor, sizes, queueing order; the global NumPy stream is not the source; `sklearn` is not imported (S3-5, S3-6) |
 | `test_nav_callback.py` | 16 | Episode-end NAV conservation, in both halves: the hook counts a violation without raising, the driver stops the run from the count, tolerance, exactness at a scale `float` cannot resolve, a missing metric reading as "nothing seen" |
@@ -77,14 +77,14 @@ Counts re-measured with `--collect-only`.
 | `test_checkpointing.py` | 50 | Checkpoint retention, restore selection, league state across a save |
 | `test_champion_trigger.py` | 19 | League statistics with modules that played no episodes; promotion, pool size, idle count and time-since-champion as metrics |
 | `test_progress_log.py` | 35 | `progress.jsonl` writer, numpy/NaN handling, `vf_explained_var` extraction, per-run directory isolation, the iteration broadcast to env runners |
-| `test_info_dict.py` | 23 | Per-step `info`: back-compat, reward terms summing exactly, live counters, spread, pass/rejection fields, JSON, and 0-d numpy arrays — which only a *recurrent* module produces |
+| `test_info_dict.py` | 24 | Per-step `info`: back-compat, reward terms summing exactly, live counters, spread, pass/rejection fields, JSON, and 0-d numpy arrays — which only a *recurrent* module produces |
 | `test_type_policy.py` | 15 | Decimal money/prices, int sizes, no field changing type mid-episode, book boundary |
 | `test_activity_metrics.py` | 29 | `pass_action_fraction` / `order_rejection_fraction`: the S1-3 detector, per-episode tallies, pickling; the reward-term variance split, the maker-ratio metric and the end-of-episode account metrics |
 | `test_episode_record.py` | 32 | The Parquet per-step record: declared schema and its drift guard against `Info_Helper`, identity columns, sampling rate, byte cap, eviction of episodes that never end, and the ways it must fail without raising |
 | `test_encoder_registry.py` | 38 | The selectable-encoder seam: registry, `CDACatalog`, the `mlp` pass-through staying byte-for-byte what it was, `ObsLayout`, tokenisation |
 | `test_encoder_architectures.py` | 110 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
-| `test_probe.py` | 41 | The reward-free probe harness's arithmetic on synthetic observations: target definitions, episode-boundary masking, the splits, the metrics, unscoreable cells |
-| **unit total** | **664** | |
+| `test_probe.py` | 43 | The reward-free probe harness's arithmetic on synthetic observations: target definitions, episode-boundary masking, the splits, the metrics, unscoreable cells, and that `snapshots` reads the book rather than the private tail |
+| **unit total** | **675** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported and finite (1 xfail pins S1-1) |
@@ -108,7 +108,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((748 tests))
+  root((759 tests))
     Simulator
       orderbook 14
         components, matching, invariants
@@ -351,22 +351,33 @@ Modify and cancel accounting (categories 3, 4, 7, 8) is verified separately in
 | `test_action_price_from_populated_book_is_raw` | With a bid resting at 99, selecting level 0 (join) resolves to `agg_LOB_raw[0]` = 99, **not** the normalized 0.01 |
 | `test_action_price_is_positive` | Over 10 random multi-agent steps, every resolved non-market price is strictly positive |
 
-### 4.2 `test_observation_history.py` (3 tests)
+### 4.2 `test_observation_history.py` (6 tests)
 
 Shape across `n_hist` values, including the default 4, moved to
 `test_obs_market_features.py::test_observation_shape_across_n_hist`; the MRO health check —
 asserting `mkt_size_mean_mul` is initialised, which it is not if `Action_Helper.__init__` aborts
-mid-body — moved to `test_config_wiring.py`. What is left here is the stacking behaviour itself.
+mid-body — moved to `test_config_wiring.py`. What is left here is the stacking behaviour and the
+shared/private split.
 
 | Test | Verifies |
 |---|---|
 | `test_reset_padding_identical_copies` | All *N* segments after reset are identical copies of *O₀* — no zero-padding artefacts |
-| `test_sliding_window_updates` | After each `step()`, the trailing `SNAPSHOT_DIM` elements match the newest snapshot and the total shape is unchanged |
-| `test_shared_history_multi_agent_uniformity` | All agents receive the same observation at reset and after each step |
+| `test_sliding_window_updates` | After each `step()`, the last *book* frame matches the newest snapshot and the total shape is unchanged |
+| `test_the_book_prefix_is_shared_across_agents` | The public book is public — every agent sees the same one |
+| `test_agents_see_distinct_private_state` | After trading, no two agents have the same private tail |
+| `test_the_private_block_is_the_declared_width` | `PRIVATE_FIELDS` and `private_dim` agree, and the observation is `n_hist × SNAPSHOT_DIM + PRIVATE_DIM` |
+| `test_the_private_block_is_bounded_and_finite` | It shares a `tanh` MLP with the book, so an unbounded field would saturate it (S2-2) |
 
-> **The last test cements a design flaw as if it were a requirement.** It is currently true, but
-> the moment private state is added to the observation (S1-2) it must be deleted. See
-> [05_observation_space.md](05_observation_space.md) §7.7.
+> **This file used to cement a design flaw as a requirement.**
+> `test_shared_history_multi_agent_uniformity` asserted that every agent received the identical
+> vector — which was true, and was S1-2. It is replaced by the two tests above, which split the
+> claim: the book prefix must *still* be shared (that half was never the bug) and the private tail
+> must not be.
+
+> **`test_sliding_window_updates` is the one that would have caught the slicing trap.** The newest
+> frame no longer ends where the vector does, so it indexes `book_dim - SNAPSHOT_DIM : book_dim`.
+> Slicing off the end returns the private block plus a truncated snapshot — right shape, every
+> field misaligned.
 
 ### 4.3 `test_obs_market_features.py` (17 tests)
 
@@ -394,7 +405,7 @@ on stochastic size sampling.
 
 ## 5. Reward
 
-### `test_reward_logic.py` (4 tests)
+### `test_reward_logic.py` (8 tests)
 
 | Test | Verifies |
 |---|---|
@@ -650,7 +661,7 @@ Two files, added with `train/probe/` ([23](23_probe_harness.md)). The harness pr
 people will cite*, so what these pin is not that it runs but the handful of properties that decide
 whether its numbers mean anything.
 
-#### 6.5.1 `test_probe.py` — 41 tests
+#### 6.5.1 `test_probe.py` — 43 tests
 
 Runs on synthetic observations built by hand, not on env rollouts: the arithmetic is the subject,
 and a target checked against the same expression that computes it checks nothing.
@@ -730,7 +741,7 @@ Honest accounting of what the suite does **not** cover.
 | **The learning-signal assertion is an xfail, not a guard** | `integration/test_progress_and_vf.py` now checks `vf_explained_var` is reported and finite, and pins the substantive threshold (`>= 1e-3`) as a strict xfail because S1-1 is open — so the suite records the frozen critic rather than catching it. Note what does *not* work here: asserting `!= 0.0` passes today on a critic sitting in the 1e-5 noise floor. `vf_loss` saturation and "returns improve" are still unchecked. |
 | **`test_accounting.py::test_insufficient_funds` is an empty `pass`** | The body is a 15-line comment debating what the behaviour *should* be, ending "Will implement based on observed behavior or re-read code carefully." A TODO shipped as a test. The behaviour it was meant to cover is in fact tested by `test_cash_check.py`. |
 | **No information-content tests for the observation** | The suite would pass unchanged with the varying-denominator stack, the zero-collision ambiguity and the dead tape loop all present — and all three are present ([05](05_observation_space.md) §7). |
-| **`test_shared_history_multi_agent_uniformity` encodes a defect as a requirement** | See §4.2. |
+| ~~**`test_shared_history_multi_agent_uniformity` encodes a defect as a requirement**~~ | **Closed.** S1-2 is fixed and the test is replaced by a pair that splits the claim — the book prefix stays shared, the private tail must not be. See §4.2. |
 | ~~**Reproducibility is untested**~~ | **Closed.** `test_seeding.py` (11 tests) asserts two identically-seeded episodes match and two differently-seeded ones do not, across all three randomness sources — and does it while seeding the *global* NumPy stream to different values, so it cannot pass for the wrong reason. What remains untested is reproducibility of a whole multi-worker *training run*, which is a different claim. |
 | ~~**No encoder is tested for whether it *learns***~~ | **Partly closed.** §6.4 still proves only mechanics, and no *training* run has followed the comparison protocol ([18](18_configuration.md) §5.5). But the reason it could not be followed usefully — the reward cannot rank encoders while S1-1 and S1-3 stand — is now routed around: `train/probe/` scores an encoder on public microstructure targets with no reward, policy or value function involved ([23](23_probe_harness.md)). What remains open is the original question in its strong form: whether a better-scoring encoder makes a better *trader*, which still needs S1-1 and S1-3 fixed. |
 | **Edge cases in league matchmaking** | Empty pools and zero weights are untested. |

@@ -511,7 +511,7 @@ Observations:
 | # | Change | Effort | Expected impact |
 |---|---|---|---|
 | 1 | ~~Scale rewards by `init_cash`~~ — **done**, by `acc.init_nav` | S | **Critic unblocked.** `vf_explained_var` guard is live, no longer an xfail |
-| 2 | Add private state to the observation (§2) | M | Makes the reward learnable at all |
+| 2 | ~~Add private state to the observation (§2)~~ — **done**, 9 floats | M | Makes the reward learnable at all. Own resting orders still absent |
 | 3 | ~~Make the drawdown penalty an increment~~ — **done**, as a *signed* change | S | Removes the episode-length-dependent risk tax; see [07 §4.1](07_reward_function.md) on why clipping it would not have |
 | 4 | ~~Re-scale the micro-penalties; express costs in bps~~ — **done** | S | Restores the intended incentives. Real fees charged through NAV remain open (S2-3) |
 | 5 | `size_mean → Box(0,1)`; scale or drop `size_sigma` | S | Recovers half the action range, removes a null control |

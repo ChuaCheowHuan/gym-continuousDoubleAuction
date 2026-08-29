@@ -32,11 +32,21 @@ STEPS = 12
 
 @pytest.fixture(scope="module")
 def layout():
+    """The shipped layout, derived the way the encoders derive it.
+
+    Built from a space of the real width - stacked book *plus* the per-agent
+    private block - rather than a bare multiple of `snapshot_dim`, because that
+    is what the env declares and `from_obs_space` refuses anything else.
+    """
     import gymnasium as gym
 
-    snapshot = 4 * 10 + 2
+    from gym_continuousDoubleAuction.config_loader import group
+
+    spec = group("tunable_constants.json", "observation_layout")
+    snapshot = spec["book_rows"] * spec["k_rows"] + spec["extra_dim"]
+    width = 4 * snapshot + spec["private_dim"]
     return ObsLayout.from_obs_space(
-        gym.spaces.Box(-np.inf, np.inf, shape=(4 * snapshot,), dtype=np.float32)
+        gym.spaces.Box(-np.inf, np.inf, shape=(width,), dtype=np.float32)
     )
 
 
@@ -64,8 +74,12 @@ def synthetic(layout, episodes=EPISODES, steps=STEPS, seed=0):
                 2.0 + episode * 10.0 + 0.25 * (step % 5)
             )
             snapshot[layout.book_dim + 1] = 0.7 + 0.1 * (step % 3)
-            # The observation stacks n_hist frames; only the last is read.
-            obs = np.tile(snapshot, layout.n_hist)
+            # The observation stacks n_hist frames, then a private tail. The
+            # tail is filled with a value no target should ever read - if one
+            # leaks into a target, it shows up as an obvious constant rather
+            # than as a plausible-looking number.
+            private = np.full(layout.private_dim, -999.0, dtype=np.float32)
+            obs = np.concatenate([np.tile(snapshot, layout.n_hist), private])
             rows.append(obs)
             episode_index.append(episode)
     return ProbeCorpus(
@@ -78,11 +92,25 @@ def synthetic(layout, episodes=EPISODES, steps=STEPS, seed=0):
 # --- Reading the snapshot ----------------------------------------------------
 
 class TestSnapshotReaders:
-    def test_snapshots_are_the_newest_frame(self, layout):
-        """The stack is oldest-first; every target reads the last frame."""
+    def test_snapshots_are_the_newest_book_frame(self, layout):
+        """The stack is oldest-first; every target reads the last *book* frame.
+
+        Sliced against `book_flat_dim`, not off the end of the vector. The
+        observation ends with the per-agent private block, so
+        `obs[-snapshot_dim:]` would hand every target the private tail plus a
+        truncated snapshot - misaligning every field while still returning an
+        array of exactly the right shape.
+        """
         corpus = synthetic(layout)
-        expected = corpus.obs[:, -layout.snapshot_dim:]
+        end = layout.book_flat_dim
+        expected = corpus.obs[:, end - layout.snapshot_dim:end]
         assert np.array_equal(corpus.snapshots, expected)
+
+    def test_snapshots_never_contain_the_private_block(self, layout):
+        """`synthetic` fills the private tail with a sentinel no target reads."""
+        corpus = synthetic(layout)
+        assert not (corpus.snapshots == -999.0).any()
+        assert corpus.snapshots.shape[1] == layout.snapshot_dim
 
     def test_log_mid_is_the_first_extra_scalar(self, layout):
         corpus = synthetic(layout)

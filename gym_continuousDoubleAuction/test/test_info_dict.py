@@ -16,6 +16,7 @@ reason this file exists:
 import json
 import os
 import sys
+from decimal import Decimal
 
 import pytest
 
@@ -117,19 +118,67 @@ class TestRewardDecomposition:
             assert _naive_sum(info["reward_terms"].values()) == info["reward"]
 
     def test_the_terms_match_the_documented_formula(self, stepped_env):
-        """Reward = nav_term - order - trade - drawdown + passive (doc/07 6).
+        """Reward = nav_term - order - trade - drawdown + passive (doc/07 §2).
 
         Rebuilt from the env's own coefficients and counters, so this catches a
         term being recorded with the wrong sign or against the wrong counter -
         which summing alone would not.
+
+        The three one-signed terms are checked here. `nav_term` and
+        `drawdown_penalty` are both two-signed and are covered by
+        `test_the_drawdown_term_is_signed` below.
         """
         env, infos, _, _ = stepped_env
         for i in range(NUM_AGENTS):
             terms = infos[f"agent_{i}"]["reward_terms"]
             assert terms["order_penalty"] <= 0
             assert terms["trade_penalty"] <= 0
-            assert terms["drawdown_penalty"] <= 0
             assert terms["passive_bonus"] >= 0
+
+    def test_the_drawdown_term_is_signed(self, stepped_env):
+        """It charges the *change* in drawdown, so recovery pays it back.
+
+        This asserted `<= 0` while the term charged the drawdown *level*, and
+        that was right then. It is wrong now, and in a way worth stating: with
+        the level, one early loss was billed on all ~4,000 remaining steps of
+        an episode (S2-1). Clipping the change at zero - charging only newly
+        opened drawdown - would restore a one-signed term and look tidier, but
+        it bills `nav_term` a second time on every losing step and refunds
+        nothing on the way back up, which is an asymmetric loss multiplier by
+        another name and puts back the negative-sum bias S1-3 is about.
+
+        So a positive `drawdown_penalty` is correct and expected: it is the
+        refund as an agent climbs back toward its peak, and it is what makes
+        the per-step charges telescope to `-coeff * final_drawdown` over an
+        episode regardless of path.
+        """
+        # A fresh env, not `stepped_env`: this drives account state directly,
+        # and `stepped_env` is shared with every other test in this file.
+        env = continuousDoubleAuctionEnv({
+            "num_of_agents": 1, "init_cash": INIT_CASH, "max_step": 10,
+        })
+        env.reset()
+        trader = env.traders[0]
+        acc = trader.acc
+        start = acc.init_nav
+
+        def term_after(nav):
+            acc.prev_nav, acc.nav = acc.nav, Decimal(nav)
+            env.set_reward({}, trader)
+            return acc.reward_terms["drawdown_penalty"]
+
+        acc.nav = acc.prev_nav = acc.max_nav = start
+        acc.drawdown = 0.0
+
+        opening = term_after(start * Decimal("0.90"))   # 10% below the peak
+        closing = term_after(start * Decimal("0.95"))   # half of it recovered
+
+        assert opening < 0, "opening a drawdown must be charged"
+        assert closing > 0, (
+            "closing a drawdown must be refunded. A term charged on the *level* "
+            "can never be positive, so this is the assertion that fails if the "
+            "level comes back. See doc/07 §4.1."
+        )
 
     def test_signs_follow_the_penalty_coefficients(self, stepped_env):
         """A penalty that fired must be exactly coefficient x counter."""
@@ -176,9 +225,15 @@ class TestAccountState:
                 assert isinstance(value, int), f"{value!r} is {type(value).__name__}"
                 assert not isinstance(value, bool)
 
-    def test_drawdown_is_the_level_the_penalty_uses(self, stepped_env):
-        """max_nav - nav, floored at 0 - computed in reward_helper and, before
-        this, thrown away."""
+    def test_drawdown_is_reported_as_the_level(self, stepped_env):
+        """`info["drawdown"]` is the level `max_nav - nav`, floored at 0.
+
+        The *penalty* multiplies the signed change in this level, not the level
+        itself (doc/07 4.1), but the level is what is worth recording - and
+        `acc.drawdown` is also what the next step reads back to form that
+        change, so this assertion doubles as a check that it is being kept
+        current.
+        """
         env, infos, _, _ = stepped_env
         for i in range(NUM_AGENTS):
             acc = env.traders[i].acc
