@@ -219,11 +219,19 @@ class State_Helper(object):
         # while staying in (-1, 1).
         position = np.tanh(float(acc.net_position) / float(self.limit_max_size))
 
-        # VWAP relative to the current midpoint - the direction and size of the
-        # open position's unrealised move, in the same fractional units the book
-        # prices use. Zero when flat, which is also what a zero VWAP means.
+        # Cost basis relative to the current midpoint - the direction and size
+        # of the open position's unrealised move, in the same fractional units
+        # the book prices use. Zero when flat.
+        #
+        # `entry_vwap`, not `VWAP`: the latter has realised P&L rolled into it
+        # by `_size_decrease` and can go negative (long 2 @ 100, sell 1 @ 250
+        # gives -50), at which point the `> 0` guard below returned 0.0 - the
+        # encoding for *flat* - while the agent still held a position. Measured
+        # on 2.5% of open-position agent-steps. `entry_vwap` is the price
+        # actually paid for the lots still held, so it is positive whenever
+        # there is a position and the guard means what it says.
         midpoint = float(self.mid_price())
-        vwap = float(acc.VWAP)
+        vwap = float(acc.entry_vwap)
         vwap_vs_mid = (midpoint - vwap) / midpoint if vwap > 0 else 0.0
 
         # `t_step + 1`, not `t_step`. `step()` increments it *after*

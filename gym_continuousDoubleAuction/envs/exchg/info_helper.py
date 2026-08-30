@@ -70,7 +70,15 @@ class Info_Helper(object):
             # the account now holds it as one for the whole episode, so there
             # is nothing left here to paper over.
             "net_position": acc.net_position,
-            "VWAP": float(acc.VWAP),
+            # The cost basis, not `acc.VWAP`, which carries realised P&L
+            # rolled in by `_size_decrease` and is not a price at all
+            # once a position has been partly closed - it can be
+            # negative. Anyone reading this column out of the episode
+            # Parquet wants the price actually paid.
+            "VWAP": float(acc.entry_vwap),
+            # The rolled basis the ledger uses, kept under its own name
+            # so the two are distinguishable rather than conflated.
+            "carrying_vwap": float(acc.VWAP),
             "cash": float(acc.cash),
             "cash_on_hold": float(acc.cash_on_hold),
             "position_val": float(acc.position_val),
