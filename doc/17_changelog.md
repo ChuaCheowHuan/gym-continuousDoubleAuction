@@ -2257,7 +2257,17 @@ Four changes, and the vector grows from 177 floats to **193**, so no earlier che
 `gymnasium.make("continuousDoubleAuction-v0")` — documented in `setup.py`'s own docstring — raised
 `TypeError` because only the plural spaces were set. `visualize/` had no `__init__.py`, so no wheel
 carried it, while [01](01_overview.md) documents it as an entry point. Both were invisible to every
-CI job, because each job constructs what it needs directly; the packaging job now exercises both.
+CI job, because each job constructs what it needs directly.
+
+Both are covered by `test/test_entry_points.py`, and both were additionally verified against a real
+wheel installed into a clean venv outside the checkout. **The matching change to the CI packaging
+job is not in this branch**: the credential this work was pushed with has no `workflow` scope, so
+GitHub refused the update to `.github/workflows/tests.yml`. The job should build the wheel, call
+`gymnasium.make`, import `gym_continuousDoubleAuction.visualize`, and fail if
+`visualize/run_all.py` is absent from the archive — importing the *package* rather than `run_all`,
+which needs matplotlib and, through `visualize_modules → policy_handler`, torch. Until that lands,
+these two entry points are guarded by the unit test and by nothing in CI, which is the same blind
+spot that let them break.
 
 ### 37.7 Documents that had gone stale again
 
