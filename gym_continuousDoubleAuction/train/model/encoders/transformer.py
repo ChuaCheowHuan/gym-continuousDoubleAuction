@@ -51,9 +51,13 @@ from gym_continuousDoubleAuction.train.model.encoders import (
 )
 from gym_continuousDoubleAuction.train.model.encoders.blocks import (
     AttentionPool,
+    PrivateToken,
     TransformerBlock,
 )
-from gym_continuousDoubleAuction.train.model.encoders.obs_layout import ObsLayout
+from gym_continuousDoubleAuction.train.model.encoders.obs_layout import (
+    ObsLayout,
+    split_private,
+)
 from gym_continuousDoubleAuction.train.model.encoders.tokenize import (
     token_shape,
     tokenize,
@@ -160,6 +164,15 @@ class TorchTransformerEncoder(TorchModel, Encoder):
             int(level_idx.max()) + 1, config.d_model
         )
 
+        # The per-agent block joins the sequence as one token; see PrivateToken
+        # for why it is not folded into the book's token width. None when the
+        # layout has no private block, which keeps a zero-width Linear from
+        # being constructed.
+        self.private_token = (
+            PrivateToken(self.layout.private_dim, config.d_model)
+            if self.layout.private_dim else None
+        )
+
         self.blocks = nn.ModuleList(
             self._make_block(config) for _ in range(config.num_layers)
         )
@@ -200,12 +213,20 @@ class TorchTransformerEncoder(TorchModel, Encoder):
 
     @override(Model)
     def _forward(self, inputs: dict, **kwargs) -> dict:
-        tokens = tokenize(inputs[Columns.OBS], self.layout, self.tokenization)
+        obs = inputs[Columns.OBS]
+        tokens = tokenize(obs, self.layout, self.tokenization)
 
         x = self.norm_in(self.project(tokens))
         x = x + self.time_embedding(self.time_idx) + self.level_embedding(
             self.level_idx
         )
+
+        # Appended after the positional embeddings, not before: the private
+        # token belongs to no time and no book level, so it is the one token
+        # that must not receive either.
+        if self.private_token is not None:
+            _book, private = split_private(obs, self.layout)
+            x = torch.cat([x, self.private_token(private)], dim=-2)
 
         stats = []
         for block in self.blocks:

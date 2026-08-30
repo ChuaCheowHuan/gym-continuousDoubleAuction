@@ -68,6 +68,20 @@ ENCODER_REGISTRY: Dict[str, EncoderConfigBuilder] = {}
 #: Also populated by `@register`; it is what `encoder_settings` validates against.
 ENCODER_DEFAULTS: Dict[str, Dict[str, Any]] = {}
 
+#: `encoder_type` -> `(module path, attribute)` for an RLModule class that
+#: encoder needs instead of the default, or absent if it needs none.
+#:
+#: A *path* rather than the class, resolved on demand by `module_class_for`.
+#: The classes live in `train/model/`, which imports this package, so importing
+#: one here would be circular. Deferring the import is what lets an encoder
+#: name its own module class without inverting that dependency.
+ENCODER_MODULE_CLASSES: Dict[str, tuple] = {}
+
+#: `encoder_type` -> `(module path, attribute)` for a Learner class, same rules.
+#: The learner is algorithm-wide rather than per-module, so `train.py` resolves
+#: this once from the configured encoder; see `learner_class_for`.
+ENCODER_LEARNER_CLASSES: Dict[str, tuple] = {}
+
 #: Spec keys applied to the top-level model config rather than to the encoder,
 #: because RLlib reads them itself. See `model_config_overrides`.
 MODEL_CONFIG_SPEC_KEYS = ("max_seq_len",)
@@ -103,10 +117,21 @@ class CDAModelConfig(DefaultModelConfig):
     #: That encoder's block from `encoder_specs`, passed through to its builder.
     encoder_spec: Dict[str, Any] = field(default_factory=dict)
 
+    #: A `train.pretrain` checkpoint whose weights the encoder starts from.
+    #:
+    #: A field of its own rather than a key inside `encoder_spec`, deliberately:
+    #: `encoder_spec` is what `encoder_fingerprint` hashes, and a fingerprint
+    #: that depended on *where the weights came from* could never match the one
+    #: stored beside those weights. It is also not an architecture knob - it
+    #: changes where training starts, not what shape anything is.
+    pretrained_path: Optional[str] = None
+
 
 def register(
     name: str,
     defaults: Optional[Dict[str, Any]] = None,
+    module_class_path: Optional[tuple] = None,
+    learner_class_path: Optional[tuple] = None,
 ) -> Callable[[EncoderConfigBuilder], EncoderConfigBuilder]:
     """Register an encoder config builder under an `encoder_type`.
 
@@ -120,6 +145,17 @@ def register(
             inside each builder is what lets `encoder_settings` do the merge and
             the unknown-key check once, and lets `model_config_overrides` see a
             default the config file happened to omit.
+        module_class_path: `(module, attribute)` naming an RLModule class this
+            encoder needs instead of the default. Omit it and the encoder gets
+            whatever `build_trainable_module_spec` uses for everyone - which is
+            why adding this parameter changed nothing for the encoders that
+            were already registered.
+        learner_class_path: `(module, attribute)` naming a Learner class, same
+            rules. Resolved by `train.py`, once, from the configured encoder.
+
+    Both paths are strings resolved on demand rather than imported classes:
+    those classes live in `train/model/`, which imports this package, so an
+    import here would be circular.
     """
 
     def decorate(builder: EncoderConfigBuilder) -> EncoderConfigBuilder:
@@ -131,9 +167,44 @@ def register(
             )
         ENCODER_REGISTRY[name] = builder
         ENCODER_DEFAULTS[name] = dict(defaults or {})
+        if module_class_path is not None:
+            ENCODER_MODULE_CLASSES[name] = module_class_path
+        if learner_class_path is not None:
+            ENCODER_LEARNER_CLASSES[name] = learner_class_path
         return builder
 
     return decorate
+
+
+def _resolve(path: tuple):
+    """Import `(module, attribute)` and return the attribute."""
+    import importlib
+
+    module_name, attribute = path
+    return getattr(importlib.import_module(module_name), attribute)
+
+
+def module_class_for(encoder_type: str, default):
+    """The RLModule class an encoder needs, or `default` if it needs none.
+
+    `default` is what every encoder resolved to before any of them declared one,
+    so an encoder that says nothing is unaffected by this mechanism existing.
+    """
+    path = ENCODER_MODULE_CLASSES.get(encoder_type)
+    return _resolve(path) if path else default
+
+
+def learner_class_for(encoder_type: str, default):
+    """The Learner class an encoder needs, or `default` if it needs none.
+
+    Unlike the module class this is algorithm-wide - RLlib takes one Learner for
+    the whole run - so it is resolved from the *configured* encoder. A league
+    whose modules carried different encoders would need the union of their
+    learners, which is why every Learner registered here subclasses the default
+    rather than replacing it.
+    """
+    path = ENCODER_LEARNER_CLASSES.get(encoder_type)
+    return _resolve(path) if path else default
 
 
 def model_config_get(model_config, key, default):
@@ -272,9 +343,67 @@ def validate_encoder_type(encoder_type: str) -> str:
     return known_encoder_type(encoder_type)
 
 
+def needs_next_obs(encoder_type: str, encoder_spec: Optional[Dict[str, Any]]) -> bool:
+    """Whether this encoder's train batch must carry `Columns.NEXT_OBS`.
+
+    PPO does not add it, so an encoder that predicts the next observation needs
+    a learner connector attached - and attaching one unconditionally would make
+    every other architecture pay for a column it never reads.
+
+    True only for a `jepa` encoder with `world_model` on. Read from the merged
+    settings rather than the raw spec block, so a config file that omits the key
+    still gets the registered default.
+    """
+    if encoder_type not in ENCODER_DEFAULTS:
+        return False
+    return bool(
+        encoder_settings(encoder_type, encoder_spec or {}).get("world_model")
+    )
+
+
+def encoder_fingerprint(encoder_type: str, encoder_spec: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """The encoder's identity, as something two callers can compare with `!=`.
+
+    One definition, because there are now two places that need it and they must
+    agree exactly: `train._encoder_fingerprint`, which digs it out of an
+    `AlgorithmConfig` so a restore cannot silently change the architecture, and
+    the offline pretrainer, which writes it beside the weights so loading a
+    `d_model: 128` checkpoint into a `d_model: 256` encoder is a hard error
+    rather than a shape mismatch several frames later.
+
+    `encoder_spec` is normalised to sorted items rather than kept as a dict:
+    the fingerprint is compared with `!=`, and two dicts differing only in key
+    order would otherwise read as a change. Round-tripping through JSON turns
+    those tuples into lists, so `fingerprints_match` compares the normalised
+    form of both sides rather than the raw values.
+    """
+    return {
+        "encoder_type": encoder_type,
+        "encoder_spec": tuple(sorted((encoder_spec or {}).items())),
+    }
+
+
+def fingerprints_match(left: Dict[str, Any], right: Dict[str, Any]) -> bool:
+    """Whether two fingerprints describe the same encoder, across JSON.
+
+    `json.dump` turns the spec's tuple of pairs into a list of lists, so a
+    naive `==` between a freshly built fingerprint and one read back from disk
+    is always False. Both sides are re-normalised here.
+    """
+    def normalise(fingerprint):
+        spec = fingerprint.get("encoder_spec") or ()
+        return (
+            fingerprint.get("encoder_type"),
+            tuple(sorted((str(k), v) for k, v in dict(spec).items())),
+        )
+
+    return normalise(left) == normalise(right)
+
+
 def build_encoder_config(
     obs_space: gym.Space,
     model_config_dict: Dict[str, Any],
+    action_space: Optional[gym.Space] = None,
 ) -> ModelConfig:
     """Build the encoder `ModelConfig` a `CDAModelConfig` asks for.
 
@@ -301,12 +430,33 @@ def build_encoder_config(
 
     layout = ObsLayout.from_obs_space(obs_space)
     spec = model_config_dict.get("encoder_spec") or {}
-    return ENCODER_REGISTRY[encoder_type](layout, spec, [layout.flat_dim])
+    config = ENCODER_REGISTRY[encoder_type](layout, spec, [layout.flat_dim])
+
+    # Set after building rather than passed to the builder: the builder's
+    # signature is `(layout, spec, input_dims)` for every encoder, and this is
+    # not part of any encoder's spec. An encoder with no `pretrained_path`
+    # field simply never sees it.
+    # Only an encoder that asks for it - the world model needs the action
+    # space to size its action embedding, and nothing else does.
+    if action_space is not None and hasattr(config, "action_space"):
+        config.action_space = action_space
+
+    pretrained = model_config_dict.get("pretrained_path")
+    if pretrained:
+        if not hasattr(config, "pretrained_path"):
+            raise ValueError(
+                f"encoder_type {encoder_type!r} was given a pretrained "
+                f"checkpoint but has no `pretrained_path` field, so it cannot "
+                "load one. Only encoders with a self-supervised objective can."
+            )
+        config.pretrained_path = pretrained
+    return config
 
 
 # Encoder modules are imported for their `@register` side effect, at the bottom
 # so they can import the registry above without a cycle.
 from gym_continuousDoubleAuction.train.model.encoders import (  # noqa: E402,F401
+    jepa,
     lstm,
     moe_transformer,
     passthrough,

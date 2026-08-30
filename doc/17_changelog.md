@@ -1545,3 +1545,610 @@ A new gap is recorded in [10](10_testing.md) §8: the suite proves every encoder
 builds, trains for an iteration and checkpoints - mechanics, not merit. Nothing
 runs long enough to say whether any of them beats the MLP, which is the question
 the whole group exists to answer.
+
+---
+
+## 29. The reward stops fighting the learner
+
+Three of the four blocking findings were one arithmetic problem wearing three hats: the reward was
+denominated in dollars of NAV. See [07 §2.1 and §4](07_reward_function.md).
+
+### 29.1 Rewards are a fraction of starting capital (S1-1)
+
+`set_reward` divides every NAV-derived quantity by `trader.acc.init_nav`. Value targets are now
+O(1), so PPO's `vf_clip_param` — RLlib's default 10.0, set nowhere in this repo — stops binding.
+It had been clamping a value loss of ~1.3e7 to a flat constant, which has zero derivative: the
+critic received **no gradient at all** and `vf_explained_var` sat at ~9e-05 while `total_loss`
+looked small and stable because 10.0 of it never moved.
+
+`acc.init_nav` rather than the configured `init_cash`: the account already records what the trader
+actually started with, so the scale cannot drift from the ledger it normalises. A second copy of
+that number is how S1-4 happened.
+
+`integration/test_progress_and_vf.py` had pinned this as a **strict xfail**, with a note saying
+that fixing S1-1 would make it XPASS and that the marker should then be deleted. That is exactly
+what happened, on the first real run after the change. It is now a live regression guard.
+
+### 29.2 Drawdown is charged on the signed change, not the level (S2-1)
+
+`max_nav` never decreases within an episode, so charging the level billed one early loss on every
+one of the remaining ~4,000 steps — even to an agent that never traded again — and the total scaled
+with episode length, making `max_step` a hidden risk-aversion knob.
+
+The fix is the *signed* change, and the sign is the interesting part. Charging only newly opened
+drawdown — `max(0, Δ)`, which is what doc/15 and doc/12 had both recommended — bills `nav_term` a
+second time on every losing step below the peak and refunds nothing on recovery, so a round trip
+costs `drawdown_penalty × X`. That is an asymmetric loss multiplier by another name, and it would
+have left S1-3 half-open while looking like a fix for S2-1. Signed, the charges telescope to
+`-drawdown_penalty × final_drawdown` over an episode regardless of path.
+
+`trader.acc.drawdown` is now load-bearing twice — the recorded diagnostic *and* the next step's
+`previous_drawdown` — and carries a comment saying so, because dropping it would silently restore
+the level penalty.
+
+### 29.3 The market is zero-sum again (S1-3)
+
+`loss_multiplier` 1.5 → **1.0**. Total NAV is conserved exactly, so any multiplier above 1 makes
+the summed reward negative even though the summed NAV change is zero — which made passing dominant
+for every agent and predicted empty-market collapse.
+
+| 4 agents × 300 steps | before | after |
+|---|---|---|
+| all agents pass | `0.0` | `0.0` |
+| random trading | **−591,027** | **−0.0104** |
+
+Measured over 1,000 steps, `nav_term` now sums to **exactly 0.000000** across agents: the zero-sum
+property is visible in the reward, not only in the ledger.
+
+### 29.4 The micro-penalties mean something again (S2-3)
+
+They were 0.1 and 0.05 against per-step NAV moves of ±10⁴ — five orders of magnitude too small to
+express any of the three economic objectives they encoded. Now in the same units as everything
+else, and calibrated against measurement rather than chosen: over 8,000 random-agent steps, 37% of
+steps move NAV at all and one that does moves it by a median 1.9e-03 of starting capital, so the
+penalties sit at 0.5–1% of that. `passive_bonus` equals `trade_penalty`, making a passive fill
+net-free while an aggressive one costs 0.2 bps — "capture spread" expressed as a price.
+
+Charging real maker/taker fees through NAV rather than through the reward remains open.
+
+### 29.5 What this does not fix
+
+Passing still scores exactly zero, and that is correct: in a zero-sum market no reward can make
+trading positive-sum on average. What changed is that the residual friction is ~0.5% of a typical
+NAV move rather than dominating it, so trading is no longer dominated for an agent with an edge.
+S1-2 — no private state in the observation — is untouched and is the next blocker.
+
+---
+
+## 30. The observation stops hiding the agent from itself
+
+S1-2: every agent received the byte-identical public book vector, while the reward is
+`f(nav, prev_nav, max_nav, ...)`. An agent long 100 lots and one short 100 lots saw the same input
+and needed opposite actions — which a policy, being a function of its observation, cannot do. See
+[05 §1.0](05_observation_space.md).
+
+### 30.1 A per-agent private block
+
+The observation is now `[ n_hist x snapshot | private ]`, 4x42 + 9 = **177 floats**. The book
+prefix is still shared and computed once per step; only the tail differs.
+`State_Helper.PRIVATE_FIELDS` names its nine entries in order and is the single definition of the
+layout — `__init__` checks its length against `private_dim` from `tunable_constants.json`, on the
+same rule `book_rows` already followed.
+
+Every field is normalised by the trader's own `init_nav` or is already a ratio. That is not
+cosmetic: the block shares a vector, and a `tanh` MLP, with the normalised book, so an unbounded
+private field would saturate it exactly as the raw sizes do (S2-2).
+
+`drawdown` is the entry that could not have been supplied any other way. The reward's drawdown
+term depends on `max_nav`, a path functional over the whole episode, so no amount of recurrence
+could have recovered it from a stream that never showed it.
+
+### 30.2 The private block is not tokenised with the book
+
+`tokenize` builds tokens `max(book_rows, extra_dim)` channels wide. Folding `private_dim` into that
+width would take every book token from 4 channels to 9 and right-pad each with five zeros —
+attention over padding on every level of every snapshot, to carry nine numbers belonging to none of
+them.
+
+So `split_private` splits before tokenisation, `tokenize` never sees the tail, and
+`blocks.PrivateToken` projects it into a single extra token. Every tokenising encoder uses that one
+class rather than its own copy: two architectures reading private state through differently-shaped
+heads would differ by the head as much as by the architecture. The token deliberately receives no
+positional embedding — the two axes are time and book level, and the agent's own state belongs to
+neither.
+
+`mlp` needed no change at all; it sees a wider flat vector.
+
+### 30.3 `obs[-SNAPSHOT_DIM:]` is now wrong everywhere
+
+The newest book frame no longer ends where the vector does. Slicing off the end returns the private
+block plus a truncated snapshot — an array of exactly the right *shape* with every field
+misaligned, which is the same failure `[-40:]` produced before `EXTRA_DIM` existed.
+
+`ObsLayout.book_flat_dim` and `split_private` exist so the correct slice has a name. Four test
+files and the probe harness held the old assumption; `from_obs_space` refusing a width that is not
+`private_dim` plus a whole number of snapshots is what surfaced all of them at once, rather than
+letting them reshape into garbage.
+
+### 30.4 What is still missing
+
+Own resting orders and agent identity are not in the block. Resting orders are the larger gap:
+`modify` and `cancel` remain partly blind, because an agent can see its escrowed cash but not which
+orders that cash is committed to.
+
+---
+
+## 31. A JEPA encoder, added without touching any of the others
+
+`encoder_type: "jepa"` is a transformer that also trains a self-supervised objective: mask part of
+the book, predict the masked part's *representation* from the rest, and score that against a
+slowly-updated copy of the encoder itself. Nothing reconstructs the input. See
+[22 4.2](22_jepa_integration.md) and [18 5.4](18_configuration.md).
+
+### 31.1 Why latent prediction rather than reconstruction
+
+The measured per-channel standard deviations of a `both` token
+`[bid_price, bid_size, ask_price, ask_size]` are `[1.27, 8.17, 0.046, 9.52]`. The size channels are
+`sqrt(volume)` and run some 200x the ask-price channel, so a squared-error loss in *input* space is
+dominated by queue-size jitter - the least predictable and least economically meaningful quantity
+in the observation. Predicting in representation space removes that structurally: the target comes
+from an encoder that is itself being trained, so anything genuinely unpredictable is free to drop
+out of the representation and the loss stops paying attention to it.
+
+### 31.2 Added without editing a single existing encoder
+
+The requirement was that `mlp`, `transformer`, `lstm` and `moe_transformer` keep behaving exactly
+as they did. Two design choices follow from it, and both differ from what doc/22 4.2 originally
+proposed:
+
+- **The aux-loss seam was not generalised.** Renaming `moe_learner` into a shared seam is the
+  better design in the abstract - two consumers is usually when that pays - but it edits code on
+  every custom encoder's path. `JEPARLModule` and `CDAJEPALearner` *subclass* the MoE ones instead,
+  so `CDAJEPALearner` still adds the MoE term and a league mixing the two works.
+- **The encoder composes rather than subclasses.** Subclassing `TorchTransformerEncoder` would have
+  needed an `_encode_tokens()` hook extracted from the class `moe_transformer` inherits. Instead
+  `jepa.py` imports `tokenize`, `positional_index`, `TransformerBlock`, `AttentionPool` and
+  `PrivateToken` as they stand and duplicates ~15 lines of the forward sequence. That duplication
+  is the price of the isolation, paid deliberately.
+
+`@register` gained optional `module_class_path` and `learner_class_path`, resolved lazily because
+those classes live in `train/model/`, which imports the encoder package. Nothing else declares
+either, so every previously registered encoder resolves to exactly the classes it did before.
+
+Eight files were required to stay untouched and did:
+`transformer.py`, `moe_transformer.py`, `lstm.py`, `token_embed.py`, `moe.py`, `blocks.py`,
+`tokenize.py`, `moe_learner.py`. `TestOtherEncodersAreUnaffectedByJEPA` asserts the same claim from
+the registry side.
+
+Exactly one existing test changed. `test_non_inference_attributes_contract` asserted the literal
+list `["vf", "encoder.critic_encoder"]` for every encoder; it now asserts that list as a *prefix*
+and requires every encoder except `jepa` to add nothing to it. A fixed list would make adding any
+encoder with training-only submodules look like a regression in all the others.
+
+### 31.3 The policy never sees a mask
+
+The policy latent is computed from the **unmasked** observation - the agent acts on everything it
+was given - and the objective runs in train mode only. Inference therefore costs one trunk pass,
+the same as `transformer`; a training step costs two plus the target's. That matters beyond
+throughput: mask sampling is stochastic, and PPO's ratio compares a log-prob recorded during
+rollout against one recomputed on the learner, so anything stochastic on the inference path becomes
+noise in the ratio rather than an error.
+
+### 31.4 Watch `jepa_latent_std`
+
+This is the `moe_max_expert_share` trap, and worse. A collapsed JEPA maps every observation to the
+same latent, which makes the prediction *perfect*: its loss goes to **zero**, which reads as
+success, and throughput is unchanged. `jepa_latent_std` goes to zero at the same moment and is the
+only thing separating the two; it should sit near 1.0, the scale LayerNormed targets already have.
+`jepa_offdiag_cov` catches the slower variant where variance holds up but the dimensions become
+redundant, and `variance_coeff` weights a VICReg-style hinge that pushes back once either starts.
+
+Anti-collapse rests on the asymmetry: the target trunk moves only by EMA, never by gradient, so the
+predictor is chasing a target that keeps moving - which a constant encoder cannot satisfy.
+
+### 31.5 What the probe says, and what it does not
+
+Scored against `mlp` and `transformer` on the reward-free targets, `jepa` is competitive and wins
+nothing decisively. That is the expected reading rather than a disappointment: the probe scores
+encoders **untrained**, so it measures JEPA's *architecture* - essentially the transformer's - and
+not its *objective*, which has had no chance to train. Scoring the objective needs `--checkpoint`
+after a real run, or the offline pretraining of doc/22 4.4.
+
+---
+
+## 32. An encoder can be taught before a policy exists
+
+`train/pretrain/` trains a JEPA encoder's self-supervised objective on observations alone - no
+reward, no policy, no opponents - and writes weights a training run starts from. See
+[24_pretraining.md](24_pretraining.md).
+
+### 32.1 Almost entirely reuse
+
+Nothing in it reads a Parquet file or steps an env. `train/probe/corpus.py` already reads both
+sources, deduplicates the per-agent copies, marks episode boundaries and validates widths;
+`probe.probe.split_masks` already splits by episode; `probe.features.build_module` already builds
+the module *training* would build. What was added is the optimiser, the checkpoint format and the
+guard on it.
+
+Building the whole `RLModuleSpec` and training the encoder inside it - rather than instantiating a
+`TorchJEPAEncoder` directly - is what makes the pretrained architecture provably the one training
+will use. The pi and vf heads are built and never touched.
+
+### 32.2 The fingerprint, and one definition of it
+
+A checkpoint holds `encoder.pt`, `encoder_fingerprint.json` and `rl_module/`. The fingerprint is
+the point of the format: `train.py` already refuses a restore whose `encoder_type` or
+`encoder_spec` differs from the checkpoint's, because the weights are that architecture's weights,
+and pretrained weights need the same guard.
+
+`encoders.encoder_fingerprint` is now the single definition, called by both
+`train._encoder_fingerprint` and the pretrainer, so the two cannot drift. That function exists at
+all because a `getattr`-only read once reported the `mlp` default from the first champion onward,
+silently disabling the structural check for a whole run.
+
+The check runs at *spec-build* time, before the path reaches any encoder, so a mismatch names the
+architectures rather than surfacing as a shape error on some env runner.
+
+### 32.3 Not `RLModuleSpec.load_state_path`
+
+There is a field that looks made for carrying a pretrained path. In RLlib 2.56 it is stored, merged
+and copied, and never read back - setting it would have silently done nothing, which is the same
+dead-config-key shape as `OrderBook`'s `tick_size`.
+
+The path rides on the model config instead, and `TorchJEPAEncoder.__init__` loads its own weights,
+so every process that builds an encoder loads them itself with no state to synchronise. The load is
+last in `__init__`, so anything explicit afterwards wins - which is what makes it safe on the two
+paths that would otherwise surprise: a champion snapshot constructs the encoder and then
+`set_state`s trained weights over it, and a restored run does the same with its checkpoint.
+
+`mlp` refuses a pretrained encoder outright, having no objective that could have produced one.
+
+### 32.4 Watch latent_std, not the loss
+
+The report carries the training loss, a validation loss split by episode, and `latent_std`. Only the
+last is load-bearing: a collapsed JEPA maps every observation to one vector, which makes its
+prediction *perfect* - the loss goes to zero and reads as success. `PretrainReport.collapsed`
+detects it and the CLI exits non-zero rather than leaving a flattering number beside unusable
+weights.
+
+### 32.5 The first measurement
+
+`--pretrained` was added to the probe so the same architecture appears twice in one report, on
+identical rows with an identical split. On a 150-step run over 4 random-agent episodes the result is
+directional rather than uniform:
+
+| target | untrained | pretrained |
+|---|---|---|
+| `spread_change` h=1 | -0.0094 | **+0.0165** |
+| `imbalance_change` h=20 | -0.3529 | **+0.1090** |
+| `realized_vol` h=5 | +0.1292 | **-0.4961** |
+
+It won on the structural targets and lost on the temporal one, which is what `mask_axis: level`
+should do - level masking only ever asks what depth is consistent with the rest of the book, so
+nothing in the objective preserves temporal structure in the latent. The obvious next experiment is
+`mask_axis: time`. This is a smoke-sized budget and establishes that the mechanism works and its
+effect is legible, not that pretraining pays at scale.
+
+---
+
+## 33. An action-conditioned world model
+
+`world_model: true` in the `jepa` spec block adds a second self-supervised term:
+`z_hat_t+1 = P(z_t, a_t)`, the next observation's latent predicted from this one's plus the action
+taken, scored against the EMA target encoder's view of `o_t+1`. See
+[22 4.3](22_jepa_integration.md) and [18 5.4](18_configuration.md).
+
+What it learns is the **latent market impact of an order** - how the book responds to a market
+order versus a passive quote versus a cancel. That is a first-class microstructure quantity, and
+this environment generates it endogenously, which is exactly the setting [01](01_overview.md) 1.3
+describes.
+
+### 33.1 The connector is attached only for it
+
+PPO's train batch carries no `Columns.NEXT_OBS`. RLlib ships
+`AddNextObservationsFromEpisodesToTrainBatch`, and `train.py` attaches it through
+`encoders.needs_next_obs` - true only for a `jepa` encoder with `world_model` on. Attaching it
+unconditionally would put an observation-sized tensor per row into every other architecture's train
+batch, for a column none of them reads.
+
+The connector fills each episode's next observations from that episode, so the boundary needs no
+masking: the last step of an episode takes that episode's final observation, never the next
+episode's reset.
+
+### 33.2 Absent is not an error
+
+The encoder reads `NEXT_OBS` and `ACTIONS` off the batch it is already handed, and returns no
+world-model term when either is missing. That is every path except the connector-fed training one -
+`compute_values`, a manual forward, a test that built a batch by hand - and raising on a key PPO
+never promised would have broken all of them.
+
+### 33.3 Two economies in the implementation
+
+The prediction reuses the trunk output already computed for the policy latent, so the term costs
+one extra *target* pass rather than two more.
+
+Its target is mean-pooled rather than run through `self.pool`. The pool is trained by the policy
+gradient, so putting it inside the target path would make the world model's target move for reasons
+that have nothing to do with the market.
+
+### 33.4 The floor is not underfitting
+
+`z_t+1` depends on every agent's action and the predictor conditions on one of them, so it is
+fitting a conditional expectation over the opponents. Its loss has a non-zero floor. That is
+interesting rather than wrong - it is an opponent model - and tuning the floor away would mean
+overfitting to noise. Both the config note and the code say so, because a loss that will not reach
+zero invites exactly that.
+
+### 33.5 Still not included: the intrinsic reward
+
+The predictor's error would make a curiosity signal, and RLlib ships the connector pattern for it.
+It stays out, for the reasons doc/22 4.3 records - chiefly that it would destroy Phase 1's control
+(you could no longer tell whether the reward fix worked or curiosity was papering over it) and that
+it would invert champion selection, since an agent with a *better* world model earns *less*
+intrinsic reward.
+
+---
+
+## 34. Review of sections 29-33, and what it found
+
+Seven defects, all of which built, trained and reported plausible numbers.
+
+### 34.1 An inference-only `jepa` module could not be built
+
+Champions are inference-only copies, so a `jepa` league failed at its first
+snapshot. Two causes stacked:
+
+`JEPARLModule.get_non_inference_attributes` read `self.encoder` unguarded, and
+RLlib calls that method from `TorchRLModule.__init__` - *before* `setup()` has
+created the encoder. `RLModuleSpec.build` catches `AttributeError` in order to
+fall back to a deprecated constructor, so the real error was swallowed and
+resurfaced as a confusing complaint about `RLModuleConfig`.
+
+Underneath it, RLlib's own stripping loop mishandles a dotted path whose target
+actually exists: it traverses to the leaf and then calls `delattr` on the
+**module** rather than on the leaf's parent. PPO's own `encoder.critic_encoder`
+escapes only because inference-only setup never creates it, so the loop's
+"absent, skip" branch runs first. `JEPARLModule.setup` now deletes the
+training-only submodules itself, which makes them absent by that same route; the
+dotted paths stay in `get_non_inference_attributes`, where `get_state` still
+needs them to filter the state dict and handles dots correctly.
+
+An inference-only `jepa` module is now 339K parameters against 1.42M.
+
+### 34.2 A `time` mask could hide the whole sequence
+
+The clamp was against `n_hist - 1`, which bounds *snapshots* rather than tokens.
+At `n_hist: 1` - a value the `lstm` block explicitly recommends - it masked
+every token, leaving the context encoder no input while the objective went on
+reporting a loss. Both structural branches now check the token count, and a
+tokenisation that yields a single token is refused at construction, since one
+token cannot be both hidden and visible.
+
+### 34.3 `time_left` was off by one step
+
+`step()` increments `t_step` *after* `set_step_outputs` builds the observations,
+so reading it raw made the reset observation and the one after the first step
+both report 1.0, and the terminal observation report `1/max_step` remaining
+rather than 0. `set_private_state` now takes the completed-step count, and
+`reset` passes 0.
+
+### 34.4 The critic ran the objective and it was thrown away
+
+`vf_share_layers` is false by default, so the critic gets its own encoder - and
+`_jepa_sub_encoder` only ever collects the actor's stats, to avoid
+double-counting the term. The critic's copy therefore ran a mask pass, a target
+pass, the predictor and the world model on every training forward, had all of it
+discarded, and retained the autograd graph in `_jepa_stats` until the next
+forward overwrote it. `JEPARLModule.setup` now switches `objective_enabled` off
+on the branch whose stats are not collected.
+
+### 34.5 The Parquet reader's premise had been invalidated by section 30
+
+`from_parquet` deduplicated on `(episode_id, step)` because every agent received
+the byte-identical observation - which is precisely what the private block
+removed. The deduplication kept working and silently discarded N-1 agents'
+private state.
+
+One row per step is still the right default, for a reason that outlived the
+original: every target is a public book quantity, so N agents at one step carry
+N identical targets over a shared book prefix, and keeping them all would put
+near-identical rows across the held-out split. But that is now a *choice* rather
+than a lossless collapse, the docstring says so, and `per_agent=True` keeps
+every row for pretraining, where the private block is part of what the objective
+encodes.
+
+### 34.6 Validation EMA-stepped the target encoder
+
+The objective only exists in train mode, so the pretrainer evaluates it in train
+mode under `no_grad`. The EMA update fired there too, moving the target with no
+corresponding update to the online trunk - making the saved weights a function
+of `log_every` and the validation split size. The update is now gated on
+`torch.is_grad_enabled()`.
+
+### 34.7 `world_model` was not declared training-only
+
+It computes an auxiliary loss and is never read on the inference path, so an
+inference-only copy carried it. Added to `_TRAINING_ONLY` - and declared only
+when it exists, since it is an attribute set to None when off and `hasattr`
+alone would have declared a submodule that `setup` would then try to delete.
+
+### 34.8 One thing the review got wrong
+
+It attributed 34.1 solely to the nested-`delattr` mechanism. That is real and is
+the *second* failure, but the first is the unguarded `self.encoder` read, and
+fixing only the mechanism the review named would have left the module still
+unbuildable. Worth recording because the finding was correct while its stated
+cause was not - the reproduction is what separated them.
+
+
+---
+
+## 35. An audit of the plan's own checklist
+
+The review in §34 read the code. This one read the *plan* against the repository
+and asked which of its stated gates were actually discharged. Every finding is a
+documentation defect rather than a code defect, which is exactly the category a
+code review does not catch.
+
+### 35.1 Four test counts in `10` were wrong
+
+`test_encoder_registry.py` (38, now 45), `test_probe.py` (43, actually 45),
+`integration/test_probe_harness.py` (25, actually 28), and the JEPA section (30,
+actually 42 across three classes). The per-file table's rows summed to 751 and
+109 against stated totals of 752 and 112, which is what made them findable: the
+totals had been updated and the rows they are a sum of had not.
+
+`TestJEPAReviewRegressions` - the 18 tests §34 added - was not documented at all.
+It is now `10` §6.4.4.
+
+### 35.2 `10` still described the critic guard as an xfail
+
+Three places: the §6.2.2 heading, its table row, and the §8 gaps table. §29.1
+records that the marker was deleted when S1-1 was fixed and the assertion went
+live; the testing document was never brought along, so it described a suite that
+records a frozen critic rather than one that catches it.
+
+The §8 row on encoder learning was stale in a subtler way. It said the strong
+question "still needs S1-1 and S1-3 fixed". Both are fixed. What actually
+remains is that **no multi-seed training comparison has been run** - the protocol
+in `18` §5.5 is unexecuted for every architecture, `jepa` included. The gap did
+not close; its reason changed, and the row now says which.
+
+### 35.3 `23` still called the deduplication load-bearing
+
+The same defect §34.5 found in the code, left behind in the document. Its section
+argued from "every agent receives the byte-identical public book vector", which
+§30 made false. Rewritten to say what the row selection now does, why the default
+is still right for public-book targets, and what `per_agent=True` buys and does
+not buy.
+
+### 35.4 The `private_dim` guard was relied on and never confirmed
+
+The plan flagged it as a risk: `n_hist` is in `STRUCTURAL_CONFIG_KEYS` and
+`private_dim` is not, so the only thing between a changed value and a silently
+misread checkpoint is `ObsLayout.from_obs_space` failing to divide. Confirmed by
+measurement, and now pinned by `TestPrivateDimIsGuardedByArithmeticAlone`:
+
+| `private_dim` against a saved 177-float space | Result |
+|---|---|
+| 9 (unchanged) | builds, `n_hist=4` |
+| 6, 8, 10, 12 | **raises** - remainder against a 42-float snapshot |
+| 51 | **builds silently as `n_hist=3`** |
+
+The guard holds for every change anyone would make by hand. Its blind spot is a
+change of exactly `snapshot_dim`, which leaves no remainder and is read as one
+fewer snapshot plus a larger tail. Pinned as a known property rather than fixed:
+closing it means adding `private_dim` to `STRUCTURAL_CONFIG_KEYS`, and the case
+is off by 42.
+
+### 35.5 What is genuinely still open
+
+Not defects - work the plan scoped and this branch did not do:
+
+| Item | State |
+|---|---|
+| Multi-seed encoder comparison (`18` §5.5) | **Unexecuted.** The largest gap. No claim that any encoder trades better than another is supported by anything here |
+| World-model loss curve | Mechanics are tested; §33.4 argues the floor from first principles. No measured curve is recorded |
+| JEPA pretraining at scale | §32.5 is a 150-step smoke measurement, explicitly not evidence that pretraining pays |
+| Own resting orders in the private block | §30.4. The larger half of what S1-2 left |
+| Maker/taker fees through NAV | §29.4 |
+| `12` §9 items 5-10, 12-14 | Untouched by this branch |
+
+---
+
+## 36. Documents that had started arguing with themselves
+
+§35 audited the plan against the repository. This pass audited the *documents*
+against the code, and found one real bug and a set of claims that had gone
+false when the code beneath them changed. The pattern worth naming: none of
+these were in the sections describing the new work, which were written last and
+are correct. They were in the older sections that the new work invalidated
+without touching.
+
+### 36.1 `visualize_orderbook` plotted private state as ask sizes
+
+The one code defect. It read the newest book snapshot as
+`np.asarray(obs)[-SNAPSHOT_DIM:]`, which was right until §30 appended a 9-float
+private block and moved the end of the vector:
+
+```
+obs width: 177   SNAPSHOT_DIM: 42   n_hist: 4
+correct newest snapshot at [126:168]
+buggy slice at            [135:177]        offset: 9 floats
+
+plotted as "ask sizes":
+   correct : [-0. -0. -0. -0. -0. -0. -0. -0. -0. -0.]
+   buggy   : [-0. -4.554 -0. -0. -0. -1. -0. -1. -0. -0.]
+```
+
+That `-4.554` is a private float - a position or a cash balance - charted as
+depth. Nothing raises: every index resolves, every sum is a float, the plot
+renders. `05` §1 warns about this exact slice in prose and §9 even lists this
+file as a consumer that reads from the end; the env, the tests and the probe
+were all updated for the new layout and this file was missed.
+
+It survived because **nothing in `visualize/` had a single test**. The fix is a
+`_newest_snapshot` helper that slices against `n_hist * SNAPSHOT_DIM`, derives
+`n_hist` from the vector rather than assuming it, and raises on a width it
+cannot decompose - the same contract `ObsLayout.from_obs_space` holds on the
+model side. `test_visualize_orderbook.py` (12 tests) pins it, including a
+sentinel test that fails if the old slice is restored.
+
+### 36.2 `--per-agent` was documented and unreachable
+
+§34.5 added `per_agent` to `from_parquet` and both `10` and `23` presented it as
+the remedy for the dropped private state. It was on no command line, so the
+remedy could not be taken. Now a probe flag.
+
+### 36.3 Two documents contradicted themselves
+
+`07` §2.1 said "**The reward is zero-sum when NAV is**". Twenty lines later a
+blockquote said "**The reward is not zero-sum.**" Both were written honestly -
+the second predates §29 - and together they say nothing. Rewritten to the
+distinction that actually holds: `nav_term` sums to exactly zero, the four
+shaping terms do not, and the comparability caveat survives at ~0.5-1% of a NAV
+move rather than 2.4x it. The flowchart below it was pre-§29 in three separate
+ways: `x loss_multiplier (1.5)`, a drawdown term fed the *level*, and no
+`init_nav` division anywhere - which is to say it drew the formula §29 replaced.
+
+`05` §1 documented the private block as shipped while §7's mindmap and §7.7
+still called "no private state" the single biggest flaw, and §8 said time
+remaining "is missing and cheap... the agent cannot currently condition on it" -
+`time_left` is `PRIVATE_FIELDS[8]`.
+
+### 36.4 `12` was six sections of present-tense description of fixed defects
+
+§2, §3.1, §3.3, §3.4, §3.5 and §4 all described live blockers, while §9's agenda
+table in the same document marked those same items **done**. The analysis is
+kept - it is the record of *why* each mattered, and it is correct as history -
+under a status banner in the convention §3.6 and §5.6 already used.
+
+§3.4 needed more than a banner. Its recommended patch is
+`max(0.0, new_dd - prev_dd)`, the clipped form §29.2 rejected on the evidence
+that it is an asymmetric loss multiplier in disguise. A reader following that
+advice would reintroduce the bias §3.1 is about, so the correction sits with the
+code block rather than only in the banner.
+
+### 36.5 The rest
+
+`02` §2.6 listed the reward coefficients as `0.1 / 0.05 / 0.2 / 0.1 / 1.5` -
+the pre-§29 values, including the `1.5` that made passivity dominant, in the
+table a reader tunes from. `15`'s mindmap and sequencing list still showed
+S1-1/S1-2/S1-3/S2-1/S2-3 and items 1/3/5 as open though its own body marked each
+fixed; item 2 was split, because the `vf_explained_var` half is done and
+`grad_clip` is genuinely still unset. S4-16 described a test that no longer
+exists. `01` cited `02` §6 where every other reference uses §2.x. Four documents
+still gave the observation as 168 floats.
+
+`22` §3 - the "read this before §4" gate - still named S1-1, S1-2 and S1-3 as
+prerequisites for the JEPA proposals, all three of which are fixed. Its two
+blocking caveats now carry status banners: §3.1's gate is open and unwalked (the
+multi-seed comparison is what would walk it), and §3.2 is collected except for
+resting orders. `15`'s S1-1/S1-2/S1-3/S2-1/S2-3 headings said `[verified]` while
+their bodies said Fixed; they now say `[verified, fixed]` in the convention S1-4
+already used.
+
+`16` was deliberately left alone. It carries a banner saying it is a log and not
+a status page, and its `(168,)` readings are correct as dated measurements. The
+one transcript in `05` §6 is labelled rather than rewritten, for the same
+reason.

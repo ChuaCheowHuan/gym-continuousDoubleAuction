@@ -24,13 +24,17 @@ DEFAULTS = {
     "min_size": 1,
     "mkt_max_size": 100,
     "limit_size_multiple": 10,
-    "order_penalty": 0.1,
-    "trade_penalty": 0.05,
+    "order_penalty": 1e-05,
+    "trade_penalty": 2e-05,
     "drawdown_penalty": 0.2,
-    "passive_bonus": 0.1,
-    "loss_multiplier": 1.5,
+    "passive_bonus": 2e-05,
+    "loss_multiplier": 1.0,
 }
 
+#: Deliberately arbitrary and deliberately *not* realistic - several are orders
+#: of magnitude larger than anything the reward's normalised scale would want.
+#: These tests pin that a configured value arrives at its consumer, so what
+#: matters is only that each is distinct from its default.
 CUSTOM = {
     "min_size": 5,
     "mkt_max_size": 40,
@@ -84,14 +88,19 @@ class TestSizingKnobs:
 class TestRewardCoefficients:
 
     def _scored(self, **overrides):
-        """Score one trader against a fixed account state."""
+        """Score one trader against a fixed account state.
+
+        The NAVs are written as round fractions of `_env`'s 100,000 starting
+        cash because `set_reward` divides by `acc.init_nav` - the reward is in
+        units of initial capital, not dollars (S1-1).
+        """
         env = _env(**overrides)
         env.reset()
         trader = env.traders[0]
         acc = trader.acc
-        acc.prev_nav = 1000
-        acc.nav = 1050            # nav_change = +50
-        acc.max_nav = 1100        # drawdown = 50
+        acc.prev_nav = 100_000
+        acc.nav = 105_000         # nav_change      = +5% of starting capital
+        acc.max_nav = 110_000     # drawdown_change = +5% (from 0 at reset)
         acc.order_step_placed = 1
         acc.num_trades_step = 2
         acc.num_passive_fills_step = 1
@@ -106,28 +115,33 @@ class TestRewardCoefficients:
         assert env.loss_multiplier == 2.5
 
     def test_default_reward_matches_the_documented_formula(self):
-        # 50 - 0.1*1 - 0.05*2 - 0.2*50 + 0.1*1
-        assert self._scored() == pytest.approx(39.9, abs=1e-9)
+        # 0.05 - 1e-5*1 - 2e-5*2 - 0.2*0.05 + 2e-5*1
+        assert self._scored() == pytest.approx(0.03997, abs=1e-9)
 
     def test_configured_coefficients_change_the_reward(self):
-        # 50 - 0.9*1 - 0.8*2 - 0.7*50 + 0.6*1
-        assert self._scored(**CUSTOM) == pytest.approx(13.1, abs=1e-9)
+        # 0.05 - 0.9*1 - 0.8*2 - 0.7*0.05 + 0.6*1
+        assert self._scored(**CUSTOM) == pytest.approx(-1.885, abs=1e-9)
 
     def test_loss_multiplier_applies_only_to_losses(self):
-        """The custom multiplier must reach the asymmetric branch."""
+        """The custom multiplier must reach the asymmetric branch.
+
+        Overridden here rather than left at its shipped 1.0, which is the only
+        value that keeps the game zero-sum (S1-3) and so cannot demonstrate the
+        asymmetric branch at all.
+        """
         env = _env(loss_multiplier=2.5, drawdown_penalty=0.0)
         env.reset()
         trader = env.traders[0]
         acc = trader.acc
-        acc.prev_nav = 1000
-        acc.nav = 900             # nav_change = -100
-        acc.max_nav = 1000
+        acc.prev_nav = 100_000
+        acc.nav = 90_000          # nav_change = -10% of starting capital
+        acc.max_nav = 100_000
         acc.order_step_placed = 0
         acc.num_trades_step = 0
         acc.num_passive_fills_step = 0
 
         reward = float(env.set_reward({}, trader)['agent_0'])
-        assert reward == pytest.approx(-250.0, abs=1e-9)  # -100 * 2.5
+        assert reward == pytest.approx(-0.25, abs=1e-9)  # -0.10 * 2.5
 
 
 class TestTrainConfigRoundTrip:

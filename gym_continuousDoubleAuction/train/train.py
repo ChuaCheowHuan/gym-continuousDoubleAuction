@@ -54,7 +54,10 @@ from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback im
 )
 from gym_continuousDoubleAuction.train.model.encoders import (
     MLP_ENCODER_TYPE,
+    encoder_fingerprint,
+    learner_class_for,
     model_config_get,
+    needs_next_obs,
     training_overrides,
     validate_encoder_type,
 )
@@ -217,6 +220,16 @@ class TrainConfig:
     # Both are STRUCTURAL_CONFIG_KEYS - a restore cannot change them.
     encoder_type: str = _default("encoder_type")
     encoder_specs: Dict[str, Any] = _default("encoder_specs")
+    # A `train.pretrain` checkpoint the trainable modules start from, or null
+    # for a fresh initialisation. The checkpoint's encoder fingerprint is
+    # checked against `encoder_type` / `encoder_specs` when the spec is built,
+    # so a mismatch fails there rather than as a shape error inside RLlib.
+    #
+    # Deliberately NOT a structural key. It changes where the weights *start*,
+    # not what shape they are, so resuming a run that used one is fine - the
+    # checkpoint being restored already contains whatever the pretraining
+    # contributed.
+    pretrained_encoder_path: Optional[str] = _default("pretrained_encoder_path")
 
     # --- League self-play ----------------------------------------------------
     std_dev_multiplier: float = _default("std_dev_multiplier")
@@ -473,6 +486,23 @@ def make_spaces(cfg: TrainConfig):
     return env.get_observation_space(agent_id), env.get_action_space(agent_id)
 
 
+def _next_obs_connector(observation_space, action_space):
+    """Adds `Columns.NEXT_OBS` to the train batch.
+
+    A module-level function rather than a lambda because RLlib pickles the
+    config out to remote learners, and a lambda would not survive that.
+
+    RLlib fills each episode's next observations from the episode itself, so
+    the boundary needs no masking here: the last step of an episode takes that
+    episode's final observation, never the next episode's reset.
+    """
+    from ray.rllib.connectors.learner import (
+        AddNextObservationsFromEpisodesToTrainBatch,
+    )
+
+    return [AddNextObservationsFromEpisodesToTrainBatch()]
+
+
 def build_config(cfg: TrainConfig):
     """Build the PPOConfig, the callback instance, and the module spec.
 
@@ -496,6 +526,7 @@ def build_config(cfg: TrainConfig):
         vf_share_layers=cfg.vf_share_layers,
         encoder_type=cfg.encoder_type,
         encoder_specs=cfg.encoder_specs,
+        pretrained_path=cfg.pretrained_encoder_path,
     )
 
     callback_instance = SelfPlayCallback(
@@ -540,6 +571,16 @@ def build_config(cfg: TrainConfig):
         .learners(
             num_learners=cfg.num_learners,
             num_gpus_per_learner=cfg.resolved_gpus_per_learner(),
+            # PPO's train batch carries no NEXT_OBS. An encoder that predicts
+            # the next observation's latent needs one, and gets it from RLlib's
+            # own connector - attached ONLY for that encoder, so no other
+            # architecture pays for a column it never reads. `learner_connector`
+            # returns a list that RLlib appends to the default pipeline; the
+            # connector early-outs if NEXT_OBS is already present.
+            **({"learner_connector": _next_obs_connector}
+               if needs_next_obs(cfg.encoder_type,
+                                 cfg.encoder_specs.get(cfg.encoder_type))
+               else {}),
         )
         .training(
             train_batch_size_per_learner=cfg.train_batch_size,
@@ -555,7 +596,16 @@ def build_config(cfg: TrainConfig):
             # stock learner for every encoder that produces no such term, which
             # is all of them but moe_transformer - so it is wired
             # unconditionally rather than branching on the encoder.
-            learner_class=CDAPPOTorchLearner,
+            #
+            # An encoder may name a *different* Learner through `@register`;
+            # `jepa` does, to add its latent-prediction term. Nothing did when
+            # that mechanism was added, so every encoder registered before it
+            # still resolves to exactly CDAPPOTorchLearner. Unlike the module
+            # class this is algorithm-wide - RLlib takes one Learner for the
+            # whole run - which is why every Learner registered this way
+            # subclasses CDAPPOTorchLearner rather than replacing it, so a
+            # league mixing encoders keeps every term it needs.
+            learner_class=learner_class_for(cfg.encoder_type, CDAPPOTorchLearner),
             **({"minibatch_size": cfg.minibatch_size}
                if cfg.minibatch_size is not None else {}),
         )
@@ -919,16 +969,13 @@ def _encoder_fingerprint(config) -> dict:
         if model_config is None:
             # A baseline RandomRLModule, which has no network at all.
             continue
-        encoder_spec = _model_config_get(model_config, "encoder_spec", None) or {}
-        return {
-            "encoder_type": _model_config_get(
-                model_config, "encoder_type", MLP_ENCODER_TYPE
-            ),
-            # Sorted items rather than the dict itself: the fingerprint is
-            # compared with `!=`, and two dicts differing only in key order
-            # would otherwise read as a change.
-            "encoder_spec": tuple(sorted(encoder_spec.items())),
-        }
+        # Built by `encoders.encoder_fingerprint` rather than assembled here,
+        # so this and the offline pretrainer - which writes the same
+        # fingerprint beside its weights - cannot drift apart.
+        return encoder_fingerprint(
+            _model_config_get(model_config, "encoder_type", MLP_ENCODER_TYPE),
+            _model_config_get(model_config, "encoder_spec", None),
+        )
 
     return {}
 

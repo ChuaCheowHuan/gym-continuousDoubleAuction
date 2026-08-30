@@ -4,8 +4,43 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from gym_continuousDoubleAuction.config_loader import constant
-from gym_continuousDoubleAuction.envs.exchg.state_helper import SNAPSHOT_DIM
+from gym_continuousDoubleAuction.envs.exchg.state_helper import (
+    PRIVATE_DIM,
+    SNAPSHOT_DIM,
+)
 from gym_continuousDoubleAuction.visualize.episode_data import load_episode
+
+def _newest_snapshot(obs):
+    """The most recent book snapshot from a recorded observation.
+
+    An observation is `n_hist` stacked snapshots followed by a per-agent
+    private block:
+
+        [ snapshot(t-n_hist+1) | ... | snapshot(t) | private ]
+
+    So the newest snapshot ends at `n_hist * SNAPSHOT_DIM`, NOT at the end of
+    the vector. `obs[-SNAPSHOT_DIM:]` returns the private block plus a
+    truncated final snapshot, shifted by exactly PRIVATE_DIM - which raises
+    nothing and plots private state as ask sizes. That is what this function
+    exists to prevent; see 05_observation_space.md section 1.
+
+    `n_hist` is derived from the vector rather than assumed, because a
+    recording may have been made with a different window than the config
+    currently names.
+    """
+    flat = np.asarray(obs)
+    book_flat_dim = flat.size - PRIVATE_DIM
+    n_hist, remainder = divmod(book_flat_dim, SNAPSHOT_DIM)
+    if remainder or n_hist < 1:
+        raise ValueError(
+            f"Recorded observation of {flat.size} floats, less a "
+            f"{PRIVATE_DIM}-float private block, leaves {book_flat_dim} - not "
+            f"a whole number of {SNAPSHOT_DIM}-float snapshots. Either this "
+            "recording did not come from this env, or observation_layout in "
+            "tunable_constants.json changed after it was written."
+        )
+    return flat[(n_hist - 1) * SNAPSHOT_DIM : n_hist * SNAPSHOT_DIM]
+
 
 def visualize_episode_data(run_dir=None, episode_id=None, agent_id=None):
     """
@@ -15,10 +50,11 @@ def visualize_episode_data(run_dir=None, episode_id=None, agent_id=None):
 
     `best_bid`/`best_ask` are read straight off their own columns. Sizes have
     no column of their own, so they still come from the raw observation
-    snapshot: the last SNAPSHOT_DIM entries of `obs`, which is the same
-    layout `state_helper` builds live - this reads a recorded observation
-    rather than a live env, so it uses the module-level SNAPSHOT_DIM instead
-    of an instance attribute.
+    snapshot, which `_newest_snapshot` slices out. This reads a recorded
+    observation rather than a live env, so it uses the module-level
+    SNAPSHOT_DIM / PRIVATE_DIM instead of an instance attribute.
+
+    Within one snapshot:
 
     [0:10]  Bid Prices
     [10:20] Bid Sizes
@@ -49,7 +85,7 @@ def visualize_episode_data(run_dir=None, episode_id=None, agent_id=None):
     total_bid_size = []
     total_ask_size = []
     for obs in episode["obs"]:
-        snapshot = np.asarray(obs)[-SNAPSHOT_DIM:]
+        snapshot = _newest_snapshot(obs)
         b_s = snapshot[10:20]
         a_s = -snapshot[30:40]  # Negated in env, restore to positive
         total_bid_size.append(b_s.sum())

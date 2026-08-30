@@ -11,16 +11,18 @@ marks a finding confirmed by executing the code; raw output is in
 ```mermaid
 mindmap
   root((Findings))
-    S1 Blocking
-      S1-1 critic gets zero gradient
-        vf_clip_param 10 vs NAV-scale targets
-      S1-2 no private state in the observation
-      S1-3 doing nothing dominates
+    S1 Blocking — all fixed
+      S1-1 critic got zero gradient — fixed
+        rewards are now a fraction of init_nav
+      S1-2 no private state — fixed
+        own resting orders still absent
+      S1-3 doing nothing dominated — fixed
       S1-4 bare env could not trade — fixed
     S2 Major
-      S2-1 drawdown charged as a level
+      S2-1 drawdown charged as a level — fixed
       S2-2 observation scales saturate tanh
-      S2-3 cost proxies 10^5 too small
+      S2-3 cost proxies 10^5 too small — fixed
+        real maker/taker fees still open
       S2-4 bankrupt agents never terminated
       S2-5 self-matching enables mark manipulation
       S2-6 per-frame normalizer
@@ -68,7 +70,7 @@ mindmap
 
 ## S1 — Blocking
 
-### S1-1 · PPO's critic receives zero gradient **[verified]**
+### S1-1 · PPO's critic receives zero gradient **[verified, fixed]**
 
 `vf_clip_param` defaults to 10.0 and is never overridden, while value targets are NAV sums in the
 10⁴–10⁷ range. `torch.clamp(vf_loss, 0, 10.0)` is flat there, so `∂L_vf/∂θ = 0` for every sample.
@@ -83,28 +85,56 @@ total_loss         9.25        /  9.48          ← 10.0 of which is a constant
 PPO degenerates to REINFORCE with a batch-standardised baseline. Silent: the reported
 `total_loss` looks small and stable because 10.0 of it is a constant.
 
-**Fix.** Normalise `nav_change` by `init_cash` in the reward (preferred — also fixes S2-1 and
-S2-3), or set `vf_clip_param` to a commensurate value and add `grad_clip`. Then assert
-`vf_explained_var > 0` in CI.
-→ [12 §4](12_perspective_rl_researcher.md#4-the-critic-cannot-learn--vf_clip_param-saturation)
+**Fixed.** Every NAV-derived quantity in `set_reward` is now divided by `trader.acc.init_nav` —
+the account's own record of what the trader started with, rather than a second copy of `init_cash`
+that could drift from it. Value targets are O(1), the clamp no longer binds, and the substantive
+`vf_explained_var` assertion in `integration/test_progress_and_vf.py` — which was a *strict xfail*
+pinning this finding — XPASSed on the first real run after the change and is now a live regression
+guard. The same change also closed S2-3 and made S2-1's fix expressible.
+→ [12 §4](12_perspective_rl_researcher.md#4-the-critic-cannot-learn--vf_clip_param-saturation),
+[07 §2.1](07_reward_function.md)
 
-### S1-2 · Observation contains no private state **[verified]**
+### S1-2 · Observation contains no private state **[verified, fixed — except resting orders]**
 
-Every agent receives the byte-identical 168-float public book vector (`distinct obs vectors
+Every agent received the byte-identical 168-float public book vector (`distinct obs vectors
 across agents: 1`). Absent: `net_position`, `VWAP`, `nav`, `max_nav`, `cash`, own resting orders,
 agent identity, time remaining.
 
 The reward is literally `f(nav, prev_nav, max_nav, …)` — all unobserved. Two states with
-identical books but opposite inventory require opposite optimal actions and are
+identical books but opposite inventory require opposite optimal actions and were
 indistinguishable. The drawdown term depends on `max_nav`, a path functional over the whole
-episode, so this is not partial observability a recurrent net can recover. It also makes the
+episode, so this was not partial observability a recurrent net could recover. It also made the
 `modify` and `cancel` categories (4 of 9) blind.
 
-**Fix.** Append a ~9-float normalised private block per agent and stop broadcasting one shared
-vector. Delete `test_shared_history_multi_agent_uniformity`, which currently asserts the defect.
-→ [12 §2](12_perspective_rl_researcher.md#2-the-observation-contains-no-private-state)
+**Fixed.** The observation is now `[ n_hist × snapshot | private ]`, 177 floats: the book prefix
+is still shared and computed once, and a 9-float per-agent block is appended.
+`State_Helper.PRIVATE_FIELDS` is the single definition of its layout and `__init__` checks its
+length against `private_dim`. Every field is normalised by the trader's own `init_nav` or is
+already a ratio, so the block is O(1) and cannot saturate the `tanh` MLP the way raw sizes do
+(S2-2).
 
-### S1-3 · Doing nothing is a dominant strategy **[verified]**
+`test_shared_history_multi_agent_uniformity` — which asserted the defect as a requirement — is
+replaced by `test_agents_see_distinct_private_state`, plus a test that the book prefix is *still*
+shared, since that half was never the bug.
+
+Three consequences worth knowing:
+
+- **The observation width is structural.** No checkpoint written before this loads.
+- **`obs[-SNAPSHOT_DIM:]` is now wrong everywhere.** It returns the private block plus a truncated
+  final snapshot. Slice against `n_hist * SNAPSHOT_DIM` — `ObsLayout.book_flat_dim` and
+  `split_private` exist for this. Four test files and the probe harness held that assumption.
+- **The private block is not tokenised with the book.** Token width is
+  `max(book_rows, extra_dim)`, so folding it in would widen every book token to 9 channels and
+  right-pad with zeros. It gets its own projection and joins as one token — `blocks.PrivateToken`,
+  shared by every tokenising encoder so they stay comparable.
+
+**Still open:** own resting orders and agent identity are not in the block. Resting orders are the
+larger gap — `modify` and `cancel` remain partly blind, since an agent can see its escrowed cash
+but not which orders that cash is committed to.
+→ [12 §2](12_perspective_rl_researcher.md#2-the-observation-contains-no-private-state),
+[05 §1.0](05_observation_space.md)
+
+### S1-3 · Doing nothing is a dominant strategy **[verified, fixed]**
 
 | Policy | Total return, 4 agents × 300 steps |
 |---|---|
@@ -117,9 +147,20 @@ loss-aversion multiplier and the drawdown level make the reward strictly negativ
 early because the fastest way to raise return is to stop trading. Empty-market collapse is the
 predicted outcome.
 
-**Fix.** Remove the systematic negative bias: make the drawdown penalty an increment (S2-1),
-scale the micro-penalties to reward units (S2-3), and reduce or drop the asymmetric multiplier.
-→ [12 §3.3](12_perspective_rl_researcher.md#33-doing-nothing-is-a-dominant-strategy)
+**Fixed.** `loss_multiplier` 1.5 → **1.0**, the drawdown level → a signed change (S2-1), and the
+micro-penalties rescaled to reward units (S2-3). Re-measured on the same 4 agents × 300 steps:
+
+| | before | after |
+|---|---|---|
+| all agents pass | `0.0` | `0.0` |
+| random trading | **−591,027** | **−0.0104** |
+
+Passing still scores exactly zero, which is correct rather than residual: in a zero-sum market no
+reward can make trading positive-sum *on average*. What changed is that the friction is now ~0.5%
+of a typical NAV move instead of dominating it, so trading is no longer dominated for an agent with
+any edge. Measured over 1,000 steps, `nav_term` sums to **exactly 0.000000** across agents.
+→ [12 §3.3](12_perspective_rl_researcher.md#33-doing-nothing-is-a-dominant-strategy),
+[07 §4.3](07_reward_function.md)
 
 ### S1-4 · The default standalone env could not trade **[verified, fixed]**
 
@@ -152,7 +193,7 @@ spot the smoke run had.
 
 ## S2 — Major
 
-### S2-1 · Drawdown is penalised as a level, not an increment **[verified]**
+### S2-1 · Drawdown is penalised as a level, not an increment **[verified, fixed]**
 
 `max_nav` is monotone within an episode, so a drawdown is re-charged **every step** until NAV
 exceeds the old peak. Measured over 300 steps × 4 random agents: drawdown = **−416,473**, roughly
@@ -162,8 +203,15 @@ exceeds the old peak. Measured over 300 steps × 4 random agents: drawdown = **�
 Side effects: not potential-based (changes the optimum, not just the shaping); magnitude scales
 with `max_step`, making episode length a hidden risk-aversion knob; non-Markov in the observation.
 
-**Fix.** `-drawdown_penalty * max(0, new_dd - prev_dd)`.
-→ [12 §3.4](12_perspective_rl_researcher.md#34-the-drawdown-term-is-a-level-not-a-delta)
+**Fixed — but not with the fix this entry used to propose.** `max(0, new_dd - prev_dd)` charges
+`nav_term` a second time on every losing step below the peak and refunds nothing on the way back
+up, so a round trip costs `drawdown_penalty × X`: an asymmetric loss multiplier by another name,
+which would have left S1-3 half-open while looking like a fix for this. What shipped is the
+**signed** change, `(current_drawdown - previous_drawdown) / init_nav`, whose per-step charges
+telescope to `-drawdown_penalty × final_drawdown` over an episode regardless of path. A round trip
+is free, ending in drawdown is still penalised, and the term cannot be farmed.
+→ [12 §3.4](12_perspective_rl_researcher.md#34-the-drawdown-term-is-a-level-not-a-delta),
+[07 §4.1](07_reward_function.md)
 
 ### S2-2 · Unnormalised observation scales saturate the `tanh` MLP **[verified]**
 
@@ -180,7 +228,7 @@ features contribute almost nothing.
 **Fix.** Divide sizes by a reference scale; centre `log_mid`.
 → [05 §7.5](05_observation_space.md#75-feature-scales-differ-by-one-to-two-orders-of-magnitude-after-normalization)
 
-### S2-3 · Transaction-cost proxies are ~10⁵× too small **[verified]**
+### S2-3 · Transaction-cost proxies are ~10⁵× too small **[verified, fixed — real fees still open]**
 
 `order_penalty=0.1`, `trade_penalty=0.05`, `passive_bonus=0.1` against per-step NAV moves of
 −10,949 … +6,126. Three of the reward's five stated objectives — "reducing number of trades",
@@ -188,9 +236,19 @@ features contribute almost nothing.
 fees anywhere in the simulator, so market making has no revenue model and crossing the spread has
 no cost.
 
-**Fix.** Charge maker/taker fees in basis points of notional inside settlement so they flow
-through NAV; relax the NAV-conservation assertion to account for fees.
-→ [13 §4](13_perspective_financial_trader.md#4-there-are-no-transaction-costs)
+**Half fixed.** The *scale* problem is closed: the coefficients now multiply quantities already
+expressed as fractions of starting capital, so `1e-05` is one basis point of it, and they were
+calibrated against measurement rather than chosen — over 8,000 random-agent steps, 37% of steps
+move NAV at all and one that does moves it by a median 1.9e-03 of starting capital, so the
+penalties sit at 0.5–1% of that. `passive_bonus` is set equal to `trade_penalty`, making a passive
+fill net-free while an aggressive one costs 0.2 bps, which expresses "capture spread" as a price.
+
+**Still open:** these remain *proxies charged against the reward*, not fees charged against NAV.
+Real maker/taker fees in basis points of notional, applied inside settlement so they flow through
+the ledger, would also require relaxing the NAV-conservation assertion to account for them. That
+is a simulator change, not a reward change, and it is unaffected by this fix.
+→ [13 §4](13_perspective_financial_trader.md#4-there-are-no-transaction-costs),
+[07 §4.2](07_reward_function.md)
 
 ### S2-4 · Bankrupt agents are never terminated **[verified]**
 
@@ -611,7 +669,7 @@ Pinned by `TestRetention` and `TestForeignCheckpoints` in `test_checkpointing.py
 | S4-13 | No property-based tests, despite the order book having clearly stated invariants (tree volume == Σ level volumes, no crossed book, Σ NAV == Σ initial cash) |
 | S4-14 | **Partly fixed.** Refused orders increment `num_rejected_step`, which reaches `infos` and the `order_rejection_fraction` metric; `is_pass_action` separates a deliberate pass. Still open: `modify` / `cancel` with nothing to target has no counter, and no dead action is penalised or visible to the agent |
 | S4-15 | `Box(-inf, inf)` observation bounds, though every quantity is boundable; disables RLlib observation filters and space-based sanity checks |
-| S4-16 | `test_shared_history_multi_agent_uniformity` encodes S1-2 as a requirement and must be deleted when private state is added |
+| S4-16 | **Fixed.** `test_shared_history_multi_agent_uniformity` encoded S1-2 as a requirement. It is replaced by a pair that splits the claim: the book prefix must still be shared between agents, the private tail must not be |
 | S4-17 | The sign convention on ask blocks is redundant (side is already encoded by block position) and prevents natural weight sharing between the two sides |
 | S4-18 | Duplicate `CODEOWNER` and `CODEOWNERS` files at the repo root |
 | S4-19 | No env/observation version recorded in checkpoints, so an observation-layout change invalidates old checkpoints silently |
@@ -675,7 +733,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **623 unit tests pass** (plus 59 integration), covering every position-flip path, cash-check edge case, modify-order
+- **770 unit tests pass** (plus 112 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 
@@ -686,13 +744,20 @@ for research code:
 Roughly two to three weeks of work, ordered so each step unblocks the next.
 
 **Phase 1 — make learning possible (≈2 days)**
-1. Scale all reward terms to fractional-NAV units (fixes S1-1, S2-1, S2-3 together)
-2. Set `grad_clip`; assert `vf_explained_var > 0` in CI
-3. Make the drawdown penalty an increment
+1. ~~Scale all reward terms to fractional-NAV units (fixes S1-1, S2-1, S2-3 together)~~ — **done**,
+   by `acc.init_nav` rather than a configured `init_cash`, so the scale cannot drift from the
+   ledger it normalises
+2. Assert the critic learns in CI — **done**: `vf_explained_var >= 1e-3` is a live assertion in
+   `integration/test_progress_and_vf.py`. **`grad_clip` is still unset**, which is the open half
+   of this item
+3. ~~Make the drawdown penalty an increment~~ — **done**, as a *signed* change. The clipped
+   `max(0, Δ)` form recommended in [12 §3.4](12_perspective_rl_researcher.md) is an asymmetric
+   loss multiplier in disguise and was deliberately not shipped; see [07 §2.1](07_reward_function.md)
 4. Normalise observation feature scales (S2-2)
 
 **Phase 2 — make the problem well-posed (≈3–4 days)**
-5. Add the private-state observation block (S1-2); delete the uniformity test
+5. ~~Add the private-state observation block (S1-2); delete the uniformity test~~ — **done**,
+   9 floats per agent. Own resting orders are the remaining gap
 6. Terminate and flatten bankrupt agents (S2-4)
 7. `size_mean → Box(0,1)`; scale or drop `size_sigma` (S3-1, S3-2)
 8. Positive decaying `entropy_coeff`; raise `std_dev_multiplier`; refuse zero-trade champions (S3-11)

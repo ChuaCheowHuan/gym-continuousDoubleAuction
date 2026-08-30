@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (682 tests: 623 unit + 59 integration)
+# everything (882 tests: 770 unit + 112 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -62,9 +62,9 @@ Counts re-measured with `--collect-only`.
 | `test_modify_order.py` | 7 | The six modify-order accounting scenarios, plus a guard that the dead escrow helper stays deleted |
 | `test_new_action_space.py` | 10 | Action decoding, ghost pricing, `tick_size` reaching the action layer, price levels matching book depth |
 | `test_obs_normalization.py` | 12 | Price/volume normalization, action unnormalization |
-| `test_observation_history.py` | 3 | Temporal stacking (shape across `n_hist` moved to `test_obs_market_features.py`) |
+| `test_observation_history.py` | 6 | Temporal stacking, and the shared-book / private-tail split (S1-2) |
 | `test_obs_market_features.py` | 17 | `log_mid`, `log1p_spread_ticks`, observation shape across `n_hist` |
-| `test_reward_logic.py` | 4 | Reward formula components |
+| `test_reward_logic.py` | 8 | Reward formula components: normalisation by `init_nav`, scale invariance, the signed drawdown telescoping, zero-sum symmetry |
 | `test_env_lifecycle.py` | 10 | The bare env is tradable (S1-4) and truncation lands exactly on `max_step` (S3-19) |
 | `test_seeding.py` | 11 | `reset(seed=...)` really seeds the episode: anchor, sizes, queueing order; the global NumPy stream is not the source; `sklearn` is not imported (S3-5, S3-6) |
 | `test_nav_callback.py` | 16 | Episode-end NAV conservation, in both halves: the hook counts a violation without raising, the driver stops the run from the count, tolerance, exactness at a scale `float` cannot resolve, a missing metric reading as "nothing seen" |
@@ -77,19 +77,23 @@ Counts re-measured with `--collect-only`.
 | `test_checkpointing.py` | 50 | Checkpoint retention, restore selection, league state across a save |
 | `test_champion_trigger.py` | 19 | League statistics with modules that played no episodes; promotion, pool size, idle count and time-since-champion as metrics |
 | `test_progress_log.py` | 35 | `progress.jsonl` writer, numpy/NaN handling, `vf_explained_var` extraction, per-run directory isolation, the iteration broadcast to env runners |
-| `test_info_dict.py` | 23 | Per-step `info`: back-compat, reward terms summing exactly, live counters, spread, pass/rejection fields, JSON, and 0-d numpy arrays — which only a *recurrent* module produces |
+| `test_info_dict.py` | 24 | Per-step `info`: back-compat, reward terms summing exactly, live counters, spread, pass/rejection fields, JSON, and 0-d numpy arrays — which only a *recurrent* module produces |
 | `test_type_policy.py` | 15 | Decimal money/prices, int sizes, no field changing type mid-episode, book boundary |
 | `test_activity_metrics.py` | 29 | `pass_action_fraction` / `order_rejection_fraction`: the S1-3 detector, per-episode tallies, pickling; the reward-term variance split, the maker-ratio metric and the end-of-episode account metrics |
 | `test_episode_record.py` | 32 | The Parquet per-step record: declared schema and its drift guard against `Info_Helper`, identity columns, sampling rate, byte cap, eviction of episodes that never end, and the ways it must fail without raising |
-| `test_encoder_registry.py` | 38 | The selectable-encoder seam: registry, `CDACatalog`, the `mlp` pass-through staying byte-for-byte what it was, `ObsLayout`, tokenisation |
-| `test_encoder_architectures.py` | 110 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
-| **unit total** | **623** | |
+| `test_encoder_registry.py` | 45 | The selectable-encoder seam: registry, `CDACatalog`, the `mlp` pass-through staying byte-for-byte what it was, `ObsLayout`, tokenisation |
+| `test_encoder_architectures.py` | 165 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
+| `test_pretrain.py` | 20 | Offline JEPA pretraining: the loop trains only the trunk and predictor, a collapse is reported rather than hidden, and the checkpoint's fingerprint refuses a mismatched architecture |
+| `test_visualize_orderbook.py` | 12 | The newest book snapshot is read from the middle of the observation, never off the end — the only arithmetic in `visualize/` that can be wrong without raising |
+| `test_probe.py` | 45 | The reward-free probe harness's arithmetic on synthetic observations: target definitions, episode-boundary masking, the splits, the metrics, unscoreable cells, and that `snapshots` reads the book rather than the private tail |
+| **unit total** | **770** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
-| `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported and finite (1 xfail pins S1-1) |
+| `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported, finite, and **above 1e-3** — a live guard since S1-1 was fixed |
 | `integration/test_distributed_observability.py` | 10 | A real `num_env_runners=1` iteration: every episode-hook metric arrives on the driver, and the episode record is written by the *worker* into the driver's absolute run-scoped path |
-| `integration/test_encoder_wiring.py` | 23 | Champions inherit the encoder; a restore cannot change it; the recurrent and MoE paths train end to end; a real checkpoint round-trip with a custom encoder |
-| **integration total** | **59** | |
+| `integration/test_encoder_wiring.py` | 48 | Champions inherit the encoder; a restore cannot change it; the recurrent and MoE paths train end to end; a real checkpoint round-trip with a custom encoder |
+| `integration/test_probe_harness.py` | 28 | The probe against the real env: a usable rollout corpus, every registered encoder frozen and read, the LSTM's state reset per episode, a real checkpoint restored with its weights |
+| **integration total** | **112** | |
 
 > **Stale references in older docs.** `test_orderbook.py`, `repro_orderbook_crossed_book.py`,
 > `test_OrderBook.py`, `test_cda_nsp.py` and `test_orderbook_double_delete_order.py` do not exist.
@@ -106,7 +110,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((682 tests))
+  root((882 tests))
     Simulator
       orderbook 14
         components, matching, invariants
@@ -136,7 +140,7 @@ mindmap
         retention, restore, league sidecar
       league 20
         matchmaking, promotion triggers
-      encoders 148
+      encoders 213
         registry, catalog, mlp pass-through
         obs layout, tokenisation
         the contract every encoder meets
@@ -145,13 +149,23 @@ mindmap
         logging, progress log, info dict
         activity metrics, episode record
         NAV conservation
-    Integration 59
+      probe 41
+        targets, episode masking
+        splits never shuffled
+        unscoreable vs zero
+      pretrain 20
+        trains trunk + predictor only
+        collapse reported not hidden
+        fingerprint refuses a mismatch
+    Integration 112
       league wiring, 3 topologies
       real save and restore
       real progress.jsonl, 1 xfail pinning S1-1
       real remote env runner
       champions inherit the encoder
       recurrent and MoE train end to end
+      every encoder frozen and probed
+      a real checkpoint restored, not re-initialised
 ```
 
 ---
@@ -343,22 +357,33 @@ Modify and cancel accounting (categories 3, 4, 7, 8) is verified separately in
 | `test_action_price_from_populated_book_is_raw` | With a bid resting at 99, selecting level 0 (join) resolves to `agg_LOB_raw[0]` = 99, **not** the normalized 0.01 |
 | `test_action_price_is_positive` | Over 10 random multi-agent steps, every resolved non-market price is strictly positive |
 
-### 4.2 `test_observation_history.py` (3 tests)
+### 4.2 `test_observation_history.py` (6 tests)
 
 Shape across `n_hist` values, including the default 4, moved to
 `test_obs_market_features.py::test_observation_shape_across_n_hist`; the MRO health check —
 asserting `mkt_size_mean_mul` is initialised, which it is not if `Action_Helper.__init__` aborts
-mid-body — moved to `test_config_wiring.py`. What is left here is the stacking behaviour itself.
+mid-body — moved to `test_config_wiring.py`. What is left here is the stacking behaviour and the
+shared/private split.
 
 | Test | Verifies |
 |---|---|
 | `test_reset_padding_identical_copies` | All *N* segments after reset are identical copies of *O₀* — no zero-padding artefacts |
-| `test_sliding_window_updates` | After each `step()`, the trailing `SNAPSHOT_DIM` elements match the newest snapshot and the total shape is unchanged |
-| `test_shared_history_multi_agent_uniformity` | All agents receive the same observation at reset and after each step |
+| `test_sliding_window_updates` | After each `step()`, the last *book* frame matches the newest snapshot and the total shape is unchanged |
+| `test_the_book_prefix_is_shared_across_agents` | The public book is public — every agent sees the same one |
+| `test_agents_see_distinct_private_state` | After trading, no two agents have the same private tail |
+| `test_the_private_block_is_the_declared_width` | `PRIVATE_FIELDS` and `private_dim` agree, and the observation is `n_hist × SNAPSHOT_DIM + PRIVATE_DIM` |
+| `test_the_private_block_is_bounded_and_finite` | It shares a `tanh` MLP with the book, so an unbounded field would saturate it (S2-2) |
 
-> **The last test cements a design flaw as if it were a requirement.** It is currently true, but
-> the moment private state is added to the observation (S1-2) it must be deleted. See
-> [05_observation_space.md](05_observation_space.md) §7.7.
+> **This file used to cement a design flaw as a requirement.**
+> `test_shared_history_multi_agent_uniformity` asserted that every agent received the identical
+> vector — which was true, and was S1-2. It is replaced by the two tests above, which split the
+> claim: the book prefix must *still* be shared (that half was never the bug) and the private tail
+> must not be.
+
+> **`test_sliding_window_updates` is the one that would have caught the slicing trap.** The newest
+> frame no longer ends where the vector does, so it indexes `book_dim - SNAPSHOT_DIM : book_dim`.
+> Slicing off the end returns the private block plus a truncated snapshot — right shape, every
+> field misaligned.
 
 ### 4.3 `test_obs_market_features.py` (17 tests)
 
@@ -386,7 +411,7 @@ on stochastic size sampling.
 
 ## 5. Reward
 
-### `test_reward_logic.py` (4 tests)
+### `test_reward_logic.py` (8 tests)
 
 | Test | Verifies |
 |---|---|
@@ -503,7 +528,7 @@ Two things this suite had to get right, and which are worth preserving in any ed
 Verified to fail for the right reason: flipping the restore to `is_restore=False` fails 5 of the
 7, the two survivors being the ones that do not depend on the restore.
 
-### 6.2.2 `integration/test_progress_and_vf.py` — 1 class, 6 tests (1 xfail)
+### 6.2.2 `integration/test_progress_and_vf.py` — 1 class, 6 tests
 
 `test_progress_log.py` (§6.1) covers the `progress.jsonl` writer and the `vf_explained_var`
 extraction against a `FakeAlgo` whose results are hand-built, which leaves the assumption
@@ -518,16 +543,16 @@ three iterations (~15s) and reads the file back.
 | `test_a_real_result_survives_the_json_round_trip` | The nested `env_runners` and `learners` blocks are still *in* the line, not merely that it parses |
 | `test_vf_explained_var_is_reported_for_every_trainable_module` | The key RLlib really emits, for exactly the modules in `policies_to_train` |
 | `test_the_metric_is_finite` | A NaN is a diverged value loss |
-| `test_the_critic_actually_explains_something` | **strict xfail** — `\|vf_explained_var\| >= 1e-3`. Fails today because S1-1 is open |
+| `test_the_critic_actually_explains_something` | **A live assertion** — `\|vf_explained_var\| >= 1e-3`. It was a strict xfail until S1-1 was fixed; the fix made it XPASS, which failed the build exactly as the marker's reason said it would, and the marker was then deleted |
 | `test_the_file_carries_it_too` | The on-disk record, not just the returned result, has the metric for every iteration |
 
 The one thing worth preserving in any edit here is the assertion that is deliberately *absent*.
 `!= 0.0` is the obvious guard against a critic that never received a gradient, and it is worthless
-on this repository: a run reports values around 1e-5 — the S1-1 signature [17](17_changelog.md)
-§17.3 records as "0.0 to 1.8e-07" — and every one of them is nonzero, so it passes on a critic
-that is entirely dead. Floating-point noise is not evidence of learning. The strict xfail is what
-carries the real claim: when S1-1 is fixed it XPASSes and fails the build, and removing the marker
-at that point turns it into a live regression guard.
+on this repository: while S1-1 was open a run reported values around 1e-5 — the signature
+[17](17_changelog.md) §17.3 records as "0.0 to 1.8e-07" — and every one of them is nonzero, so it
+would have passed on a critic that was entirely dead. Floating-point noise is not evidence of
+learning, which is why the threshold is `1e-3` and not "nonzero". That threshold is now the guard
+that stops [17](17_changelog.md) §29.1 silently regressing.
 
 ### 6.3 `test_runtime_profiles.py` — 28 tests
 
@@ -566,7 +591,7 @@ worth reading is the shape of the problem: the shipped default, `mlp`, is a **pa
 touches none of the new code, so it can pass while every line of the custom path is broken. The
 suite is built around that gap.
 
-### 6.4.1 `test_encoder_registry.py` — 38 tests
+### 6.4.1 `test_encoder_registry.py` — 45 tests
 
 The seam itself, not the architectures.
 
@@ -584,7 +609,7 @@ but `known_encoder_type` allows a test to build. It exists solely to travel the 
 (`CDAModelConfig` → `CDACatalog` → `build_encoder_config` → `ActorCriticEncoderConfig` → the stock
 pi/vf heads) so that route is covered without shipping an architecture nobody asked for.
 
-### 6.4.2 `test_encoder_architectures.py` — 6 classes, 110 tests
+### 6.4.2 `test_encoder_architectures.py` — 9 classes, 165 tests
 
 `TestEveryEncoder` is parametrised over **every registered encoder**, so a new one is covered the
 moment it is registered rather than when someone remembers to write its tests. What it pins is the
@@ -614,7 +639,7 @@ no memory), `TestMoETransformer` (the auxiliary loss reaching `fwd_out` and carr
 routing fractions summing to `top_k`, stats cleared when taken, and that the term does not scale
 with `num_layers` or `vf_share_layers`), and `TestCommonSpecKeys`.
 
-### 6.4.3 `integration/test_encoder_wiring.py` — 5 classes, 23 tests
+### 6.4.3 `integration/test_encoder_wiring.py` — 9 classes, 48 tests
 
 The claims that only hold once a real `Algorithm` exists.
 
@@ -626,6 +651,12 @@ The claims that only hold once a real `Algorithm` exists.
 | `TestMoEAuxLossReachesTheOptimiser` | The load-balancing term is computed three layers from the loss; every link is invisible from either end |
 | `TestCustomEncoderCheckpointRoundTrip` | A real save and `from_checkpoint`, which `get_state`/`set_state` cannot show because it never leaves the process |
 
+`TestJEPAAuxLossReachesTheOptimiser` makes the same claim for the latent-prediction term, and adds
+one the MoE class does not need: that selecting `jepa` swaps in **both** its RLModule and its
+Learner. `TestOtherEncodersAreUnaffectedByJEPA` is the other half — every encoder that existed
+first must still resolve to the default module and learner classes. Together they are the
+mechanical form of the isolation claim, alongside a `git diff` over the eight shared files.
+
 Two of these were written *because* the unit tests could not have caught what they found.
 `test_the_fingerprint_survives_a_champion_snapshot` pins a live bug: `add_module` normalises every
 `model_config` to a plain dict, so a `getattr`-based read reported the `mlp` default from the first
@@ -633,6 +664,92 @@ champion onward — silently disabling the structural restore check for the rest
 normal path, since every real run creates champions. And the recurrent class exists because
 selecting `lstm` broke the **info dict** — `_plain` could not handle the 0-d arrays the
 time-dimension connectors produce, so every env step failed nowhere near the model.
+
+---
+
+### 6.4.4 The JEPA classes — 42 tests
+
+Three classes in `test_encoder_architectures.py`: `TestJEPA` (17), `TestJEPAWorldModel` (7) and
+`TestJEPAReviewRegressions` (18). The encoder is covered by `TestEveryEncoder` for the contract
+automatically; `TestJEPA` covers what decides whether the *objective* is doing anything.
+
+| Test | What it pins |
+|---|---|
+| `test_the_policy_latent_ignores_the_mask` | Two training forwards draw two masks; the latent must not move between them. If masking reached the policy, the agent would act on a random subset of the book and PPO's ratio would compare log-probs taken under different masks |
+| `test_the_objective_runs_only_in_train_mode` | `eval()` produces no stats at all. Mask sampling is stochastic, so an objective on the inference path injects noise into the ratio rather than raising |
+| `test_the_target_trunk_takes_no_gradient` | It moves by EMA and never by gradient. If it learned by gradient it would stop lagging, and the asymmetry that discourages collapse would be gone |
+| `test_the_target_trails_the_online_trunk` | It does move, and by roughly one decay step — a target that never moved would make the objective trivial |
+| `test_collapse_is_visible_in_latent_std` | **The load-bearing one.** A collapsed encoder maps everything to one latent, which makes the prediction *perfect* — loss near zero, reading as success. Only `latent_std` separates that from a working encoder |
+| `test_a_mask_never_hides_everything_or_nothing` | Over every (tokenisation × axis × ratio): an empty mask leaves nothing to predict, a total one leaves no context. Both are silent |
+| `test_a_dense_encoder_produces_no_jepa_loss` | The plumbing is inert for every other architecture |
+
+`TestJEPAWorldModel` (7 tests) covers the action-conditioned term. The two worth naming:
+`test_a_batch_without_next_obs_is_not_an_error` — PPO's own batch has none and `compute_values`
+runs on one, so raising on a key PPO never promised would break every path but training — and
+`test_the_prediction_depends_on_the_action`, without which the model would be predicting the next
+book from the current one and ignoring what the agent did, which is a different and much less
+interesting object.
+
+`test_a_mask_never_hides_everything_or_nothing` found a real bug while being written: a `level`
+mask under `time` tokenisation indexed a level axis that tokenisation does not have. It now falls
+back to a random mask, so a `tokenization × mask_axis` sweep needs no special cases.
+
+`TestJEPAReviewRegressions` (18 tests) was added by the review recorded in [17](17_changelog.md)
+§34, one or more tests per finding, each written to fail against the commit before its fix. The
+three worth naming:
+
+| Test | What it pins |
+|---|---|
+| `test_an_inference_only_module_builds` | The finding that mattered most. `RLModuleSpec.build` catches an `AttributeError` from `__init__` and falls back to a deprecated constructor, so a module that could not be built inference-only failed *silently* — and a champion snapshot is an inference-only copy, so a `jepa` league would have died at its first promotion with an unrelated-looking error |
+| `test_a_mask_leaves_context_at_every_n_hist` | The original mask test swept tokenisations and axes at one `n_hist`. The clamp was against `n_hist - 1` snapshots rather than the token count, so `n_hist: 1` masked the whole sequence and the objective silently predicted from nothing |
+| `test_evaluation_does_not_step_the_ema` | The EMA update ran on validation batches, so the number a probe or a pretraining validation pass reported depended on how many times it had been evaluated |
+
+---
+
+### 6.5 The probe harness
+
+Two files, added with `train/probe/` ([23](23_probe_harness.md)). The harness produces *numbers
+people will cite*, so what these pin is not that it runs but the handful of properties that decide
+whether its numbers mean anything.
+
+#### 6.5.1 `test_probe.py` — 45 tests
+
+Runs on synthetic observations built by hand, not on env rollouts: the arithmetic is the subject,
+and a target checked against the same expression that computes it checks nothing.
+
+| Area | What it pins |
+|---|---|
+| Snapshot readers | `snapshots` is the *newest* frame of the stack; `depth_imbalance` uses the `+sqrt(V)` / `-sqrt(V)` sign convention rather than working around it (a balanced book is exactly 0, a one-sided one exactly ±1); an empty book is neutral, not a sentinel |
+| Targets | `mid_return` is the `log_mid` difference; `realized_vol` of a constant drift is exactly zero and refuses `horizon` 1; every registered target builds and is finite |
+| `horizon_mask` | **Never crosses an episode boundary.** A return read across a reset is a jump between unrelated random price anchors — the largest "signal" in the corpus and entirely artificial |
+| Splits | No episode appears in two splits; the fallback below three episodes is contiguous; **no split is ever shuffled**; the three partition the rows |
+| Metrics | R² of the mean predictor is 0 and of a constant target is 0 (not 1); balanced accuracy of a constant predictor is 0.5 — the reason it is balanced, since `two_sided` is true in almost every step |
+| `fit_and_score` | A linearly readable target scores > 0.99; pure noise does **not** score hugely negative, because the alpha grid reaches far enough to decline the overfit; a single-class or constant target is *unscoreable* rather than a floor value; the intercept is not penalised |
+| Report | Every feature set is scored on identical rows with an identical split; a misaligned set raises; a target below its `min_horizon` is skipped, not fatal; a tie names no winner |
+| Parquet | One row per `(episode, step)` by default, and `per_agent=True` keeps them all. The rows at one step are **no longer identical** — §4.2 gave each agent its own private tail — so the default now *drops* N-1 agents' private state rather than dropping duplicates, and the tests pin both halves of that. See [17](17_changelog.md) §34.5 |
+
+The two most load-bearing are `test_pure_noise_does_not_score_above_zero` and the row-selection
+tests. Both pin the difference between a harness that reports representation quality and one that
+reports overfitting while looking identical.
+
+#### 6.5.2 `integration/test_probe_harness.py` — 28 tests
+
+The parts that can only break where the harness meets the rest of the system.
+
+| Class | Covers |
+|---|---|
+| `TestRolloutCorpus` | The stream is `max_step + 1` per episode (the reset observation is a real book state), matches the env's width, is seed-reproducible, and **the book is not empty** — a corpus of empty books scores every feature set at the floor and says nothing, which is exactly what `init_cash: 0` produces (S1-4) |
+| `TestEveryEncoderIsProbeable` | Parametrised over every registered encoder: latents are one per observation and finite, **deterministic** (a live dropout makes the score irreproducible rather than wrong), and probing does not change a single weight |
+| `TestStatefulEncodersSeeTheirEpisode` | The LSTM's latent moves along its episode and its state resets at every boundary — batched like a stateless encoder it would silently score a memory re-initialised at every row, which would look completely normal in the report |
+| `TestCheckpointRestore` | A checkpoint is found in RLlib's layout, restores **its weights** rather than a fresh initialisation, and a missing module id raises naming what is there |
+| `TestEndToEnd` | The matrix scores `raw` against a real encoder on identical rows and renders |
+
+`test_restores_the_weights_not_a_fresh_initialisation` is the one worth reading. A re-initialised
+encoder produces perfectly good latents and a perfectly plausible score — the report would simply
+credit the run's training with its initialisation, and nothing would look wrong. The missing-module
+test found a live bug while being written: the path resolver fell back to loading the checkpoint
+*root* as a module, so a mistyped `--module-id` surfaced as a missing-file error about an internal
+pickle instead of naming the modules that were there.
 
 ---
 
@@ -672,14 +789,15 @@ Honest accounting of what the suite does **not** cover.
 
 | Gap | Risk |
 |---|---|
-| **The learning-signal assertion is an xfail, not a guard** | `integration/test_progress_and_vf.py` now checks `vf_explained_var` is reported and finite, and pins the substantive threshold (`>= 1e-3`) as a strict xfail because S1-1 is open — so the suite records the frozen critic rather than catching it. Note what does *not* work here: asserting `!= 0.0` passes today on a critic sitting in the 1e-5 noise floor. `vf_loss` saturation and "returns improve" are still unchecked. |
+| ~~**The learning-signal assertion is an xfail, not a guard**~~ | **Closed.** S1-1 is fixed and the `vf_explained_var >= 1e-3` threshold in `integration/test_progress_and_vf.py` is a live assertion — see §6.2.2. What is still unchecked is narrower than it was: `vf_loss` saturation, and "returns improve" across iterations. |
 | **`test_accounting.py::test_insufficient_funds` is an empty `pass`** | The body is a 15-line comment debating what the behaviour *should* be, ending "Will implement based on observed behavior or re-read code carefully." A TODO shipped as a test. The behaviour it was meant to cover is in fact tested by `test_cash_check.py`. |
 | **No information-content tests for the observation** | The suite would pass unchanged with the varying-denominator stack, the zero-collision ambiguity and the dead tape loop all present — and all three are present ([05](05_observation_space.md) §7). |
-| **`test_shared_history_multi_agent_uniformity` encodes a defect as a requirement** | See §4.2. |
+| ~~**`test_shared_history_multi_agent_uniformity` encodes a defect as a requirement**~~ | **Closed.** S1-2 is fixed and the test is replaced by a pair that splits the claim — the book prefix stays shared, the private tail must not be. See §4.2. |
 | ~~**Reproducibility is untested**~~ | **Closed.** `test_seeding.py` (11 tests) asserts two identically-seeded episodes match and two differently-seeded ones do not, across all three randomness sources — and does it while seeding the *global* NumPy stream to different values, so it cannot pass for the wrong reason. What remains untested is reproducibility of a whole multi-worker *training run*, which is a different claim. |
-| **No encoder is tested for whether it *learns*** | §6.4 proves every encoder builds, trains for an iteration, checkpoints and survives a champion snapshot — mechanics, not merit. Nothing runs long enough to say whether the transformer or the LSTM beats the MLP, which is the question the `encoder` group exists to answer. The comparison protocol is written down ([18](18_configuration.md) §5.5); no run has followed it. |
+| **No encoder is tested for whether it *learns*** | **Still the largest gap, and now for a different reason.** §6.4 proves only mechanics, and `train/probe/` routes around the reward entirely — it scores an encoder on public microstructure targets with no policy or value function involved ([23](23_probe_harness.md)). S1-1 and S1-3 blocked the strong form of the question, and both are now fixed ([17](17_changelog.md) §29), so what remains is simply that **no multi-seed training comparison has been run**: the protocol in [18](18_configuration.md) §5.5 (pinned `seed`, three seeds per architecture, separate runs) is unexecuted for every architecture, `jepa` included. Until it is, no claim that one encoder trades better than another is supported by anything in this repository. |
 | **Edge cases in league matchmaking** | Empty pools and zero weights are untested. |
 | **No property-based tests** | The order book is an ideal Hypothesis target: "tree volume == Σ level volumes", "no crossed book", "Σ NAV == Σ initial cash" hold for *any* order sequence. |
 | **No coverage measurement** | No `pytest-cov`, no threshold. |
 | **No performance regression test** | Nothing catches a 10× slowdown in the matching engine. |
 | **`envs/orderbook/test/example.py` and `genOrders.py`** | 353 LOC of standalone scripts not collected by pytest and not run by CI. |
+| **`visualize/` is almost entirely untested** | `test_visualize_orderbook.py` covers the one slice that can be silently wrong; the other eight modules in the package have no tests. That gap is what let the private-block layout change reach a plotting path unnoticed for three commits ([17](17_changelog.md) §36.1) — every one of those modules reads recorded data and renders it, so a wrong read looks like a plausible chart rather than an error. |

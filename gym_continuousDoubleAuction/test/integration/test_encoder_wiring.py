@@ -37,7 +37,24 @@ from gym_continuousDoubleAuction.train.model.encoders.transformer import (
     TorchTransformerEncoder,
 )
 from gym_continuousDoubleAuction.train.model.model_handler import CDACatalog
+from gym_continuousDoubleAuction.train.model.encoders import (
+    ENCODER_LEARNER_CLASSES,
+    ENCODER_MODULE_CLASSES,
+    learner_class_for,
+    module_class_for,
+    needs_next_obs,
+)
+from gym_continuousDoubleAuction.train.model.jepa_learner import (
+    CDAJEPALearner,
+    JEPARLModule,
+    JEPA_AUX_LOSS_KEY,
+    JEPA_LATENT_STD_KEY,
+    JEPA_OFFDIAG_COV_KEY,
+    JEPA_PREDICT_LOSS_KEY,
+    JEPA_WORLD_LOSS_KEY,
+)
 from gym_continuousDoubleAuction.train.model.moe_learner import (
+    CDAPPOTorchRLModule,
     MOE_AUX_LOSS_KEY,
     MOE_MAX_EXPERT_SHARE_KEY,
     MOE_MIN_EXPERT_SHARE_KEY,
@@ -442,3 +459,202 @@ class TestCustomEncoderCheckpointRoundTrip:
         )
 
         _check_restored_config(self.restored.config, desired)
+
+
+class TestJEPAAuxLossReachesTheOptimiser:
+    """The latent-prediction term, end to end through a real Algorithm.
+
+    Same shape of claim as `TestMoEAuxLossReachesTheOptimiser` and for the same
+    reason: the term is computed several layers from the loss - the encoder
+    stages it, `JEPARLModule` moves it into `fwd_out`, `CDAJEPALearner` adds it
+    to PPO's total - and a break anywhere leaves training running normally with
+    an encoder nothing is teaching, which looks exactly like a working run.
+
+    It also pins the isolation claim at the algorithm level: selecting `jepa`
+    must swap in *both* the module and the learner class, and selecting
+    anything else must leave both at what they were.
+    """
+
+    @classmethod
+    def setup_class(cls):
+        ray.init(
+            ignore_reinit_error=True,
+            include_dashboard=False,
+            log_to_driver=False,
+            num_cpus=2,
+        )
+        cls.cfg = config_with_encoder("jepa")
+        ppo_config, cls.callback = build_config(cls.cfg)
+        cls.algo = ppo_config.build_algo()
+        cls.pid = trainable_policy_ids(cls.cfg.num_trained_agents)[0]
+        cls.before = {
+            k: v.detach().clone()
+            for k, v in cls.algo.env_runner.module[cls.pid].named_parameters()
+        }
+        cls.result = cls.algo.train()
+
+    @classmethod
+    def teardown_class(cls):
+        cls.algo.stop()
+        ray.shutdown()
+
+    def test_the_jepa_learner_is_in_use(self):
+        assert self.algo.config.learner_class is CDAJEPALearner
+
+    def test_the_module_class_is_the_jepa_one(self):
+        assert isinstance(self.algo.env_runner.module[self.pid], JEPARLModule)
+
+    def test_the_aux_loss_is_logged(self):
+        """Absent if the module stopped forwarding it - the learner would then
+        add nothing and training would look entirely normal."""
+        learner_results = self.result["learners"][self.pid]
+
+        assert JEPA_AUX_LOSS_KEY in learner_results
+        assert learner_results[JEPA_AUX_LOSS_KEY] > 0
+        assert JEPA_PREDICT_LOSS_KEY in learner_results
+
+    def test_the_collapse_metrics_are_reported(self):
+        """A collapsed JEPA drives its prediction loss to zero, which reads as
+        success: loss and throughput look identical to a working encoder. These
+        two numbers are the only difference."""
+        learner_results = self.result["learners"][self.pid]
+
+        assert JEPA_LATENT_STD_KEY in learner_results
+        assert JEPA_OFFDIAG_COV_KEY in learner_results
+        # LayerNormed targets sit near unit scale; anywhere near 0 is a
+        # collapse, and this run is far too short to be in one.
+        assert learner_results[JEPA_LATENT_STD_KEY] > 0.1
+
+    def test_the_encoder_is_trained(self):
+        after = dict(self.algo.env_runner.module[self.pid].named_parameters())
+        changed = {
+            k for k, v in after.items() if not torch.equal(self.before[k], v)
+        }
+        assert any("actor_encoder.trunk" in k for k in changed), (
+            "the online trunk took no gradient at all"
+        )
+
+    def test_the_predictor_is_trained_but_the_target_is_not(self):
+        """The target moves by EMA, never by gradient - that asymmetry is the
+        anti-collapse mechanism. The predictor moves by gradient."""
+        module = self.algo.env_runner.module[self.pid]
+        encoder = module.encoder.actor_encoder
+
+        assert all(not p.requires_grad for p in encoder.target_trunk.parameters())
+        assert any(p.requires_grad for p in encoder.predictor.parameters())
+
+    def test_the_training_only_parts_are_declared(self):
+        """Or every champion snapshot carries a second encoder it never runs."""
+        module = self.algo.env_runner.module[self.pid]
+        declared = module.get_non_inference_attributes()
+
+        assert "encoder.actor_encoder.target_trunk" in declared
+        assert "encoder.actor_encoder.predictor" in declared
+
+
+class TestOtherEncodersAreUnaffectedByJEPA:
+    """Selecting anything else must resolve exactly as it did before `jepa`.
+
+    The registry gained an optional module class and an optional learner class.
+    Neither is set for any encoder that existed first, so each must still get
+    the defaults - this is the mechanical form of the isolation claim.
+    """
+
+    @pytest.mark.parametrize(
+        "encoder_type", ["mlp", "transformer", "lstm", "moe_transformer"]
+    )
+    def test_the_learner_is_still_the_default(self, encoder_type):
+        assert learner_class_for(encoder_type, CDAPPOTorchLearner) is (
+            CDAPPOTorchLearner
+        )
+
+    @pytest.mark.parametrize(
+        "encoder_type", ["transformer", "lstm", "moe_transformer"]
+    )
+    def test_the_module_class_is_still_the_default(self, encoder_type):
+        assert module_class_for(encoder_type, CDAPPOTorchRLModule) is (
+            CDAPPOTorchRLModule
+        )
+
+    def test_jepa_is_the_only_encoder_that_overrides_either(self):
+        assert set(ENCODER_MODULE_CLASSES) == {"jepa"}
+        assert set(ENCODER_LEARNER_CLASSES) == {"jepa"}
+
+
+class TestJEPAWorldModelReachesTheOptimiser:
+    """The action-conditioned term, end to end through a real Algorithm.
+
+    It needs `Columns.NEXT_OBS`, which PPO's train batch does not carry, so this
+    also pins the conditional connector: it must be attached when the world
+    model is on, and the term must actually arrive at the loss. Attached but
+    unread, or read but never added, both look exactly like a working run.
+    """
+
+    @classmethod
+    def setup_class(cls):
+        ray.init(
+            ignore_reinit_error=True,
+            include_dashboard=False,
+            log_to_driver=False,
+            num_cpus=2,
+        )
+        cls.cfg = config_with_encoder(
+            "jepa", encoder_specs={"jepa": {"world_model": True}}
+        )
+        ppo_config, cls.callback = build_config(cls.cfg)
+        cls.algo = ppo_config.build_algo()
+        cls.pid = trainable_policy_ids(cls.cfg.num_trained_agents)[0]
+        cls.result = cls.algo.train()
+
+    @classmethod
+    def teardown_class(cls):
+        cls.algo.stop()
+        ray.shutdown()
+
+    def test_the_world_loss_is_logged(self):
+        """Absent if the connector did not run, or if the encoder never saw
+        NEXT_OBS - neither of which raises anywhere."""
+        learner_results = self.result["learners"][self.pid]
+
+        assert JEPA_WORLD_LOSS_KEY in learner_results
+        assert learner_results[JEPA_WORLD_LOSS_KEY] > 0
+
+    def test_the_masked_objective_still_runs_alongside_it(self):
+        """The world model is an addition, not a replacement."""
+        learner_results = self.result["learners"][self.pid]
+
+        assert JEPA_AUX_LOSS_KEY in learner_results
+        assert JEPA_LATENT_STD_KEY in learner_results
+
+    def test_the_action_embedding_is_trained(self):
+        module = self.algo.env_runner.module[self.pid]
+        world = module.encoder.actor_encoder.world_model
+
+        assert world is not None
+        assert any(p.requires_grad for p in world.action_embed.parameters())
+
+
+class TestTheNextObsConnectorIsConditional:
+    """Attached for the world model and for nothing else.
+
+    Every other architecture would otherwise pay for a column it never reads -
+    an extra observation-sized tensor per row of every train batch.
+    """
+
+    @pytest.mark.parametrize(
+        "encoder_type", ["mlp", "transformer", "lstm", "moe_transformer"]
+    )
+    def test_other_encoders_do_not_ask_for_it(self, encoder_type):
+        assert not needs_next_obs(encoder_type, None)
+
+    def test_jepa_without_the_world_model_does_not_ask_for_it(self):
+        assert not needs_next_obs("jepa", {"world_model": False})
+
+    def test_jepa_with_the_world_model_does(self):
+        assert needs_next_obs("jepa", {"world_model": True})
+
+    def test_the_default_is_read_when_the_spec_omits_it(self):
+        """A config file that never mentions `world_model` must resolve to the
+        registered default, not to a missing key."""
+        assert not needs_next_obs("jepa", {})
+        assert not needs_next_obs("jepa", None)

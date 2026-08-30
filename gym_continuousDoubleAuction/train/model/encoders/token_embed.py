@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import torch
 import torch.nn as nn
 from ray.rllib.core.columns import Columns
 from ray.rllib.core.models.base import ENCODER_OUT, Encoder, Model
@@ -31,8 +32,14 @@ from ray.rllib.core.models.configs import ModelConfig
 from ray.rllib.core.models.torch.base import TorchModel
 from ray.rllib.utils.annotations import override
 
-from gym_continuousDoubleAuction.train.model.encoders.blocks import AttentionPool
-from gym_continuousDoubleAuction.train.model.encoders.obs_layout import ObsLayout
+from gym_continuousDoubleAuction.train.model.encoders.blocks import (
+    AttentionPool,
+    PrivateToken,
+)
+from gym_continuousDoubleAuction.train.model.encoders.obs_layout import (
+    ObsLayout,
+    split_private,
+)
 from gym_continuousDoubleAuction.train.model.encoders.tokenize import (
     token_shape,
     tokenize,
@@ -85,6 +92,11 @@ class TorchTokenEmbedEncoder(TorchModel, Encoder):
         # Not a knob. The size channels run ~200x the price channels and share
         # a token with them - see the scale note in `tokenize`.
         self.norm = nn.LayerNorm(config.d_model)
+        # One extra token carrying this agent's private state; see PrivateToken.
+        self.private_token = (
+            PrivateToken(self.layout.private_dim, config.d_model)
+            if self.layout.private_dim else None
+        )
         self.pool = (
             AttentionPool(config.d_model, config.num_heads)
             if config.pool == "attention"
@@ -93,7 +105,12 @@ class TorchTokenEmbedEncoder(TorchModel, Encoder):
 
     @override(Model)
     def _forward(self, inputs: dict, **kwargs) -> dict:
-        tokens = tokenize(inputs[Columns.OBS], self.layout, self.tokenization)
-        embedded = self.norm(self.project(tokens))
+        obs = inputs[Columns.OBS]
+        embedded = self.norm(self.project(tokenize(obs, self.layout, self.tokenization)))
+
+        if self.private_token is not None:
+            _book, private = split_private(obs, self.layout)
+            embedded = torch.cat([embedded, self.private_token(private)], dim=-2)
+
         latent = self.pool(embedded) if self.pool is not None else embedded.mean(dim=-2)
         return {ENCODER_OUT: latent}

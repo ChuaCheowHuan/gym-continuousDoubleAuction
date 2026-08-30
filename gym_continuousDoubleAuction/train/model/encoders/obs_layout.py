@@ -5,7 +5,7 @@ is not unstructured - it is a chronological stack of `n_hist` order-book
 snapshots, each of which is itself a `book_rows x k_rows` grid plus `extra_dim`
 market-level scalars:
 
-    obs  = [ snapshot(t-n_hist+1), ..., snapshot(t) ]        <- oldest first
+    obs  = [ snapshot(t-n_hist+1), ..., snapshot(t) | private ]   <- oldest first
 
     snapshot = [ bid_price(0..k-1),      <- book_rows=4 fields, k_rows=10 levels,
                  bid_size (0..k-1),         laid out FIELD-major
@@ -13,16 +13,31 @@ market-level scalars:
                  ask_size (0..k-1),
                  log_mid, log1p_spread_ticks ]   <- extra_dim=2 scalars
 
+    private  = private_dim per-agent floats, appended ONCE after the whole
+               stack rather than per frame - position, cash, NAV, drawdown and
+               so on. See State_Helper.PRIVATE_FIELDS. The book prefix is
+               shared between agents; only this tail differs.
+
 The MLP encoder throws all of that away and sees `n_hist * snapshot_dim`
 unrelated numbers. Every other encoder recovers it through this class, which is
 the single place the layout is written down on the model side.
 
 `from_obs_space` derives `n_hist` from the observation space rather than reading
-it from config: `book_rows`, `k_rows` and `extra_dim` come from
+it from config: `book_rows`, `k_rows`, `extra_dim` and `private_dim` come from
 `tunable_constants.json` (the same group `State_Helper` reads), and `n_hist` is
-whatever makes the product match the space the env actually declared. A space
-that is not a whole number of snapshots is a layout bug and raises, rather than
-silently reshaping into garbage.
+whatever makes the arithmetic match the space the env actually declared. A space
+whose book part is not a whole number of snapshots is a layout bug and raises,
+rather than silently reshaping into garbage.
+
+Why the private block is a separate tail rather than extra channels
+-------------------------------------------------------------------
+`tokenize` builds tokens `max(book_rows, extra_dim)` channels wide. Folding
+`private_dim` into that width would take every token from 4 channels to 9 and
+right-pad the book tokens with five zeros - paying attention over padding on
+every level of every snapshot, to carry nine numbers that belong to none of
+them. So the split happens before tokenisation, `tokenize` never sees the
+private block, and an encoder that wants it projects it separately and appends
+it as a single token. `split_private` is that seam.
 """
 from __future__ import annotations
 
@@ -49,6 +64,7 @@ class ObsLayout:
     book_rows: int
     k_rows: int
     extra_dim: int
+    private_dim: int
 
     @property
     def book_dim(self) -> int:
@@ -61,9 +77,14 @@ class ObsLayout:
         return self.book_dim + self.extra_dim
 
     @property
-    def flat_dim(self) -> int:
-        """Floats in the whole observation."""
+    def book_flat_dim(self) -> int:
+        """Floats in the stacked book part, i.e. everything but the private tail."""
         return self.n_hist * self.snapshot_dim
+
+    @property
+    def flat_dim(self) -> int:
+        """Floats in the whole observation, private block included."""
+        return self.book_flat_dim + self.private_dim
 
     @property
     def num_tokens_time(self) -> int:
@@ -102,18 +123,21 @@ class ObsLayout:
         book_rows = layout["book_rows"]
         k_rows = layout["k_rows"]
         extra_dim = layout["extra_dim"]
+        private_dim = layout["private_dim"]
 
         snapshot_dim = book_rows * k_rows + extra_dim
         flat_dim = int(obs_space.shape[0])
-        n_hist, remainder = divmod(flat_dim, snapshot_dim)
+        book_flat_dim = flat_dim - private_dim
+        n_hist, remainder = divmod(book_flat_dim, snapshot_dim)
         if remainder or n_hist < 1:
             raise ValueError(
-                f"Observation space of {flat_dim} floats is not a whole number "
-                f"of {snapshot_dim}-float snapshots (book_rows={book_rows} * "
-                f"k_rows={k_rows} + extra_dim={extra_dim}). Either the env's "
-                "observation changed without observation_layout in "
-                "tunable_constants.json following it, or this space did not "
-                "come from this env."
+                f"Observation space of {flat_dim} floats, less a "
+                f"{private_dim}-float private block, leaves {book_flat_dim} - "
+                f"not a whole number of {snapshot_dim}-float snapshots "
+                f"(book_rows={book_rows} * k_rows={k_rows} + "
+                f"extra_dim={extra_dim}). Either the env's observation changed "
+                "without observation_layout in tunable_constants.json "
+                "following it, or this space did not come from this env."
             )
 
         return cls(
@@ -121,4 +145,21 @@ class ObsLayout:
             book_rows=book_rows,
             k_rows=k_rows,
             extra_dim=extra_dim,
+            private_dim=private_dim,
         )
+
+
+def split_private(obs, layout: "ObsLayout"):
+    """Split a flat observation batch into its book part and its private tail.
+
+    Args:
+        obs: `(B, layout.flat_dim)`.
+        layout: the layout to split against.
+
+    Returns:
+        `(book, private)` of widths `layout.book_flat_dim` and
+        `layout.private_dim`. `tokenize` takes the first; an encoder that wants
+        the second projects it itself - see this module's docstring for why it
+        is not folded into the token width.
+    """
+    return obs[..., : layout.book_flat_dim], obs[..., layout.book_flat_dim :]

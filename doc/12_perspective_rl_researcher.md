@@ -45,9 +45,16 @@ reasonable prioritised-fictitious-play approximation.
 
 ---
 
-## 2. The observation contains no private state
+## 2. The observation contains no private state — **fixed**
 
-**The single biggest flaw.** **[verified]** — all agents receive the byte-identical 168-float
+> **Status.** S1-2 is closed. Every agent now receives a 9-float private tail
+> (`State_Helper.PRIVATE_FIELDS`) after the shared book, so the observation is 177 floats and no
+> two agents' vectors are identical. See [17_changelog.md](17_changelog.md) §30 and
+> [05_observation_space.md](05_observation_space.md) §1. **Own resting orders are still absent** —
+> the analysis below is kept because it is the argument for why this mattered, and because the
+> part it names last is the part still open.
+
+**Was the single biggest flaw.** **[verified]** — all agents received the byte-identical 168-float
 vector, at reset and at every step:
 
 ```
@@ -116,13 +123,19 @@ repository. Note that `test_shared_history_multi_agent_uniformity` must be delet
 
 Full specification in [07_reward_function.md](07_reward_function.md).
 
-### 3.1 The reward is strictly negative-sum over a zero-sum market
+### 3.1 The reward is strictly negative-sum over a zero-sum market — **fixed**
+
+> **Status.** S1-3 is closed. `loss_multiplier` 1.5 → 1.0 and the drawdown level → a signed
+> change; the same 4 agents × 300 steps now score **−0.0104** rather than −591,027, and over 1,000
+> steps `nav_term` sums to exactly `0.000000` across agents. See
+> [17_changelog.md](17_changelog.md) §29.2–29.3 and [07_reward_function.md](07_reward_function.md)
+> §2.1.
 
 NAV is conserved exactly — **[verified]**, 4 agents × 1,000,000 → final total NAV 4,000,000.00.
 So `Σ_agents nav_change = 0` at every step.
 
-But the reward adds a loss-aversion multiplier and a persistent drawdown level. Over 300 steps
-with 4 random agents — **[verified]**:
+But the reward *then* added a loss-aversion multiplier and a persistent drawdown level. Over 300
+steps with 4 random agents — **[verified]**:
 
 | Term | Summed value |
 |---|---|
@@ -142,7 +155,13 @@ pooled `mean + k·std` computed over *all* modules, including the frozen random 
 A policy can therefore clear the promotion threshold by **trading less**, not by trading
 *better*. Combined with §3.3, this is a direct path to a league full of do-nothing champions.
 
-### 3.3 Doing nothing is a dominant strategy
+### 3.3 Doing nothing is a dominant strategy — **fixed**
+
+> **Status.** Passing still scores exactly `0.0`, and always will: in a market where NAV is
+> conserved, no reward can make trading positive-sum *on average*. What changed is that it is no
+> longer **dominant** — random trading scores −0.0104 rather than −591,027, so the residual
+> friction is ~0.5% of a typical NAV move instead of dwarfing it, and an agent with an edge is no
+> longer taxed out of using it. See [17_changelog.md](17_changelog.md) §29.3 and §29.5.
 
 **[verified]** — a policy where every agent plays `category=0` every step:
 
@@ -163,7 +182,10 @@ collapse is the most likely training outcome as configured.
 
 This is not hypothetical — it is exactly what the numbers above predict.
 
-### 3.4 The drawdown term is a level, not a delta
+### 3.4 The drawdown term is a level, not a delta — **fixed, but not by the patch below**
+
+> **Status.** S2-1 is closed. The term now charges the **signed** change in drawdown, not the
+> clipped one this section recommends. See the correction after the code block.
 
 `max_nav` is monotone non-decreasing within an episode, so a drawdown opened at step 50 is
 charged **every step until NAV recovers past the old peak**. At `max_step=4096`, a 1,000-unit
@@ -181,9 +203,25 @@ new_dd = max(0, max_nav - nav)
 reward += -drawdown_penalty * max(0.0, new_dd - prev_dd)   # penalise deepening only
 ```
 
-### 3.5 The micro-terms are numerically irrelevant
+> **Correction — do not apply the clip.** The diagnosis above is right and the patch is not. The
+> `max(0.0, ...)` charges every step that deepens a drawdown and refunds nothing on recovery, so a
+> round trip down and back to the old peak costs `drawdown_penalty × X` and the term is farmable
+> in one direction only. That is an asymmetric loss multiplier wearing a different hat — it
+> reintroduces exactly the negative-sum bias §3.1 is about. What shipped is the **signed** change,
+> which telescopes over an episode to `-drawdown_penalty × final_drawdown` whatever path was taken
+> and leaves §3.1's zero-sum property intact. [07_reward_function.md](07_reward_function.md) §2.1
+> works through the arithmetic.
 
-`order_penalty=0.1`, `trade_penalty=0.05`, `passive_bonus=0.1` sit against a NAV term whose
+### 3.5 The micro-terms are numerically irrelevant — **fixed**
+
+> **Status.** S2-3 is closed. Every NAV-derived quantity is divided by `acc.init_nav`, and the
+> coefficients were recalibrated against the measured move distribution rather than guessed:
+> `order_penalty` 1e-05, `trade_penalty` 2e-05, `passive_bonus` 2e-05, which is ~0.5–1% of the
+> median step that moves NAV at all. `passive_bonus == trade_penalty` makes a passive fill
+> net-free while an aggressive one costs 0.2 bps. See [17_changelog.md](17_changelog.md) §29.4.
+> **Real maker/taker fees charged through NAV rather than through the reward remain open.**
+
+`order_penalty=0.1`, `trade_penalty=0.05`, `passive_bonus=0.1` sat against a NAV term whose
 per-step magnitude is **[verified]** in the range −10,949 … +6,126. They are 5–6 orders of
 magnitude too small to influence behaviour. Whatever economic intent they encode (discourage
 over-trading, reward providing liquidity) is not being expressed. Either scale them to the
@@ -198,15 +236,21 @@ moved to config". They are now `env_config` keys, read from the `environment` gr
 are captured in the checkpoint's config and sweepable by Tune. For a research repository, reward
 shaping is the primary experimental axis, and it is now the axis the config file exposes.
 
-What §3.1–3.5 says about the *values* is unchanged: making them reachable does not make them
-right. The recommended change is still to normalise the reward by `init_cash` and charge drawdown
-as an increment, which §4 argues is the highest-leverage edit in the repository.
+Making them reachable did not make them right, and §3.1–3.5 is the record of what was wrong with
+the values. Both changes those sections called for have since shipped — normalisation by starting
+capital and a drawdown charge that is a change rather than a level — which is what §4's banner
+records as the highest-leverage edit in the repository, now made.
 
 ---
 
-## 4. The critic cannot learn — `vf_clip_param` saturation
+## 4. The critic cannot learn — `vf_clip_param` saturation — **fixed**
 
-**This is the single most consequential finding.** RLlib's PPO clips the value-function loss:
+> **Status.** S1-1 is closed, and not by setting `vf_clip_param`: `set_reward` divides every
+> NAV-derived quantity by `acc.init_nav`, so value targets are O(1) and the default 10.0 stops
+> binding. `integration/test_progress_and_vf.py` asserts `|vf_explained_var| >= 1e-3` live — it
+> was a strict xfail until the fix made it XPASS. See [17_changelog.md](17_changelog.md) §29.1.
+
+**This was the single most consequential finding.** RLlib's PPO clips the value-function loss:
 
 ```python
 vf_loss         = torch.pow(value_fn_out - batch[Postprocessing.VALUE_TARGETS], 2.0)
@@ -510,17 +554,17 @@ Observations:
 
 | # | Change | Effort | Expected impact |
 |---|---|---|---|
-| 1 | Scale rewards by `init_cash`; or raise `vf_clip_param` + set `grad_clip` | S | **Unblocks the critic.** Nothing else matters until this is done |
-| 2 | Add private state to the observation (§2) | M | Makes the reward learnable at all |
-| 3 | Make the drawdown penalty an increment, not a level (§3.4) | S | Removes the episode-length-dependent risk tax |
-| 4 | Re-scale or remove the micro-penalties; express costs in bps | S | Restores the intended economic incentives |
+| 1 | ~~Scale rewards by `init_cash`~~ — **done**, by `acc.init_nav` | S | **Critic unblocked.** `vf_explained_var` guard is live, no longer an xfail |
+| 2 | ~~Add private state to the observation (§2)~~ — **done**, 9 floats | M | Makes the reward learnable at all. Own resting orders still absent |
+| 3 | ~~Make the drawdown penalty an increment~~ — **done**, as a *signed* change | S | Removes the episode-length-dependent risk tax; see [07 §4.1](07_reward_function.md) on why clipping it would not have |
+| 4 | ~~Re-scale the micro-penalties; express costs in bps~~ — **done** | S | Restores the intended incentives. Real fees charged through NAV remain open (S2-3) |
 | 5 | `size_mean → Box(0,1)`; scale or drop `size_sigma` | S | Recovers half the action range, removes a null control |
 | 6 | Normalise observation feature scales | S | Removes `tanh` saturation |
 | 7 | Terminate bankrupt agents individually | S | Stops zombie transitions polluting returns |
 | 8 | `entropy_coeff > 0` with decay; raise `std_dev_multiplier`; refuse champions with ~0 trades | S | Guards against passivity collapse |
 | 9 | Normalise the whole obs stack by the current `M_t`; add trade-flow features | M | Makes frame stacking actually informative |
 | 10 | Emit size directly as an action instead of distribution parameters | M | Removes unrecorded env-side stochasticity from the ratio |
-| 11 | Assert `vf_explained_var > 0` in the integration suite | S | Prevents §4 from silently regressing |
+| 11 | ~~Assert `vf_explained_var > 0` in the integration suite~~ — **done** | S | Prevents §4 from silently regressing |
 | 12 | Raise γ toward 0.999 or shorten episodes | S | Makes long-horizon strategies expressible |
 | 13 | One `np.random.Generator` on the env, threaded through everything | S | Reproducibility |
 | 14 | Surface rejected / no-op order counts in `infos` | S | Makes the dead-action fraction measurable |

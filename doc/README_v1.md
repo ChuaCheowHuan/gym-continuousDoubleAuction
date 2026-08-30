@@ -222,7 +222,7 @@ way.
 
 # Observation space:
 
-Each observation is a flat 1D vector of shape `(n_hist * 42,)` (default shape `(168,)` for `n_hist = 4`), representing a sliding temporal history window of the last *N* sequential orderbook snapshots.
+Each observation is a flat 1D vector of shape `(n_hist * 42 + 9,)` (default shape `(177,)` for `n_hist = 4`): a sliding temporal history window of the last *N* sequential orderbook snapshots, shared by every agent, followed by a 9-float per-agent private block.
 
 Each 42-element snapshot segment is organized as:
 ```

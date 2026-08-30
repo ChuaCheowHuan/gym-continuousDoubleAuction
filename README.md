@@ -39,7 +39,7 @@ flowchart LR
     ACC --> MTM
     MTM --> OBS
     MTM --> REW
-    OBS -->|"observation, 168 floats"| POL
+    OBS -->|"observation, 177 floats"| POL
     REW -->|"reward"| POL
     REW --> CB
     CB -->|"agent to module mapping"| POL
@@ -82,6 +82,10 @@ mindmap
       14 AI engineer
       15 Findings
       16 Verification log
+    Research
+      22 JEPA integration
+      23 Probe harness
+      24 Pretraining
 ```
 
 ### Start here
@@ -121,6 +125,9 @@ mindmap
 | 15 | [15_findings_and_recommendations.md](doc/15_findings_and_recommendations.md) | Consolidated, severity-ranked findings with fixes and a suggested sequence |
 | 16 | [16_verification_log.md](doc/16_verification_log.md) | Every executed probe and its raw output |
 | 17 | [17_changelog.md](doc/17_changelog.md) | What changed since `original_v1` (2020) and why |
+| 22 | [22_jepa_integration.md](doc/22_jepa_integration.md) | What JEPA is, why this observation suits it and this reward does not, and four ways it could be used |
+| 23 | [23_probe_harness.md](doc/23_probe_harness.md) | Scoring an encoder on microstructure targets without the reward: how to run it, how to read it, why the probe is linear |
+| 24 | [24_pretraining.md](doc/24_pretraining.md) | Training a JEPA encoder on observations alone before any PPO run, the fingerprint that guards its weights, and why to watch `latent_std` rather than the loss |
 
 ### Configuration and deployment
 
@@ -144,6 +151,18 @@ mindmap
 **Planning changes to the RL layer**
 [15](doc/15_findings_and_recommendations.md) (severity order) → [12](doc/12_perspective_rl_researcher.md) →
 [05](doc/05_observation_space.md) → [07](doc/07_reward_function.md)
+
+**Weighing a representation-learning change (JEPA)**
+[22](doc/22_jepa_integration.md) → [05](doc/05_observation_space.md) →
+[18](doc/18_configuration.md) §5.4–5.5 → [12](doc/12_perspective_rl_researcher.md) §4, §7
+
+**Comparing encoders**
+[23](doc/23_probe_harness.md) (a metric that does not go through the reward) →
+[18](doc/18_configuration.md) §5.5 (seeds, separate runs, parameter counts)
+
+**Pretraining an encoder before training a policy**
+[22](doc/22_jepa_integration.md) §4.2 (the objective) → [24](doc/24_pretraining.md) (running it) →
+[23](doc/23_probe_harness.md) (measuring what it taught)
 
 **Setting up training**
 [18](doc/18_configuration.md) (where every value lives) → [08](doc/08_self_play_league.md) →
@@ -172,7 +191,7 @@ This repository implements a multi-agent continuous double auction system, struc
 
 In this environment, agents act as traders who can submit market, limit, modify, and cancel orders to a shared order book. They are marked to market based on the trade tape, and receive rewards derived from a multi-term NAV-based function. The codebase also includes a matching engine, supports `Decimal`-based accounting, includes the necessary RLlib league wiring, and comes with CI unit tests.
 
-**Main problems:** The weak points are concentrated in the learning problem formulation rather than in the simulator: agents observe no private state, the reward is strictly negative-sum with a dominant do-nothing strategy, and the reward scale silently disables PPO's critic entirely.
+**Main problems:** The weak points were concentrated in the learning problem formulation rather than in the simulator — agents observed no private state, the reward was strictly negative-sum with a dominant do-nothing strategy, and the reward scale silently disabled PPO's critic entirely. All three are now fixed ([17_changelog.md](doc/17_changelog.md) §29-30). What remains is largely in the observation pipeline: the per-frame normalizer, no trade-flow features, and the agent's own resting orders still invisible to it.
 
 ---
 

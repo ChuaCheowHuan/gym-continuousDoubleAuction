@@ -22,11 +22,20 @@ evidence of learning.
 So the unconditional assertions are only that the metric is present and finite
 (a diverged value loss really does show up as NaN, and that is worth catching),
 and the substantive claim - that the critic explains a non-trivial share of
-return variance - is a separate strict xfail. It fails today because S1-1 is
-open and unfixed. When S1-1 is fixed it will XPASS, which under strict xfail
-fails the build: that is deliberate, and the fix is to delete the marker,
-turning this into the live regression guard it cannot be while the defect is
-still there.
+return variance - is separate.
+
+That claim was a strict xfail for as long as S1-1 was open. **It is now a live
+assertion**: normalising the reward by starting NAV (`reward_helper.set_reward`)
+brought value targets to O(1), the `vf_clip_param` clamp stopped binding, and
+the test XPASSed on the first real run after the change - which under strict
+xfail failed the build, exactly as the marker's reason said it would. The
+marker is gone and this is the regression guard it could not be before.
+
+What it guards against is a *silent* return: any future change that puts value
+targets back out of scale with `vf_clip_param` - raising `init_cash` without
+rescaling, adding an unnormalised reward term - flattens the value loss again
+and reports a small, stable-looking `total_loss` while the critic learns
+nothing.
 """
 import json
 import math
@@ -138,17 +147,8 @@ class TestProgressAndCriticHealth:
                 f"the value loss has diverged"
             )
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "S1-1: the critic receives no gradient, so vf_explained_var sits in "
-            "the 1e-5 noise floor. Fixing S1-1 makes this XPASS and fails the "
-            "build - remove the marker at that point, which turns this into the "
-            "regression guard it cannot be while the defect is open."
-        ),
-    )
     def test_the_critic_actually_explains_something(self):
-        """The assertion that would have caught S1-1, pinned as a known failure.
+        """The assertion that catches S1-1. Live, since S1-1 is fixed.
 
         The threshold is loose on purpose. `NUM_ITERS` iterations at this size
         teach a *working* critic very little, so this is not a measure of how

@@ -59,6 +59,7 @@ from gym_continuousDoubleAuction.train.model.encoders import (
     build_encoder_config,
     known_encoder_type,
     model_config_overrides,
+    module_class_for,
     validate_encoder_type,
 )
 
@@ -157,12 +158,18 @@ class CDACatalog(PPOCatalog):
     @override(PPOCatalog)
     def _get_encoder_config(cls, observation_space, model_config_dict,
                             action_space=None, **kwargs) -> ModelConfig:
-        return build_encoder_config(observation_space, model_config_dict)
+        # `action_space` is forwarded because the JEPA world model needs it to
+        # size its action embedding. Every other encoder ignores it - the
+        # catalog has always passed it and nothing read it until now.
+        return build_encoder_config(
+            observation_space, model_config_dict, action_space
+        )
 
 
 def build_trainable_module_spec(obs_space, act_space, encoder_type=None,
                                 encoder_specs=None, fcnet_hiddens=None,
-                                fcnet_activation=None, vf_share_layers=None):
+                                fcnet_activation=None, vf_share_layers=None,
+                                pretrained_path=None):
     """The `RLModuleSpec` for one trainable PPO module.
 
     Args:
@@ -177,6 +184,12 @@ def build_trainable_module_spec(obs_space, act_space, encoder_type=None,
         vf_share_layers: Ditto. Also honoured by custom encoders, since
             `ActorCriticEncoderConfig` reads it to decide whether the actor and
             critic share a trunk.
+        pretrained_path: A directory written by `train.pretrain`, whose weights
+            the module starts from. The checkpoint's encoder fingerprint is
+            verified against the encoder being built *here*, before the path
+            reaches RLlib - a mismatch is a hard error rather than a shape
+            failure several frames later. Ignored for `mlp`, which has no
+            self-supervised objective to have been pretrained on.
 
     Returns:
         An `RLModuleSpec` with `module_class` left None, so RLlib fills in the
@@ -210,6 +223,13 @@ def build_trainable_module_spec(obs_space, act_space, encoder_type=None,
     )
 
     if encoder_type == MLP_ENCODER_TYPE:
+        if pretrained_path:
+            raise ValueError(
+                "encoder_type 'mlp' cannot use a pretrained encoder: it has no "
+                "self-supervised objective, so there is nothing that could have "
+                "produced those weights. Set encoder_type to the architecture "
+                "the checkpoint was trained for."
+            )
         return RLModuleSpec(
             observation_space=obs_space,
             action_space=act_space,
@@ -223,6 +243,26 @@ def build_trainable_module_spec(obs_space, act_space, encoder_type=None,
         "encoder_type": encoder_type,
         "encoder_spec": encoder_spec,
     }
+
+    if pretrained_path:
+        # Verified HERE, before the path reaches the model config, so a
+        # checkpoint for a different architecture fails while there is still a
+        # name to put in the message - not as a shape error inside an encoder
+        # constructor on some env runner.
+        #
+        # The path rides on the model config rather than on `RLModuleSpec`'s
+        # `load_state_path`, which looks like the field for exactly this and is
+        # not: nothing in RLlib 2.56 ever reads it back, so setting it would
+        # have silently done nothing. Carrying it on the model config means
+        # every process that constructs the encoder - env runners and learners
+        # alike - loads the weights itself, with no state to synchronise.
+        #
+        # Imported here rather than at module scope: `train.pretrain` imports
+        # the probe, which imports this module.
+        from gym_continuousDoubleAuction.train.pretrain import verify_fingerprint
+
+        verify_fingerprint(pretrained_path, encoder_type, encoder_spec)
+        fields["pretrained_path"] = pretrained_path
     # Some spec keys configure RLlib rather than the encoder and cannot ride on
     # a custom encoder config: `max_seq_len`, which the connectors read to cut a
     # recurrent module's batch into sequences before any encoder is called, and
@@ -235,9 +275,14 @@ def build_trainable_module_spec(obs_space, act_space, encoder_type=None,
         # The stock module would do for every encoder except moe_transformer,
         # whose auxiliary loss needs a hop through `_forward_train` to reach the
         # Learner. CDAPPOTorchRLModule is identical to its base when there is no
-        # such loss, so it is used for all custom encoders rather than
-        # branching on one of them.
-        module_class=CDAPPOTorchRLModule,
+        # such loss, so it is the default for all custom encoders rather than a
+        # branch on one of them.
+        #
+        # An encoder may name a different one through `@register`. Nothing did
+        # when that mechanism was added, so every encoder registered before it
+        # still resolves to exactly this class - which is what lets a new
+        # architecture bring its own module without editing any existing one.
+        module_class=module_class_for(encoder_type, CDAPPOTorchRLModule),
         observation_space=obs_space,
         action_space=act_space,
         catalog_class=CDACatalog,

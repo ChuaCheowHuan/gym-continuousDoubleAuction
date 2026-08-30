@@ -22,7 +22,7 @@ beginning with `_`, at every level.
 | [`config/train_config.json`](../config/train_config.json) | Every `TrainConfig` value, **including the env keys** | `TrainConfig`, `default_model_config`, `SelfPlayCallback` |
 | [`config/env_defaults.json`](../config/env_defaults.json) | Fallbacks for an env built without a full config dict | `continuousDoubleAuctionEnv` and the env mixins |
 | [`config/tunable_constants.json`](../config/tunable_constants.json) | Structural constants: space layout, ID prefixes, logging setup, path defaults | `state_helper`, `action_helper`, `policy_handler`, `logging_setup`, `visualize/` |
-| [`config/cli_defaults.json`](../config/cli_defaults.json) | Flag defaults with no other config home | `CDA_rand` |
+| [`config/cli_defaults.json`](../config/cli_defaults.json) | Flag defaults with no other config home | `CDA_rand`, `train/probe` |
 | [`config/runtime_profiles.json`](../config/runtime_profiles.json) | *Where* a run executes: the `gpu` / `cpu` hardware sets and per-platform paths | `train/runtime.py`, `CDA_train.ipynb` |
 
 ```mermaid
@@ -204,18 +204,37 @@ The `environment` group of `train_config.json`, forwarded as an `env_config` dic
 
 ### 3.2 Reward coefficients
 
+Every coefficient multiplies a quantity already expressed as a **fraction of the trader's
+starting NAV** — `set_reward` divides by `acc.init_nav` — so they are all in units of "reward per
+unit of initial capital", and `1e-05` is one basis point of it.
+
 | Key | Value | Meaning |
 |---|---|---|
-| `order_penalty` | 0.1 | Per order placed this step |
-| `trade_penalty` | 0.05 | Per trade filled this step |
-| `drawdown_penalty` | 0.2 | Per unit of NAV below the running peak |
-| `passive_bonus` | 0.1 | Per passive (liquidity-providing) fill this step |
-| `loss_multiplier` | 1.5 | Extra weight on negative NAV changes |
+| `order_penalty` | 1e-05 | Per order placed this step (0.1 bps of initial capital) |
+| `trade_penalty` | 2e-05 | Per trade filled this step (0.2 bps) |
+| `drawdown_penalty` | 0.2 | Per unit of *change* in NAV below the running peak |
+| `passive_bonus` | 2e-05 | Per passive (liquidity-providing) fill this step (0.2 bps) |
+| `loss_multiplier` | 1.0 | Extra weight on negative NAV changes |
+
+Two of these are less free than they look:
+
+- **`loss_multiplier` must be 1.0** to keep the game zero-sum. Total NAV is conserved exactly, so
+  `Σ nav_change = 0` across agents; any value above 1 makes `Σ reward < 0`, which makes passing
+  dominant for every agent and collapses the market. That is S1-3, measured: all-pass scored
+  exactly 0.0 while random trading scored −591,027. It shipped at 1.5.
+- **`drawdown_penalty` multiplies a signed change, not a level.** The level was charged on all
+  4,096 steps of an episode, so one early loss taxed every later step even from an idle agent
+  (S2-1). Clipping the change at zero would not have been the fix — see
+  [07 §4.1](07_reward_function.md).
+
+The micro-penalties were calibrated against measurement, not chosen: over 8,000 random-agent steps
+a step that moves NAV at all moves it by a median 1.9e-03 of starting capital, so they sit at
+0.5–1% of that. `passive_bonus` equals `trade_penalty`, making a passive fill net-free while an
+aggressive one costs 0.2 bps.
 
 These were literals inside `Reward_Helper.set_reward` until they were promoted to config — the
 parameters most worth sweeping were the least reachable in the project. The formula they feed is
-documented in [07_reward_function.md](07_reward_function.md) §2, including why
-`drawdown_penalty` in particular dominates the reward at the current scale.
+documented in [07_reward_function.md](07_reward_function.md) §2.
 
 ### 3.3 How the keys reach their consumers
 
@@ -531,6 +550,7 @@ Available encoders:
 | `transformer` | Pre-norm self-attention over the order-book grid, with a learned two-axis positional encoding and attention pooling. |
 | `lstm` | A per-step embedding of the book grid, then an LSTM over the rollout axis. Stateful. |
 | `moe_transformer` | The transformer with each block's feed-forward replaced by a top-k gated mixture of experts. |
+| `jepa` | A transformer that also trains a self-supervised objective: mask part of the book, predict the masked part's *representation* from the rest, scored against an EMA copy of itself. |
 
 #### What a token is
 
@@ -556,6 +576,52 @@ with the narrower one right-padded with zeros. At the shipped layout those are 4
 add market features: sizing to `book_rows` would silently drop every scalar past the
 fourth, and only for the encoders that tokenise, so `mlp` would go on seeing a
 feature the transformer and LSTM no longer received.
+
+#### What `jepa` adds
+
+It is the only encoder that trains on something other than the reward. The policy latent is
+computed from the **unmasked** observation exactly as `transformer`'s is — the agent acts on
+everything it was given — and the masking exists only for the auxiliary loss, which runs in train
+mode only. So inference costs one trunk pass, the same as `transformer`; a training step costs
+two plus the target's.
+
+| Key | Meaning |
+|---|---|
+| `mask_axis` | What a mask hides. `level` hides a contiguous depth band in every snapshot ("what depth is consistent with this touch?"); `time` hides whole snapshots ("where is the book heading?"); `random` uses no structure and is the ablation baseline. A tokenisation that lacks the requested axis falls back to `random` rather than raising, so a `tokenization × mask_axis` sweep needs no special cases |
+| `mask_ratio` | Fraction of tokens hidden. Clamped so a mask is never empty (nothing to predict) or total (no context) |
+| `predictor_layers`, `predictor_dim` | The predictor is deliberately narrower than the trunk. A predictor able to invert any encoding would let the trunk emit anything at all, a constant included |
+| `ema_decay` | How slowly the target trunk follows the online one. The lagging, frozen target is the primary anti-collapse mechanism — a constant encoder cannot satisfy a moving target |
+| `aux_loss_coeff` | Weight on the latent-prediction term in PPO's total loss |
+| `variance_coeff` | Weight on a VICReg-style hinge that pushes back once the latent's spread starts falling |
+| `world_model` | Also train the **action-conditioned** term: `ẑ_{t+1} = P(z_t, a_t)`, scored against the target encoder's view of `o_{t+1}`. Off by default |
+| `world_model_coeff` | Weight on that term |
+
+#### The world model
+
+What it learns is the **latent market impact of an order** — how the book responds to a market
+order versus a passive quote versus a cancel. That is a first-class microstructure quantity, and
+this environment generates it endogenously, which is the setting [01](01_overview.md) §1.3
+describes.
+
+It needs `Columns.NEXT_OBS` in the train batch and PPO does not add it, so `train.py` attaches
+RLlib's `AddNextObservationsFromEpisodesToTrainBatch` **only when `world_model` is on**. No other
+architecture pays for an observation-sized column per row that it never reads.
+
+**The honest bound.** `z_{t+1}` depends on every agent's action and the predictor conditions on one
+of them, so it is fitting a conditional expectation over the opponents. Its loss therefore has a
+non-zero floor. That is not underfitting — it is an opponent model, and tuning the floor away would
+mean overfitting to noise.
+
+**Watch `jepa_latent_std`.** This is the same class of trap as `moe_max_expert_share`, and worse.
+A collapsed JEPA maps every observation to the same latent, which makes the prediction *perfect* —
+its loss goes to **zero**, which reads as success, and throughput is unchanged. `jepa_latent_std`
+goes to zero at the same moment and is the only thing that distinguishes the two; it should sit
+near 1.0, the scale LayerNormed targets already have. `jepa_offdiag_cov` catches the slower
+variant, where variance holds up while the dimensions become redundant.
+
+`jepa` is also the only encoder that brings its own RLModule and Learner classes, declared through
+`@register`. Both subclass the defaults, so nothing about the other architectures changes — see
+[22 §4.2](22_jepa_integration.md).
 
 Every non-`mlp` encoder LayerNorms immediately after its input projection, and that
 is deliberately not configurable. Measured on real steps, the four channels in a
@@ -710,7 +776,7 @@ placing a learner on a device that is not there.
 #### The `lstm` encoder and its two time axes
 
 `lstm` is the *structured* recurrent encoder, not RLlib's `use_lstm` shortcut. The
-shortcut feeds the raw 168-float observation to a stock MLP tokenizer, discarding
+shortcut feeds the raw 177-float observation to a stock MLP tokenizer, discarding
 the book structure exactly as `mlp` does. This one's tokenizer reads the grid.
 
 Two different time axes are involved and they are easy to confuse:
@@ -772,7 +838,7 @@ pushed — the same confound the per-encoder `lr` override exists to remove. Ave
 the floor is `top_k` at perfectly uniform routing, so an untrained gate reads just
 above 2 at the shipped settings regardless of depth.
 
-**Expect collapse, and watch for it.** This env's observation is 168 floats and the
+**Expect collapse, and watch for it.** This env's observation is 177 floats and the
 league is small, so MoE's premise — capacity you cannot afford densely — may simply
 not apply. A collapsed mixture and a healthy one have identical losses and identical
 throughput; the only difference is `moe_max_expert_share` and `moe_min_expert_share`
@@ -827,6 +893,27 @@ damage getting them wrong does:
    parameters and a fraction of the throughput is a different claim from a win at
    parity, and the per-iteration line reports `env steps sampled` for the other half.
 
+5. **Score them without the reward first.** Points 1–4 are about running the comparison
+   well; this one is about whether the comparison can answer anything at all. While S1-1
+   holds, `vf_explained_var` is ~9e-05 and PPO is REINFORCE with a batch baseline; while
+   S1-3 holds, passivity is the joint optimum. An architecture ranking taken from returns
+   under those two is a ranking of how fast each architecture descends to doing nothing.
+
+   ```bash
+   python -m gym_continuousDoubleAuction.train.probe --encoders mlp transformer lstm
+   ```
+
+   That ranks encoders on public microstructure targets — the next midpoint move, the
+   spread change, depth imbalance — with no reward, policy or value function in the path.
+   It runs in seconds, needs no training run, and scores each architecture *untrained* as
+   well, which is the inductive-bias baseline a trained encoder has to beat. See
+   [23_probe_harness.md](23_probe_harness.md).
+
+   It does not replace a training comparison. It answers "does this architecture represent
+   the market better", not "does it trade better", and the second question genuinely needs
+   S1-1 and S1-3 fixed.
+
 For `moe_transformer` also watch `moe_max_expert_share` and `moe_min_expert_share` in
 the learner metrics — a collapsed mixture is indistinguishable from a healthy one by
 loss or throughput alone.
+

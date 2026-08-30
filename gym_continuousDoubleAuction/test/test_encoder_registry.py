@@ -37,7 +37,10 @@ from gym_continuousDoubleAuction.train.model.encoders import (
     selectable_encoder_types,
     validate_encoder_type,
 )
-from gym_continuousDoubleAuction.train.model.encoders.obs_layout import ObsLayout
+from gym_continuousDoubleAuction.train.model.encoders.obs_layout import (
+    ObsLayout,
+    split_private,
+)
 from gym_continuousDoubleAuction.train.model.encoders.tokenize import (
     TOKENIZATIONS,
     token_shape,
@@ -119,6 +122,85 @@ def test_layout_rejects_a_non_flat_space():
         ObsLayout.from_obs_space(gym.spaces.Box(-1.0, 1.0, shape=(4, 42)))
 
 
+class TestPrivateDimIsGuardedByArithmeticAlone:
+    """What stops a changed `private_dim` from silently reinterpreting a
+    checkpoint's observation.
+
+    `n_hist` is in `train.STRUCTURAL_CONFIG_KEYS`, so a restore that changes it
+    is refused by name. `private_dim` is not - it lives in
+    `tunable_constants.json` beside `k_rows` and `extra_dim`, and the only thing
+    standing between a changed value and a silently misread observation is
+    `from_obs_space` failing to divide. That guard is load-bearing and untested
+    until here, so these pin both what it catches and the one case it cannot.
+    """
+
+    @staticmethod
+    def _layout():
+        from gym_continuousDoubleAuction.config_loader import group
+
+        return group("tunable_constants.json", "observation_layout")
+
+    def _space(self, layout, private_dim, n_hist=4):
+        snapshot = layout["book_rows"] * layout["k_rows"] + layout["extra_dim"]
+        return gym.spaces.Box(
+            -np.inf, np.inf, shape=(n_hist * snapshot + private_dim,),
+            dtype=np.float32,
+        )
+
+    def _with_private_dim(self, monkeypatch, layout, private_dim):
+        from gym_continuousDoubleAuction.train.model.encoders import obs_layout
+
+        monkeypatch.setattr(
+            obs_layout, "group",
+            lambda _f, _g: {**layout, "private_dim": private_dim},
+        )
+
+    @pytest.mark.parametrize("changed_by", [-3, -1, 1, 3])
+    def test_a_changed_private_dim_raises(self, monkeypatch, changed_by):
+        """The realistic case: a field added to or removed from the private
+        block. The leftover is not a whole number of snapshots, so it raises
+        instead of reporting a different `n_hist`."""
+        layout = self._layout()
+        saved = self._space(layout, layout["private_dim"])
+
+        self._with_private_dim(monkeypatch, layout, layout["private_dim"] + changed_by)
+
+        with pytest.raises(ValueError, match="whole number"):
+            ObsLayout.from_obs_space(saved)
+
+    def test_the_unchanged_value_still_builds(self, monkeypatch):
+        layout = self._layout()
+        saved = self._space(layout, layout["private_dim"])
+
+        self._with_private_dim(monkeypatch, layout, layout["private_dim"])
+
+        assert ObsLayout.from_obs_space(saved).n_hist == 4
+
+    def test_a_change_of_exactly_one_snapshot_is_not_caught(self, monkeypatch):
+        """The blind spot, pinned so it is a known property rather than a
+        surprise.
+
+        The guard is arithmetic: it catches a `private_dim` that leaves a
+        remainder. A change of exactly `snapshot_dim` leaves none, so the same
+        vector is read as one fewer snapshot plus a larger private block -
+        wrong, and silent. Nothing here defends against that; only putting
+        `private_dim` in `STRUCTURAL_CONFIG_KEYS` would. It is documented
+        rather than fixed because the guard covers every change anyone would
+        plausibly make by hand, and this one is off by 42.
+        """
+        layout = self._layout()
+        snapshot = layout["book_rows"] * layout["k_rows"] + layout["extra_dim"]
+        saved = self._space(layout, layout["private_dim"])
+
+        self._with_private_dim(
+            monkeypatch, layout, layout["private_dim"] + snapshot
+        )
+
+        built = ObsLayout.from_obs_space(saved)
+        assert built.n_hist == 3, "reinterpreted, not rejected"
+        assert built.flat_dim == saved.shape[0]
+
+
 # --- Tokenisation ------------------------------------------------------------
 
 @pytest.mark.parametrize("tokenization", TOKENIZATIONS)
@@ -141,15 +223,38 @@ def test_tokenize_rejects_an_unknown_tokenization(spaces):
         tokenize(obs, layout, "sideways")
 
 
-def test_time_tokenization_preserves_the_observation(spaces):
-    """`time` is a pure reshape, so nothing may be dropped or reordered."""
+def test_time_tokenization_preserves_the_book(spaces):
+    """`time` is a pure reshape of the book part, dropping nothing, reordering
+    nothing - and carrying none of the private tail, which is not tokenised."""
     obs_space, _ = spaces
     layout = ObsLayout.from_obs_space(obs_space)
     obs = torch.from_numpy(np.stack([obs_space.sample() for _ in range(2)]))
+    book, _private = split_private(obs, layout)
 
     tokens = tokenize(obs, layout, "time")
 
-    assert torch.equal(tokens.reshape(2, -1), obs)
+    assert torch.equal(tokens.reshape(2, -1), book)
+
+
+def test_tokenize_ignores_the_private_block(spaces):
+    """Changing an agent's private state must not move a single book token.
+
+    The tail is per-agent and the book prefix is shared, so a tokeniser that
+    let the tail leak in would make one agent's attention depend on another's
+    inventory - and it would do so silently.
+    """
+    obs_space, _ = spaces
+    layout = ObsLayout.from_obs_space(obs_space)
+    obs = torch.from_numpy(np.stack([obs_space.sample()]))
+
+    other = obs.clone()
+    other[0, layout.book_flat_dim :] += 1.0
+
+    for tokenization in TOKENIZATIONS:
+        assert torch.equal(
+            tokenize(obs, layout, tokenization),
+            tokenize(other, layout, tokenization),
+        ), tokenization
 
 
 def test_level_tokens_carry_one_level_per_token(spaces):
@@ -163,7 +268,7 @@ def test_level_tokens_carry_one_level_per_token(spaces):
     obs = torch.from_numpy(np.stack([obs_space.sample()]))
 
     tokens = tokenize(obs, layout, "level")
-    newest = obs[0, -layout.snapshot_dim :]
+    newest = split_private(obs, layout)[0][0, -layout.snapshot_dim :]
 
     for level in range(layout.k_rows):
         expected = torch.tensor(
@@ -179,7 +284,7 @@ def test_level_tokenization_appends_a_global_token(spaces):
     obs = torch.from_numpy(np.stack([obs_space.sample()]))
 
     tokens = tokenize(obs, layout, "level")
-    newest = obs[0, -layout.snapshot_dim :]
+    newest = split_private(obs, layout)[0][0, -layout.snapshot_dim :]
     extras = newest[layout.book_dim :]
 
     assert tokens.shape[1] == layout.k_rows + 1
@@ -322,10 +427,14 @@ class TestTokenWidthFitsBothKindsOfToken:
     market features. A fifth would have stopped reaching the tokenising
     encoders while `mlp` kept seeing it - so the architectures would have been
     compared on different observations, with nothing to say so.
+
+    Each layout here carries a non-zero `private_dim` as well: these are token
+    *width* tests, so a private tail that is present and correctly ignored is a
+    stronger fixture than one that is absent.
     """
 
     def test_wide_extras_are_not_truncated(self):
-        layout = ObsLayout(n_hist=2, book_rows=4, k_rows=3, extra_dim=5)
+        layout = ObsLayout(n_hist=2, book_rows=4, k_rows=3, extra_dim=5, private_dim=3)
         obs = torch.arange(layout.flat_dim, dtype=torch.float32).unsqueeze(0)
 
         tokens = tokenize(obs, layout, "both")
@@ -335,7 +444,7 @@ class TestTokenWidthFitsBothKindsOfToken:
 
     @pytest.mark.parametrize("tokenization", TOKENIZATIONS)
     def test_declared_shape_still_matches_for_wide_extras(self, tokenization):
-        layout = ObsLayout(n_hist=2, book_rows=4, k_rows=3, extra_dim=5)
+        layout = ObsLayout(n_hist=2, book_rows=4, k_rows=3, extra_dim=5, private_dim=3)
         obs = torch.zeros(1, layout.flat_dim)
 
         tokens = tokenize(obs, layout, tokenization)
@@ -344,7 +453,7 @@ class TestTokenWidthFitsBothKindsOfToken:
 
     def test_book_tokens_are_padded_when_extras_are_wider(self):
         """The narrower kind keeps trailing zeros rather than being reshaped."""
-        layout = ObsLayout(n_hist=1, book_rows=2, k_rows=3, extra_dim=5)
+        layout = ObsLayout(n_hist=1, book_rows=2, k_rows=3, extra_dim=5, private_dim=3)
         obs = torch.arange(layout.flat_dim, dtype=torch.float32).unsqueeze(0)
 
         tokens = tokenize(obs, layout, "level")
@@ -358,7 +467,7 @@ class TestTokenWidthFitsBothKindsOfToken:
     def test_shipped_layout_is_unchanged(self):
         """4 fields and 2 scalars: the width was already correct, so this fix
         must not move it."""
-        layout = ObsLayout(n_hist=4, book_rows=4, k_rows=10, extra_dim=2)
+        layout = ObsLayout(n_hist=4, book_rows=4, k_rows=10, extra_dim=2, private_dim=9)
 
         assert token_shape(layout, "both") == (44, 4)
         assert token_shape(layout, "level") == (11, 4)

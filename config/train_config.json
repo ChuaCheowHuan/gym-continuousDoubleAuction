@@ -2,12 +2,9 @@
   "_source": "gym_continuousDoubleAuction/train/train.py (TrainConfig dataclass)",
   "_description": "THE source of every TrainConfig value. The dataclass declares the schema - field names, types, and what each knob does - and holds no values: each field's default is read from here. Editing this file changes what `python -m gym_continuousDoubleAuction.train.train` does, with no flag needed. Every field must be present; a missing key raises when a TrainConfig is built. Groups are flattened one level, keys starting with _ are documentation, unknown keys raise. Derived properties (train_batch_size, checkpoint_dir) are computed in code and are not listed.",
   "_note": "Precedence is this file -> `--config <other file>` -> explicit CLI flags. The `environment` group is forwarded to the env by TrainConfig.env_config, which renames exactly one key: num_agents here becomes num_of_agents in the env config dict. num_trained_agents is NOT forwarded - it configures the policy/module wiring, not the env. A bare env built without these keys falls back to config/env_defaults.json, whose standalone values deliberately differ from the training values here. The ppo and league_self_play groups are also read directly by model_handler.default_model_config and SelfPlayCallback when those are called without arguments.",
-
   "environment": {
     "num_agents": 8,
-
     "num_trained_agents": 2,
-
     "init_cash": 1000000,
     "tick_size": 1,
     "tape_display_length": 10,
@@ -16,63 +13,53 @@
     "n_hist": 4,
     "initial_price_min": 10,
     "initial_price_max": 100,
-
     "min_size": 1,
     "mkt_max_size": 100,
     "limit_size_multiple": 10,
-
-    "order_penalty": 0.1,
-    "trade_penalty": 0.05,
+    "order_penalty": 1e-05,
+    "trade_penalty": 2e-05,
     "drawdown_penalty": 0.2,
-    "passive_bonus": 0.1,
-    "loss_multiplier": 1.5
+    "passive_bonus": 2e-05,
+    "loss_multiplier": 1.0,
+    "_note_reward_coefficients": "See config/env_defaults.json for how these are scaled and why loss_multiplier is 1.0. Both files must agree; test_config_sources pins the fallback behaviour."
   },
-
   "rollouts": {
     "_note": "sample_timeout_s is how long the driver waits for a remote env runner to return its share of train_batch_size (= max_step * num_episodes_per_iter) before giving up on it. RLlib's default is 60s, which this environment cannot meet: the order book is pure Python at roughly 60 env steps/s per runner, so 16,384 steps across 2 runners needs ~2 minutes. A timed-out iteration is not a slow iteration - the partial rollouts are discarded, the learner is handed nothing, and the run does zero gradient work while still logging iterations and writing checkpoints. Size this above the time one iteration's sampling actually takes, or shrink the batch by lowering max_step / num_episodes_per_iter. It is ignored when num_env_runners is 0, since the driver then samples in-process.",
-
     "num_env_runners": 0,
     "num_envs_per_env_runner": 1,
     "num_cpus_per_env_runner": 0.25,
     "sample_timeout_s": 600.0
   },
-
   "learner": {
     "num_learners": 0,
     "num_gpus_per_learner": 0.25
   },
-
   "ppo": {
     "num_episodes_per_iter": 4,
     "num_epochs": 4,
     "lr": 5e-05,
-    "fcnet_hiddens": [256, 256],
+    "fcnet_hiddens": [
+      256,
+      256
+    ],
     "fcnet_activation": "tanh",
     "vf_share_layers": false,
     "minibatch_size": null
   },
-
   "encoder": {
     "_source": "gym_continuousDoubleAuction/train/model/encoders/ (ENCODER_REGISTRY)",
-
     "_note": "Selects the network the *trainable* PPO modules encode observations with. The frozen RandomRLModule baselines have no network and ignore this entirely. `mlp` is the default and is a pass-through: it resolves to the stock RLlib DefaultModelConfig built from the `ppo` group's fcnet_hiddens / fcnet_activation / vf_share_layers, touching none of the custom encoder machinery, so a default run and every checkpoint written by one are unaffected by this group existing. Any other value routes the trainable modules through CDACatalog and a custom encoder. An unregistered name raises at config-build time, naming the ones that are registered.",
-
     "_note_structural": "encoder_type and everything in encoder_specs are STRUCTURAL_CONFIG_KEYS: the restored weights depend on them, so changing one in the same pass as is_restore is a hard error rather than a silent no-op. Comparing architectures means separate runs, not a resume.",
-
     "_note_specs": "Per-architecture hyperparameters, keyed by encoder_type. `mlp` has no block: its shape comes from the `ppo` group, which is where it has always lived and where STRUCTURAL_CONFIG_KEYS already guards it. A block is added here alongside each new encoder, so an entry existing is the signal that its encoder is implemented.",
-
     "_note_common_keys": "Two further keys are accepted in EVERY spec block and handled centrally: `lr` and `vf_share_layers`. Both defaults in the `ppo` group were chosen for the 2x256 tanh MLP - holding an attention stack to that learning rate measures the learning rate rather than the architecture, and vf_share_layers false doubles a transformer where it barely costs an MLP anything. Omit them to inherit the `ppo` group; set either to override it for that encoder only. They are not listed in the blocks below because absent means inherit, and a null would be indistinguishable from a value nobody chose.",
-
     "encoder_type": "mlp",
-
+    "_note_pretrained": "pretrained_encoder_path points at a directory written by `python -m gym_continuousDoubleAuction.train.pretrain`, whose weights the trainable modules start from instead of a fresh initialisation. null means no pretraining. The checkpoint carries an encoder fingerprint that is checked against encoder_type and encoder_specs when the module spec is built, so pointing at a checkpoint for a different architecture is a hard error there rather than a shape failure inside RLlib. It is NOT a structural key: it changes where the weights start, not their shape, so resuming a run that used one is fine - the restored checkpoint already contains whatever pretraining contributed. `mlp` cannot use one, having no self-supervised objective that could have produced the weights.",
+    "pretrained_encoder_path": null,
     "encoder_specs": {
       "transformer": {
         "_note": "tokenization decides what a token is: 'time' = one per snapshot (n_hist of them - too few to attend over at n_hist 4, kept for ablation), 'level' = one per book level from the newest snapshot, 'both' = one per (snapshot, level) cell. Under 'level' and 'both' a token is that level's [bid_price, bid_size, ask_price, ask_size] and the market-level scalars ride on an extra global token per snapshot, so the sequence is n_hist * (k_rows + 1) long, not n_hist * k_rows.",
-
         "_note_dropout": "Leave at 0 for PPO. The ratio exp(logp_new - logp_old) compares a log-prob recorded during rollout with one recomputed on the learner; dropout is active for the second and not the first, so a non-zero value injects mask noise directly into the policy-gradient ratio. The knob exists because it is standard on this component, not because it is advisable here.",
-
         "_note_cost": "vf_share_layers in the ppo group is false, which builds two independent trunks - so a transformer here costs twice these numbers. That default is deliberate (a shared value trunk destabilises against non-stationary league opponents), so it is a real trade-off rather than a free saving.",
-
         "tokenization": "both",
         "d_model": 128,
         "num_heads": 4,
@@ -81,14 +68,10 @@
         "dropout": 0.0,
         "pool": "attention"
       },
-
       "lstm": {
         "_note": "The structured LSTM, not RLlib's use_lstm shortcut. tokenization / d_model / pool / num_heads configure the per-step tokenizer, which embeds one observation's book grid; hidden_dim / num_layers configure the LSTM that then recurs over the ROLLOUT axis on top of those embeddings. Two different time axes: the tokenizer collapses n_hist, which is a window inside one observation, while the LSTM's memory runs across env steps.",
-
         "_note_n_hist": "Those two axes overlap. With n_hist 4 the LSTM re-reads the last four snapshots at every step, so its memory is partly redundant with the observation. Setting n_hist to 1 for a recurrent run removes that, at the cost of invalidating checkpoints - n_hist is structural.",
-
         "_note_max_seq_len": "Applied to the top-level model config, not to the encoder: RLlib's connectors read it to cut a batch into training sequences before any encoder is called. It is declared in this block because it belongs to this encoder conceptually, and build_trainable_module_spec lifts it across.",
-
         "tokenization": "both",
         "d_model": 128,
         "pool": "mean",
@@ -97,16 +80,11 @@
         "num_layers": 1,
         "max_seq_len": 20
       },
-
       "moe_transformer": {
         "_note": "The transformer above with each block's dense feed-forward replaced by a top-k gated mixture of experts. Every transformer key means the same thing here, except that ff_dim is now each EXPERT's width - so the feed-forward parameter count is roughly num_experts times what the same ff_dim buys in `transformer`, while the per-token compute is top_k times it.",
-
         "_note_aux": "aux_loss_coeff weights the Switch-Transformer load-balancing term, which is the only thing pushing the gate to use more than one expert - nothing in the policy gradient rewards it for doing so, and collapsing onto a single expert is a perfectly good local optimum that yields a dense feed-forward you paid num_experts times over for. Read by CDAPPOTorchLearner, not by the encoder.",
-
         "_note_aux_scale": "The term is AVERAGED over MoE blocks, not summed, so this coefficient means the same thing whatever the stack looks like. Summed - which is what Switch Transformer does - it would scale with num_layers and double when vf_share_layers is false, because the critic's blocks route separately and count too: a coefficient tuned at num_layers 2 would apply twice the pressure at 4, silently, and comparing two MoE configs of different depths would confound depth with how hard the gate was being pushed. Averaged, the floor is top_k (2 at these settings) at perfectly uniform routing, so an untrained gate reads just above 2.",
-
         "_note_expect_collapse": "Set expectations. This env's observation is 168 floats and the league is small, so MoE's premise - capacity you cannot afford densely - may not apply. Watch moe_max_expert_share and moe_min_expert_share in the learner metrics: a healthy mixture holds both near 1/num_experts, and a collapsed one is indistinguishable from a healthy one by loss or throughput alone.",
-
         "tokenization": "both",
         "d_model": 128,
         "num_heads": 4,
@@ -117,15 +95,36 @@
         "num_experts": 4,
         "top_k": 2,
         "aux_loss_coeff": 0.01
+      },
+      "jepa": {
+        "_note": "Joint-Embedding Predictive Architecture. The transformer keys mean what they do in that block; the rest configure the self-supervised objective. Predicts MASKED TOKENS' LATENTS from the visible ones, scored against an EMA copy of the encoder - nothing reconstructs the input, which matters here because a reconstruction loss would be dominated by sqrt(volume) jitter (measured channel sigmas [1.27, 8.17, 0.046, 9.52]).",
+        "_note_policy_latent": "The POLICY latent is always computed from the UNMASKED observation - the agent acts on everything it was given. Masking exists only for the auxiliary loss, and runs in train mode only, so a training step costs two trunk passes plus the target's while inference costs exactly one, the same as `transformer`.",
+        "_note_mask_axis": "What a mask hides. 'level' hides a contiguous depth band in every snapshot (what depth is consistent with this touch?); 'time' hides whole snapshots (where is the book heading?); 'random' uses no structure and is the ablation baseline. Under 'level' tokenisation there is only one snapshot, so all three degenerate to random.",
+        "_note_collapse": "WATCH jepa_latent_std IN THE LEARNER METRICS. A collapsed JEPA drives its prediction loss to ZERO, which reads as success - loss and throughput look identical to a working one. latent_std goes to 0 exactly when every observation maps to the same latent and should sit near 1.0. variance_coeff weights a hinge that pushes back once it starts falling; jepa_offdiag_cov catches dimensional collapse, where variance holds up but the dimensions become redundant.",
+        "_note_ema_decay": "How slowly the target encoder follows the online one. The asymmetry - a frozen, lagging target the predictor has to chase - is the primary anti-collapse mechanism; a constant encoder cannot satisfy a moving target. Higher is slower and more stable; too high and the target carries no signal.",
+        "_note_world_model": "world_model turns on the ACTION-CONDITIONED term: predict the next observation's latent from this one's plus the action taken, z_hat_t+1 = P(z_t, a_t), scored against the EMA target encoder's view of o_t+1. What it learns is the latent market impact of an order - how the book responds to a market order versus a passive quote versus a cancel - which is a microstructure quantity this env generates endogenously. Off by default because it needs Columns.NEXT_OBS in the train batch, which PPO does not add; train.py attaches RLlib's learner connector for it ONLY when this is on, so no other architecture pays for a column it never reads. Honest bound: z_t+1 depends on every agent's action and this conditions on one of them, so the predictor fits a conditional expectation over the opponents. The loss therefore has a non-zero floor which is NOT underfitting - it is an opponent model, and tuning it away would mean overfitting to noise.",
+        "tokenization": "both",
+        "d_model": 128,
+        "num_heads": 4,
+        "num_layers": 2,
+        "ff_dim": 256,
+        "dropout": 0.0,
+        "pool": "attention",
+        "mask_axis": "level",
+        "mask_ratio": 0.4,
+        "predictor_layers": 1,
+        "predictor_dim": 64,
+        "ema_decay": 0.996,
+        "aux_loss_coeff": 0.1,
+        "variance_coeff": 1.0,
+        "world_model": false,
+        "world_model_coeff": 0.1
       }
     }
   },
-
   "league_self_play": {
     "_note": "nav_tolerance is the absolute cash tolerance for the episode-end NAV conservation check. The ledger is Decimal end to end and the check now parses info['NAV'] back with Decimal rather than float, so conservation is exact by construction and the expected error is 0, not merely small. The tolerance is therefore headroom for a change that legitimately removes cash from the system, such as fees - it is not absorbing arithmetic noise. Widen it for such a change; it can be set to 0 for a run that wants the invariant enforced exactly. strict_nav_check true stops the run on a violation, because a broken conservation invariant means the ledger is corrupt and everything trained after it is meaningless; false downgrades it to an ERROR log plus the nav_conservation_error metric, for a run that would rather keep going and be inspected afterwards. The stop is decided on the driver at the end of the iteration, not raised inside the episode hook: that hook runs on the env runner, where RLlib's fault tolerance swallows the exception and restarts the worker instead of ending the run.",
-
     "_note_episode_record": "episode_data_dir is the root of the per-step episode record, written as Parquet - one row per (episode, step, agent), carrying the whole info dict. null switches it off entirely, including the in-memory accumulation behind it. It is resolved to an absolute path with run_id appended before it reaches the callback, because the callback is pickled into every env runner and a relative path would be resolved against whatever working directory that worker inherited. episode_sample_every records one episode in N, chosen by a hash of the episode id so every runner samples the same subset without coordinating; the record is ~34MB per 4096-step episode, so this is what makes the default affordable. episode_max_bytes caps what each writer keeps, deleting its own oldest files first - per writer rather than per directory, because deleting another worker's files is a cross-process race for no benefit, so a run with N runners keeps up to N times this. episode_rows_per_file is the write batch: at num_agents rows per env step, a file is episode_rows_per_file / num_agents steps.",
-
     "std_dev_multiplier": 0.1,
     "max_champions": 8,
     "min_iterations_between_champions": 2,
@@ -138,14 +137,10 @@
     "nav_tolerance": 1e-06,
     "strict_nav_check": true
   },
-
   "run": {
     "_note": "log_level is Ray's, passed to PPOConfig.debugging; cda_log_level is this package's own, applied by logging_setup and exported as $CDA_LOG_LEVEL so Ray's worker processes pick it up. They are separate because Ray at INFO is noise while this package at INFO is the per-episode NAV table and the per-iteration league statistics - the output a run is meant to produce. Set cda_log_level to DEBUG for the per-step render and account tables, WARNING for a quiet run. ray_log_encoding is handed to ray.LoggingConfig, which is the only lever that reaches a worker's Ray-side output - the env-runner restart notices and the traceback RLlib swallows when a runner dies are emitted by Ray's own loggers in processes this package never configures. TEXT keeps them human-readable with job and worker ids attached; JSON makes them machine-parseable; an empty string leaves Ray's logging entirely alone. Setting it also turns off propagation from this package's logger to the root one, since ray.LoggingConfig configures root and both handlers would otherwise print every line twice.",
-
     "_note_run": "num_iters is a target, not an amount: a restored run trains up to iteration num_iters, so a 16-iteration run that resumes at 9 does 7 more. Set num_iters_is_delta true for the old behaviour, where num_iters is how many iterations to run from wherever the restore landed. restore_path pins which checkpoint to resume from; null takes the newest under log_base_dir/chkpt, which is what a disconnect wants. It requires is_restore, and is deliberately recorded here rather than passed at the call site, so which checkpoint a run continued from is written down beside the run.",
-
     "_note_run_id": "Names the per-run directory under log_base_dir that holds progress.jsonl and the run logs. null generates one from the local date, time and four random hex digits, so two runs never write into each other's files - a shared run.log is the cross-process RotatingFileHandler race the per-worker files exist to avoid, and a shared progress.jsonl can interleave two drivers' writes inside a single JSON line. Set it to a fixed string to resume into an existing run directory and extend its progress.jsonl, which is what a disconnected run that is being restored wants. The checkpoint tree deliberately stays at log_base_dir/chkpt, outside the run directory: restore looks for the newest iter_* across runs, so scoping it per run would make every resumed run start from nothing.",
-
     "num_iters": 16,
     "num_iters_is_delta": false,
     "chkpt_freq": 2,

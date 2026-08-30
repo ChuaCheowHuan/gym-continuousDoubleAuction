@@ -80,6 +80,7 @@ def build_multi_rl_module_spec(
     vf_share_layers=False,
     encoder_type=None,
     encoder_specs=None,
+    pretrained_path=None,
 ):
     """Build the MultiRLModuleSpec for a league-based self-play run.
 
@@ -95,6 +96,11 @@ def build_multi_rl_module_spec(
             None reads the `encoder` group of `config/train_config.json`.
         encoder_specs: Per-encoder hyperparameter blocks. None reads the same
             group.
+        pretrained_path: A `train.pretrain` checkpoint the trainable modules
+            start from. Every trainable module gets the same one - they train
+            against each other from a shared representation, which is the point
+            of having pretrained it. Champions are snapshots of a trained
+            module and so never read this.
 
     Returns:
         MultiRLModuleSpec covering policy_0..policy_(n-1).
@@ -122,6 +128,7 @@ def build_multi_rl_module_spec(
             encoder_specs=encoder_specs,
             fcnet_hiddens=fcnet_hiddens,
             fcnet_activation=fcnet_activation,
+            pretrained_path=pretrained_path,
             vf_share_layers=vf_share_layers,
         )
     for pid in baseline_policy_ids(num_agents, num_trained_agents):
@@ -144,6 +151,7 @@ def create_multi_agent_config(
     vf_share_layers=False,
     encoder_type=None,
     encoder_specs=None,
+    pretrained_path=None,
 ):
     """Everything `AlgorithmConfig.multi_agent(...)` / `.rl_module(...)` needs.
 
@@ -166,6 +174,7 @@ def create_multi_agent_config(
         vf_share_layers=vf_share_layers,
         encoder_type=encoder_type,
         encoder_specs=encoder_specs,
+        pretrained_path=pretrained_path,
     )
     policies = set(spec.rl_module_specs.keys())
     policies_to_train = trainable_policy_ids(num_trained_agents)

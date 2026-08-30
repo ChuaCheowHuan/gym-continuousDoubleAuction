@@ -2,7 +2,6 @@
   "_source": "gym_continuousDoubleAuction/CDA_rand.py (main) and gym_continuousDoubleAuction/train/train.py (_parse_args)",
   "_description": "Defaults for command-line flags that have no other config home. Read through config_loader.cli_default; neither entry point holds a literal default.",
   "_note": "train.py is deliberately absent. Its flags declare argparse.SUPPRESS as their default, so an unset flag is absent from the namespace entirely and the value comes from TrainConfig - whose defaults are train_config.json. Duplicating them here would create a second set that can disagree. Precedence for train.py is: train_config.json -> --config <other file> -> explicit flags.",
-
   "cda_env_rand": {
     "_module": "python -m gym_continuousDoubleAuction.CDA_rand",
     "_note": "Standalone random-agent simulation. It builds an env config directly rather than going through TrainConfig, so these are its own defaults; every env key it does not set falls back to env_defaults.json. log_level null defers to the logging group of tunable_constants.json; --render on its own raises the level to DEBUG, which is where the per-step render writes.",
@@ -12,5 +11,53 @@
     "is_render": false,
     "log_level": null,
     "seed": null
+  },
+  "cda_probe": {
+    "_module": "python -m gym_continuousDoubleAuction.train.probe",
+    "_note": "Reward-free encoder scoring - see doc/23_probe_harness.md. Independent of TrainConfig on purpose: the harness exists because the reward cannot currently settle an encoder comparison (S1-1, S1-3), so it must not read the same group whose defaults were chosen for training. log_level null defers to the logging group of tunable_constants.json.",
+    "_note_corpus": "num_episodes / max_step / num_agents describe the random-agent rollouts used when --parquet is not given. The product is the corpus size, and the split is contiguous, so more EPISODES buys more independent price anchors while more STEPS only lengthens each one - three short episodes generalise better than one long one.",
+    "_note_encoders": "Scored untrained, i.e. at initialisation. That is the inductive-bias baseline a trained encoder from --checkpoint has to beat; reporting a trained encoder without it credits the architecture with whatever its initialisation was already worth.",
+    "_note_horizons": "Steps ahead. realized_vol declares min_horizon 2 and is skipped at horizon 1 rather than reporting a column of zeros.",
+    "num_episodes": 3,
+    "max_step": 512,
+    "num_agents": 4,
+    "seed": 0,
+    "encoders": [
+      "mlp",
+      "transformer"
+    ],
+    "targets": [
+      "mid_return",
+      "mid_moves",
+      "spread_change",
+      "imbalance_change",
+      "two_sided",
+      "realized_vol"
+    ],
+    "horizons": [
+      1,
+      5,
+      20
+    ],
+    "module_id": "policy_0",
+    "log_level": null
+  },
+  "cda_pretrain": {
+    "_module": "python -m gym_continuousDoubleAuction.train.pretrain",
+    "_note": "Offline JEPA pretraining - see doc/24_pretraining.md. Trains an encoder's self-supervised objective on observations alone, with no reward, policy or opponents, then writes the weights beside an encoder fingerprint that a mismatched load refuses. log_level null defers to the logging group of tunable_constants.json.",
+    "_note_corpus": "num_episodes / max_step / num_agents describe the random-agent rollouts used when --parquet is not given. A book made by random agents does not look like one made by a trained league, so prefer --parquet over a real run's episode record once one exists; these defaults are a warm start, not a training corpus.",
+    "_note_collapse": "Watch latent_std in the report, not the loss. A collapsed JEPA maps every observation to the same vector, which makes its prediction perfect - the loss goes to zero and reads as success. The CLI exits non-zero when it detects one.",
+    "_note_spec": "The encoder's hyperparameters are NOT duplicated here: they come from the encoder_specs block of train_config.json, so a pretrained encoder is built from the same numbers the training run will build it from, and the fingerprint written beside the weights is comparable with the one train.py computes.",
+    "out_dir": "pretrained/jepa",
+    "encoder_type": "jepa",
+    "steps": 300,
+    "batch_size": 128,
+    "lr": 0.0003,
+    "seed": 0,
+    "log_every": 50,
+    "num_episodes": 6,
+    "max_step": 512,
+    "num_agents": 4,
+    "log_level": null
   }
 }

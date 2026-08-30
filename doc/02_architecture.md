@@ -86,13 +86,16 @@ gym_continuousDoubleAuction/
 │   ├── policy/policy_handler.py        MultiRLModuleSpec, module ID conventions
 │   ├── model/model_handler.py          RandomRLModule + DefaultModelConfig + CDACatalog
 │   ├── model/encoders/                 selectable observation encoders for the trainable modules
+│   ├── probe/                          reward-free encoder scoring (doc/23)
+│   ├── pretrain/                       offline JEPA pretraining (doc/24)
+│   ├── model/jepa_learner.py           JEPA module + learner (doc/22 4.2)
 │   ├── callbk/…_self_play_callback.py  league: champions, matchmaking, metrics, the record
 │   └── helper/helper.py                order-imbalance / mid-price utilities (unused)
 ├── visualize/                          offline charts from the episode Parquet + progress.jsonl
 │   ├── run_all.py                        regenerates every chart
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               623 unit tests
+└── test/                               770 unit tests
     └── integration/                    59 tests that build real Algorithms
 ```
 
@@ -346,7 +349,8 @@ builds one 42-float snapshot:
 
 `M` is the L1 midpoint with a documented fallback chain (one-sided book → that side's best;
 empty book → `last_price`; degenerate → 100.0), so `log(M)` is always defined. The final
-observation is `n_hist` snapshots concatenated, default 4 → **168 floats**. On reset the deque is
+observation is `n_hist` snapshots concatenated plus a per-agent private block, default
+4 × 42 + 9 → **177 floats**. On reset the deque is
 pre-filled with `n_hist` copies of the initial snapshot so the shape is constant from step 0.
 
 **The history deque is a single shared object on the environment**, and the same stacked vector
@@ -390,7 +394,7 @@ resolving to a number written in Python. The full rules are in
 | `initial_price_min` | 10 | 10 | Lower bound of the per-episode price anchor |
 | `initial_price_max` | 100 | 100 | Upper bound of the per-episode price anchor |
 | `min_size`, `mkt_max_size`, `limit_size_multiple` | 1 / 100 / 10 | same | Order sizing, consumed by `Action_Helper` |
-| `order_penalty`, `trade_penalty`, `drawdown_penalty`, `passive_bonus`, `loss_multiplier` | 0.1 / 0.05 / 0.2 / 0.1 / 1.5 | same | Reward coefficients, consumed by `Reward_Helper` |
+| `order_penalty`, `trade_penalty`, `drawdown_penalty`, `passive_bonus`, `loss_multiplier` | 1e-05 / 2e-05 / 0.2 / 2e-05 / 1.0 | same | Reward coefficients, consumed by `Reward_Helper`. Each multiplies a quantity already expressed as a fraction of starting NAV, so 1e-05 is one basis point of initial capital. **`loss_multiplier` must stay 1.0** or the reward stops being zero-sum — see [07_reward_function.md](07_reward_function.md) §2.1 |
 
 The standalone column is [`config/env_defaults.json`](../config/env_defaults.json) and the
 training column is the `environment` group of
@@ -578,7 +582,7 @@ flowchart TB
     BOOK -->|"trades, residue"| BOOK
     BOOK -->|"mark_to_mkt"| ENV
     ENV --> OBSH
-    OBSH -->|"obs 168 floats"| RLM
+    OBSH -->|"obs 177 floats"| RLM
     ENV -->|"reward, info"| HOOKS
     HOOKS --> REC --> PARQ
     HOOKS -->|"NAV table, violation ERROR"| RLOG
