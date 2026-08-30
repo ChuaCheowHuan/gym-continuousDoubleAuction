@@ -42,6 +42,7 @@ from gym_continuousDoubleAuction.train.model.encoders.obs_layout import (
     split_private,
 )
 from gym_continuousDoubleAuction.train.model.encoders.tokenize import (
+    token_width,
     TOKENIZATIONS,
     token_shape,
     tokenize,
@@ -270,10 +271,16 @@ def test_level_tokens_carry_one_level_per_token(spaces):
     tokens = tokenize(obs, layout, "level")
     newest = split_private(obs, layout)[0][0, -layout.snapshot_dim :]
 
+    # A level token is `book_rows` channels of book, right-padded to
+    # `token_width` - the larger of book_rows and extra_dim, so both kinds of
+    # token share one sequence. With extra_dim now 6 against book_rows 4 that
+    # padding is real rather than empty, which is the case `token_width`'s own
+    # docstring anticipated.
+    width = token_width(layout)
     for level in range(layout.k_rows):
-        expected = torch.tensor(
-            [newest[field * layout.k_rows + level] for field in range(layout.book_rows)]
-        )
+        expected = torch.zeros(width, dtype=tokens.dtype)
+        for field in range(layout.book_rows):
+            expected[field] = newest[field * layout.k_rows + level]
         assert torch.equal(tokens[0, level], expected)
 
 

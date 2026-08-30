@@ -3,7 +3,7 @@ import pytest
 
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import continuousDoubleAuctionEnv
 from gym_continuousDoubleAuction.envs.exchg.state_helper import (
-    BOOK_DIM, EXTRA_DIM, PRIVATE_DIM, SNAPSHOT_DIM,
+    BOOK_DIM, EXTRA_DIM, EXTRA_FIELDS, PRIVATE_DIM, SNAPSHOT_DIM,
 )
 
 LOG_MID_IDX = BOOK_DIM
@@ -52,7 +52,7 @@ class TestObsMarketFeatures:
 
     def test_snapshot_dim_is_book_plus_extras(self):
         assert SNAPSHOT_DIM == BOOK_DIM + EXTRA_DIM
-        assert EXTRA_DIM == 2
+        assert EXTRA_DIM == len(EXTRA_FIELDS)
 
     def test_observation_shape_across_n_hist(self):
         for n_hist in [1, 2, 4, 6, 10]:

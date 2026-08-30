@@ -1,5 +1,6 @@
 import numpy as np
 from collections import deque
+from itertools import islice
 
 from ...config_loader import constant, constants, env_default
 
@@ -32,6 +33,44 @@ SNAPSHOT_DIM = BOOK_DIM + EXTRA_DIM
 #: definition of the book block's layout, and what `book_rows` is checked
 #: against - it lets consumers name a row instead of indexing a magic number.
 BOOK_ROW_ORDER = ("bid_price", "bid_size", "ask_price", "ask_size")
+
+#: The market-level scalars appended after the book block, in order. Same rule
+#: as BOOK_ROW_ORDER and PRIVATE_FIELDS: `extra_dim` in tunable_constants.json
+#: must equal its length, and __init__ checks that.
+#:
+#: The last four exist because the observation used to carry **no information
+#: about executions at all** (doc/15 S2-7): `set_agg_LOB` iterated the tape,
+#: incremented a counter and threw it away, the loop body being a commented-out
+#: `write` copy-pasted from `OrderBook.__str__`. In a continuous double auction
+#: aggressive order flow is the most predictive public signal there is - more so
+#: than the resting book, which is largely stale intentions - and an agent could
+#: not see the last traded price, the direction of a trade, or that a trade had
+#: happened.
+#:
+#: `mid_return` is the other half of that, and belongs to S2-6: it is the change
+#: in the very quantity every price in the frame is divided by, so an agent can
+#: tell a book that moved from a midpoint that moved.
+EXTRA_FIELDS = (
+    "log_mid",             # log(M_frame) - log_mid_centre
+    "log1p_spread_ticks",  # log1p(spread / min_tick), 0.0 if not two-sided
+    "mid_return",          # M_frame / M_previous_frame - 1
+    "signed_volume",       # (buy-initiated - sell-initiated) qty / limit_max_size
+    "log1p_trade_count",   # log1p(trades since the previous frame)
+    "trade_direction",     # initiator side of the last trade: +1 buy, -1 sell, 0 none
+)
+
+#: Offsets of the frame-local values a raw frame carries after its book block.
+#: A raw frame is `[book (book_rows*k_rows) | M | spread_ticks | mid_return |
+#: signed_volume | trade_count | trade_direction]`. `M` and `spread_ticks` are
+#: raw here and become `log_mid` / `log1p_spread_ticks` at normalisation time;
+#: the rest pass through untouched, being frame-local already.
+_FRAME_M = 0
+_FRAME_SPREAD_TICKS = 1
+_FRAME_MID_RETURN = 2
+_FRAME_SIGNED_VOLUME = 3
+_FRAME_TRADE_COUNT = 4
+_FRAME_TRADE_DIRECTION = 5
+_FRAME_EXTRAS = 6
 
 #: Order of the per-agent private block `set_private_state` builds, and the
 #: single definition of what it contains. `private_dim` in
@@ -110,6 +149,13 @@ class State_Helper(object):
                 f"{len(BOOK_ROW_ORDER)} rows {BOOK_ROW_ORDER}. Change "
                 f"set_agg_LOB and BOOK_ROW_ORDER to match."
             )
+        if self.extra_dim != len(EXTRA_FIELDS):
+            raise ValueError(
+                f"tunable_constants.json: observation_layout.extra_dim="
+                f"{self.extra_dim} but set_agg_LOB builds "
+                f"{len(EXTRA_FIELDS)} scalars {EXTRA_FIELDS}. Change "
+                f"set_agg_LOB and EXTRA_FIELDS to match."
+            )
         if self.private_dim != len(PRIVATE_FIELDS):
             raise ValueError(
                 f"tunable_constants.json: observation_layout.private_dim="
@@ -119,6 +165,15 @@ class State_Helper(object):
             )
         self.book_dim = self.book_rows * self.k_rows
         self.snapshot_dim = self.book_dim + self.extra_dim
+
+        # Where the tape had reached, and what the midpoint was, when the last
+        # frame was committed to `obs_history`. Trade flow and `mid_return` are
+        # both differences against the previous *committed* frame, and
+        # `set_agg_LOB` runs twice per step - once pre-action for the render
+        # path - so neither may advance these. `prep_next_state` does, because
+        # it is the one place a frame enters the history.
+        self._tape_cursor = 0
+        self._prev_frame_mid = None
 
         # Used when the book has no two-sided market and last_price is unusable.
         self.midpoint_fallback = float(
@@ -133,13 +188,18 @@ class State_Helper(object):
     def reset_traders_agg_LOB(self):
         """
         Set observation state for all traders with temporal history window.
-        Populates shared obs_history deque with n_hist copies of the initial LOB snapshot.
+        Populates the shared obs_history deque with n_hist copies of the
+        initial RAW frame.
         """
-        init_obs = self.set_agg_LOB()
-        n_hist = self.n_hist
-        self.obs_history = deque([init_obs] * n_hist, maxlen=n_hist)
+        self._tape_cursor = 0
+        self._prev_frame_mid = None
 
-        stacked_obs = np.concatenate(list(self.obs_history), axis=0).astype(np.float32)
+        self.agg_LOB = self.set_agg_LOB()
+        n_hist = self.n_hist
+        self.obs_history = deque([self.agg_LOB_frame] * n_hist, maxlen=n_hist)
+        self._prev_frame_mid = float(self.agg_LOB_frame[self.book_dim + _FRAME_M])
+
+        stacked_obs = self._stack(float(self._prev_frame_mid))
 
         # Per agent, not one shared array: the book prefix is identical for
         # everyone but the private tail is not, and returning the same object
@@ -159,16 +219,121 @@ class State_Helper(object):
     def prep_next_state(self):
         """
         Return:
-            stacked_obs: The temporal stacked state of the aggregated LOB after all actions are executed.
+            stacked_obs: The temporal stacked state of the aggregated LOB after
+            all actions are executed, every frame normalised by the CURRENT
+            midpoint.
+
+        The deque holds **raw** frames and the whole stack is normalised once,
+        here, by `M_t`. It used to hold frames that had each already been
+        normalised by their own midpoint, so frames t-3..t carried denominators
+        M_{t-3}..M_t and could not meaningfully be differenced - which is the
+        entire purpose of stacking them. That is doc/15 S2-6.
+
+        Concretely: a bid resting at 90 while the midpoint moves 100 -> 96 used
+        to read 0.100 in one frame and 0.063 in the next. The order had not
+        moved; its denominator had. It now reads 0.0625 in both, while
+        `log_mid` still differs across the two frames (0.0 -> -0.0408) and
+        `mid_return` records the move as -0.04 - so nothing is lost, it is
+        simply no longer smeared through every price in the book.
         """
 
         self.agg_LOB_aft = self.set_agg_LOB() # LOB state at t+1 after processing LOB
 
-        self.obs_history.append(self.agg_LOB_aft)
+        self.obs_history.append(self.agg_LOB_frame)
 
-        stacked_obs = np.concatenate(list(self.obs_history), axis=0).astype(np.float32)
+        # Only here, because only here does a frame enter the history. See the
+        # note on `_tape_cursor` in __init__.
+        self._tape_cursor = len(self.LOB.tape)
+        M_t = float(self.agg_LOB_frame[self.book_dim + _FRAME_M])
+        self._prev_frame_mid = M_t
 
-        return stacked_obs
+        return self._stack(M_t)
+
+    def _stack(self, M_t):
+        """Every frame in the history, normalised by `M_t`, end to end."""
+        return np.concatenate(
+            [self._normalise_frame(frame, M_t) for frame in self.obs_history],
+            axis=0,
+        ).astype(np.float32)
+
+    def _normalise_frame(self, frame, M_t):
+        """One raw frame as `snapshot_dim` normalised floats.
+
+        Prices are measured against `M_t` - the midpoint of the newest frame,
+        not of this one - so the same absolute price reads the same in every
+        frame of the stack. `log_mid` keeps each frame's OWN midpoint, which is
+        what lets an agent recover the level it was at; the frame is normalised
+        against a common denominator, not stripped of its own.
+        """
+        k = self.k_rows
+        book = frame[:self.book_dim]
+        extras = frame[self.book_dim:]
+
+        bid_price = book[0:k]
+        bid_size = book[k:2 * k]
+        ask_price = book[2 * k:3 * k]
+        ask_size = book[3 * k:4 * k]
+
+        norm_bid_price = np.where(bid_price > 0, (M_t - bid_price) / M_t, 0.0)
+        norm_ask_price = np.where(
+            ask_price != 0, -((np.abs(ask_price) - M_t) / M_t), 0.0)
+
+        # Sizes carry no dependence on the midpoint, so they normalise the same
+        # way in every frame. See set_agg_LOB for why they are divided.
+        size_scale = float(self.limit_max_size)
+        norm_bid_size = np.where(
+            bid_size > 0, np.sqrt(bid_size / size_scale), 0.0)
+        norm_ask_size = np.where(
+            ask_size != 0, -np.sqrt(np.abs(ask_size) / size_scale), 0.0)
+
+        M_frame = float(extras[_FRAME_M])
+        spread_ticks = float(extras[_FRAME_SPREAD_TICKS])
+
+        scalars = np.array([
+            np.log(M_frame) - self.log_mid_centre,
+            np.log1p(max(0.0, spread_ticks)) if spread_ticks > 0 else 0.0,
+            extras[_FRAME_MID_RETURN],
+            extras[_FRAME_SIGNED_VOLUME],
+            np.log1p(max(0.0, float(extras[_FRAME_TRADE_COUNT]))),
+            extras[_FRAME_TRADE_DIRECTION],
+        ])
+
+        return np.concatenate([
+            norm_bid_price, norm_bid_size, norm_ask_price, norm_ask_size,
+            scalars,
+        ]).astype(np.float32)
+
+    def _trade_flow(self):
+        """Execution flow since the last frame entered the history.
+
+        Returns `(signed_volume, trade_count, direction)`, all raw.
+
+        `signed_volume` signs each fill by its **initiator's** side, which is
+        what makes it order flow rather than volume: a trade whose aggressor
+        bought is +q, one whose aggressor sold is -q. That is the quantity
+        microstructure research finds most predictive of short-horizon returns,
+        and the observation carried nothing of it at all (doc/15 S2-7).
+
+        Does not advance `_tape_cursor` - `prep_next_state` does, because
+        `set_agg_LOB` runs twice per step and only one of those commits a frame.
+        """
+        tape = self.LOB.tape
+        total = len(tape)
+        if total <= self._tape_cursor:
+            return 0.0, 0, 0.0
+
+        signed = 0.0
+        count = 0
+        direction = 0.0
+        for entry in islice(tape, self._tape_cursor, total):
+            quantity = float(entry.get('quantity', 0) or 0)
+            initiator = (entry.get('init_party') or {}).get('side')
+            sign = 1.0 if initiator == 'bid' else -1.0
+            signed += sign * quantity
+            direction = sign
+            count += 1
+
+        return signed, count, direction
 
     def _l1_prices(self):
         """(best bid, best ask) from the raw snapshot, 0.0 where a side is empty.
@@ -365,16 +530,6 @@ class State_Helper(object):
                     ask_size_list[k] = -set[1].volume
                 else:
                     break
-        # tape
-        if self.LOB.tape != None and len(self.LOB.tape) > 0:
-            num = 0
-            for entry in reversed(self.LOB.tape):
-                if num < self.LOB.tape_display_length: # get last n entries
-                    #tempfile.write(str(entry['quantity']) + " @ " + str(entry['price']) + " (" + str(entry['timestamp']) + ") " + str(entry['party1'][0]) + "/" + str(entry['party2'][0]) + "\n")
-                    num += 1
-                else:
-                    break
-        
         # Raw unnormalized snapshot
         flattened_raw = np.concatenate([bid_price_list, bid_size_list, ask_price_list, ask_size_list]).astype(np.float32)
         self.agg_LOB_raw = flattened_raw
@@ -387,64 +542,56 @@ class State_Helper(object):
         l1_bid, l1_ask = self._l1_prices()
         M = self.mid_price()
 
-        # Apply price normalization using symmetric midpoint distance:
-        # norm_P_bid = (M - P_bid) / M (non-negative)
-        # norm_P_ask = -((abs(P_ask) - M) / M) (negated to maintain negative ask observation sign convention)
-        norm_bid_price = np.where(bid_price_list > 0, (M - bid_price_list) / M, 0.0)
-        norm_ask_price = np.where(ask_price_list != 0, -((np.abs(ask_price_list) - M) / M), 0.0)
-
-        # Volume normalization: sqrt of the level volume as a fraction of a
-        # reference size, keeping the observation's sign convention.
-        #
-        # The division is the fix for doc/15 S2-2. Raw `sqrt(V)` reached +-47
-        # against +-0.58 for the normalised prices beside it - a 220x spread in
-        # standard deviation (9.0 vs 0.04) into a `tanh` first layer with no
-        # `MeanStdFilter` anywhere, so size features saturated and dominated
-        # while price features contributed almost nothing. `limit_max_size` is
-        # the reference because it is the scale orders are drawn on, and it
-        # lands the result where a bounded activation can use it: measured over
-        # 9,565 populated levels, sqrt(V / limit_max_size) has a median of 0.52,
-        # a p99 of 0.94 and a maximum of 1.32.
-        size_scale = float(self.limit_max_size)
-        norm_bid_size = np.where(
-            bid_size_list > 0, np.sqrt(bid_size_list / size_scale), 0.0)
-        norm_ask_size = np.where(
-            ask_size_list != 0,
-            -np.sqrt(np.abs(ask_size_list) / size_scale), 0.0)
-
-        # Market-level scalars appended after the book block.
-        #
-        # log_mid restores the price anchor that midpoint normalization discards:
-        # without it a market at price 10 and one at price 100 are indistinguishable,
-        # even though min_tick is absolute and so worth 10x more in the former.
-        # M is guaranteed > 0 by the fallback chain above, so log() is always defined.
-        #
-        # Centred on `log_mid_centre` - see __init__ for why. The information is
-        # unchanged: the centre is a constant of the configuration, not of the
-        # episode, so subtracting it is a shift the network would otherwise have
-        # to learn to undo before the feature could do anything.
-        log_mid = np.log(M) - self.log_mid_centre
-
-        # log1p_spread_ticks measures the spread in the same tick units the action
-        # space quotes in (min_tick), not the tick_size config, which is dropped on
-        # reset. A resting book can never be locked or crossed (a bid at or above the
-        # best ask is filled on arrival), so a two-sided book always has a spread of
-        # at least 1 tick and therefore log1p >= log1p(1) = 0.693. That leaves 0.0 as
-        # an unambiguous sentinel for "no two-sided market".
+        # Spread in the tick units the action space quotes in (min_tick), not the
+        # tick_size config, which is dropped on reset. A resting book can never be
+        # locked or crossed (a bid at or above the best ask is filled on arrival), so
+        # a two-sided book always has a spread of at least 1 tick and therefore
+        # log1p >= log1p(1) = 0.693. That leaves 0.0 as an unambiguous sentinel for
+        # "no two-sided market".
         if l1_bid > 0 and l1_ask > 0:
             min_tick = getattr(self, 'min_tick', env_default("tick_size"))
             if min_tick <= 0:
                 min_tick = env_default("tick_size")
             spread_ticks = (l1_ask - l1_bid) / min_tick
-            log1p_spread_ticks = np.log1p(max(0.0, spread_ticks))
         else:
-            log1p_spread_ticks = 0.0
+            spread_ticks = 0.0
 
-        extras = np.array([log_mid, log1p_spread_ticks])
+        # Motion of the denominator every price in this frame is divided by.
+        # 0.0 on the first frame, where there is no previous midpoint - the same
+        # value a market that did not move reports, which is the right reading
+        # of "nothing has changed yet".
+        if self._prev_frame_mid:
+            mid_return = M / float(self._prev_frame_mid) - 1.0
+        else:
+            mid_return = 0.0
 
-        flattened = np.concatenate([norm_bid_price, norm_bid_size, norm_ask_price, norm_ask_size, extras]).astype(np.float32)
+        # Execution flow since the previous frame. This is what the old tape
+        # loop was supposed to produce: it iterated `reversed(self.LOB.tape)`,
+        # incremented a counter and discarded it, its body a commented-out
+        # `write` copy-pasted from `OrderBook.__str__`, so the observation
+        # carried zero information about trades (doc/15 S2-7).
+        signed_volume, trade_count, trade_direction = self._trade_flow()
 
-        return flattened
+        # The raw frame, which is what `obs_history` stores. Normalisation is
+        # deferred to emission so that one midpoint normalises the whole stack
+        # - see `prep_next_state`.
+        self.agg_LOB_frame = np.concatenate([
+            flattened_raw,
+            np.array([
+                M,
+                spread_ticks,
+                mid_return,
+                signed_volume / float(self.limit_max_size),
+                float(trade_count),
+                trade_direction,
+            ]),
+        ]).astype(np.float32)
+
+        # The current frame, normalised against its own midpoint. At emission
+        # time that is `M_t`, so the newest frame of a stack is identical
+        # either way; this keeps `set_agg_LOB`'s contract - "return the
+        # normalised snapshot" - for the render path and its callers.
+        return self._normalise_frame(self.agg_LOB_frame, M)
     
     def state_diff(self, agg_LOB, agg_LOB_aft):
         """

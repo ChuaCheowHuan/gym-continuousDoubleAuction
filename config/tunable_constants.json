@@ -7,7 +7,7 @@
     "_note_private_dim": "private_dim is the width of the PER-AGENT block appended after the n_hist stacked snapshots, so an observation is n_hist * snapshot_dim + private_dim floats. The book prefix is still shared and computed once; only this tail differs between agents. It exists because the reward is f(nav, prev_nav, max_nav, ...) and none of those were observable - two agents holding opposite positions saw the byte-identical vector and needed opposite actions, which no policy can do (finding S1-2). Changing this number means changing State_Helper.set_private_state to match; PRIVATE_FIELDS there is the single definition of what the block contains, and its length is checked against this value at construction.",
     "k_rows": 10,
     "book_rows": 4,
-    "extra_dim": 2,
+    "extra_dim": 6,
     "private_dim": 9
   },
   "action_space": {

@@ -175,9 +175,9 @@ class TestStructuralConstantsComeFromTheFile:
 
         assert env.k_rows == 6
         assert env.book_dim == 4 * 6
-        assert env.snapshot_dim == 4 * 6 + 2
+        assert env.snapshot_dim == 4 * 6 + env.extra_dim
         # + the per-agent private block, whose width k_rows does not touch.
-        expected = (2 * (4 * 6 + 2) + env.private_dim,)
+        expected = (2 * (4 * 6 + env.extra_dim) + env.private_dim,)
         assert env.observation_spaces["agent_0"].shape == expected
         assert env.action_spaces["agent_0"]["price"].n == 6
 
@@ -185,12 +185,27 @@ class TestStructuralConstantsComeFromTheFile:
         assert obs["agent_0"].shape == expected
 
     def test_extra_dim_widens_the_snapshot(self, config_tree):
+        """The scalars are part of the snapshot, and k_rows does not touch them."""
         config_tree(
             "tunable_constants.json",
-            lambda raw: raw["observation_layout"].update(k_rows=5, extra_dim=2),
+            lambda raw: raw["observation_layout"].update(k_rows=5),
         )
         env = continuousDoubleAuctionEnv({"num_of_agents": 2, "n_hist": 1})
-        assert env.snapshot_dim == 22
+        assert env.snapshot_dim == 4 * 5 + env.extra_dim
+
+    def test_extra_dim_must_match_what_set_agg_LOB_builds(self, config_tree):
+        """Same rule as book_rows: a structural value code cannot honour raises.
+
+        `extra_dim` used to be documentation - the scalars were built by a
+        literal list and the config key was never checked - so setting it to
+        anything was a silent no-op. It is now checked against `EXTRA_FIELDS`.
+        """
+        config_tree(
+            "tunable_constants.json",
+            lambda raw: raw["observation_layout"].update(extra_dim=2),
+        )
+        with pytest.raises(ValueError, match="extra_dim"):
+            continuousDoubleAuctionEnv({"num_of_agents": 2})
 
     def test_book_rows_must_match_what_set_agg_LOB_builds(self, config_tree):
         """A structural value that code cannot honour must raise, not be ignored."""
