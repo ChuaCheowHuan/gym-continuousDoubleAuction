@@ -122,6 +122,85 @@ def test_layout_rejects_a_non_flat_space():
         ObsLayout.from_obs_space(gym.spaces.Box(-1.0, 1.0, shape=(4, 42)))
 
 
+class TestPrivateDimIsGuardedByArithmeticAlone:
+    """What stops a changed `private_dim` from silently reinterpreting a
+    checkpoint's observation.
+
+    `n_hist` is in `train.STRUCTURAL_CONFIG_KEYS`, so a restore that changes it
+    is refused by name. `private_dim` is not - it lives in
+    `tunable_constants.json` beside `k_rows` and `extra_dim`, and the only thing
+    standing between a changed value and a silently misread observation is
+    `from_obs_space` failing to divide. That guard is load-bearing and untested
+    until here, so these pin both what it catches and the one case it cannot.
+    """
+
+    @staticmethod
+    def _layout():
+        from gym_continuousDoubleAuction.config_loader import group
+
+        return group("tunable_constants.json", "observation_layout")
+
+    def _space(self, layout, private_dim, n_hist=4):
+        snapshot = layout["book_rows"] * layout["k_rows"] + layout["extra_dim"]
+        return gym.spaces.Box(
+            -np.inf, np.inf, shape=(n_hist * snapshot + private_dim,),
+            dtype=np.float32,
+        )
+
+    def _with_private_dim(self, monkeypatch, layout, private_dim):
+        from gym_continuousDoubleAuction.train.model.encoders import obs_layout
+
+        monkeypatch.setattr(
+            obs_layout, "group",
+            lambda _f, _g: {**layout, "private_dim": private_dim},
+        )
+
+    @pytest.mark.parametrize("changed_by", [-3, -1, 1, 3])
+    def test_a_changed_private_dim_raises(self, monkeypatch, changed_by):
+        """The realistic case: a field added to or removed from the private
+        block. The leftover is not a whole number of snapshots, so it raises
+        instead of reporting a different `n_hist`."""
+        layout = self._layout()
+        saved = self._space(layout, layout["private_dim"])
+
+        self._with_private_dim(monkeypatch, layout, layout["private_dim"] + changed_by)
+
+        with pytest.raises(ValueError, match="whole number"):
+            ObsLayout.from_obs_space(saved)
+
+    def test_the_unchanged_value_still_builds(self, monkeypatch):
+        layout = self._layout()
+        saved = self._space(layout, layout["private_dim"])
+
+        self._with_private_dim(monkeypatch, layout, layout["private_dim"])
+
+        assert ObsLayout.from_obs_space(saved).n_hist == 4
+
+    def test_a_change_of_exactly_one_snapshot_is_not_caught(self, monkeypatch):
+        """The blind spot, pinned so it is a known property rather than a
+        surprise.
+
+        The guard is arithmetic: it catches a `private_dim` that leaves a
+        remainder. A change of exactly `snapshot_dim` leaves none, so the same
+        vector is read as one fewer snapshot plus a larger private block -
+        wrong, and silent. Nothing here defends against that; only putting
+        `private_dim` in `STRUCTURAL_CONFIG_KEYS` would. It is documented
+        rather than fixed because the guard covers every change anyone would
+        plausibly make by hand, and this one is off by 42.
+        """
+        layout = self._layout()
+        snapshot = layout["book_rows"] * layout["k_rows"] + layout["extra_dim"]
+        saved = self._space(layout, layout["private_dim"])
+
+        self._with_private_dim(
+            monkeypatch, layout, layout["private_dim"] + snapshot
+        )
+
+        built = ObsLayout.from_obs_space(saved)
+        assert built.n_hist == 3, "reinterpreted, not rejected"
+        assert built.flat_dim == saved.shape[0]
+
+
 # --- Tokenisation ------------------------------------------------------------
 
 @pytest.mark.parametrize("tokenization", TOKENIZATIONS)

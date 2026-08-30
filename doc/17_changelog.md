@@ -1980,3 +1980,76 @@ fixing only the mechanism the review named would have left the module still
 unbuildable. Worth recording because the finding was correct while its stated
 cause was not - the reproduction is what separated them.
 
+
+---
+
+## 35. An audit of the plan's own checklist
+
+The review in §34 read the code. This one read the *plan* against the repository
+and asked which of its stated gates were actually discharged. Every finding is a
+documentation defect rather than a code defect, which is exactly the category a
+code review does not catch.
+
+### 35.1 Four test counts in `10` were wrong
+
+`test_encoder_registry.py` (38, now 45), `test_probe.py` (43, actually 45),
+`integration/test_probe_harness.py` (25, actually 28), and the JEPA section (30,
+actually 42 across three classes). The per-file table's rows summed to 751 and
+109 against stated totals of 752 and 112, which is what made them findable: the
+totals had been updated and the rows they are a sum of had not.
+
+`TestJEPAReviewRegressions` - the 18 tests §34 added - was not documented at all.
+It is now `10` §6.4.4.
+
+### 35.2 `10` still described the critic guard as an xfail
+
+Three places: the §6.2.2 heading, its table row, and the §8 gaps table. §29.1
+records that the marker was deleted when S1-1 was fixed and the assertion went
+live; the testing document was never brought along, so it described a suite that
+records a frozen critic rather than one that catches it.
+
+The §8 row on encoder learning was stale in a subtler way. It said the strong
+question "still needs S1-1 and S1-3 fixed". Both are fixed. What actually
+remains is that **no multi-seed training comparison has been run** - the protocol
+in `18` §5.5 is unexecuted for every architecture, `jepa` included. The gap did
+not close; its reason changed, and the row now says which.
+
+### 35.3 `23` still called the deduplication load-bearing
+
+The same defect §34.5 found in the code, left behind in the document. Its section
+argued from "every agent receives the byte-identical public book vector", which
+§30 made false. Rewritten to say what the row selection now does, why the default
+is still right for public-book targets, and what `per_agent=True` buys and does
+not buy.
+
+### 35.4 The `private_dim` guard was relied on and never confirmed
+
+The plan flagged it as a risk: `n_hist` is in `STRUCTURAL_CONFIG_KEYS` and
+`private_dim` is not, so the only thing between a changed value and a silently
+misread checkpoint is `ObsLayout.from_obs_space` failing to divide. Confirmed by
+measurement, and now pinned by `TestPrivateDimIsGuardedByArithmeticAlone`:
+
+| `private_dim` against a saved 177-float space | Result |
+|---|---|
+| 9 (unchanged) | builds, `n_hist=4` |
+| 6, 8, 10, 12 | **raises** - remainder against a 42-float snapshot |
+| 51 | **builds silently as `n_hist=3`** |
+
+The guard holds for every change anyone would make by hand. Its blind spot is a
+change of exactly `snapshot_dim`, which leaves no remainder and is read as one
+fewer snapshot plus a larger tail. Pinned as a known property rather than fixed:
+closing it means adding `private_dim` to `STRUCTURAL_CONFIG_KEYS`, and the case
+is off by 42.
+
+### 35.5 What is genuinely still open
+
+Not defects - work the plan scoped and this branch did not do:
+
+| Item | State |
+|---|---|
+| Multi-seed encoder comparison (`18` §5.5) | **Unexecuted.** The largest gap. No claim that any encoder trades better than another is supported by anything here |
+| World-model loss curve | Mechanics are tested; §33.4 argues the floor from first principles. No measured curve is recorded |
+| JEPA pretraining at scale | §32.5 is a 150-step smoke measurement, explicitly not evidence that pretraining pays |
+| Own resting orders in the private block | §30.4. The larger half of what S1-2 left |
+| Maker/taker fees through NAV | §29.4 |
+| `12` §9 items 5-10, 12-14 | Untouched by this branch |

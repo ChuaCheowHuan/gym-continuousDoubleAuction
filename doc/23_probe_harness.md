@@ -213,13 +213,29 @@ made by a trained league — different spreads, different depth, different arriv
 encoder scored on random-agent data is being asked how well it represents a market it will never
 see. Rollouts are the default because they always work; Parquet is the one to use once a run exists.
 
-### The deduplication is load-bearing
+### Which rows the Parquet reader keeps, and why the answer changed
 
-S1-2: every agent receives the byte-identical public book vector. `episode_record` writes one row
-per `(episode, step, agent)`, so a file from an 8-agent run holds **eight copies of every
-observation**. Stacking them naively inflates the apparent corpus size by the agent count while
-adding no information — and it *leaks*, because a row's exact duplicates land on both sides of the
-split. The reader deduplicates on `(episode_id, step)`; the rollout reader keeps one agent.
+`episode_record` writes one row per `(episode, step, agent)`, so a file from an 8-agent run holds
+eight rows per step. The reader keeps one per `(episode_id, step)` by default, and the rollout
+reader likewise keeps one agent.
+
+The *reason* for that default has changed, and the change matters. While S1-2 was open every agent
+received the byte-identical public book vector, so the eight rows were exact duplicates: keeping
+one discarded nothing and avoided a leak, because a row's duplicates would otherwise land on both
+sides of the split. **That premise no longer holds.** [17](17_changelog.md) §30 gave each agent its
+own private tail, so the eight rows now differ in their last `private_dim` floats. Keeping one is
+therefore a real choice — it drops seven agents' private state — and it is still the right default
+for the public-book targets this harness scores, none of which read the private tail.
+
+Pass `per_agent=True` to keep every row. Do that when the private block is the subject, and be
+aware of what you are buying: the eight rows at a step share an identical book prefix, so a split
+that separates them still leaks the book. Episode-level splitting (§5) is what contains that, and
+it is applied either way.
+
+This is the sort of thing a comment gets to be quietly wrong about for a long time. It was found by
+the review in [17](17_changelog.md) §34.5 — a regression introduced by the private-state work
+itself, which fixed the reader's `snapshots` slice and left the row selection reasoning behind it
+untouched.
 
 ---
 
@@ -227,8 +243,11 @@ split. The reader deduplicates on `(episode_id, step)`; the rollout reader keeps
 
 It says nothing about whether an encoder makes a better **trader**. A latent that linearly carries
 the next midpoint move is evidence that the architecture represents the market, not that PPO can
-exploit it. That second question needs S1-1 and S1-3 fixed first — and this harness is deliberately
-independent of both, which is why its answer survives those fixes.
+exploit it. That second question needed S1-1 and S1-3 fixed first; both are now fixed
+([17](17_changelog.md) §29), so it is answerable for the first time — but answering it means a
+multi-seed training comparison under [18](18_configuration.md) §5.5, not a probe report. This
+harness is deliberately independent of the reward, which is why its own answer survived those
+fixes unchanged.
 
 It is also scored on a corpus, and a corpus has a distribution. A win on random-agent rollouts is a
 win on random-agent books.

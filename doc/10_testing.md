@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (864 tests: 752 unit + 112 integration)
+# everything (870 tests: 758 unit + 112 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -81,17 +81,17 @@ Counts re-measured with `--collect-only`.
 | `test_type_policy.py` | 15 | Decimal money/prices, int sizes, no field changing type mid-episode, book boundary |
 | `test_activity_metrics.py` | 29 | `pass_action_fraction` / `order_rejection_fraction`: the S1-3 detector, per-episode tallies, pickling; the reward-term variance split, the maker-ratio metric and the end-of-episode account metrics |
 | `test_episode_record.py` | 32 | The Parquet per-step record: declared schema and its drift guard against `Info_Helper`, identity columns, sampling rate, byte cap, eviction of episodes that never end, and the ways it must fail without raising |
-| `test_encoder_registry.py` | 38 | The selectable-encoder seam: registry, `CDACatalog`, the `mlp` pass-through staying byte-for-byte what it was, `ObsLayout`, tokenisation |
+| `test_encoder_registry.py` | 45 | The selectable-encoder seam: registry, `CDACatalog`, the `mlp` pass-through staying byte-for-byte what it was, `ObsLayout`, tokenisation |
 | `test_encoder_architectures.py` | 165 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
 | `test_pretrain.py` | 20 | Offline JEPA pretraining: the loop trains only the trunk and predictor, a collapse is reported rather than hidden, and the checkpoint's fingerprint refuses a mismatched architecture |
 | `test_probe.py` | 45 | The reward-free probe harness's arithmetic on synthetic observations: target definitions, episode-boundary masking, the splits, the metrics, unscoreable cells, and that `snapshots` reads the book rather than the private tail |
-| **unit total** | **752** | |
+| **unit total** | **758** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
-| `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported and finite (1 xfail pins S1-1) |
+| `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported, finite, and **above 1e-3** — a live guard since S1-1 was fixed |
 | `integration/test_distributed_observability.py` | 10 | A real `num_env_runners=1` iteration: every episode-hook metric arrives on the driver, and the episode record is written by the *worker* into the driver's absolute run-scoped path |
 | `integration/test_encoder_wiring.py` | 48 | Champions inherit the encoder; a restore cannot change it; the recurrent and MoE paths train end to end; a real checkpoint round-trip with a custom encoder |
-| `integration/test_probe_harness.py` | 25 | The probe against the real env: a usable rollout corpus, every registered encoder frozen and read, the LSTM's state reset per episode, a real checkpoint restored with its weights |
+| `integration/test_probe_harness.py` | 28 | The probe against the real env: a usable rollout corpus, every registered encoder frozen and read, the LSTM's state reset per episode, a real checkpoint restored with its weights |
 | **integration total** | **112** | |
 
 > **Stale references in older docs.** `test_orderbook.py`, `repro_orderbook_crossed_book.py`,
@@ -109,7 +109,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((864 tests))
+  root((870 tests))
     Simulator
       orderbook 14
         components, matching, invariants
@@ -527,7 +527,7 @@ Two things this suite had to get right, and which are worth preserving in any ed
 Verified to fail for the right reason: flipping the restore to `is_restore=False` fails 5 of the
 7, the two survivors being the ones that do not depend on the restore.
 
-### 6.2.2 `integration/test_progress_and_vf.py` — 1 class, 6 tests (1 xfail)
+### 6.2.2 `integration/test_progress_and_vf.py` — 1 class, 6 tests
 
 `test_progress_log.py` (§6.1) covers the `progress.jsonl` writer and the `vf_explained_var`
 extraction against a `FakeAlgo` whose results are hand-built, which leaves the assumption
@@ -542,16 +542,16 @@ three iterations (~15s) and reads the file back.
 | `test_a_real_result_survives_the_json_round_trip` | The nested `env_runners` and `learners` blocks are still *in* the line, not merely that it parses |
 | `test_vf_explained_var_is_reported_for_every_trainable_module` | The key RLlib really emits, for exactly the modules in `policies_to_train` |
 | `test_the_metric_is_finite` | A NaN is a diverged value loss |
-| `test_the_critic_actually_explains_something` | **strict xfail** — `\|vf_explained_var\| >= 1e-3`. Fails today because S1-1 is open |
+| `test_the_critic_actually_explains_something` | **A live assertion** — `\|vf_explained_var\| >= 1e-3`. It was a strict xfail until S1-1 was fixed; the fix made it XPASS, which failed the build exactly as the marker's reason said it would, and the marker was then deleted |
 | `test_the_file_carries_it_too` | The on-disk record, not just the returned result, has the metric for every iteration |
 
 The one thing worth preserving in any edit here is the assertion that is deliberately *absent*.
 `!= 0.0` is the obvious guard against a critic that never received a gradient, and it is worthless
-on this repository: a run reports values around 1e-5 — the S1-1 signature [17](17_changelog.md)
-§17.3 records as "0.0 to 1.8e-07" — and every one of them is nonzero, so it passes on a critic
-that is entirely dead. Floating-point noise is not evidence of learning. The strict xfail is what
-carries the real claim: when S1-1 is fixed it XPASSes and fails the build, and removing the marker
-at that point turns it into a live regression guard.
+on this repository: while S1-1 was open a run reported values around 1e-5 — the signature
+[17](17_changelog.md) §17.3 records as "0.0 to 1.8e-07" — and every one of them is nonzero, so it
+would have passed on a critic that was entirely dead. Floating-point noise is not evidence of
+learning, which is why the threshold is `1e-3` and not "nonzero". That threshold is now the guard
+that stops [17](17_changelog.md) §29.1 silently regressing.
 
 ### 6.3 `test_runtime_profiles.py` — 28 tests
 
@@ -590,7 +590,7 @@ worth reading is the shape of the problem: the shipped default, `mlp`, is a **pa
 touches none of the new code, so it can pass while every line of the custom path is broken. The
 suite is built around that gap.
 
-### 6.4.1 `test_encoder_registry.py` — 38 tests
+### 6.4.1 `test_encoder_registry.py` — 45 tests
 
 The seam itself, not the architectures.
 
@@ -666,10 +666,11 @@ time-dimension connectors produce, so every env step failed nowhere near the mod
 
 ---
 
-### 6.4.4 `TestJEPA` — 30 tests
+### 6.4.4 The JEPA classes — 42 tests
 
-The JEPA encoder is covered by `TestEveryEncoder` for the contract automatically. `TestJEPA` covers
-what decides whether the *objective* is doing anything.
+Three classes in `test_encoder_architectures.py`: `TestJEPA` (17), `TestJEPAWorldModel` (7) and
+`TestJEPAReviewRegressions` (18). The encoder is covered by `TestEveryEncoder` for the contract
+automatically; `TestJEPA` covers what decides whether the *objective* is doing anything.
 
 | Test | What it pins |
 |---|---|
@@ -692,6 +693,16 @@ interesting object.
 mask under `time` tokenisation indexed a level axis that tokenisation does not have. It now falls
 back to a random mask, so a `tokenization × mask_axis` sweep needs no special cases.
 
+`TestJEPAReviewRegressions` (18 tests) was added by the review recorded in [17](17_changelog.md)
+§34, one or more tests per finding, each written to fail against the commit before its fix. The
+three worth naming:
+
+| Test | What it pins |
+|---|---|
+| `test_an_inference_only_module_builds` | The finding that mattered most. `RLModuleSpec.build` catches an `AttributeError` from `__init__` and falls back to a deprecated constructor, so a module that could not be built inference-only failed *silently* — and a champion snapshot is an inference-only copy, so a `jepa` league would have died at its first promotion with an unrelated-looking error |
+| `test_a_mask_leaves_context_at_every_n_hist` | The original mask test swept tokenisations and axes at one `n_hist`. The clamp was against `n_hist - 1` snapshots rather than the token count, so `n_hist: 1` masked the whole sequence and the objective silently predicted from nothing |
+| `test_evaluation_does_not_step_the_ema` | The EMA update ran on validation batches, so the number a probe or a pretraining validation pass reported depended on how many times it had been evaluated |
+
 ---
 
 ### 6.5 The probe harness
@@ -700,7 +711,7 @@ Two files, added with `train/probe/` ([23](23_probe_harness.md)). The harness pr
 people will cite*, so what these pin is not that it runs but the handful of properties that decide
 whether its numbers mean anything.
 
-#### 6.5.1 `test_probe.py` — 43 tests
+#### 6.5.1 `test_probe.py` — 45 tests
 
 Runs on synthetic observations built by hand, not on env rollouts: the arithmetic is the subject,
 and a target checked against the same expression that computes it checks nothing.
@@ -714,13 +725,13 @@ and a target checked against the same expression that computes it checks nothing
 | Metrics | R² of the mean predictor is 0 and of a constant target is 0 (not 1); balanced accuracy of a constant predictor is 0.5 — the reason it is balanced, since `two_sided` is true in almost every step |
 | `fit_and_score` | A linearly readable target scores > 0.99; pure noise does **not** score hugely negative, because the alpha grid reaches far enough to decline the overfit; a single-class or constant target is *unscoreable* rather than a floor value; the intercept is not penalised |
 | Report | Every feature set is scored on identical rows with an identical split; a misaligned set raises; a target below its `min_horizon` is skipped, not fatal; a tie names no winner |
-| Parquet | The per-agent copies are **deduplicated** — an 8-agent run writes eight copies of every observation, and stacking them leaks a row's exact duplicates into both the training and the test split |
+| Parquet | One row per `(episode, step)` by default, and `per_agent=True` keeps them all. The rows at one step are **no longer identical** — §4.2 gave each agent its own private tail — so the default now *drops* N-1 agents' private state rather than dropping duplicates, and the tests pin both halves of that. See [17](17_changelog.md) §34.5 |
 
-The two most load-bearing are `test_pure_noise_does_not_score_above_zero` and the deduplication
-test. Both pin the difference between a harness that reports representation quality and one that
+The two most load-bearing are `test_pure_noise_does_not_score_above_zero` and the row-selection
+tests. Both pin the difference between a harness that reports representation quality and one that
 reports overfitting while looking identical.
 
-#### 6.5.2 `integration/test_probe_harness.py` — 25 tests
+#### 6.5.2 `integration/test_probe_harness.py` — 28 tests
 
 The parts that can only break where the harness meets the rest of the system.
 
@@ -777,12 +788,12 @@ Honest accounting of what the suite does **not** cover.
 
 | Gap | Risk |
 |---|---|
-| **The learning-signal assertion is an xfail, not a guard** | `integration/test_progress_and_vf.py` now checks `vf_explained_var` is reported and finite, and pins the substantive threshold (`>= 1e-3`) as a strict xfail because S1-1 is open — so the suite records the frozen critic rather than catching it. Note what does *not* work here: asserting `!= 0.0` passes today on a critic sitting in the 1e-5 noise floor. `vf_loss` saturation and "returns improve" are still unchecked. |
+| ~~**The learning-signal assertion is an xfail, not a guard**~~ | **Closed.** S1-1 is fixed and the `vf_explained_var >= 1e-3` threshold in `integration/test_progress_and_vf.py` is a live assertion — see §6.2.2. What is still unchecked is narrower than it was: `vf_loss` saturation, and "returns improve" across iterations. |
 | **`test_accounting.py::test_insufficient_funds` is an empty `pass`** | The body is a 15-line comment debating what the behaviour *should* be, ending "Will implement based on observed behavior or re-read code carefully." A TODO shipped as a test. The behaviour it was meant to cover is in fact tested by `test_cash_check.py`. |
 | **No information-content tests for the observation** | The suite would pass unchanged with the varying-denominator stack, the zero-collision ambiguity and the dead tape loop all present — and all three are present ([05](05_observation_space.md) §7). |
 | ~~**`test_shared_history_multi_agent_uniformity` encodes a defect as a requirement**~~ | **Closed.** S1-2 is fixed and the test is replaced by a pair that splits the claim — the book prefix stays shared, the private tail must not be. See §4.2. |
 | ~~**Reproducibility is untested**~~ | **Closed.** `test_seeding.py` (11 tests) asserts two identically-seeded episodes match and two differently-seeded ones do not, across all three randomness sources — and does it while seeding the *global* NumPy stream to different values, so it cannot pass for the wrong reason. What remains untested is reproducibility of a whole multi-worker *training run*, which is a different claim. |
-| ~~**No encoder is tested for whether it *learns***~~ | **Partly closed.** §6.4 still proves only mechanics, and no *training* run has followed the comparison protocol ([18](18_configuration.md) §5.5). But the reason it could not be followed usefully — the reward cannot rank encoders while S1-1 and S1-3 stand — is now routed around: `train/probe/` scores an encoder on public microstructure targets with no reward, policy or value function involved ([23](23_probe_harness.md)). What remains open is the original question in its strong form: whether a better-scoring encoder makes a better *trader*, which still needs S1-1 and S1-3 fixed. |
+| **No encoder is tested for whether it *learns*** | **Still the largest gap, and now for a different reason.** §6.4 proves only mechanics, and `train/probe/` routes around the reward entirely — it scores an encoder on public microstructure targets with no policy or value function involved ([23](23_probe_harness.md)). S1-1 and S1-3 blocked the strong form of the question, and both are now fixed ([17](17_changelog.md) §29), so what remains is simply that **no multi-seed training comparison has been run**: the protocol in [18](18_configuration.md) §5.5 (pinned `seed`, three seeds per architecture, separate runs) is unexecuted for every architecture, `jepa` included. Until it is, no claim that one encoder trades better than another is supported by anything in this repository. |
 | **Edge cases in league matchmaking** | Empty pools and zero weights are untested. |
 | **No property-based tests** | The order book is an ideal Hypothesis target: "tree volume == Σ level volumes", "no crossed book", "Σ NAV == Σ initial cash" hold for *any* order sequence. |
 | **No coverage measurement** | No `pytest-cov`, no threshold. |
