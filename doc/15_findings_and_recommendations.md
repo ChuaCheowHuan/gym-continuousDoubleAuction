@@ -11,16 +11,18 @@ marks a finding confirmed by executing the code; raw output is in
 ```mermaid
 mindmap
   root((Findings))
-    S1 Blocking
-      S1-1 critic gets zero gradient
-        vf_clip_param 10 vs NAV-scale targets
-      S1-2 no private state in the observation
-      S1-3 doing nothing dominates
+    S1 Blocking — all fixed
+      S1-1 critic got zero gradient — fixed
+        rewards are now a fraction of init_nav
+      S1-2 no private state — fixed
+        own resting orders still absent
+      S1-3 doing nothing dominated — fixed
       S1-4 bare env could not trade — fixed
     S2 Major
-      S2-1 drawdown charged as a level
+      S2-1 drawdown charged as a level — fixed
       S2-2 observation scales saturate tanh
-      S2-3 cost proxies 10^5 too small
+      S2-3 cost proxies 10^5 too small — fixed
+        real maker/taker fees still open
       S2-4 bankrupt agents never terminated
       S2-5 self-matching enables mark manipulation
       S2-6 per-frame normalizer
@@ -68,7 +70,7 @@ mindmap
 
 ## S1 — Blocking
 
-### S1-1 · PPO's critic receives zero gradient **[verified]**
+### S1-1 · PPO's critic receives zero gradient **[verified, fixed]**
 
 `vf_clip_param` defaults to 10.0 and is never overridden, while value targets are NAV sums in the
 10⁴–10⁷ range. `torch.clamp(vf_loss, 0, 10.0)` is flat there, so `∂L_vf/∂θ = 0` for every sample.
@@ -92,7 +94,7 @@ guard. The same change also closed S2-3 and made S2-1's fix expressible.
 → [12 §4](12_perspective_rl_researcher.md#4-the-critic-cannot-learn--vf_clip_param-saturation),
 [07 §2.1](07_reward_function.md)
 
-### S1-2 · Observation contains no private state **[verified]**
+### S1-2 · Observation contains no private state **[verified, fixed — except resting orders]**
 
 Every agent received the byte-identical 168-float public book vector (`distinct obs vectors
 across agents: 1`). Absent: `net_position`, `VWAP`, `nav`, `max_nav`, `cash`, own resting orders,
@@ -132,7 +134,7 @@ but not which orders that cash is committed to.
 → [12 §2](12_perspective_rl_researcher.md#2-the-observation-contains-no-private-state),
 [05 §1.0](05_observation_space.md)
 
-### S1-3 · Doing nothing is a dominant strategy **[verified]**
+### S1-3 · Doing nothing is a dominant strategy **[verified, fixed]**
 
 | Policy | Total return, 4 agents × 300 steps |
 |---|---|
@@ -191,7 +193,7 @@ spot the smoke run had.
 
 ## S2 — Major
 
-### S2-1 · Drawdown is penalised as a level, not an increment **[verified]**
+### S2-1 · Drawdown is penalised as a level, not an increment **[verified, fixed]**
 
 `max_nav` is monotone within an episode, so a drawdown is re-charged **every step** until NAV
 exceeds the old peak. Measured over 300 steps × 4 random agents: drawdown = **−416,473**, roughly
@@ -226,7 +228,7 @@ features contribute almost nothing.
 **Fix.** Divide sizes by a reference scale; centre `log_mid`.
 → [05 §7.5](05_observation_space.md#75-feature-scales-differ-by-one-to-two-orders-of-magnitude-after-normalization)
 
-### S2-3 · Transaction-cost proxies are ~10⁵× too small **[verified]**
+### S2-3 · Transaction-cost proxies are ~10⁵× too small **[verified, fixed — real fees still open]**
 
 `order_penalty=0.1`, `trade_penalty=0.05`, `passive_bonus=0.1` against per-step NAV moves of
 −10,949 … +6,126. Three of the reward's five stated objectives — "reducing number of trades",
@@ -667,7 +669,7 @@ Pinned by `TestRetention` and `TestForeignCheckpoints` in `test_checkpointing.py
 | S4-13 | No property-based tests, despite the order book having clearly stated invariants (tree volume == Σ level volumes, no crossed book, Σ NAV == Σ initial cash) |
 | S4-14 | **Partly fixed.** Refused orders increment `num_rejected_step`, which reaches `infos` and the `order_rejection_fraction` metric; `is_pass_action` separates a deliberate pass. Still open: `modify` / `cancel` with nothing to target has no counter, and no dead action is penalised or visible to the agent |
 | S4-15 | `Box(-inf, inf)` observation bounds, though every quantity is boundable; disables RLlib observation filters and space-based sanity checks |
-| S4-16 | `test_shared_history_multi_agent_uniformity` encodes S1-2 as a requirement and must be deleted when private state is added |
+| S4-16 | **Fixed.** `test_shared_history_multi_agent_uniformity` encoded S1-2 as a requirement. It is replaced by a pair that splits the claim: the book prefix must still be shared between agents, the private tail must not be |
 | S4-17 | The sign convention on ask blocks is redundant (side is already encoded by block position) and prevents natural weight sharing between the two sides |
 | S4-18 | Duplicate `CODEOWNER` and `CODEOWNERS` files at the repo root |
 | S4-19 | No env/observation version recorded in checkpoints, so an observation-layout change invalidates old checkpoints silently |
@@ -731,7 +733,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **758 unit tests pass** (plus 112 integration), covering every position-flip path, cash-check edge case, modify-order
+- **770 unit tests pass** (plus 112 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 
@@ -742,13 +744,20 @@ for research code:
 Roughly two to three weeks of work, ordered so each step unblocks the next.
 
 **Phase 1 — make learning possible (≈2 days)**
-1. Scale all reward terms to fractional-NAV units (fixes S1-1, S2-1, S2-3 together)
-2. Set `grad_clip`; assert `vf_explained_var > 0` in CI
-3. Make the drawdown penalty an increment
+1. ~~Scale all reward terms to fractional-NAV units (fixes S1-1, S2-1, S2-3 together)~~ — **done**,
+   by `acc.init_nav` rather than a configured `init_cash`, so the scale cannot drift from the
+   ledger it normalises
+2. Assert the critic learns in CI — **done**: `vf_explained_var >= 1e-3` is a live assertion in
+   `integration/test_progress_and_vf.py`. **`grad_clip` is still unset**, which is the open half
+   of this item
+3. ~~Make the drawdown penalty an increment~~ — **done**, as a *signed* change. The clipped
+   `max(0, Δ)` form recommended in [12 §3.4](12_perspective_rl_researcher.md) is an asymmetric
+   loss multiplier in disguise and was deliberately not shipped; see [07 §2.1](07_reward_function.md)
 4. Normalise observation feature scales (S2-2)
 
 **Phase 2 — make the problem well-posed (≈3–4 days)**
-5. Add the private-state observation block (S1-2); delete the uniformity test
+5. ~~Add the private-state observation block (S1-2); delete the uniformity test~~ — **done**,
+   9 floats per agent. Own resting orders are the remaining gap
 6. Terminate and flatten bankrupt agents (S2-4)
 7. `size_mean → Box(0,1)`; scale or drop `size_sigma` (S3-1, S3-2)
 8. Positive decaying `entropy_coeff`; raise `std_dev_multiplier`; refuse zero-trade champions (S3-11)

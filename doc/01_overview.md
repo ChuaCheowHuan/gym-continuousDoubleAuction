@@ -119,7 +119,7 @@ Note the env's **own** defaults differ from what `TrainConfig` passes — a bare
 `continuousDoubleAuctionEnv({})` gets 5 agents, `init_cash=1,000,000`, `max_step=64` and
 `is_render=True`. (`init_cash` was `0` until it was found to make the bare env inert — every
 order refused, every agent bankrupt on step 1.)
-The full table is in [02_architecture.md](02_architecture.md) §6.
+The full table is in [02_architecture.md](02_architecture.md) §2.6.
 
 Within one env step, all N agents' orders are collected, **randomly shuffled**, and then applied
 to the book one at a time
@@ -199,7 +199,7 @@ remaining high-impact issues are.
 | `python -m gym_continuousDoubleAuction.train.train --iters 4 --agents 4` | League self-play PPO training |
 | `python -m gym_continuousDoubleAuction.train.train --help` | Full CLI |
 | `python gym_continuousDoubleAuction/CDA_rand.py` | Random-agent smoke run, no learning (CI stage 2) |
-| `python -m pytest gym_continuousDoubleAuction/test -q` | 870 tests (758 unit + 112 integration) |
+| `python -m pytest gym_continuousDoubleAuction/test -q` | 882 tests (770 unit + 112 integration) |
 | `python -m pytest gym_continuousDoubleAuction/test/integration -q` | 59 integration tests that build real `Algorithm`s |
 | `python -m gym_continuousDoubleAuction.CDA_rand --help` | Flags for the smoke run; defaults in `config/cli_defaults.json` |
 | `CDA_train.ipynb` | Notebook driver; imports `TrainConfig` / `train` from `train.py`. Runs unchanged on [Colab](20_colab.md) and in the [docker image](19_docker.md) — set `PLATFORM` / `USE_GPU` in its first cell, everything else comes from `config/runtime_profiles.json` |

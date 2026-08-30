@@ -115,6 +115,14 @@ def main(argv=None):
         help="Cap on rows read from --parquet.",
     )
     p.add_argument(
+        "--per-agent", action="store_true",
+        help="Keep every agent's row from --parquet rather than one per step. "
+             "The rows at one step share a book and differ only in their "
+             "private tail, so this multiplies the corpus by the agent count "
+             "while adding only private state - useful when that is the "
+             "subject, misleading otherwise.",
+    )
+    p.add_argument(
         "--checkpoint", type=str, default=None,
         help="An iter_<n> checkpoint directory, scored alongside the "
              "untrained encoders.",
@@ -139,7 +147,9 @@ def main(argv=None):
     configure_logging(args.log_level, force=True)
 
     if args.parquet:
-        corpus = corpus_module.from_parquet(args.parquet, max_rows=args.max_rows)
+        corpus = corpus_module.from_parquet(
+            args.parquet, max_rows=args.max_rows, per_agent=args.per_agent,
+        )
     else:
         corpus = corpus_module.from_rollouts(
             num_episodes=args.episodes,
@@ -155,7 +165,8 @@ def main(argv=None):
     rows = report_module.run(corpus, features, args.targets, args.horizons)
     text = "\n".join([
         f"Corpus: {corpus.describe()}",
-        f"Source: {args.parquet or 'random-agent rollouts'}",
+        f"Source: {args.parquet or 'random-agent rollouts'}"
+        + (" (per-agent rows)" if args.parquet and args.per_agent else ""),
         "",
         report_module.render(rows, list(features)),
     ])

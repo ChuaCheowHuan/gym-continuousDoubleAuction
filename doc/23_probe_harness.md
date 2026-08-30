@@ -80,7 +80,7 @@ Three kinds of column, and the comparison needs all three:
 
 | Column | What it is | Why it must be there |
 |---|---|---|
-| `raw` | The 168-float observation itself | The floor. Every latent is a *function* of this vector |
+| `raw` | The observation itself, all 177 floats | The floor. Every latent is a *function* of this vector |
 | `<encoder>` | That architecture **at initialisation** | The inductive-bias term: tokenisation, the two-axis positional encoding and the input LayerNorm, before any training |
 | `<module>@ckpt` | The same architecture with trained weights | Trained minus untrained is what training actually taught it |
 
@@ -227,8 +227,8 @@ own private tail, so the eight rows now differ in their last `private_dim` float
 therefore a real choice — it drops seven agents' private state — and it is still the right default
 for the public-book targets this harness scores, none of which read the private tail.
 
-Pass `per_agent=True` to keep every row. Do that when the private block is the subject, and be
-aware of what you are buying: the eight rows at a step share an identical book prefix, so a split
+Pass `--per-agent` (or `per_agent=True` to `from_parquet`) to keep every row. Do that when the
+private block is the subject, and be aware of what you are buying: the eight rows at a step share an identical book prefix, so a split
 that separates them still leaks the book. Episode-level splitting (§5) is what contains that, and
 it is applied either way.
 

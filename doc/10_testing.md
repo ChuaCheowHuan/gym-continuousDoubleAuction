@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (870 tests: 758 unit + 112 integration)
+# everything (882 tests: 770 unit + 112 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -84,8 +84,9 @@ Counts re-measured with `--collect-only`.
 | `test_encoder_registry.py` | 45 | The selectable-encoder seam: registry, `CDACatalog`, the `mlp` pass-through staying byte-for-byte what it was, `ObsLayout`, tokenisation |
 | `test_encoder_architectures.py` | 165 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
 | `test_pretrain.py` | 20 | Offline JEPA pretraining: the loop trains only the trunk and predictor, a collapse is reported rather than hidden, and the checkpoint's fingerprint refuses a mismatched architecture |
+| `test_visualize_orderbook.py` | 12 | The newest book snapshot is read from the middle of the observation, never off the end — the only arithmetic in `visualize/` that can be wrong without raising |
 | `test_probe.py` | 45 | The reward-free probe harness's arithmetic on synthetic observations: target definitions, episode-boundary masking, the splits, the metrics, unscoreable cells, and that `snapshots` reads the book rather than the private tail |
-| **unit total** | **758** | |
+| **unit total** | **770** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported, finite, and **above 1e-3** — a live guard since S1-1 was fixed |
@@ -109,7 +110,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((870 tests))
+  root((882 tests))
     Simulator
       orderbook 14
         components, matching, invariants
@@ -799,3 +800,4 @@ Honest accounting of what the suite does **not** cover.
 | **No coverage measurement** | No `pytest-cov`, no threshold. |
 | **No performance regression test** | Nothing catches a 10× slowdown in the matching engine. |
 | **`envs/orderbook/test/example.py` and `genOrders.py`** | 353 LOC of standalone scripts not collected by pytest and not run by CI. |
+| **`visualize/` is almost entirely untested** | `test_visualize_orderbook.py` covers the one slice that can be silently wrong; the other eight modules in the package have no tests. That gap is what let the private-block layout change reach a plotting path unnoticed for three commits ([17](17_changelog.md) §36.1) — every one of those modules reads recorded data and renders it, so a wrong read looks like a plausible chart rather than an error. |

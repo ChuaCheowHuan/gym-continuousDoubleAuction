@@ -119,25 +119,31 @@ builtin applies Neumaier compensated summation to floats, which is more accurate
 with the original expression on ~44% of random inputs — instrumenting the reward must not change
 what the agent is trained on.
 
-> **The reward is not zero-sum.** NAV *is* conserved across traders, but the four shaping terms
-> are not, so returns are not comparable across policies playing different roles. The league
-> callback nevertheless ranks policies against a pooled `mean + k·std` that includes the random
-> baselines. A policy can clear that threshold by trading *less*, not by trading *better* — see
+> **`nav_term` is zero-sum; the whole reward is not quite.** §2.1 measured `nav_term` summing to
+> exactly `0.000000` across agents, which is the property that matters and the one that was
+> broken. The four shaping terms are still not conserved — the three penalties are strictly
+> negative and `passive_bonus` strictly positive — so returns remain *slightly* incomparable
+> across policies playing different roles. The magnitude is what changed: the shaping terms are
+> now ~0.5–1% of a typical NAV move rather than 2.4× it, so a policy can no longer clear the
+> league's pooled `mean + k·std` threshold by trading *less* rather than *better*. The
+> comparability caveat survives as a caveat; it is no longer a dominant strategy — see
 > [12_perspective_rl_researcher.md](12_perspective_rl_researcher.md) §3.2.
 
 ---
 
 ```mermaid
 flowchart LR
-    NAV["nav - prev_nav<br/>(set inside mark_to_mkt)"] --> LA{"< 0?"}
-    LA -->|"yes"| NT1["x loss_multiplier (1.5)"]
+    NAV["nav - prev_nav<br/>(set inside mark_to_mkt)"] --> SC["/ acc.init_nav<br/>a FRACTION of starting capital"]
+    SC --> LA{"< 0?"}
+    LA -->|"yes"| NT1["x loss_multiplier (1.0 - off)"]
     LA -->|"no"| NT2["x 1.0"]
     NT1 --> T1["nav_term"]
     NT2 --> T1
 
     OSP["order_step_placed (0 or 1)"] --> T2["- order_penalty x it"]
     NTS["num_trades_step"] --> T3["- trade_penalty x it"]
-    DD["max(0, max_nav - nav)"] --> T4["- drawdown_penalty x it"]
+    DDN["max(0, max_nav - nav)<br/>this step"] --> DDD["minus acc.drawdown<br/>(last step's level)<br/>/ acc.init_nav"]
+    DDD --> T4["- drawdown_penalty x the SIGNED CHANGE"]
     NPF["num_passive_fills_step"] --> T5["+ passive_bonus x it"]
 
     T1 --> SUM["reward = sum of the five, left to right"]

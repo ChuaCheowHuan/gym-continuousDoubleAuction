@@ -776,7 +776,7 @@ placing a learner on a device that is not there.
 #### The `lstm` encoder and its two time axes
 
 `lstm` is the *structured* recurrent encoder, not RLlib's `use_lstm` shortcut. The
-shortcut feeds the raw 168-float observation to a stock MLP tokenizer, discarding
+shortcut feeds the raw 177-float observation to a stock MLP tokenizer, discarding
 the book structure exactly as `mlp` does. This one's tokenizer reads the grid.
 
 Two different time axes are involved and they are easy to confuse:

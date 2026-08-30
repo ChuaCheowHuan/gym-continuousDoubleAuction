@@ -325,8 +325,11 @@ exceeds the price block by roughly **80–250×**, feeding a `tanh` first layer 
 
 Round-trip verification of the transforms (inverting both must recover the live book):
 
+Recorded before the private block was added, so the shape is the book part alone; everything else
+below is unaffected by that change.
+
 ```
-OBS SHAPE          = (168,)
+OBS SHAPE          = (168,)   <- book only; the observation is 177 floats now
 best bid/ask raw   = 67.0 / 76.0
 exp(log_mid)       = 71.500015     ← matches (67 + 76) / 2 = 71.5
 expm1(log1p_spread)= 9.0           ← matches 76 - 67 = 9 ticks
@@ -344,15 +347,15 @@ The observation is where the largest remaining problems are. Ordered by cost.
 mindmap
   root((Observation defects))
     Information missing
-      7.7 no private state
-        inventory, cash, NAV, own orders
-        the reward is a function of exactly these
-        S1-2
+      7.7 private state - fixed
+        inventory, cash, NAV, drawdown now in the observation
+        own resting orders still absent
+        S1-2 closed by 17 section 30
       7.3 no trade flow
         the tape loop discards every entry
         S2-7
-      no time remaining
-        finite horizon, t_step / max_step unseen
+      time remaining - fixed
+        time_left is PRIVATE_FIELDS[8]
     Representation
       7.1 per-frame normalizer
         frames cannot be compared
@@ -474,11 +477,18 @@ useless: they are correct, but likely dominated until the size block is rescaled
   it "should be used in obs preprocessing if needed". Either use it or delete it.
 - **`Box(-inf, inf)` bounds.** Every quantity here is boundable.
 
-### 7.7 No private state — the single biggest flaw
+### 7.7 No private state — **fixed**, except resting orders
 
-Nothing in the vector encodes the agent's own inventory, cash, NAV, drawdown, or resting orders,
-yet the reward is a deterministic function of exactly those. This is covered in full in
-[12_perspective_rl_researcher.md](12_perspective_rl_researcher.md) §2 and tracked as S1-2.
+Nothing in the vector encoded the agent's own inventory, cash, NAV or drawdown, yet the reward is a
+deterministic function of exactly those. That was S1-2, the single biggest flaw, and it is closed:
+§1 documents the 9-float private block that every agent now receives, and
+[17_changelog.md](17_changelog.md) §30 records the change.
+
+**What is still missing is own resting orders.** An agent sees `cash_on_hold` — how much cash is
+escrowed against live orders — but not *which* orders that cash is committed to, so `modify` and
+`cancel` remain partly blind. That is the larger half of what S1-2 left, and it is the one item on
+§8's private list still unbuilt. The analysis of why it mattered is in
+[12_perspective_rl_researcher.md](12_perspective_rl_researcher.md) §2.
 
 ---
 
@@ -497,16 +507,21 @@ market (public):
   M_t / M_{t-1} - 1                         1    lets the agent undo rescaling
 
 private (per agent):
-  net position, VWAP, unrealized P&L        3
-  cash, cash_on_hold, NAV/init_cash         3
-  drawdown from peak                        1
-  own resting volume on the same grid      2N
-  t_step / max_step                         1
+  net position, VWAP, unrealized P&L        3    [DONE] position, vwap_vs_mid,
+                                                        position_val
+  cash, cash_on_hold, NAV/init_cash         3    [DONE]
+  drawdown from peak                        1    [DONE]
+  own resting volume on the same grid      2N    still missing - see 7.7
+  t_step / max_step                         1    [DONE] as time_left
 ```
 
-**Time remaining** (`t_step / max_step`) is missing and cheap. This is a finite-horizon episode,
-so the optimal policy is genuinely time-dependent — inventory should be flattened toward the end
-— and the agent cannot currently condition on it.
+Everything on the private list is shipped except own resting volume; see §1 for the block as
+built and `State_Helper.PRIVATE_FIELDS` for the field order.
+
+**Time remaining is now in the observation.** It was missing and cheap, and the argument for it
+still explains why it is there: this is a finite-horizon episode, so the optimal policy is
+genuinely time-dependent — inventory should be flattened toward the end. `time_left` is
+`PRIVATE_FIELDS[8]`, carried as `1 - t_step / max_step` so it *falls* to zero at truncation.
 
 Stack raw snapshots, normalize the whole stack once at emission using the current `M_t`, and add
 explicit frame deltas rather than relying on the network to difference them.

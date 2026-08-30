@@ -191,7 +191,7 @@ This repository implements a multi-agent continuous double auction system, struc
 
 In this environment, agents act as traders who can submit market, limit, modify, and cancel orders to a shared order book. They are marked to market based on the trade tape, and receive rewards derived from a multi-term NAV-based function. The codebase also includes a matching engine, supports `Decimal`-based accounting, includes the necessary RLlib league wiring, and comes with CI unit tests.
 
-**Main problems:** The weak points are concentrated in the learning problem formulation rather than in the simulator: agents observe no private state, the reward is strictly negative-sum with a dominant do-nothing strategy, and the reward scale silently disables PPO's critic entirely.
+**Main problems:** The weak points were concentrated in the learning problem formulation rather than in the simulator — agents observed no private state, the reward was strictly negative-sum with a dominant do-nothing strategy, and the reward scale silently disabled PPO's critic entirely. All three are now fixed ([17_changelog.md](doc/17_changelog.md) §29-30). What remains is largely in the observation pipeline: the per-frame normalizer, no trade-flow features, and the agent's own resting orders still invisible to it.
 
 ---
 

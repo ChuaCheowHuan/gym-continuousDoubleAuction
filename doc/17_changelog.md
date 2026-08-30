@@ -2053,3 +2053,102 @@ Not defects - work the plan scoped and this branch did not do:
 | Own resting orders in the private block | §30.4. The larger half of what S1-2 left |
 | Maker/taker fees through NAV | §29.4 |
 | `12` §9 items 5-10, 12-14 | Untouched by this branch |
+
+---
+
+## 36. Documents that had started arguing with themselves
+
+§35 audited the plan against the repository. This pass audited the *documents*
+against the code, and found one real bug and a set of claims that had gone
+false when the code beneath them changed. The pattern worth naming: none of
+these were in the sections describing the new work, which were written last and
+are correct. They were in the older sections that the new work invalidated
+without touching.
+
+### 36.1 `visualize_orderbook` plotted private state as ask sizes
+
+The one code defect. It read the newest book snapshot as
+`np.asarray(obs)[-SNAPSHOT_DIM:]`, which was right until §30 appended a 9-float
+private block and moved the end of the vector:
+
+```
+obs width: 177   SNAPSHOT_DIM: 42   n_hist: 4
+correct newest snapshot at [126:168]
+buggy slice at            [135:177]        offset: 9 floats
+
+plotted as "ask sizes":
+   correct : [-0. -0. -0. -0. -0. -0. -0. -0. -0. -0.]
+   buggy   : [-0. -4.554 -0. -0. -0. -1. -0. -1. -0. -0.]
+```
+
+That `-4.554` is a private float - a position or a cash balance - charted as
+depth. Nothing raises: every index resolves, every sum is a float, the plot
+renders. `05` §1 warns about this exact slice in prose and §9 even lists this
+file as a consumer that reads from the end; the env, the tests and the probe
+were all updated for the new layout and this file was missed.
+
+It survived because **nothing in `visualize/` had a single test**. The fix is a
+`_newest_snapshot` helper that slices against `n_hist * SNAPSHOT_DIM`, derives
+`n_hist` from the vector rather than assuming it, and raises on a width it
+cannot decompose - the same contract `ObsLayout.from_obs_space` holds on the
+model side. `test_visualize_orderbook.py` (12 tests) pins it, including a
+sentinel test that fails if the old slice is restored.
+
+### 36.2 `--per-agent` was documented and unreachable
+
+§34.5 added `per_agent` to `from_parquet` and both `10` and `23` presented it as
+the remedy for the dropped private state. It was on no command line, so the
+remedy could not be taken. Now a probe flag.
+
+### 36.3 Two documents contradicted themselves
+
+`07` §2.1 said "**The reward is zero-sum when NAV is**". Twenty lines later a
+blockquote said "**The reward is not zero-sum.**" Both were written honestly -
+the second predates §29 - and together they say nothing. Rewritten to the
+distinction that actually holds: `nav_term` sums to exactly zero, the four
+shaping terms do not, and the comparability caveat survives at ~0.5-1% of a NAV
+move rather than 2.4x it. The flowchart below it was pre-§29 in three separate
+ways: `x loss_multiplier (1.5)`, a drawdown term fed the *level*, and no
+`init_nav` division anywhere - which is to say it drew the formula §29 replaced.
+
+`05` §1 documented the private block as shipped while §7's mindmap and §7.7
+still called "no private state" the single biggest flaw, and §8 said time
+remaining "is missing and cheap... the agent cannot currently condition on it" -
+`time_left` is `PRIVATE_FIELDS[8]`.
+
+### 36.4 `12` was six sections of present-tense description of fixed defects
+
+§2, §3.1, §3.3, §3.4, §3.5 and §4 all described live blockers, while §9's agenda
+table in the same document marked those same items **done**. The analysis is
+kept - it is the record of *why* each mattered, and it is correct as history -
+under a status banner in the convention §3.6 and §5.6 already used.
+
+§3.4 needed more than a banner. Its recommended patch is
+`max(0.0, new_dd - prev_dd)`, the clipped form §29.2 rejected on the evidence
+that it is an asymmetric loss multiplier in disguise. A reader following that
+advice would reintroduce the bias §3.1 is about, so the correction sits with the
+code block rather than only in the banner.
+
+### 36.5 The rest
+
+`02` §2.6 listed the reward coefficients as `0.1 / 0.05 / 0.2 / 0.1 / 1.5` -
+the pre-§29 values, including the `1.5` that made passivity dominant, in the
+table a reader tunes from. `15`'s mindmap and sequencing list still showed
+S1-1/S1-2/S1-3/S2-1/S2-3 and items 1/3/5 as open though its own body marked each
+fixed; item 2 was split, because the `vf_explained_var` half is done and
+`grad_clip` is genuinely still unset. S4-16 described a test that no longer
+exists. `01` cited `02` §6 where every other reference uses §2.x. Four documents
+still gave the observation as 168 floats.
+
+`22` §3 - the "read this before §4" gate - still named S1-1, S1-2 and S1-3 as
+prerequisites for the JEPA proposals, all three of which are fixed. Its two
+blocking caveats now carry status banners: §3.1's gate is open and unwalked (the
+multi-seed comparison is what would walk it), and §3.2 is collected except for
+resting orders. `15`'s S1-1/S1-2/S1-3/S2-1/S2-3 headings said `[verified]` while
+their bodies said Fixed; they now say `[verified, fixed]` in the convention S1-4
+already used.
+
+`16` was deliberately left alone. It carries a banner saying it is a log and not
+a status page, and its `(168,)` readings are correct as dated measurements. The
+one transcript in `05` §6 is labelled rather than rewritten, for the same
+reason.

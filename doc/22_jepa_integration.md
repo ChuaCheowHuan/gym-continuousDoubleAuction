@@ -83,8 +83,9 @@ Five reasons, in descending order of strength.
 
 ### 2.1 The observation is already the grid JEPA masks
 
-[`tokenize.py`](../gym_continuousDoubleAuction/train/model/encoders/tokenize.py) turns the flat
-168-float vector into `(B, n_hist × (k_rows + 1), 4)` tokens whose position is a `(time, level)`
+[`tokenize.py`](../gym_continuousDoubleAuction/train/model/encoders/tokenize.py) turns the book part of the
+observation - 168 of its 177 floats, the private tail having been split off first - into
+`(B, n_hist × (k_rows + 1), 4)` tokens whose position is a `(time, level)`
 pair, and [`transformer.py`](../gym_continuousDoubleAuction/train/model/encoders/transformer.py)
 already carries a **two-axis learned positional embedding** for exactly that grid. A JEPA
 predictor needs precisely one thing the encoder does not: the ability to say "predict the latent
@@ -186,34 +187,47 @@ The pretraining corpus is not a thing that would need building. It is a thing th
 
 Four objections. None is fatal; all change what may honestly be claimed.
 
-### 3.1 A better encoder makes a better do-nothing agent
+### 3.1 A better encoder makes a better do-nothing agent — **prerequisite met**
 
-While S1-1 and S1-3 stand, the policy gradient points at passivity. A JEPA-pretrained encoder
+> **Status.** S1-1 and S1-3 are fixed ([17](17_changelog.md) §29), so this no longer blocks
+> anything. It is kept because it is the reason the ordering in §7 is what it is, and because the
+> *measurement* it warns about is still unmade.
+
+While S1-1 and S1-3 stood, the policy gradient pointed at passivity. A JEPA-pretrained encoder
 that perfectly represents book dynamics, attached to a policy being paid to stop trading, learns
 to stop trading with an excellent internal model of what it is declining to do. Any measured
-"win" would then be an artefact.
+"win" would have been an artefact.
 
 This is the same trap [18](18_configuration.md) §5.5 already warns about for architecture
-comparisons, one level deeper. **S1-1 and S1-3 are prerequisites for the RL-facing proposals
-(§4.3, §4.4), and are not prerequisites for the evaluation-facing ones (§4.1, §4.2).** That
-asymmetry is why the ordering in §7 is what it is.
+comparisons, one level deeper. **S1-1 and S1-3 were prerequisites for the RL-facing proposals
+(§4.3, §4.4), and were not prerequisites for the evaluation-facing ones (§4.1, §4.2)** — which is
+why the probe harness could be built and used first. The gate is now open and unwalked: no
+multi-seed training comparison has been run, so nothing yet says whether a JEPA encoder makes a
+better *trader*. §5.5's protocol is what would answer it.
 
-### 3.2 The observation has no private state, so this can only be a model of *the market*
+### 3.2 The observation had no private state — **mostly fixed**
 
-S1-2: every agent receives the byte-identical public book vector — `distinct obs vectors across
-agents: 1`. A JEPA world model over that observation models the market's evolution and cannot
-represent inventory, VWAP, NAV, drawdown or resting orders, because none of them is in its input.
+> **Status.** S1-2 is closed for inventory, cash, NAV, drawdown, VWAP and time remaining: the
+> observation carries a 9-float private tail ([17](17_changelog.md) §30). **Resting orders are
+> still absent**, so the third bullet below is half-collected and the first still stands.
 
-Consequences:
+S1-2: every agent received the byte-identical public book vector — `distinct obs vectors across
+agents: 1`. A JEPA world model over *that* observation modelled the market's evolution and could
+not represent inventory, VWAP, NAV, drawdown or resting orders, because none of them was in its
+input.
 
-- The latent cannot support the four of nine action categories (`modify`, `cancel`) that are
-  blind for the same reason.
-- An action-conditioned predictor (§4.3) conditioned on *this* agent's action is fitting the
-  conditional expectation over seven unobserved opponent actions. Its loss has a nonzero floor
-  and that floor is not a bug — it is the residual multi-agent stochasticity.
-- Once S1-2 is fixed and the observation carries a private block, action-conditioning becomes
-  materially more interesting: "what does the book — and my position — look like after I send
-  this order" is a *market-impact* model, which is the quantity the project exists to study.
+Consequences, and where each now stands:
+
+- **Still open.** The latent cannot fully support the four of nine action categories (`modify`,
+  `cancel`) that stay partly blind: an agent sees `cash_on_hold` but not *which* orders that cash
+  is committed to.
+- **Unchanged, and not a defect.** An action-conditioned predictor (§4.3) conditioned on *this*
+  agent's action is fitting the conditional expectation over seven unobserved opponent actions.
+  Its loss has a nonzero floor, and that floor is the residual multi-agent stochasticity rather
+  than underfitting — §33.4 of [17](17_changelog.md) says the same about the shipped world model.
+- **Collected.** With the private block in place, action-conditioning is now the materially more
+  interesting object it promised to be: "what does the book — and my position — look like after I
+  send this order" is a *market-impact* model, which is the quantity the project exists to study.
 
 ### 3.3 The per-frame normalizer contaminates a predictive target
 

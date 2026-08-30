@@ -95,7 +95,7 @@ gym_continuousDoubleAuction/
 │   ├── run_all.py                        regenerates every chart
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               758 unit tests
+└── test/                               770 unit tests
     └── integration/                    59 tests that build real Algorithms
 ```
 
@@ -394,7 +394,7 @@ resolving to a number written in Python. The full rules are in
 | `initial_price_min` | 10 | 10 | Lower bound of the per-episode price anchor |
 | `initial_price_max` | 100 | 100 | Upper bound of the per-episode price anchor |
 | `min_size`, `mkt_max_size`, `limit_size_multiple` | 1 / 100 / 10 | same | Order sizing, consumed by `Action_Helper` |
-| `order_penalty`, `trade_penalty`, `drawdown_penalty`, `passive_bonus`, `loss_multiplier` | 0.1 / 0.05 / 0.2 / 0.1 / 1.5 | same | Reward coefficients, consumed by `Reward_Helper` |
+| `order_penalty`, `trade_penalty`, `drawdown_penalty`, `passive_bonus`, `loss_multiplier` | 1e-05 / 2e-05 / 0.2 / 2e-05 / 1.0 | same | Reward coefficients, consumed by `Reward_Helper`. Each multiplies a quantity already expressed as a fraction of starting NAV, so 1e-05 is one basis point of initial capital. **`loss_multiplier` must stay 1.0** or the reward stops being zero-sum — see [07_reward_function.md](07_reward_function.md) §2.1 |
 
 The standalone column is [`config/env_defaults.json`](../config/env_defaults.json) and the
 training column is the `environment` group of
