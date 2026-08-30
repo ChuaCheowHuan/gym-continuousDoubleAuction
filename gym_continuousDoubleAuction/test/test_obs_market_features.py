@@ -13,7 +13,10 @@ LOG1P_SPREAD_IDX = BOOK_DIM + 1
 class TestObsMarketFeatures:
     """
     Tests for the two market-level scalars appended to each observation snapshot:
-      - log_mid             = log(M), the Level 1 midpoint anchor
+      - log_mid             = log(M) - log_mid_centre, the Level 1 midpoint
+                              anchor, centred on the geometric mean of the
+                              price-anchor range so it is not a standing
+                              +4.6 bias into a tanh layer (doc/15 S2-2)
       - log1p_spread_ticks  = log1p(spread / min_tick), 0.0 when not two-sided
     """
 
@@ -80,28 +83,28 @@ class TestObsMarketFeatures:
 
         snap = env.set_agg_LOB()
         expected_M = (98 + 102) / 2.0
-        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(expected_M)), abs=1e-5)
+        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(expected_M)) - env.log_mid_centre, abs=1e-5)
 
     def test_log_mid_bid_only_book(self):
         env = self._make_env()
         self._insert(env, 'bid', 47, 10)
 
         snap = env.set_agg_LOB()
-        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(47.0)), abs=1e-5)
+        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(47.0)) - env.log_mid_centre, abs=1e-5)
 
     def test_log_mid_ask_only_book(self):
         env = self._make_env()
         self._insert(env, 'ask', 63, 10)
 
         snap = env.set_agg_LOB()
-        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(63.0)), abs=1e-5)
+        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(63.0)) - env.log_mid_centre, abs=1e-5)
 
     def test_log_mid_empty_book_uses_last_price(self):
         env = self._make_env()
         env.last_price = 37.0
 
         snap = env.set_agg_LOB()
-        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(37.0)), abs=1e-5)
+        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(37.0)) - env.log_mid_centre, abs=1e-5)
 
     def test_log_mid_survives_non_positive_last_price(self):
         """M defaults to 100.0 when last_price is bad; log must stay finite."""
@@ -109,7 +112,7 @@ class TestObsMarketFeatures:
         env.last_price = 0.0
 
         snap = env.set_agg_LOB()
-        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(100.0)), abs=1e-5)
+        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(100.0)) - env.log_mid_centre, abs=1e-5)
         assert np.isfinite(snap).all()
 
     # ------------------------------------------------------------------
@@ -188,7 +191,7 @@ class TestObsMarketFeatures:
                                           "n_hist": n_hist})
         obs, _ = env.reset()
         stacked = obs["agent_0"]
-        expected_log_mid = float(np.log(env.last_price))
+        expected_log_mid = float(np.log(env.last_price)) - env.log_mid_centre
 
         for k in range(n_hist):
             frame = stacked[k * SNAPSHOT_DIM:(k + 1) * SNAPSHOT_DIM]

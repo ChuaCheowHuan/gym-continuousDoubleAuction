@@ -170,6 +170,7 @@ class TrainConfig:
     min_size: int = _default("min_size")
     mkt_max_size: int = _default("mkt_max_size")
     limit_size_multiple: int = _default("limit_size_multiple")
+    position_scale: int = _default("position_scale")
 
     # Reward coefficients. Previously hardcoded in Reward_Helper.set_reward,
     # which made them the least reachable knobs in the project despite being
@@ -458,6 +459,7 @@ class TrainConfig:
             "min_size": self.min_size,
             "mkt_max_size": self.mkt_max_size,
             "limit_size_multiple": self.limit_size_multiple,
+            "position_scale": self.position_scale,
             "order_penalty": self.order_penalty,
             "trade_penalty": self.trade_penalty,
             "drawdown_penalty": self.drawdown_penalty,

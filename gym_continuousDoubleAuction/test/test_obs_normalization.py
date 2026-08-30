@@ -108,7 +108,8 @@ class TestObsNormalization:
         )
         # The market scalars are not part of the book block: log_mid falls back to
         # last_price and the spread sentinel is 0.0 (no two-sided market).
-        assert float(snap[BOOK_DIM]) == pytest.approx(float(np.log(env.last_price)), abs=1e-5)
+        assert float(snap[BOOK_DIM]) == pytest.approx(
+            float(np.log(env.last_price)) - env.log_mid_centre, abs=1e-5)
         assert float(snap[BOOK_DIM + 1]) == 0.0
 
     def test_bid_obs_non_negative_with_orders(self):
@@ -255,10 +256,12 @@ class TestObsNormalization:
         norm_ask_size_l1 = float(snap[30])
 
         if raw_bid_size_l1 > 0:
-            assert norm_bid_size_l1 == pytest.approx(np.sqrt(raw_bid_size_l1), abs=1e-4), \
+            expected = np.sqrt(raw_bid_size_l1 / env.limit_max_size)
+            assert norm_bid_size_l1 == pytest.approx(expected, abs=1e-4), \
                 "Bid size not sqrt-normalized"
         if raw_ask_size_l1 > 0:
-            assert norm_ask_size_l1 == pytest.approx(-np.sqrt(raw_ask_size_l1), abs=1e-4), \
+            expected = -np.sqrt(raw_ask_size_l1 / env.limit_max_size)
+            assert norm_ask_size_l1 == pytest.approx(expected, abs=1e-4), \
                 "Ask size not sqrt-normalized (should be negative)"
 
     # ------------------------------------------------------------------
@@ -284,7 +287,8 @@ class TestObsNormalization:
         np.testing.assert_array_equal(snap[:BOOK_DIM], np.zeros(BOOK_DIM, dtype=np.float32),
                                       err_msg="Empty book should produce an all-zero book block")
         # M falls back to last_price (50.0), and there is no two-sided spread
-        assert float(snap[BOOK_DIM]) == pytest.approx(float(np.log(50.0)), abs=1e-5)
+        assert float(snap[BOOK_DIM]) == pytest.approx(
+            float(np.log(50.0)) - env.log_mid_centre, abs=1e-5)
         assert float(snap[BOOK_DIM + 1]) == 0.0
 
     def test_zero_last_price_fallback(self):

@@ -18,6 +18,8 @@
     "min_size": 1,
     "mkt_max_size": 100,
     "limit_size_multiple": 10,
+            "_note_position_scale": "position_scale divides net_position before the tanh in the private observation block. Deliberately not limit_max_size, which is what it used to be: that is a sizing parameter - it scales the mean of the Gaussian _set_size draws from and bounds nothing - while inventory accumulates over many fills. Measured over 7,200 agent-steps of random play at default config, |net_position| has a median of 372, a p90 of 1,195, a p95 of 1,485 and a maximum of 1,831, so limit_max_size of 1,000 put 13.2% of agent-steps into tanh saturation. 1500 is that p95, which keeps the feature in its responsive range across the observed distribution (finding S2-2).",
+            "position_scale": 1500,
     "order_penalty": 1e-05,
     "trade_penalty": 2e-05,
     "drawdown_penalty": 0.2,

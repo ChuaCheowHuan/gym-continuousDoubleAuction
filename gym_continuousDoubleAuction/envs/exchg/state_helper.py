@@ -64,9 +64,40 @@ PRIVATE_FIELDS = (
 
 class State_Helper(object):
 
-    def __init__(self, n_hist=env_default("n_hist"), **kwargs):
+    def __init__(self, n_hist=env_default("n_hist"),
+                 initial_price_min=env_default("initial_price_min"),
+                 initial_price_max=env_default("initial_price_max"),
+                 position_scale=env_default("position_scale"),
+                 **kwargs):
         self.n_hist = n_hist
         self.obs_history = deque(maxlen=self.n_hist)
+
+        # Centre of the `log_mid` feature: the log of the geometric mean of the
+        # price-anchor range. `log_mid` restores the absolute price level that
+        # midpoint normalisation throws away, but uncentred it is a near
+        # constant - measured at 4.55..4.64 over a 400-step rollout, a standing
+        # +4.6 bias into a `tanh` first layer while every price feature around
+        # it has a standard deviation of 0.04. Centred on the range the anchor
+        # is actually drawn from, it spans about -1.15..+1.15 instead and
+        # carries the same information. Geometric rather than arithmetic mean
+        # because the quantity is a logarithm: it puts the two ends of the
+        # range symmetrically about zero.
+        low = max(float(initial_price_min), 1e-12)
+        high = max(float(initial_price_max), low)
+        self.log_mid_centre = float(np.log(np.sqrt(low * high)))
+
+        # Divisor of the private `position` field. Deliberately not
+        # `limit_max_size`, which is what this used to be: that is a *sizing*
+        # parameter - it scales the mean of the Gaussian `_set_size` draws from
+        # and bounds nothing - whereas inventory accumulates over many fills.
+        # Measured over 7,200 agent-steps of random play, |net_position| has a
+        # median of 372 but a p90 of 1,195 and a maximum of 1,831, so
+        # `limit_max_size` of 1,000 put 13.2% of steps into `tanh` saturation.
+        self.position_scale = float(position_scale)
+        if self.position_scale <= 0:
+            raise ValueError(
+                f"position_scale must be > 0; got {position_scale!r}."
+            )
 
         # Observation layout as instance state. book_dim and snapshot_dim are
         # derived here and nowhere else - they are not config keys, because a
@@ -213,11 +244,16 @@ class State_Helper(object):
                 "env_defaults.json)."
             )
 
-        # Position as a bounded fraction of the largest order the action space
-        # can express. tanh rather than a clip: an agent at 3x that size and one
-        # at 30x should not encode identically, and tanh keeps the difference
-        # while staying in (-1, 1).
-        position = np.tanh(float(acc.net_position) / float(self.limit_max_size))
+        # Position as a bounded fraction of a reference inventory. tanh rather
+        # than a clip: an agent at 3x that size and one at 30x should not
+        # encode identically, and tanh keeps the difference while staying in
+        # (-1, 1).
+        #
+        # `position_scale`, not `limit_max_size`: see __init__. The latter
+        # bounds nothing and is a per-order quantity, while inventory
+        # accumulates across fills, so it put 13.2% of agent-steps into
+        # saturation.
+        position = np.tanh(float(acc.net_position) / self.position_scale)
 
         # Cost basis relative to the current midpoint - the direction and size
         # of the open position's unrealised move, in the same fractional units
@@ -357,9 +393,24 @@ class State_Helper(object):
         norm_bid_price = np.where(bid_price_list > 0, (M - bid_price_list) / M, 0.0)
         norm_ask_price = np.where(ask_price_list != 0, -((np.abs(ask_price_list) - M) / M), 0.0)
 
-        # Apply volume normalization (sqrt) maintaining observation signs
-        norm_bid_size = np.where(bid_size_list > 0, np.sqrt(bid_size_list), 0.0)
-        norm_ask_size = np.where(ask_size_list != 0, -np.sqrt(np.abs(ask_size_list)), 0.0)
+        # Volume normalization: sqrt of the level volume as a fraction of a
+        # reference size, keeping the observation's sign convention.
+        #
+        # The division is the fix for doc/15 S2-2. Raw `sqrt(V)` reached +-47
+        # against +-0.58 for the normalised prices beside it - a 220x spread in
+        # standard deviation (9.0 vs 0.04) into a `tanh` first layer with no
+        # `MeanStdFilter` anywhere, so size features saturated and dominated
+        # while price features contributed almost nothing. `limit_max_size` is
+        # the reference because it is the scale orders are drawn on, and it
+        # lands the result where a bounded activation can use it: measured over
+        # 9,565 populated levels, sqrt(V / limit_max_size) has a median of 0.52,
+        # a p99 of 0.94 and a maximum of 1.32.
+        size_scale = float(self.limit_max_size)
+        norm_bid_size = np.where(
+            bid_size_list > 0, np.sqrt(bid_size_list / size_scale), 0.0)
+        norm_ask_size = np.where(
+            ask_size_list != 0,
+            -np.sqrt(np.abs(ask_size_list) / size_scale), 0.0)
 
         # Market-level scalars appended after the book block.
         #
@@ -367,7 +418,12 @@ class State_Helper(object):
         # without it a market at price 10 and one at price 100 are indistinguishable,
         # even though min_tick is absolute and so worth 10x more in the former.
         # M is guaranteed > 0 by the fallback chain above, so log() is always defined.
-        log_mid = np.log(M)
+        #
+        # Centred on `log_mid_centre` - see __init__ for why. The information is
+        # unchanged: the centre is a constant of the configuration, not of the
+        # episode, so subtracting it is a shift the network would otherwise have
+        # to learn to undo before the feature could do anything.
+        log_mid = np.log(M) - self.log_mid_centre
 
         # log1p_spread_ticks measures the spread in the same tick units the action
         # space quotes in (min_tick), not the tick_size config, which is dropped on

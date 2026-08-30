@@ -46,6 +46,9 @@ class continuousDoubleAuctionEnv(
         mkt_max_size = self._cfg("mkt_max_size")
         limit_size_multiple = self._cfg("limit_size_multiple")
 
+        # Observation scales, consumed by State_Helper.
+        position_scale = self._cfg("position_scale")
+
         # Reward coefficients, consumed by Reward_Helper.
         order_penalty = self._cfg("order_penalty")
         trade_penalty = self._cfg("trade_penalty")
@@ -63,6 +66,9 @@ class continuousDoubleAuctionEnv(
             min_size=min_size,
             mkt_max_size=mkt_max_size,
             limit_size_multiple=limit_size_multiple,
+            initial_price_min=self._cfg("initial_price_min"),
+            initial_price_max=self._cfg("initial_price_max"),
+            position_scale=position_scale,
             order_penalty=order_penalty,
             trade_penalty=trade_penalty,
             drawdown_penalty=drawdown_penalty,
