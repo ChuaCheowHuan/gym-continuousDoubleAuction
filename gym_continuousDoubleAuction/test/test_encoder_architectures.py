@@ -32,6 +32,7 @@ from gym_continuousDoubleAuction.train.model.encoders import (
     common_settings,
     training_overrides,
 )
+from gym_continuousDoubleAuction.train.model.encoders import jepa as jepa_module
 from gym_continuousDoubleAuction.train.model.encoders.jepa import (
     MASK_AXES,
     sample_mask,
@@ -839,17 +840,21 @@ class TestJEPA:
         the prediction *perfect* - loss near zero, which reads as success.
         `latent_std` goes to zero at the same time, and is the only signal that
         distinguishes the two.
+
+        The collapse is forced on the ONLINE path, because that is what the
+        statistic now measures. It used to be read off the no-grad `target`,
+        which is doc/15 S2-9: a zeroed *target* trunk made the number fall
+        while the thing being trained was perfectly healthy, and - worse - the
+        hinge built from it carried no gradient at all.
         """
         obs_space, _ = spaces
-        # ema_decay 1.0 freezes the target completely, so the zeroing below
-        # survives the EMA step `_forward` takes before computing the loss.
         module = build_module(spaces, "jepa", spec={"ema_decay": 1.0})
         encoder = module.encoder.actor_encoder
 
-        # Force the collapse: a target trunk whose weights are all zero emits
-        # the same vector for every input.
+        # A predictor whose weights are all zero emits the same vector for
+        # every input, which is exactly what a collapsed online path does.
         with torch.no_grad():
-            for parameter in encoder.target_trunk.parameters():
+            for parameter in encoder.predictor.parameters():
                 parameter.zero_()
 
         module.train()
@@ -862,6 +867,91 @@ class TestJEPA:
         # And the hinge pushes back, so the reported aux loss is NOT near zero
         # even though the prediction problem became trivial.
         assert float(stats["aux_loss"].detach()) > float(stats["predict_loss"])
+
+    def test_the_variance_hinge_actually_carries_a_gradient(self, monkeypatch, spaces):
+        """doc/15 S2-9, isolated so only the hinge can explain the result.
+
+        The hinge was computed from `target`, built under `torch.no_grad()` by
+        a trunk with `requires_grad_(False)`. `loss + coeff * penalty` still
+        backpropagates - through `loss` - so nothing raised, and the term
+        described everywhere as the only active defence against collapse was a
+        constant.
+
+        Asserting that "a gradient reaches the trunk" does not catch that: one
+        reaches it from the prediction loss either way. So the same batch and
+        the same mask are run twice, differing only in `variance_coeff`. If the
+        hinge is in the graph the gradients must differ; if it is a constant
+        they are identical, because a constant's derivative is zero however
+        large the coefficient in front of it.
+
+        `VARIANCE_TARGET` is raised so the hinge is off its `relu` floor on a
+        healthy encoder. Collapsing the encoder instead would not do: the
+        obvious way is to zero the predictor, and a zeroed predictor has a zero
+        Jacobian back to the trunk.
+        """
+        monkeypatch.setattr(jepa_module, "VARIANCE_TARGET", 100.0)
+
+        obs_space, _ = spaces
+        # ema_decay 1.0 freezes the target, so the EMA step `_forward` takes
+        # cannot make the second pass differ for a reason of its own.
+        module = build_module(spaces, "jepa", spec={"ema_decay": 1.0})
+        encoder = module.encoder.actor_encoder
+        module.train()
+        batch = sample_batch(obs_space, n=8, module=module)
+
+        def gradients_with(coeff):
+            encoder.variance_coeff = coeff
+            # `sample_mask` draws from the global RNG, so re-seeding is what
+            # makes the two passes see the same mask.
+            torch.manual_seed(0)
+            module.encoder(batch)
+            stats = encoder.take_jepa_stats()
+            encoder.zero_grad(set_to_none=True)
+            stats["aux_loss"].backward()
+            return (
+                {
+                    name: parameter.grad.clone()
+                    for name, parameter in encoder.trunk.named_parameters()
+                    if parameter.grad is not None
+                },
+                float(stats["aux_loss"].detach()),
+                float(stats["predict_loss"]),
+            )
+
+        without, aux_off, predict_off = gradients_with(0.0)
+        with_hinge, aux_on, _predict_on = gradients_with(50.0)
+
+        assert without, "precondition: the prediction loss reaches the trunk"
+        assert aux_off == pytest.approx(predict_off, rel=1e-6), (
+            "precondition: at coeff 0 the aux loss is the prediction loss"
+        )
+        assert aux_on > aux_off, "precondition: the hinge is off its floor"
+
+        assert any(
+            not torch.allclose(without[name], with_hinge[name])
+            for name in without
+        ), (
+            "the trunk's gradient is unchanged by variance_coeff, so the "
+            "variance hinge is a constant again"
+        )
+
+    def test_the_target_branch_stays_detached(self, spaces):
+        """The guard on the other side: gradients must not reach the target."""
+        obs_space, _ = spaces
+        module = build_module(spaces, "jepa", spec={"ema_decay": 1.0})
+        encoder = module.encoder.actor_encoder
+
+        module.train()
+        module.encoder(sample_batch(obs_space, n=8, module=module))
+        stats = encoder.take_jepa_stats()
+
+        encoder.zero_grad(set_to_none=True)
+        stats["aux_loss"].backward()
+
+        assert all(
+            parameter.grad is None or not torch.any(parameter.grad != 0)
+            for parameter in encoder.target_trunk.parameters()
+        ), "the target branch is an EMA copy and must never be trained"
 
     @pytest.mark.parametrize("mask_axis", MASK_AXES)
     def test_every_mask_axis_builds_and_runs(self, spaces, mask_axis):

@@ -675,12 +675,41 @@ class TorchJEPAEncoder(TorchModel, Encoder):
 
         loss = F.smooth_l1_loss(predicted, target)
 
-        # Collapse metrics. A collapsed JEPA drives `loss` to ZERO, which reads
-        # as success - so the loss alone cannot tell a working encoder from a
-        # dead one. These can: `std` is the mean per-dimension standard
-        # deviation of the targets across the batch, and it goes to 0 exactly
-        # when every observation maps to the same vector.
-        flat = target.reshape(-1, target.shape[-1])
+        # Collapse metrics and the hinge, both computed on the ONLINE side.
+        #
+        # This is the whole of doc/15 S2-9. They used to be derived from
+        # `target`, which is produced inside `torch.no_grad()` by a trunk whose
+        # parameters are additionally `requires_grad_(False)`. So `std` had
+        # `grad_fn is None`, `variance_penalty` had `requires_grad False`, and
+        # `loss + coeff * penalty` was `loss` plus a *constant*. Nothing raised,
+        # because adding a constant to a tensor that does carry a grad_fn is
+        # perfectly legal - the sum still backpropagates, just not through the
+        # term that was supposed to do the work. The mechanism this module,
+        # `train_config.json`'s `_note_collapse` and `pretrain/__init__` all
+        # describe as "the only thing actively pushing back once a collapse
+        # starts" contributed exactly zero gradient, and `variance_coeff` was a
+        # dead knob that nonetheless entered `encoder_fingerprint` - so changing
+        # it invalidated checkpoints while changing nothing at all.
+        #
+        # `predicted` is the online counterpart of `target`: same positions,
+        # same count, and gradients reach both the predictor and, through
+        # `context`, the trunk. VICReg applies its variance and covariance terms
+        # to the embeddings being *trained*; BYOL stops the gradient on the
+        # target branch alone. Reading them off the target was a deviation from
+        # both.
+        #
+        # Layer-normed like the target before the statistics are taken, so
+        # `VARIANCE_TARGET` of 1.0 means the same thing on both sides. The
+        # normalisation is per token, over the feature dimension, so it does not
+        # touch the across-batch variance these terms are about.
+        online = F.layer_norm(predicted, predicted.shape[-1:])
+
+        # A collapsed JEPA drives `loss` to ZERO, which reads as success - so
+        # the loss alone cannot tell a working encoder from a dead one. `std`
+        # can: it is the mean per-dimension standard deviation across the
+        # batch, and it goes to 0 exactly when every observation maps to the
+        # same vector.
+        flat = online.reshape(-1, online.shape[-1])
         std = flat.std(dim=0).mean()
 
         # Dimensional collapse: variance held up while dimensions become
@@ -691,7 +720,7 @@ class TorchJEPAEncoder(TorchModel, Encoder):
         offdiag = off_diagonal.abs().mean()
 
         # VICReg-style hinge: inactive on a healthy encoder, and the only thing
-        # actively pushing back once a collapse starts.
+        # actively pushing back once a collapse starts. It now actually is.
         variance_penalty = F.relu(VARIANCE_TARGET - std)
 
         return {
