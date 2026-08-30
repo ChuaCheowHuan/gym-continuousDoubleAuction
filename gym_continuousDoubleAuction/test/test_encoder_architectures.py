@@ -284,6 +284,102 @@ def test_config_block_keys_are_all_recognised(spaces, encoder_type):
 
 # --- Transformer specifics ---------------------------------------------------
 
+@pytest.mark.parametrize("encoder_type", SHIPPED_ENCODERS)
+class TestEncodersReadTheGridAsAGrid:
+    """No selectable encoder may be blind to the order of the book grid.
+
+    doc/15 S2-10. The shipped `lstm` encoder was `tokenize -> Linear ->
+    LayerNorm -> mean`, and a mean of per-token linear projections is a linear
+    function of the token *sum*: permutation-invariant across both axes.
+    Measured on the real observation space, permuting the book levels moved its
+    latent by 1.8e-07 and reversing time by 1.2e-07 - float32 noise. Its 44 book
+    tokens collapsed to their per-field mean before anything nonlinear, so the
+    encoder discarded exactly the structure its own docstring says it preserves,
+    and any lstm-vs-transformer comparison was measuring something else.
+
+    The `encoder` group exists to answer "which architecture reads this market
+    better". An architecture that cannot see where a level sits, or which
+    snapshot came first, is not answering it - so this belongs in the contract
+    every encoder meets rather than in one encoder's own tests.
+
+    Note what *does not* catch this: positional embeddings alone. Under a linear
+    projection and a mean they are an input-independent constant and the
+    invariance survives them untouched. Only a comparison of latents can tell.
+    """
+
+    def _latent(self, module, obs_space, obs):
+        """The actor latent for one observation, stateful module or not.
+
+        A stateful module takes `(B, T, obs)` and a STATE_IN tree, so the
+        observation is repeated across the time axis rather than reshaped -
+        a recurrent encoder must be covered by this contract too, and it is the
+        one the finding is about.
+        """
+        batch = sample_batch(obs_space, n=1, module=module)
+        if module.is_stateful():
+            batch[Columns.OBS] = obs.unsqueeze(1).expand(
+                1, batch[Columns.OBS].shape[1], obs.shape[-1]
+            ).contiguous()
+        else:
+            batch[Columns.OBS] = obs
+
+        out = module.encoder(batch)
+        latent = out[ENCODER_OUT]
+        return latent[ACTOR] if isinstance(latent, dict) else latent
+
+    def _observation(self, obs_space):
+        return torch.from_numpy(np.stack([obs_space.sample()]))
+
+    def test_permuting_book_levels_changes_the_latent(self, spaces, encoder_type):
+        obs_space, _ = spaces
+        module = build_module(spaces, encoder_type)
+        module.eval()
+        layout = ObsLayout.from_obs_space(obs_space)
+
+        obs = self._observation(obs_space)
+        shuffled = obs.clone()
+        permutation = torch.randperm(layout.k_rows)
+        for snapshot in range(layout.n_hist):
+            base = snapshot * layout.snapshot_dim
+            for field in range(layout.book_rows):
+                start = base + field * layout.k_rows
+                row = shuffled[0, start:start + layout.k_rows]
+                shuffled[0, start:start + layout.k_rows] = row[permutation]
+
+        with torch.no_grad():
+            before = self._latent(module, obs_space, obs)
+            after = self._latent(module, obs_space, shuffled)
+
+        assert float((before - after).abs().max()) > 1e-4, (
+            f"{encoder_type} is invariant to the order of the book's levels"
+        )
+
+    def test_reversing_the_history_changes_the_latent(self, spaces, encoder_type):
+        obs_space, _ = spaces
+        module = build_module(spaces, encoder_type)
+        module.eval()
+        layout = ObsLayout.from_obs_space(obs_space)
+        if layout.n_hist < 2:
+            pytest.skip("a one-frame stack has no time order to destroy")
+
+        obs = self._observation(obs_space)
+        reversed_obs = obs.clone()
+        snapshots = [
+            obs[0, i * layout.snapshot_dim:(i + 1) * layout.snapshot_dim].clone()
+            for i in range(layout.n_hist)
+        ]
+        for i, snapshot in enumerate(reversed(snapshots)):
+            reversed_obs[0, i * layout.snapshot_dim:(i + 1) * layout.snapshot_dim] = snapshot
+
+        with torch.no_grad():
+            before = self._latent(module, obs_space, obs)
+            after = self._latent(module, obs_space, reversed_obs)
+
+        assert float((before - after).abs().max()) > 1e-4, (
+            f"{encoder_type} is invariant to the order of the history stack"
+        )
+
+
 class TestTransformer:
     ENCODER = "transformer"
 

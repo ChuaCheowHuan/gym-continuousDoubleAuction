@@ -141,6 +141,36 @@ def tokenize(obs: torch.Tensor, layout: ObsLayout, tokenization: str) -> torch.T
     return tokens.reshape(batch, layout.n_hist * (layout.k_rows + 1), width)
 
 
+
+def positional_index(layout: ObsLayout, tokenization: str):
+    """(time index, level index) per token, for the two positional embeddings.
+
+    Mirrors the token order `tokenize` produces. Returns tensors of length
+    `num_tokens`, and the size each axis's embedding table needs.
+
+    Lives here rather than beside the transformer that first used it, because
+    it is a statement about the token order this module defines - and every
+    tokenising encoder needs it, not just the attention stacks. `token_embed`
+    went without one, which made the shipped `lstm` encoder invariant to the
+    order of the very grid it exists to preserve (doc/15 S2-10).
+    """
+    num_tokens, _ = token_shape(layout, tokenization)
+
+    if tokenization == "time":
+        # One token per snapshot; no level axis.
+        return torch.arange(num_tokens), torch.zeros(num_tokens, dtype=torch.long)
+
+    # `level` and `both` both lay levels out as k_rows real levels plus one
+    # global token, so the level axis is k_rows + 1 wide either way.
+    stride = layout.k_rows + 1
+    positions = torch.arange(num_tokens)
+    if tokenization == "level":
+        # Newest snapshot only; no time axis.
+        return torch.zeros(num_tokens, dtype=torch.long), positions
+
+    # "both" is time-major: index = t * stride + level.
+    return positions // stride, positions % stride
+
 def _check(tokenization: str) -> None:
     if tokenization not in TOKENIZATIONS:
         raise ValueError(
