@@ -133,6 +133,11 @@ class TestTheObservationSaysWhatItMeans:
             {"num_of_agents": 4, "max_step": 400, "is_render": False}
         )
         env.reset(seed=11)
+        # `reset(seed=)` seeds the env's generator, not the action spaces:
+        # `Space.sample()` has a generator of its own. Seeding both is what
+        # makes the thresholds below a fact rather than a coin toss.
+        for index, agent in enumerate(env.agents):
+            env.action_spaces[agent].seed(11 + index)
 
         open_steps = 0
         for _ in range(400):

@@ -22,7 +22,10 @@ class continuousDoubleAuctionEnv(
     Exchg_Helper, 
     MultiAgentEnv):
 
-    metadata = {'render.modes': ['human']}
+    # `render_modes`, not the pre-gymnasium `render.modes`. The old key made
+    # `gymnasium.make` warn on every construction - it looks for the new one
+    # and reports what it found instead.
+    metadata = {'render_modes': ['human']}
 
     def __init__(self, config=None):      
         # Handle config parameter for RLlib compatibility
@@ -132,6 +135,27 @@ class continuousDoubleAuctionEnv(
 
         # Updated action space to use the new Compact Flat structure
         self.action_spaces = self.act_space(self.num_of_agents)
+
+        # The SINGULAR spaces, which are a different thing from the plural pair
+        # above and are what everything outside RLlib's new API stack reads.
+        # RLlib marks them @OldAPIStack and defines them as the space of a
+        # *single* agent, which is exactly what they are set to here - so
+        # setting them disturbs nothing the new stack does.
+        #
+        # Leaving them as the `None` inherited from MultiAgentEnv is why the
+        # entry point this project's own setup.py documents did not work:
+        #
+        #     gymnasium.make("continuousDoubleAuction-v0")
+        #     TypeError: action space does not inherit from
+        #     `gymnasium.spaces.Space`, actual type: <class 'NoneType'>
+        #
+        # `PassiveEnvChecker` reads the singular attributes and refuses None.
+        # Nothing in the test suite or the CI packaging job exercised `make` -
+        # both construct the class directly - so it stayed broken while every
+        # job was green. See doc/15 S2-12.
+        first_agent = agent_ids[0]
+        self.observation_space = self.observation_spaces[first_agent]
+        self.action_space = self.action_spaces[first_agent]
 
     def _cfg(self, key):
         """One env config value, falling back to `config/env_defaults.json`.

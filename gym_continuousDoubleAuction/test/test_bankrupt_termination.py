@@ -21,6 +21,10 @@ def _env(**overrides):
     config.update(overrides)
     env = continuousDoubleAuctionEnv(config)
     env.reset(seed=3)
+    # `reset(seed=)` seeds the env's generator, not the action spaces:
+    # `Space.sample()` has a generator of its own.
+    for index, agent in enumerate(env.agents):
+        env.action_spaces[agent].seed(3 + index)
     return env
 
 

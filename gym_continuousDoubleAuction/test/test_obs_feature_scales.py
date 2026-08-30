@@ -30,6 +30,11 @@ def _rollout(steps=400, seed=7, agents=4):
         {"num_of_agents": agents, "max_step": steps, "is_render": False}
     )
     obs, _ = env.reset(seed=seed)
+    # `reset(seed=)` seeds the env's own generator, not the action spaces -
+    # `Space.sample()` draws from a generator of its own. Without this the
+    # rollout differs run to run and the thresholds below become a coin toss.
+    for index, agent in enumerate(env.agents):
+        env.action_spaces[agent].seed(seed + index)
 
     k, snap_dim, n_hist = env.k_rows, env.snapshot_dim, env.n_hist
     blocks = {
@@ -106,8 +111,16 @@ class TestFeatureBlocksAreComparable:
         assert np.all(np.isfinite(self.privates))
 
     def test_inventory_stays_inside_its_own_scale(self):
+        """Not zero, and deliberately not: the scale is a measured p95.
+
+        `position_scale` is the 95th percentile of |net_position| under random
+        play, so a few percent of agent-steps beyond it is the definition of
+        the number rather than a failure. What the threshold rules out is the
+        13.2% that `limit_max_size` produced - a scale the feature spent an
+        eighth of its life saturated against.
+        """
         fraction = self.sat / max(1, self.steps)
-        assert fraction < 0.02, (
+        assert fraction < 0.08, (
             f"{fraction:.1%} of agent-steps exceed position_scale "
             f"({self.env.position_scale:.0f}); it was 13.2% against "
             "limit_max_size"

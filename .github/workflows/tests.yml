@@ -106,4 +106,46 @@ jobs:
           for _ in range(8):
               env.step({a: env.action_spaces[a].sample() for a in env.agents})
           print("stepped an installed env with", env.num_of_agents, "agents")
+
+          # The entry point setup.py's own docstring documents. It raised
+          # `TypeError: action space does not inherit from
+          # gymnasium.spaces.Space, actual type: NoneType` for as long as it
+          # has been documented, because only the plural spaces were set and
+          # nothing here or in the test suite ever called `make` - both
+          # construct the class directly. See doc/15 S2-12.
+          made = gymnasium.make("continuousDoubleAuction-v0")
+          made.reset(seed=0)
+          inner = made.unwrapped
+          for _ in range(4):
+              made.step({a: inner.action_spaces[a].sample() for a in inner.agents})
+          print("gymnasium.make() constructs and steps")
+
+          # `visualize/` had no __init__.py, so find_packages() omitted it and
+          # no wheel carried it - while doc/01 documents
+          # `python -m gym_continuousDoubleAuction.visualize.run_all` as an
+          # entry point. In-tree and editable installs hid it. doc/15 S3-21.
+          #
+          # The package is imported, not `run_all`: that module needs
+          # matplotlib AND - through visualize_modules -> policy_handler - the
+          # whole training stack including torch, so importing it here would
+          # make this job about installing the extras rather than about what
+          # the wheel carries. The file's presence is checked below instead.
+          import gym_continuousDoubleAuction.visualize  # noqa: F401
+          print("visualize/ is importable from the wheel")
+          PY
+
+      - name: The wheel must carry visualize/
+        run: |
+          python - <<'PY'
+          import glob, sys, zipfile
+          wheel = glob.glob("dist/*.whl")[0]
+          shipped = sorted(
+              n for n in zipfile.ZipFile(wheel).namelist()
+              if "/visualize/" in n and n.endswith(".py")
+          )
+          print(f"{wheel}: {len(shipped)} visualize module(s)")
+          for name in shipped:
+              print("  ", name)
+          if not any(n.endswith("visualize/run_all.py") for n in shipped):
+              sys.exit("the wheel is missing visualize/run_all.py - see doc/15 S3-21")
           PY

@@ -221,6 +221,11 @@ class TestTheObservationCanSeeExecutions:
             {"num_of_agents": 4, "max_step": 300, "is_render": False}
         )
         env.reset(seed=5)
+        # `reset(seed=)` seeds the env's generator, not the action spaces:
+        # `Space.sample()` has a generator of its own. Seeding both is what
+        # makes the thresholds below a fact rather than a coin toss.
+        for index, agent in enumerate(env.agents):
+            env.action_spaces[agent].seed(5 + index)
 
         seen = {"signed_volume": 0, "log1p_trade_count": 0, "trade_direction": 0}
         for _ in range(300):
