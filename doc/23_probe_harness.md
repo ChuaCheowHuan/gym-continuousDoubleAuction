@@ -21,7 +21,10 @@ protocol this supplies a metric for),
 > long enough to say whether the transformer or the LSTM beats the MLP, which is the question the
 > `encoder` group exists to answer.
 
-The obvious way to close it — train each architecture, compare returns — cannot work yet:
+The obvious way to close it — train each architecture, compare returns — could not work when this
+was written. Both blockers below are now fixed ([17](17_changelog.md) §29), so the strong form of
+the question is open; what remains is that no multi-seed comparison has actually been run. The
+harness is still the cheaper way in, because it does not need one.
 
 | Finding | Consequence for an architecture comparison |
 |---|---|

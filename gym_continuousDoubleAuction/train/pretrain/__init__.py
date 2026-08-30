@@ -52,6 +52,12 @@ as a spectacular success. `PretrainReport.collapsed` checks for it, and the CLI
 says so in as many words rather than leaving a good-looking number to be
 believed.
 
+Detection is not prevention, and until recently this package had only the first.
+The `variance_coeff` hinge that is supposed to resist a collapse was computed
+from the EMA *target*, built under `torch.no_grad()`, so it contributed exactly
+zero gradient and the encoder had no active defence at all - doc/15 S2-9. It is
+computed on the online side now, so the knob does what this file says it does.
+
 Distribution shift
 ------------------
 A book made by uniformly-random agents does not look like a book made by a

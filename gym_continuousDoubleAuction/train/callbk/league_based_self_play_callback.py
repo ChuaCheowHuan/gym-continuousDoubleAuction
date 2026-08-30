@@ -80,6 +80,15 @@ def _new_tally() -> dict:
         # Only `num_trades` is cumulative, so pairing it with a step counter
         # would divide an episode's trades by one step's passive fills.
         "per_agent_fills": {},
+        # The last NAV string each agent reported, carried forward so the
+        # conservation check can still add up after an agent stops reporting.
+        # A bankrupt agent is terminated and drops out of `info` from its
+        # terminal step onward (doc/15 S2-4), and the check used to read only
+        # `get_infos(-1)` - so a terminated agent's NAV silently vanished from
+        # the total and the ledger looked broken when it was not. Kept as the
+        # exact `str()` of the Decimal, which is the whole reason `info["NAV"]`
+        # is a string.
+        "last_nav": {},
         "term_sum": {term: 0.0 for term in REWARD_TERMS},
         "term_sq": {term: 0.0 for term in REWARD_TERMS},
     }
@@ -586,6 +595,9 @@ class SelfPlayCallback(RLlibCallback):
             if not isinstance(agent_info, dict):
                 continue
             tally["agent_steps"] += 1
+            nav = agent_info.get("NAV")
+            if nav is not None:
+                tally["last_nav"][agent_id] = nav
             if agent_info.get("is_pass_action"):
                 tally["passes"] += 1
             tally["rejections"] += int(agent_info.get("num_rejected_step", 0) or 0)
@@ -646,6 +658,13 @@ class SelfPlayCallback(RLlibCallback):
         if recorder is not None:
             recorder.finish_episode(episode.id_)
 
+        # Before `_log_activity`, which pops the tally: the NAV check below
+        # needs the last NAV of any agent that terminated mid-episode, and
+        # asking for it afterwards would silently build a fresh empty tally.
+        carried_nav = dict(
+            (self._activity.get(episode.id_) or {}).get("last_nav", {})
+        )
+
         self._log_activity(episode, metrics_logger)
 
         # Try to get parameters from different possible sources. The starting
@@ -687,12 +706,23 @@ class SelfPlayCallback(RLlibCallback):
 
         last_info = episode.get_infos(-1)
 
+        # An agent terminated mid-episode is absent from the final step's
+        # `info`, so fall back to the last NAV it did report. Without this the
+        # sum is short by exactly that agent's NAV and every episode containing
+        # a bankruptcy reads as a conservation violation - which would halt a
+        # strict run for a ledger that is perfectly intact.
+        carried = carried_nav
+
         total_nav = Decimal(0)
         per_agent = []
         for i in range(num_agents):
             agent_key = f"agent_{i}"
-            if agent_key in last_info:
-                nav = Decimal(last_info[agent_key].get("NAV", "0"))
+            info = last_info.get(agent_key) if last_info else None
+            reported = info.get("NAV") if isinstance(info, dict) else None
+            if reported is None:
+                reported = carried.get(agent_key)
+            if reported is not None:
+                nav = Decimal(str(reported))
                 total_nav += nav
                 per_agent.append(f"  {agent_key} NAV: {nav:,.2f}")
 

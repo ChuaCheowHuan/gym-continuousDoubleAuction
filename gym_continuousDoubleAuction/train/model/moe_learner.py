@@ -113,7 +113,14 @@ class CDAPPOTorchLearner(PPOTorchLearner):
         self.metrics.log_dict(
             {
                 MOE_AUX_LOSS_KEY: aux_loss,
-                # A healthy mixture keeps these near 1/num_experts. Max drifting
+                # A healthy mixture keeps these near top_k/num_experts -
+                # 0.5 at the shipped top_k 2, num_experts 4, NOT 0.25.
+                # `expert_fractions` scatters top_k ones per token, so it sums
+                # to top_k rather than to 1; Switch Transformer's f_i is the
+                # fraction of tokens *dispatched* and does sum to 1, which is
+                # where the confusion came from. This note and the one in
+                # train_config.json both said 1/num_experts, which reads a
+                # perfectly healthy mixture as collapsed. Max drifting
                 # towards 1 and min towards 0 is expert collapse, which is
                 # otherwise invisible: a collapsed MoE and a working one have
                 # identical losses and identical throughput.

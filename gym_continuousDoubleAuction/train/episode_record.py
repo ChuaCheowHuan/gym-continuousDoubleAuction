@@ -72,7 +72,11 @@ INFO_COLUMNS = (
     ("reward", "float64"),
     ("num_trades", "int64"),
     ("net_position", "int64"),
+    # The cost basis actually paid for the lots held. Distinct from
+    # `carrying_vwap` below, which is the ledger's rolled basis and is
+    # not a price once a position has been partly closed.
     ("VWAP", "float64"),
+    ("carrying_vwap", "float64"),
     ("cash", "float64"),
     ("cash_on_hold", "float64"),
     ("position_val", "float64"),

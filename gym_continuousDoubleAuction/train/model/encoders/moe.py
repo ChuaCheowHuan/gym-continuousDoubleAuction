@@ -26,7 +26,8 @@ chain exists because the one before it cannot see the next.
 
 Expect collapse anyway
 ----------------------
-This env's observation is 168 floats and the league is small. MoE's premise is
+This env's observation is small (a 184-float book stack plus a 9-float private
+block) and the league is small too. MoE's premise is
 capacity you cannot afford densely, which is not obviously the situation here,
 so the honest prior is that the experts specialise weakly or not at all. That is
 why `expert_fractions` is reported as a metric rather than left implicit: a

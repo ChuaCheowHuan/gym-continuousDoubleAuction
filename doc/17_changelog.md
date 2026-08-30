@@ -2152,3 +2152,150 @@ already used.
 a status page, and its `(168,)` readings are correct as dated measurements. The
 one transcript in `05` §6 is labelled rather than rewritten, for the same
 reason.
+
+---
+
+## 37. The 2026-08-30 review pass
+
+A review that re-audited every open item in [15](15_findings_and_recommendations.md) against the
+code as it stood, and searched the two areas the register did not cover: the risk layer of the
+accounting, and everything added since it was written. It found one blocking defect and four major
+ones the register did not contain, each confirmed by running the code. Every S2 in the register is
+now closed.
+
+### 37.1 An agent's position was not bounded by its capital (S1-5)
+
+`Trader._order_approved` waived the cash check for the portion of an order reducing the *current*
+net position, and nothing netted an order against the trader's **other resting orders** — so N
+individually-"closing" orders were each approved against the same lots. Executed: a trader long 10
+with `cash = 0` rested ten 10-lot asks across ten price levels, every one approved, and filled into
+a **90-lot short with no refusal**. The approval is what bounds risk, so this was the absence of a
+position limit rather than a rounding error.
+
+It now nets against the position not already claimed by this trader's own resting orders, excluding
+the order an upsert or a modify is about to replace. Nine of the ten are refused and the position
+goes flat.
+
+This contradicted the register's own summary, which called the buying-power logic "subtle and
+right". That line is amended rather than deleted: the design is sound and the defect was one missing
+term in it.
+
+### 37.2 Bankrupt agents kept trading (S2-4)
+
+`set_done` recorded bankruptcy and `set_all_done` then rebuilt the dictionary as all-`False`, so
+`terminateds[agent]` was `False` for every agent on every step: the agent kept emitting transitions,
+kept accruing reward, and kept resting executable orders in a book it had no capital behind. Its
+module return — what champion promotion reads — was then dominated by a constant unrelated to its
+policy.
+
+Termination is decided and applied in the same call, which also settles the monotone-`done_set`
+worry: an agent goes at the moment its NAV is non-positive, so no later step can terminate a
+recovered one.
+
+**The consequence worth recording**, because it was one edit away from being a silent regression:
+the NAV conservation check read only the *final* step's `info`, so a terminated agent's NAV vanished
+from the total and any episode containing a bankruptcy would have read as a violation — halting a
+strict run over an intact ledger. `on_episode_step` carries each agent's last reported NAV forward,
+and a test pins that a genuine breach is still caught when an agent terminated.
+
+### 37.3 One participant could set the price everyone was marked at (S2-5)
+
+Self-matching printed to the tape and `mark_to_mkt` marked every account off the last print, so one
+self-traded contract re-priced the whole market: a 1-lot self-print moved **1,000 NAV**. It was also
+free — `_process_trades` sends a self-trade down a branch that never calls `process_acc`, so neither
+trade counter incremented and `trade_penalty` never charged for it.
+
+Both halves were needed. `Trader._prevent_self_match` withdraws the trader's own crossing orders
+before they reach the matcher (in `Trader`, not `process_order_list`, because `envs/orderbook/` is
+off-limits). But the *resting leg* of a prevented self-cross survives, and with the mark falling
+back to a one-sided quote that lone order simply became the mark — the same 1,000 NAV, with no trade
+at all. So `mark_price` uses the midpoint only when the book is genuinely two-sided and falls back
+to the last trade otherwise. Moving the mark now means posting a better quote somebody else can
+lift.
+
+### 37.4 The observation (S2-2, S2-6, S2-7, S2-11)
+
+Four changes, and the vector grows from 177 floats to **193**, so no earlier checkpoint loads.
+
+- **Scales.** Level volumes are `sqrt(V / limit_max_size)`; `log_mid` is centred on the log of the
+  geometric mean of the anchor range; `position` divides by a new `position_scale` key rather than
+  by `limit_max_size`, which is not a maximum of anything. The size/price standard-deviation ratio
+  falls from **220× to 3.7×** and inventory saturates its scale on **0.0%** of agent-steps
+  against 13.2%.
+- **One normaliser per stack.** The deque holds raw frames and the whole stack is normalised once,
+  at emission, by `M_t`. A bid resting at 90 while the midpoint moved 100 → 96 read 0.100 then
+  0.063; it now reads 0.0625 in both, with `mid_return` recording the move as −0.04.
+- **Trade flow.** The tape loop that iterated, counted and discarded is now `_trade_flow`, and
+  `signed_volume` / `log1p_trade_count` / `trade_direction` join the snapshot. `extra_dim` is
+  checked against a new `EXTRA_FIELDS` tuple; it was documentation before, so setting it was a
+  silent no-op.
+- **A cost basis that is still a price.** `_size_decrease` rolls realised P&L into the remaining
+  lot's basis — load-bearing on the short side, so it stays — which let `VWAP` go negative and made
+  `vwap_vs_mid` report `0.0`, the encoding for *flat*, on **5.0%** of open-position steps.
+  `entry_vwap` is the price actually paid; the rolled basis stays as `carrying_vwap`.
+
+### 37.5 The learning stack (S2-9, S2-10, S3-22)
+
+- **The JEPA anti-collapse hinge carried no gradient.** It was computed from `target`, built under
+  `torch.no_grad()` by a trunk with `requires_grad_(False)`, so `loss + coeff * penalty` was the
+  prediction loss plus a *constant*. Nothing raised, because adding a constant to a tensor that does
+  carry a `grad_fn` is legal. The encoder had collapse detection and no collapse prevention, and
+  `variance_coeff` was a dead knob that still invalidated checkpoints. The statistics now come from
+  the online side.
+- **The `lstm` encoder ignored the grid.** Its tokenizer was `tokenize → Linear → LayerNorm → mean`,
+  a linear function of the token sum: permuting book levels moved the latent by 1.8e-07. Positional
+  embeddings alone do not fix that — under a linear projection and a mean they are an
+  input-independent constant, verified at 0.000000 — so a token-wise nonlinearity goes with them.
+  The guard is in the every-encoder contract.
+- **The encoder fingerprint did not identify the encoder.** It hashed the raw spec, giving both
+  false mismatches (a stated default vs an omitted one) and false matches (an omitted key surviving
+  an edit to `*_DEFAULTS`). It hashes the merged settings now, and `pretrain`, `save` and
+  `verify_fingerprint` share one definition of what `encoder_spec=None` means.
+
+### 37.6 Two documented entry points that did not work (S2-12, S3-21)
+
+`gymnasium.make("continuousDoubleAuction-v0")` — documented in `setup.py`'s own docstring — raised
+`TypeError` because only the plural spaces were set. `visualize/` had no `__init__.py`, so no wheel
+carried it, while [01](01_overview.md) documents it as an entry point. Both were invisible to every
+CI job, because each job constructs what it needs directly.
+
+Both are covered by `test/test_entry_points.py`, and both were additionally verified against a real
+wheel installed into a clean venv outside the checkout. **The matching change to the CI packaging
+job is not in this branch**: the credential this work was pushed with has no `workflow` scope, so
+GitHub refused the update to `.github/workflows/tests.yml`. The job should build the wheel, call
+`gymnasium.make`, import `gym_continuousDoubleAuction.visualize`, and fail if
+`visualize/run_all.py` is absent from the archive — importing the *package* rather than `run_all`,
+which needs matplotlib and, through `visualize_modules → policy_handler`, torch. Until that lands,
+these two entry points are guarded by the unit test and by nothing in CI, which is the same blind
+spot that let them break.
+
+### 37.7 Documents that had gone stale again
+
+Test counts (`681 passed, 1 xfailed`, `36`, `59`) against the real 863 + 112; the S1-1 xfail still
+described as live in two documents, contradicting a third that correctly records its deletion;
+[14](14_perspective_ai_engineer.md) §5.1 and §5.3 measuring a tree a quarter the current size, now
+carrying the same "original audit" banner §5.4 already had; `168 floats` in five places; "episode
+pickles ~10 MB" for what is 34 MB of Parquet; and a `1/num_experts` target for a metric that sums
+to `top_k`, stated identically in two notes that would have read a healthy mixture as collapsed.
+
+Dependencies: `pyarrow` is imported directly and was declared nowhere — the exact reasoning that
+produced S3-6 — while `scipy` and `tensorboardX` were declared as direct dependencies and are
+imported nowhere. `six` was in `install_requires` but missing from `requirements.txt`. The lock file
+still carried the removed scikit-learn stack and lacked `GPUtil`; the Docker image still installed
+scikit-learn and pinned a numpy floor `requirements.txt` does not use. `setup.py` said `0.1.0` while
+`CITATION.cff` and the README said `2.0.0`. The duplicate `CODEOWNER` file, which GitHub never read,
+is deleted.
+
+### 37.8 What this pass did not close
+
+`S1-5`'s escrow half: a resting order is escrowed at full notional whether it opens or closes, so a
+cash-poor trader closing a position drives `cash` negative while `cash_on_hold` rises by the same
+amount. NAV is untouched — it is a reclassification, not a loss — and it is asserted rather than
+fixed, because changing it means tracking escrow per order and every partial-fill path in
+`Cash_Processor` assumes escrow equals full notional.
+
+Everything in S3 and S4 that was open remains open, including `sys.exit()` in the matching engine
+(S3-7), the two degenerate size dimensions (S3-1, S3-2), the level index as a non-stationary
+coordinate (S3-15), the league ranking a signal not comparable across roles (S3-12), and the absence
+of `entropy_coeff`, `grad_clip`, `gamma` and `lambda_` from the PPO configuration (S3-11, S3-13).
+`envs/orderbook/` remains off-limits, which is why S2-5's fix lives in `Trader`.

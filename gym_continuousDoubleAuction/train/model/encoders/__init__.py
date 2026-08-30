@@ -376,10 +376,44 @@ def encoder_fingerprint(encoder_type: str, encoder_spec: Optional[Dict[str, Any]
     order would otherwise read as a change. Round-tripping through JSON turns
     those tuples into lists, so `fingerprints_match` compares the normalised
     form of both sides rather than the raw values.
+
+    **The spec is merged against the registry's defaults before it is hashed**,
+    which is doc/15 S3-22. Hashing the raw spec got it wrong in both
+    directions, and the two failures are opposites:
+
+    * A false mismatch. A config that states a value equal to its registered
+      default, and one that omits it, describe the *identical* architecture and
+      fingerprinted differently - a hard error at `pretrain.verify_fingerprint`
+      and at `train._check_restored_config` over nothing at all. That is not
+      hypothetical: `pretrain(encoder_spec=None)` resolves to registry defaults
+      and wrote an *empty* spec, so pretrained weights could not be loaded into
+      a training run built from the config block they were trained from.
+    * A false match, which is worse. A checkpoint whose spec omitted a key kept
+      the same fingerprint when the value in `*_DEFAULTS` was later edited - so
+      the architecture changed and the guard said nothing, which is exactly the
+      silent shape mismatch this function exists to prevent.
+
+    `encoder_settings` is the canonical merged form and is what the encoder is
+    actually built from, so it is what identifies it. `mlp` has no registry
+    entry and is passed through unmerged.
     """
+    try:
+        # `or {}` because None means "the encoder's own defaults", which is
+        # exactly what merging an empty spec produces - and `encoder_settings`
+        # validates keys, so it takes a mapping rather than None.
+        settings = encoder_settings(encoder_type, encoder_spec or {})
+    except (KeyError, ValueError):
+        # `mlp` has no registry entry, and a spec carrying another encoder's
+        # keys does not validate against this one. Neither is this function's
+        # business: it reports an identity, and a caller comparing two of them
+        # wants "these differ", not an exception from the comparison itself.
+        # The un-merged spec cannot collide with a merged one, so a mismatch is
+        # still what comes out.
+        settings = dict(encoder_spec or {})
+
     return {
         "encoder_type": encoder_type,
-        "encoder_spec": tuple(sorted((encoder_spec or {}).items())),
+        "encoder_spec": tuple(sorted(settings.items())),
     }
 
 

@@ -152,6 +152,7 @@ class TrainConfig:
     num_trained_agents: int = _default("num_trained_agents")
     init_cash: int = _default("init_cash")
     tick_size: int = _default("tick_size")
+    mark_price_source: str = _default("mark_price_source")
     tape_display_length: int = _default("tape_display_length")
     max_step: int = _default("max_step")
     is_render: bool = _default("is_render")
@@ -169,6 +170,7 @@ class TrainConfig:
     min_size: int = _default("min_size")
     mkt_max_size: int = _default("mkt_max_size")
     limit_size_multiple: int = _default("limit_size_multiple")
+    position_scale: int = _default("position_scale")
 
     # Reward coefficients. Previously hardcoded in Reward_Helper.set_reward,
     # which made them the least reachable knobs in the project despite being
@@ -447,6 +449,7 @@ class TrainConfig:
             "num_of_agents": self.num_agents,
             "init_cash": self.init_cash,
             "tick_size": self.tick_size,
+            "mark_price_source": self.mark_price_source,
             "tape_display_length": self.tape_display_length,
             "max_step": self.max_step,
             "is_render": self.is_render,
@@ -456,6 +459,7 @@ class TrainConfig:
             "min_size": self.min_size,
             "mkt_max_size": self.mkt_max_size,
             "limit_size_multiple": self.limit_size_multiple,
+            "position_scale": self.position_scale,
             "order_penalty": self.order_penalty,
             "trade_penalty": self.trade_penalty,
             "drawdown_penalty": self.drawdown_penalty,

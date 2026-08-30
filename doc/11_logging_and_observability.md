@@ -720,10 +720,12 @@ trainable module on every iteration, read from `result["learners"][<module_id>]`
 `trainable_policy_ids`, since only the modules in `policies_to_train` appear in that block.
 
 `test/integration/test_progress_and_vf.py` asserts in CI that a real run reports it, finite, for
-every trainable module. It deliberately does **not** assert `!= 0.0`: this repository currently
-reports values around 1e-5, so that assertion passes on a critic that is entirely dead. The
-substantive threshold (`>= 1e-3`) is there as a strict xfail that pins S1-1 as a known failure and
-becomes a live guard the moment it is fixed.
+every trainable module. It deliberately does **not** assert `!= 0.0`: while S1-1 was open this
+repository reported values around 1e-5, so that assertion would have passed on a critic that was
+entirely dead. The substantive threshold (`>= 1e-3`) is what distinguishes them, and it is now a
+**live assertion** - it was a strict xfail pinning S1-1, XPASSed on the first run after the fix
+exactly as the marker's reason said it would, and the marker was deleted. See
+[10 §6.2.2](10_testing.md).
 
 Everything else on this list is *computed* by RLlib and reaches `progress.jsonl` (§1.6) as part of
 the full result dict. What is still missing is surfacing: none of it is in the iteration log line

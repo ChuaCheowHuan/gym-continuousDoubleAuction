@@ -28,10 +28,10 @@ Farama-Notifications==0.0.6
 filelock==3.32.2
 fonttools==4.63.0
 fsspec==2026.7.0
+GPUtil==1.4.0
 gymnasium==1.2.2
 idna==3.18
 Jinja2==3.1.6
-joblib==1.5.3
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 kiwisolver==1.5.0
@@ -58,14 +58,12 @@ ray==2.56.1
 referencing==0.37.0
 requests==2.34.2
 rpds-py==2026.6.3
-scikit-learn==1.9.0
 scipy==1.18.0
 six==1.17.0
 sortedcontainers==2.4.0
 sympy==1.14.0
 tabulate==0.10.0
 tensorboardX==2.6.5
-threadpoolctl==3.6.0
 torch==2.13.0
 typing-inspection==0.4.3
 typing_extensions==4.16.0

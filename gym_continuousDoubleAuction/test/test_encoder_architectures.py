@@ -32,6 +32,7 @@ from gym_continuousDoubleAuction.train.model.encoders import (
     common_settings,
     training_overrides,
 )
+from gym_continuousDoubleAuction.train.model.encoders import jepa as jepa_module
 from gym_continuousDoubleAuction.train.model.encoders.jepa import (
     MASK_AXES,
     sample_mask,
@@ -282,6 +283,102 @@ def test_config_block_keys_are_all_recognised(spaces, encoder_type):
 
 
 # --- Transformer specifics ---------------------------------------------------
+
+@pytest.mark.parametrize("encoder_type", SHIPPED_ENCODERS)
+class TestEncodersReadTheGridAsAGrid:
+    """No selectable encoder may be blind to the order of the book grid.
+
+    doc/15 S2-10. The shipped `lstm` encoder was `tokenize -> Linear ->
+    LayerNorm -> mean`, and a mean of per-token linear projections is a linear
+    function of the token *sum*: permutation-invariant across both axes.
+    Measured on the real observation space, permuting the book levels moved its
+    latent by 1.8e-07 and reversing time by 1.2e-07 - float32 noise. Its 44 book
+    tokens collapsed to their per-field mean before anything nonlinear, so the
+    encoder discarded exactly the structure its own docstring says it preserves,
+    and any lstm-vs-transformer comparison was measuring something else.
+
+    The `encoder` group exists to answer "which architecture reads this market
+    better". An architecture that cannot see where a level sits, or which
+    snapshot came first, is not answering it - so this belongs in the contract
+    every encoder meets rather than in one encoder's own tests.
+
+    Note what *does not* catch this: positional embeddings alone. Under a linear
+    projection and a mean they are an input-independent constant and the
+    invariance survives them untouched. Only a comparison of latents can tell.
+    """
+
+    def _latent(self, module, obs_space, obs):
+        """The actor latent for one observation, stateful module or not.
+
+        A stateful module takes `(B, T, obs)` and a STATE_IN tree, so the
+        observation is repeated across the time axis rather than reshaped -
+        a recurrent encoder must be covered by this contract too, and it is the
+        one the finding is about.
+        """
+        batch = sample_batch(obs_space, n=1, module=module)
+        if module.is_stateful():
+            batch[Columns.OBS] = obs.unsqueeze(1).expand(
+                1, batch[Columns.OBS].shape[1], obs.shape[-1]
+            ).contiguous()
+        else:
+            batch[Columns.OBS] = obs
+
+        out = module.encoder(batch)
+        latent = out[ENCODER_OUT]
+        return latent[ACTOR] if isinstance(latent, dict) else latent
+
+    def _observation(self, obs_space):
+        return torch.from_numpy(np.stack([obs_space.sample()]))
+
+    def test_permuting_book_levels_changes_the_latent(self, spaces, encoder_type):
+        obs_space, _ = spaces
+        module = build_module(spaces, encoder_type)
+        module.eval()
+        layout = ObsLayout.from_obs_space(obs_space)
+
+        obs = self._observation(obs_space)
+        shuffled = obs.clone()
+        permutation = torch.randperm(layout.k_rows)
+        for snapshot in range(layout.n_hist):
+            base = snapshot * layout.snapshot_dim
+            for field in range(layout.book_rows):
+                start = base + field * layout.k_rows
+                row = shuffled[0, start:start + layout.k_rows]
+                shuffled[0, start:start + layout.k_rows] = row[permutation]
+
+        with torch.no_grad():
+            before = self._latent(module, obs_space, obs)
+            after = self._latent(module, obs_space, shuffled)
+
+        assert float((before - after).abs().max()) > 1e-4, (
+            f"{encoder_type} is invariant to the order of the book's levels"
+        )
+
+    def test_reversing_the_history_changes_the_latent(self, spaces, encoder_type):
+        obs_space, _ = spaces
+        module = build_module(spaces, encoder_type)
+        module.eval()
+        layout = ObsLayout.from_obs_space(obs_space)
+        if layout.n_hist < 2:
+            pytest.skip("a one-frame stack has no time order to destroy")
+
+        obs = self._observation(obs_space)
+        reversed_obs = obs.clone()
+        snapshots = [
+            obs[0, i * layout.snapshot_dim:(i + 1) * layout.snapshot_dim].clone()
+            for i in range(layout.n_hist)
+        ]
+        for i, snapshot in enumerate(reversed(snapshots)):
+            reversed_obs[0, i * layout.snapshot_dim:(i + 1) * layout.snapshot_dim] = snapshot
+
+        with torch.no_grad():
+            before = self._latent(module, obs_space, obs)
+            after = self._latent(module, obs_space, reversed_obs)
+
+        assert float((before - after).abs().max()) > 1e-4, (
+            f"{encoder_type} is invariant to the order of the history stack"
+        )
+
 
 class TestTransformer:
     ENCODER = "transformer"
@@ -839,17 +936,21 @@ class TestJEPA:
         the prediction *perfect* - loss near zero, which reads as success.
         `latent_std` goes to zero at the same time, and is the only signal that
         distinguishes the two.
+
+        The collapse is forced on the ONLINE path, because that is what the
+        statistic now measures. It used to be read off the no-grad `target`,
+        which is doc/15 S2-9: a zeroed *target* trunk made the number fall
+        while the thing being trained was perfectly healthy, and - worse - the
+        hinge built from it carried no gradient at all.
         """
         obs_space, _ = spaces
-        # ema_decay 1.0 freezes the target completely, so the zeroing below
-        # survives the EMA step `_forward` takes before computing the loss.
         module = build_module(spaces, "jepa", spec={"ema_decay": 1.0})
         encoder = module.encoder.actor_encoder
 
-        # Force the collapse: a target trunk whose weights are all zero emits
-        # the same vector for every input.
+        # A predictor whose weights are all zero emits the same vector for
+        # every input, which is exactly what a collapsed online path does.
         with torch.no_grad():
-            for parameter in encoder.target_trunk.parameters():
+            for parameter in encoder.predictor.parameters():
                 parameter.zero_()
 
         module.train()
@@ -862,6 +963,91 @@ class TestJEPA:
         # And the hinge pushes back, so the reported aux loss is NOT near zero
         # even though the prediction problem became trivial.
         assert float(stats["aux_loss"].detach()) > float(stats["predict_loss"])
+
+    def test_the_variance_hinge_actually_carries_a_gradient(self, monkeypatch, spaces):
+        """doc/15 S2-9, isolated so only the hinge can explain the result.
+
+        The hinge was computed from `target`, built under `torch.no_grad()` by
+        a trunk with `requires_grad_(False)`. `loss + coeff * penalty` still
+        backpropagates - through `loss` - so nothing raised, and the term
+        described everywhere as the only active defence against collapse was a
+        constant.
+
+        Asserting that "a gradient reaches the trunk" does not catch that: one
+        reaches it from the prediction loss either way. So the same batch and
+        the same mask are run twice, differing only in `variance_coeff`. If the
+        hinge is in the graph the gradients must differ; if it is a constant
+        they are identical, because a constant's derivative is zero however
+        large the coefficient in front of it.
+
+        `VARIANCE_TARGET` is raised so the hinge is off its `relu` floor on a
+        healthy encoder. Collapsing the encoder instead would not do: the
+        obvious way is to zero the predictor, and a zeroed predictor has a zero
+        Jacobian back to the trunk.
+        """
+        monkeypatch.setattr(jepa_module, "VARIANCE_TARGET", 100.0)
+
+        obs_space, _ = spaces
+        # ema_decay 1.0 freezes the target, so the EMA step `_forward` takes
+        # cannot make the second pass differ for a reason of its own.
+        module = build_module(spaces, "jepa", spec={"ema_decay": 1.0})
+        encoder = module.encoder.actor_encoder
+        module.train()
+        batch = sample_batch(obs_space, n=8, module=module)
+
+        def gradients_with(coeff):
+            encoder.variance_coeff = coeff
+            # `sample_mask` draws from the global RNG, so re-seeding is what
+            # makes the two passes see the same mask.
+            torch.manual_seed(0)
+            module.encoder(batch)
+            stats = encoder.take_jepa_stats()
+            encoder.zero_grad(set_to_none=True)
+            stats["aux_loss"].backward()
+            return (
+                {
+                    name: parameter.grad.clone()
+                    for name, parameter in encoder.trunk.named_parameters()
+                    if parameter.grad is not None
+                },
+                float(stats["aux_loss"].detach()),
+                float(stats["predict_loss"]),
+            )
+
+        without, aux_off, predict_off = gradients_with(0.0)
+        with_hinge, aux_on, _predict_on = gradients_with(50.0)
+
+        assert without, "precondition: the prediction loss reaches the trunk"
+        assert aux_off == pytest.approx(predict_off, rel=1e-6), (
+            "precondition: at coeff 0 the aux loss is the prediction loss"
+        )
+        assert aux_on > aux_off, "precondition: the hinge is off its floor"
+
+        assert any(
+            not torch.allclose(without[name], with_hinge[name])
+            for name in without
+        ), (
+            "the trunk's gradient is unchanged by variance_coeff, so the "
+            "variance hinge is a constant again"
+        )
+
+    def test_the_target_branch_stays_detached(self, spaces):
+        """The guard on the other side: gradients must not reach the target."""
+        obs_space, _ = spaces
+        module = build_module(spaces, "jepa", spec={"ema_decay": 1.0})
+        encoder = module.encoder.actor_encoder
+
+        module.train()
+        module.encoder(sample_batch(obs_space, n=8, module=module))
+        stats = encoder.take_jepa_stats()
+
+        encoder.zero_grad(set_to_none=True)
+        stats["aux_loss"].backward()
+
+        assert all(
+            parameter.grad is None or not torch.any(parameter.grad != 0)
+            for parameter in encoder.target_trunk.parameters()
+        ), "the target branch is an EMA copy and must never be trained"
 
     @pytest.mark.parametrize("mask_axis", MASK_AXES)
     def test_every_mask_axis_builds_and_runs(self, spaces, mask_axis):

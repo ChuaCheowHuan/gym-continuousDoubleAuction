@@ -78,7 +78,10 @@ class _BuildPyWithConfig(_build_py):
 
 setup(
     name="gym_continuousDoubleAuction",
-    version="0.1.0",
+    # Matches CITATION.cff and the README's citation block. They said 2.0.0
+    # while this said 0.1.0, so `pip show` reported a version no document
+    # mentioned.
+    version="2.0.0",
     description=(
         "A multi-agent continuous double auction (limit order book) environment "
         "for reinforcement learning, with RLlib league-based self-play."
@@ -104,6 +107,10 @@ setup(
         "numpy>=2.2,<3",
         "pandas>=3.0,<4",
         "sortedcontainers>=2.4",
+        # Imported directly by train/episode_record.py and probe/corpus.py.
+        # Transitive through ray[rllib], which is the reasoning that produced
+        # S3-6 - so it is declared rather than relied on.
+        "pyarrow>=15",
         "tabulate>=0.10",
         # Base class of the env. Pinned to the same release requirements.txt
         # pins, because Ray 2.56.x hard-pins gymnasium==1.2.2 and the two

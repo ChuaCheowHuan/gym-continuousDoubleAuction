@@ -22,7 +22,10 @@ class continuousDoubleAuctionEnv(
     Exchg_Helper, 
     MultiAgentEnv):
 
-    metadata = {'render.modes': ['human']}
+    # `render_modes`, not the pre-gymnasium `render.modes`. The old key made
+    # `gymnasium.make` warn on every construction - it looks for the new one
+    # and reports what it found instead.
+    metadata = {'render_modes': ['human']}
 
     def __init__(self, config=None):      
         # Handle config parameter for RLlib compatibility
@@ -35,6 +38,7 @@ class continuousDoubleAuctionEnv(
         self.num_of_agents = self._cfg("num_of_agents")
         init_cash = self._cfg("init_cash")
         tick_size = self._cfg("tick_size")
+        mark_price_source = self._cfg("mark_price_source")
         tape_display_length = self._cfg("tape_display_length")
         self.max_step = self._cfg("max_step")
         is_render = self._cfg("is_render")
@@ -44,6 +48,9 @@ class continuousDoubleAuctionEnv(
         min_size = self._cfg("min_size")
         mkt_max_size = self._cfg("mkt_max_size")
         limit_size_multiple = self._cfg("limit_size_multiple")
+
+        # Observation scales, consumed by State_Helper.
+        position_scale = self._cfg("position_scale")
 
         # Reward coefficients, consumed by Reward_Helper.
         order_penalty = self._cfg("order_penalty")
@@ -58,9 +65,13 @@ class continuousDoubleAuctionEnv(
             tick_size,
             tape_display_length,
             n_hist=self.n_hist,
+            mark_price_source=mark_price_source,
             min_size=min_size,
             mkt_max_size=mkt_max_size,
             limit_size_multiple=limit_size_multiple,
+            initial_price_min=self._cfg("initial_price_min"),
+            initial_price_max=self._cfg("initial_price_max"),
+            position_scale=position_scale,
             order_penalty=order_penalty,
             trade_penalty=trade_penalty,
             drawdown_penalty=drawdown_penalty,
@@ -124,6 +135,27 @@ class continuousDoubleAuctionEnv(
 
         # Updated action space to use the new Compact Flat structure
         self.action_spaces = self.act_space(self.num_of_agents)
+
+        # The SINGULAR spaces, which are a different thing from the plural pair
+        # above and are what everything outside RLlib's new API stack reads.
+        # RLlib marks them @OldAPIStack and defines them as the space of a
+        # *single* agent, which is exactly what they are set to here - so
+        # setting them disturbs nothing the new stack does.
+        #
+        # Leaving them as the `None` inherited from MultiAgentEnv is why the
+        # entry point this project's own setup.py documents did not work:
+        #
+        #     gymnasium.make("continuousDoubleAuction-v0")
+        #     TypeError: action space does not inherit from
+        #     `gymnasium.spaces.Space`, actual type: <class 'NoneType'>
+        #
+        # `PassiveEnvChecker` reads the singular attributes and refuses None.
+        # Nothing in the test suite or the CI packaging job exercised `make` -
+        # both construct the class directly - so it stayed broken while every
+        # job was green. See doc/15 S2-12.
+        first_agent = agent_ids[0]
+        self.observation_space = self.observation_spaces[first_agent]
+        self.action_space = self.action_spaces[first_agent]
 
     def _cfg(self, key):
         """One env config value, falling back to `config/env_defaults.json`.
@@ -212,6 +244,12 @@ class continuousDoubleAuctionEnv(
         self.truncateds = {}   # New in Ray 2.4
         self.done_set = set()
         self.infos = {}
+
+        # `set_all_done` narrows this to the agents still live, so a new
+        # episode has to restore it. `possible_agents` is the fixed roster and
+        # is never narrowed, which is the distinction RLlib draws between the
+        # two.
+        self.agents = list(self.possible_agents)
 
         self.seq_trades = []
         self.seq_order_in_book = []

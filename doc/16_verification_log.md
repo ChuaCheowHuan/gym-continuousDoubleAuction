@@ -532,9 +532,96 @@ through `build_config` and takes a few minutes. Neither writes into the reposito
 `episode_data_dir=None` is passed; with the default the rollout probes will create
 `episode_data/` in the working directory.
 
-When these were recorded, seeding was non-functional (S3-5), so **re-running would not reproduce
+16.12 is reproducible: it seeds both the env and the action spaces. Everything before it is not.
+When those were recorded, seeding was non-functional (S3-5), so **re-running would not reproduce
 the exact numbers above** — only the signs, ratios and orders of magnitude. That was itself a
 finding, and it is now fixed: all three of the env's random draws read `self.np_random`, so
 `reset(seed=...)` pins an episode and a probe written to seed the env *is* reproducible. The
 numbers recorded above were produced before that, from unseeded runs, and are left as they were —
 re-running the same script today will not match them digit for digit unless it seeds.
+
+---
+
+## 16.12 After the 2026-08-30 fix pass
+
+Re-measured on the fixed code, 4 agents × 400 steps at default config, `reset(seed=7)` **and** the
+action spaces seeded — `Space.sample()` draws from a generator of its own, which `reset(seed=)` does
+not touch, so a probe that seeds only the env is not reproducible. `CDA_rand.py` already seeded both;
+three of the new tests did not, and were flaky until they did.
+
+### Observation feature scales (S2-2)
+
+| Block | min | max | std |
+|---|---|---|---|
+| `bid_price` | 0.0000 | 0.3385 | 0.0663 |
+| `bid_size` | 0.0000 | 1.1136 | 0.2471 |
+| `ask_price` | −0.5856 | 0.0000 | 0.0823 |
+| `ask_size` | −0.9214 | 0.0000 | 0.2433 |
+
+Size/price standard-deviation ratio **3.7×**, against **220×** before (sizes std 9.0 vs prices 0.04,
+sizes reaching ±47). Every book feature is inside ±1.2 — a range a `tanh` first layer can use.
+
+### The market scalars (S2-6, S2-7)
+
+`extra_dim` 2 → 6. The last four did not exist; the tape loop that should have produced three of them
+iterated, counted and discarded.
+
+| Scalar | min | max | std | non-zero |
+|---|---|---|---|---|
+| `log_mid` | 0.3963 | 1.1612 | 0.1722 | 100.0% |
+| `log1p_spread_ticks` | 0.0000 | 3.4012 | 0.8147 | 89.0% |
+| `mid_return` | −0.1935 | 0.2308 | 0.0374 | 48.0% |
+| `signed_volume` | −0.0800 | 0.1080 | 0.0255 | 57.5% |
+| `log1p_trade_count` | 0.0000 | 1.6094 | 0.4480 | 57.8% |
+| `trade_direction` | −1.0000 | 1.0000 | 0.7592 | 57.8% |
+
+`log_mid` was 4.55–4.64 before centring: a standing +4.6 bias into a bounded activation while every
+price feature beside it had a standard deviation of 0.04.
+
+### The one-normaliser-per-stack property (S2-6)
+
+Directly, rather than by correlation. A bid resting at 90 while the midpoint moves 100 → 96:
+
+| | frame at mid 100 | frame at mid 96 |
+|---|---|---|
+| normalised bid L1, **before** | 0.100 | 0.063 |
+| normalised bid L1, **after** | 0.0625 | 0.0625 |
+| `log_mid`, after | 0.0000 | −0.0408 |
+
+`mid_return` on the newest frame is −0.0400, i.e. 96/100 − 1. The order had not moved; its
+denominator had. A correlation against `Δ log_mid` is *not* a good test of this — the best bid and
+the midpoint are mechanically linked, so a genuine relationship exists either way, and the measured
+correlation moved from +0.61 to −0.71 rather than to zero.
+
+### Account and risk invariants (S1-5, S2-4, S2-11)
+
+Over 1,600 agent-steps:
+
+```
+|position| > position_scale (1500)          : 0      (0.0%)   was 13.2% vs limit_max_size
+open positions                              : 1582
+  of which entry_vwap <= 0                  : 0      (0.0%)   was 5.0% on the rolled VWAP
+agent-steps with negative cash              : 0
+total NAV                                   : 4000000.000000000000000000000  (init 4,000,000)
+```
+
+The layered-closing-order exploit, re-run: a trader long 10 with `cash = 0` resting ten 10-lot asks
+across ten price levels now has **nine of the ten refused**, and lifting what rested leaves it
+**flat** rather than 90 lots short.
+
+The self-cross, re-run: the tape does not grow, and neither trader's NAV moves — where before a
+1-lot self-print at a chosen price moved **1,000 NAV** between them.
+
+### Encoder order-sensitivity (S2-10)
+
+Maximum absolute change in the `lstm` tokenizer's latent, real observation space:
+
+| | before | positions only | positions + token-wise nonlinearity |
+|---|---|---|---|
+| book levels permuted | 1.8e-07 | 0.000000 | 0.070 |
+| history reversed | 1.2e-07 | 0.000000 | 0.078 |
+
+The middle column is the one worth keeping: positional embeddings alone change nothing under a
+linear projection and a mean, because `mean(W·xᵢ + pᵢ)` is `W·mean(xᵢ) + mean(pᵢ)`.
+
+**Supports:** S1-5, S2-2, S2-4, S2-5, S2-6, S2-7, S2-10, S2-11.

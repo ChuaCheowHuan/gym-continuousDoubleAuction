@@ -41,8 +41,10 @@ import torch
 from ray.rllib.core.columns import Columns
 
 from gym_continuousDoubleAuction.logging_setup import get_logger
+from gym_continuousDoubleAuction.config_loader import group
 from gym_continuousDoubleAuction.train.model.encoders import (
     encoder_fingerprint,
+    encoder_settings,
     fingerprints_match,
 )
 from gym_continuousDoubleAuction.train.probe import features as features_module
@@ -112,6 +114,26 @@ class PretrainReport:
         if not values:
             return "-"
         return f"{values[0]:.5f} -> {values[-1]:.5f}"
+
+
+def resolve_spec(encoder_type: str,
+                 encoder_spec: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """`encoder_spec`, with None meaning "the config file's block".
+
+    One definition because `pretrain` and `save` must agree: the fingerprint
+    written beside the weights has to describe the architecture the weights are
+    *of*. They did not. `None` reached `build_module`, which turns a falsy spec
+    into `{}` and so resolved to the *registry* defaults, while `save` wrote
+    `encoder_fingerprint(encoder_type, None)` - so a pretrained encoder was
+    built from whatever the code shipped rather than from what the run would be
+    configured with, and the weights would not load into a training run built
+    from the config block. See doc/15 S3-22.
+    """
+    if encoder_spec is not None:
+        return encoder_spec
+    return group("train_config.json", "encoder")["encoder_specs"].get(
+        encoder_type, {}
+    )
 
 
 def _jepa_encoder(module):
@@ -190,7 +212,9 @@ def pretrain(
         obs_space: Single-agent observation space, for building the module.
         act_space: Single-agent action space, same.
         encoder_type: Must name an encoder with a JEPA objective.
-        encoder_spec: Its `encoder_specs` block; None reads the config file's.
+        encoder_spec: Its `encoder_specs` block; None reads the config
+            file's, which is what makes the pretrained architecture the
+            one a training run will build.
         steps: Optimiser steps.
         batch_size: Rows per step.
         lr: Adam learning rate.
@@ -211,6 +235,16 @@ def pretrain(
             f"self-supervised objective. Available: {', '.join(PRETRAINABLE)}."
         )
 
+    # `None` means "the config file's block", as the docstring says - it did
+    # not. `build_module` turns a falsy spec into `{}`, which
+    # `build_trainable_module_spec` then resolves to the *registry* defaults, so
+    # a pretrained encoder was built from whatever the code shipped rather than
+    # from what the run would be configured with. `save` then wrote
+    # `encoder_fingerprint(encoder_type, None)` beside the weights, and a
+    # training run built from the config block could not load them. See
+    # doc/15 S3-22.
+    encoder_spec = resolve_spec(encoder_type, encoder_spec)
+
     torch.manual_seed(seed)
     generator = np.random.default_rng(seed)
 
@@ -218,6 +252,20 @@ def pretrain(
         obs_space, act_space, encoder_type, encoder_spec
     )
     encoder = _jepa_encoder(module)
+
+    # The world model has no optimiser here and no data to train on: the loop
+    # feeds `encoder({Columns.OBS: batch})` with no NEXT_OBS and no ACTIONS, so
+    # the term short-circuits and never runs. Saving a randomly initialised
+    # world model into a checkpoint that `strict` load then pulls into a
+    # training run is silent, which is the only reason this is loud.
+    if encoder_settings(encoder_type, encoder_spec).get("world_model"):
+        raise ValueError(
+            f"encoder_spec has world_model=True, but {__name__} trains only "
+            "the trunk and the predictor: the corpus carries observations "
+            "alone, so the action-conditioned term never runs and its "
+            "parameters would be saved untrained. Pretrain with "
+            "world_model=False and enable it for the training run."
+        )
 
     train_mask, validation_mask, _test_mask = probe_module.split_masks(
         corpus.episode_index, len(corpus)
@@ -321,6 +369,10 @@ def verify_fingerprint(path: str, encoder_type: str,
         FileNotFoundError: if `path` is not a pretrain checkpoint.
         ValueError: on a mismatch.
     """
+    # Resolved the same way `pretrain` and `save` resolve it, so all three
+    # agree on what `None` means.
+    encoder_spec = resolve_spec(encoder_type, encoder_spec)
+
     fingerprint_path = os.path.join(path, FINGERPRINT_FILE)
     for required in (os.path.join(path, WEIGHTS_FILE), fingerprint_path):
         if not os.path.isfile(required):

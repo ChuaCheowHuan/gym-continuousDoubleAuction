@@ -4,13 +4,23 @@ This is the "structured" of the two ways to give this env an LSTM.
 
 The other one is free: set `use_lstm=True` on `DefaultModelConfig` and RLlib
 builds a recurrent encoder whose tokenizer is a stock MLP over the raw
-168-float observation. The book's `(time, level, field)` structure is discarded
+flat observation. The book's `(time, level, field)` structure is discarded
 exactly as it is under `mlp`, and the LSTM's memory is layered on top of an
 `n_hist`-step window that already carries most of the same information.
 
 This one keeps the structure: the tokenizer is `TokenEmbedConfig`, which reads
 the observation as the grid it is, and the LSTM runs over the *rollout* axis on
 top of that embedding.
+
+That claim was false as shipped, and it is worth knowing why. `TokenEmbedConfig`
+tokenised the grid and then did `Linear -> LayerNorm -> mean`, which is a linear
+function of the token *sum* - permutation-invariant across both axes. Measured:
+permuting the book levels moved the latent by 1.8e-07 and reversing time by
+1.2e-07. The grid went in and its per-field mean came out, so this encoder
+discarded exactly what it exists to preserve and an lstm-vs-transformer
+comparison measured something other than the architecture. It now carries the
+transformer's two positional embeddings *and* a token-wise nonlinearity, which
+is what makes them count - see doc/15 S2-10 and the note in `token_embed`.
 
 Why there is no custom Encoder class here
 -----------------------------------------

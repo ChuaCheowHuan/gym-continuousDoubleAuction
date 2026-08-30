@@ -439,8 +439,12 @@ class TestActivityFields:
                 for i in range(NUM_AGENTS)
             }
             _, _, terminateds, truncateds, infos = env.step(actions)
+            # Over the agents that reported, not over `range(NUM_AGENTS)`: at
+            # this cash level an agent can go bankrupt, and a terminated agent
+            # stops appearing in `info` from its terminal step onward
+            # (doc/15 S2-4).
             rejections += sum(
-                infos[f"agent_{i}"]["num_rejected_step"] for i in range(NUM_AGENTS)
+                agent_info["num_rejected_step"] for agent_info in infos.values()
             )
             if terminateds.get("__all__") or truncateds.get("__all__"):
                 break

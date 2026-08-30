@@ -23,6 +23,21 @@ class Account(Calculate, Cash_Processor):
         # assuming only one ticker (1 type of contract)
         self.net_position = 0 # number of contracts currently holding long (positive) or short (negative)
         self.VWAP = Decimal(0) # VWAP
+        # The average price actually paid for the lots still held.
+        #
+        # `VWAP` above is NOT that, and has not been since `_size_decrease`
+        # started rolling realised P&L into the remaining lot's basis. That
+        # roll is load-bearing - on the short side `position_val` is
+        # `2*raw_val - mkt_val`, so removing it would move NAV - but it leaves
+        # `VWAP` free to go negative: long 2 @ 100, sell 1 @ 250 gives -50.
+        #
+        # That mattered because `set_private_state` reported
+        # `vwap_vs_mid = ... if vwap > 0 else 0.0`, and 0.0 is the encoding for
+        # *flat*. So an agent holding an open position was told it held none,
+        # on a measured 2.5% of open-position agent-steps. This field is
+        # maintained by the three methods that open or reset a position and
+        # deliberately untouched by `_size_decrease`, so it stays a price.
+        self.entry_vwap = Decimal(0)
         self.profit = Decimal(0) # profit @ each trade(tick) within a single t step
         self.total_profit = Decimal(0) # profit at the end of a single t-step
         self.num_trades = 0
@@ -65,6 +80,8 @@ class Account(Calculate, Cash_Processor):
         # assuming only one ticker (1 type of contract)
         self.net_position = 0 # number of contracts currently holding long (positive) or short (negative)
         self.VWAP = Decimal(0) # VWAP
+        # The real cost basis; see __init__ for why it is not VWAP.
+        self.entry_vwap = Decimal(0)
         self.profit = Decimal(0) # profit @ each trade(tick) within a single t step
         self.total_profit = Decimal(0) # profit at the end of a single t-step
         self.num_trades = 0
@@ -126,6 +143,11 @@ class Account(Calculate, Cash_Processor):
         total_size = abs(self.net_position) + int(trade.get('quantity'))
         # VWAP
         self.VWAP = (abs(self.net_position) * self.VWAP + trade_val) / total_size
+        # The real cost basis, rolled the same way but from its own previous
+        # value, so a prior partial close cannot leak into it.
+        self.entry_vwap = (
+            abs(self.net_position) * self.entry_vwap + trade_val
+        ) / total_size
         raw_val = total_size * self.VWAP # value acquired with VWAP
         mkt_val = total_size * trade.get('price')
         self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
@@ -146,6 +168,7 @@ class Account(Calculate, Cash_Processor):
         # was what made VWAP read back as an int once a position went flat.
         self.position_val = Decimal(0)
         self.VWAP = Decimal(0)
+        self.entry_vwap = Decimal(0)
         return mkt_val
 
     def _size_decrease(self, trade, position, party, trade_val):
@@ -167,12 +190,15 @@ class Account(Calculate, Cash_Processor):
         new_size = int(trade.get('quantity')) - abs(self.net_position)
         self.position_val = new_size * trade.get('price') # traded value
         self.VWAP = trade.get('price')
+        # The flip opened a fresh position at this price, so the basis is it.
+        self.entry_vwap = trade.get('price')
         self.size_increase_cash_transfer(party, self.position_val)
         return 0
 
     def _neutral(self, trade_val, trade, party):
         self.position_val += trade_val
         self.VWAP = trade.get('price')
+        self.entry_vwap = trade.get('price')
         self.size_increase_cash_transfer(party, trade_val)
 
     def _net_long(self, trade_val, trade, party):

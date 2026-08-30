@@ -59,6 +59,7 @@ from gym_continuousDoubleAuction.train.model.encoders.obs_layout import (
     split_private,
 )
 from gym_continuousDoubleAuction.train.model.encoders.tokenize import (
+    positional_index,
     token_shape,
     tokenize,
 )
@@ -78,30 +79,6 @@ TRANSFORMER_DEFAULTS = {
 
 #: How a token sequence is reduced to one latent vector.
 POOLINGS = ("mean", "attention")
-
-
-def positional_index(layout: ObsLayout, tokenization: str):
-    """(time index, level index) per token, for the two positional embeddings.
-
-    Mirrors the token order `tokenize` produces. Returns tensors of length
-    `num_tokens`, and the size each axis's embedding table needs.
-    """
-    num_tokens, _ = token_shape(layout, tokenization)
-
-    if tokenization == "time":
-        # One token per snapshot; no level axis.
-        return torch.arange(num_tokens), torch.zeros(num_tokens, dtype=torch.long)
-
-    # `level` and `both` both lay levels out as k_rows real levels plus one
-    # global token, so the level axis is k_rows + 1 wide either way.
-    stride = layout.k_rows + 1
-    positions = torch.arange(num_tokens)
-    if tokenization == "level":
-        # Newest snapshot only; no time axis.
-        return torch.zeros(num_tokens, dtype=torch.long), positions
-
-    # "both" is time-major: index = t * stride + level.
-    return positions // stride, positions % stride
 
 
 @dataclass

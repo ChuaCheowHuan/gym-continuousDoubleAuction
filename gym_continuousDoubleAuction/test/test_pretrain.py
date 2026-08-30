@@ -24,6 +24,11 @@ from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
     continuousDoubleAuctionEnv,
 )
 from gym_continuousDoubleAuction.train import pretrain as pretrain_pkg
+from gym_continuousDoubleAuction.train.model.encoders import (
+    encoder_fingerprint,
+    encoder_settings,
+    fingerprints_match,
+)
 from gym_continuousDoubleAuction.train.model.model_handler import (
     build_trainable_module_spec,
 )
@@ -161,6 +166,89 @@ def saved(spaces, corpus, spec_block, tmp_path_factory):
     pretrain_pkg.save(module, path, "jepa", spec_block)
     return path, module
 
+
+
+class TestTheFingerprintIdentifiesTheArchitecture:
+    """doc/15 S3-22, in both directions.
+
+    `encoder_fingerprint` hashed the spec *as written*, not merged against the
+    encoder's registered defaults. That was wrong twice over, and the two
+    failures are opposites: a config stating a value equal to its default and
+    one omitting it describe the same architecture and fingerprinted
+    differently (a hard error over nothing), while a spec that omitted a key
+    kept its fingerprint when the value in `*_DEFAULTS` was later edited (the
+    architecture changed and the guard said nothing - the silent shape mismatch
+    the fingerprint exists to prevent).
+    """
+
+    def _config_block(self):
+        return group("train_config.json", "encoder")["encoder_specs"]["jepa"]
+
+    def test_none_and_the_config_block_agree(self):
+        """The case that made pretrained weights unloadable.
+
+        `pretrain(encoder_spec=None)` resolves to the config block, and a
+        training run built from that same block must accept its weights.
+        """
+        assert fingerprints_match(
+            encoder_fingerprint("jepa", None),
+            encoder_fingerprint("jepa", self._config_block()),
+        )
+
+    def test_omitting_a_key_at_its_default_still_matches(self):
+        block = self._config_block()
+        partial = {k: v for k, v in block.items() if k != "d_model"}
+
+        assert encoder_settings("jepa", partial) == encoder_settings("jepa", block)
+        assert fingerprints_match(
+            encoder_fingerprint("jepa", partial),
+            encoder_fingerprint("jepa", block),
+        )
+
+    def test_a_real_change_still_does_not_match(self):
+        """The guard against a merge that makes everything match everything."""
+        block = self._config_block()
+
+        assert not fingerprints_match(
+            encoder_fingerprint("jepa", block),
+            encoder_fingerprint("jepa", {**block, "d_model": 256}),
+        )
+
+    def test_a_defaulted_value_is_carried_in_the_hash(self):
+        """The false-match half: a later edit to *_DEFAULTS must move this."""
+        partial = {k: v for k, v in self._config_block().items() if k != "d_model"}
+        keys = dict(encoder_fingerprint("jepa", partial)["encoder_spec"])
+
+        assert "d_model" in keys
+
+    def test_an_unbuildable_spec_reports_a_mismatch_rather_than_raising(self):
+        """The fingerprint is an identity, not a validator.
+
+        A caller comparing two of them wants "these differ", not an exception
+        from the comparison itself.
+        """
+        block = self._config_block()
+        foreign = encoder_fingerprint("transformer", block)
+
+        assert not fingerprints_match(foreign, encoder_fingerprint("jepa", block))
+
+
+class TestPretrainResolvesItsSpec:
+    def test_world_model_is_refused_rather_than_saved_untrained(self, spaces, corpus):
+        """The loop feeds observations alone, so the term never runs.
+
+        Its parameters would be saved randomly initialised and then pulled into
+        a training run by a `strict` load - silently, which is the only reason
+        this is loud.
+        """
+        obs_space, act_space = spaces
+        with pytest.raises(ValueError, match="world_model"):
+            pretrain_pkg.pretrain(
+                corpus, obs_space, act_space,
+                encoder_type="jepa",
+                encoder_spec={"world_model": True},
+                steps=1, batch_size=4,
+            )
 
 
 class TestTheCheckpoint:
