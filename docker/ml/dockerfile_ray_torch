@@ -67,10 +67,9 @@ RUN pip install \
 RUN pip install \
         "ray[rllib]==2.56.1" \
         "gymnasium==1.2.2" \
-        "numpy>=2.5,<3" \
+        "numpy>=2.2,<3" \
         "pandas>=3.0,<4" \
         "scipy>=1.18,<2" \
-        "scikit-learn>=1.9,<2" \
         "matplotlib>=3.11,<4" \
         "sortedcontainers>=2.4" \
         "tabulate>=0.10" \

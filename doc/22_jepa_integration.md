@@ -84,7 +84,7 @@ Five reasons, in descending order of strength.
 ### 2.1 The observation is already the grid JEPA masks
 
 [`tokenize.py`](../gym_continuousDoubleAuction/train/model/encoders/tokenize.py) turns the book part of the
-observation - 168 of its 177 floats, the private tail having been split off first - into
+observation - 184 of its 193 floats, the private tail having been split off first - into
 `(B, n_hist × (k_rows + 1), 4)` tokens whose position is a `(time, level)`
 pair, and [`transformer.py`](../gym_continuousDoubleAuction/train/model/encoders/transformer.py)
 already carries a **two-axis learned positional embedding** for exactly that grid. A JEPA

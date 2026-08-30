@@ -7,7 +7,7 @@ On its own this is not a registered encoder. It exists to be the LSTM's
 *tokenizer*: `RecurrentEncoderConfig` takes a `tokenizer_config`, and
 `TorchLSTMEncoder` folds its `(B, T, obs)` input to `(B * T, obs)`, runs the
 tokenizer, unfolds back to `(B, T, latent)` and recurs over T. So this is what
-turns "an LSTM over the raw 168-float observation" into "an LSTM over a
+turns "an LSTM over the raw flat observation" into "an LSTM over a
 structured per-step embedding of the book" - the difference between the two
 LSTM designs, and the reason the tokenizer is worth writing.
 

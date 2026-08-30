@@ -18,16 +18,22 @@ mindmap
         own resting orders still absent
       S1-3 doing nothing dominated — fixed
       S1-4 bare env could not trade — fixed
-    S2 Major
+      S1-5 cash check bypassable — fixed
+        escrow still charges closing orders
+    S2 Major — all fixed
       S2-1 drawdown charged as a level — fixed
-      S2-2 observation scales saturate tanh
+      S2-2 observation scales saturate tanh — fixed
       S2-3 cost proxies 10^5 too small — fixed
         real maker/taker fees still open
-      S2-4 bankrupt agents never terminated
-      S2-5 self-matching enables mark manipulation
-      S2-6 per-frame normalizer
-      S2-7 no trade-flow features
+      S2-4 bankrupt agents never terminated — fixed
+      S2-5 self-matching enables mark manipulation — fixed
+      S2-6 per-frame normalizer — fixed
+      S2-7 no trade-flow features — fixed
       S2-8 no logging framework — fixed
+      S2-9 JEPA variance hinge had no gradient — fixed
+      S2-10 lstm encoder ignored the grid order — fixed
+      S2-11 VWAP negative, obs reported flat — fixed
+      S2-12 gymnasium.make raised — fixed
     S3 Moderate
       action space
         S3-1 half of size_mean is a no-op
@@ -48,6 +54,8 @@ mindmap
         S3-6 install_requires — fixed
         S3-18 config not in the wheel — fixed
         S3-19 episodes ran one step long — fixed
+        S3-21 visualize not in the wheel — fixed
+        S3-22 fingerprint hashed the raw spec — fixed
     S4 Minor
       dead code, hygiene, tooling
       S4-9 pickle episode data — fixed
@@ -189,6 +197,33 @@ value that broke it.
 checked-in file deliberately — a fixture supplying its own cash would reproduce exactly the blind
 spot the smoke run had.
 
+### S1-5 · The cash check is bypassable; position is not bounded by capital **[verified, fixed]**
+
+`Trader._order_approved` waived the cash check for the portion of an order that reduces the
+*current* net position, and nothing netted an order against the trader's **other resting orders**.
+So N individually-"closing" orders were each approved against the same lots.
+
+Executed: a trader long 10 with `cash = 0` rested ten 10-lot asks across ten price levels — every
+one approved, `cash` driven to −10,550 — and when they filled it held a **90-lot short built from a
+10-lot long, without a single refusal**. Since the approval is what bounds risk, this is not a
+rounding error in the ledger; it is the absence of a position limit.
+
+This is the one finding that contradicts the register's own summary below, which praises the
+buying-power logic as "subtle and right". It is right per order and wrong in aggregate.
+
+**Fixed.** `_order_approved` computes the closable position as `abs(net_position)` minus this
+trader's own resting quantity on that side, excluding the order an upsert or a modify is about to
+replace (a `limit` at a price it already rests at, or a `modify`, releases the old order in the same
+call that would otherwise be charged for it). The same sequence now refuses nine of the ten and the
+position goes flat instead of flipping. Pinned by `test_resting_exposure.py`.
+
+**Still open, and deliberately.** The escrow charges full notional for *any* resting order,
+including one that only closes, so a cash-poor trader closing a position drives `cash` negative
+while `cash_on_hold` rises by the same amount. That is a reclassification, not a loss — NAV is
+untouched — and it is asserted rather than fixed, because changing it means tracking escrow per
+order: every partial-fill path in `Cash_Processor` assumes escrow equals full notional.
+
+
 ---
 
 ## S2 — Major
@@ -213,7 +248,7 @@ is free, ending in drawdown is still penalised, and the term cannot be farmed.
 → [12 §3.4](12_perspective_rl_researcher.md#34-the-drawdown-term-is-a-level-not-a-delta),
 [07 §4.1](07_reward_function.md)
 
-### S2-2 · Unnormalised observation scales saturate the `tanh` MLP **[verified]**
+### S2-2 · Unnormalised observation scales saturate the `tanh` MLP **[verified, fixed]**
 
 | Feature block | Range (one 300-step rollout) |
 |---|---|
@@ -225,7 +260,19 @@ An ~80–250× spread (book-dependent; a second run measured ±0.26 vs ±51) int
 with no `MeanStdFilter` or normalisation connector. Size features saturate and dominate; price
 features contribute almost nothing.
 
-**Fix.** Divide sizes by a reference scale; centre `log_mid`.
+**Fixed**, in three places. Level volumes are `sqrt(V / limit_max_size)` — `limit_max_size` is the
+scale orders are drawn on, and over 9,565 populated levels that lands at a median of 0.52, a p99 of
+0.94 and a maximum of 1.32. `log_mid` is centred on the log of the geometric mean of the price-anchor
+range, a constant of the configuration rather than of the episode, so the information is unchanged
+and the feature spans about ±1.15 instead of being a standing +4.6 bias. And the private `position`
+field no longer divides by `limit_max_size`, which is not a maximum of anything — it scales the mean
+of the Gaussian `_set_size` draws from and clamps nothing — while inventory accumulates across
+fills; there is now a `position_scale` key, defaulted to the measured p95 of 1,500.
+
+Re-measured: the size/price standard-deviation ratio falls from **220× to 3.7×**, every book feature
+lands inside ±1.2, and inventory exceeds its scale on **0.0%** of agent-steps against 13.2%.
+`test_obs_feature_scales.py` asserts the *property* — that the blocks are comparable and bounded —
+rather than the formulas, which stay pinned where they were.
 → [05 §7.5](05_observation_space.md#75-feature-scales-differ-by-one-to-two-orders-of-magnitude-after-normalization)
 
 ### S2-3 · Transaction-cost proxies are ~10⁵× too small **[verified, fixed — real fees still open]**
@@ -250,7 +297,7 @@ is a simulator change, not a reward change, and it is unaffected by this fix.
 → [13 §4](13_perspective_financial_trader.md#4-there-are-no-transaction-costs),
 [07 §4.2](07_reward_function.md)
 
-### S2-4 · Bankrupt agents are never terminated **[verified]**
+### S2-4 · Bankrupt agents are never terminated **[verified, fixed]**
 
 Forcing `agent_0.nav = −50`:
 
@@ -265,10 +312,19 @@ The agent keeps emitting transitions, keeps accruing the per-step drawdown tax (
 resting orders stay live and executable. Its module return is then dominated by a constant
 unrelated to its policy — and that return is what champion promotion reads.
 
-**Fix.** Set `terminateds[agent] = True` for members of `done_set`, cancel their resting orders,
-and stop scoring them.
+**Fixed.** `set_done` decides and applies termination in the same call — which also settles the
+`done_set`-is-monotone worry, since an agent goes at the moment its NAV is non-positive and no later
+step can terminate a recovered one. It keeps the observation and reward of its terminal transition,
+loses its resting orders, and drops out of `agents` (not `possible_agents`, which stays the fixed
+roster).
 
-### S2-5 · Self-matching enables mark manipulation **[verified]**
+One consequence was worth catching: the NAV conservation check read only the final step's `info`, so
+a terminated agent's NAV vanished from the total and any episode containing a bankruptcy would have
+read as a violation — halting a strict run over a ledger that was intact. `on_episode_step` now
+carries each agent's last reported NAV forward, and a test pins that a *genuine* breach is still
+caught when an agent terminated.
+
+### S2-5 · Self-matching enables mark manipulation **[verified, fixed]**
 
 An agent can cross its own resting order (`same ID both sides: True`). The accounting handles it
 consistently, so NAV stays conserved — but `mark_to_mkt` uses the **last tape print** as the mark
@@ -276,11 +332,28 @@ for *everyone*. An agent holding inventory can self-trade one contract at a chos
 instantly re-mark the whole market, including its own reward. Every regulated venue mandates
 self-match prevention for exactly this reason.
 
-**Fix.** Skip resting orders whose `trade_id` matches the incoming order in `process_order_list`;
-and mark to mid rather than last print.
+It was also **free**: `_process_trades` sends a self-trade down a branch that never calls
+`process_acc`, so neither `num_trades` nor `num_trades_step` incremented and `trade_penalty` never
+charged for it. Any "refuse to promote a champion that does not trade" guard would have been evadable
+the same way.
+
+**Fixed, and it took both halves.** `Trader._prevent_self_match` withdraws the trader's own resting
+orders that an incoming order would cross, before it reaches the matcher — the "cancel resting order"
+SMP mode. It lives in `Trader` rather than as a `trade_id` skip in `process_order_list`, where it
+would naturally go, because `envs/orderbook/` is off-limits (S3-4).
+
+Prevention alone was not enough, which is the part worth reading twice. The *resting leg* of a
+prevented self-cross survives, and with the mark falling back to whichever side of the book was
+populated, that lone order simply became the mark — the same 1,000 NAV moved with no trade at all. So
+`mark_price` uses the midpoint only when the book is genuinely two-sided, and falls back to the last
+trade rather than to a one-sided quote. Moving the mark now takes a real two-sided market, and moving
+the mid in one means posting a better quote somebody else can lift — a price someone can take the
+other side of, which is the whole difference. The source is a `mark_price_source` config key ("mid"
+or "last") because the change moves NAV dynamics and a run should be able to reproduce the old
+behaviour.
 → [13 §3.1](13_perspective_financial_trader.md#31-self-matching)
 
-### S2-6 · Every frame in the observation stack has a different normalizer
+### S2-6 · Every frame in the observation stack has a different normalizer **[verified, fixed]**
 
 `set_agg_LOB` computes `M` from the book at that moment; `prep_next_state` appends the
 already-normalized frame to the deque. Frames *t−3 … t* each carry their own `M_{t−3} … M_t`, so
@@ -290,11 +363,15 @@ resting order at a fixed absolute price appears to move whenever the midpoint mo
 Partially mitigated by the per-frame `log_mid`, which lets the agent recover each frame's
 normalizer, but the network must then learn to undo the rescaling itself.
 
-**Fix.** Keep raw snapshots in the deque, normalize the whole stack once at emission by `M_t`,
-and expose `M_t / M_{t−1} − 1`.
+**Fixed** exactly that way. The deque holds raw frames and `prep_next_state` normalises the whole
+stack once, by `M_t`. Concretely: a bid resting at 90 while the midpoint moved 100 → 96 used to read
+0.100 in one frame and 0.063 in the next — the order had not moved, its denominator had. It now reads
+0.0625 in both, `log_mid` still differs across them (0.0 → −0.0408) because each frame keeps its own
+midpoint, and a new `mid_return` scalar records the move as −0.04. Nothing is lost; it is no longer
+smeared through every price in the book.
 → [05 §7.1](05_observation_space.md#71-each-frame-in-the-stack-is-normalized-by-a-different-denominator)
 
-### S2-7 · No trade-flow information — the tape loop is dead code
+### S2-7 · No trade-flow information — the tape loop is dead code **[verified, fixed]**
 
 `set_agg_LOB` iterates the tape, uses nothing, and increments a discarded counter. The body is a
 commented-out `write` copy-pasted from `OrderBook.__str__`. The observation therefore contains
@@ -305,8 +382,16 @@ In a continuous double auction, aggressive order flow is the single most predict
 signal — more so than the resting book, which is largely stale intentions. Order-imbalance
 helpers already exist in `train/helper/helper.py`, unused.
 
-**Fix.** Finish the loop into signed-volume / trade-count / direction features, and wire in
-`ord_imb`.
+**Fixed.** The loop is now `_trade_flow`, and three scalars join the snapshot: `signed_volume` —
+each fill signed by its **initiator's** side, which is what makes it order flow rather than volume —
+`log1p_trade_count` and `trade_direction`. Over a 400-step rollout each is non-zero on ~58% of steps.
+`extra_dim` goes 2 → 6 and is now checked against a new `EXTRA_FIELDS` tuple, on the same rule as
+`book_rows` and `private_dim`; it was documentation before, so setting it was a silent no-op. The
+observation is 193 floats rather than 177, so no earlier checkpoint loads.
+
+The flow cursor advances only in `prep_next_state`, never in `set_agg_LOB`, because the latter runs
+twice per step and only one call commits a frame — a display-only snapshot must not eat the step's
+trade flow.
 → [05 §7.3](05_observation_space.md#73-the-tape-loop-is-dead-code--there-is-no-trade-flow-information-at-all)
 
 ### S2-8 · No logging framework; the callback prints 42 diagnostics per episode — **fixed**
@@ -322,6 +407,96 @@ comes back.
 
 Still open, tracked in [11 §4](11_logging_and_observability.md#4-recommended-additions): only
 three custom values reach TensorBoard, and no per-iteration history is written to disk.
+
+### S2-9 · The JEPA anti-collapse hinge contributes zero gradient **[verified, fixed]**
+
+`_jepa_loss` derived `std`, the off-diagonal covariance and
+`variance_penalty = relu(VARIANCE_TARGET − std)` from `target`, which is built inside
+`torch.no_grad()` by a trunk whose parameters are additionally `requires_grad_(False)`. Confirmed at
+runtime: `std.grad_fn is None`, `variance_penalty.requires_grad is False`.
+
+Nothing raised, and nothing could — adding a constant to a tensor that *does* carry a `grad_fn` is
+legal, and the sum still backpropagates, just not through the term meant to do the work. So the
+mechanism `jepa.py`, `train_config.json`'s `_note_collapse` and `pretrain/__init__` all describe as
+"the only thing actively pushing back once a collapse starts" did not exist. The encoder had
+collapse *detection* and no collapse *prevention*; `variance_coeff` was a dead knob that still
+entered `encoder_fingerprint`, so changing it invalidated every checkpoint while changing nothing;
+and the constant was silently folded into the logged `jepa_aux_loss`, making it incomparable with
+`predict_loss`.
+
+**Fixed.** The statistics come from `predicted`, the online counterpart of `target` — same
+positions, same count, gradients reaching the predictor and, through `context`, the trunk —
+layer-normed exactly as the target is so `VARIANCE_TARGET` means the same on both sides. VICReg
+applies its variance and covariance terms to the embeddings being *trained*; BYOL stops the gradient
+on the target branch alone. Reading them off the target was a deviation from both.
+
+Worth knowing for the test: "a gradient reaches the trunk" passes either way, because one arrives
+from the prediction loss regardless. The guard runs the same batch and mask twice, differing only in
+`variance_coeff`, and asserts the gradients differ — a constant's derivative is zero however large
+the coefficient in front of it.
+
+### S2-10 · The `lstm` encoder is invariant to the order of the grid it exists to preserve **[verified, fixed]**
+
+`TokenEmbedConfig` — the tokenizer that is the entire difference between this project's LSTM and
+RLlib's stock `use_lstm=True` — was `tokenize → Linear → LayerNorm → mean`. A mean of per-token
+linear projections is a linear function of the token *sum*, hence permutation-invariant on both
+axes.
+
+Measured on the real observation space: permuting the book levels moved the latent by **1.8e-07**
+and reversing the history by **1.2e-07**, float32 noise either way. Its 44 book tokens collapsed to
+their per-field mean before anything nonlinear. Since the `encoder` group exists to ask which
+architecture reads this market better, an lstm-vs-transformer comparison was measuring something
+else.
+
+**Fixed**, and the second half is the part that is easy to miss. Positional embeddings alone do not
+help: `mean(W·xᵢ + pᵢ)` is `W·mean(xᵢ) + mean(pᵢ)`, so under a linear projection and a mean the
+position is an input-independent constant — verified, the permutation delta stayed at 0.000000 with
+the embeddings in place. A token-wise nonlinearity between the two is what makes position bear on
+the result. With both, the deltas are 0.070 (levels) and 0.078 (time) under the shipped
+`pool="mean"`.
+
+The guard is in the **every-encoder contract**, not in the LSTM's own tests: an architecture that
+cannot see where a level sits, or which snapshot came first, is not answering the question the group
+exists to ask.
+
+### S2-11 · `VWAP` goes negative on a partial close, and the observation then reports "flat" **[verified, fixed]**
+
+`Account._size_decrease` rolls realised P&L into the remaining lot's basis. The roll is load-bearing
+and must stay — on the short side `position_val` is `2·raw_val − mkt_val`, so removing it moves NAV
+— but it leaves `VWAP` free to go negative: long 2 @ 100, sell 1 @ 250 gives **−50**.
+
+`set_private_state` computed `vwap_vs_mid` under a `vwap > 0` guard and fell through to `0.0`, which
+is the encoding for **flat**. An agent holding an open position was told it held none, on a measured
+**5.0%** of open-position agent-steps. `info["VWAP"]` exported the same non-price into the episode
+Parquet.
+
+**Fixed.** `Account.entry_vwap` is the price actually paid for the lots still held, maintained by
+the three methods that open or reset a position and untouched by `_size_decrease`, rolling from its
+own previous value so an earlier partial close cannot leak into it. The observation and
+`info["VWAP"]` read it; the ledger's rolled basis stays available as `carrying_vwap`. Re-measured:
+0.0% of open positions report a non-positive basis, and the worked case reports `vwap_vs_mid` 0.6.
+
+### S2-12 · `gymnasium.make(...)` raises **[verified, fixed]**
+
+`setup.py`'s own docstring documents it. Run from a clean directory:
+
+```
+TypeError: action space does not inherit from `gymnasium.spaces.Space`,
+actual type: <class 'NoneType'>
+```
+
+Only the plural `observation_spaces` / `action_spaces` were set — the pair RLlib's new API stack
+reads — while `PassiveEnvChecker` reads the singular ones inherited from `MultiAgentEnv`. Nothing in
+the test suite or the CI packaging job exercised `make`; both construct the class directly, so it
+stayed broken while every job was green.
+
+**Fixed.** The singular spaces are set to a single agent's, which is exactly what RLlib defines them
+as (`@OldAPIStack`). `metadata` also moves from the pre-gymnasium `render.modes` to `render_modes`,
+and the registration passes `disable_env_checker=True` — `PassiveEnvChecker` is a *single-agent*
+checker and this env returns a dict keyed by agent id, which is a category error rather than a
+finding. That flag is set only after fixing the spaces; doing it first would have hidden the
+`TypeError` rather than fixed it. The CI packaging job now calls `make`.
+
 
 ---
 
@@ -648,6 +823,50 @@ written is never the one pruned. A fresh run that finds checkpoints it did not w
 names them, newest first; nothing is deleted, because the directory belongs to the operator.
 Pinned by `TestRetention` and `TestForeignCheckpoints` in `test_checkpointing.py`.
 
+### S3-21 · `visualize/` is in no built distribution **[verified, fixed]**
+
+It had no `__init__.py`, so `setuptools.find_packages()` omitted it and a built wheel carried none of
+it — while [01](01_overview.md) documents `python -m gym_continuousDoubleAuction.visualize.run_all`
+as an entry point. It worked in-tree and under an editable install, which is why nothing noticed,
+and the CI packaging job builds a wheel but never imported it.
+
+**Fixed.** Verified by building a wheel: it now carries 11 visualize modules, and a clean venv
+outside the checkout imports the package. The packaging job fails if `visualize/run_all.py` is
+absent from the wheel. It imports the *package* rather than `run_all`, which needs matplotlib and —
+through `visualize_modules → policy_handler` — the whole training stack including torch; that
+coupling is now stated in `visualize/__init__`, since `pip install gym_continuousDoubleAuction`
+installs these modules but cannot run them.
+
+### S3-22 · The encoder fingerprint does not identify the encoder **[verified, fixed]**
+
+`encoder_fingerprint` hashed the spec *as written* rather than merged against the encoder's
+registered defaults. Wrong in both directions, and the two failures are opposites:
+
+- **False mismatch.** A config stating a value equal to its registered default and one omitting it
+  describe the identical architecture and fingerprinted differently — a hard error at
+  `verify_fingerprint` and `_check_restored_config` over nothing at all.
+- **False match**, which is worse. A checkpoint whose spec omitted a key kept its fingerprint when
+  the value in `*_DEFAULTS` was later edited, so the architecture changed and the guard said
+  nothing — the silent shape mismatch the fingerprint exists to prevent.
+
+The pretrainer had it from the other end. `pretrain(encoder_spec=None)` is documented as "reads the
+config file's" and did not: `None` reached `build_module`, which turns a falsy spec into `{}` and
+resolves to the *registry* defaults, and `save` then wrote `encoder_fingerprint(encoder_type, None)`.
+So a pretrained encoder was built from whatever the code shipped rather than from what the run would
+be configured with, and its weights could not load into a training run built from that config block.
+
+**Fixed.** The fingerprint hashes `encoder_settings`, the canonical merged form the encoder is
+actually built from, and no longer raises on a spec that does not validate for the type it is asked
+about — it reports an identity, and a caller comparing two of them wants "these differ", not an
+exception. `pretrain.resolve_spec` is one definition used by `pretrain`, `save` and
+`verify_fingerprint`. Verified end to end.
+
+**Also fixed:** `pretrain` refuses `world_model: true` rather than accepting it. It optimises only
+the trunk and the predictor, and its loop supplies no `NEXT_OBS`/`ACTIONS`, so the
+action-conditioned term never runs — its parameters would be saved randomly initialised and pulled
+into a training run by a `strict` load, silently.
+
+
 ---
 
 ## S4 — Minor
@@ -710,9 +929,12 @@ for research code:
   aggressive limits, and correct partial fills.
 - **The ledger is exact and conserved.** `Decimal` throughout, and total NAV equals total initial
   cash to the cent after 300 random steps **[verified]**.
-- **Buying-power logic is subtle and right** — only the risk-*increasing* portion of an order is
+- **Buying-power logic is subtle** — only the risk-*increasing* portion of an order is
   cash-checked, so closing and covering always succeed, and market orders are priced off the
-  contra side with a tape fallback.
+  contra side with a tape fallback. It said "and right" here until S1-5: the rule was right per
+  order and wrong in aggregate, because nothing netted an order against the trader's *other*
+  resting orders, so N individually-closing orders were each approved against the same lots. Left
+  in the list, amended, because the design is sound and the defect was one missing term in it.
 - **Position flips are atomic** (`_covered_side_chg`) — the case most toy exchanges get wrong,
   with four dedicated tests.
 - **The RLlib new-API-stack migration was done properly.** Module classes declared through
@@ -733,7 +955,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **770 unit tests pass** (plus 112 integration), covering every position-flip path, cash-check edge case, modify-order
+- **863 unit tests pass** (plus 112 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 

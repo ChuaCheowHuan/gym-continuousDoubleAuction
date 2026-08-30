@@ -32,15 +32,31 @@ torch>=2.13.0,<3
 # who runs it on 3.10/3.11 despite the declared support range.
 numpy>=2.2,<3
 pandas>=3.0,<4
+# Imported directly by train/episode_record.py and train/probe/corpus.py.
+# It arrives transitively with ray[rllib], which is exactly the reasoning that
+# produced the six/scikit-learn bug (doc/15 S3-6) - so it is declared.
+pyarrow>=15
+# scipy is imported nowhere in the project. Kept because the [plot] extra
+# declares it and some matplotlib workflows want it, but it is NOT a direct
+# dependency and this file said it was.
 scipy>=1.18,<2
 
 # --- Env internals ------------------------------------------------------------
 sortedcontainers>=2.4      # order book price-level trees
+# `six.moves.cStringIO` in envs/orderbook/{orderbook,orderlist}.py. A Python-2
+# shim io.StringIO replaces, but envs/orderbook/ is off-limits (doc/15 S3-4), so
+# it is declared rather than removed. It is in setup.py's install_requires and
+# was missing here, which contradicted this file's own "only what the project
+# imports directly".
+six>=1.16
 tabulate>=0.10             # env render()
 
 # --- Plotting / metrics -------------------------------------------------------
 matplotlib>=3.11,<4
-tensorboardX>=2.6.5        # pulled in by ray[rllib], pinned here as it is used directly
+# tensorboardX is imported nowhere either; this line used to claim it was "used
+# directly". Pinned only because ray[rllib] writes TensorBoard output through it
+# and an unpinned transitive is worth naming.
+tensorboardX>=2.6.5
 
 # --- Optional -----------------------------------------------------------------
 # GPUtil is only used by Ray for GPU system monitoring; harmless to omit on CPU.

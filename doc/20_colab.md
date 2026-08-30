@@ -89,8 +89,8 @@ every later session on the same VM.
 ### What gets installed, and what deliberately does not
 
 `platforms.colab.pip_packages` in `runtime_profiles.json` lists `ray[rllib]`, `gymnasium`,
-`sortedcontainers` and `tabulate`. **`torch`, `numpy`, `pandas` and `scikit-learn` are absent on
-purpose.** Colab preinstalls all four, and this repo's pins would replace Colab's CUDA-enabled
+`sortedcontainers` and `tabulate`. **`torch`, `numpy` and `pandas` are absent on
+purpose.** Colab preinstalls all three, and this repo's pins would replace Colab's CUDA-enabled
 torch build with a CPU wheel — you would install a GPU runtime and then train on the CPU. Do not
 "fix" this by running `pip install -r requirements.txt` in the notebook.
 

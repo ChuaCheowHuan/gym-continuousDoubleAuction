@@ -4,7 +4,7 @@ This is the "structured" of the two ways to give this env an LSTM.
 
 The other one is free: set `use_lstm=True` on `DefaultModelConfig` and RLlib
 builds a recurrent encoder whose tokenizer is a stock MLP over the raw
-168-float observation. The book's `(time, level, field)` structure is discarded
+flat observation. The book's `(time, level, field)` structure is discarded
 exactly as it is under `mlp`, and the LSTM's memory is layered on top of an
 `n_hist`-step window that already carries most of the same information.
 

@@ -47,12 +47,12 @@
     "_note": "Filesystem shape per machine. `repo_path` is where the package and config/ live; null means 'the working directory already is it', which is the case on Colab (the notebook must chdir there before it can read this file at all) and for a local checkout. `results_root` and `episode_data_root` replace TrainConfig.log_base_dir and .episode_data_dir; null leaves the configured value alone, which keeps it relative to the working directory. Splitting the two matters on Colab: checkpoints are small and must survive a disconnect, while the per-step episode record is ~34MB per 4096-step episode (measured at 8 agents) and has no business crossing the Drive FUSE layer. episode_sample_every and episode_max_bytes bound it; see the league_self_play group of train_config.json.",
 
     "colab": {
-      "_description": "Colab VM with Google Drive mounted. Checkpoints stay in the Drive-backed repo so a disconnect is recoverable with is_restore; episode pickles go to the VM's local disk and die with the session.",
+      "_description": "Colab VM with Google Drive mounted. Checkpoints stay in the Drive-backed repo so a disconnect is recoverable with is_restore; the per-step episode record (Parquet, ~34 MB per 4,096-step episode - not pickles, which it has not been since the record was rewritten) goes to the VM's local disk and dies with the session.",
       "repo_path": null,
       "results_root": null,
       "episode_data_root": "/content/cda_episode_data",
       "drive_mount_point": "/content/gdrive",
-      "_pip_note": "Read by the notebook's bootstrap cell, which runs before the package is importable and so reads this file with plain json.load. Pins must track requirements.txt. torch, numpy, pandas and scikit-learn are deliberately absent: Colab preinstalls them, and installing this repo's pins would replace Colab's CUDA torch build with a CPU wheel.",
+      "_pip_note": "Read by the notebook's bootstrap cell, which runs before the package is importable and so reads this file with plain json.load. Pins must track requirements.txt. torch, numpy and pandas are deliberately absent: Colab preinstalls them, and installing this repo's pins would replace Colab's CUDA torch build with a CPU wheel. scikit-learn used to be named here too; it is no longer a dependency of anything, so there is nothing left to exclude.",
       "pip_packages": [
         "ray[rllib]==2.56.1",
         "gymnasium==1.2.2",

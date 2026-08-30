@@ -13,6 +13,17 @@ production-deployable as a service, but as a research codebase it is above avera
 
 ## 5.1 Overall code-quality snapshot
 
+> **This section is the original audit and is no longer accurate.** It was measured against a
+> tree of 7,478 Python lines with 90 unit tests and no logging module. The repository is now
+> 28,412 lines across 110 files, with 863 unit and 112 integration tests, a 523-line
+> `logging_setup` and a test that fails the build on a bare `print` in `envs/` or `train/`. The
+> `sklearn.utils.shuffle` import it names was removed (`action_helper.py:182` records that), and
+> the `install_requires` block it quotes no longer exists - `ray[rllib]` and `six` are in it and
+> the numpy floor is `>=2.2`. Read [15](15_findings_and_recommendations.md) and
+> [16](16_verification_log.md) for the current state; this is kept for the reasoning, not the
+> numbers.
+
+
 | Signal | Measurement |
 |---|---|
 | Python LOC | 7,478 across 63 files |
@@ -65,6 +76,12 @@ codebase most needs.
 ---
 
 ## 5.3 Dependency management
+
+> **This section is the original audit and is no longer accurate.** The `install_requires` block
+> quoted below no longer exists: `ray[rllib]==2.56.1` and `six>=1.16` are in it and the numpy floor
+> is `>=2.2` (S3-6). `sklearn.utils.shuffle` is not imported by `action_helper.py` - line 182 is a
+> comment recording its removal - and `ray[rllib]` is not behind an extra. Kept for the reasoning.
+
 
 ### The declared vs. actual import mismatch
 
