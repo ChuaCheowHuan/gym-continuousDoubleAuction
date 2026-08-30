@@ -15,7 +15,7 @@ production-deployable as a service, but as a research codebase it is above avera
 
 > **This section is the original audit and is no longer accurate.** It was measured against a
 > tree of 7,478 Python lines with 90 unit tests and no logging module. The repository is now
-> 28,412 lines across 110 files, with 863 unit and 112 integration tests, a 523-line
+> 28,412 lines across 110 files, with 858 unit and 112 integration tests, a 523-line
 > `logging_setup` and a test that fails the build on a bare `print` in `envs/` or `train/`. The
 > `sklearn.utils.shuffle` import it names was removed (`action_helper.py:182` records that), and
 > the `install_requires` block it quotes no longer exists - `ray[rllib]` and `six` are in it and

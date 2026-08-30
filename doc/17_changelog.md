@@ -2299,3 +2299,68 @@ Everything in S3 and S4 that was open remains open, including `sys.exit()` in th
 coordinate (S3-15), the league ranking a signal not comparable across roles (S3-12), and the absence
 of `entropy_coeff`, `grad_clip`, `gamma` and `lambda_` from the PPO configuration (S3-11, S3-13).
 `envs/orderbook/` remains off-limits, which is why S2-5's fix lives in `Trader`.
+
+---
+
+## 38. A pre-existing flake that the merge surfaced
+
+CI on `master` failed immediately after §37 landed:
+
+```
+TestMoETransformer::test_aux_loss_does_not_scale_with_the_stack[False-1]
+assert 2.5662789344787598 == 2.0 ± 0.5
+```
+
+### 38.1 It was not a regression
+
+The obvious reading — the observation layout grew from 177 floats to 193, token
+width from 4 to 6, so the input distribution to an untrained MoE gate changed — is
+wrong, and it is worth recording *why*, because the measurement points the other
+way.
+
+The MoE auxiliary term is a load-balancing loss whose floor is `top_k` at perfectly
+uniform routing. Its value on an untrained gate depends on the gate's **random
+initialisation**, which nothing in the test seeds. Sampled 1,500 times with the RNG
+walking forward exactly as it does inside a pytest process:
+
+| | `1a6996a` (PR #81's base, 177 floats) | after §37 (193 floats) |
+|---|---|---|
+| pooled mean | 2.149 | 2.142 |
+| max observed | **2.694** | 2.541 |
+| draws past the 2.5 bound | 4 of 600 | 1 of 1,500 |
+
+So the flake existed at the base, with a maximum *higher* than the value CI actually
+failed on. §37 did not introduce it and did not measurably worsen it; CI happened to
+draw a tail on the first run after the merge. The rate is worst at `num_layers=1`,
+where there are fewest blocks to average over.
+
+### 38.2 The band was the wrong instrument
+
+The test asserted `approx(2.0, abs=0.5)` independently in each of six
+(depth, sharing) parametrisations. But its own docstring states the claim as
+*invariance*: the term is averaged over MoE blocks rather than summed, so
+`aux_loss_coeff` means the same thing at every depth. An absolute band around the
+floor is a proxy for that, and a leaky one — under a summed implementation the
+`(1, True)` configuration comes out at 2.26, comfortably **inside** the band it was
+supposed to police.
+
+It now builds all six configurations from one seed and compares them with each
+other: the floor (`>= top_k`), proximity to it (`< 1.5 x top_k`), and the ratio
+across the stack (`< 1.25`, against a measured spread of 1.03–1.06). Summing gives a
+ratio near 8 and a deepest-configuration value of 17.6, so the replacement is a much
+sharper test than the band — and being seeded, it is deterministic. Verified by
+swapping `torch.stack(aux_terms).mean()` for `.sum()` in `moe_learner.py`: it fails
+and names every configuration's value.
+
+The seeding is done under `torch.random.fork_rng`, so the suite's global stream is
+left where it was found — other tests rely on it varying, and silently pinning it
+would mask their own nondeterminism rather than fix it.
+
+### 38.3 Scope
+
+Only this one test had the defect. The two neighbouring assertions on the same
+quantity are deterministic by construction: one sums the routing fractions, which
+equal `top_k` whatever the routing does, and the other zeroes the gate's weights to
+force exactly uniform load. No suite-wide seeding fixture was added for that reason.
+
+The unit count moves from 863 to 858: six parametrisations became one test.

@@ -721,34 +721,82 @@ class TestMoETransformer:
         with pytest.raises(ValueError, match="Unknown key"):
             build_module(spaces, self.ENCODER, spec={"n_experts": 4})
 
-    @pytest.mark.parametrize("num_layers", [1, 2, 4])
-    @pytest.mark.parametrize("vf_share_layers", [False, True])
-    def test_aux_loss_does_not_scale_with_the_stack(
-        self, spaces, num_layers, vf_share_layers
-    ):
+    #: `top_k` for the aux-loss tests, and the term's mathematical floor: the
+    #: routing fractions sum to `top_k`, so uniform load gives exactly this.
+    TOP_K = 2
+
+    def test_aux_loss_does_not_scale_with_the_stack(self, spaces):
         """`aux_loss_coeff` must mean the same thing whatever the stack is.
 
-        The term is averaged over MoE blocks, not summed. Summed - which is
-        what Switch Transformer does, and what this did first - it scales with
-        `num_layers` and doubles when `vf_share_layers` is false, since the
-        critic's blocks route separately and count too. A coefficient tuned at
-        one depth would then apply different pressure at another, silently, and
-        comparing MoE configs of different depths would confound depth with how
-        hard the gate was pushed.
+        The term is averaged over MoE blocks, not summed (`moe_learner.py`,
+        `torch.stack(aux_terms).mean()`). Summed - which is what Switch
+        Transformer does, and what this did first - it scales with `num_layers`
+        and doubles when `vf_share_layers` is false, since the critic's blocks
+        route separately and count too. A coefficient tuned at one depth would
+        then apply different pressure at another, silently, and comparing MoE
+        configs of different depths would confound depth with how hard the gate
+        was pushed.
 
-        The floor is `top_k`, reached at perfectly uniform routing, so an
-        untrained gate sits just above it in every configuration.
+        **Why this compares configurations instead of checking a band.** It
+        used to be parametrised over the six (depth, sharing) combinations with
+        `approx(2.0, abs=0.5)` asserted independently in each - an absolute band
+        around the floor, on a quantity set by the *unseeded* random
+        initialisation of the gate. That is flaky by construction, and it duly
+        failed in CI at 2.566. Measured over 1,500 unseeded builds the term has
+        mean 2.14 and reaches past 2.5 about once in 1,500, worst at
+        `num_layers=1` where there are fewest blocks to average over. It is not
+        a regression from any particular change: at the commit before the
+        observation layout grew, the same measurement gave a *higher* rate
+        (4 of 600 draws past 2.5) and a maximum of 2.694.
+
+        The band was also the wrong instrument. The claim in the docstring is
+        that the value does not move *across* configurations, and that is what
+        is asserted now: the six are built from one seed and compared with each
+        other. Summing gives a ratio near 8 against a measured spread of 1.03 -
+        1.06, so this is a far sharper test than the band ever was, and it is
+        deterministic.
         """
         obs_space, _ = spaces
-        module = build_module(
-            spaces, self.ENCODER,
-            spec={"num_layers": num_layers, "top_k": 2},
-            vf_share_layers=vf_share_layers,
+
+        losses = {}
+        for vf_share_layers in (False, True):
+            for num_layers in (1, 2, 4):
+                # Seeded so the assertion is about the architecture rather than
+                # about which weights this process happened to draw; forked so
+                # the suite's global stream is left where it was found, since
+                # other tests rely on it varying.
+                with torch.random.fork_rng(devices=[]):
+                    torch.manual_seed(0)
+                    module = build_module(
+                        spaces, self.ENCODER,
+                        spec={"num_layers": num_layers, "top_k": self.TOP_K},
+                        vf_share_layers=vf_share_layers,
+                    )
+                    out = module.forward_train(
+                        sample_batch(obs_space, module=module)
+                    )
+                losses[(num_layers, vf_share_layers)] = float(
+                    out[MOE_AUX_LOSS].detach()
+                )
+
+        lowest = min(losses.values())
+        highest = max(losses.values())
+
+        # The floor, which no routing can go below.
+        assert lowest >= self.TOP_K, (
+            f"aux loss {lowest} is below the floor {self.TOP_K}: {losses}"
         )
-
-        out = module.forward_train(sample_batch(obs_space, module=module))
-
-        assert float(out[MOE_AUX_LOSS].detach()) == pytest.approx(2.0, abs=0.5)
+        # Near it, for an untrained gate. Summing would put even the
+        # two-block case at ~4.3.
+        assert highest < 1.5 * self.TOP_K, (
+            f"aux loss {highest} is far above the floor {self.TOP_K}: {losses}"
+        )
+        # The property this test exists for. Summed, the deepest unshared
+        # configuration is eight blocks against one and the ratio is ~8.
+        assert highest / lowest < 1.25, (
+            f"the aux loss varies {highest / lowest:.2f}x across the stack, so "
+            f"it is not being averaged over blocks: {losses}"
+        )
 
     def test_balanced_routing_gives_the_minimum_aux_loss(self, spaces):
         """The term is minimised at uniform load, which is the only reason it
