@@ -7,6 +7,8 @@
     "num_trained_agents": 2,
     "init_cash": 1000000,
     "tick_size": 1,
+            "_note_mark_price_source": "See env_defaults.json. 'mid' marks every account at the L1 midpoint (falling back to a one-sided quote, then to the last tape print); 'last' reproduces the previous last-print-only behaviour. Marking off the last print is what made self-matching profitable - finding S2-5.",
+            "mark_price_source": "mid",
     "tape_display_length": 10,
     "max_step": 4096,
     "is_render": false,

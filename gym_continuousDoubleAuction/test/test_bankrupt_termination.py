@@ -29,6 +29,24 @@ def _step(env):
     return env.step(actions)
 
 
+def _pass_action(env, agent):
+    """The do-nothing action: category 0 is the only code with no side."""
+    action = env.action_spaces[agent].sample()
+    action["category"] = 0
+    return action
+
+
+def _quiet_step(env):
+    """Step with every agent passing.
+
+    Used where the assertion is about one agent's own state. Stepping with
+    random actions lets another agent fill the orders under test, which changes
+    the position being asserted on - and, once the mark is the midpoint,
+    changes the NAV that decides whether the agent is bankrupt at all.
+    """
+    return env.step({agent: _pass_action(env, agent) for agent in env.agents})
+
+
 def _bankrupt(trader):
     """Put a trader under water in a way that survives `mark_to_mkt`.
 
@@ -53,7 +71,7 @@ class TestBankruptAgentIsTerminated:
         env = _env()
         _bankrupt(env.traders[0])
 
-        _obs, _rew, terminateds, _trunc, _infos = _step(env)
+        _obs, _rew, terminateds, _trunc, _infos = _quiet_step(env)
 
         assert terminateds["agent_0"] is True
         assert all(terminateds[a] is False for a in ("agent_1", "agent_2", "agent_3"))
@@ -64,7 +82,7 @@ class TestBankruptAgentIsTerminated:
         env = _env()
         _bankrupt(env.traders[0])
 
-        obs, rewards, _term, _trunc, infos = _step(env)
+        obs, rewards, _term, _trunc, infos = _quiet_step(env)
 
         assert "agent_0" in obs
         assert "agent_0" in rewards
@@ -73,9 +91,9 @@ class TestBankruptAgentIsTerminated:
     def test_it_stops_being_scored_on_every_later_step(self):
         env = _env()
         _bankrupt(env.traders[0])
-        _step(env)
+        _quiet_step(env)
 
-        obs, rewards, terminateds, truncateds, infos = _step(env)
+        obs, rewards, terminateds, truncateds, infos = _quiet_step(env)
 
         for emitted in (obs, rewards, infos):
             assert "agent_0" not in emitted
@@ -97,7 +115,7 @@ class TestBankruptAgentIsTerminated:
         assert len(resting) == 2, "precondition: the agent has orders to lose"
 
         _bankrupt(env.traders[0])
-        _step(env)
+        _quiet_step(env)
 
         assert not [
             order
@@ -109,7 +127,7 @@ class TestBankruptAgentIsTerminated:
     def test_agents_narrows_but_possible_agents_does_not(self):
         env = _env()
         _bankrupt(env.traders[0])
-        _step(env)
+        _quiet_step(env)
 
         assert env.agents == ["agent_1", "agent_2", "agent_3"]
         assert env.possible_agents == [
@@ -119,7 +137,7 @@ class TestBankruptAgentIsTerminated:
     def test_reset_restores_the_full_roster(self):
         env = _env()
         _bankrupt(env.traders[0])
-        _step(env)
+        _quiet_step(env)
         assert len(env.agents) == 3
 
         obs, _infos = env.reset(seed=3)
@@ -133,7 +151,7 @@ class TestBankruptAgentIsTerminated:
         for trader in env.traders:
             _bankrupt(trader)
 
-        _obs, _rew, terminateds, _trunc, _infos = _step(env)
+        _obs, _rew, terminateds, _trunc, _infos = _quiet_step(env)
 
         assert terminateds["__all__"] is True
 

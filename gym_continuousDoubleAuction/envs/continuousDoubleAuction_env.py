@@ -35,6 +35,7 @@ class continuousDoubleAuctionEnv(
         self.num_of_agents = self._cfg("num_of_agents")
         init_cash = self._cfg("init_cash")
         tick_size = self._cfg("tick_size")
+        mark_price_source = self._cfg("mark_price_source")
         tape_display_length = self._cfg("tape_display_length")
         self.max_step = self._cfg("max_step")
         is_render = self._cfg("is_render")
@@ -58,6 +59,7 @@ class continuousDoubleAuctionEnv(
             tick_size,
             tape_display_length,
             n_hist=self.n_hist,
+            mark_price_source=mark_price_source,
             min_size=min_size,
             mkt_max_size=mkt_max_size,
             limit_size_multiple=limit_size_multiple,

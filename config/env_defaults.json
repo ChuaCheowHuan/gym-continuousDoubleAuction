@@ -7,6 +7,8 @@
     "num_of_agents": 5,
     "init_cash": 1000000,
     "tick_size": 1,
+            "_note_mark_price_source": "mark_price_source picks the price every account is marked at. 'mid' is the L1 midpoint, falling back to the one-sided quote and then to the last tape print; 'last' is the last tape print alone, which is what this used to do unconditionally. It is a key rather than a constant because the change moves NAV dynamics. Marking off the last print is what made self-matching profitable (finding S2-5): one self-traded contract at a chosen price re-marked the whole market, including the self-trader's own reward - measured at 1,000 NAV moved by a single 1-lot print. Self-match prevention now stops the print from happening, and marking to mid removes the payoff even if some other path ever produces one.",
+            "mark_price_source": "mid",
     "tape_display_length": 10,
     "max_step": 64,
     "is_render": true,

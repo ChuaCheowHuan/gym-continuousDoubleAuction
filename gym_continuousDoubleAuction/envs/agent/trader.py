@@ -69,6 +69,14 @@ class Trader(Random_agent):
 
         # normal execution
         if self._order_approved(side, size, price, LOB, type):
+            # Before the order can reach the matcher. Every regulated venue
+            # runs self-match prevention, and this one needs it more than
+            # most: `Exchg_Helper.mark_to_mkt` marks *every* account off a
+            # single market price, so one self-traded contract at a chosen
+            # price used to re-price the whole market including the
+            # self-trader's own reward (doc/15 S2-5).
+            self._prevent_self_match(LOB, type, side, price)
+
             order = self._create_order(type, side, size, price)
 
             # Option B: Flag only Market and Limit orders for entry penalty
@@ -104,6 +112,71 @@ class Trader(Random_agent):
             # identical to a passive one from returns alone (doc/11 2.2).
             self.acc.num_rejected_step += 1
             return trades, order_in_book
+
+    def _prevent_self_match(self, LOB, type, side, price):
+        """Cancel this trader's own resting orders the incoming order would cross.
+
+        The "cancel resting order" self-match-prevention mode: the older order
+        gives way and the aggressor proceeds. Done here rather than in
+        `OrderBook.process_order_list`, where a `head_order.trade_id !=
+        quote['trade_id']` skip would be the natural place for it, because
+        `envs/orderbook/` is off-limits to changes (doc/15 S3-4). The effect on
+        what can reach the tape is the same; what differs is that the resting
+        order is withdrawn rather than stepped over, which is also the more
+        common venue behaviour.
+
+        Why it matters beyond tidiness: a self-trade printed to the tape, and
+        `mark_to_mkt` marks every account off a single market price, so one
+        self-matched contract re-marked the entire market. Measured before
+        this: a 1-lot self-print moved 1,000 NAV between two traders. It was
+        also free - `_process_trades` sends a self-trade down a path that never
+        calls `process_acc`, so neither `num_trades` nor `num_trades_step` ever
+        incremented and `trade_penalty` never charged for it. Any "refuse to
+        promote a champion that does not trade" guard would have been evadable
+        the same way.
+
+        A `cancel` crosses nothing. A `modify` re-processes as a limit and can,
+        so it is included.
+
+        Returns:
+            The number of own orders withdrawn.
+        """
+        if type not in ('market', 'limit', 'modify'):
+            return 0
+
+        if side == 'bid':
+            contra = 'ask'
+        elif side == 'ask':
+            contra = 'bid'
+        else:
+            return 0
+
+        order_map = self._find_orderTree(LOB, {'side': contra})
+        if order_map is None:
+            return 0
+
+        # A market order names no price and sweeps the whole contra side, so
+        # every one of this trader's resting orders there is in its path.
+        is_market = (type == 'market') or (price is None) or (price == -1.0)
+        # Decimal, matching how the book stores a resting price, so the
+        # comparison below is exact rather than going through a float.
+        limit = None if is_market else Decimal(str(price))
+
+        def crosses(resting_price):
+            if is_market:
+                return True
+            return resting_price <= limit if side == 'bid' else resting_price >= limit
+
+        doomed = [
+            (order_ID, order)
+            for order_ID, order in order_map.items()
+            if order.trade_id == self.ID and crosses(order.price)
+        ]
+        for order_ID, order in doomed:
+            LOB.cancel_order(contra, order_ID)
+            self.acc.cancel_cash_transfer(order)
+
+        return len(doomed)
 
     def _resting_exposure(self, LOB, side, exclude_order_id=None):
         """This trader's own live resting quantity on `side`.

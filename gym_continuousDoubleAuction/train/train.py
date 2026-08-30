@@ -152,6 +152,7 @@ class TrainConfig:
     num_trained_agents: int = _default("num_trained_agents")
     init_cash: int = _default("init_cash")
     tick_size: int = _default("tick_size")
+    mark_price_source: str = _default("mark_price_source")
     tape_display_length: int = _default("tape_display_length")
     max_step: int = _default("max_step")
     is_render: bool = _default("is_render")
@@ -447,6 +448,7 @@ class TrainConfig:
             "num_of_agents": self.num_agents,
             "init_cash": self.init_cash,
             "tick_size": self.tick_size,
+            "mark_price_source": self.mark_price_source,
             "tape_display_length": self.tape_display_length,
             "max_step": self.max_step,
             "is_render": self.is_render,

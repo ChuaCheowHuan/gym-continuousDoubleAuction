@@ -17,10 +17,14 @@ from tabulate import tabulate
 logger = get_logger(__name__)
 
 class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info_Helper):
+    #: Accepted values of the `mark_price_source` config key.
+    MARK_PRICE_SOURCES = ("mid", "last")
+
     def __init__(self, init_cash=env_default("init_cash"),
                  tick_size=env_default("tick_size"),
                  tape_display_length=env_default("tape_display_length"),
                  n_hist=env_default("n_hist"),
+                 mark_price_source=env_default("mark_price_source"),
                  **kwargs):
         # tick_size goes on to Action_Helper as well: it is the tick the action
         # space quotes on, not just a property of the book.
@@ -41,6 +45,13 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         self.init_cash = init_cash
         self.tape_display_length = tape_display_length
 
+        if mark_price_source not in self.MARK_PRICE_SOURCES:
+            raise ValueError(
+                f"mark_price_source={mark_price_source!r} is not one of "
+                f"{self.MARK_PRICE_SOURCES}. See env_defaults.json."
+            )
+        self.mark_price_source = mark_price_source
+
         self.model_actions = None
         self.LOB_actions = None
         self.shuffled_actions = None
@@ -53,16 +64,82 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         for trader in self.traders:
             trader.acc.reset_acc(trader.ID, self.init_cash)
 
-    def mark_to_mkt(self):
+    def mark_price(self):
+        """The price every account is marked at this step, or None.
+
+        `mark_price_source` picks the chain:
+
+        * ``"mid"`` - the L1 midpoint of a **two-sided** book, then the last
+          tape print, then a one-sided quote. This is the default and the
+          reason is doc/15 S2-5: the mark used to be the last print alone, so
+          one trade at a chosen price re-marked every account in the market. A
+          midpoint cannot be moved by printing a trade; it moves only when
+          someone *quotes*, and a quote that moves it is one anybody else can
+          hit.
+        * ``"last"`` - the last tape print alone, which is the previous
+          behaviour, kept so a run can reproduce it.
+
+        **The two-sided requirement is the load-bearing part**, not an edge
+        case. `State_Helper.mid_price` falls back to whichever side is present,
+        because the observation needs a positive number to normalise against.
+        Doing that here would hand back the manipulation by another route: a
+        lone resting bid far from the market would *be* the mark, so an agent
+        could re-price every account by quoting a price nobody has traded at
+        and cancelling it next step. Measured, before this fallback was
+        narrowed: a 1-lot self-cross whose resting leg survived moved 1,000
+        NAV even though self-match prevention had stopped the print. Falling
+        back to the last trade instead means moving the mark takes a real
+        two-sided market - and by the time one exists, moving the mid means
+        posting a better quote that someone can lift.
+
+        Read off `LOB.get_best_bid()` / `get_best_ask()` rather than through
+        `State_Helper.mid_price()`, which is the same shape of chain over
+        `agg_LOB_raw`. That snapshot is taken *before* the step's orders are
+        processed, so at mark time it is one step stale; the book itself is
+        not. Decimal throughout, because this is a price and it goes straight
+        into the ledger.
         """
-        Update acc for all traders with last price in most recent entry of tape.
-        """
+        best_bid = self.LOB.get_best_bid()
+        best_ask = self.LOB.get_best_ask()
+
+        if self.mark_price_source == "mid":
+            if best_bid is not None and best_ask is not None:
+                return (best_bid + best_ask) / 2
 
         if len(self.LOB.tape) > 0:
-            mkt_price = self.LOB.tape[-1].get('price') # last price from tape
-            self.last_price = float(mkt_price) # Updated anchor
-            for trader in self.traders:
-                trader.acc.mark_to_mkt(trader.ID, mkt_price)
+            return self.LOB.tape[-1].get('price')
+
+        # No trade has ever printed, so nobody holds a position and the mark
+        # cannot move anyone's NAV. A one-sided quote is as good an answer as
+        # exists, and it keeps `mark_to_mkt` from being a no-op that leaves
+        # `prev_nav` stale.
+        if self.mark_price_source == "mid":
+            if best_bid is not None:
+                return best_bid
+            if best_ask is not None:
+                return best_ask
+
+        return None
+
+    def mark_to_mkt(self):
+        """
+        Mark every trader's account at `mark_price`.
+
+        `last_price` keeps tracking the last *traded* price whatever the mark
+        source is: it is the ghost-level anchor `Action_Helper._set_price`
+        quotes around and the final fallback of `State_Helper.mid_price`, and
+        both of those want "where did this market last actually trade".
+        """
+        if len(self.LOB.tape) > 0:
+            self.last_price = float(self.LOB.tape[-1].get('price')) # anchor
+
+        mkt_price = self.mark_price()
+        if mkt_price is None:
+            return 0
+
+        for trader in self.traders:
+            trader.acc.mark_to_mkt(trader.ID, mkt_price)
+
         return 0
 
     def set_market_snapshot(self):
