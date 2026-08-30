@@ -256,6 +256,111 @@ class TestNAVCallback:
         assert callback.strict_nav_check == league["strict_nav_check"]
 
 
+class TestATerminatedAgentStillCounts:
+    """A bankrupt agent drops out of `info`; its NAV must not drop out too.
+
+    doc/15 S2-4. Once a bankrupt agent is terminated it stops appearing in
+    `info` from its terminal step onward, and the check reads the *final*
+    step's info. Summing only what is there leaves the total short by exactly
+    that agent's NAV, so every episode containing a bankruptcy would read as a
+    conservation violation - and in a strict run, halt it - for a ledger that
+    is entirely intact. `on_episode_step` therefore carries each agent's last
+    reported NAV forward.
+    """
+
+    def setup_method(self):
+        self.init_cash = 1000000
+        self.num_agents = 4
+        self.mock_env = MockEnv(self.init_cash, self.num_agents)
+        self.mock_runner = MagicMock()
+        self.mock_runner.config = MagicMock()
+        self.mock_runner.config.env_config = {
+            "init_cash": self.init_cash,
+            "num_of_agents": self.num_agents,
+        }
+
+    def _callback(self):
+        return SelfPlayCallback(
+            num_trainable_policies=2,
+            num_random_policies=2,
+            episode_data_dir=None,
+        )
+
+    def _step(self, callback, episode, info):
+        episode.last_info = info
+        callback.on_episode_step(
+            episode=episode,
+            env_runner=self.mock_runner,
+            metrics_logger=None,
+            env=self.mock_env,
+            env_index=0,
+            rl_module=None,
+        )
+
+    def test_the_last_reported_nav_is_carried_forward(self):
+        callback = self._callback()
+        metrics = MagicMock()
+        episode = MockEpisode("ep_bankrupt", {})
+
+        # Every agent alive, each holding a quarter of the system's cash.
+        share = self.init_cash
+        self._step(callback, episode, {
+            f"agent_{i}": {"NAV": str(float(share))} for i in range(4)
+        })
+
+        # agent_0 goes bankrupt at a NAV of -60 - non-zero deliberately, so
+        # the total is only right if that number is actually carried. The
+        # survivors hold what it lost plus the 60 it went under by.
+        survivor = (Decimal(4 * share) + Decimal(60)) / 3
+        self._step(callback, episode, {
+            "agent_0": {"NAV": "-60"},
+            **{f"agent_{i}": {"NAV": str(survivor)} for i in (1, 2, 3)},
+        })
+        final = {f"agent_{i}": {"NAV": str(survivor)} for i in (1, 2, 3)}
+        self._step(callback, episode, final)
+
+        episode.last_info = final
+        callback.on_episode_end(
+            episode=episode,
+            env_runner=self.mock_runner,
+            metrics_logger=metrics,
+            env=self.mock_env,
+            env_index=0,
+            rl_module=None,
+        )
+
+        assert _emitted(metrics, "nav_conservation_error").args[1] == pytest.approx(0.0)
+        assert _emitted(metrics, NAV_VIOLATIONS_METRIC).args[1] == 0.0
+
+    def test_a_genuine_breach_is_still_caught_when_an_agent_terminated(self):
+        """The guard against a carry-forward that hides real corruption."""
+        callback = self._callback()
+        metrics = MagicMock()
+        episode = MockEpisode("ep_broken", {})
+
+        share = self.init_cash
+        self._step(callback, episode, {
+            f"agent_{i}": {"NAV": str(float(share))} for i in range(4)
+        })
+        # agent_0 terminates at 0, and the survivors do NOT absorb its loss -
+        # a quarter of the system's cash has simply evaporated.
+        final = {f"agent_{i}": {"NAV": str(float(share))} for i in (1, 2, 3)}
+        self._step(callback, episode, {"agent_0": {"NAV": "0.0"}, **final})
+        self._step(callback, episode, final)
+
+        episode.last_info = final
+        callback.on_episode_end(
+            episode=episode,
+            env_runner=self.mock_runner,
+            metrics_logger=metrics,
+            env=self.mock_env,
+            env_index=0,
+            rl_module=None,
+        )
+
+        assert _emitted(metrics, NAV_VIOLATIONS_METRIC).args[1] == 1.0
+
+
 class TestDriverCheck:
     """The half that actually stops the run.
 

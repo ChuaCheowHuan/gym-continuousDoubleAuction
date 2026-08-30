@@ -180,29 +180,31 @@ class TestAccounting:
         assert self.trader_B.acc.nav == Decimal(1010), "NAV should increase on price drop"
 
     def test_insufficient_funds(self):
-        """Test Case 8: Insufficient Funds"""
+        """Test Case 8: Insufficient Funds
 
-        # Agent A has 1000. Tries to buy 20 @ 100 (2000 value)
-        order = {'type': 'limit', 'side': 'bid', 'quantity': 20, 'price': 100, 'trade_id': 1}
-        self.trader_A.place_order(order['type'], order['side'], order['quantity'], order['price'], self.order_book, self.agents)
+        This used to be a bare `pass` under twenty lines of comments arguing
+        with themselves about what `_order_approved` did - doc/15 S4-5, a TODO
+        shipped as a test. The comments described an older version that checked
+        only `nav > 0`; the current one cash-checks the risk-increasing portion,
+        so the behaviour is now asserted rather than speculated about.
+        """
+        # Agent A has 1000 and is flat, so all 20 lots are opening: 2000 of
+        # notional against 1000 of cash.
+        self.trader_A.place_order('limit', 'bid', 20, 100, self.order_book, self.agents)
 
-        # Verify no change
-        # Note: The logic in Trader.place_order L71 checks self.acc.nav > 0, NOT cash >= size * price
-        # Wait, I need to check the code:
-        # if self.acc.nav > 0: return True
-        # This implementation seems to allow leverage or just checks solvency?
-        # Let's check test outcome on implementation.
-        # If it allows testing, we check consequences.
-        # If it blindly accepts, then cash will go negative.
-        # Let's assume standard behavior verifies nav > 0.
+        assert self.trader_A.acc.cash == Decimal(1000), "refused order must not move cash"
+        assert self.trader_A.acc.cash_on_hold == Decimal(0)
+        assert len(self.order_book.bids) == 0, "refused order must not reach the book"
+        assert self.trader_A.acc.num_rejected_step == 1
 
-        # If the code allows it (based on my reading it only checks nav > 0), this test might fail if I assert rejection.
-        # Let's check cash.
-        # If order accepted: cash 1000 - 2000 = -1000.
-        # If Rejected: cash 1000.
-        pass # Will implement based on observed behavior or re-read code carefully.
-        # Re-reading: Trader._order_approved checks `if self.acc.nav > 0`.
-        # So it WILL approve even if cash is insufficient, driving cash negative?
+        # The affordable half of the same order is approved, which is what
+        # makes the assertion above about the cash check rather than about
+        # limit orders in general.
+        self.trader_A.place_order('limit', 'bid', 10, 100, self.order_book, self.agents)
+
+        assert self.trader_A.acc.cash == Decimal(0)
+        assert self.trader_A.acc.cash_on_hold == Decimal(1000)
+        assert len(self.order_book.bids) == 1
 
     def test_market_order_empty_book(self):
         """Test Case 9: Market Order Empty Book"""

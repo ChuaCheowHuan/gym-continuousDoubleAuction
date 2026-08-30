@@ -68,7 +68,7 @@ class Trader(Random_agent):
             return trades, order_in_book
 
         # normal execution
-        if self._order_approved(side, size, price, LOB):
+        if self._order_approved(side, size, price, LOB, type):
             order = self._create_order(type, side, size, price)
 
             # Option B: Flag only Market and Limit orders for entry penalty
@@ -105,14 +105,61 @@ class Trader(Random_agent):
             self.acc.num_rejected_step += 1
             return trades, order_in_book
 
-    def _order_approved(self, side, size, price, LOB):
+    def _resting_exposure(self, LOB, side, exclude_order_id=None):
+        """This trader's own live resting quantity on `side`.
+
+        Walks the tree's `order_map` for this trader's `trade_id`, the way
+        `_get_order_ID` does, and reuses `_find_orderTree` so there is one
+        definition of which tree a side names.
+
+        `exclude_order_id` drops the order an incoming quote is about to
+        replace. A `limit` at a price this trader already rests at is an upsert
+        (`_place_limit_order`) and a `modify` is a cancel-and-reprocess, so in
+        both cases the old order's quantity is released by the same call that
+        would otherwise be charged for it. Counting it would refuse orders that
+        free more exposure than they take.
+        """
+        order_map = self._find_orderTree(LOB, {'side': side})
+        if order_map is None:
+            return 0
+
+        total = 0
+        for order_ID, order in order_map.items():
+            if order.trade_id != self.ID:
+                continue
+            if exclude_order_id is not None and order_ID == exclude_order_id:
+                continue
+            total += int(order.quantity)
+
+        return total
+
+    def _replaced_order_id(self, LOB, type, side, price):
+        """The order id this quote would replace, or None.
+
+        Only `limit`, `modify` and `cancel` can replace an order, and each
+        resolves its target through `_get_order_ID` - so this asks that same
+        function rather than re-deriving the rule. A market order never
+        replaces anything and never reaches the lookup.
+        """
+        if type not in ('limit', 'modify', 'cancel'):
+            return None
+
+        order_ID, _order = self._get_order_ID(
+            LOB, {'trade_id': self.ID, 'side': side,
+                  'price': price, 'type': type},
+        )
+        return None if order_ID == -1 else order_ID
+
+    def _order_approved(self, side, size, price, LOB, type=None):
         """
         Conditions for order approval. Handles:
         1. NAV positivity.
-        2. Position flips (Long -> Short, Short -> Long). Only the "opening" 
+        2. Position flips (Long -> Short, Short -> Long). Only the "opening"
            portion of an order requires a cash check.
-        3. Market order price estimation.
-        4. Decimal precision.
+        3. Orders already resting on the closing side, which have claimed part
+           of the position and so cannot close it a second time.
+        4. Market order price estimation.
+        5. Decimal precision.
 
         Return: boolean.
         """
@@ -126,8 +173,21 @@ class Trader(Random_agent):
         if (side == 'bid' and net_pos >= 0) or (side == 'ask' and net_pos <= 0):
             opening_size = size
         # Scenario 2: Order is on the opposite side (Decreasing or Flipping)
+        #
+        # `closable` is the position NOT already claimed by this trader's own
+        # resting orders on this side, and it is the whole point of this
+        # branch. Netting against `abs(net_pos)` alone let every resting order
+        # net against the *same* lots, so N individually-"closing" orders were
+        # each waved through against one position and the cash check could be
+        # bypassed entirely by layering them across price levels. Measured
+        # before this: a trader long 10 with `cash == 0` rested ten 10-lot asks
+        # - all approved - and filled into a 90-lot short having never been
+        # refused. That is doc/15 S1-5.
         else:
-            opening_size = max(0, size - abs(net_pos))
+            exclude = self._replaced_order_id(LOB, type, side, price)
+            resting = self._resting_exposure(LOB, side, exclude_order_id=exclude)
+            closable = max(0, int(abs(net_pos)) - resting)
+            opening_size = max(0, size - closable)
 
         # If we are only closing/decreasing a position, no cash check is needed
         if opening_size <= 0:
@@ -250,6 +310,37 @@ class Trader(Random_agent):
             trades, order_in_book = [],[]
 
         return trades, order_in_book
+
+    def cancel_all_orders(self, LOB):
+        """Pull every order this trader has resting, on both sides.
+
+        Used when a trader is terminated: a bankrupt agent stops acting, but
+        its resting orders stay live and executable unless something takes
+        them down, so the rest of the market would keep trading against a
+        participant that no longer exists (doc/15 S2-4).
+
+        Cancels through the same two calls `_cancel_limit_order` uses -
+        `OrderBook.cancel_order` and `cancel_cash_transfer` - so the escrow is
+        released by the same path in both cases. The order ids are collected
+        before anything is cancelled, because `remove_order_by_id` mutates the
+        map being walked.
+
+        Returns:
+            The number of orders cancelled.
+        """
+        cancelled = 0
+        for side in ('bid', 'ask'):
+            order_map = self._find_orderTree(LOB, {'side': side})
+            if order_map is None:
+                continue
+            mine = [(order_ID, order) for order_ID, order in order_map.items()
+                    if order.trade_id == self.ID]
+            for order_ID, order in mine:
+                LOB.cancel_order(side, order_ID)
+                self.acc.cancel_cash_transfer(order)
+                cancelled += 1
+
+        return cancelled
 
     def _get_order_ID(self, orderBook, qoute):
         """

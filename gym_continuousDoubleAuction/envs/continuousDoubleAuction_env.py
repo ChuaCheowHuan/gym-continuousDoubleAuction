@@ -213,6 +213,12 @@ class continuousDoubleAuctionEnv(
         self.done_set = set()
         self.infos = {}
 
+        # `set_all_done` narrows this to the agents still live, so a new
+        # episode has to restore it. `possible_agents` is the fixed roster and
+        # is never narrowed, which is the distinction RLlib draws between the
+        # two.
+        self.agents = list(self.possible_agents)
+
         self.seq_trades = []
         self.seq_order_in_book = []
 

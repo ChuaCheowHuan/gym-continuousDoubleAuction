@@ -108,8 +108,18 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
 
         next_states, rewards, dones, infos = {},{},{},{}
         for trader in self.traders:
+            # A trader terminated on an earlier step is not scored again. It
+            # still holds an account (the NAV-conservation check sums every
+            # trader, live or not), it simply stops producing transitions -
+            # see `Done_Helper.set_done` and doc/15 S2-4.
+            if not self.is_live(trader):
+                continue
+
             next_states = self.set_next_state(next_states, trader, state_input) # dict of tuple of tuples
             rewards = self.set_reward(rewards, trader)
+            # After the reward, so the step on which an agent goes bankrupt
+            # still carries the observation and reward of its terminal
+            # transition, which is what a learner needs to bootstrap it.
             dones = self.set_done(dones, trader)
             infos = self.set_info(infos, trader)
 
