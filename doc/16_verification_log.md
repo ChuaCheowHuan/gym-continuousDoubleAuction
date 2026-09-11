@@ -625,3 +625,53 @@ The middle column is the one worth keeping: positional embeddings alone change n
 linear projection and a mean, because `mean(W·xᵢ + pᵢ)` is `W·mean(xᵢ) + mean(pᵢ)`.
 
 **Supports:** S1-5, S2-2, S2-4, S2-5, S2-6, S2-7, S2-10, S2-11.
+
+---
+
+## 16.13 Continual Backprop feasibility probes (2026-09-11)
+
+Two structural claims in [25_continual_backprop.md](25_continual_backprop.md), measured against the
+working tree on Python 3.12.3 / Ray 2.56.1. Both are design claims about *seams*, not about
+training outcomes — no run was performed, and nothing in §25 asserts a measured effect on learning.
+
+### The learner mixin composes over the existing chain (§25 2.5)
+
+`type(f"CBP{base.__name__}", (CBPLearnerMixin, base), {})`, for each learner the encoder registry
+can select:
+
+```
+CDAPPOTorchLearner   -> CBPCDAPPOTorchLearner     jepa_in_chain=False
+CDAJEPALearner       -> CBPCDAJEPALearner         jepa_in_chain=True
+```
+
+In both cases `compute_loss_for_module` still resolves to the base learner's — so the MoE
+load-balancing term and, for `jepa`, the latent-prediction term both survive — while
+`after_gradient_based_update` resolves to the mixin's. This is the property that makes Continual
+Backprop orthogonal to `learner_class_for`'s single algorithm-wide slot rather than a competitor
+for it.
+
+`Learner.update` was also read directly: it calls `before_gradient_based_update`, runs the whole
+minibatch/epoch loop, then calls `after_gradient_based_update` **once**. That is what lets a
+replacement event avoid invalidating PPO's `exp(logp_new - logp_old)` ratio mid-update (§25 3.1).
+
+### Outgoing-zeroing injects exactly zero perturbation (§25 1)
+
+`blocks.feedforward(d_model=64, ff_dim=256)`, 256-row batch, replacing 3 units, with the
+replacement split into its two stages:
+
+| units replaced | drop old contribution | add new randomness |
+|---|---|---|
+| 3 lowest-utility | 0.097763 | 0.0000000000 |
+| 3 highest-utility | 0.173780 | 0.0000000000 |
+
+Utility is `mean|hᵢ| · Σⱼ|wᵢⱼ_out|`, the CBP contribution utility. The right-hand column is exactly
+zero in both rows and is the half of the guarantee that is exact: once the outgoing weights are
+zero, fresh random incoming weights are multiplied by zero and reach the output not at all. The
+left-hand column is never zero — removing a unit's contribution changes the function by definition
+— and is bounded only by *selecting* the minimum-utility unit, which on a freshly initialised
+network is a weak bound because the utility spread is only ~2× (0.30 vs 0.67).
+
+This is the measurement that corrected the note's first draft, which claimed the replacement was
+"function-preserving at the instant it happens". It is not; only the new-randomness half is.
+
+**Supports:** §25 1, §25 2.5, §25 3.1, §25 3.4.

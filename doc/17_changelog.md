@@ -2364,3 +2364,67 @@ equal `top_k` whatever the routing does, and the other zeroes the gate's weights
 force exactly uniform load. No suite-wide seeding fixture was added for that reason.
 
 The unit count moves from 863 to 858: six parametrisations became one test.
+
+---
+
+## 39. A research note on Continual Backprop
+
+[25_continual_backprop.md](25_continual_backprop.md), in the same genre as
+[22](22_jepa_integration.md): a design exploration, not a change. No code was added, no
+configuration key was introduced, and no run behaves differently.
+
+It asks whether Continual Backprop — backprop plus the continual, utility-ranked reinitialisation
+of low-utility hidden units — has anything to offer a league-based self-play trainer, and reaches a
+qualified yes with the qualification in a different place than JEPA's. JEPA suited *this
+observation* and not *this reward*. Continual Backprop suits *this training regime* — the champion
+pool turning over under `max_champions: 8` and `min_iterations_between_champions: 2` makes the
+learning problem non-stationary by construction, which is the regime loss of plasticity is a
+phenomenon of — and is aimed at a failure **nobody has yet confirmed this system has**. Before the
+note, grepping `doc/` for *plasticity*, *dormant* or *dead unit* returned nothing at all.
+
+### 39.1 The structural finding
+
+Every previous extension to the learning stack went through the encoder registry. Continual
+Backprop must not, for three reasons the note develops in §2.5:
+
+- `encoder_type: "mlp"` is a deliberate pass-through that never reaches `CDACatalog`, so a
+  registry-based mechanism would be unavailable for the shipped default — which is a 2×256 **tanh**
+  MLP, the configuration most susceptible to the saturation CBP targets.
+- `learner_class_for` fills RLlib's single algorithm-wide Learner slot from the *configured
+  encoder*, so a CBP learner registered against an `encoder_type` would be mutually exclusive with
+  `jepa` rather than composable with it.
+- Resetting Adam's moment estimates for replaced units is part of the algorithm, and only the
+  Learner can see the optimiser.
+
+The shape the note proposes instead is a `CBPLearnerMixin` composed over whatever
+`learner_class_for` returned, with its per-unit state held on the Learner rather than on the module
+— which also keeps it out of champion snapshots by construction, rather than by remembering to
+declare it the way `jepa` must via `get_non_inference_attributes`.
+
+### 39.2 What was measured
+
+Two feasibility probes, logged in [16](16_verification_log.md) §16.13. The mixin composes over both
+`CDAPPOTorchLearner` and `CDAJEPALearner` with every existing loss term intact, and
+`Learner.update` calls `after_gradient_based_update` exactly once per update — which is what lets a
+replacement event avoid invalidating PPO's `exp(logp_new - logp_old)` ratio mid-update.
+
+The second probe corrected the note's own first draft. It had repeated the usual claim that zeroing
+a replaced unit's outgoing weights makes the replacement *function-preserving*. Measured on
+`blocks.feedforward`, only half of that is true: the fresh random incoming weights reach the output
+**not at all** (exactly `0.0`), but dropping the old unit's contribution moves the layer by `0.098`
+even for the lowest-utility units. Nothing makes that half zero; it is bounded only by selecting
+the minimum-utility unit, and on a freshly initialised network that bound is weak because the
+utility spread is barely 2×.
+
+### 39.3 What it recommends
+
+Not the algorithm. §4.1 first — plasticity *instrumentation* only: dormant and saturated unit
+fractions, effective rank, weight norm, and the CBP utility statistic computed and logged but
+**not acted on**. It cannot change a run's trajectory, it is most of the implementation of the real
+thing, and it answers the question everything else is blocked on, which is whether this system
+loses plasticity at all.
+
+The note is also explicit that CBP must be scored on the [23](23_probe_harness.md) probe rather
+than on episode return until S1-3 is fixed: under a reward where passivity is the joint optimum,
+preserved plasticity preserves the capacity to learn nothing, and a returns-based comparison would
+measure which variant reaches passivity faster.
