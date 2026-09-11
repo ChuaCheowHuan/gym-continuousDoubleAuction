@@ -129,7 +129,7 @@ mindmap
 | 22 | [22_jepa_integration.md](doc/22_jepa_integration.md) | What JEPA is, why this observation suits it and this reward does not, and four ways it could be used |
 | 23 | [23_probe_harness.md](doc/23_probe_harness.md) | Scoring an encoder on microstructure targets without the reward: how to run it, how to read it, why the probe is linear |
 | 24 | [24_pretraining.md](doc/24_pretraining.md) | Training a JEPA encoder on observations alone before any PPO run, the fingerprint that guards its weights, and why to watch `latent_std` rather than the loss |
-| 25 | [25_continual_backprop.md](doc/25_continual_backprop.md) | What Continual Backprop is, why league self-play is the non-stationary regime it targets, why it belongs on the Learner rather than the encoder registry, and four ways it could be used |
+| 25 | [25_continual_backprop.md](doc/25_continual_backprop.md) | What Continual Backprop is, why league self-play is the non-stationary regime it targets, why it belongs on the Learner rather than the encoder registry, and why the papers' hyperparameters cannot be copied at this repo's update cadence |
 
 ### Configuration and deployment
 
@@ -167,8 +167,10 @@ mindmap
 [23](doc/23_probe_harness.md) (measuring what it taught)
 
 **Weighing a plasticity change for long runs (Continual Backprop)**
-[25](doc/25_continual_backprop.md) → [08](doc/08_self_play_league.md) (the non-stationarity it
-targets) → [23](doc/23_probe_harness.md) (the reward-free metric it must be scored on) →
+[25](doc/25_continual_backprop.md) → [18](doc/18_configuration.md) §5.6 (the two config groups, and
+the cadence caveat that decides whether a result means anything) →
+[11](doc/11_logging_and_observability.md) (the three correlates) →
+[23](doc/23_probe_harness.md) (the reward-free metric it must be scored on) →
 [15](doc/15_findings_and_recommendations.md) (S1-1, S1-3, which gate the returns comparison)
 
 **Setting up training**

@@ -2428,3 +2428,102 @@ The note is also explicit that CBP must be scored on the [23](23_probe_harness.m
 than on episode return until S1-3 is fixed: under a reward where passivity is the joint optimum,
 preserved plasticity preserves the capacity to learn nothing, and a returns-based comparison would
 measure which variant reaches passivity faster.
+
+---
+
+## 40. Continual Backprop, implemented
+
+[25_continual_backprop.md](25_continual_backprop.md) §39 proposed this and recommended measuring
+before building. Both halves are now built, off by default; the measurement is still outstanding
+and is now the blocking step rather than the code.
+
+Two modules, splitting algorithm from wiring the way `encoders/` splits architecture from
+`moe_learner.py`:
+
+- `train/model/cbp.py` — layer discovery, the three utility measures, the replacement rule, the
+  plasticity metrics. Imports no RLlib, so the formulas are testable against hand-computed values
+  without building an `Algorithm`.
+- `train/model/cbp_learner.py` — forward hooks, the generate-and-test step, metrics, checkpoint
+  state, and the composition helpers.
+
+Plus two config groups, `optimizer` and `continual_backprop`, and 67 tests.
+
+### 40.1 Reading the papers changed three things
+
+The §39 note was written from general knowledge of the method. Against the sources it was wrong in
+two places and understated in a third.
+
+**It is the same network, not a similar one.** §39 said the shipped default is "very close to" the
+configuration loss of plasticity was demonstrated on. arXiv Appendix D specifies "Policy Network:
+(256, tanh, 256, tanh, Linear)", "Value Network (256, tanh, 256, tanh, linear)" and "separate
+networks for policy and value function". That is `fcnet_hiddens: [256, 256]`, `fcnet_activation:
+"tanh"`, `vf_share_layers: false` — exactly, trunks included. The mechanism can be validated
+against a known-good reference instead of invented.
+
+That turned up the structural trap: the **second hidden layer's outgoing weights are in the `pi`/`vf`
+head, not the encoder**, so a layer walker that stops at the encoder boundary finds one replaceable
+layer per network where there are two and silently leaves half the units alone. Discovery joins
+across the boundary and a test names `pi.net.mlp.0` to keep it joined.
+
+**Replacement fires per minibatch, not per iteration.** §39 reasoned that it must run once per
+iteration to protect PPO's `exp(logp_new - logp_old)` ratio. arXiv Algorithm 3 runs generate-and-test
+after *every* Adam step, inside the minibatch loop, and that is the configuration that produced the
+paper's 100M-step RL results. Three things bound the disturbance: outgoing weights are zeroed so the
+function is unchanged at the instant of replacement, Nature Algorithm 1 caps it at one unit per
+layer per step (`If c > 1`, not `while` — the first implementation here used `while` and was
+corrected), and at the shipped rate it happens about once per 39 steps. `cbp_fire_on: "iteration"`
+keeps the conservative placement available.
+
+**The recipe includes the optimiser.** Neither paper runs CBP alone in RL: it is CBP with L2 at
+weight decay `1e-4` and "tuned Adam" at `β₁ = β₂ = 0.99`, the last because the usual `(0.9, 0.999)`
+mismatch is itself identified as a cause of plasticity loss. This repo runs stock Adam with no
+weight decay. Both are now configurable — in a **separate** group, so that enabling CBP and
+retuning Adam cannot be done accidentally in one step and measured as one effect.
+
+### 40.2 The finding that decides how to read any result
+
+CBP's replacement rate and maturity threshold are counted in **optimiser steps**, and this project
+takes far fewer of them than the papers do: 4 per iteration at the defaults against Continual PPO's
+320. Transplanting the Nature paper's PPO values makes the maturity threshold 2,500 iterations
+against a default run of 16 — **continual backprop would never fire once**.
+
+A mechanism that never fires logs exactly what a working one logs. So `cbp_replacements` and
+`cbp_mature_unit_frac` are required metrics, the maturity default is the arXiv value of 100 rather
+than the Nature PPO value of 1e4, and both the config note and [18 §5.6.4](18_configuration.md) say
+to read those two counters before believing anything else.
+
+### 40.3 Isolation
+
+Continual backprop is an update rule, not an architecture, so it is composed *over* whatever
+`learner_class_for` returned rather than registered as another candidate to come back from it — the
+argument in [25](25_continual_backprop.md) §2.5. Registering it in the encoder registry would have
+made it mutually exclusive with `jepa` and unavailable for `mlp`, which never reaches the catalog.
+
+With both switches off, `_learner_class` returns the base class object itself, and
+`test_off_resolves_to_exactly_the_base_learner` asserts identity rather than behaviour. Nothing
+that existed before regressed: the suite moves from 970 to **1,042 tests**, all passing, the 72 new
+ones being 42 in `test_cbp.py` and 30 in `integration/test_cbp_wiring.py`.
+
+### 40.4 Three bugs the tests found
+
+None was hypothetical, and the third was found only by a real save and restore.
+
+`find_replaceable_layers` originally returned the `jepa` encoder's EMA `target_trunk`, which is
+structurally identical to the trunk it mirrors. Replacing a unit there would break the EMA
+relationship the objective rests on, and nothing would undo it, because nothing updates that trunk
+by gradient descent. Layers whose weights do not require gradients are now skipped.
+
+`CBPLayerState.get_state` used `.detach().cpu()`, which returns *the same object* for a tensor
+already on the CPU. The returned state therefore aliased the live tensors: a checkpoint would have
+serialised whatever the values had drifted to rather than what they were when taken. Found by a
+round-trip test that zeroed the live state and watched its own saved copy go to zero with it.
+
+Third, and the one that mattered most: **continual backprop attached itself to league champions.**
+A champion is a snapshot of a past policy, kept fixed so the opponent it represents does not drift,
+and it shares the `MultiRLModule` with the trainable policies. Replacing a unit in one would have
+silently mutated an opponent that is supposed to be constant, with no gradient to undo it. It did
+not show up on a fresh run, where the league is empty when the learner is built; it showed up on a
+restore, where the champions come back with the checkpoint and are present from `build()`. The fix
+is `should_module_be_updated` - the same rule, one level up, that keeps replacement off the `jepa`
+encoder's EMA target trunk: continual backprop replaces units gradient descent maintains, and
+nothing else.

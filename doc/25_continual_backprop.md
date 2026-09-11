@@ -1,14 +1,23 @@
 # 25. Continual Backprop: What It Is and How It Could Serve This Project
 
-A research note, not a change. It asks one question: **does Continual Backprop — backprop plus the
-continual, selective reinitialization of low-utility hidden units — have anything to offer a
-league-based self-play trainer whose opponents change under it by construction?**
+It asks one question: **does Continual Backprop — backprop plus the continual, selective
+reinitialization of low-utility hidden units — have anything to offer a league-based self-play
+trainer whose opponents change under it by construction?**
 
 The answer is a qualified yes, and the qualification is different from the one in
 [22_jepa_integration.md](22_jepa_integration.md). JEPA was a good fit for *this observation* and a
 poor fit for *this reward*. Continual Backprop is a good fit for *this training regime* and is
 currently **unmeasured** in it: the mechanism it fixes has never been shown to occur here, and §4.1
 is therefore an instrument rather than an algorithm.
+
+**Status.** This began as a research note and is now also a description of shipped code. §4.1
+(instrumentation) and §4.2 (the mechanism) are implemented, off by default, in
+[`train/model/cbp.py`](../gym_continuousDoubleAuction/train/model/cbp.py) and
+[`cbp_learner.py`](../gym_continuousDoubleAuction/train/model/cbp_learner.py). §4.3 and §4.4 are
+not. What has *not* happened is the measurement: nobody has yet run long enough to say whether this
+system loses plasticity at all, which is what §3.3 is about and what `cbp_metrics_only` exists to
+find out. Sections 1, 3.1 and 4 were rewritten against the papers themselves after the first draft
+reasoned about the algorithm from memory and got two things wrong — §3.1 says which.
 
 It also differs from every previous extension in one structural way that decides the whole design:
 **Continual Backprop is not an encoder, and it must not be wired through the encoder registry.**
@@ -39,25 +48,49 @@ process running alongside it:
 
 | Part | Symbol | Role |
 |---|---|---|
-| Contribution utility | `u_i` | How much unit `i` contributes downstream. Running-average of `\|h_i\| · Σ_j \|w_ij^out\|`, decayed at rate `η` |
+| Utility | `u_i` | How much unit `i` is worth. A running average decayed at rate `η`, bias-corrected by `1 - η^age`. The two papers define it differently; see below |
 | Age / maturity | `a_i`, `m` | A freshly reinitialised unit is protected from replacement for `m` steps, so it gets a chance to become useful |
-| Replacement rate | `ρ` | The fraction of *eligible* units in a layer reinitialised per step. Small — `1e-4` is the paper's working value |
+| Replacement rate | `ρ` | Fraction of *eligible* units replaced per step. Small — `1e-4` is the papers' working value |
 
-Each step, in each eligible layer, the `ρ · n_eligible` lowest-utility mature units are
-reinitialised:
+Each optimiser step, in each layer, a fractional counter advances and at most one unit is replaced
+(Nature Algorithm 1):
+
+```
+age += 1;  update u
+eligible = units with age > m
+c += |eligible| · ρ
+if c > 1:  r = argmin u over eligible;  replace r;  c -= 1
+```
 
 - **incoming** weights are re-sampled from the layer's original initialisation distribution,
 - **outgoing** weights are set to **zero**,
-- the unit's utility and age are reset,
+- the unit's utility, mean activation and age are reset,
 - and the optimiser's per-parameter state for those weights — Adam's two moment estimates — is
-  reset too.
+  reset too (arXiv Algorithm 2).
+
+Two details of that pseudocode carry real weight. **`c` is an accumulator, not a per-step
+quantity**: at `ρ = 1e-4` over 256 units the per-step figure is 0.026, so anything that rounded it
+to an integer would replace nothing, ever. And it is **`if`, not `while`** — one replacement per
+layer per step however high `ρ` goes, which is what bounds how far a single step can move the
+function, and is why §3.1 resolves the way it does.
+
+**Which utility.** Nature's Algorithm 1 uses the *contribution* utility alone,
+`|h_i| · Σ_k |w_out|`. arXiv builds it up in two further steps: subtract the running mean
+activation (`|h_i - f̂_i|`, because gradient descent transfers the mean part of a removed unit's
+contribution to the consumer's bias anyway), then divide by `Σ_j |w_in|` — the *adaptation* utility,
+on the grounds that under Adam a unit with small incoming weights can change its function faster
+and so is worth more than its contribution alone suggests. Appendix C ablates all of them and finds
+the full form best, including on the RL problem, which is why `cbp_utility: "overall"` is the
+default here and the other two are selectable.
 
 ```mermaid
 flowchart LR
-    B["gradient step<br/>(PPO update)"] --> U["update utilities<br/>u_i ← η·u_i + (1-η)·abs(h_i)·Σ abs(w_out)"]
+    B["optimiser step<br/>(one PPO minibatch)"] --> U["update age and utility<br/>u_i ← η·u_i + (1-η)·y_i"]
     U --> E["eligible = mature units<br/>age > m"]
-    E --> S["select ρ·n lowest utility"]
-    S --> R["reinitialise"]
+    E --> C["c += eligible·ρ"]
+    C --> S{"c > 1?"}
+    S -->|"no"| B
+    S -->|"yes"| R["reinitialise argmin u<br/>one unit; c -= 1"]
     R --> RI["incoming ~ init dist"]
     R --> RO["outgoing := 0"]
     R --> RA["age, utility := 0"]
@@ -156,7 +189,13 @@ learning. Before this note, grepping the whole `doc/` tree for *plasticity*, *do
 *dead unit* returned nothing at all. Non-stationarity is discussed repeatedly; plasticity loss,
 which is its long-run consequence, is not discussed anywhere. **That is a genuine gap, and it is the one this note fills.**
 
-### 2.2 The shipped default network is the configuration the effect was demonstrated on
+### 2.2 The shipped default network *is* the papers' Continual PPO network — **[verified]**
+
+Not "close to". The same. arXiv Appendix D specifies, for the reinforcement-learning experiments:
+
+> Policy Network: (256, tanh, 256, tanh, Linear) + Standard Deviation variable
+> Value Network: (256, tanh, 256, tanh, linear)
+> … We used separate networks for policy and value function
 
 From the `ppo` group:
 
@@ -166,14 +205,33 @@ From the `ppo` group:
 "vf_share_layers": false
 ```
 
-A 2×256 **tanh** MLP is very close to the canonical setting in which loss of plasticity has been
-demonstrated. Tanh saturates at both ends; a saturated unit has a vanishing local gradient, so once
-it drifts out it does not come back, and its capacity is gone for the rest of the run. The
-mechanism CBP targets is not hypothetical for this default — it is the textbook case.
+Which builds exactly that, separate trunks included ([16](16_verification_log.md) §16.14):
 
-This matters for scope in a way the JEPA work did not enjoy: `mlp` is the **shipped default**, so a
-plasticity intervention is relevant to the configuration almost every run actually uses, not only
-to the custom encoders. §2.5 turns that into a hard design constraint.
+```
+encoder.actor_encoder.net.mlp.0: Linear 177->256    encoder.critic_encoder.net.mlp.0: Linear 177->256
+encoder.actor_encoder.net.mlp.1: Tanh               encoder.critic_encoder.net.mlp.1: Tanh
+encoder.actor_encoder.net.mlp.2: Linear 256->256    encoder.critic_encoder.net.mlp.2: Linear 256->256
+encoder.actor_encoder.net.mlp.3: Tanh               encoder.critic_encoder.net.mlp.3: Tanh
+pi.net.mlp.0:  Linear 256->26                       vf.net.mlp.0:  Linear 256->1
+```
+
+Tanh saturates at both ends; a saturated unit has a vanishing local gradient, so once it drifts out
+it does not come back, and its capacity is gone for the rest of the run. The papers measured that
+directly — arXiv Appendix G reports ~90% of features saturated under plain backprop. So the
+mechanism CBP targets is not hypothetical for this default; it is the case the method was built
+for, on this architecture.
+
+Two consequences. For scope: `mlp` is the **shipped default**, so a plasticity intervention is
+relevant to the configuration almost every run uses, not only to the custom encoders — which §2.5
+turns into a hard design constraint. And for validation: the mechanism can be checked against a
+known-good reference rather than invented, because the network it runs on is the one the reference
+results were produced with.
+
+**One structural consequence, and it is easy to miss.** The second hidden layer's *outgoing*
+weights are in the head (`pi` / `vf`), not in the encoder. A layer walker confined to `encoder`
+finds one replaceable layer per network where there are two, and silently leaves half the units
+unreplaceable. `find_replaceable_layers` joins across that boundary, and
+`test_cbp.py::test_the_last_hidden_layer_consumes_into_the_head` is what keeps it joined.
 
 ### 2.3 The budget this project needs is the regime where plasticity loss appears
 
@@ -279,28 +337,41 @@ the MoE and JEPA terms survive, while `after_gradient_based_update` resolves to 
 
 ## 3. Where the fit breaks — read this before §4
 
-### 3.1 PPO's ratio does not survive a mid-update reinitialisation
+### 3.1 PPO's ratio and the mid-update reinitialisation — **the papers do it anyway**
 
-This is the sharpest technical constraint, and it is the same class of hazard already documented
-for dropout in `encoders/blocks.py`:
+An earlier draft of this note reasoned from first principles that replacement must happen once per
+iteration, in `after_gradient_based_update`, to protect PPO's ratio. **arXiv Algorithm 3 does the
+opposite**, and it is worth quoting because it settles the question:
 
-> The ratio `exp(logp_new - logp_old)` compares a log-prob recorded during rollout against one
-> recomputed on the learner.
+> **Algorithm 3: Continual PPO**
+> for iteration = 1, 2 … do
+>  Collect data: Run the current policy to collect a set of trajectories
+>  for epochs = 1, 2 … do
+>   Divide and shuffle the collected trajectories into mini-batches
+>   for each mini-batch do
+>    Compute the objectives for policy and value networks
+>    **Update the weights of both networks using Adam**
+>    **Update the weights of both networks using generate-and-test**
 
-PPO's surrogate objective is only valid while `logp_old` and `logp_new` come from networks related
-by the trust region. Reinitialising units *between minibatches* changes the policy underneath a
-`logp_old` that was recorded before it — so the ratio compares two networks that differ by a
-discrete jump, and the clipping that is supposed to bound the update silently stops bounding
-anything.
+Generate-and-test runs after *every* optimiser step, inside the minibatch loop. That configuration
+is what produced the paper's RL results over 100M steps, where Continual PPO was the best performer
+and "continually performed as well as it did initially".
 
-Zeroing outgoing weights mitigates this more than it first appears — at the instant of replacement
-the function is unchanged, so `logp_new` is unchanged too. But the *gradient* is not, and the
-following epoch trains a network whose capacity has moved. The safe rule:
+The concern itself is real, and is the same class of hazard `encoders/blocks.py` documents for
+dropout: the ratio `exp(logp_new - logp_old)` compares a log-prob recorded during rollout against
+one recomputed on the learner, and a replacement between minibatches moves the network underneath a
+`logp_old` recorded before it. Three things bound it, which is presumably why it works:
 
-**Reinitialise only in `after_gradient_based_update`, never inside the epoch loop.** One
-replacement event per `update()`, at a point where the next rollout will recompute `logp_old`
-against the post-replacement network. With `ρ = 1e-4` and `num_epochs: 4` the per-iteration
-disturbance is tiny in any case; the constraint costs nothing and removes the hazard entirely.
+- The replaced unit's outgoing weights are zeroed, so `logp_new` is unchanged at the instant of
+  replacement; only the removed contribution of the lowest-utility unit moves it at all.
+- Nature Algorithm 1 replaces **at most one unit per layer per step** — it is `If c > 1`, not
+  `while`. However high the rate is set, one step cannot cascade.
+- At the shipped rate a replacement happens roughly once per 39 optimiser steps.
+
+So the implementation follows the paper: `apply_gradients`, which RLlib calls once per minibatch
+immediately after the optimiser step, is a one-to-one correspondence with "update using Adam;
+update using generate-and-test". `cbp_fire_on: "iteration"` keeps the conservative placement
+available for anyone who wants to measure the difference.
 
 ### 3.2 Preserved plasticity, in a reward that pays for passivity, preserves the ability to learn nothing
 
@@ -381,73 +452,119 @@ So CBP state must go through `Learner.get_state` / `set_state`, and
 turn CBP on midway. That is a genuine difference from `encoder_spec` and should be stated in the
 config note, since the obvious assumption is the opposite.
 
+### 3.6 The papers' hyperparameters cannot be copied — this repo updates ~320× less often
+
+CBP's accumulator and its maturity threshold are both counted in **optimiser steps**. That unit is
+where the papers' numbers and this repo's reality diverge badly:
+
+| | Adam steps / iteration | env steps / iteration | Adam steps per env step |
+|---|---|---|---|
+| Continual PPO (arXiv App. D) | 10 epochs × 32 minibatches = **320** | 4,096 | 0.078 |
+| This repo (defaults) | 4 epochs × 1 (`minibatch_size: null`) = **4** | 16,384 | 0.00024 |
+
+Take the Nature paper's own PPO values — `ρ = 1e-4`, `m = 1e4`, 256 units — and transplant them:
+
+- **`m = 10,000` updates is 2,500 iterations here.** The default run is `num_iters: 16`. No unit
+  would ever become mature, so continual backprop would **never fire once**, in an entire run.
+- Ignoring maturity, the accumulator fills every ~39 optimiser steps ≈ every 10 iterations ≈ 1.6
+  replacements per default run.
+
+Hence `cbp_maturity_threshold: 100` — the arXiv CBP default, not the Nature PPO one — and hence the
+cadence note in `train_config.json`.
+
+**This is also the reason `cbp_replacements` is a required metric rather than a nice one.** A
+continual backprop that never fires produces exactly the same logs, the same losses and the same
+returns as one that is working perfectly; the only difference is a counter. `cbp_mature_unit_frac`
+pinned at `0.0` is the specific diagnosis. Anyone reporting "CBP made no difference" without
+quoting both numbers has not yet established that it ran.
+
+The lever, if more replacement is wanted without raising `ρ`, is `minibatch_size`: it multiplies
+the number of optimiser steps per iteration, which is the clock CBP actually runs on.
+
 ---
 
 ## 4. Four proposals, cheapest first
 
-### 4.1 Proposal A — plasticity instrumentation only (no training change)
+### 4.1 Proposal A — plasticity instrumentation only (no training change) — **implemented**
 
-**The one to do first, and it is independent of everything else in this note.**
+**The one to do first, and it is independent of everything else in this note.** Shipped as
+`cbp_metrics_only: true`, which computes the utility and logs the correlates without replacing
+anything.
 
 Add a metrics pass that walks the trainable modules' feed-forward layers each iteration and logs,
 per module:
 
-| Metric | Definition | What it shows |
-|---|---|---|
-| `dormant_unit_frac` | Fraction of units whose mean \|activation\| over the batch is below `τ` | Dead capacity, directly |
-| `saturated_unit_frac` | For tanh: fraction with mean \|activation\| > 0.99 | The mechanism §2.2 predicts |
-| `effective_rank` | Entropy-based effective rank of the layer's activation matrix | Representational collapse that unit-wise metrics miss |
-| `mean_weight_norm` | Mean L2 norm of incoming weights per layer | The weight growth that accompanies plasticity loss |
-| `utility_gini` | Concentration of the CBP utility statistic | How unequally the layer's capacity is used |
+The first three are the papers' own **three correlates of loss of plasticity**, and the Nature
+paper's claim for CBP is precisely that it is the only method keeping all three healthy at once:
 
-That last one is the bridge: computing the utility statistic **without acting on it** is most of
-CBP's implementation, exercised and logged, with zero effect on training. Proposal B then becomes
-"act on the number you are already computing".
+| Metric | Definition | Source |
+|---|---|---|
+| `cbp_dead_unit_frac` | Fraction of units whose mean \|activation\| is below `cbp_dead_unit_threshold` | Nature Fig. 2d, ED Fig. 4 |
+| `cbp_mean_weight_magnitude` | Mean \|w\| of incoming weights | Nature ED Fig. 4 |
+| `cbp_effective_rank` | Stable rank: fewest singular values of the activation matrix carrying 99% of the total | Nature Methods |
+| `cbp_saturated_unit_frac` | Fraction with mean \|activation\| > 0.9 — the tanh failure | arXiv App. G |
+| `cbp_utility_min` / `_median` | The CBP utility spread: how unequally capacity is used | arXiv eqs. 5–7 |
+| `cbp_mature_unit_frac` | Fraction old enough to be replaceable | §3.6 |
+| `cbp_replacements` | Cumulative replacements | §3.6 |
+
+Computing the utility statistic **without acting on it** is most of CBP's implementation, exercised
+and logged, with zero effect on training. Proposal B then becomes "act on the number you are already
+computing".
 
 Effort: **S**. Risk: **none** — it cannot change a run's trajectory. Value: it answers §3.3, which
 everything else is blocked on.
 
-### 4.2 Proposal B — `CBPLearnerMixin`, the mechanism itself
+### 4.2 Proposal B — `CBPLearnerMixin`, the mechanism itself — **implemented**
 
-The design is §2.5's shape, with §3.1's timing and §3.4's scope:
+Two modules, splitting algorithm from wiring the way `encoders/` splits architecture from
+`moe_learner.py`:
 
 ```
-train/model/cbp_learner.py
-    CBPLearnerMixin           # after_gradient_based_update -> _cbp_step
-    with_continual_backprop() # composes the mixin over any base learner
-    _replaceable_layers()     # walks a module, yields (incoming, outgoing) Linear pairs
+train/model/cbp.py          # the algorithm. Imports no RLlib, so the formulas
+                            # are testable without building an Algorithm.
+    find_replaceable_layers()   # incl. the trunk-to-head join (§2.2)
+    update_utility()            # the three measures
+    select_and_replace()        # the accumulator and the one-per-step cap
+    plasticity_metrics()        # the three correlates
+
+train/model/cbp_learner.py  # the RLlib wiring
+    CBPLearnerMixin             # hooks, apply_gradients, metrics, get/set_state
+    TunedAdamMixin              # the papers' betas and weight decay, separately
+    with_continual_backprop()   # composes over any base learner
 ```
 
-- **Where:** `after_gradient_based_update`, once per `update()` (§3.1).
-- **Scope:** feed-forward hidden units only; attention and embeddings excluded and documented as
-  excluded (§3.4).
-- **State:** utility and age tensors held on the **Learner**, keyed by `(module_id, layer)`, so
-  champion snapshots and inference-only copies never see them (§3.4), and routed through
-  `get_state` / `set_state` so a resume is correct (§3.5).
-- **Optimiser:** Adam moment estimates zeroed for the replaced slices, via the Learner's optimiser
-  access (§2.5, third reason).
+- **Where:** `apply_gradients`, once per minibatch, immediately after the optimiser step — the
+  paper's placement (§3.1). `cbp_fire_on: "iteration"` moves it to
+  `after_gradient_based_update`.
+- **Scope:** feed-forward hidden units, plus the trunk-to-head layer (§2.2). Attention and
+  embeddings excluded (§3.4). Layers no optimiser trains are skipped, which is what keeps it off
+  the `jepa` encoder's EMA target trunk — discovery finds that trunk, because it is structurally
+  identical to the one it mirrors, and replacing a unit in it would break the EMA relationship
+  permanently since nothing would ever update it back.
+- **Activations:** forward hooks on each layer's activation module, reducing to per-unit statistics
+  *inside the hook*. Necessary rather than tidy: `mean|h - f̂|` needs the running mean as it stood
+  at the forward pass and cannot be recovered afterwards — and keeping `h` would pin the autograd
+  graph until the next forward, which is the leak `jepa_learner.setup()` documents.
+- **State:** utility, mean activation, age and accumulator held on the **Learner**, so champion
+  snapshots and inference-only copies never see them (§3.4), and routed through `get_state` /
+  `set_state` so a resume is correct (§3.5).
+- **Optimiser:** Adam moments zeroed for the replaced slices. The per-weight *timestep* reset
+  Algorithm 2 also specifies is **not** implemented and cannot be with stock `torch.optim.Adam`,
+  which keeps one scalar `step` per parameter tensor rather than per element. Cost of omitting it:
+  the new unit's effective step ramps up over ~`1/(1-β₁)` updates instead of being full size at
+  once. Documented in `_reset_optimizer_slots`.
 - **Composition:** applied over `learner_class_for(...)`'s result, so MoE and JEPA terms survive
-  (§2.5, second reason).
-- **Off by default**, and when off the composition is skipped entirely so the resolved learner
-  class is *identical* to today's — which is the property
-  `TestOtherEncodersAreUnaffectedByJEPA` exists to assert for the previous extension, and the
-  natural model for this one's tests.
+  (§2.5). Off by default, and when off the composition is skipped entirely so the resolved learner
+  class is *identical* to today's — asserted by
+  `test_cbp_wiring.py::test_off_resolves_to_exactly_the_base_learner`, the counterpart of
+  `TestOtherEncodersAreUnaffectedByJEPA`.
 
-Config, as a new top-level group in `train_config.json` (a group, not an `encoder_specs` block —
-it is not an encoder knob):
+Two config groups, not one (`config/train_config.json`). The optimiser group is separate on
+purpose: both papers run every algorithm except the standard-PPO baseline with `β₁ = β₂ = 0.99`,
+and the Nature paper pairs CBP with L2 in *every* RL experiment — so enabling CBP and retuning Adam
+together would measure the two at once, which is the confound the split exists to prevent.
 
-```json
-"continual_backprop": {
-  "enabled": false,
-  "replacement_rate": 1e-4,
-  "maturity_threshold": 100,
-  "utility_decay": 0.99,
-  "scope": "feedforward",
-  "reset_optimizer_state": true
-}
-```
-
-Effort: **M**. Risk: **contained** — the off-by-default path is bit-identical to today.
+Effort: **M**. Risk: **contained** — the off-by-default path resolves to the same class object.
 
 ### 4.3 Proposal C — CBP during offline pretraining
 
@@ -529,24 +646,32 @@ asked yet.
 | Step | Work | Depends on | Effort |
 |---|---|---|---|
 | 0 | S1-1 (`vf_clip_param` / reward scaling), S1-3 (reward sign) | — | S–M |
-| 1 | **Proposal A** — plasticity metrics, including the utility statistic computed but unused | **nothing** | S |
-| 2 | Run a long (≥10⁶ step) job with A on, and decide from the curves whether §3.3 is answered yes | 1 | S (compute, not code) |
-| 3 | **Proposal B** — `CBPLearnerMixin`, off by default, composed over `learner_class_for` | 1, 2 | M |
-| 4 | Checkpoint round-trip and seeding tests for CBP state (§3.5, §5) | 3 | S |
-| 5 | **Proposal C** — CBP in the offline pretrainer, the cleanest test | 3 | S |
-| 6 | Probe-scored CBP-on/off comparison, multi-seed | 3, [23](23_probe_harness.md) | M |
-| 7 | Returns-based comparison | 0, 6 | M, and only if S1-3 is genuinely fixed first |
-| 8 | **Proposal D** — utility profiles in league matchmaking | 0, 3 | L |
+| 1 | ~~**Proposal A** — plasticity metrics, including the utility statistic computed but unused~~ — **done**, `cbp_metrics_only` | **nothing** | S |
+| 2 | ~~**Proposal B** — the mechanism, off by default, composed over `learner_class_for`~~ — **done** | 1 | M |
+| 3 | ~~Checkpoint round-trip and seeding tests for CBP state~~ — **done**, `test_cbp.py` + `integration/test_cbp_wiring.py` | 2 | S |
+| 4 | **Run a long (≥10⁶ step) job with `cbp_metrics_only: true`** and decide from the curves whether §3.3 is answered yes | 1 | S (compute, not code) |
+| 5 | Probe-scored CBP-on/off comparison, multi-seed, with tuned Adam held fixed across arms | 2, 4, [23](23_probe_harness.md) | M |
+| 6 | **Proposal C** — CBP in the offline pretrainer, the cleanest test | 2 | S |
+| 7 | Returns-based comparison | 0, 5 | M, and only if S1-3 is genuinely fixed first |
+| 8 | **Proposal D** — utility profiles in league matchmaking | 0, 2 | L |
 
-Step 1 is worth doing whatever is decided about the rest: it closes an observability gap that
-exists independently of CBP, and [11](11_logging_and_observability.md) is already the document
-about the distance between what this system computes and what it surfaces.
+**Step 4 is now the blocking one**, and it is compute rather than code: the mechanism exists and is
+tested, but whether this system loses plasticity at all is still unknown, so there is nothing yet
+to say it should be switched on. Note that a default-length run cannot answer it — see §3.6 — and
+that step 1 was worth doing regardless of CBP, since it closes an observability gap
+[11](11_logging_and_observability.md) already describes.
 
 ---
 
 ## 8. Sources
 
-- [Loss of plasticity in deep continual learning — Dohare, Hernandez-Garcia, Lan, Rahman, Mahmood, Sutton (Nature, 2024)](https://www.nature.com/articles/s41586-024-07711-7)
+The two the implementation follows, and which every algorithmic claim above is taken from:
+
+- [Loss of plasticity in deep continual learning — Dohare, Hernandez-Garcia, Lan, Rahman, Mahmood & Sutton (Nature, 2024)](https://www.nature.com/articles/s41586-024-07711-7) — Algorithm 1 (the accumulator and the one-per-step cap), the contribution utility, the three correlates, and the RL recipe: CBP with L2 at weight decay 1e-4, replacement rate 1e-4, and tuned Adam at β₁ = β₂ = 0.99.
+- [Continual Backprop: Stochastic Gradient Descent with Persistent Randomness — Dohare, Sutton & Mahmood (arXiv 2108.06325)](https://arxiv.org/abs/2108.06325) — Algorithm 2 (the Adam state resets), Algorithm 3 (Continual PPO, and the per-minibatch placement §3.1 turns on), Appendix C (the utility ablation), Appendix D (the network this repo happens to ship as its default).
+
+Related work, for the alternatives §1.2 compares against:
+
 - [Maintaining Plasticity in Continual Learning via Regenerative Regularization (L2 Init)](https://arxiv.org/abs/2308.11958)
 - [The Dormant Neuron Phenomenon in Deep Reinforcement Learning (ReDo) — Sokar et al., ICML 2023](https://arxiv.org/abs/2302.12902)
 - [Understanding plasticity in neural networks — Lyle et al., ICML 2023](https://arxiv.org/abs/2303.01486)

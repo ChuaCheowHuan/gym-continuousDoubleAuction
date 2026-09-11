@@ -877,3 +877,41 @@ What remains, in order:
    market / limit / modify / cancel is not.
 5. **Order book depth per level** (§2.2), the one item on this list that needs a new field in
    `info` rather than a reduction of an existing one.
+
+---
+
+## Continual Backprop metrics
+
+Emitted per trainable module by `CBPLearnerMixin` when `cbp_enabled` or `cbp_metrics_only` is set,
+through the same `self.metrics.log_dict(..., key=module_id, window=1)` path the MoE and JEPA terms
+use. Absent entirely when both are false. Full context in
+[25_continual_backprop.md](25_continual_backprop.md) §4.1.
+
+The first three are the **three correlates of loss of plasticity** both papers track. The Nature
+paper's claim for continual backprop is precisely that it is the only method that keeps all three
+healthy at once, so they are read together rather than individually.
+
+| Metric | Reduction across layers | What a bad value looks like |
+|---|---|---|
+| `cbp_dead_unit_frac` | max | Rising. Units whose mean \|activation\| has fallen below the threshold and stopped contributing |
+| `cbp_mean_weight_magnitude` | mean | Rising. Weight growth is the correlate L2 addresses and CBP also suppresses |
+| `cbp_effective_rank` | mean | Falling. Units becoming redundant — a collapse the unit-wise metrics miss, because no single unit need be dead |
+| `cbp_saturated_unit_frac` | max | Rising. Specific to tanh, which is this project's default: past \|h\| > 0.9 the local gradient vanishes |
+| `cbp_utility_min` / `_median` | min / mean | A widening gap means capacity is concentrating in fewer units |
+| `cbp_mature_unit_frac` | mean | **Pinned at 0.0 means the mechanism cannot fire at all** — see below |
+| `cbp_replacements` | **sum** | **Flat at 0 means it never fired** |
+
+`cbp_replacements` is summed rather than averaged because it counts events in the network rather
+than describing a layer; `cbp_dead_unit_frac` and `cbp_saturated_unit_frac` take the max and
+`cbp_utility_min` the min, because one collapsing layer is the thing worth seeing and an average
+over healthy neighbours would hide it. The rest are averaged. Reduced to one value per module
+rather than emitted per layer, which would be 80 series for a 16-layer `moe_transformer`.
+
+**The two that decide whether any of the others mean anything** are `cbp_replacements` and
+`cbp_mature_unit_frac`. A continual backprop that never fires — which is the *expected* outcome at
+the shipped replacement rate over a short run, for the cadence reason in
+[18 §5.6.4](18_configuration.md) — logs exactly what a working one logs. Read those two first.
+
+`cbp_effective_rank` runs an SVD and is therefore computed every `cbp_metrics_every_n_updates`
+optimiser steps rather than every one; the same counter gates keeping an activation sample in the
+forward hook at all.

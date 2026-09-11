@@ -675,3 +675,72 @@ This is the measurement that corrected the note's first draft, which claimed the
 "function-preserving at the instant it happens". It is not; only the new-randomness half is.
 
 **Supports:** §25 1, §25 2.5, §25 3.1, §25 3.4.
+
+---
+
+## 16.14 Continual Backprop, against the papers (2026-09-11)
+
+Measured on the working tree, Python 3.12.3 / Ray 2.56.1 / torch 2.13.0+cpu, while implementing
+[25_continual_backprop.md](25_continual_backprop.md). Two findings shaped the design; the third
+corrected a claim the note's first draft had made.
+
+### The shipped default network is the papers' Continual PPO network (§25 2.2)
+
+arXiv Appendix D specifies, for the reinforcement-learning experiments, "Policy Network: (256,
+tanh, 256, tanh, Linear)", "Value Network (256, tanh, 256, tanh, linear)" and "separate networks
+for policy and value function". Built from this repo's shipped defaults and enumerated:
+
+```
+encoder.actor_encoder.net.mlp.0: Linear 177->256    encoder.critic_encoder.net.mlp.0: Linear 177->256
+encoder.actor_encoder.net.mlp.1: Tanh               encoder.critic_encoder.net.mlp.1: Tanh
+encoder.actor_encoder.net.mlp.2: Linear 256->256    encoder.critic_encoder.net.mlp.2: Linear 256->256
+encoder.actor_encoder.net.mlp.3: Tanh               encoder.critic_encoder.net.mlp.3: Tanh
+pi.net.mlp.0:  Linear 256->26                       vf.net.mlp.0:  Linear 256->1
+```
+
+The structural consequence is the one worth recording: the **second hidden layer's outgoing weights
+are in the head, not the encoder**. A walker confined to `encoder` reports one replaceable layer
+per network where there are two. `find_replaceable_layers` returns 4 on the default configuration
+and 2 under `vf_share_layers: true`, where the trailing layer has two consumers (`pi` at 26 outputs
+and `vf` at 1) rather than one.
+
+RLlib leaves `nn.Linear`'s own initialiser in place, so "resample from `d_l`" is
+`U(-1/sqrt(fan_in), +1/sqrt(fan_in))`: layer 0's weights were measured at max |w| = 0.07516 against
+a bound of 1/sqrt(177) = 0.075165.
+
+### This repo performs ~320x fewer optimiser steps per env step than the papers (§25 3.6)
+
+CBP's accumulator and maturity threshold are both counted in optimiser steps.
+
+| | Adam steps / iteration | env steps / iteration | Adam steps per env step |
+|---|---|---|---|
+| Continual PPO (arXiv App. D: 10 epochs, 4096 batch, 128 minibatch) | 320 | 4,096 | 0.078 |
+| This repo (4 epochs, 16,384 batch, `minibatch_size: null`) | 4 | 16,384 | 0.00024 |
+
+With the Nature paper's PPO values (rate 1e-4, maturity 1e4, 256 units), the maturity threshold
+alone is 2,500 iterations here against a default run of 16 - continual backprop would never fire
+once. Hence `cbp_maturity_threshold: 100` and the `cbp_replacements` metric.
+
+### `if c > 1`, not `while` - and the aliasing bug the tests found
+
+Two corrections that came out of implementation rather than reading:
+
+- The first implementation replaced units in a `while state.accumulator > 1` loop. Nature
+  Algorithm 1 is explicit that it is an `If`, capping replacement at **one unit per layer per
+  optimiser step** however high the rate is set. That cap is what bounds the per-step disturbance,
+  and so is part of why the per-minibatch placement (§25 3.1) is safe. Measured through a real
+  update: no layer's replacement count exceeds the optimiser-step count.
+- `CBPLayerState.get_state` used `.detach().cpu()`, which on a CPU tensor **returns the same
+  object**, so the state dict aliased the live tensors - a checkpoint would have serialised
+  whatever the values had drifted to rather than what they were when taken. `.clone()` on both
+  sides. Found by `test_state_round_trips_through_set_state`, which zeroed the live state and
+  watched its own saved copy go to zero with it.
+
+### End to end
+
+A real one-iteration run with the rate forced high enough to fire (the shipped 1e-4 replaces
+nothing in a test-length run, which is §25 3.6 restated): 4 layers discovered per trainable module,
+the frozen `RandomRLModule` baselines correctly carrying none, units replaced, the correlates
+logged per module, and NAV conservation still exact.
+
+**Supports:** §25 1, §25 2.2, §25 3.1, §25 3.6, §25 4.2.

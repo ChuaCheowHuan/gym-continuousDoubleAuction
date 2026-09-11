@@ -358,6 +358,10 @@ opponents, where sharing a trunk between policy and value tends to destabilise t
 
 Which *kind* of network sits underneath that is the separate `encoder` group — see §5.4.
 
+How that network is *updated* is two further groups, `optimizer` and `continual_backprop` — see
+§5.6. Both are off-by-default in the sense that matters: at their shipped values the optimiser is
+the one RLlib has always built and the learner class is the one the encoder selects, unchanged.
+
 `SelfPlayCallback` does the same with the `league_self_play` group and the two agent counts. That
 group also carries the two knobs on the episode-end NAV conservation check: `nav_tolerance`, the
 absolute cash tolerance, and `strict_nav_check` (`--no-strict-nav-check`), which decides whether a
@@ -917,3 +921,74 @@ For `moe_transformer` also watch `moe_max_expert_share` and `moe_min_expert_shar
 the learner metrics — a collapsed mixture is indistinguishable from a healthy one by
 loss or throughput alone.
 
+
+---
+
+## 5.6. The `optimizer` and `continual_backprop` groups
+
+Two groups that change how the network is *updated* rather than what shape it is. Both ship inert:
+leave them alone and a run builds the same optimiser and resolves the same Learner class it always
+has. Full rationale in [25_continual_backprop.md](25_continual_backprop.md).
+
+### 5.6.1 Why they are two groups and not one
+
+The continual-backprop papers' reinforcement-learning recipe is not CBP alone. It is CBP **plus**
+L2 at a weight decay of `1e-4` **plus** "tuned Adam" at `β₁ = β₂ = 0.99`, the last on the grounds
+that the usual `(0.9, 0.999)` is itself a cause of plasticity loss — the squared-gradient estimate
+in Adam's denominator updates far more slowly than the gradient estimate in its numerator, so one
+large gradient produces one very large update. Every algorithm in both papers except the
+standard-PPO baseline uses the retuned values.
+
+That makes them easy to bundle, and bundling them would be a mistake: turning CBP on and retuning
+Adam in the same change would measure the two together, and neither paper claims they are the same
+intervention. So they are separate groups, separately composable, and `_learner_class` will compose
+the optimiser mixin with or without the CBP one.
+
+### 5.6.2 `optimizer`
+
+| Key | Default | Meaning |
+|---|---|---|
+| `adam_betas` | `[0.9, 0.999]` | Adam's `betas`. The papers' tuned value is `[0.99, 0.99]` |
+| `adam_weight_decay` | `0.0` | L2. The papers' RL value is `1e-4` |
+
+At the defaults, `configure_optimizers_for_module` defers to RLlib's own implementation, so the
+optimiser is bit-for-bit the one every existing run and checkpoint was built with.
+
+### 5.6.3 `continual_backprop`
+
+| Key | Default | Meaning |
+|---|---|---|
+| `cbp_enabled` | `false` | Master switch. Off means the learner class is the encoder's, unchanged |
+| `cbp_metrics_only` | `false` | Compute the utility and log the correlates, **replace nothing**. Cannot change a run's trajectory |
+| `cbp_replacement_rate` | `1e-4` | Fraction of eligible units replaced **per optimiser step** |
+| `cbp_maturity_threshold` | `100` | Optimiser steps a fresh unit is protected for |
+| `cbp_utility_decay` | `0.99` | Decay of the utility running average |
+| `cbp_utility` | `"overall"` | `contribution`, `mean_corrected`, or `overall` |
+| `cbp_scope` | `"feedforward"` | Which units are replaceable |
+| `cbp_fire_on` | `"adam_step"` | `adam_step` (the papers' placement) or `iteration` |
+| `cbp_reset_optimizer_state` | `true` | Zero Adam's moments for replaced weights |
+| `cbp_dead_unit_threshold` | `0.01` | Mean \|activation\| below which a unit counts as dead, metric only |
+| `cbp_metrics_every_n_updates` | `10` | How often to compute the metrics; the effective rank runs an SVD |
+
+**The keys carry a `cbp_` prefix because `config_loader.flatten` collapses every group of
+`train_config.json` into a single namespace and raises on a duplicate.** Bare names like `enabled`
+or `utility` would be a collision waiting for the next group anyone adds.
+
+**None of these is a `STRUCTURAL_CONFIG_KEY.** Nothing here changes a tensor shape, so unlike
+`encoder_spec` a restore may legitimately turn continual backprop on, off, or up. The per-unit
+utility and ages *are* checkpoint state and travel with the learner; a checkpoint written before
+this group existed restores cleanly, with every unit starting at age 0.
+
+### 5.6.4 The one thing to check before believing a result
+
+`cbp_replacement_rate` and `cbp_maturity_threshold` are counted in **optimiser steps**, and this
+project takes far fewer of them than the papers do: 4 per iteration at the defaults (`num_epochs: 4`
+over one full batch, `minibatch_size: null`) against Continual PPO's 320. The papers' own PPO
+maturity threshold of `1e4` would be 2,500 iterations here, against a default run of 16 — no unit
+would ever mature and **continual backprop would never fire once**.
+
+A mechanism that never fires produces identical logs, losses and returns to one that is working.
+So before concluding anything from a CBP run, read `cbp_replacements` and `cbp_mature_unit_frac`:
+a replacement count of 0, or a mature fraction pinned at `0.0`, means it did not run, not that it
+did not help. If more replacement is wanted without raising the rate, `minibatch_size` is the lever
+— it multiplies the optimiser steps per iteration, which is the clock CBP runs on.

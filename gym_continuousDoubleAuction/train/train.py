@@ -215,6 +215,41 @@ class TrainConfig:
     # run, so this is exposed rather than left implicit.
     minibatch_size: Optional[int] = _default("minibatch_size")
 
+    # --- Optimiser -----------------------------------------------------------
+    # Both default to torch's own values, so a run that changes neither builds
+    # exactly the optimiser RLlib has always built. Set them to reproduce the
+    # continual-backprop papers' RL recipe, which runs every algorithm but the
+    # standard-PPO baseline at beta_1 = beta_2 = 0.99 and pairs CBP with a
+    # weight decay of 1e-4. Kept apart from the CBP knobs on purpose: turning
+    # both on at once would measure them together.
+    adam_betas: List[float] = _default("adam_betas")
+    adam_weight_decay: float = _default("adam_weight_decay")
+
+    # --- Continual Backprop --------------------------------------------------
+    # Selective reinitialisation of low-utility hidden units, after the
+    # optimiser step. An update rule rather than an architecture, so it is
+    # composed over whichever Learner the encoder chose instead of replacing
+    # it - see train/model/cbp_learner.py.
+    #
+    # None of these is a STRUCTURAL_CONFIG_KEY: no tensor shape depends on
+    # them, so unlike encoder_spec a restore may turn continual backprop on or
+    # change its rate. The per-unit utility and ages are checkpoint state and
+    # travel with the learner.
+    cbp_enabled: bool = _default("cbp_enabled")
+    cbp_metrics_only: bool = _default("cbp_metrics_only")
+    # Counted in OPTIMISER STEPS, not iterations. See the cadence note in
+    # train_config.json: this repo takes 4 Adam steps per iteration against the
+    # papers' 320, so their values do not transfer.
+    cbp_replacement_rate: float = _default("cbp_replacement_rate")
+    cbp_maturity_threshold: int = _default("cbp_maturity_threshold")
+    cbp_utility_decay: float = _default("cbp_utility_decay")
+    cbp_utility: str = _default("cbp_utility")
+    cbp_scope: str = _default("cbp_scope")
+    cbp_fire_on: str = _default("cbp_fire_on")
+    cbp_reset_optimizer_state: bool = _default("cbp_reset_optimizer_state")
+    cbp_dead_unit_threshold: float = _default("cbp_dead_unit_threshold")
+    cbp_metrics_every_n_updates: int = _default("cbp_metrics_every_n_updates")
+
     # --- Encoder -------------------------------------------------------------
     # Which network the trainable modules encode observations with. "mlp" is a
     # pass-through to the stock RLlib path built from fcnet_* above; any other
@@ -507,6 +542,86 @@ def _next_obs_connector(observation_space, action_space):
     return [AddNextObservationsFromEpisodesToTrainBatch()]
 
 
+#: The `learner_config_dict` keys the CBP learner reads. Named here rather than
+#: imported from `cbp_learner` so that building a config does not drag the
+#: mixin in on a run that has continual backprop switched off.
+CBP_CONFIG_KEY = "continual_backprop"
+OPTIMIZER_CONFIG_KEY = "optimizer"
+
+
+def _learner_class(cfg: TrainConfig):
+    """The Learner for this run: the encoder's, optionally wrapped by CBP.
+
+    Two separate mechanisms, resolved in order:
+
+    1. `learner_class_for` picks the Learner the *encoder* needs - the JEPA one
+       for `jepa`, the shared MoE one for everything else. RLlib takes a single
+       algorithm-wide Learner, so this is a one-of-N choice.
+    2. Continual Backprop is then composed over the result. It is orthogonal to
+       the encoder, so it must not compete for that slot; `with_continual_backprop`
+       subclasses whatever came back, leaving `compute_loss_for_module` - and so
+       the MoE and JEPA loss terms - resolving to the base learner.
+
+    With CBP off this returns exactly what step 1 returned, which is what keeps
+    a default run identical to one from before this existed.
+    """
+    base = learner_class_for(cfg.encoder_type, CDAPPOTorchLearner)
+
+    cbp = cfg.cbp_enabled or cfg.cbp_metrics_only
+    # The optimiser knobs are composed independently of CBP, so that the
+    # papers' tuned Adam can be run on its own. Composing it only alongside CBP
+    # would make every CBP-vs-baseline comparison a comparison of both at once.
+    tuned_adam = (
+        list(cfg.adam_betas) != [0.9, 0.999] or cfg.adam_weight_decay != 0.0
+    )
+    if not cbp and not tuned_adam:
+        return base
+
+    # Imported here rather than at module scope: a run using neither should not
+    # pay for importing the mixins, and nothing else in this module needs them.
+    from gym_continuousDoubleAuction.train.model.cbp_learner import (
+        with_continual_backprop,
+        with_tuned_adam,
+    )
+
+    if cbp:
+        return with_continual_backprop(base, tuned_adam=tuned_adam)
+    return with_tuned_adam(base)
+
+
+def _learner_config_dict(cfg: TrainConfig) -> dict:
+    """Settings the Learner reads for itself, keyed by group.
+
+    RLlib passes `learner_config_dict` through to the Learner untouched. That
+    is the supported channel for a custom Learner's own knobs, and it is what
+    lets the CBP mixin be configured without a second config path or a
+    subclass per setting.
+
+    The optimiser group is always present because `configure_optimizers_for_module`
+    consults it whether or not CBP is on - at the shipped defaults it finds
+    torch's own values and defers to RLlib's implementation unchanged.
+    """
+    return {
+        OPTIMIZER_CONFIG_KEY: {
+            "adam_betas": list(cfg.adam_betas),
+            "adam_weight_decay": cfg.adam_weight_decay,
+        },
+        CBP_CONFIG_KEY: {
+            "cbp_enabled": cfg.cbp_enabled,
+            "cbp_metrics_only": cfg.cbp_metrics_only,
+            "cbp_replacement_rate": cfg.cbp_replacement_rate,
+            "cbp_maturity_threshold": cfg.cbp_maturity_threshold,
+            "cbp_utility_decay": cfg.cbp_utility_decay,
+            "cbp_utility": cfg.cbp_utility,
+            "cbp_scope": cfg.cbp_scope,
+            "cbp_fire_on": cfg.cbp_fire_on,
+            "cbp_reset_optimizer_state": cfg.cbp_reset_optimizer_state,
+            "cbp_dead_unit_threshold": cfg.cbp_dead_unit_threshold,
+            "cbp_metrics_every_n_updates": cfg.cbp_metrics_every_n_updates,
+        },
+    }
+
+
 def build_config(cfg: TrainConfig):
     """Build the PPOConfig, the callback instance, and the module spec.
 
@@ -609,7 +724,19 @@ def build_config(cfg: TrainConfig):
             # whole run - which is why every Learner registered this way
             # subclasses CDAPPOTorchLearner rather than replacing it, so a
             # league mixing encoders keeps every term it needs.
-            learner_class=learner_class_for(cfg.encoder_type, CDAPPOTorchLearner),
+            #
+            # Continual Backprop is then composed *over* whatever came back,
+            # rather than being another candidate to come back from it. It is
+            # an update rule, not an architecture, so it is orthogonal to the
+            # encoder: registering it here would make it mutually exclusive
+            # with `jepa` and unavailable for `mlp`, which never reaches the
+            # catalog at all. When it is off the composition is skipped and
+            # this resolves to exactly the class it did before. See doc/25 2.5.
+            learner_class=_learner_class(cfg),
+            # Custom settings the Learner reads for itself. RLlib passes this
+            # through untouched, which is what lets a composed-in mixin be
+            # configured without inventing a second channel.
+            learner_config_dict=_learner_config_dict(cfg),
             **({"minibatch_size": cfg.minibatch_size}
                if cfg.minibatch_size is not None else {}),
         )
