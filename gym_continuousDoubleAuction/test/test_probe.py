@@ -630,9 +630,30 @@ class TestEffectiveRank:
             rng.standard_normal((256, 32)),
             rng.standard_normal((256, 4)) @ rng.standard_normal((4, 32)),
             rng.standard_normal((64, 64)),
+            np.zeros((32, 8)),
         ):
             assert (rank_module.effective_rank(matrix)
                     == cbp_module.effective_rank(torch.tensor(matrix)))
+
+    def test_the_one_deliberate_divergence_is_the_degenerate_row_count(self):
+        """Fewer than two rows: 0 here, NaN on the Learner.
+
+        Both docstrings claim one definition, so the single place they do not
+        agree has to be pinned rather than left to drift. The two answers are
+        different because the destinations are: this number lands in a report
+        column and is read as a rank, where 0 is the honest 'no directions';
+        `cbp.effective_rank`'s lands in a metric series plotted over a run,
+        where a 0.0 reads as total collapse and NaN reads as 'not measured'.
+        """
+        import math
+
+        import torch
+
+        from gym_continuousDoubleAuction.train.model import cbp as cbp_module
+
+        for matrix in (np.empty((0, 8)), np.ones((1, 8))):
+            assert rank_module.effective_rank(matrix) == 0
+            assert math.isnan(cbp_module.effective_rank(torch.tensor(matrix)))
 
     def test_the_table_reports_width_and_usage(self):
         rng = np.random.default_rng(0)

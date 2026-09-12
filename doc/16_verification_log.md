@@ -691,12 +691,20 @@ tanh, 256, tanh, Linear)", "Value Network (256, tanh, 256, tanh, linear)" and "s
 for policy and value function". Built from this repo's shipped defaults and enumerated:
 
 ```
-encoder.actor_encoder.net.mlp.0: Linear 177->256    encoder.critic_encoder.net.mlp.0: Linear 177->256
+encoder.actor_encoder.net.mlp.0: Linear 193->256    encoder.critic_encoder.net.mlp.0: Linear 193->256
 encoder.actor_encoder.net.mlp.1: Tanh               encoder.critic_encoder.net.mlp.1: Tanh
 encoder.actor_encoder.net.mlp.2: Linear 256->256    encoder.critic_encoder.net.mlp.2: Linear 256->256
 encoder.actor_encoder.net.mlp.3: Tanh               encoder.critic_encoder.net.mlp.3: Tanh
 pi.net.mlp.0:  Linear 256->26                       vf.net.mlp.0:  Linear 256->1
 ```
+
+**Corrected 2026-09-12.** The first version of this entry recorded the input width as `177` and the
+init bound as `1/sqrt(177)`, which is the observation as it stood *before* §37.4 widened it. The
+tree these probes ran on already emitted 193, so the two numbers were carried over from an older
+document rather than read off the run. Re-enumerated above and re-measured below; only the input
+width and the bound change, and the claim the entry exists to support — the papers' `(256, tanh,
+256, tanh, Linear)` network, separate trunks, second hidden layer consumed by the head — is
+untouched, since none of it depends on the input width.
 
 The structural consequence is the one worth recording: the **second hidden layer's outgoing weights
 are in the head, not the encoder**. A walker confined to `encoder` reports one replaceable layer
@@ -705,8 +713,8 @@ and 2 under `vf_share_layers: true`, where the trailing layer has two consumers 
 and `vf` at 1) rather than one.
 
 RLlib leaves `nn.Linear`'s own initialiser in place, so "resample from `d_l`" is
-`U(-1/sqrt(fan_in), +1/sqrt(fan_in))`: layer 0's weights were measured at max |w| = 0.07516 against
-a bound of 1/sqrt(177) = 0.075165.
+`U(-1/sqrt(fan_in), +1/sqrt(fan_in))`: layer 0's weights were measured at max |w| = 0.07198 against
+a bound of 1/sqrt(193) = 0.071982.
 
 ### This repo performs ~320x fewer optimiser steps per env step than the papers (§25 3.6)
 

@@ -39,7 +39,7 @@ flowchart LR
     ACC --> MTM
     MTM --> OBS
     MTM --> REW
-    OBS -->|"observation, 177 floats"| POL
+    OBS -->|"observation, 193 floats"| POL
     REW -->|"reward"| POL
     REW --> CB
     CB -->|"agent to module mapping"| POL
@@ -102,7 +102,7 @@ mindmap
 |---|---|---|
 | 3 | [03_matching_engine.md](doc/03_matching_engine.md) | Book data structures, limit/market processing, modify-order semantics and the six accounting scenarios, invariants |
 | 4 | [04_accounting.md](doc/04_accounting.md) | Cash escrow, order approval, position transitions including atomic flips, mark-to-market, NAV conservation |
-| 5 | [05_observation_space.md](doc/05_observation_space.md) | The 42-float snapshot: midpoint normalization, `√V` sizing, `log_mid` / `log1p_spread_ticks`, temporal stacking, the raw/normalized split, measured feature scales |
+| 5 | [05_observation_space.md](doc/05_observation_space.md) | The 46-float snapshot: midpoint normalization, `√(V/limit_max_size)` sizing, the six market scalars, temporal stacking, the raw/normalized split, measured feature scales |
 | 6 | [06_action_space.md](doc/06_action_space.md) | The `Dict` action space, ghost-level price anchoring, the two degenerate size dimensions, the legacy `Tuple` design it replaced |
 | 7 | [07_reward_function.md](doc/07_reward_function.md) | The five-term formula, its account plumbing, the measured decomposition, a coefficient tuning guide |
 
@@ -200,7 +200,7 @@ This repository implements a multi-agent continuous double auction system, struc
 
 In this environment, agents act as traders who can submit market, limit, modify, and cancel orders to a shared order book. They are marked to market based on the trade tape, and receive rewards derived from a multi-term NAV-based function. The codebase also includes a matching engine, supports `Decimal`-based accounting, includes the necessary RLlib league wiring, and comes with CI unit tests.
 
-**Main problems:** The weak points were concentrated in the learning problem formulation rather than in the simulator — agents observed no private state, the reward was strictly negative-sum with a dominant do-nothing strategy, and the reward scale silently disabled PPO's critic entirely. All three are now fixed ([17_changelog.md](doc/17_changelog.md) §29-30). What remains is largely in the observation pipeline: the per-frame normalizer, no trade-flow features, and the agent's own resting orders still invisible to it.
+**Main problems:** The weak points were concentrated in the learning problem formulation rather than in the simulator — agents observed no private state, the reward was strictly negative-sum with a dominant do-nothing strategy, and the reward scale silently disabled PPO's critic entirely. All three are now fixed ([17_changelog.md](doc/17_changelog.md) §29-30). The observation pipeline's own defects — the per-frame normalizer, the missing trade-flow features, and a size block two orders of magnitude off the price block — are fixed too (§37.4). What remains there: the agent's own resting orders are still invisible to it, and the price level index is still a non-stationary coordinate ([05](doc/05_observation_space.md) §7.2, §7.4, §7.7).
 
 ---
 

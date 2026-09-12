@@ -2679,3 +2679,118 @@ null, since the pretrainer has no policy and so cannot have this confound at all
 Also fixed here: §40 appended its testing section as `## 6.5 Continual Backprop` *after* section 7
 of [10](10_testing.md), where `### 6.5 The probe harness` already existed. Renumbered to 6.6 and
 moved into section 6 where it belongs.
+
+---
+
+## 43. A code review, and the documents §37 left behind
+
+A review pass over the working tree. The code findings are small; the documentation ones are not,
+and they are all the same finding.
+
+### 43.1 The observation reference was a version behind the observation
+
+§37.4 widened the observation from **177 floats to 193** — `extra_dim` 2 → 6, snapshot 42 → 46,
+book block 168 → 184 — and rescaled two of the existing features. It updated
+[15](15_findings_and_recommendations.md), [16](16_verification_log.md) and this changelog. It did
+not update [05](05_observation_space.md), which is the *reference* for the thing it changed, and
+the stale numbers had spread from there into eight more documents.
+
+What [05](05_observation_space.md) still said, and now does not:
+
+- the snapshot is 42 floats and the observation 177;
+- `extra_dim` is 2, and there are two market scalars;
+- volumes are `sqrt(V)` and `log_mid` is `ln(M)`;
+- the deque holds already-normalised frames, so §7.1 — frames cannot be compared — is a live
+  defect;
+- §7.3 — the tape loop is dead code, there is no trade-flow information at all — is a live defect;
+- §7.5 — the size block is 80–250× the price block — is a live defect;
+- every agent receives the same array, `distinct obs vectors across agents: 1`.
+
+The last one had been fixed two passes earlier, in §30. Three of the six are §37.4's own subject.
+§7.1, §7.3 and §7.5 are marked fixed rather than deleted, because the fix only reads as a fix
+against what it replaced, and §6 now carries the before-and-after measurements side by side.
+
+Sections 3.3–3.5 are new: `mid_return` and the three trade-flow scalars had no reference entry
+anywhere, only a line in this changelog.
+
+The same numbers were corrected in [README](../README.md), [01](01_overview.md),
+[02](02_architecture.md) §2.5 and §2.9, [09](09_distributed_training.md),
+[12](12_perspective_rl_researcher.md), [18](18_configuration.md), [21](21_logging_review.md),
+[22](22_jepa_integration.md), [23](23_probe_harness.md) and [25](25_continual_backprop.md). Two of
+those were not just a width:
+
+- [18](18_configuration.md) §5.4 said a token is 4 channels wide because `max(book_rows,
+  extra_dim)` is `max(4, 2)`. It is `max(4, 6)` now, so tokens are **6** wide and it is the
+  per-level tokens that are zero-padded, not the global one. That paragraph had predicted exactly
+  this ("the `max` matters if you add market features") and then went stale on its own prediction.
+- The [README](../README.md) summary named the per-frame normalizer and the missing trade-flow
+  features as what remained wrong with the observation pipeline. Both are §37.4.
+
+### 43.2 A verification-log entry recorded numbers from a tree it did not run on
+
+[16](16_verification_log.md) §16.14 enumerated the default network as `Linear 177->256` and
+checked the initialisation bound against `1/sqrt(177) = 0.075165`. The tree those probes ran on
+already emitted 193; re-measured, it is `Linear 193->256` and `1/sqrt(193) = 0.071982`, with a
+measured max |w| of 0.07198. Corrected in place with a note, since a verification log that quietly
+changes its numbers is worse than one that says it got them wrong. Nothing the entry exists to
+support depends on the input width, so the conclusion stands.
+
+### 43.3 §2.5 of the Continual Backprop note argued for a hook the code does not use
+
+[25](25_continual_backprop.md) §2.5 was written before §3.1 was, and still said
+`after_gradient_based_update` "is the correct hook", pointing at §3.1 for the argument — where
+§3.1 in fact reverses it and the shipped default is `apply_gradients`. Its two code sketches had
+drifted too: a mixin method that no longer exists and a `cfg.cbp["enabled"]` config shape that
+never did. Rewritten to make the ordering explicit — §3.1 settles the hook, §2.5 only claims it is
+*on the Learner* — and the sketches now match `cbp_learner.py`.
+
+Also in that note: §5's instrument table named `dormant_unit_frac` and `effective_rank`, neither
+of which is emitted, and asked for the rank metric §3.8 had just established is confounded. §6
+still said the disease was "unmeasured" after §3.3 measured it.
+
+### 43.4 Four smaller ones
+
+- `CBPLearnerMixin._cbp_log`'s docstring described reductions the method does not perform — it
+  says the correlates are averaged and two utility statistics take extremes, where in fact
+  `dead_unit_frac` and `saturated_unit_frac` take the max, `utility_min` the min, and
+  `utility_median` the mean. [11](11_logging_and_observability.md) had the table right, so the
+  code comment was the one arguing with the reader.
+- `train_config.json`'s `_note_metrics_only` still said whether this system loses plasticity "is
+  currently unknown" after §42 answered it, and `_note_restore` said every key in the group is a
+  hard error alongside `is_restore` when nine of the eleven are only checked while the mechanism
+  is running.
+- `cbp.effective_rank` and `probe.rank.effective_rank` disagree on a matrix with fewer than two
+  rows — NaN and 0 respectively — while three docstrings and a test claimed one definition. The
+  divergence is right (a metric series wants NaN where a report column wants 0) and is now stated
+  in both docstrings and pinned by a test of its own.
+- The rank table's `used` column was formatted one character narrower than its header.
+
+### 43.5 What the review did not find
+
+No correctness defect in the Continual Backprop implementation, the probe harness or the
+observation pipeline. 914 unit tests and 153 integration tests pass. The utility formulas, the
+accumulator, the one-per-step cap, the optimiser resets, the device and DDP handling and the
+checkpoint round trip were all checked against the papers and against §41's four boundary bugs,
+and nothing further turned up.
+
+Two tests are new — the deliberate torch/numpy divergence in `effective_rank`, and the
+fingerprint-collision guard — and one latent hazard was closed rather than merely noted:
+`_config_fingerprint` flattens `learner_config_dict`'s groups into the same namespace as the
+AlgorithmConfig attributes, so a future group with a bare `num_epochs` would have shadowed the
+real one and made a genuine divergence invisible to the restore check. It raises now.
+
+### 43.6 The test inventory, re-counted
+
+[10](10_testing.md) §"File inventory" was itself a version behind: it reported `858 passed` and a
+unit total of 770 against a real 914, was missing nine files outright — including both continual
+backprop suites, and `test_self_match`, `test_resting_exposure`, `test_entry_vwap`,
+`test_obs_pipeline` and `test_obs_feature_scales`, which are §37's own tests — and thirty-eight of
+its per-file counts were wrong. Re-measured with `--collect-only`: **914 unit, 153 integration,
+1,067 total**. The coverage mindmap's per-area counts were regenerated from the same numbers, and
+the four other documents quoting a total — [01](01_overview.md), [02](02_architecture.md),
+[14](14_perspective_ai_engineer.md) and [15](15_findings_and_recommendations.md) — were brought to
+it. [16](16_verification_log.md) §16.2 keeps its `90 passed`: it is a dated record of the original
+audit's run, not a claim about now.
+
+This is the third pass to re-count these (§36, §37.7, here), which suggests the counts want a
+generator rather than a reviewer.

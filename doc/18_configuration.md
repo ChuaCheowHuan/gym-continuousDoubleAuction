@@ -570,16 +570,17 @@ market-level scalars. `mlp` discards that; every other encoder recovers it throu
 | `both` (default) | `n_hist * (k_rows + 1)` | both axes. |
 
 Under `level` and `both` a token is one level's `[bid_price, bid_size, ask_price,
-ask_size]`, and the two market-level scalars have no per-level home — they ride on
+ask_size]`, and the six market-level scalars have no per-level home — they ride on
 one extra **global token** per snapshot. That is where the `+ 1` comes from, so
 `both` is 44 tokens at the shipped settings, not 40.
 
 A token is `max(book_rows, extra_dim)` channels wide — wide enough for either kind,
 with the narrower one right-padded with zeros. At the shipped layout those are 4 and
-2, so the width is 4 and only the global token is padded. The `max` matters if you
-add market features: sizing to `book_rows` would silently drop every scalar past the
-fourth, and only for the encoders that tokenise, so `mlp` would go on seeing a
-feature the transformer and LSTM no longer received.
+6, so the width is **6** and the per-level tokens are the padded ones. The `max` is
+what made that a width change rather than a data loss: §37.4 took `extra_dim` from 2
+to 6, and sizing to `book_rows` would have silently dropped every scalar past the
+fourth — only for the encoders that tokenise, so `mlp` would have gone on seeing
+features the transformer and LSTM no longer received.
 
 #### What `jepa` adds
 
@@ -780,7 +781,7 @@ placing a learner on a device that is not there.
 #### The `lstm` encoder and its two time axes
 
 `lstm` is the *structured* recurrent encoder, not RLlib's `use_lstm` shortcut. The
-shortcut feeds the raw 177-float observation to a stock MLP tokenizer, discarding
+shortcut feeds the raw 193-float observation to a stock MLP tokenizer, discarding
 the book structure exactly as `mlp` does. This one's tokenizer reads the grid.
 
 Two different time axes are involved and they are easy to confuse:
@@ -842,7 +843,7 @@ pushed — the same confound the per-encoder `lr` override exists to remove. Ave
 the floor is `top_k` at perfectly uniform routing, so an untrained gate reads just
 above 2 at the shipped settings regardless of depth.
 
-**Expect collapse, and watch for it.** This env's observation is 177 floats and the
+**Expect collapse, and watch for it.** This env’s observation is 193 floats and the
 league is small, so MoE's premise — capacity you cannot afford densely — may simply
 not apply. A collapsed mixture and a healthy one have identical losses and identical
 throughput; the only difference is `moe_max_expert_share` and `moe_min_expert_share`

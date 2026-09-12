@@ -85,7 +85,7 @@ Five reasons, in descending order of strength.
 
 [`tokenize.py`](../gym_continuousDoubleAuction/train/model/encoders/tokenize.py) turns the book part of the
 observation - 184 of its 193 floats, the private tail having been split off first - into
-`(B, n_hist × (k_rows + 1), 4)` tokens whose position is a `(time, level)`
+`(B, n_hist × (k_rows + 1), 6)` tokens whose position is a `(time, level)`
 pair, and [`transformer.py`](../gym_continuousDoubleAuction/train/model/encoders/transformer.py)
 already carries a **two-axis learned positional embedding** for exactly that grid. A JEPA
 predictor needs precisely one thing the encoder does not: the ability to say "predict the latent
@@ -244,7 +244,7 @@ what it says.
 
 ### 3.4 The scale is small, and JEPA's evidence is at scale
 
-44 tokens of 4 channels; encoders of 225k–1.4M parameters ([18](18_configuration.md) §5.5). The
+44 tokens of 6 channels; encoders of 225k–1.4M parameters ([18](18_configuration.md) §5.5). The
 JEPA results that made the architecture interesting are at internet scale — V-JEPA 2 on over a
 million hours of video. The nearest published analogues in this domain are small on purpose:
 Fin-JEPA is a 367K-parameter PriceEncoder plus causal-transformer predictor over daily equity
@@ -311,8 +311,8 @@ head, and let PPO and the JEPA objective share one trunk.
 
 ```mermaid
 flowchart TD
-    OBS["observation, 177 floats"] --> SPLIT["split_private"]
-    SPLIT -->|"168 book"| TOK["tokenize (both)<br/>44 tokens x 4"]
+    OBS["observation, 193 floats"] --> SPLIT["split_private"]
+    SPLIT -->|"184 book"| TOK["tokenize (both)<br/>44 tokens x 6"]
     SPLIT -->|"9 private"| PTOK["PrivateToken<br/>1 token"]
     TOK --> MASK{"training?"}
     MASK -->|"yes"| CTX["mask a block<br/>context tokens only"]

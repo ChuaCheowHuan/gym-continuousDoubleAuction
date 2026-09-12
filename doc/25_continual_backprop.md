@@ -211,7 +211,7 @@ From the `ppo` group:
 Which builds exactly that, separate trunks included ([16](16_verification_log.md) §16.14):
 
 ```
-encoder.actor_encoder.net.mlp.0: Linear 177->256    encoder.critic_encoder.net.mlp.0: Linear 177->256
+encoder.actor_encoder.net.mlp.0: Linear 193->256    encoder.critic_encoder.net.mlp.0: Linear 193->256
 encoder.actor_encoder.net.mlp.1: Tanh               encoder.critic_encoder.net.mlp.1: Tanh
 encoder.actor_encoder.net.mlp.2: Linear 256->256    encoder.critic_encoder.net.mlp.2: Linear 256->256
 encoder.actor_encoder.net.mlp.3: Tanh               encoder.critic_encoder.net.mlp.3: Tanh
@@ -281,7 +281,7 @@ guarantee for every checkpoint written before encoders existed. An encoder-regis
 therefore be unavailable for the exact configuration §2.2 identifies as most at risk.
 
 **Second: `learner_class_for` is algorithm-wide and single-valued.** From
-`encoders/__init__.py` and `train.py:612`:
+`encoders/__init__.py`, as `build_config` used to call it directly:
 
 ```python
 learner_class=learner_class_for(cfg.encoder_type, CDAPPOTorchLearner)
@@ -306,19 +306,17 @@ The right shape is therefore a **mixin composed over whichever learner the encod
 ```python
 class CBPLearnerMixin:
     """Selective reinitialisation, after the optimiser step. Encoder-agnostic."""
-    def after_gradient_based_update(self, *, timesteps):
-        super().after_gradient_based_update(timesteps=timesteps)
-        if not self._cbp_enabled:
-            return
-        for module_id in self.module.keys():
-            self._cbp_step(module_id)
+    def apply_gradients(self, gradients_dict):
+        super().apply_gradients(gradients_dict)
+        if self._cbp_config.active and self._cbp_config.fire_on == "adam_step":
+            self._cbp_run()
 ```
 
 and a single composition point in `train.py`, applied *after* `learner_class_for` has done its job:
 
 ```python
 base = learner_class_for(cfg.encoder_type, CDAPPOTorchLearner)
-learner_cls = with_continual_backprop(base) if cfg.cbp["enabled"] else base
+learner_cls = with_continual_backprop(base) if cbp else base
 ```
 
 `with_continual_backprop` builds `type(f"CBP{base.__name__}", (CBPLearnerMixin, base), {})` — so
@@ -326,15 +324,19 @@ the MoE term, the JEPA term and CBP all survive together, and every existing enc
 exactly what it resolves to today when CBP is off. This is the same isolation property
 `jepa` was held to, obtained a different way because the mechanism is a different *kind* of thing.
 
-**And `after_gradient_based_update` is the correct hook.** Confirmed against the installed RLlib
-(2.56.1): `Learner.update` calls `before_gradient_based_update`, runs the entire minibatch/epoch
-loop, and then calls `after_gradient_based_update` **once**. §3.1 is why that once-per-update
-timing is not a convenience but a correctness requirement.
+**Which hook it composes onto is settled in §3.1, not here, and the answer is not the one this
+section originally gave.** The first draft argued for `after_gradient_based_update` — confirmed
+against the installed RLlib (2.56.1) to run **once** per `update()`, after the whole minibatch and
+epoch loop — on the grounds that a mid-update replacement disturbs PPO's ratio. arXiv Algorithm 3
+does it per optimiser step anyway, so the shipped default is `apply_gradients` and
+`cbp_fire_on: "iteration"` keeps the once-per-update placement available. Nothing in *this*
+section's argument depends on which of the two it is: both are methods on the Learner, and that is
+the claim being made.
 
 **[verified]** The composition was measured rather than assumed — see
 [16](16_verification_log.md) §16.13. Composing the mixin over `CDAPPOTorchLearner` and over
 `CDAJEPALearner` leaves `compute_loss_for_module` resolving to the base learner in both cases, so
-the MoE and JEPA terms survive, while `after_gradient_based_update` resolves to the mixin's.
+the MoE and JEPA terms survive, while the generate-and-test hook resolves to the mixin's.
 
 ---
 
@@ -688,11 +690,16 @@ The comparison protocol is [18](18_configuration.md) §5.5, with one substitutio
 
 | Question | Instrument | Predicted if plasticity loss is real here |
 |---|---|---|
-| Does plasticity degrade at all? | Proposal A metrics over a long run | `dormant_unit_frac` and `saturated_unit_frac` rise; `effective_rank` falls |
+| Does plasticity degrade at all? | Proposal A metrics over a long run, plus `train/probe/rank.py` across checkpoints | `cbp_dead_unit_frac` and `cbp_saturated_unit_frac` rise; the **fixed-corpus** rank falls |
 | Does CBP prevent it? | Same metrics, CBP on vs off | The curves stay flat with CBP on |
 | Does it help the *representation*? | Probe score (§2.4) at iterations 10 / 100 / 1000 | No-CBP probe score falls late; CBP's does not |
 | Does it cost anything early? | Probe + return at low iteration counts | Indistinguishable — `ρ = 1e-4` is small |
 | Does it help returns? | **Deferred until S1-3 is fixed** (§3.2) | Not interpretable before then |
+
+The metric names are the ones the Learner actually emits ([11](11_logging_and_observability.md)),
+and the rank in the first row is deliberately **not** `cbp_batch_effective_rank`: that one is
+measured on the training minibatch and is confounded by the policy's own input distribution, which
+is §3.8 and the reason `train/probe/rank.py` exists.
 
 Multi-seed, since [23](23_probe_harness.md) already notes no multi-seed comparison has ever been
 run here and a single-seed plasticity result would be worthless.
@@ -713,7 +720,8 @@ observation to its long-run conclusion. The default tanh MLP is the susceptible 
 codebases lack and the reason this can be evaluated honestly here. And the intervention is cheap,
 off by default, and orthogonal to every extension already shipped.
 
-**What is genuinely weak.** The disease is unmeasured here (§3.3) — so the strongest claim
+**What is genuinely weak.** The disease has now been looked for here and not found (§3.3) — at
+~20,000 optimiser steps, on a scaled-down environment, at one seed — so the strongest claim
 available today is "the conditions are right", not "this is happening". And the reward problem
 (§3.2) is worse for CBP than it was for JEPA: JEPA had a dense training signal independent of the
 reward, whereas CBP only modulates how the reward's own gradient is applied. Preserved plasticity

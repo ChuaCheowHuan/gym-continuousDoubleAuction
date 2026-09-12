@@ -114,7 +114,7 @@ indistinguishable. The drawdown term depends on `max_nav`, a path functional ove
 episode, so this was not partial observability a recurrent net could recover. It also made the
 `modify` and `cancel` categories (4 of 9) blind.
 
-**Fixed.** The observation is now `[ n_hist × snapshot | private ]`, 177 floats: the book prefix
+**Fixed.** The observation is now `[ n_hist × snapshot | private ]`, 193 floats: the book prefix
 is still shared and computed once, and a 9-float per-agent block is appended.
 `State_Helper.PRIVATE_FIELDS` is the single definition of its layout and `__init__` checks its
 length against `private_dim`. Every field is normalised by the trader's own `init_nav` or is
@@ -955,7 +955,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **858 unit tests pass** (plus 112 integration), covering every position-flip path, cash-check edge case, modify-order
+- **914 unit tests pass** (plus 153 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 

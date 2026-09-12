@@ -95,8 +95,8 @@ gym_continuousDoubleAuction/
 │   ├── run_all.py                        regenerates every chart
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               770 unit tests
-    └── integration/                    59 tests that build real Algorithms
+└── test/                               914 unit tests
+    └── integration/                    153 tests that build real Algorithms
 ```
 
 `train/logger/`, `train/plotter/` and `train/storage/` — the legacy Ray-actor telemetry an earlier
@@ -336,25 +336,32 @@ are exactly 0.
 
 `set_agg_LOB`
 ([`state_helper.py`](../gym_continuousDoubleAuction/envs/exchg/state_helper.py))
-builds one 42-float snapshot:
+builds one **raw** frame; `prep_next_state` normalises the whole stack at emission, giving a
+46-float snapshot:
 
 ```
- [ 0:10]  normalised bid prices   (M − P_bid)/M          ≥ 0
- [10:20]  sqrt bid sizes                                 ≥ 0
- [20:30]  normalised ask prices  −(P_ask − M)/M          ≤ 0
- [30:40]  −sqrt ask sizes                                ≤ 0
- [40]     log(M)                     price-level anchor
+ [ 0:10]  normalised bid prices   (M_t − P_bid)/M_t      ≥ 0
+ [10:20]  sqrt(bid size / limit_max_size)                ≥ 0
+ [20:30]  normalised ask prices  −(P_ask − M_t)/M_t      ≤ 0
+ [30:40]  −sqrt(ask size / limit_max_size)               ≤ 0
+ [40]     log_mid                    price-level anchor, centred
  [41]     log1p(spread / min_tick)   0.0 ⇒ no two-sided market
+ [42]     mid_return                 M_frame / M_prev − 1
+ [43]     signed_volume              initiator-signed qty / limit_max_size
+ [44]     log1p(trade count)         trades since the previous frame
+ [45]     trade_direction            last initiator: +1 buy, −1 sell, 0 none
 ```
 
 `M` is the L1 midpoint with a documented fallback chain (one-sided book → that side's best;
-empty book → `last_price`; degenerate → 100.0), so `log(M)` is always defined. The final
-observation is `n_hist` snapshots concatenated plus a per-agent private block, default
-4 × 42 + 9 → **177 floats**. On reset the deque is
-pre-filled with `n_hist` copies of the initial snapshot so the shape is constant from step 0.
+empty book → `last_price`; degenerate → 100.0), so `log_mid` is always defined. Every frame in
+the stack is divided by `M_t`, the newest frame's midpoint, so the same absolute price reads the
+same in all of them; each frame keeps its own `log_mid`. The final observation is `n_hist`
+snapshots concatenated plus a per-agent private block, default 4 × 46 + 9 → **193 floats**. On
+reset the deque is pre-filled with `n_hist` copies of the initial raw frame so the shape is
+constant from step 0.
 
-**The history deque is a single shared object on the environment**, and the same stacked vector
-is handed to every agent — there is no per-agent view. Full spec and its defects in
+**The history deque is a single shared object on the environment**, so the book prefix is
+identical for every agent; only the 9-float private tail differs. Full spec and its defects in
 [05_observation_space.md](05_observation_space.md).
 
 ### Step 7 — outputs
@@ -582,7 +589,7 @@ flowchart TB
     BOOK -->|"trades, residue"| BOOK
     BOOK -->|"mark_to_mkt"| ENV
     ENV --> OBSH
-    OBSH -->|"obs 177 floats"| RLM
+    OBSH -->|"obs 193 floats"| RLM
     ENV -->|"reward, info"| HOOKS
     HOOKS --> REC --> PARQ
     HOOKS -->|"NAV table, violation ERROR"| RLOG

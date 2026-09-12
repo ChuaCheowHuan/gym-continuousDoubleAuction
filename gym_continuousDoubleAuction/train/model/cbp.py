@@ -727,6 +727,12 @@ def effective_rank(activations: torch.Tensor, threshold: float = 0.99) -> float:
     `train.probe.rank.effective_rank` is the same definition in numpy;
     `test_probe.py::TestEffectiveRank.test_it_agrees_with_the_torch_definition`
     pins that the two agree.
+
+    They differ in exactly one place, deliberately. A matrix with fewer than
+    two rows has nothing to decompose: this returns NaN, because the value goes
+    into a metric series where a plotted 0.0 reads as total collapse, and the
+    probe's version returns 0, because that value goes into a report column
+    read as a rank. The agreement test pins both answers.
     """
     matrix = activations.detach()
     if matrix.dim() > 2:

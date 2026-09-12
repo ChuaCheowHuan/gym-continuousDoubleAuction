@@ -13,13 +13,17 @@ Related: [02_architecture.md](02_architecture.md) §2.5 (step 6),
 ## 1. Shape at a glance
 
 ```
-snapshot (one frame) = 42 floats
+snapshot (one frame) = 46 floats
   index    0:10   normalized bid prices
           10:20   normalized bid sizes
           20:30   normalized ask prices
           30:40   normalized ask sizes
-             40   log_mid
-             41   log1p_spread_ticks
+             40   log_mid              ln(M_frame) - log_mid_centre
+             41   log1p_spread_ticks   0.0 if the book is not two-sided
+             42   mid_return           M_frame / M_previous_frame - 1
+             43   signed_volume        initiator-signed qty / limit_max_size
+             44   log1p_trade_count    trades since the previous frame
+             45   trade_direction      last initiator: +1 buy, -1 sell, 0 none
 
 private block (per agent) = 9 floats
              0   position        tanh(net_position / limit_max_size)
@@ -33,7 +37,7 @@ private block (per agent) = 9 floats
              8   time_left       1 - t_step / max_step
 
 observation = n_hist frames concatenated, then the private block
-  default n_hist = 4  →  shape (177,) = 4x42 + 9
+  default n_hist = 4  →  shape (193,) = 4x46 + 9
   layout: [ O_{t-3} | O_{t-2} | O_{t-1} | O_t | private ]
   the most recent frame ends at index n_hist * SNAPSHOT_DIM, NOT at the end
 ```
@@ -54,7 +58,7 @@ Widths are defined once, in
 ```jsonc
 "k_rows": 10,      // book depth, price levels per side
 "book_rows": 4,    // bid_price, bid_size, ask_price, ask_size
-"extra_dim": 2,    // log_mid, log1p_spread_ticks
+"extra_dim": 6,    // the market scalars; State_Helper.EXTRA_FIELDS names them
 "private_dim": 9   // the per-agent block; State_Helper.PRIVATE_FIELDS names them
 ```
 
@@ -73,16 +77,20 @@ could reconstruct it from a stream that never showed it.
 Every field is normalised by the trader's own `init_nav` or is already a ratio, so the block is on
 the same O(1) scale as the normalised book. An unbounded private field would saturate the `tanh`
 MLP exactly as the raw sizes do (§7, S2-2). `State_Helper.PRIVATE_FIELDS` is the single definition
-of the layout, and `__init__` checks its length against `private_dim`.
+of the layout, and `__init__` checks its length against `private_dim`. `BOOK_ROW_ORDER` and
+`EXTRA_FIELDS` are checked the same way against `book_rows` and `extra_dim`, so a width set in the
+config that the builder does not produce raises at construction instead of misaligning every
+consumer downstream — `extra_dim` was documentation only until §37.4, and setting it was a silent
+no-op.
 
-`book_dim` (= `book_rows × k_rows` = 40) and `snapshot_dim` (= 42) are **derived** in
+`book_dim` (= `book_rows × k_rows` = 40) and `snapshot_dim` (= 46) are **derived** in
 `state_helper`, not stored, so they cannot disagree with `k_rows`. Inside the env, use the
 instance attributes `self.k_rows` / `self.book_dim` / `self.snapshot_dim`, which
 `State_Helper.__init__` sets from the config. The module-level `K_ROWS` / `BOOK_DIM` /
 `SNAPSHOT_DIM` names read the same config at import and exist for consumers with no env instance —
 the visualizers and the tests. See [18_configuration.md](18_configuration.md) §4.1.
 
-**Never hardcode 40, 42, 160, 168, or 177.** Use `self.snapshot_dim`, or import `SNAPSHOT_DIM` (and
+**Never hardcode 40, 46, 160, 184, or 193.** Use `self.snapshot_dim`, or import `SNAPSHOT_DIM` (and
 `BOOK_DIM` when you specifically mean the book block). The `[-40:]` slicing that predated `EXTRA_DIM` failed
 *silently* rather than loudly when the width changed — it returned the last 38 book values plus
 2 scalars, misaligning every block slice by 2 while still passing several assertions.
@@ -111,28 +119,36 @@ flowchart TD
     M -->|"ask only"| M3["M = ask1"]
     M -->|"neither"| M4["M = last_price,<br/>or 100.0 if that is <= 0"]
 
-    M1 --> NORM
-    M2 --> NORM
-    M3 --> NORM
-    M4 --> NORM
-    NORM["prices -> (M - P)/M, asks negated<br/>sizes -> sqrt(V), asks negated"] --> EXTRA
-    M1 --> SPREAD["log1p((ask1 - bid1) / min_tick)"]
-    M2 --> SENT["0.0 sentinel"]
-    M3 --> SENT
-    M4 --> SENT
-    SPREAD --> EXTRA
-    SENT --> EXTRA
-    EXTRA["append log(M) and log1p_spread_ticks"] --> SNAP["snapshot: SNAPSHOT_DIM = 42 floats"]
-    SNAP --> DEQ["obs_history deque, maxlen = n_hist"]
-    DEQ --> OBS["concatenate -> 168 book floats,<br/>shared by every agent"]
+    M1 --> MID["M"]
+    M2 --> MID
+    M3 --> MID
+    M4 --> MID
+
+    M -->|"both"| SPREAD["spread_ticks = (ask1 - bid1) / min_tick"]
+    M -->|"otherwise"| SENT["spread_ticks = 0.0 sentinel"]
+    MID --> MR["mid_return = M / M_prev_frame - 1<br/>0.0 on the first frame"]
+    TAPE["_trade_flow: tape since the last committed frame<br/>signed_volume, trade_count, trade_direction"]
+
+    RAW --> FRAME
+    MID --> FRAME
+    SPREAD --> FRAME
+    SENT --> FRAME
+    MR --> FRAME
+    TAPE --> FRAME
+    FRAME["RAW frame: 40 book floats + M, spread_ticks, mid_return,<br/>signed_volume, trade_count, trade_direction"]
+
+    FRAME --> DEQ["obs_history deque, maxlen = n_hist<br/>holds RAW frames"]
+    DEQ --> NORM["prep_next_state: normalise the WHOLE stack by M_t<br/>prices -> (M_t - P)/M_t; sizes -> sqrt(V / limit_max_size)<br/>M -> log_mid (centred); spread_ticks -> log1p;<br/>the other three pass through, being frame-local already"]
+    NORM --> OBS["concatenate -> n_hist x 46 = 184 book floats,<br/>shared by every agent"]
     OBS --> PRIV["+ 9 private floats per agent<br/>position, cash, NAV, drawdown, ..."]
-    PRIV --> FULL["observation: 177 floats"]
+    PRIV --> FULL["observation: 193 floats"]
 ```
 
 Two things this picture makes concrete. The raw book is kept **beside** the normalised one and is
 `BOOK_DIM`, not `SNAPSHOT_DIM` — the market scalars are observation-only, so action pricing is
-untouched by them (§5). And the deque holds **already-normalised** frames, each with its own `M`,
-which is defect §7.1.
+untouched by them (§5). And the deque holds **raw** frames: normalisation is deferred to emission
+so that one midpoint, `M_t`, normalises every frame in the stack. It used to hold frames each
+already normalised by its own `M`, which is what made them incomparable (§7.1, now fixed).
 
 ---
 
@@ -163,17 +179,28 @@ $$\text{norm\_P\_bid}_k = \begin{cases} \dfrac{M - P_{bid,k}}{M} & P_{bid,k} > 0
 Since `P_bid,k <= M <= |P_ask,k|`, bids come out `>= 0` and asks `<= 0` — the sign convention is
 preserved, and the magnitude is the fractional distance from the top of the book.
 
+**`M` here is `M_t`, the newest frame's midpoint, for every frame in the stack.** Normalisation
+happens once at emission, not once per frame as it enters the deque, so the same absolute price
+reads the same number in all four frames and a difference between frames is a real price move
+(§7.1). The older frames' own midpoints are not lost — each keeps its own `log_mid`.
+
 This is the right instinct, and the same thing a practitioner does before feeding a book to a
 model: it makes the representation invariant to the episode's random price anchor.
 
 ### 2.3 Volumes — square root
 
-$$\text{norm\_V\_bid}_k = +\sqrt{V_{bid,k}} \ge 0 \qquad \text{norm\_V\_ask}_k = -\sqrt{V_{ask,k}} \le 0$$
+$$\text{norm\_V\_bid}_k = +\sqrt{V_{bid,k} / \texttt{limit\_max\_size}} \ge 0 \qquad
+\text{norm\_V\_ask}_k = -\sqrt{V_{ask,k} / \texttt{limit\_max\_size}} \le 0$$
 
-This dampens extreme volume spikes while preserving relative liquidity signals.
+The root dampens extreme volume spikes while preserving relative liquidity signals; the divisor is
+what puts the result on the same order as the price block. Sizes carry no dependence on the
+midpoint, so unlike prices they normalise identically in every frame of the stack.
 
-> **Caveat.** `sqrt` stabilises variance *within* the size block but leaves the cross-block scale
-> mismatch untouched — see §6 for measured ranges and §7.5 for why it matters.
+> **This used to be a bare `sqrt(V)`**, which stabilised variance *within* the size block and left
+> the cross-block mismatch untouched: sizes reached ±47 beside prices of ±0.4, a standard-deviation
+> ratio of **220×** into a `tanh` first layer. Dividing by `limit_max_size` first brings it to
+> **3.7×** and every book feature inside ±1.2 — see §6 for the measurements and §7.5 for the
+> history.
 
 ### 2.4 Why normalize at all
 
@@ -185,16 +212,41 @@ price features scale-invariant; the `sqrt` transform compresses volume dynamic r
 
 ## 3. Market-level scalars
 
-Two scalars are appended to **every frame** (not once per stack). They are **always on** — there
-is no config flag and no second code path.
+Six scalars are appended to **every frame** (not once per stack). They are **always on** — there
+is no config flag and no second code path. `State_Helper.EXTRA_FIELDS` is the definition of the
+order, and `__init__` checks its length against `extra_dim`.
+
+| # | Index | Scalar | What it carries |
+|---|---|---|---|
+| 1 | 40 | `log_mid` | The absolute price level midpoint normalisation discards |
+| 2 | 41 | `log1p_spread_ticks` | How wide the market is, in the units the action space quotes in |
+| 3 | 42 | `mid_return` | The motion of the denominator every price is divided by |
+| 4 | 43 | `signed_volume` | Initiator-signed traded quantity since the previous frame |
+| 5 | 44 | `log1p_trade_count` | How many trades happened in that interval |
+| 6 | 45 | `trade_direction` | Which side the last one was initiated from |
+
+The last four are the newer half, and they close two findings at once: the observation carried
+**no information about executions at all** (S2-7 — the tape loop that should have produced three
+of them iterated, counted and discarded, §7.3), and it could not distinguish a book that moved
+from a midpoint that moved (S2-6, §7.1).
 
 ### 3.1 `log_mid` (index 40)
 
-$$\texttt{log\_mid} = \ln(M)$$
+$$\texttt{log\_mid} = \ln(M_{frame}) - \ln\!\sqrt{\texttt{initial\_price\_min} \cdot \texttt{initial\_price\_max}}$$
 
-Reuses the `M` already computed for normalization — no extra book queries.
+Reuses the `M` already computed for normalization — no extra book queries. Note it is the
+**frame's own** midpoint, not the `M_t` the prices are divided by: that is what lets an agent
+recover the level each frame sat at after the stack has been put on one denominator (§2.2).
 
-**Range:** ≈ 2.3 – 4.6 for the `[10, 100]` initial-price range.
+**Centred, and that matters.** Uncentred, `ln(M)` is a near-constant — measured at 4.55–4.64 over
+a 400-step rollout — a standing +4.6 bias into a `tanh` first layer while every price feature
+beside it had a standard deviation of 0.04. Subtracting the log of the geometric mean of the
+price-anchor range spans it about −1.15…+1.15 instead, carrying identical information. Geometric
+rather than arithmetic mean because the quantity is a logarithm, so that puts the two ends of the
+range symmetrically about zero.
+
+**Range:** ≈ 0.40 – 1.16 measured over 400 steps at the shipped `[10, 100]` anchor range
+([16](16_verification_log.md) §16.12).
 
 **Why it exists.** Midpoint normalization makes the observation scale-free, which *discards `M`
 itself*. Two markets at price 10 and price 100 were previously indistinguishable — yet `min_tick`
@@ -222,7 +274,8 @@ right source. See [02_architecture.md](02_architecture.md) §2.7.)
 two-sided book always has `spread >= 1` tick, and every real measurement maps to
 `log1p(x) >= log1p(1) = 0.693`. `log1p(0) = 0` sits cleanly below the valid range.
 
-**Range:** 0 (sentinel), then ≈ 0.693 – 4.6 for spreads of 1 to 100 ticks.
+**Range:** 0 (sentinel), then ≈ 0.693 – 4.6 for spreads of 1 to 100 ticks. Measured 0.0 – 3.40,
+non-zero on 89.0% of frames ([16](16_verification_log.md) §16.12).
 
 **Why `log1p` rather than raw `spread / tick`:** raw spread is unbounded — a thin early-episode
 book can produce 50+, which would sit beside price features of magnitude ~0.5. `log1p` compresses
@@ -230,11 +283,50 @@ it to the same order as `log_mid`, keeps the zero sentinel exact, and preserves 
 cost is diminishing sensitivity at wide spreads, which is acceptable: the difference between a
 40- and a 50-tick spread matters far less than between 1 and 2.
 
-### 3.3 Why per-frame
+### 3.3 `mid_return` (index 42)
 
-Each frame becomes self-describing, and stacking `log(M_t)` per frame lets an agent recover each
-frame's own normalizer. That partially mitigates the varying-denominator defect (§7.1). Appending
-at the *end* also keeps all existing `[0:10] / [10:20] / [20:30] / [30:40]` block slicing correct.
+$$\texttt{mid\_return} = \frac{M_{frame}}{M_{previous\ frame}} - 1$$
+
+The motion of the anchor itself, `0.0` on the first frame of an episode — the same value a market
+that did not move reports, which is the right reading of "nothing has changed yet".
+
+It is the other half of the §7.1 fix. Once the whole stack is normalised by one `M_t`, a price
+that did not move reads identically in every frame; `mid_return` is where the information about
+the *anchor* having moved goes instead, rather than being smeared through all forty book features.
+
+**Range:** measured −0.19 – 0.23, non-zero on 48.0% of frames.
+
+### 3.4 Trade flow (indices 43–45)
+
+$$\texttt{signed\_volume} = \frac{1}{\texttt{limit\_max\_size}}\sum_{\text{fills since the last frame}} \pm q
+\qquad
+\texttt{log1p\_trade\_count} = \ln(1 + n)
+\qquad
+\texttt{trade\_direction} \in \{-1, 0, +1\}$$
+
+`_trade_flow` walks the tape from `_tape_cursor` — where it stood when the last frame was
+committed to the deque — to its end, so the interval is exactly one frame regardless of how many
+times `set_agg_LOB` was called in between (it runs twice per step; only `prep_next_state`
+advances the cursor).
+
+**Signed by the *initiator's* side**, which is what makes it order flow rather than volume: a fill
+whose aggressor bought is `+q`, one whose aggressor sold is `−q`. That is the quantity
+microstructure research finds most predictive of short-horizon returns, and it is the single
+largest public feature the observation used to lack.
+
+`trade_direction` is the initiator side of the **last** fill in the interval, `0.0` if there was
+none. Zero is unambiguous here: the two live values are ±1.
+
+**Ranges:** `signed_volume` −0.080 – 0.108 (non-zero 57.5%), `log1p_trade_count` 0.0 – 1.61,
+`trade_direction` ±1 — the last two non-zero on 57.8% of frames, which is the fraction of frames
+in which any trade happened at all.
+
+### 3.5 Why per-frame
+
+Each frame becomes self-describing: `log_mid` lets an agent recover the level that frame sat at,
+and the three flow scalars describe the interval that *ended* at it, so a stack of four frames is
+four intervals of order flow rather than one. Appending at the *end* also keeps all existing
+`[0:10] / [10:20] / [20:30] / [30:40]` block slicing correct.
 
 ---
 
@@ -260,20 +352,25 @@ patterns, and distinguishes a stable book from a rapidly evolving one.
 
 `State_Helper` holds `self.obs_history = deque(maxlen=n_hist)`.
 
-- `reset_traders_agg_LOB()` generates the initial snapshot *O₀* and fills the deque with *N*
-  copies of it, then concatenates. Padding with copies of *O₀* rather than zeros avoids
-  misleading agents into thinking there was prior inactivity.
-- `prep_next_state()` appends the new snapshot (the deque drops the oldest automatically) and
-  concatenates.
+- `reset_traders_agg_LOB()` generates the initial **raw** frame *O₀* and fills the deque with *N*
+  copies of it, then normalises and concatenates. Padding with copies of *O₀* rather than zeros
+  avoids misleading agents into thinking there was prior inactivity.
+- `prep_next_state()` appends the new raw frame (the deque drops the oldest automatically),
+  advances `_tape_cursor` and `_prev_frame_mid`, and normalises the whole stack by `M_t`.
 
-Every agent receives the same array:
+Every agent receives the same **book prefix** and its own private tail:
 
 ```python
-states = {f'agent_{i}': stacked_obs for i in range(len(self.traders))}
+for trader in self.traders:
+    states = self.set_next_state(states, trader, stacked_obs, ...)
 ```
 
-**[verified]** — the number of distinct observation vectors across agents is **1**, at reset and
-at every step.
+The reset path goes through `set_next_state` too, so the two blocks are laid out by exactly the
+same code at step 0 as at every later step — a reset that ordered them differently would be
+invisible until a policy trained on it behaved oddly on its first action.
+
+**[verified]** — the number of distinct observation vectors across agents was **1** before the
+private block existed, at reset and at every step. That was S1-2; §1.0 is the fix.
 
 ---
 
@@ -307,35 +404,59 @@ mean a chosen level can already be crossed by the time it executes.
 
 ## 6. Measured feature scales
 
-**[verified]** — an independent 300-step, 4-agent random rollout (`init_cash=1e6`):
+**[verified]** — 4 agents × 400 steps at default config, `reset(seed=7)` with the action spaces
+seeded too ([16](16_verification_log.md) §16.12):
 
-| Block | min | max |
+| Block | min | max | std |
+|---|---|---|---|
+| `bid_price` | 0.0000 | 0.3385 | 0.0663 |
+| `bid_size` | 0.0000 | 1.1136 | 0.2471 |
+| `ask_price` | −0.5856 | 0.0000 | 0.0823 |
+| `ask_size` | −0.9214 | 0.0000 | 0.2433 |
+
+| Scalar | min | max | std | non-zero |
+|---|---|---|---|---|
+| `log_mid` | 0.3963 | 1.1612 | 0.1722 | 100.0% |
+| `log1p_spread_ticks` | 0.0000 | 3.4012 | 0.8147 | 89.0% |
+| `mid_return` | −0.1935 | 0.2308 | 0.0374 | 48.0% |
+| `signed_volume` | −0.0800 | 0.1080 | 0.0255 | 57.5% |
+| `log1p_trade_count` | 0.0000 | 1.6094 | 0.4480 | 57.8% |
+| `trade_direction` | −1.0000 | 1.0000 | 0.7592 | 57.8% |
+
+Size/price standard-deviation ratio **3.7×**, and every book feature inside ±1.2 — a range a
+`tanh` first layer can use.
+
+**What it was before §37.4**, because the size of the change is the point: sizes were a bare
+`sqrt(V)` reaching **±47** beside prices of ±0.4, a standard-deviation ratio of **220×**, and
+`log_mid` was an uncentred 4.55–4.64. Two earlier probes on that code measured maxima of 47.01 and
+51.19 for the size block; the absolute numbers moved with the book and the ratio did not.
+
+The one-normaliser-per-stack property, measured directly rather than by correlation — a bid
+resting at 90 while the midpoint moves 100 → 96:
+
+| | frame at mid 100 | frame at mid 96 |
 |---|---|---|
-| normalised bid price | 0.0000 | 0.4048 |
-| sqrt bid size | 0.0000 | **47.01** |
-| normalised ask price | −0.5802 | 0.0000 |
-| sqrt ask size | **−40.29** | 0.0000 |
-| `log_mid` | 3.6763 | 4.0431 |
-| `log1p_spread` | 0.0000 | 2.7726 |
+| normalised bid L1, **before** | 0.100 | 0.063 |
+| normalised bid L1, **after** | 0.0625 | 0.0625 |
+| `log_mid`, after | 0.0000 | −0.0408 |
 
-An earlier probe on the same code measured 0.2117 / 51.19 / −0.2593 / −44.01 / 4.1589 / 2.5649 —
-the absolute numbers move with the book, the **ratio does not**. Across both runs the size block
-exceeds the price block by roughly **80–250×**, feeding a `tanh` first layer with no
-`MeanStdFilter` and no normalisation connector configured.
+`mid_return` on the newest frame is −0.0400, i.e. 96/100 − 1. The order had not moved; its
+denominator had.
 
-Round-trip verification of the transforms (inverting both must recover the live book):
-
-Recorded before the private block was added, so the shape is the book part alone; everything else
-below is unaffected by that change.
+Round-trip verification of the transforms (inverting both must recover the live book). Recorded
+before the private block and the four new scalars existed, so the shape is the book part alone at
+its old width; the round trip itself is unaffected:
 
 ```
-OBS SHAPE          = (168,)   <- book only; the observation is 177 floats now
+OBS SHAPE          = (168,)   <- book only, extra_dim 2; the observation is 193 floats now
 best bid/ask raw   = 67.0 / 76.0
 exp(log_mid)       = 71.500015     ← matches (67 + 76) / 2 = 71.5
 expm1(log1p_spread)= 9.0           ← matches 76 - 67 = 9 ticks
 total NAV          = 4,000,000     ← conserved
 all finite         = True
 ```
+
+Inverting `log_mid` now needs the centre added back first: `exp(log_mid + log_mid_centre)`.
 
 ---
 
@@ -351,16 +472,16 @@ mindmap
         inventory, cash, NAV, drawdown now in the observation
         own resting orders still absent
         S1-2 closed by 17 section 30
-      7.3 no trade flow
-        the tape loop discards every entry
-        S2-7
+      7.3 no trade flow - fixed
+        signed_volume, trade count, direction
+        S2-7 closed by 17 section 37.4
       time remaining - fixed
         time_left is PRIVATE_FIELDS[8]
     Representation
-      7.1 per-frame normalizer
-        frames cannot be compared
-        stacking exposes nothing
-        S2-6
+      7.1 per-frame normalizer - fixed
+        the deque holds raw frames
+        one M_t normalises the stack
+        S2-6 closed by 17 section 37.4
       7.2 zero means three things
         absent level
         price exactly at M
@@ -370,9 +491,9 @@ mindmap
         k-th occupied price, not a fixed distance
         S3-15
     Scaling
-      7.5 size block is 80-250x the price block
-        tanh first layer, no filter
-        S2-2
+      7.5 size block was 80-250x the price block - fixed
+        sqrt(V / limit_max_size), ratio now 3.7x
+        S2-2 closed by 17 section 37.4
       7.6 infinite observation bounds
         disables RLlib filters
         S4-15
@@ -381,10 +502,14 @@ mindmap
         S4-17
 ```
 
-### 7.1 Each frame in the stack is normalized by a different denominator
+**Three of these are now closed.** §7.1, §7.3 and §7.5 are kept rather than deleted because each
+records a failure mode worth recognising again, and because the fix only makes sense against what
+it replaced. What is still open is §7.2, §7.4, §7.6 and the resting-order half of §7.7.
 
-`set_agg_LOB` computes `M` from the book *at that moment*, and `prep_next_state` appends the
-**already-normalized** frame to the deque. So frames *t−3 … t* each carry their own
+### 7.1 Each frame in the stack is normalized by a different denominator — **fixed**
+
+`set_agg_LOB` computed `M` from the book *at that moment*, and `prep_next_state` appended the
+**already-normalized** frame to the deque. So frames *t−3 … t* each carried their own
 `M_{t−3} … M_t`.
 
 Consequence: **frames cannot be compared to each other.** A resting order whose absolute price
@@ -396,9 +521,11 @@ normalizer.
 *Partially mitigated* by the per-frame `log_mid` scalar, which at least lets the agent recover
 each frame's normalizer.
 
-**Fix.** Keep raw snapshots in the deque and normalize the whole stack once, at emission, by the
-current `M_t`. Additionally expose `M_t / M_{t−1} − 1` so the agent can reason about the anchor's
-own motion.
+**Fixed exactly that way.** The deque holds raw frames and `prep_next_state` normalises the whole
+stack once, by `M_t`; `mid_return` carries the anchor's own motion (§3.3), and each frame keeps
+its own `log_mid`. A bid resting at 90 while the midpoint moves 100 → 96 read 0.100 then 0.063; it
+now reads 0.0625 in both. [17](17_changelog.md) §37.4, measured in
+[16](16_verification_log.md) §16.12.
 
 ### 7.2 Zero means three different things
 
@@ -413,7 +540,7 @@ on. There is no validity mask, so the network cannot disambiguate.
 **Fix.** An explicit per-level occupancy channel (10 bits per side), or a clearly out-of-range
 sentinel.
 
-### 7.3 The tape loop is dead code — there is no trade-flow information at all
+### 7.3 The tape loop is dead code — there is no trade-flow information at all — **fixed**
 
 In `set_agg_LOB`
 ([`state_helper.py`](../gym_continuousDoubleAuction/envs/exchg/state_helper.py)):
@@ -433,11 +560,16 @@ if self.LOB.tape != None and len(self.LOB.tape) > 0:
 The loop increments a counter and discards it. It *looks* like it is building tape features; it
 builds nothing.
 
-The observation therefore contains **zero information about executions**: no last traded price,
+The observation therefore contained **zero information about executions**: no last traded price,
 no trade direction, no signed volume, no trade count. In a continuous double auction, aggressive
 order flow is the single most predictive public signal — more so than the resting book, which is
-largely stale intentions. This is the largest missing *public* feature, and the placeholder loop
+largely stale intentions. This was the largest missing *public* feature, and the placeholder loop
 suggests it was intended to be there.
+
+**Fixed.** That loop is now `_trade_flow`, and `signed_volume`, `log1p_trade_count` and
+`trade_direction` are scalars 4–6 of every frame (§3.4). [17](17_changelog.md) §37.4. Note what is
+*not* there: the last traded **price** is still absent as a feature, though `mid_return` and the
+midpoint fallback chain make most of what it would carry recoverable.
 
 ### 7.4 Level index is a non-stationary coordinate
 
@@ -450,20 +582,24 @@ place to quote" has no fixed meaning across steps.
 volume at that price. This is stationary, makes empty levels naturally zero-volume rather than
 sentinel-encoded, and makes observation and action share one coordinate system.
 
-### 7.5 Feature scales differ by one to two orders of magnitude after "normalization"
+### 7.5 Feature scales differ by one to two orders of magnitude after "normalization" — **fixed**
 
-See §6 for the measurements. The 22 well-scaled features (prices and the two scalars) feed the
-same linear layer as the 20 size features and are up to ~250× smaller, so the price half is close
-to invisible at initialization and the size units saturate `tanh` immediately.
+See §6 for the measurements, before and after. The 22 well-scaled features (prices and the two
+scalars) fed the same linear layer as the 20 size features and were up to ~250× smaller, so the
+price half was close to invisible at initialization and the size units saturated `tanh`
+immediately.
 
-`sqrt` stabilized variance *within* the size block and left the cross-block mismatch untouched —
-arguably worse than no normalization, because the documentation asserts the observation is
-normalized.
+A bare `sqrt` stabilized variance *within* the size block and left the cross-block mismatch
+untouched — arguably worse than no normalization, because the documentation asserted the
+observation was normalized.
 
-**Fix.** Give size the same units-free property as price — `V_k / sum(V)` (depth share),
-`log1p(V)`, or `V` divided by a running mean — and centre `log_mid` on `log(55)`. Note that a
-null result from the `log_mid` / `log1p_spread_ticks` features would *not* prove those features
-useless: they are correct, but likely dominated until the size block is rescaled.
+**Fixed** by giving size the same units-free property as price — `sqrt(V / limit_max_size)`
+(§2.3) — and centring `log_mid` on the log of the geometric mean of the anchor range (§3.1). The
+size/price standard-deviation ratio is **3.7×**, down from 220×, and every book feature is inside
+±1.2. [17](17_changelog.md) §37.4.
+
+The `tanh` MLP still runs with no `MeanStdFilter` and no normalisation connector configured; that
+is now a choice rather than a gap, because the features arrive on one scale.
 
 ### 7.6 Redundancy and wasted capacity
 
@@ -502,9 +638,10 @@ market (public):
   spread in ticks                           1                         [DONE]
   volume at +/-N tick offsets from mid     2N    fixed grid, stationary
   occupancy mask for that grid             2N    kills the zero collision
-  signed traded volume last step            1    from the tape
-  trade count / direction last step         2
-  M_t / M_{t-1} - 1                         1    lets the agent undo rescaling
+  signed traded volume last step            1    [DONE] signed_volume
+  trade count / direction last step         2    [DONE] log1p_trade_count,
+                                                        trade_direction
+  M_t / M_{t-1} - 1                         1    [DONE] mid_return
 
 private (per agent):
   net position, VWAP, unrealized P&L        3    [DONE] position, vwap_vs_mid,
@@ -515,16 +652,19 @@ private (per agent):
   t_step / max_step                         1    [DONE] as time_left
 ```
 
-Everything on the private list is shipped except own resting volume; see §1 for the block as
-built and `State_Helper.PRIVATE_FIELDS` for the field order.
+Everything on the private list is shipped except own resting volume, and everything on the public
+list except the fixed grid and its occupancy mask — which are the same item twice, and are §7.4
+and §7.2. See §1 for the blocks as built, and `State_Helper.PRIVATE_FIELDS` / `EXTRA_FIELDS` for
+the field orders.
 
 **Time remaining is now in the observation.** It was missing and cheap, and the argument for it
 still explains why it is there: this is a finite-horizon episode, so the optimal policy is
 genuinely time-dependent — inventory should be flattened toward the end. `time_left` is
 `PRIVATE_FIELDS[8]`, carried as `1 - t_step / max_step` so it *falls* to zero at truncation.
 
-Stack raw snapshots, normalize the whole stack once at emission using the current `M_t`, and add
-explicit frame deltas rather than relying on the network to difference them.
+Stacking raw snapshots and normalising the whole stack once at emission is done (§7.1). Explicit
+frame deltas, rather than relying on the network to difference the stack, are not: `mid_return`
+supplies the anchor's delta and nothing supplies the book's.
 
 ---
 
@@ -536,13 +676,14 @@ Anything that slices an observation must use `SNAPSHOT_DIM` / `BOOK_DIM`:
 |---|---|
 | [`continuousDoubleAuction_env.py`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py) | `Box` shape is `(n_hist * SNAPSHOT_DIM + PRIVATE_DIM,)` |
 | [`exchg_helper.py`](../gym_continuousDoubleAuction/envs/exchg/exchg_helper.py) `print_table` | Slices the book block before `reshape(4, K_ROWS)`, then prints trailing scalars on their own line. Without the slice, `reshape` raises `ValueError` on **every rendered step**. |
-| [`visualize_orderbook.py`](../gym_continuousDoubleAuction/visualize/visualize_orderbook.py) | Takes `agent_obs[-SNAPSHOT_DIM:]` for the current book state |
+| [`visualize_orderbook.py`](../gym_continuousDoubleAuction/visualize/visualize_orderbook.py) | Slices the newest frame at `[(n_hist-1) * SNAPSHOT_DIM : n_hist * SNAPSHOT_DIM]`, deriving `n_hist` from the width after taking `PRIVATE_DIM` off — deliberately **not** `obs[-SNAPSHOT_DIM:]`, which returns the private block plus a truncated frame |
 | `test_obs_normalization.py`, `test_observation_history.py`, `test_obs_market_features.py` | All shape literals derive from the constants |
 
 Rendered output for the scalars looks like:
 
 ```
-log_mid = 4.269698; log1p_spread_ticks = 2.302585
+log_mid = 0.269698; log1p_spread_ticks = 2.302585; mid_return = -0.004000;
+signed_volume = 0.012000; log1p_trade_count = 1.098612; trade_direction = 1.000000
 ```
 
 ---
@@ -552,7 +693,8 @@ log_mid = 4.269698; log1p_spread_ticks = 2.302585
 Any policy checkpoint built against an older observation width will not load against the current
 one, and an episode Parquet record written under one width has `obs` lists of a different length
 than the reader expects. This is unavoidable whenever the observation dimension
-changes; the width has changed three times (40 → 160 with stacking, 160 → 168 with market
-features, 168 → 177 with the private block).
+changes; the width has changed four times (40 → 160 with stacking, 160 → 168 with the first two
+market scalars, 168 → 177 with the private block, 177 → 193 with the four trade-flow and
+mid-return scalars).
 `SNAPSHOT_DIM` is a good constant but is not recorded in the checkpoint, so the mismatch is not
 detected — it just fails.
