@@ -2600,3 +2600,82 @@ One test was also found to be flaky rather than wrong: `TestCBPSurvivesARealSave
 that the restored league carries a champion, which depends on league statistics that are not
 reproducible across test orderings. It now creates one explicitly, the same manoeuvre
 `test_checkpoint_roundtrip.py` uses, so the class cannot pass vacuously on an empty league.
+
+---
+
+## 42. The plasticity measurement, and the metric that got it wrong
+
+[25](25_continual_backprop.md) §7 made one thing the blocking step after §40 and §41: actually
+run `cbp_metrics_only` and find out whether this system loses plasticity. It has now been run.
+**The answer at this scale is no — and the instrument §39 proposed said yes.**
+
+### 42.1 The result
+
+Numbers in [16](16_verification_log.md) §16.16. The network is the shipped default untouched;
+the environment is scaled down and the update schedule up to buy optimiser steps, those being the
+clock plasticity runs on.
+
+| | optimiser steps | effective rank |
+|---|---|---|
+| On the training minibatch | 17,875 | 97.1 → 73.2, **−24.6%**, both policies |
+| On a fixed corpus, 8 layers | 19,500 | **+2.5% to −1.9%** |
+
+Two further readings agree with the second. The training-batch rank is **not monotone** — it fell
+to 68.2 by iteration 178 and recovered to 73.2 by 275 as the league turned over, ρ weakening from
+−0.90 to −0.71 — and capacity loss does not come back. And dead and saturated units sat at
+**exactly zero** on every layer, where arXiv Appendix G reports ~90% of features saturated under
+plain backprop.
+
+### 42.2 Why the two disagree, and what it says about the metric
+
+The rank of an activation matrix has two parents: the network and the inputs. Both papers measure
+it in supervised settings where the inputs are a fixed dataset, so only the network can move it.
+In reinforcement learning the policy chooses its own inputs, and under S1-3 — where passivity is
+the joint optimum — a converging agent visits an ever narrower set of book states. The rank of
+what it sees falls with the network unchanged.
+
+So `cbp_effective_rank` as shipped in §40 was confounded, and on this system it produced a 24.6%
+false positive. A reader following [18](18_configuration.md) §5.6.4, reading the correlates, and
+seeing that number would reasonably have switched continual backprop on to treat a patient who
+was not ill.
+
+§40 argued instrumentation is safe because it cannot change a run's trajectory. That is true of
+the run and false of the conclusion: a metric that cannot break training can still be believed.
+
+### 42.3 The fix
+
+`train/probe/rank.py`. The probe harness already exists to answer questions about an encoder
+without going through the reward, and it already holds a corpus fixed while the encoder varies —
+which is exactly the property the metric was missing. It reports each feature set's effective
+rank beside its width, flags any set whose rank is bounded by the corpus rather than the encoder,
+and prints as its own table under the score matrix rather than as a column on it, since rank is a
+property of a feature set while every row of that matrix is a (feature set, target) pair.
+
+The Learner-side version is **kept and renamed** `cbp_batch_effective_rank`. "What the network is
+doing on the data it is actually training on" is a real thing to want; what was wrong was a name
+that did not say what it was measured on.
+
+There are now two implementations of effective rank — torch in `cbp.py`, which must not import
+RLlib or the probe package, and numpy in `probe/rank.py`, which is what the harness works in.
+`test_it_agrees_with_the_torch_definition` is the only thing keeping them the same measurement.
+
+Two notes on the other correlates, both of which read zero throughout and neither of which is
+confounded this way (weights do not depend on the batch, and a unit dead on one input
+distribution is generally dead on others):
+
+- `cbp_dead_unit_frac` is ReLU-shaped — a tanh unit does not die toward zero, so it cannot fire
+  on the shipped network whatever happens to it.
+- `cbp_saturated_unit_frac` uses the per-unit batch mean |h| > 0.9, i.e. "saturated on
+  essentially every input", which is stricter than the papers' per-output definition.
+
+### 42.4 What is still open
+
+A null at 2×10⁴ optimiser steps on a scaled-down environment at one seed does not rule out loss
+of plasticity at the 10⁶–10⁸ the project needs. [25](25_continual_backprop.md) §7 step 5 is the
+re-run at scale, on real hardware, multi-seed, reading the fixed-corpus rank rather than the batch
+one. Step 7 — continual backprop in the offline pretrainer — is worth promoting if that stays
+null, since the pretrainer has no policy and so cannot have this confound at all.
+
+Also fixed here: §40 appended its testing section as `## 6.5 Continual Backprop` *after* section 7
+of [10](10_testing.md), where `### 6.5 The probe harness` already existed. Renumbered to 6.6 and
+moved into section 6 where it belongs.

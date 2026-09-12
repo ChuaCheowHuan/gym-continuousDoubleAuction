@@ -714,6 +714,18 @@ def effective_rank(activations: torch.Tensor, threshold: float = 0.99) -> float:
     representation whose units have become redundant has a low effective rank
     even when none of them is individually dead, which is why the dead-unit
     fraction alone is not enough.
+
+    **Read the caller's caveat before reading the number.** The rank of an
+    activation matrix depends on the inputs as much as on the network. Here the
+    inputs are whatever minibatch training produced, and the policy shapes its
+    own input distribution - so this falls when the network loses capacity and
+    *also* when the agent simply starts visiting a narrower set of book states.
+    Measured on this repo, the second effect alone moved it by -24.6% while the
+    network's capacity on a fixed corpus did not move at all (doc/16 §16.16).
+    `train/probe/rank.py` is the version that holds the inputs still.
+
+    `train.probe.rank.effective_rank` is the same definition in numpy;
+    `test_probe_rank` pins that the two agree.
     """
     matrix = activations.detach()
     if matrix.dim() > 2:
@@ -738,7 +750,10 @@ def plasticity_metrics(
     """The three correlates of loss of plasticity, plus the utility spread.
 
     The three are the ones both papers track: the fraction of dead units, the
-    average weight magnitude, and the effective rank of the representation.
+    average weight magnitude, and the effective rank of the representation -
+    the last of which is reported as `batch_effective_rank`, because on this
+    system it is confounded by the policy's own input distribution and the name
+    is the only thing standing between a reader and a false positive.
     Continual Backprop is the only algorithm in the Nature paper that keeps all
     three healthy, so they are what says whether it is working - and, run with
     `metrics_only`, whether there is anything for it to work on.
@@ -760,7 +775,12 @@ def plasticity_metrics(
         "utility_median": float(corrected_utility.median().item()),
     }
     if activations is not None:
-        metrics["effective_rank"] = effective_rank(activations)
+        # Named for the batch it is measured on, not for what it looks like it
+        # measures. It is NOT a clean read of the network's capacity: the
+        # training minibatch reflects wherever the policy currently goes, so
+        # this moves with the input distribution too. See `effective_rank`,
+        # and use the probe harness for the comparable version.
+        metrics["batch_effective_rank"] = effective_rank(activations)
     return metrics
 
 

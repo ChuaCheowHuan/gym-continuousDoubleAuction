@@ -6,17 +6,20 @@ trainer whose opponents change under it by construction?**
 
 The answer is a qualified yes, and the qualification is different from the one in
 [22_jepa_integration.md](22_jepa_integration.md). JEPA was a good fit for *this observation* and a
-poor fit for *this reward*. Continual Backprop is a good fit for *this training regime* and is
-currently **unmeasured** in it: the mechanism it fixes has never been shown to occur here, and §4.1
-is therefore an instrument rather than an algorithm.
+poor fit for *this reward*. Continual Backprop is a good fit for *this training regime* and,
+now that it has been measured in it, is a fix for a problem this system does not yet have: at
+~20,000 optimiser steps the effect is not detectable (§3.3).
 
-**Status.** This began as a research note and is now also a description of shipped code. §4.1
-(instrumentation) and §4.2 (the mechanism) are implemented, off by default, in
-[`train/model/cbp.py`](../gym_continuousDoubleAuction/train/model/cbp.py) and
-[`cbp_learner.py`](../gym_continuousDoubleAuction/train/model/cbp_learner.py). §4.3 and §4.4 are
-not. What has *not* happened is the measurement: nobody has yet run long enough to say whether this
-system loses plasticity at all, which is what §3.3 is about and what `cbp_metrics_only` exists to
-find out. Sections 1, 3.1 and 4 were rewritten against the papers themselves after the first draft
+**Status.** This began as a research note and is now also a description of shipped code and of a
+measurement that has been taken. §4.1 (instrumentation) and §4.2 (the mechanism) are implemented,
+off by default, in [`train/model/cbp.py`](../gym_continuousDoubleAuction/train/model/cbp.py) and
+[`cbp_learner.py`](../gym_continuousDoubleAuction/train/model/cbp_learner.py); §4.3 and §4.4 are
+not.
+
+**The measurement has now been run, and the answer is that the effect is not detectable here** at
+~20,000 optimiser steps — §3.3 has the numbers. It also found that §4.1's own instrument was
+confounded and would have reported the opposite; §3.8 is that, and `train/probe/rank.py` is the
+fix. Sections 1, 3.1 and 4 were rewritten against the papers themselves after the first draft
 reasoned about the algorithm from memory and got two things wrong — §3.1 says which.
 
 It also differs from every previous extension in one structural way that decides the whole design:
@@ -393,16 +396,40 @@ wholesale.
 (§2.4), not on episode return, until S1-3 is fixed. A returns-based comparison would measure which
 variant converges to passivity faster and report it as a win or a loss more or less at random.
 
-### 3.3 The effect has not been demonstrated *here*
+### 3.3 The effect is **not** detectable here at ~20,000 optimiser steps — **[measured]**
 
-Nothing in this repository currently measures unit saturation, dormancy, effective rank, or weight
-norm growth. So the honest position is: the *regime* is right (§2.1, §2.3), the *architecture* is
-the susceptible one (§2.2), and whether plasticity actually degrades in this specific system over a
-long run is **unknown**.
+This section used to say the question was unknown. It has now been asked, with
+`cbp_metrics_only: true`, and the answer at this scale is no. Full numbers in
+[16](16_verification_log.md) §16.16; the short form:
 
-Shipping the mechanism before measuring the disease would be backwards, and it is the mistake
-[22](22_jepa_integration.md) avoided by putting Proposal A — a pure instrument — first. §4.1 does
-the same thing here, for the same reason.
+| | optimiser steps | effective rank |
+|---|---|---|
+| On the **training minibatch** | 17,875 | 97.1 → 73.2, **−24.6%**, both policies |
+| On a **fixed corpus**, 8 layers | 19,500 | **+2.5% to −1.9%** |
+
+The first number is what the instrument this note proposed actually reported, and it is
+**wrong** — or rather, it is right about something else. The rank of an activation matrix
+depends on the inputs as much as on the network, and here the policy chooses its own inputs:
+under S1-3 passivity is the joint optimum, so a converging agent visits an ever narrower set
+of book states and the rank of what it sees falls with the network unchanged. Hold the
+observations fixed and nothing is left.
+
+Two further readings agree. The training-batch rank is **not monotone** — it fell to 68.2 by
+iteration 178 and recovered to 73.2 by 275 as the league turned over, ρ weakening from −0.90
+to −0.71 — and capacity loss does not come back. And dead and saturated units sat at **exactly
+zero** on every layer throughout, where arXiv Appendix G reports ~90% of features saturated
+under plain backprop.
+
+**So the honest position is now narrower and better founded than "unknown".** The regime is
+still right (§2.1, §2.3) and the architecture is still the susceptible one (§2.2), but at
+~20,000 optimiser steps, on a scaled-down environment, at one seed, the disease is not
+detectable. That does not rule it out at the 10⁶–10⁸ scale the project needs; it does mean
+there is nothing here yet for the mechanism to fix, and switching it on would be treating a
+patient who is not ill.
+
+Shipping the mechanism before measuring the disease would have been backwards, which is the
+mistake [22](22_jepa_integration.md) avoided by putting a pure instrument first. §4.1 did the
+same — and §3.8 is what happened when the instrument itself turned out to need one.
 
 ### 3.4 "Unit" is unambiguous in some places in this codebase and not in others
 
@@ -519,6 +546,34 @@ with DDP's two relevant behaviours (a `module` submodule, no attribute forwardin
 the wrapper. That is weaker than running on the real thing and is the honest limit of what this
 suite can pin.
 
+### 3.8 The instrument needed an instrument
+
+§4.1's argument was that instrumentation is safe: it cannot change a run's trajectory, so the
+worst case is that it tells you nothing. That is true about the *run* and false about the
+*conclusion*. A metric that cannot break training can still be believed, and this one was
+wrong by 24.6 percentage points in the direction that would have caused someone to switch the
+mechanism on.
+
+The flaw is not subtle in hindsight. Effective rank is a property of a matrix of activations,
+and a matrix of activations has two parents: the network and the inputs. In the supervised
+settings both papers measure it in, the inputs are a fixed dataset, so the network is the only
+thing that can move it. In reinforcement learning the policy chooses its own inputs, and in
+*this* reinforcement-learning problem S1-3 gives it a strong reason to narrow them. Carrying
+the metric across from the papers carried an assumption that does not hold here.
+
+The general form is worth stating because it will recur: **a plasticity correlate measured on
+on-policy data confounds the network with the policy's behaviour.** That applies to the other
+two as well. Dead-unit fraction and weight magnitude happen to be robust to it — weights do not
+depend on the batch at all, and a unit dead on one input distribution is usually dead on
+others — which is why only the rank went wrong. It is not why only the rank *could* have.
+
+The fix is `train/probe/rank.py`. The probe harness already exists to answer questions about
+an encoder without going through the reward, and it already holds a corpus fixed while the
+encoder varies — which is exactly the property the metric was missing. The Learner-side version
+is kept, because "what the network is doing on the data it is actually training on" is a real
+thing to want, and is renamed `cbp_batch_effective_rank` so the reader is told what it is
+measured on before they interpret it.
+
 ---
 
 ## 4. Four proposals, cheapest first
@@ -539,7 +594,7 @@ paper's claim for CBP is precisely that it is the only method keeping all three 
 |---|---|---|
 | `cbp_dead_unit_frac` | Fraction of units whose mean \|activation\| is below `cbp_dead_unit_threshold` | Nature Fig. 2d, ED Fig. 4 |
 | `cbp_mean_weight_magnitude` | Mean \|w\| of incoming weights | Nature ED Fig. 4 |
-| `cbp_effective_rank` | Stable rank: fewest singular values of the activation matrix carrying 99% of the total | Nature Methods |
+| `cbp_batch_effective_rank` | Stable rank of the **training minibatch's** activations. Confounded by the policy's own input distribution — §3.8; `train/probe/rank.py` is the comparable version | Nature Methods |
 | `cbp_saturated_unit_frac` | Fraction with mean \|activation\| > 0.9 — the tanh failure | arXiv App. G |
 | `cbp_utility_min` / `_median` | The CBP utility spread: how unequally capacity is used | arXiv eqs. 5–7 |
 | `cbp_mature_unit_frac` | Fraction old enough to be replaceable | §3.6 |
@@ -687,17 +742,22 @@ asked yet.
 | 1 | ~~**Proposal A** — plasticity metrics, including the utility statistic computed but unused~~ — **done**, `cbp_metrics_only` | **nothing** | S |
 | 2 | ~~**Proposal B** — the mechanism, off by default, composed over `learner_class_for`~~ — **done** | 1 | M |
 | 3 | ~~Checkpoint round-trip and seeding tests for CBP state~~ — **done**, `test_cbp.py` + `integration/test_cbp_wiring.py` | 2 | S |
-| 4 | **Run a long (≥10⁶ step) job with `cbp_metrics_only: true`** and decide from the curves whether §3.3 is answered yes | 1 | S (compute, not code) |
-| 5 | Probe-scored CBP-on/off comparison, multi-seed, with tuned Adam held fixed across arms | 2, 4, [23](23_probe_harness.md) | M |
-| 6 | **Proposal C** — CBP in the offline pretrainer, the cleanest test | 2 | S |
-| 7 | Returns-based comparison | 0, 5 | M, and only if S1-3 is genuinely fixed first |
-| 8 | **Proposal D** — utility profiles in league matchmaking | 0, 2 | L |
+| 4 | ~~Run with `cbp_metrics_only: true` and decide whether §3.3 is answered yes~~ — **done at ~2×10⁴ optimiser steps; answer is no** (§3.3, [16](16_verification_log.md) §16.16) | 1 | S |
+| 4b | ~~Fix the confounded rank metric~~ — **done**, `train/probe/rank.py` (§3.8) | 4 | S |
+| 5 | **Re-run step 4 at 10⁶–10⁸ steps on real hardware**, multi-seed, reading `train/probe/rank.py` rather than the batch metric | 4b | S code, L compute |
+| 6 | Probe-scored CBP-on/off comparison, multi-seed, with tuned Adam held fixed across arms — **only if step 5 finds something** | 5, [23](23_probe_harness.md) | M |
+| 7 | **Proposal C** — CBP in the offline pretrainer, the cleanest test: no policy, so no input-distribution confound at all | 2 | S |
+| 8 | Returns-based comparison | 0, 6 | M, and only if S1-3 is genuinely fixed first |
+| 9 | **Proposal D** — utility profiles in league matchmaking | 0, 2 | L |
 
-**Step 4 is now the blocking one**, and it is compute rather than code: the mechanism exists and is
-tested, but whether this system loses plasticity at all is still unknown, so there is nothing yet
-to say it should be switched on. Note that a default-length run cannot answer it — see §3.6 — and
-that step 1 was worth doing regardless of CBP, since it closes an observability gap
-[11](11_logging_and_observability.md) already describes.
+**Step 5 is now the blocking one, and it is compute rather than code.** Everything through 4b is
+done; what is missing is scale. A null at 2×10⁴ optimiser steps on a scaled-down environment does
+not rule out loss of plasticity at the 10⁶–10⁸ the project actually needs (§2.3), and that run
+wants real hardware, several seeds, and the *fixed-corpus* rank rather than the batch one.
+
+Step 7 is worth promoting if step 5 stays null: the offline pretrainer has no policy, so the
+confound §3.8 is about cannot arise there at all, which makes it the cleanest place in the
+repository to ask whether this network loses plasticity under sustained updates.
 
 ---
 

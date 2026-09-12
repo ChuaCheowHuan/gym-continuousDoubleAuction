@@ -967,7 +967,7 @@ optimiser is bit-for-bit the one every existing run and checkpoint was built wit
 | `cbp_scope` | `"feedforward"` | Which units are replaceable |
 | `cbp_fire_on` | `"adam_step"` | `adam_step` (the papers' placement) or `iteration` |
 | `cbp_reset_optimizer_state` | `true` | Zero Adam's moments for replaced weights |
-| `cbp_dead_unit_threshold` | `0.01` | Mean \|activation\| below which a unit counts as dead, metric only |
+| `cbp_dead_unit_threshold` | `0.01` | Mean \|activation\| below which a unit counts as dead, metric only. Cannot fire on a tanh network, which does not die toward zero |
 | `cbp_metrics_every_n_updates` | `10` | How often to compute the metrics; the effective rank runs an SVD |
 
 **The keys carry a `cbp_` prefix because `config_loader.flatten` collapses every group of
@@ -1000,6 +1000,11 @@ project takes far fewer of them than the papers do: 4 per iteration at the defau
 over one full batch, `minibatch_size: null`) against Continual PPO's 320. The papers' own PPO
 maturity threshold of `1e4` would be 2,500 iterations here, against a default run of 16 — no unit
 would ever mature and **continual backprop would never fire once**.
+
+**And do not read `cbp_batch_effective_rank` as a statement about the network.** It is measured on
+the training minibatch, which the policy's own behaviour shapes; on this system it fell 24.6% while
+the network's rank on a fixed corpus did not move at all ([16](16_verification_log.md) §16.16). The
+comparable version is `train/probe/rank.py`, read across checkpoints ([23](23_probe_harness.md) §8).
 
 A mechanism that never fires produces identical logs, losses and returns to one that is working.
 So before concluding anything from a CBP run, read `cbp_replacements` and `cbp_mature_unit_frac`:

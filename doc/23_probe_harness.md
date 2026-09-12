@@ -272,3 +272,51 @@ Tests: [`test/test_probe.py`](../gym_continuousDoubleAuction/test/test_probe.py)
 arithmetic, on synthetic observations) and
 [`test/integration/test_probe_harness.py`](../gym_continuousDoubleAuction/test/integration/test_probe_harness.py)
 (25, against the real env, every registered encoder, and a real checkpoint).
+
+---
+
+## 8. Effective rank
+
+`train/probe/rank.py` reports the effective rank of every feature set on the corpus, printed as
+its own table under the score matrix. It is a second, independent reading of an encoder: the
+score matrix says how much microstructure the latent makes *linearly available*, and the rank
+says how many directions it is using at all.
+
+```
+Effective rank of each feature set, on this corpus (99% of singular mass)
+feature set     rank   width    used
+raw               98     193    51% *
+mlp              112     256    44% *
+```
+
+Stable rank as the Nature paper's Methods defines it: the fewest singular values carrying 99% of
+the total mass. Read it against `width` — absolute values are not comparable between a 193-float
+observation and a 256-unit latent. The `*` marks a set whose rank is bounded by the corpus rather
+than by the encoder (rank cannot exceed `min(rows, width)`), which is a warning that the number
+describes the corpus and not the thing you wanted to compare.
+
+### 8.1 Why it is here and not on the Learner
+
+Because it is only a statement about the network if the inputs hold still, and this harness is
+the only place in the repository where they do.
+
+`CBPLearnerMixin` reports the same quantity on whatever minibatch training produced. In a
+supervised setting that would be equivalent. Here the policy chooses its own inputs, and under
+S1-3 the reward makes passivity the joint optimum — so a converging agent visits an ever narrower
+set of book states and the rank of its activations falls with the network unchanged.
+
+That is measured, not argued ([16](16_verification_log.md) §16.16). Over ~18,000 optimiser steps:
+
+| | change |
+|---|---|
+| rank on the training minibatch | **−24.6%** |
+| rank on a fixed corpus, all 8 layers | **+2.5% to −1.9%** |
+
+The first reads as a plasticity collapse and is the agent's behaviour; the second is the network,
+and it did not move. The Learner-side metric is kept — "what the network is doing on the data it
+is actually training on" is a real thing to want — but it is named `cbp_batch_effective_rank` so
+that what it is measured on is visible before it is interpreted.
+
+The practical consequence for [25](25_continual_backprop.md)'s open question: a plasticity
+measurement that wants to say something about the *network* must read this table across
+checkpoints (`--checkpoint`), not the training-time metric across a run.

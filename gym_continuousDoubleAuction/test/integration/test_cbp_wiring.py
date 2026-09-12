@@ -244,11 +244,11 @@ class TestCBPRunsInsideARealUpdate:
                 "cbp_dead_unit_frac",
                 "cbp_saturated_unit_frac",
                 "cbp_mean_weight_magnitude",
-                "cbp_effective_rank",
+                "cbp_batch_effective_rank",
                 "cbp_mature_unit_frac",
                 "cbp_replacements",
             } <= set(metrics)
-            assert metrics["cbp_effective_rank"] > 0
+            assert metrics["cbp_batch_effective_rank"] > 0
 
     def test_training_still_produced_a_result(self):
         """Replacement must not break sampling, the league, or the update."""
@@ -295,7 +295,7 @@ class TestMetricsOnlyChangesNothing:
 
     def test_the_correlates_are_still_logged(self):
         metrics = self.result["learners"]["policy_0"]
-        assert "cbp_effective_rank" in metrics
+        assert "cbp_batch_effective_rank" in metrics
         assert "cbp_dead_unit_frac" in metrics
 
     def test_the_utility_is_still_accumulated(self):

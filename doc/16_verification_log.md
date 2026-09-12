@@ -784,3 +784,98 @@ unrestorable check now runs before that return and compares against what a pre-f
 rather than against the intersection.
 
 **Supports:** §25 3.5, §25 3.7, §18 5.6.3.
+
+---
+
+## 16.16 The plasticity measurement, and the metric that got it wrong (2026-09-12)
+
+[25](25_continual_backprop.md) §3.3 said the effect continual backprop treats had
+never been shown to occur here, and §7 made measuring it the blocking step. This is
+that measurement. It ran with `cbp_metrics_only: true`, which computes every
+correlate and replaces nothing, so the run's trajectory is identical to one with
+continual backprop switched off entirely.
+
+**The answer is no - and the shipped metric said yes.**
+
+### Setup
+
+The *network* is the shipped default untouched: `(256, tanh, 256, tanh, Linear)` for
+the policy, the same for the value, separate trunks - which §2.2 establishes is the
+papers' own Continual PPO network. The *environment* is scaled down and the *update
+schedule* up, to buy optimiser steps per wall-clock second, optimiser steps being the
+clock plasticity runs on (§3.6): 4 agents, 512-step episodes, 8 epochs over 8
+minibatches = 65 optimiser steps per iteration against the default 4. Seed 11, one
+seed, CPU.
+
+### Result
+
+| | optimiser steps | effective rank |
+|---|---|---|
+| On the **training minibatch** (`cbp_batch_effective_rank`) | 17,875 | 97.1 → 73.2, **−24.6%** (policy_0); 97.1 → 73.7, −24.1% (policy_1) |
+| On a **fixed corpus** of real observations, 8 layers | 19,500 | **+2.5% to −1.9%**; actor layers rise (ρ ≈ 1.0), critic layers fall slightly |
+
+The first is a textbook plasticity collapse. The second says the network's
+representational capacity did not move. Two further readings agree with the second:
+
+- **The training-batch rank is not monotone.** It fell to 68.2 by iteration 178, then
+  recovered to 73.2 by 275 as the league turned over; Spearman ρ weakened from −0.90
+  to −0.71. Capacity loss does not come back.
+- **Dead and saturated units stayed at exactly zero** throughout, on every layer. A
+  network actually losing plasticity does not look like that - arXiv Appendix G
+  reports ~90% of features saturated under plain backprop.
+
+Mean incoming |w| rose monotonically (ρ = 1.00) but by 1.6-2.1%, which is not the
+weight growth the papers associate with the effect.
+
+### What the difference was
+
+The rank of an activation matrix depends on the inputs as much as on the network, and
+here the policy chooses its own inputs. Under S1-3 the reward makes passivity the
+joint optimum, so a converging agent visits an ever narrower set of book states and
+the rank of what it sees falls - with the network unchanged. Holding the observations
+fixed removes that term, and when it is removed nothing is left.
+
+### Consequence for the code
+
+`cbp_effective_rank` as first shipped measured the training minibatch and so carried
+this confound. On this system it produced a 24.6% false positive: a reader following
+[18](18_configuration.md) §5.6.4, reading the correlates, and seeing that number would
+reasonably have switched continual backprop on for no reason. It is renamed
+`cbp_batch_effective_rank` - the name now says what it is measured on - and the
+comparable version lives in `train/probe/rank.py`, where the corpus is collected once
+and does not change while the encoder does.
+
+Two related notes on the other correlates, both of which read zero here:
+
+- `cbp_dead_unit_frac` (mean |h| below 0.01) is ReLU-shaped. A tanh unit does not die
+  toward zero, so this cannot fire on the shipped network whatever happens to it.
+- `cbp_saturated_unit_frac` uses the per-unit *batch mean* |h| > 0.9, i.e. "saturated
+  on essentially every input". The papers define saturation per output (arXiv App. G),
+  so this is the stricter reading and fires later than their Figure 19a would.
+
+### Reproducing it
+
+Seeded throughout, so unlike 16.3-16.6 this one does reproduce. The measuring run is a
+`TrainConfig` with `cbp_metrics_only=True`, `cbp_metrics_every_n_updates=1`, `num_agents=4`,
+`num_trained_agents=2`, `max_step=512`, `num_episodes_per_iter=2`, `num_epochs=8`,
+`minibatch_size=128`, `seed=11`, `episode_data_dir=None`, and the `ppo` group's network left
+alone; the per-iteration `cbp_*` metrics come straight out of `result["learners"][<module>]`.
+
+The fixed-corpus column is the same loop with one addition: a batch of 512 real observations
+collected once before training, under uniformly random actions, and pushed through the module
+every fifth iteration with temporary forward hooks on the layers `find_replaceable_layers` returns.
+Do **not** draw that batch from `observation_space.sample()` - the space is `Box(-inf, inf)`, so
+gymnasium returns a standard normal out to +/-3.2 while real observations sit near [0, 1], and the
+measurement would be of a representation nobody uses. `train/probe/rank.py` now does this properly
+against the harness's own corpus, and is what a re-run should use.
+
+### What this does not establish
+
+~20,000 optimiser steps against the papers' 10⁶-10⁸, on a scaled-down environment, one
+seed. A null here does not rule out loss of plasticity at the scale the project
+actually needs ([25](25_continual_backprop.md) §2.3), and it says nothing about whether
+continual backprop would help if the effect did appear. What it does establish is that
+the effect is not detectable at this scale, and that the metric which said otherwise
+was measuring the agent's behaviour rather than its network.
+
+**Supports:** §25 3.3, §25 3.8, §23, §11, §18 5.6.4.
