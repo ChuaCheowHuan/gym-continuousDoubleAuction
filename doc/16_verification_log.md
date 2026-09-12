@@ -625,3 +625,257 @@ The middle column is the one worth keeping: positional embeddings alone change n
 linear projection and a mean, because `mean(W·xᵢ + pᵢ)` is `W·mean(xᵢ) + mean(pᵢ)`.
 
 **Supports:** S1-5, S2-2, S2-4, S2-5, S2-6, S2-7, S2-10, S2-11.
+
+---
+
+## 16.13 Continual Backprop feasibility probes (2026-09-11)
+
+Two structural claims in [25_continual_backprop.md](25_continual_backprop.md), measured against the
+working tree on Python 3.12.3 / Ray 2.56.1. Both are design claims about *seams*, not about
+training outcomes — no run was performed, and nothing in §25 asserts a measured effect on learning.
+
+### The learner mixin composes over the existing chain (§25 2.5)
+
+`type(f"CBP{base.__name__}", (CBPLearnerMixin, base), {})`, for each learner the encoder registry
+can select:
+
+```
+CDAPPOTorchLearner   -> CBPCDAPPOTorchLearner     jepa_in_chain=False
+CDAJEPALearner       -> CBPCDAJEPALearner         jepa_in_chain=True
+```
+
+In both cases `compute_loss_for_module` still resolves to the base learner's — so the MoE
+load-balancing term and, for `jepa`, the latent-prediction term both survive — while
+`after_gradient_based_update` resolves to the mixin's. This is the property that makes Continual
+Backprop orthogonal to `learner_class_for`'s single algorithm-wide slot rather than a competitor
+for it.
+
+`Learner.update` was also read directly: it calls `before_gradient_based_update`, runs the whole
+minibatch/epoch loop, then calls `after_gradient_based_update` **once**. That is what lets a
+replacement event avoid invalidating PPO's `exp(logp_new - logp_old)` ratio mid-update (§25 3.1).
+
+### Outgoing-zeroing injects exactly zero perturbation (§25 1)
+
+`blocks.feedforward(d_model=64, ff_dim=256)`, 256-row batch, replacing 3 units, with the
+replacement split into its two stages:
+
+| units replaced | drop old contribution | add new randomness |
+|---|---|---|
+| 3 lowest-utility | 0.097763 | 0.0000000000 |
+| 3 highest-utility | 0.173780 | 0.0000000000 |
+
+Utility is `mean|hᵢ| · Σⱼ|wᵢⱼ_out|`, the CBP contribution utility. The right-hand column is exactly
+zero in both rows and is the half of the guarantee that is exact: once the outgoing weights are
+zero, fresh random incoming weights are multiplied by zero and reach the output not at all. The
+left-hand column is never zero — removing a unit's contribution changes the function by definition
+— and is bounded only by *selecting* the minimum-utility unit, which on a freshly initialised
+network is a weak bound because the utility spread is only ~2× (0.30 vs 0.67).
+
+This is the measurement that corrected the note's first draft, which claimed the replacement was
+"function-preserving at the instant it happens". It is not; only the new-randomness half is.
+
+**Supports:** §25 1, §25 2.5, §25 3.1, §25 3.4.
+
+---
+
+## 16.14 Continual Backprop, against the papers (2026-09-11)
+
+Measured on the working tree, Python 3.12.3 / Ray 2.56.1 / torch 2.13.0+cpu, while implementing
+[25_continual_backprop.md](25_continual_backprop.md). Two findings shaped the design; the third
+corrected a claim the note's first draft had made.
+
+### The shipped default network is the papers' Continual PPO network (§25 2.2)
+
+arXiv Appendix D specifies, for the reinforcement-learning experiments, "Policy Network: (256,
+tanh, 256, tanh, Linear)", "Value Network (256, tanh, 256, tanh, linear)" and "separate networks
+for policy and value function". Built from this repo's shipped defaults and enumerated:
+
+```
+encoder.actor_encoder.net.mlp.0: Linear 177->256    encoder.critic_encoder.net.mlp.0: Linear 177->256
+encoder.actor_encoder.net.mlp.1: Tanh               encoder.critic_encoder.net.mlp.1: Tanh
+encoder.actor_encoder.net.mlp.2: Linear 256->256    encoder.critic_encoder.net.mlp.2: Linear 256->256
+encoder.actor_encoder.net.mlp.3: Tanh               encoder.critic_encoder.net.mlp.3: Tanh
+pi.net.mlp.0:  Linear 256->26                       vf.net.mlp.0:  Linear 256->1
+```
+
+The structural consequence is the one worth recording: the **second hidden layer's outgoing weights
+are in the head, not the encoder**. A walker confined to `encoder` reports one replaceable layer
+per network where there are two. `find_replaceable_layers` returns 4 on the default configuration
+and 2 under `vf_share_layers: true`, where the trailing layer has two consumers (`pi` at 26 outputs
+and `vf` at 1) rather than one.
+
+RLlib leaves `nn.Linear`'s own initialiser in place, so "resample from `d_l`" is
+`U(-1/sqrt(fan_in), +1/sqrt(fan_in))`: layer 0's weights were measured at max |w| = 0.07516 against
+a bound of 1/sqrt(177) = 0.075165.
+
+### This repo performs ~320x fewer optimiser steps per env step than the papers (§25 3.6)
+
+CBP's accumulator and maturity threshold are both counted in optimiser steps.
+
+| | Adam steps / iteration | env steps / iteration | Adam steps per env step |
+|---|---|---|---|
+| Continual PPO (arXiv App. D: 10 epochs, 4096 batch, 128 minibatch) | 320 | 4,096 | 0.078 |
+| This repo (4 epochs, 16,384 batch, `minibatch_size: null`) | 4 | 16,384 | 0.00024 |
+
+With the Nature paper's PPO values (rate 1e-4, maturity 1e4, 256 units), the maturity threshold
+alone is 2,500 iterations here against a default run of 16 - continual backprop would never fire
+once. Hence `cbp_maturity_threshold: 100` and the `cbp_replacements` metric.
+
+### `if c > 1`, not `while` - and the aliasing bug the tests found
+
+Two corrections that came out of implementation rather than reading:
+
+- The first implementation replaced units in a `while state.accumulator > 1` loop. Nature
+  Algorithm 1 is explicit that it is an `If`, capping replacement at **one unit per layer per
+  optimiser step** however high the rate is set. That cap is what bounds the per-step disturbance,
+  and so is part of why the per-minibatch placement (§25 3.1) is safe. Measured through a real
+  update: no layer's replacement count exceeds the optimiser-step count.
+- `CBPLayerState.get_state` used `.detach().cpu()`, which on a CPU tensor **returns the same
+  object**, so the state dict aliased the live tensors - a checkpoint would have serialised
+  whatever the values had drifted to rather than what they were when taken. `.clone()` on both
+  sides. Found by `test_state_round_trips_through_set_state`, which zeroed the live state and
+  watched its own saved copy go to zero with it.
+
+### End to end
+
+A real one-iteration run with the rate forced high enough to fire (the shipped 1e-4 replaces
+nothing in a test-length run, which is §25 3.6 restated): 4 layers discovered per trainable module,
+the frozen `RandomRLModule` baselines correctly carrying none, units replaced, the correlates
+logged per module, and NAV conservation still exact.
+
+**Supports:** §25 1, §25 2.2, §25 3.1, §25 3.6, §25 4.2.
+
+---
+
+## 16.15 The four boundary bugs (2026-09-12)
+
+Verified against RLlib 2.56.1's source while fixing what a code review of §16.14's implementation
+found. Recorded because each is a claim about RLlib's behaviour rather than about this repo's, and
+because none of them is reachable from this test suite.
+
+### Device: the module is on the GPU before the mixin's setup runs
+
+`TorchLearner.build` in order: sets `self._device` from `get_device(...)`, calls `super().build()`
+(which builds each module and moves it to that device), then calls
+`_make_modules_ddp_if_necessary()`. `CBPLearnerMixin.build` calls `super().build()` first, so by the
+time it attaches, the module is both on its final device **and** already DDP-wrapped. State
+allocated with a bare `torch.zeros(n)` therefore sat on the CPU against CUDA activations.
+
+### DDP: no attribute forwarding, and a name prefix
+
+`TorchDDPRLModule(RLModule, nn.parallel.DistributedDataParallel)` defines no `__getattr__`; the
+wrapped module is a submodule named `module`. So `getattr(wrapper, "encoder", None)` is None, and
+`named_modules()` yields `module.encoder...` rather than `encoder...`. `_make_modules_ddp_if_necessary`
+applies this at `num_learners > 1` (the method's own docstring says `> 0`; the code says `> 1`).
+
+`RLModule.unwrapped()` is defined on the base class and returns `self`, so calling it
+unconditionally costs an undistributed run nothing.
+
+### Restore: the rebuilt config wins
+
+`build_algo` calls `Algorithm.from_checkpoint(path)`, which reconstructs from the config stored in
+the checkpoint. The freshly built `ppo` config is passed only to `_check_restored_config`. Anything
+consumed at Learner-construction or optimiser-construction time is therefore discarded on a restore,
+which is what made `cbp_enabled: true` alongside `is_restore: true` a silent no-op.
+
+`_check_restored_config` also returned early when the fingerprint intersection showed no divergence,
+so a first attempt at the guard never ran for a checkpoint that predated the config groups. The
+unrestorable check now runs before that return and compares against what a pre-feature run did
+rather than against the intersection.
+
+**Supports:** §25 3.5, §25 3.7, §18 5.6.3.
+
+---
+
+## 16.16 The plasticity measurement, and the metric that got it wrong (2026-09-12)
+
+[25](25_continual_backprop.md) §3.3 said the effect continual backprop treats had
+never been shown to occur here, and §7 made measuring it the blocking step. This is
+that measurement. It ran with `cbp_metrics_only: true`, which computes every
+correlate and replaces nothing, so the run's trajectory is identical to one with
+continual backprop switched off entirely.
+
+**The answer is no - and the shipped metric said yes.**
+
+### Setup
+
+The *network* is the shipped default untouched: `(256, tanh, 256, tanh, Linear)` for
+the policy, the same for the value, separate trunks - which §2.2 establishes is the
+papers' own Continual PPO network. The *environment* is scaled down and the *update
+schedule* up, to buy optimiser steps per wall-clock second, optimiser steps being the
+clock plasticity runs on (§3.6): 4 agents, 512-step episodes, 8 epochs over 8
+minibatches = 65 optimiser steps per iteration against the default 4. Seed 11, one
+seed, CPU.
+
+### Result
+
+| | optimiser steps | effective rank |
+|---|---|---|
+| On the **training minibatch** (`cbp_batch_effective_rank`) | 17,875 | 97.1 → 73.2, **−24.6%** (policy_0); 97.1 → 73.7, −24.1% (policy_1) |
+| On a **fixed corpus** of real observations, 8 layers | 19,500 | **+2.5% to −1.9%**; actor layers rise (ρ ≈ 1.0), critic layers fall slightly |
+
+The first is a textbook plasticity collapse. The second says the network's
+representational capacity did not move. Two further readings agree with the second:
+
+- **The training-batch rank is not monotone.** It fell to 68.2 by iteration 178, then
+  recovered to 73.2 by 275 as the league turned over; Spearman ρ weakened from −0.90
+  to −0.71. Capacity loss does not come back.
+- **Dead and saturated units stayed at exactly zero** throughout, on every layer. A
+  network actually losing plasticity does not look like that - arXiv Appendix G
+  reports ~90% of features saturated under plain backprop.
+
+Mean incoming |w| rose monotonically (ρ = 1.00) but by 1.6-2.1%, which is not the
+weight growth the papers associate with the effect.
+
+### What the difference was
+
+The rank of an activation matrix depends on the inputs as much as on the network, and
+here the policy chooses its own inputs. Under S1-3 the reward makes passivity the
+joint optimum, so a converging agent visits an ever narrower set of book states and
+the rank of what it sees falls - with the network unchanged. Holding the observations
+fixed removes that term, and when it is removed nothing is left.
+
+### Consequence for the code
+
+`cbp_effective_rank` as first shipped measured the training minibatch and so carried
+this confound. On this system it produced a 24.6% false positive: a reader following
+[18](18_configuration.md) §5.6.4, reading the correlates, and seeing that number would
+reasonably have switched continual backprop on for no reason. It is renamed
+`cbp_batch_effective_rank` - the name now says what it is measured on - and the
+comparable version lives in `train/probe/rank.py`, where the corpus is collected once
+and does not change while the encoder does.
+
+Two related notes on the other correlates, both of which read zero here:
+
+- `cbp_dead_unit_frac` (mean |h| below 0.01) is ReLU-shaped. A tanh unit does not die
+  toward zero, so this cannot fire on the shipped network whatever happens to it.
+- `cbp_saturated_unit_frac` uses the per-unit *batch mean* |h| > 0.9, i.e. "saturated
+  on essentially every input". The papers define saturation per output (arXiv App. G),
+  so this is the stricter reading and fires later than their Figure 19a would.
+
+### Reproducing it
+
+Seeded throughout, so unlike 16.3-16.6 this one does reproduce. The measuring run is a
+`TrainConfig` with `cbp_metrics_only=True`, `cbp_metrics_every_n_updates=1`, `num_agents=4`,
+`num_trained_agents=2`, `max_step=512`, `num_episodes_per_iter=2`, `num_epochs=8`,
+`minibatch_size=128`, `seed=11`, `episode_data_dir=None`, and the `ppo` group's network left
+alone; the per-iteration `cbp_*` metrics come straight out of `result["learners"][<module>]`.
+
+The fixed-corpus column is the same loop with one addition: a batch of 512 real observations
+collected once before training, under uniformly random actions, and pushed through the module
+every fifth iteration with temporary forward hooks on the layers `find_replaceable_layers` returns.
+Do **not** draw that batch from `observation_space.sample()` - the space is `Box(-inf, inf)`, so
+gymnasium returns a standard normal out to +/-3.2 while real observations sit near [0, 1], and the
+measurement would be of a representation nobody uses. `train/probe/rank.py` now does this properly
+against the harness's own corpus, and is what a re-run should use.
+
+### What this does not establish
+
+~20,000 optimiser steps against the papers' 10⁶-10⁸, on a scaled-down environment, one
+seed. A null here does not rule out loss of plasticity at the scale the project
+actually needs ([25](25_continual_backprop.md) §2.3), and it says nothing about whether
+continual backprop would help if the effect did appear. What it does establish is that
+the effect is not detectable at this scale, and that the metric which said otherwise
+was measuring the agent's behaviour rather than its network.
+
+**Supports:** §25 3.3, §25 3.8, §23, §11, §18 5.6.4.

@@ -17,6 +17,7 @@ from gym_continuousDoubleAuction.logging_setup import get_logger
 from gym_continuousDoubleAuction.train.model.encoders import selectable_encoder_types
 from gym_continuousDoubleAuction.train.probe import corpus as corpus_module
 from gym_continuousDoubleAuction.train.probe import features as features_module
+from gym_continuousDoubleAuction.train.probe import rank as rank_module
 from gym_continuousDoubleAuction.train.probe import report as report_module
 from gym_continuousDoubleAuction.train.probe import targets as targets_module
 
@@ -163,12 +164,15 @@ def main(argv=None):
         args.pretrained, args.pretrained_encoder,
     )
     rows = report_module.run(corpus, features, args.targets, args.horizons)
+    ranks = rank_module.rank_table(features)
     text = "\n".join([
         f"Corpus: {corpus.describe()}",
         f"Source: {args.parquet or 'random-agent rollouts'}"
         + (" (per-agent rows)" if args.parquet and args.per_agent else ""),
         "",
         report_module.render(rows, list(features)),
+        "",
+        rank_module.render(ranks, list(features)),
     ])
 
     # Through the logger, not `print`: everything under `train/` reports that

@@ -20,6 +20,7 @@ import pytest
 from gym_continuousDoubleAuction.train.model.encoders.obs_layout import ObsLayout
 from gym_continuousDoubleAuction.train.probe import corpus as corpus_module
 from gym_continuousDoubleAuction.train.probe import probe as probe_module
+from gym_continuousDoubleAuction.train.probe import rank as rank_module
 from gym_continuousDoubleAuction.train.probe import report as report_module
 from gym_continuousDoubleAuction.train.probe import targets as targets_module
 from gym_continuousDoubleAuction.train.probe.corpus import ProbeCorpus
@@ -584,3 +585,87 @@ class TestParquetCorpus:
         )
         with pytest.raises(ValueError, match="No usable observation"):
             corpus_module.from_parquet(str(file))
+
+
+class TestEffectiveRank:
+    """The plasticity correlate, measured where the inputs hold still.
+
+    The reason this lives in the probe harness rather than on the Learner is a
+    measured one, not a stylistic one: on the training minibatch the same
+    quantity fell 24.6% over ~18,000 optimiser steps while the network's
+    capacity on a fixed corpus did not move (doc/16 §16.16). The corpus is what
+    makes it a statement about the encoder.
+    """
+
+    def test_a_rank_one_matrix_has_rank_one(self):
+        column = np.random.default_rng(0).standard_normal((64, 1))
+        outer = column @ np.random.default_rng(1).standard_normal((1, 16))
+        assert rank_module.effective_rank(outer) == 1
+
+    def test_a_collapsed_representation_scores_below_a_full_one(self):
+        rng = np.random.default_rng(0)
+        full = rng.standard_normal((512, 32))
+        collapsed = rng.standard_normal((512, 4)) @ rng.standard_normal((4, 32))
+        assert rank_module.effective_rank(collapsed) < rank_module.effective_rank(full)
+
+    def test_degenerate_inputs_report_no_directions(self):
+        """Zero, not one: an empty or all-zero matrix has no directions at all."""
+        assert rank_module.effective_rank(np.zeros((32, 8))) == 0
+        assert rank_module.effective_rank(np.empty((0, 8))) == 0
+        assert rank_module.effective_rank(np.ones((1, 8))) == 0
+
+    def test_it_agrees_with_the_torch_definition(self):
+        """Two array libraries, one definition - the docstrings promise this.
+
+        `cbp.effective_rank` is torch because the Learner works in torch and
+        must not import this package; this one is numpy because the harness
+        works in numpy. Nothing but a test keeps them the same measurement.
+        """
+        import torch
+
+        from gym_continuousDoubleAuction.train.model import cbp as cbp_module
+
+        rng = np.random.default_rng(7)
+        for matrix in (
+            rng.standard_normal((256, 32)),
+            rng.standard_normal((256, 4)) @ rng.standard_normal((4, 32)),
+            rng.standard_normal((64, 64)),
+        ):
+            assert (rank_module.effective_rank(matrix)
+                    == cbp_module.effective_rank(torch.tensor(matrix)))
+
+    def test_the_table_reports_width_and_usage(self):
+        rng = np.random.default_rng(0)
+        table = rank_module.rank_table({
+            "raw": rng.standard_normal((256, 16)),
+            "collapsed": rng.standard_normal((256, 2)) @ rng.standard_normal((2, 64)),
+        })
+        assert table["raw"].width == 16
+        assert table["raw"].fraction == pytest.approx(table["raw"].rank / 16)
+        assert table["collapsed"].rank < table["collapsed"].width
+
+    def test_a_short_corpus_is_flagged_rather_than_reported_straight(self):
+        """Rank is bounded by min(rows, width).
+
+        A corpus shorter than the latent is wide caps every feature set at the
+        same number, so the comparison quietly becomes one about the corpus.
+        The flag is what stops that being read as a finding about the encoder.
+        """
+        rng = np.random.default_rng(0)
+        table = rank_module.rank_table({
+            "wide": rng.standard_normal((16, 256)),
+            "fine": rng.standard_normal((1024, 16)),
+        })
+        assert table["wide"].row_limited
+        assert not table["fine"].row_limited
+        assert "* bounded by the corpus" in rank_module.render(
+            table, ["wide", "fine"]
+        )
+
+    def test_the_rendering_names_the_confounded_metric(self):
+        """A reader of this table is exactly who needs warning off the other one."""
+        table = rank_module.rank_table(
+            {"raw": np.random.default_rng(0).standard_normal((256, 16))}
+        )
+        text = rank_module.render(table, ["raw"])
+        assert "cbp_batch_effective_rank" in text

@@ -751,6 +751,97 @@ test found a live bug while being written: the path resolver fell back to loadin
 *root* as a module, so a mistyped `--module-id` surfaced as a missing-file error about an internal
 pickle instead of naming the modules that were there.
 
+### 6.5.1 `test_probe.py::TestEffectiveRank` — 7 tests
+
+The rank measurement the probe harness gained after the Learner's own turned out to be
+confounded ([25](25_continual_backprop.md) §3.8). Rank-one and collapsed matrices score as
+expected; degenerate inputs report **0** rather than 1, since an empty or all-zero matrix has no
+directions at all; a corpus too short for the feature width is flagged rather than reported
+straight, because rank is bounded by `min(rows, width)` and a short corpus caps every set at the
+same number.
+
+`test_it_agrees_with_the_torch_definition` is the load-bearing one. There are two
+implementations of effective rank — torch in `cbp.py`, because the Learner works in torch and
+`cbp.py` must not import RLlib or the probe package; numpy in `probe/rank.py`, because the
+harness works in numpy. Nothing but that test keeps them the same measurement, and both
+docstrings promise it does.
+
+---
+
+### 6.6 Continual Backprop
+
+Two files, and the split is the same one `cbp.py` makes: the algorithm is testable without RLlib,
+the wiring is not. See [25_continual_backprop.md](25_continual_backprop.md).
+
+### 6.6.1 `test_cbp.py` — 48 tests
+
+No Ray, no `Algorithm`. The formulas are checked against hand-computed values rather than against
+the implementation.
+
+| Group | Pins |
+|---|---|
+| Layer discovery | The default network yields **four** replaceable layers, not two — the last hidden layer's outgoing weights are in the `pi`/`vf` head, and a walker confined to the encoder silently finds half of them. A shared trunk yields one layer with two consumers. A frozen layer yields none |
+| Config | Every unknown setting raises by name; `metrics_only` is active but never replaces |
+| Utility | Each of the three measures against its paper equation; the outgoing sum spans every consumer; bias correction leaves age 0 alone |
+| Replacement | Outgoing zeroed, incoming resampled inside the init distribution's bound, bookkeeping and Adam moments reset |
+| Accumulator | A rate too small to replace anything still accumulates; **at most one replacement per step**; immature units are never selected |
+| Determinism | The same generator gives the same weights, and replacement does not disturb the global RNG stream |
+| Device placement | State is allocated on the layer's device and the RNG on the learner's — asserted as a property, since a CPU-only box cannot execute the GPU path |
+| DDP unwrapping | A stub with `TorchDDPRLModule`'s two relevant behaviours yields the same layers, under the same names |
+
+**`test_frozen_layers_are_skipped` is the load-bearing one.** Discovery finds the `jepa` encoder's
+EMA `target_trunk`, because it is structurally identical to the trunk it mirrors. Replacing a unit
+there would break the EMA relationship the whole objective rests on, and — since nothing updates
+that trunk by gradient descent — nothing would ever undo it. `requires_grad` is what separates
+them.
+
+`test_the_last_hidden_layer_consumes_into_the_head` is the other: it asserts the policy head's 26
+outputs and the value head's 1, so a regression that stopped at the encoder boundary fails loudly
+rather than quietly halving the mechanism.
+
+### 6.6.2 `integration/test_cbp_wiring.py` — 38 tests
+
+The claims that need a real `Algorithm`, modelled on `TestMoEAuxLossReachesTheOptimiser` and
+`TestOtherEncodersAreUnaffectedByJEPA`.
+
+| Class | Covers |
+|---|---|
+| `TestCompositionPreservesTheEncodersLearner` | CBP subclasses the encoder's Learner rather than competing for RLlib's single slot, so `compute_loss_for_module` — and with it the MoE and JEPA terms — still resolves to the base |
+| `TestTunedAdamIsIndependentOfCBP` | The optimiser knobs compose without CBP and vice versa. Bundling them would make every CBP-vs-baseline comparison a comparison of both |
+| `TestTunedAdamReachesTheOptimiser` | The configured betas and weight decay land on the built optimiser |
+| `TestCBPRunsInsideARealUpdate` | Four layers per trainable module and none for the frozen baselines; units actually replaced; the one-per-step cap holds against the optimiser-step count; metrics logged; training still produces a finite loss |
+| `TestMetricsOnlyChangesNothing` | An absurd replacement rate replaces nothing, while the correlates are still logged and the utility still accumulates |
+| `TestCBPStateSurvivesACheckpoint` | Utility and ages round-trip; a checkpoint **without** the CBP block still restores; a block missing one layer leaves that layer alone |
+| `TestCBPSurvivesARealSaveAndRestore` | A real `save_to_path` and `build_algo(is_restore=True)`, which `get_state`/`set_state` cannot show because they never leave the process — and where champions are present from `build()` |
+| `TestRestoreCannotChangeCBP` | Enabling continual backprop or retuning Adam alongside `is_restore` raises, including on a checkpoint predating the groups; a tuning knob edited while the mechanism is off does not |
+
+Two things these tests have to do deliberately. They **force the replacement rate up**: at the
+shipped `1e-4` nothing fires in a test-length run, so every assertion about replacement would pass
+vacuously — which is [25](25_continual_backprop.md) §3.6 restated as a testing problem. And
+`test_units_were_actually_replaced` exists precisely so that a mechanism silently doing nothing
+cannot pass the rest of the class.
+
+`test_state_round_trips_through_set_state` found a real bug rather than confirming one: `get_state`
+used `.detach().cpu()`, which returns *the same object* for a tensor already on the CPU, so the
+state dict aliased the live tensors and a checkpoint would have recorded whatever they later
+drifted to.
+
+**On what this suite cannot reach.** A code review found four bugs after these tests were passing,
+and none was in the algorithm: all four were at boundaries the suite does not cross — GPU, DDP, and
+a restore with a changed config. The suite runs CPU-only at `num_learners: 0` and only ever
+restores an unchanged config, which is precisely the envelope the bugs lived outside. The device
+and DDP tests added afterwards assert the *property* (state allocated from the weight's device, a
+wrapper unwrapped before discovery) rather than executing it, because a CPU-only box cannot do the
+latter. That is weaker than the real thing and is the honest limit here; see
+[25 §3.7](25_continual_backprop.md).
+
+`test_champions_in_the_restored_league_are_not_attached` found a worse one, and only the *real*
+restore could have. Continual backprop was attaching to league champions — frozen snapshots that
+share the `MultiRLModule` with the trainable policies — so a replacement would have silently
+mutated an opponent that is supposed to be constant. A fresh run cannot catch it, because the
+league is empty when the learner is built. The test asserts a champion is present first, so it
+fails loudly rather than passing vacuously if the league ever comes back empty.
+
 ---
 
 ## 7. Continuous integration

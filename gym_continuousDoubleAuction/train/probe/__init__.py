@@ -41,6 +41,8 @@ Layout
             masking that keeps a return from being read across a reset
   features  raw observations, and frozen latents from a built or restored module
   probe     the ridge readout, its splits and its metrics
+  rank      effective rank of a feature set, the one plasticity correlate that
+            only means something on a corpus that holds still
   report    the (feature set x target) matrix and its rendering
 
 Run it
@@ -68,6 +70,11 @@ from gym_continuousDoubleAuction.train.probe.features import (  # noqa: F401
     latents,
     load_module,
     raw,
+)
+from gym_continuousDoubleAuction.train.probe.rank import (  # noqa: F401
+    RankRow,
+    effective_rank,
+    rank_table,
 )
 from gym_continuousDoubleAuction.train.probe.probe import (  # noqa: F401
     ProbeResult,

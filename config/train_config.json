@@ -50,6 +50,36 @@
     "vf_share_layers": false,
     "minibatch_size": null
   },
+  "optimizer": {
+    "_source": "gym_continuousDoubleAuction/train/model/cbp_learner.py (configure_optimizers_for_module)",
+    "_note": "Adam settings RLlib would otherwise leave at torch's defaults. Both continual-backprop papers run every algorithm except the standard-PPO baseline with beta_1 = beta_2 = 0.99, on the grounds that the usual (0.9, 0.999) mismatch is itself a cause of plasticity loss: the squared-gradient estimate in the denominator updates far more slowly than the gradient estimate in the numerator, so a single large gradient produces one very large, destabilising update. The Nature paper also applies continual backprop together with L2 (weight decay 1e-4) in every reinforcement-learning experiment, and reports that CBP alone is sensitive to the replacement rate while the pair is not. The defaults below are torch's, so a run that changes neither gets exactly the optimiser RLlib has always built, and every existing checkpoint is unaffected. Deliberately a separate group from continual_backprop: enabling CBP and retuning Adam at the same time would measure the two together, and the papers treat them as independent interventions that happen to be used together.",
+    "adam_betas": [
+      0.9,
+      0.999
+    ],
+    "adam_weight_decay": 0.0
+  },
+  "continual_backprop": {
+    "_source": "gym_continuousDoubleAuction/train/model/cbp.py",
+    "_note": "Continual Backprop (Dohare, Hernandez-Garcia, Lan, Rahman, Mahmood & Sutton, Nature 2024; Dohare, Sutton & Mahmood, arXiv 2108.06325). Backprop plus a generate-and-test process that continually reinitialises the lowest-utility hidden units: incoming weights resampled from the layer's initial distribution, outgoing weights set to zero so the fresh unit reaches the output not at all. It is an update rule, not an architecture, so it composes over whichever Learner the encoder selected rather than occupying the encoder registry's single learner slot - see doc/25 section 2.5. Off by default, and when off the resolved learner class is identical to the one a run would have had before this group existed.",
+    "_note_restore": "Every key here is an UNRESTORABLE_CONFIG_KEY: changing one in the same pass as is_restore is a hard error. Not for the reason encoder_spec is - no tensor shape depends on these, and the weights would restore perfectly well - but because they are consumed when the Learner class is chosen and the optimiser is built, both of which happen before a restore, after which Algorithm.from_checkpoint rebuilds from the checkpoint's own config and discards them. Turning continual backprop on alongside a resume therefore did nothing at all, and looked identical to a run that honoured it. Changing any of these means a fresh run, not a resume. The per-unit utility and ages ARE checkpoint state and are restored with the learner; a checkpoint written before this group existed restores cleanly and starts every unit at age 0.",
+    "_note_cadence": "cbp_replacement_rate and cbp_maturity_threshold are both counted in OPTIMISER STEPS - not environment steps, and not training iterations. This repo takes 4 Adam steps per iteration at its defaults (num_epochs 4 over one full batch, minibatch_size null) against the 320 of the papers' Continual PPO (10 epochs x 32 minibatches), so the papers' own PPO values cannot be transplanted: their maturity threshold of 1e4 would be 2,500 iterations here, against a default run of 16, and no unit would ever become mature. cbp_maturity_threshold is therefore the arXiv CBP default of 100 rather than the Nature PPO value. Watch cbp_replacements and cbp_mature_unit_frac: a continual backprop that never fires looks exactly like one that is working, and at low replacement rates over a short run not firing is the expected outcome.",
+    "_note_metrics_only": "cbp_metrics_only computes the utility and logs the three correlates of loss of plasticity - dead units, weight magnitude, effective rank - without replacing anything, so it cannot change a run's trajectory. That is the measurement doc/25 recommends taking first: whether this system loses plasticity at all is currently unknown, and the mechanism is only worth enabling once it is known.",
+    "_note_scope": "cbp_scope selects which units are replaceable. 'feedforward' means the hidden units of a two-Linear feed-forward block, plus the trunk's final hidden layer whose outgoing weights live in the pi/vf head rather than the encoder. Attention projections and embeddings are excluded: a unit there has no single well-defined outgoing weight matrix, and zeroing the outgoing weights is the whole reason a replacement does not disturb the function. Layers no optimiser trains are also skipped, which is what keeps it off the jepa encoder's EMA target trunk.",
+    "_note_utility": "cbp_utility selects the measure ranked against. 'contribution' is Nature equation 1, |h| * sum|w_out|. 'mean_corrected' subtracts the running mean activation, because gradient descent transfers the mean part of a removed unit's contribution to the consumer's bias anyway. 'overall' additionally divides by sum|w_in|, the adaptation utility: under Adam a unit with small incoming weights can change its function faster, so it is worth more than its contribution alone suggests. arXiv Appendix C ablates all three and finds 'overall' best, including on the reinforcement-learning task, which is why it is the default here.",
+    "_note_fire_on": "cbp_fire_on selects when generate-and-test runs. 'adam_step' is after every optimiser step, which is what arXiv Algorithm 3 (Continual PPO) specifies. 'iteration' runs it once per training iteration instead, which cannot move the network underneath a log-prob recorded before it and so leaves PPO's exp(logp_new - logp_old) ratio undisturbed between minibatches. The papers use the per-step placement over 100M steps, so it is the default, but the conservative one is kept available.",
+    "cbp_enabled": false,
+    "cbp_metrics_only": false,
+    "cbp_replacement_rate": 0.0001,
+    "cbp_maturity_threshold": 100,
+    "cbp_utility_decay": 0.99,
+    "cbp_utility": "overall",
+    "cbp_scope": "feedforward",
+    "cbp_fire_on": "adam_step",
+    "cbp_reset_optimizer_state": true,
+    "cbp_dead_unit_threshold": 0.01,
+    "cbp_metrics_every_n_updates": 10
+  },
   "encoder": {
     "_source": "gym_continuousDoubleAuction/train/model/encoders/ (ENCODER_REGISTRY)",
     "_note": "Selects the network the *trainable* PPO modules encode observations with. The frozen RandomRLModule baselines have no network and ignore this entirely. `mlp` is the default and is a pass-through: it resolves to the stock RLlib DefaultModelConfig built from the `ppo` group's fcnet_hiddens / fcnet_activation / vf_share_layers, touching none of the custom encoder machinery, so a default run and every checkpoint written by one are unaffected by this group existing. Any other value routes the trainable modules through CDACatalog and a custom encoder. An unregistered name raises at config-build time, naming the ones that are registered.",
