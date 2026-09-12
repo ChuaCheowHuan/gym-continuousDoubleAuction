@@ -725,7 +725,8 @@ def effective_rank(activations: torch.Tensor, threshold: float = 0.99) -> float:
     `train/probe/rank.py` is the version that holds the inputs still.
 
     `train.probe.rank.effective_rank` is the same definition in numpy;
-    `test_probe_rank` pins that the two agree.
+    `test_probe.py::TestEffectiveRank.test_it_agrees_with_the_torch_definition`
+    pins that the two agree.
     """
     matrix = activations.detach()
     if matrix.dim() > 2:

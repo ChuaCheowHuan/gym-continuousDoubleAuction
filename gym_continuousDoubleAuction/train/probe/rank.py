@@ -70,8 +70,10 @@ def effective_rank(matrix: np.ndarray, threshold: float = DEFAULT_THRESHOLD) -> 
     """Smallest number of singular values carrying `threshold` of the total.
 
     The same definition `cbp.effective_rank` implements in torch, on numpy
-    here because that is what this harness works in. `test_probe_rank` pins
-    that the two agree on identical data - two array libraries, one definition.
+    here because that is what this harness works in. Two array libraries, one
+    definition, and nothing but
+    `test_probe.py::TestEffectiveRank.test_it_agrees_with_the_torch_definition`
+    keeping them the same measurement.
 
     Returns 0 for an empty matrix and for one whose singular values are all
     zero, both of which mean "no directions at all" rather than "one".
