@@ -974,10 +974,24 @@ optimiser is bit-for-bit the one every existing run and checkpoint was built wit
 `train_config.json` into a single namespace and raises on a duplicate.** Bare names like `enabled`
 or `utility` would be a collision waiting for the next group anyone adds.
 
-**None of these is a `STRUCTURAL_CONFIG_KEY.** Nothing here changes a tensor shape, so unlike
-`encoder_spec` a restore may legitimately turn continual backprop on, off, or up. The per-unit
-utility and ages *are* checkpoint state and travel with the learner; a checkpoint written before
-this group existed restores cleanly, with every unit starting at age 0.
+**Changing any of these alongside `is_restore` is a hard error.** Not for the reason
+`encoder_spec` is — no tensor shape depends on them and the weights would restore perfectly well —
+but because they are consumed when the Learner class is chosen and the optimiser is built, both of
+which happen *before* a restore. `Algorithm.from_checkpoint` then rebuilds from the checkpoint's own
+config and discards them, so turning continual backprop on alongside a resume did nothing at all
+and looked exactly like a run that honoured it. They are `UNRESTORABLE_CONFIG_KEYS` rather than
+`STRUCTURAL_CONFIG_KEYS`, and the error message says so, because a reader who concluded the
+checkpoint was unusable would throw away a good one.
+
+Two softenings. A tuning knob edited while continual backprop is off on both sides is allowed —
+it describes something that was not going to happen either way, and a guard that fails on nothing
+is a guard people switch off. And a checkpoint written before these groups existed is compared
+against what such a run actually *did* (continual backprop off, torch's own Adam) rather than
+being skipped, which matters because at the time of writing every checkpoint in existence predates
+the feature.
+
+The per-unit utility and ages *are* checkpoint state and travel with the learner; a pre-feature
+checkpoint restores cleanly, with every unit starting at age 0.
 
 ### 5.6.4 The one thing to check before believing a result
 

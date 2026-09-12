@@ -124,13 +124,33 @@ class CBPLearnerMixin:
         # A dedicated stream, so a replacement drawing random numbers does not
         # shift the global one and make an otherwise seeded run diverge. Same
         # discipline as the `torch.random.fork_rng` fix in changelog 38.2.
+        #
+        # On the learner's own device, not the default one. `_reinitialise`
+        # fills `torch.empty_like(weight[index])`, which lives wherever the
+        # parameter does, and `uniform_` refuses a generator from a different
+        # device type. A CPU generator on a CUDA run therefore raises - but not
+        # until the accumulator first crosses 1.0, which at the shipped
+        # replacement rate is some tens of optimiser steps in. A crash that
+        # waits until the mechanism first does something is exactly the kind
+        # this suite cannot catch, since it runs CPU-only.
         seed = getattr(self.config, "seed", None)
-        self._cbp_generator = torch.Generator()
+        self._cbp_generator = torch.Generator(device=self._cbp_device())
         if seed is not None:
             self._cbp_generator.manual_seed(int(seed))
 
         for module_id in self.module.keys():
             self._cbp_attach(module_id)
+
+    def _cbp_device(self) -> torch.device:
+        """The device the learner put its modules on.
+
+        `TorchLearner.build` sets `self._device` and moves every module to it
+        *before* the mixin's own setup runs, so this is authoritative by the
+        time anything here needs it. Guarded anyway: the attribute is a
+        `TorchLearner` implementation detail, and defaulting to CPU matches what
+        a learner without one would be doing.
+        """
+        return getattr(self, "_device", None) or torch.device("cpu")
 
     def _cbp_attach(self, module_id) -> None:
         """Discover a module's replaceable layers and hook their activations.
@@ -164,8 +184,16 @@ class CBPLearnerMixin:
             return
 
         self._cbp_layers[module_id] = layers
+        # On the layer's own device rather than the default one. The module has
+        # already been moved to the learner's device by `super().build()`, so a
+        # state tensor left on the CPU would meet a CUDA `h` in
+        # `activation_stats`'s `h - f_hat` on the very first forward pass and
+        # raise. Read off the weight rather than from `_cbp_device` so the two
+        # cannot drift apart.
         self._cbp_state[module_id] = {
-            layer.name: CBPLayerState.zeros(layer.num_units)
+            layer.name: CBPLayerState.zeros(
+                layer.num_units, device=layer.incoming.weight.device
+            )
             for layer in layers
         }
         for layer in layers:

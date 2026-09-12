@@ -1037,6 +1037,73 @@ STRUCTURAL_CONFIG_KEYS = (
     "encoder_spec",
 )
 
+#: Keys a restore cannot honour at all, for a different reason than the
+#: structural ones: not that the weights would not fit, but that the value is
+#: consumed when the Learner *class* is chosen and the optimiser is *built*,
+#: both of which happen before a restore and are then overwritten by the
+#: checkpoint's own config.
+#:
+#: `Algorithm.from_checkpoint` rebuilds from the config stored in the
+#: checkpoint, so the `learner_class` and `learner_config_dict` assembled for
+#: this run are used only for the comparison below and never take effect.
+#: Editing any of these alongside `is_restore` therefore did exactly nothing,
+#: and - because `_config_fingerprint` did not carry them - said nothing either.
+#: A hard error rather than a warning: "I turned continual backprop on and it
+#: made no difference" is a conclusion someone could carry a long way before
+#: discovering it never ran.
+#:
+#: They are NOT structural. No tensor shape depends on them, and the per-unit
+#: utility and ages restore cleanly. Changing one means a fresh run, not a
+#: resume - the same rule as the encoder group, arrived at by a different route.
+UNRESTORABLE_CONFIG_KEYS = (
+    "cbp_enabled",
+    "cbp_metrics_only",
+    "adam_betas",
+    "adam_weight_decay",
+)
+
+#: The rest of the continual-backprop group. Unrestorable for the same reason,
+#: but only *material* when continual backprop is running on one side or the
+#: other - a replacement rate edited while the mechanism is off in both the
+#: checkpoint and the config changes nothing that was going to happen anyway,
+#: and failing a resume over it would be noise.
+UNRESTORABLE_WHEN_ACTIVE_KEYS = (
+    "cbp_replacement_rate",
+    "cbp_maturity_threshold",
+    "cbp_utility_decay",
+    "cbp_utility",
+    "cbp_scope",
+    "cbp_fire_on",
+    "cbp_reset_optimizer_state",
+    "cbp_dead_unit_threshold",
+    "cbp_metrics_every_n_updates",
+)
+
+#: What a run that carried none of the above actually did, which is what every
+#: checkpoint written before these groups existed did.
+#:
+#: Deliberately literals rather than a read of `config/train_config.json`: this
+#: is a statement about the behaviour of a *past* run, and reading the current
+#: file would make it a statement about the present one - so editing a default
+#: would silently change what an old checkpoint is judged to have done. The
+#: values are "continual backprop off" and "torch's own Adam", which is what the
+#: code did before `cbp_learner` existed.
+PRE_FEATURE_BEHAVIOUR = {
+    "cbp_enabled": False,
+    "cbp_metrics_only": False,
+    "cbp_replacement_rate": 1e-4,
+    "cbp_maturity_threshold": 100,
+    "cbp_utility_decay": 0.99,
+    "cbp_utility": "overall",
+    "cbp_scope": "feedforward",
+    "cbp_fire_on": "adam_step",
+    "cbp_reset_optimizer_state": True,
+    "cbp_dead_unit_threshold": 0.01,
+    "cbp_metrics_every_n_updates": 10,
+    "adam_betas": (0.9, 0.999),
+    "adam_weight_decay": 0.0,
+}
+
 
 def _config_fingerprint(config) -> dict:
     """The comparable subset of an AlgorithmConfig, flattened to scalars."""
@@ -1071,6 +1138,22 @@ def _config_fingerprint(config) -> dict:
 
     for key, value in (getattr(config, "env_config", None) or {}).items():
         fingerprint[f"env_config.{key}"] = value
+
+    # The continual-backprop and optimiser groups ride on `learner_config_dict`
+    # rather than being AlgorithmConfig attributes, so they have to be flattened
+    # in by hand. Without this they were invisible to the comparison entirely:
+    # `_check_restored_config` only reports keys present in BOTH fingerprints,
+    # so a restore that turned continual backprop on was neither applied nor
+    # mentioned. See UNRESTORABLE_CONFIG_KEYS.
+    for group, values in (getattr(config, "learner_config_dict", None) or {}).items():
+        if isinstance(values, dict):
+            for key, value in values.items():
+                # Lists are not comparable across a JSON round trip in the way
+                # the `!=` here needs; `adam_betas` is the only one and a tuple
+                # compares cleanly against a list once both are normalised.
+                fingerprint[key] = (
+                    tuple(value) if isinstance(value, list) else value
+                )
 
     fingerprint.update(_encoder_fingerprint(config))
 
@@ -1121,35 +1204,86 @@ def _model_config_get(model_config, key, default):
 
 
 def _check_restored_config(restored, desired) -> None:
-    """Report config keys the restore is about to ignore; raise on structural ones.
+    """Report config keys the restore is about to ignore; raise on the ones that
+    cannot be ignored safely.
+
+    Three categories, in the order they are checked:
+
+    * **Structural** - the restored weights would not fit. Raises.
+    * **Unrestorable** - the weights fit perfectly, but the value is consumed
+      before a restore happens and is then discarded, so the setting would
+      silently not apply. Raises, with a different message.
+    * Everything else - reported as a warning, since the checkpoint's value
+      simply stays in effect and that is usually what was wanted.
 
     Raises:
-        ValueError: a structural key differs, so the checkpoint's weights do not
-            fit the requested configuration.
+        ValueError: a structural or an unrestorable key differs.
     """
     old = _config_fingerprint(restored)
     new = _config_fingerprint(desired)
+
+    def fail(kind, keys, explanation):
+        detail = "\n".join(
+            f"  {key}: checkpoint has {before!r}, config asks for {after!r}"
+            for key, (before, after) in sorted(keys.items())
+        )
+        raise ValueError(f"Cannot restore: {kind}\n{detail}\n{explanation}")
 
     diverged = {
         key: (old[key], new[key])
         for key in set(old) & set(new)
         if old[key] != new[key]
     }
-    if not diverged:
-        return
 
     structural = {k: v for k, v in diverged.items() if k in STRUCTURAL_CONFIG_KEYS}
     if structural:
-        detail = "\n".join(
-            f"  {key}: checkpoint has {was!r}, config asks for {wants!r}"
-            for key, (was, wants) in sorted(structural.items())
+        fail(
+            "the configuration changes the shape of the problem the checkpoint "
+            "was trained on.",
+            structural,
+            "The restored weights do not fit. Either revert these keys, or "
+            "start a fresh run (is_restore false, or a new log_base_dir).",
         )
-        raise ValueError(
-            "Cannot restore: the configuration changes the shape of the problem "
-            f"the checkpoint was trained on.\n{detail}\n"
-            "The restored weights do not fit. Either revert these keys, or start "
-            "a fresh run (is_restore false, or a new log_base_dir)."
+
+    # Compared against what the checkpoint's run actually DID, rather than
+    # against the intersection of the two fingerprints, and *before* the
+    # no-divergence early return below. Every checkpoint written before these
+    # groups existed carries none of these keys, so an intersection-only
+    # comparison would skip them entirely - on exactly the checkpoints most
+    # likely to be resumed, since at the time of writing every checkpoint in
+    # existence predates the feature. A missing key means that run behaved as
+    # PRE_FEATURE_BEHAVIOUR describes.
+    def checkpoint_value(key):
+        return old.get(key, PRE_FEATURE_BEHAVIOUR[key])
+
+    checked = list(UNRESTORABLE_CONFIG_KEYS)
+    # The tuning knobs only count when the mechanism is actually running on one
+    # side or the other; otherwise they describe something that was not going to
+    # happen either way, and failing a resume over one would be pure noise.
+    if any(checkpoint_value(k) or new.get(k)
+           for k in ("cbp_enabled", "cbp_metrics_only")):
+        checked += list(UNRESTORABLE_WHEN_ACTIVE_KEYS)
+
+    unrestorable = {
+        key: (checkpoint_value(key), new[key])
+        for key in checked
+        if key in new and new[key] != checkpoint_value(key)
+    }
+    if unrestorable:
+        fail(
+            "these keys are read when the Learner class is chosen and the "
+            "optimiser is built, both of which happen before a restore - and "
+            "`Algorithm.from_checkpoint` then rebuilds from the checkpoint's "
+            "own config, discarding them.",
+            unrestorable,
+            "The weights would restore fine; the settings simply would not "
+            "apply, and a run that silently ignored them would look exactly "
+            "like one that honoured them. Either revert these keys, or start a "
+            "fresh run (is_restore false, or a new log_base_dir).",
         )
+
+    if not diverged:
+        return
 
     detail = "\n".join(
         f"  {key}: {was!r} (checkpoint, in effect) != {wants!r} (config, ignored)"

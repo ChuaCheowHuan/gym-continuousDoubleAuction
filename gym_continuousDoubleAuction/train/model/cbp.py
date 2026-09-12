@@ -353,11 +353,28 @@ def find_replaceable_layers(
 
     Ordered by `named_modules` traversal so the result is deterministic, which
     is what lets the state be keyed by layer name across a checkpoint.
+
+    **Unwrapped first**, which is load-bearing in two ways at `num_learners > 1`.
+    RLlib wraps each module in a `TorchDDPRLModule` at the end of
+    `TorchLearner.build`, i.e. before anything here runs. That class subclasses
+    `DistributedDataParallel`, keeps the real module as a submodule named
+    `module`, and defines no attribute forwarding - so `_trunk_head_layers`
+    would find no `encoder`, no `pi` and no `vf`, silently return nothing, and
+    leave the default network with 2 replaceable layers instead of 4. It would
+    also prefix every name from `named_modules` with `module.`, so the state
+    keys of a distributed run would not match those of a single-learner one and
+    a checkpoint could not move between them. `unwrapped()` is defined on the
+    base `RLModule` and returns `self`, so this costs an undistributed run
+    nothing.
     """
     if scope not in SCOPES:
         raise ValueError(
             f"Unknown scope {scope!r}. Available: {', '.join(SCOPES)}."
         )
+
+    unwrapped = getattr(module, "unwrapped", None)
+    if callable(unwrapped):
+        module = unwrapped()
 
     layers: List[ReplaceableLayer] = []
     for name, sub in module.named_modules():

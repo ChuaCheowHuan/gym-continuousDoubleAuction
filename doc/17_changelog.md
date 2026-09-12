@@ -2527,3 +2527,76 @@ restore, where the champions come back with the checkpoint and are present from 
 is `should_module_be_updated` - the same rule, one level up, that keeps replacement off the `jepa`
 encoder's EMA target trunk: continual backprop replaces units gradient descent maintains, and
 nothing else.
+
+---
+
+## 41. Four bugs a code review found in section 40
+
+All four were at boundaries the test suite does not cross. None was in the algorithm: the utility
+formulas, the accumulator, the one-replacement-per-step cap and the optimiser resets were correct
+against the papers and covered. The suite runs **CPU-only, at `num_learners: 0`, and only ever
+restores an unchanged config** - which is exactly the envelope the bugs lived outside of.
+
+### 41.1 Two that would have crashed every GPU run
+
+`CBPLayerState.zeros(layer.num_units)` omitted the device. `TorchLearner.build` sets `self._device`
+and moves the module to CUDA *before* the mixin's setup runs, so the state sat on the CPU while the
+activations arrived on the GPU, and `activation_stats`'s `h - f_hat` raised on the first forward
+pass. The shipped `gpu` runtime profile is a supported configuration, so this was not an exotic
+path. The state is now allocated from `layer.incoming.weight.device`.
+
+`torch.Generator()` is a CPU generator, and `_reinitialise` hands it to `uniform_` on a tensor that
+lives wherever the parameter does. Worse than the first because it is *delayed*: it does not raise
+at build time but the first time the accumulator crosses 1.0, some tens of optimiser steps in. Now
+built on the learner's device.
+
+### 41.2 One that silently halved the mechanism
+
+`_trunk_head_layers` reads `encoder`, `pi` and `vf` by attribute. At `num_learners > 1` RLlib wraps
+each module in a `TorchDDPRLModule`, which subclasses `DistributedDataParallel`, keeps the real
+module as a submodule named `module`, and defines no attribute forwarding - so all three lookups
+returned None, the trunk-to-head join found nothing, and the default network came back with 2
+replaceable layers instead of 4. No error, and metrics that look perfectly healthy. Precisely the
+layers [25 §2.2](25_continual_backprop.md) identifies as easy to miss.
+
+Unwrapping fixes a second thing that had not been noticed: `named_modules()` on the wrapper prefixes
+every name with `module.`, and those names are the checkpoint keys, so a checkpoint could not have
+moved between a distributed run and a single-learner one.
+
+### 41.3 One that made a documented operation a no-op
+
+`Algorithm.from_checkpoint` rebuilds from the config stored in the checkpoint, so the
+`learner_class` and `learner_config_dict` assembled for the new run were used only for comparison
+and never took effect. And `_config_fingerprint` carried neither group, so the existing "these
+values will NOT take effect" warning could not fire either. Turning continual backprop on alongside
+a resume therefore did nothing at all and looked identical to a run honouring it.
+
+The note in `train_config.json` said the opposite - that a restore "may legitimately turn continual
+backprop on, off, or up" - which made this the worst of the four: a documented operation that
+silently did nothing.
+
+Changing one of these keys alongside `is_restore` is now a hard error. They are
+`UNRESTORABLE_CONFIG_KEYS`, a third category beside the structural ones and the merely ignorable,
+with their own message: the weights fit perfectly, only the settings cannot apply, and a reader who
+took "cannot restore" to mean the checkpoint was dead would throw away a good one.
+
+Two softenings keep it from being noise. A tuning knob edited while continual backprop is off on
+both sides is allowed, since it describes something that was not going to happen either way. And a
+checkpoint predating the groups is compared against what such a run actually did - CBP off, torch's
+own Adam - rather than skipped, which matters because every checkpoint in existence predates the
+feature; comparing only the intersection of the two fingerprints would have made the fix hollow on
+exactly the checkpoints most likely to be resumed.
+
+### 41.4 What the tests can and cannot now pin
+
+The suite goes from 1,042 to **1,058**. The device and DDP tests assert the *property* - state
+allocated from the weight's device, the RNG from the learner's, a wrapper unwrapped before
+discovery - rather than executing it, because a CPU-only box cannot do the latter: a `meta`-device
+tensor stands in for CUDA and a stub with DDP's two relevant behaviours stands in for the wrapper.
+That is weaker than running on the real hardware and is stated as such in
+[10 §6.5](10_testing.md) and [25 §3.7](25_continual_backprop.md).
+
+One test was also found to be flaky rather than wrong: `TestCBPSurvivesARealSaveAndRestore` asserted
+that the restored league carries a champion, which depends on league statistics that are not
+reproducible across test orderings. It now creates one explicitly, the same manoeuvre
+`test_checkpoint_roundtrip.py` uses, so the class cannot pass vacuously on an empty league.

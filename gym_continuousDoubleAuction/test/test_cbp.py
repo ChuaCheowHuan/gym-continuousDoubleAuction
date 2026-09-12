@@ -574,3 +574,113 @@ class TestActivationStats:
         assert h.requires_grad
         stats = activation_stats(h, CBPLayerState.zeros(5), CBPConfig())
         assert not any(value.requires_grad for value in stats.values())
+
+
+# --- Device placement -------------------------------------------------------
+
+class TestDevicePlacement:
+    """State and RNG must live where the parameters live.
+
+    None of this can be *executed* on a CPU-only box, which is the whole reason
+    the bugs it covers shipped. What is checkable everywhere is the property
+    that actually matters: that the device is derived from the module rather
+    than defaulted, and that nothing hardcodes a CPU one. A meta-device module
+    gives a non-CPU device to check against without needing a GPU.
+    """
+
+    def test_state_is_allocated_on_the_requested_device(self):
+        state = CBPLayerState.zeros(4, device=torch.device("meta"))
+        assert state.utility.device.type == "meta"
+        assert state.mean_act.device.type == "meta"
+        assert state.age.device.type == "meta"
+
+    def test_the_learner_derives_the_device_from_the_weights(self):
+        """`_cbp_attach` must read the device off the layer, not default it.
+
+        The module is moved to the learner's device by `super().build()` before
+        any of this runs, so the weight is authoritative. A default-constructed
+        state would sit on the CPU while `h` arrived on CUDA, and
+        `activation_stats`'s `h - f_hat` would raise on the first forward pass
+        of every GPU run.
+        """
+        import inspect
+
+        from gym_continuousDoubleAuction.train.model import cbp_learner
+
+        source = inspect.getsource(cbp_learner.CBPLearnerMixin._cbp_attach)
+        assert "device=layer.incoming.weight.device" in source, (
+            "CBP state must be allocated on the layer's own device"
+        )
+
+    def test_the_generator_is_built_on_the_learners_device(self):
+        """`uniform_` refuses a generator whose device type differs.
+
+        A CPU generator on a CUDA run does not fail at build time - it fails
+        the first time a replacement actually fires, tens of optimiser steps in.
+        """
+        import inspect
+
+        from gym_continuousDoubleAuction.train.model import cbp_learner
+
+        source = inspect.getsource(cbp_learner.CBPLearnerMixin.build)
+        assert "torch.Generator(device=self._cbp_device())" in source
+
+    def test_reinitialise_draws_onto_the_parameters_device(self):
+        """The resampled row must be built from the weight, not from scratch."""
+        import inspect
+
+        from gym_continuousDoubleAuction.train.model import cbp
+
+        source = inspect.getsource(cbp._reinitialise)
+        # `empty_like` inherits device and dtype from the weight; `torch.empty`
+        # or `torch.rand` with an explicit shape would not.
+        assert "torch.empty_like(weight[index])" in source
+
+
+class TestDDPUnwrapping:
+    """Discovery must see through RLlib's DistributedDataParallel wrapper."""
+
+    class _FakeDDP(nn.Module):
+        """Stands in for `TorchDDPRLModule`.
+
+        Same two properties that matter: the real module is a submodule named
+        `module`, and no attribute forwarding is defined - so `wrapper.encoder`
+        does not resolve, and `named_modules()` prefixes every name with
+        `module.`.
+        """
+
+        def __init__(self, wrapped):
+            super().__init__()
+            self.module = wrapped
+
+        def unwrapped(self):
+            return self.module
+
+    def test_a_wrapped_module_yields_the_same_layers(self, spaces):
+        """Without unwrapping this drops the trunk-to-head layers silently.
+
+        `_trunk_head_layers` reads `encoder`/`pi`/`vf` by attribute, which the
+        wrapper does not forward, so it would return nothing and the default
+        network would come back with 2 replaceable layers instead of 4 - half
+        the mechanism, no error, and healthy-looking metrics.
+        """
+        module = build_module(spaces)
+        plain = find_replaceable_layers(module)
+        wrapped = find_replaceable_layers(self._FakeDDP(module))
+
+        assert len(plain) == 4
+        assert len(wrapped) == len(plain)
+
+    def test_layer_names_are_unchanged_by_wrapping(self, spaces):
+        """Names are checkpoint keys, so they must not depend on `num_learners`.
+
+        `named_modules()` on the wrapper prefixes everything with `module.`. If
+        that reached the state dict, a checkpoint from a single-learner run
+        could not be restored into a distributed one, or the reverse.
+        """
+        module = build_module(spaces)
+        plain = sorted(l.name for l in find_replaceable_layers(module))
+        wrapped = sorted(l.name for l in find_replaceable_layers(self._FakeDDP(module)))
+
+        assert wrapped == plain
+        assert not any(name.startswith("module.") for name in wrapped)

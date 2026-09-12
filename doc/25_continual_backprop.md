@@ -446,11 +446,22 @@ from almost no data. On a project whose `chkpt_freq` is 2 and which is explicitl
 long, resumable runs, that is a real failure and an invisible one — the run continues, converges
 worse, and nothing reports why.
 
-So CBP state must go through `Learner.get_state` / `set_state`, and
-`test_checkpointing.py` must gain a case that pins it. Note also that CBP's knobs are **not**
-`STRUCTURAL_CONFIG_KEYS`: they change no tensor shapes, so a resume may legitimately change `ρ` or
-turn CBP on midway. That is a genuine difference from `encoder_spec` and should be stated in the
-config note, since the obvious assumption is the opposite.
+So CBP state goes through `Learner.get_state` / `set_state`, pinned by a real save-and-restore in
+`integration/test_cbp_wiring.py`.
+
+**The knobs themselves are a different story, and this note got it wrong first time.** It said CBP's
+settings are not `STRUCTURAL_CONFIG_KEYS` — true — and concluded that a resume may therefore
+legitimately turn CBP on or change `ρ` — false, and the config file repeated the error. They are
+consumed when the Learner class is chosen and the optimiser is built, both of which happen *before*
+a restore; `Algorithm.from_checkpoint` then rebuilds from the checkpoint's own config and discards
+them. So enabling CBP alongside a resume did nothing whatsoever, logged no metric, and raised no
+warning — `_config_fingerprint` did not carry the keys, so the existing "will NOT take effect"
+notice could not fire either.
+
+They are now `UNRESTORABLE_CONFIG_KEYS`: a third category beside structural and ignorable, raising
+with its own message, because "cannot restore" read as "your checkpoint is dead" would throw away a
+perfectly good one. The weights fit; only the settings cannot apply. Changing one means a fresh
+run, which is the same conclusion the encoder group reaches by a different route.
 
 ### 3.6 The papers' hyperparameters cannot be copied — this repo updates ~320× less often
 
@@ -480,6 +491,33 @@ quoting both numbers has not yet established that it ran.
 
 The lever, if more replacement is wanted without raising `ρ`, is `minibatch_size`: it multiplies
 the number of optimiser steps per iteration, which is the clock CBP actually runs on.
+
+### 3.7 The boundaries a CPU-only, single-learner test suite cannot see
+
+Four bugs shipped in the first implementation and a code review found all four. None was in the
+algorithm — the utility formulas, the accumulator, the one-per-step cap and the optimiser resets
+were all correct against the papers and covered by tests. Every one was at a **boundary the test
+suite does not cross**, and the suite runs CPU-only, at `num_learners: 0`, and never restores with
+a changed config. That is the whole envelope the bugs lived outside of.
+
+| Boundary | What broke |
+|---|---|
+| GPU | CBP state allocated on the CPU while the module had already been moved to CUDA by `super().build()`. `h - f̂` raises on the first forward pass of any GPU run |
+| GPU, later | A CPU `torch.Generator` filling a CUDA tensor. Does not raise at build time — only when the accumulator first crosses 1.0, tens of optimiser steps in |
+| `num_learners > 1` | RLlib wraps each module in `TorchDDPRLModule`, which forwards no attributes, so the trunk-to-head join found nothing and the default network silently got 2 replaceable layers instead of 4. It also prefixes every `named_modules` name with `module.`, which would have made state keys differ between distributed and single-learner runs |
+| Restore | §3.5 |
+
+The three code fixes are small — derive the device from `layer.incoming.weight`, build the
+generator on the learner's device, call `unwrapped()` before discovery. What is worth keeping is
+the shape of the mistake: the mechanism was tested thoroughly against the specification it was
+written from, and not at all against the configurations it would actually run in. `doc/19` and
+`doc/09` describe those configurations; neither was consulted while writing the tests.
+
+The device and DDP fixes are covered by tests that assert the *property* rather than executing it,
+since a CPU-only box cannot do the latter — a `meta`-device tensor stands in for CUDA, and a stub
+with DDP's two relevant behaviours (a `module` submodule, no attribute forwarding) stands in for
+the wrapper. That is weaker than running on the real thing and is the honest limit of what this
+suite can pin.
 
 ---
 

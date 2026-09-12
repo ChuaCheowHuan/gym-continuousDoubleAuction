@@ -744,3 +744,43 @@ the frozen `RandomRLModule` baselines correctly carrying none, units replaced, t
 logged per module, and NAV conservation still exact.
 
 **Supports:** §25 1, §25 2.2, §25 3.1, §25 3.6, §25 4.2.
+
+---
+
+## 16.15 The four boundary bugs (2026-09-12)
+
+Verified against RLlib 2.56.1's source while fixing what a code review of §16.14's implementation
+found. Recorded because each is a claim about RLlib's behaviour rather than about this repo's, and
+because none of them is reachable from this test suite.
+
+### Device: the module is on the GPU before the mixin's setup runs
+
+`TorchLearner.build` in order: sets `self._device` from `get_device(...)`, calls `super().build()`
+(which builds each module and moves it to that device), then calls
+`_make_modules_ddp_if_necessary()`. `CBPLearnerMixin.build` calls `super().build()` first, so by the
+time it attaches, the module is both on its final device **and** already DDP-wrapped. State
+allocated with a bare `torch.zeros(n)` therefore sat on the CPU against CUDA activations.
+
+### DDP: no attribute forwarding, and a name prefix
+
+`TorchDDPRLModule(RLModule, nn.parallel.DistributedDataParallel)` defines no `__getattr__`; the
+wrapped module is a submodule named `module`. So `getattr(wrapper, "encoder", None)` is None, and
+`named_modules()` yields `module.encoder...` rather than `encoder...`. `_make_modules_ddp_if_necessary`
+applies this at `num_learners > 1` (the method's own docstring says `> 0`; the code says `> 1`).
+
+`RLModule.unwrapped()` is defined on the base class and returns `self`, so calling it
+unconditionally costs an undistributed run nothing.
+
+### Restore: the rebuilt config wins
+
+`build_algo` calls `Algorithm.from_checkpoint(path)`, which reconstructs from the config stored in
+the checkpoint. The freshly built `ppo` config is passed only to `_check_restored_config`. Anything
+consumed at Learner-construction or optimiser-construction time is therefore discarded on a restore,
+which is what made `cbp_enabled: true` alongside `is_restore: true` a silent no-op.
+
+`_check_restored_config` also returned early when the fingerprint intersection showed no divergence,
+so a first attempt at the guard never ran for a checkpoint that predated the config groups. The
+unrestorable check now runs before that return and compares against what a pre-feature run did
+rather than against the intersection.
+
+**Supports:** §25 3.5, §25 3.7, §18 5.6.3.

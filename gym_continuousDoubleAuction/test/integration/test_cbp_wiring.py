@@ -404,9 +404,19 @@ class TestCBPSurvivesARealSaveAndRestore:
             log_base_dir=cls.tmpdir, chkpt_keep=0, **TEST_CFG, **FIRING_CFG
         )
 
-        ppo_config, _cb = build_config(cls.cfg)
+        ppo_config, callback = build_config(cls.cfg)
         original = ppo_config.build_algo()
         original.train()
+
+        # Force a champion rather than hoping the iteration produced one.
+        # Whether it does depends on the league statistics, which are not
+        # reproducible enough across test orderings to assert on - and the
+        # champion is the entire point of this class, so an empty league would
+        # make every assertion below pass vacuously. Same manoeuvre as
+        # `test_checkpoint_roundtrip.TestRealCheckpointRoundTrip`.
+        callback._create_champion_snapshot_from_policy(
+            original, "policy_0", return_value=0.0, iteration=1
+        )
 
         learner = original.learner_group._learner
         cls.saved = {
@@ -471,3 +481,135 @@ class TestCBPSurvivesARealSaveAndRestore:
             for layers in self.saved.values()
             for _utility, age, _r in layers.values()
         )
+
+
+class TestRestoreCannotChangeCBP:
+    """Changing these alongside `is_restore` must raise, not silently do nothing.
+
+    `Algorithm.from_checkpoint` rebuilds from the config stored in the
+    checkpoint, so the `learner_class` and `learner_config_dict` assembled for
+    the new run are used only for this comparison and never take effect. Before
+    this check, turning continual backprop on alongside a resume produced a run
+    that looked exactly like one honouring it: no metric, no warning, no
+    mechanism. The weights would restore perfectly well - which is why this is
+    a separate category from the structural keys rather than one of them.
+    """
+
+    @staticmethod
+    def _config(**overrides):
+        ppo_config, _cb = build_config(TrainConfig(**{**TEST_CFG, **overrides}))
+        return ppo_config
+
+    def test_enabling_cbp_on_a_restore_raises(self):
+        from gym_continuousDoubleAuction.train.train import _check_restored_config
+
+        with pytest.raises(ValueError, match="cbp_enabled"):
+            _check_restored_config(self._config(), self._config(cbp_enabled=True))
+
+    def test_enabling_metrics_only_on_a_restore_raises(self):
+        from gym_continuousDoubleAuction.train.train import _check_restored_config
+
+        with pytest.raises(ValueError, match="cbp_metrics_only"):
+            _check_restored_config(
+                self._config(), self._config(cbp_metrics_only=True)
+            )
+
+    def test_retuning_adam_on_a_restore_raises(self):
+        from gym_continuousDoubleAuction.train.train import _check_restored_config
+
+        with pytest.raises(ValueError, match="adam_betas"):
+            _check_restored_config(
+                self._config(), self._config(adam_betas=[0.99, 0.99])
+            )
+
+    def test_the_error_says_the_weights_are_fine(self):
+        """The distinction from a structural mismatch has to survive the message.
+
+        A reader who sees "cannot restore" and assumes the checkpoint is
+        unusable would throw away a perfectly good one.
+        """
+        from gym_continuousDoubleAuction.train.train import _check_restored_config
+
+        with pytest.raises(ValueError) as excinfo:
+            _check_restored_config(self._config(), self._config(cbp_enabled=True))
+        assert "weights would restore fine" in str(excinfo.value)
+
+    def test_changing_the_rate_while_cbp_runs_raises(self):
+        from gym_continuousDoubleAuction.train.train import _check_restored_config
+
+        with pytest.raises(ValueError, match="cbp_replacement_rate"):
+            _check_restored_config(
+                self._config(cbp_enabled=True),
+                self._config(cbp_enabled=True, cbp_replacement_rate=0.5),
+            )
+
+    def test_changing_a_tuning_knob_while_cbp_is_off_is_allowed(self):
+        """It describes something that was not going to happen either way.
+
+        Failing a resume over a knob with no effect would be noise, and noise in
+        a guard is how guards get switched off.
+        """
+        from gym_continuousDoubleAuction.train.train import _check_restored_config
+
+        _check_restored_config(
+            self._config(), self._config(cbp_replacement_rate=0.5)
+        )
+
+    def test_an_unchanged_config_restores_cleanly(self):
+        from gym_continuousDoubleAuction.train.train import _check_restored_config
+
+        _check_restored_config(self._config(), self._config())
+        _check_restored_config(
+            self._config(cbp_enabled=True), self._config(cbp_enabled=True)
+        )
+
+    def test_a_checkpoint_predating_the_groups_still_raises(self):
+        """The case that made the naive fix hollow.
+
+        Every checkpoint written before these groups existed carries none of
+        these keys, and `_check_restored_config` only reports keys present in
+        *both* fingerprints. Comparing against the intersection would therefore
+        skip them on exactly the checkpoints most likely to be resumed - at the
+        time of writing, all of them.
+        """
+        from gym_continuousDoubleAuction.train.train import _check_restored_config
+
+        old = self._config()
+        # Strip the groups, as a pre-feature checkpoint's config has them.
+        old.learner_config_dict = {}
+
+        _check_restored_config(old, self._config())  # defaults: still fine
+        with pytest.raises(ValueError, match="cbp_enabled"):
+            _check_restored_config(old, self._config(cbp_enabled=True))
+
+    def test_the_key_tables_cannot_drift_apart(self):
+        """Every unrestorable key needs a pre-feature value, and vice versa.
+
+        `PRE_FEATURE_BEHAVIOUR` is indexed unguarded in `_check_restored_config`,
+        so a key added to either tuple and not to it is a KeyError on the next
+        restore - raised from the guard itself, which is the worst place for one.
+        """
+        from gym_continuousDoubleAuction.train.train import (
+            PRE_FEATURE_BEHAVIOUR,
+            UNRESTORABLE_CONFIG_KEYS,
+            UNRESTORABLE_WHEN_ACTIVE_KEYS,
+        )
+
+        declared = set(UNRESTORABLE_CONFIG_KEYS) | set(UNRESTORABLE_WHEN_ACTIVE_KEYS)
+        assert declared == set(PRE_FEATURE_BEHAVIOUR)
+
+    def test_the_shipped_defaults_are_the_pre_feature_behaviour(self):
+        """A fresh config must never trip the guard against an old checkpoint.
+
+        If a shipped default ever diverges from what a pre-feature run did, then
+        resuming any existing checkpoint without touching the config would fail
+        - a guard firing on the one case it is meant to wave through.
+        """
+        from gym_continuousDoubleAuction.train.train import PRE_FEATURE_BEHAVIOUR
+
+        cfg = TrainConfig()
+        for key, expected in PRE_FEATURE_BEHAVIOUR.items():
+            actual = getattr(cfg, key)
+            if isinstance(actual, list):
+                actual = tuple(actual)
+            assert actual == expected, key
