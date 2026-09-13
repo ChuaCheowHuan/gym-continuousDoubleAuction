@@ -598,6 +598,25 @@ class TestRestoreCannotChangeCBP:
         declared = set(UNRESTORABLE_CONFIG_KEYS) | set(UNRESTORABLE_WHEN_ACTIVE_KEYS)
         assert declared == set(PRE_FEATURE_BEHAVIOUR)
 
+    def test_a_learner_config_key_colliding_with_an_algorithm_key_raises(self):
+        """The groups are flattened into one namespace, so a name can collide.
+
+        `_config_fingerprint` drops the group name, which is why every key in
+        these two groups carries a `cbp_` or `adam_` prefix. Nothing enforced
+        that: a future group with a bare `num_epochs` would have silently
+        overwritten the AlgorithmConfig entry of the same name, and the
+        divergence check would then have waved through a real change to it -
+        the one failure this whole function exists to prevent.
+        """
+        from gym_continuousDoubleAuction.train.train import _config_fingerprint
+
+        config = self._config()
+        config.learner_config_dict = dict(config.learner_config_dict)
+        config.learner_config_dict["careless_group"] = {"num_epochs": 999}
+
+        with pytest.raises(ValueError, match="collides"):
+            _config_fingerprint(config)
+
     def test_the_shipped_defaults_are_the_pre_feature_behaviour(self):
         """A fresh config must never trip the guard against an old checkpoint.
 

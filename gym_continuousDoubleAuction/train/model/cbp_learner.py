@@ -303,11 +303,20 @@ class CBPLearnerMixin:
         not one. Emitting a series per layer instead would mean 80 of them for a
         16-layer `moe_transformer`.
 
-        The correlates are averaged, which is what a reader comparing runs would
-        do anyway. `replacements` is **summed** - it is a count of events in the
-        network, not a property of a layer - and the two utility statistics take
-        the extremes across layers, since a single collapsing layer is the thing
-        worth seeing and an average over healthy neighbours would hide it.
+        Three reductions, and which one a metric gets follows from what a bad
+        value would look like:
+
+          sum   `replacements`, because it counts events in the network rather
+                than describing a layer.
+          worst `dead_unit_frac` and `saturated_unit_frac` (max) and
+                `utility_min` (min), because one collapsing layer is the thing
+                worth seeing and an average over healthy neighbours hides it.
+          mean  everything else - `mean_weight_magnitude`, `utility_median`,
+                `batch_effective_rank`, `mature_unit_frac` - where an average
+                is what a reader comparing runs would take anyway.
+
+        doc/11 lists the same table from the reader's side; the two have to
+        agree, because that table is what someone plots against.
         """
         summed = {"replacements"}
         minimum = {"utility_min"}

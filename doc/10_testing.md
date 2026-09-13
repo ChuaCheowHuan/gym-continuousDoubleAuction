@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (970 tests: 858 unit + 112 integration)
+# everything (1,067 tests: 914 unit + 153 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -25,7 +25,7 @@ python -m pytest gym_continuousDoubleAuction/test -q \
     --ignore=gym_continuousDoubleAuction/test/integration
 
 # RLlib wiring, the real save/restore, the progress log and a real remote
-# runner (112 tests, builds real Algorithms)
+# runner (153 tests, builds real Algorithms)
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 
 # a single file
@@ -46,7 +46,7 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `858 passed` on the unit half. There is no xfail: the one that pinned S1-1 XPASSed when S1-1 was fixed and was deleted (see §6.2.2).
+**[verified]** — `914 passed` on the unit half. There is no xfail: the one that pinned S1-1 XPASSed when S1-1 was fixed and was deleted (see §6.2.2).
 
 ### File inventory
 
@@ -67,11 +67,11 @@ Counts re-measured with `--collect-only`.
 | `test_reward_logic.py` | 8 | Reward formula components: normalisation by `init_nav`, scale invariance, the signed drawdown telescoping, zero-sum symmetry |
 | `test_env_lifecycle.py` | 10 | The bare env is tradable (S1-4) and truncation lands exactly on `max_step` (S3-19) |
 | `test_seeding.py` | 11 | `reset(seed=...)` really seeds the episode: anchor, sizes, queueing order; the global NumPy stream is not the source; `sklearn` is not imported (S3-5, S3-6) |
-| `test_nav_callback.py` | 16 | Episode-end NAV conservation, in both halves: the hook counts a violation without raising, the driver stops the run from the count, tolerance, exactness at a scale `float` cannot resolve, a missing metric reading as "nothing seen" |
+| `test_nav_callback.py` | 18 | Episode-end NAV conservation, in both halves: the hook counts a violation without raising, the driver stops the run from the count, tolerance, exactness at a scale `float` cannot resolve, a missing metric reading as "nothing seen" |
 | `test_logging_setup.py` | 61 | Level resolution and export, handler setup, no `print` in `envs/` or `train/`, the rotating run log, per-worker files, the `iter=` tag, dated stamps, concurrent configuration, two-process isolation, unhandled exceptions, warning capture, propagation control and `ray.LoggingConfig` |
 | `test_probabilistic_mapping.py` | 1 | League matchmaking distribution |
 | `test_config_loading.py` | 15 | `train_config.json` → `TrainConfig` → env |
-| `test_config_sources.py` | 26 | No literal copy of a configured value survives in Python |
+| `test_config_sources.py` | 27 | No literal copy of a configured value survives in Python |
 | `test_config_wiring.py` | 17 | Config keys reaching their consumers; `episode_data_path` absolute and run-scoped |
 | `test_runtime_profiles.py` | 28 | `runtime_profiles.json` → hardware sets, platform paths |
 | `test_checkpointing.py` | 50 | Checkpoint retention, restore selection, league state across a save |
@@ -82,18 +82,27 @@ Counts re-measured with `--collect-only`.
 | `test_activity_metrics.py` | 29 | `pass_action_fraction` / `order_rejection_fraction`: the S1-3 detector, per-episode tallies, pickling; the reward-term variance split, the maker-ratio metric and the end-of-episode account metrics |
 | `test_episode_record.py` | 32 | The Parquet per-step record: declared schema and its drift guard against `Info_Helper`, identity columns, sampling rate, byte cap, eviction of episodes that never end, and the ways it must fail without raising |
 | `test_encoder_registry.py` | 45 | The selectable-encoder seam: registry, `CDACatalog`, the `mlp` pass-through staying byte-for-byte what it was, `ObsLayout`, tokenisation |
-| `test_encoder_architectures.py` | 165 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
-| `test_pretrain.py` | 20 | Offline JEPA pretraining: the loop trains only the trunk and predictor, a collapse is reported rather than hidden, and the checkpoint's fingerprint refuses a mismatched architecture |
+| `test_encoder_architectures.py` | 170 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
+| `test_pretrain.py` | 26 | Offline JEPA pretraining: the loop trains only the trunk and predictor, a collapse is reported rather than hidden, and the checkpoint's fingerprint refuses a mismatched architecture |
 | `test_visualize_orderbook.py` | 12 | The newest book snapshot is read from the middle of the observation, never off the end — the only arithmetic in `visualize/` that can be wrong without raising |
-| `test_probe.py` | 45 | The reward-free probe harness's arithmetic on synthetic observations: target definitions, episode-boundary masking, the splits, the metrics, unscoreable cells, and that `snapshots` reads the book rather than the private tail |
-| **unit total** | **770** | |
+| `test_probe.py` | 53 | The reward-free probe harness's arithmetic on synthetic observations: target definitions, episode-boundary masking, the splits, the metrics, unscoreable cells, and that `snapshots` reads the book rather than the private tail |
+| `test_bankrupt_termination.py` | 10 | A trader whose NAV reaches zero is terminated, and the episode ends when too few solvent traders remain |
+| `test_resting_exposure.py` | 8 | Escrow against live orders: what a resting order commits, and the layered-closing-order exploit that used to leave a trader short |
+| `test_self_match.py` | 14 | A trader cannot trade with itself: the crossing leg is withdrawn before the matcher, and the resting leg cannot become the mark (S2-5) |
+| `test_entry_vwap.py` | 11 | `entry_vwap` is the price actually paid and stays positive while a position is open, where the rolled `carrying_vwap` can go negative |
+| `test_obs_pipeline.py` | 13 | The raw-frame deque and the one-normaliser-per-stack property: a resting order reads the same in every frame (S2-6) |
+| `test_obs_feature_scales.py` | 10 | Every observation block lands on one scale — the size/price ratio and the centred `log_mid` (S2-2) |
+| `test_entry_points.py` | 8 | The two documented entry points work: `gymnasium.make("continuousDoubleAuction-v0")`, and `visualize/` being importable from a wheel |
+| `test_cbp.py` | 48 | Continual Backprop's algorithm core, with no Ray and no `Algorithm` — §6.6.1 |
+| **unit total** | **914** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported, finite, and **above 1e-3** — a live guard since S1-1 was fixed |
 | `integration/test_distributed_observability.py` | 10 | A real `num_env_runners=1` iteration: every episode-hook metric arrives on the driver, and the episode record is written by the *worker* into the driver's absolute run-scoped path |
 | `integration/test_encoder_wiring.py` | 48 | Champions inherit the encoder; a restore cannot change it; the recurrent and MoE paths train end to end; a real checkpoint round-trip with a custom encoder |
 | `integration/test_probe_harness.py` | 28 | The probe against the real env: a usable rollout corpus, every registered encoder frozen and read, the LSTM's state reset per episode, a real checkpoint restored with its weights |
-| **integration total** | **112** | |
+| `integration/test_cbp_wiring.py` | 41 | Continual Backprop inside a real `Algorithm`: composition over the encoder's Learner, a real save and restore, and the restore guard — §6.6.2 |
+| **integration total** | **153** | |
 
 > **Stale references in older docs.** `test_orderbook.py`, `repro_orderbook_crossed_book.py`,
 > `test_OrderBook.py`, `test_cda_nsp.py` and `test_orderbook_double_delete_order.py` do not exist.
@@ -110,54 +119,63 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((882 tests))
+  root((1067 tests))
     Simulator
       orderbook 14
         components, matching, invariants
         crossed book, volume cache
-      accounting 27
+      accounting 60
         escrow, flips, cash gating
-        modify scenarios
+        modify scenarios, resting exposure
+        entry VWAP, self-match prevention
       types 15
         Decimal money, int sizes
     Learning problem
-      observation 32
+      observation 58
         normalization, stacking
-        log_mid, spread sentinel
+        one normaliser per stack
+        the six market scalars
+        feature scales on one range
       action 10
         decoding, ghost pricing
-      reward 4
+      reward 8
         five terms, loss aversion
-      env lifecycle 21
+      env lifecycle 31
         bare env tradable
         truncation on max_step
-        seeded episodes
+        seeded episodes, bankruptcy
     Training
-      config 86
+      config 87
         loading, wiring, no literals
         runtime profiles
       checkpointing 50
         retention, restore, league sidecar
       league 20
         matchmaking, promotion triggers
-      encoders 213
+      encoders 215
         registry, catalog, mlp pass-through
         obs layout, tokenisation
         the contract every encoder meets
         transformer, lstm, MoE specifics
-      observability 195
+      observability 211
         logging, progress log, info dict
         activity metrics, episode record
-        NAV conservation
-      probe 41
+        NAV conservation, book rendering
+      probe 53
         targets, episode masking
         splits never shuffled
         unscoreable vs zero
-      pretrain 20
+        effective rank on a fixed corpus
+      pretrain 26
         trains trunk + predictor only
         collapse reported not hidden
         fingerprint refuses a mismatch
-    Integration 112
+      continual backprop 48
+        utility, accumulator, one per step
+        device and DDP boundaries
+      packaging 8
+        gymnasium.make, visualize importable
+    Integration 153
       league wiring, 3 topologies
       real save and restore
       real progress.jsonl, live vf_explained_var guard
@@ -751,7 +769,7 @@ test found a live bug while being written: the path resolver fell back to loadin
 *root* as a module, so a mistyped `--module-id` surfaced as a missing-file error about an internal
 pickle instead of naming the modules that were there.
 
-### 6.5.1 `test_probe.py::TestEffectiveRank` — 7 tests
+### 6.5.1 `test_probe.py::TestEffectiveRank` — 8 tests
 
 The rank measurement the probe harness gained after the Learner's own turned out to be
 confounded ([25](25_continual_backprop.md) §3.8). Rank-one and collapsed matrices score as
@@ -765,6 +783,12 @@ implementations of effective rank — torch in `cbp.py`, because the Learner wor
 `cbp.py` must not import RLlib or the probe package; numpy in `probe/rank.py`, because the
 harness works in numpy. Nothing but that test keeps them the same measurement, and both
 docstrings promise it does.
+
+They differ in exactly one place, and
+`test_the_one_deliberate_divergence_is_the_degenerate_row_count` is what makes that deliberate
+rather than accidental: a matrix with fewer than two rows is `0` in the probe, where the value
+lands in a report column read as a rank, and `NaN` on the Learner, where it lands in a metric
+series and a plotted `0.0` would read as total collapse.
 
 ---
 
@@ -799,7 +823,7 @@ them.
 outputs and the value head's 1, so a regression that stopped at the encoder boundary fails loudly
 rather than quietly halving the mechanism.
 
-### 6.6.2 `integration/test_cbp_wiring.py` — 38 tests
+### 6.6.2 `integration/test_cbp_wiring.py` — 41 tests
 
 The claims that need a real `Algorithm`, modelled on `TestMoEAuxLossReachesTheOptimiser` and
 `TestOtherEncodersAreUnaffectedByJEPA`.
@@ -813,7 +837,7 @@ The claims that need a real `Algorithm`, modelled on `TestMoEAuxLossReachesTheOp
 | `TestMetricsOnlyChangesNothing` | An absurd replacement rate replaces nothing, while the correlates are still logged and the utility still accumulates |
 | `TestCBPStateSurvivesACheckpoint` | Utility and ages round-trip; a checkpoint **without** the CBP block still restores; a block missing one layer leaves that layer alone |
 | `TestCBPSurvivesARealSaveAndRestore` | A real `save_to_path` and `build_algo(is_restore=True)`, which `get_state`/`set_state` cannot show because they never leave the process — and where champions are present from `build()` |
-| `TestRestoreCannotChangeCBP` | Enabling continual backprop or retuning Adam alongside `is_restore` raises, including on a checkpoint predating the groups; a tuning knob edited while the mechanism is off does not |
+| `TestRestoreCannotChangeCBP` | Enabling continual backprop or retuning Adam alongside `is_restore` raises, including on a checkpoint predating the groups; a tuning knob edited while the mechanism is off does not; and a `learner_config_dict` key colliding with an AlgorithmConfig one raises rather than silently shadowing it, since the groups are flattened into a single fingerprint namespace |
 
 Two things these tests have to do deliberately. They **force the replacement rate up**: at the
 shipped `1e-4` nothing fires in a test-length run, so every assertion about replacement would pass

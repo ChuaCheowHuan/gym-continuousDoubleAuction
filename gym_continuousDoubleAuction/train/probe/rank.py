@@ -77,6 +77,12 @@ def effective_rank(matrix: np.ndarray, threshold: float = DEFAULT_THRESHOLD) -> 
 
     Returns 0 for an empty matrix and for one whose singular values are all
     zero, both of which mean "no directions at all" rather than "one".
+
+    **The one place the two deliberately differ** is a matrix with fewer than
+    two rows. Here that is 0, because the number goes into a report column
+    where it is read as a rank; `cbp.effective_rank` returns NaN, because that
+    one goes into a metric series where 0 would be read as total collapse. The
+    agreement test pins both answers so the divergence stays deliberate.
     """
     values = np.asarray(matrix, dtype=np.float64)
     if values.ndim > 2:
@@ -153,9 +159,11 @@ def render(table: Mapping[str, RankRow], feature_names: Sequence[str]) -> str:
             continue
         mark = " *" if row.row_limited else ""
         flagged = flagged or row.row_limited
+        # `used` is 8 wide to match its header; the `*` hangs off the end of
+        # the column rather than inside it, so a flagged row still lines up.
         lines.append(
             f"{name:<{width}}{row.rank:>7}{row.width:>8}"
-            f"{row.fraction:>7.0%}{mark}"
+            f"{row.fraction:>8.0%}{mark}"
         )
 
     if flagged:

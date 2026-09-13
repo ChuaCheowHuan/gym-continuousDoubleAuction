@@ -1148,6 +1148,20 @@ def _config_fingerprint(config) -> dict:
     for group, values in (getattr(config, "learner_config_dict", None) or {}).items():
         if isinstance(values, dict):
             for key, value in values.items():
+                # The group name is dropped, so these share one namespace with
+                # the AlgorithmConfig attributes above. That is why the CBP keys
+                # carry a `cbp_` prefix and the optimiser ones an `adam_` one -
+                # the same rule `config_loader.flatten` enforces one level up.
+                # Raised rather than overwritten: a silent collision would hide
+                # a real divergence from `_check_restored_config`, which is the
+                # one thing this function exists to prevent.
+                if key in fingerprint:
+                    raise ValueError(
+                        f"learner_config_dict[{group!r}][{key!r}] collides with "
+                        f"an existing fingerprint key. These groups are "
+                        f"flattened into one namespace, so give the key a "
+                        f"group-specific prefix - see UNRESTORABLE_CONFIG_KEYS."
+                    )
                 # Lists are not comparable across a JSON round trip in the way
                 # the `!=` here needs; `adam_betas` is the only one and a tuple
                 # compares cleanly against a list once both are normalised.

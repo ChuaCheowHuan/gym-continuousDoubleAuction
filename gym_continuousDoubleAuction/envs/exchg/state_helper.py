@@ -9,8 +9,7 @@ from ...config_loader import constant, constants, env_default
 #
 # The book block is `book_rows` stacked rows of `k_rows` price levels:
 #   [bid_price, bid_size, ask_price, ask_size]
-# followed by `extra_dim` market-level scalars:
-#   [log_mid, log1p_spread_ticks]
+# followed by the `extra_dim` market-level scalars `EXTRA_FIELDS` names below.
 #
 # These module-level names are the layout as it was at import time, kept for
 # standalone consumers that have no env instance to ask - the visualizers,
