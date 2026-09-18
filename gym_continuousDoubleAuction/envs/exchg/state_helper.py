@@ -186,7 +186,7 @@ BASE_PRIVATE_FIELDS = (
     "drawdown",        # (nav - max_nav) / init_nav, <= 0
     "vwap_vs_mid",     # (M - VWAP) / M when a position is open, else 0
     "realised_pnl",    # total_profit / init_nav
-    "time_left",       # 1 - t_step / max_step, in [0, 1]
+    "time_left",       # 1 - t_step / time_left_horizon (the latest possible end), in [0, 1]
 )
 
 #: The two own-order counts that follow the own-book sizes, and the feedback
@@ -705,10 +705,14 @@ class State_Helper(object):
         # The reset path has no completed step, so it passes `elapsed_steps=0`
         # explicitly and gets the 1.0 it should.
         #
-        # `max_step` can be 0 in a degenerate config; treat that as "no time
-        # left" rather than dividing by it.
-        elapsed = (float(elapsed_steps) / float(self.max_step)
-                   if self.max_step else 1.0)
+        # `time_left_horizon`, not `max_step`: the latest possible end of the
+        # episode. In the fixed mode that is `max_step`; in the random mode
+        # it is `max_step_max`, so the drawn horizon stays unknown to the
+        # policy (a horizon it could read would hand the end-game back).
+        # It can be 0 in a degenerate config; treat that as "no time left"
+        # rather than dividing by it.
+        elapsed = (float(elapsed_steps) / float(self.time_left_horizon)
+                   if self.time_left_horizon else 1.0)
 
         base = np.array([
             position,

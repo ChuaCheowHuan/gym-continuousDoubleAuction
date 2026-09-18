@@ -90,7 +90,9 @@ class Done_Helper(object):
         # the (max_step + 1)-th step, so every episode ran one step long and
         # TrainConfig.train_batch_size (`max_step * num_episodes_per_iter`)
         # understated the batch by one step per episode.
-        episode_timed_out = self.t_step + 1 >= self.max_step
+        # `episode_horizon`, not `max_step`: the two agree in the fixed
+        # mode and differ when the horizon was drawn at reset.
+        episode_timed_out = self.t_step + 1 >= self.episode_horizon
 
         terminateds["__all__"] = True if all_agents_done else False
         truncateds["__all__"] = True if episode_timed_out else False

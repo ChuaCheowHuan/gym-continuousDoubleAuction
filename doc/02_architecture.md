@@ -94,7 +94,7 @@ gym_continuousDoubleAuction/
 │   ├── run_all.py                        regenerates every chart
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               1,065 unit tests
+└── test/                               1,079 unit tests
     └── integration/                    156 tests that build real Algorithms
 ```
 

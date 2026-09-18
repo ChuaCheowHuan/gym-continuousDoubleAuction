@@ -160,6 +160,11 @@ class TrainConfig:
     mark_price_source: str = _default("mark_price_source")
     tape_display_length: int = _default("tape_display_length")
     max_step: int = _default("max_step")
+    # "fixed" truncates every episode at max_step; "random" draws the horizon
+    # per episode from [max_step_min, max_step_max] (doc/18 section 3.4).
+    episode_length_mode: str = _default("episode_length_mode")
+    max_step_min: int = _default("max_step_min")
+    max_step_max: int = _default("max_step_max")
     is_render: bool = _default("is_render")
     n_hist: int = _default("n_hist")
     # How the public book is laid out in each snapshot: "grid" (fixed tick
@@ -412,7 +417,19 @@ class TrainConfig:
 
     @property
     def train_batch_size(self) -> int:
-        return self.max_step * self.num_episodes_per_iter
+        """Timesteps per iteration: `num_episodes_per_iter` episodes' worth.
+
+        Under a random horizon an episode's length is a draw, so the batch is
+        sized by the mean of the range - the number of episodes it holds is
+        then `num_episodes_per_iter` on average rather than exactly.
+        """
+        return self.expected_episode_length * self.num_episodes_per_iter
+
+    @property
+    def expected_episode_length(self) -> int:
+        if self.episode_length_mode == "random":
+            return (self.max_step_min + self.max_step_max) // 2
+        return self.max_step
 
     @property
     def checkpoint_dir(self) -> str:
@@ -498,6 +515,9 @@ class TrainConfig:
             "mark_price_source": self.mark_price_source,
             "tape_display_length": self.tape_display_length,
             "max_step": self.max_step,
+            "episode_length_mode": self.episode_length_mode,
+            "max_step_min": self.max_step_min,
+            "max_step_max": self.max_step_max,
             "is_render": self.is_render,
             "n_hist": self.n_hist,
             "book_mode": self.book_mode,

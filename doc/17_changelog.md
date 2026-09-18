@@ -3173,3 +3173,13 @@ The second pre-existing S3 row taken through the measure-first pass
   the field's type - the switch the remaining S3 comparisons need.
 - **Tests.** `test_grid_book.py` (14), two more in `test_layout_version.py`; the `levels`-mode
   tests build that mode explicitly. Suite: **1,065 unit + 156 integration**.
+
+## 52. Episode horizons: fixed, or drawn from a range
+
+`episode_length_mode` in the env config ([18](18_configuration.md) §3.4): `"fixed"` is the
+behaviour to date, every episode truncated at `max_step`; `"random"` draws each episode's horizon
+uniformly from `[max_step_min, max_step_max]` with the env's seeded generator, reports it once as
+`episode_horizon` in the reset infos, and keeps it out of the observation - `time_left` counts
+against the latest possible end, so the policy sees a bound but not the draw. Truncation lands on
+the draw; bankruptcy termination is unchanged; `TrainConfig.train_batch_size` is sized by the mean
+of the range. `test_episode_horizon.py` (14). Suite: **1,079 unit + 156 integration**.

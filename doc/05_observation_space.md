@@ -42,7 +42,7 @@ private block (per agent) = 32 floats = 9 base + 2 x k_rows own book + 2 counts 
              5   drawdown        (nav - max_nav) / init_nav, <= 0
              6   vwap_vs_mid     (M - VWAP) / M when a position is open, else 0
              7   realised_pnl    total_profit / init_nav
-             8   time_left       1 - t_step / max_step
+             8   time_left       1 - t_step / time_left_horizon (the latest possible end; 18 section 3.4)
           9-18   own_bid_size_k  THIS agent's resting size at public bid level k,
                                  sqrt(V / limit_max_size), 0 where it has none
          19-28   own_ask_size_k  same for asks, non-negative like the public ask block

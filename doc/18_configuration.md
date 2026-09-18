@@ -271,6 +271,29 @@ would have given it.
 
 ---
 
+### 3.4 Episode horizon: fixed or random
+
+| Key | Default | Meaning |
+|---|---|---|
+| `episode_length_mode` | `"fixed"` | `"fixed"`: every episode truncates at `max_step`. `"random"`: each reset draws the horizon uniformly from `[max_step_min, max_step_max]` (inclusive) with the env's seeded generator, so `reset(seed=...)` reproduces it |
+| `max_step_min`, `max_step_max` | `max_step / 2`, `max_step` | The range of the draw. Ignored in `"fixed"` mode |
+
+The drawn horizon is reported once, as `episode_horizon` in the reset `infos`, and never shown
+to the policy: `time_left` ([05](05_observation_space.md) §1) counts against `time_left_horizon`,
+the **latest possible end** (`max_step_max` in random mode, `max_step` in fixed), so at truncation
+it reads `1 − h / max_step_max` rather than 0. Showing the draw would hand the horizon back.
+Termination on bankruptcy is unchanged in both modes, and `TrainConfig.train_batch_size` is sized
+by the mean of the range (`expected_episode_length`), so `num_episodes_per_iter` is the number of
+episodes an iteration holds *on average*.
+
+**Why one would want it.** A known horizon makes the end of the episode a free option: an agent
+learns that the last steps are where inventory can be dumped or spread crossed without a
+tomorrow, and `time_left` tells it exactly when. A horizon drawn from a range removes the exact
+end while keeping a bound the value function can still see. The cost is a noisier value estimate
+near the end - the agent does not know whether a step is its last - and `time_left` no longer
+reaching 0 in most episodes. Which of these matters is an empirical question; both modes run under
+`train.compare --set episode_length_mode=random --set max_step_min=... --set max_step_max=...`.
+
 ## 4. Structural constants
 
 `config/tunable_constants.json`. These shape the observation and action spaces, the module-ID

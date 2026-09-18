@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (1,221 tests: 1,065 unit + 156 integration)
+# everything (1,235 tests: 1,079 unit + 156 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -73,6 +73,7 @@ Counts re-measured with `--collect-only`.
 | `test_obs_normalization.py` | 12 | Price/volume normalization (both sides positive since S4-17), action unnormalization |
 | `test_observation_history.py` | 6 | Temporal stacking, and the shared-book / private-tail split (S1-2) |
 | `test_obs_market_features.py` | 18 | `log_mid` under every branch of the reference-price chain, `log1p_spread_ticks`, observation shape across `n_hist` |
+| `test_episode_horizon.py` | 14 | Fixed horizons truncate at `max_step` as before; random ones are drawn inside the range, reproduce under a seed, truncate on the draw, and keep `time_left` against the upper bound; validation; batch sizing by the expected length |
 | `test_grid_book.py` | 14 | The fixed tick-offset grid (S3-15): a quote sits in the cell of its tick offset, the same price lands in the same cell of every frame, out-of-window levels are not shown, price code j is j ticks from the reference whatever rests, own block and tokeniser alignment, `ObsLayout` reads both modes |
 | `test_occupancy_channel.py` | 11 | The two occupancy rows equal `size > 0` on every cell of every step and ride with their frame; an absent level and a quote at the reference price differ; a one-sided book is referenced to the last trade, agreeing with `mark_price`; layout version 4 (S3-14) |
 | `test_reward_logic.py` | 8 | Reward formula components: normalisation by `init_nav`, scale invariance, the signed drawdown telescoping, zero-sum symmetry |
@@ -107,7 +108,7 @@ Counts re-measured with `--collect-only`.
 | `test_cbp.py` | 48 | Continual Backprop's algorithm core, with no Ray and no `Algorithm` — §6.6.1 |
 | `test_compare.py` | 12 | The encoder comparison driver's aggregation: means and standard deviations across seeds, the separation rule and its three-seed floor, the rendered table and its caveats |
 | `test_lint.py` | 1 | The package is pyflakes-clean; any message fails the suite (S4-6) |
-| **unit total** | **1,065** | |
+| **unit total** | **1,079** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -170,9 +171,9 @@ mindmap
       own book and slots 27
         own resting orders observed
         modify and cancel aimed by slot
-      env lifecycle 31
+      env lifecycle 45
         bare env tradable
-        truncation on max_step
+        truncation on max_step, or on a drawn horizon
         seeded episodes, bankruptcy
     Training
       config 87

@@ -63,7 +63,7 @@ import and reads its config tree relative to the repository root
 Three checks, cheapest first. All three are what CI runs ([10](10_testing.md) §7).
 
 ```bash
-# 1. the simulator and the training-side units: ~3 min, 1,065 tests (incl. pyflakes and Hypothesis)
+# 1. the simulator and the training-side units: ~3 min, 1,079 tests (incl. pyflakes and Hypothesis)
 python -m pytest gym_continuousDoubleAuction/test -q \
     --ignore=gym_continuousDoubleAuction/test/integration
 
@@ -107,7 +107,7 @@ Groups and what they own ([18](18_configuration.md) §1 and §5):
 
 | Group | Owns | Examples |
 |---|---|---|
-| `environment` | the market and the reward | `num_agents`, `num_trained_agents`, `init_cash`, `max_step`, `tick_size`, the five reward coefficients |
+| `environment` | the market and the reward | `num_agents`, `num_trained_agents`, `init_cash`, `max_step` (or `episode_length_mode: random` with `max_step_min` / `max_step_max`), `tick_size`, `book_mode`, the six reward coefficients |
 | `rollouts`, `learner` | where sampling and learning run | `num_env_runners`, `sample_timeout_s`, `num_gpus_per_learner` |
 | `ppo`, `optimizer` | the update | `lr`, `num_epochs`, `fcnet_hiddens`, `adam_betas` |
 | `encoder` | which network encodes the observation | `encoder_type`, `encoder_specs`, `pretrained_encoder_path` |

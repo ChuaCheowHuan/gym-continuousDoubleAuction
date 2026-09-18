@@ -38,6 +38,29 @@ class continuousDoubleAuctionEnv(
         mark_price_source = self._cfg("mark_price_source")
         tape_display_length = self._cfg("tape_display_length")
         self.max_step = self._cfg("max_step")
+        # Episode horizon: fixed at max_step, or drawn per episode from
+        # [max_step_min, max_step_max] at reset (doc/18 section 3.4). The
+        # horizon the agent is shown through `time_left` is the latest
+        # possible end, `time_left_horizon`, so a random draw stays unknown.
+        self.episode_length_mode = self._cfg("episode_length_mode")
+        if self.episode_length_mode not in ("fixed", "random"):
+            raise ValueError(
+                f"episode_length_mode must be 'fixed' or 'random'; got "
+                f"{self.episode_length_mode!r}."
+            )
+        self.max_step_min = int(self._cfg("max_step_min"))
+        self.max_step_max = int(self._cfg("max_step_max"))
+        if self.episode_length_mode == "random":
+            if self.max_step_min < 1 or self.max_step_min > self.max_step_max:
+                raise ValueError(
+                    f"episode_length_mode 'random' needs 1 <= max_step_min <= "
+                    f"max_step_max; got {self.max_step_min} and {self.max_step_max}."
+                )
+            self.time_left_horizon = self.max_step_max
+        else:
+            self.time_left_horizon = self.max_step
+        # The horizon of the episode in progress; `reset` sets it.
+        self.episode_horizon = self.time_left_horizon
         is_render = self._cfg("is_render")
         self.n_hist = self._cfg("n_hist")
 
@@ -239,14 +262,26 @@ class continuousDoubleAuctionEnv(
         high = self._cfg("initial_price_max")
         self.last_price = float(self.np_random.integers(low, high + 1))
 
+        # The horizon of this episode. Drawn from the env's own generator so a
+        # seeded reset reproduces it, like the price anchor above.
+        if self.episode_length_mode == "random":
+            self.episode_horizon = int(
+                self.np_random.integers(self.max_step_min, self.max_step_max + 1)
+            )
+        else:
+            self.episode_horizon = self.max_step
+
         self.reset_traders_acc()
 
         # Return observations and info dict (new format)
         observations = self.reset_traders_agg_LOB()
         # print(f'reset (observations): {observations}')
 
-        infos = {agent_id: {} for agent_id in self._agent_ids}
-        
+        # The drawn horizon is reported once, here, and never in the
+        # observation - `time_left` counts against `time_left_horizon`.
+        infos = {agent_id: {"episode_horizon": self.episode_horizon}
+                 for agent_id in self._agent_ids}
+
         return observations, infos
 
     # Updated step method to return 5 values: obs, rewards, terminated, truncated, infos
