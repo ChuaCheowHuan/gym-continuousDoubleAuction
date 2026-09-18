@@ -19,7 +19,8 @@ Related: [03_matching_engine.md](03_matching_engine.md) (what produces the fills
 | `cash_on_hold` | Capital escrowed against resting limit orders |
 | `position_val` | Market value of the open position |
 | `net_position` | Signed quantity held — positive long, negative short |
-| `VWAP` | Volume-weighted average entry price |
+| `cost_basis` | The position's carrying basis as the **exact** `Decimal` sum of the trade values that built it (buys − sells for a long, sells − buys for a short; positive on both sides). The ledger's primary quantity since 2026-09-18 |
+| `VWAP` | `cost_basis / |net_position|`, a derived property for display; zero when flat. Not the entry price — realised P&L is rolled into the basis on a partial close, so it can go negative (`entry_vwap` is the price actually paid) |
 | `nav` | Net asset value = `cash + cash_on_hold + position_val` |
 | `prev_nav` | NAV at the previous mark, used for the reward's `nav_change` |
 | `init_nav` | NAV at *t* = 0, used for `total_profit` |
@@ -36,7 +37,14 @@ everywhere; sizes and `net_position` are `int`, because a position is a count of
 requires float rewards. No field changes type mid-episode — `_covered` resets `position_val` and
 `VWAP` to `Decimal(0)` rather than a bare `0` for exactly that reason.
 
-All arithmetic is `Decimal`. This is what makes the simulation exactly zero-sum in NAV terms:
+All arithmetic is `Decimal`, and the basis is carried as a **sum**, not a quotient. Until
+2026-09-18 the ledger stored `VWAP = cost / size` and rebuilt the basis as `size × VWAP`; the
+quotient rounds at the 28-digit context whenever it does not terminate, and `mark_to_mkt` then
+multiplied it back in two independently rounded products, so conservation held only to about one
+unit in the 22nd decimal place ([15](15_findings_and_recommendations.md) S3-23). With `cost_basis`
+primary, every term of the conservation identity is a sum of the same trade values with opposite
+signs, and the property suite asserts `Σ NAV == Σ initial cash` with `==`. This is what makes the
+simulation exactly zero-sum in NAV terms:
 total NAV across all traders is conserved and equals total initial cash, and `total_sys_profit
 ≈ 0`. The invariant is checked at runtime in `exchg_helper.py` and again by the league callback
 at episode end.
@@ -118,7 +126,21 @@ if opening_size <= 0:
 ```
 
 You never need capital to flatten. Otherwise `opening_size × est_price` is compared against
-`cash` in `Decimal`.
+`cash` in `Decimal` — plus, for a `modify` or a `limit` at a price the trader already rests at,
+the escrow the order being replaced gives back, since `cancel_cash_transfer` returns it before the
+new quote is processed.
+
+   Also spendable: escrow held against this trader's resting orders that would only *close* its
+   position (`_closing_escrow`, capped at `|net_position|`, oldest order first). That cash backs a
+   fill that can only reduce risk, and treating it as spent refused two thirds of all orders at
+   `init_cash` 100,000 under random play ([15](15_findings_and_recommendations.md) S1-5,
+   [16](16_verification_log.md) §16.18). `cash` may therefore sit below zero by at most that
+   amount while both orders rest; `cash + cash_on_hold` never does and NAV is unaffected.
+
+3. **A `cancel` is never cash-checked.** It places nothing and only releases escrow. It used to be
+   run through the same predicate with its own irrelevant size and price, so a trader with all its
+   cash escrowed was refused the cancel that would have freed it
+   ([15](15_findings_and_recommendations.md) S2-13). Only the `nav > 0` gate applies to it.
 
 For market orders (`price == -1.0`) the estimate is the best price on the **opposite** side,
 falling back to the last tape price, falling back to 1:
@@ -131,7 +153,7 @@ est_price = LOB.get_best_ask() or (LOB.tape[-1]['price'] if LOB.tape else 1)   #
 20, and only the 10-lot short leg needs cash.
 
 > This supersedes an older documentation claim that the system "only validates `nav > 0`,
-> potentially allowing high leverage." A real cash check exists and is tested seven ways.
+> potentially allowing high leverage." A real cash check exists and is tested fourteen ways.
 
 **Rejections are counted now, but still cost nothing.** A refused order returns `([], [])`
 without a penalty and without reaching the book — but it increments `num_rejected_step`, which
@@ -193,9 +215,10 @@ Four dedicated tests cover it — aggressor and passive, in both directions.
 revalues every account at the **last tape price** each step:
 
 ```python
-price_diff   = (VWAP - mkt_price, mkt_price - VWAP)[net_position >= 0]
-profit       = |net_position| * price_diff
-position_val = |net_position| * VWAP + profit
+raw_val      = cost_basis                                # exact sum of trade values
+mkt_val      = |net_position| * mkt_price                # one product
+profit       = mkt_val - raw_val   if long   else   raw_val - mkt_val
+position_val = raw_val + profit    # = mkt_val for a long, 2*cost_basis - mkt_val for a short
 prev_nav     = nav
 nav          = cash + cash_on_hold + position_val      # cal_nav()
 max_nav      = max(max_nav, nav)                       # inside cal_nav()

@@ -1,5 +1,4 @@
-from decimal import *
-import time, random
+from decimal import Decimal
 
 class Order(object):
     '''
@@ -19,28 +18,26 @@ class Order(object):
         self.prev_order = None
         self.order_list = order_list
 
-    # helper functions to get Orders in linked list
-    def next_order(self):
-        return self.next_order
-
-    def prev_order(self):
-        return self.prev_order
-
     def update_quantity(self, new_quantity, new_timestamp):
+        """Change the resting quantity, keeping or losing queue priority.
+
+        A size *increase* is a new commitment and goes to the back of the
+        queue, so it takes the new timestamp. A size *decrease* keeps its place
+        - and now keeps its timestamp too. It used to take the new one while
+        staying at the head, which left a level's list out of timestamp order
+        (found by the Hypothesis suite: stamps `[16, 12]` at one price) and
+        made `Trader._get_order_ID`'s "oldest order" FIFO rule for a modify
+        pick the wrong order after a partial cancel. The timestamp is the
+        priority time, so it moves exactly when the priority does.
+        """
         new_quantity = Decimal(new_quantity)
-        if new_quantity > self.quantity and self.order_list.tail_order != self:
-            # check to see that the order is not the last order in list and the quantity is more
-            self.order_list.move_to_tail(self) # move to the end
+        if new_quantity > self.quantity:
+            if self.order_list.tail_order != self:
+                self.order_list.move_to_tail(self) # move to the end
+            self.timestamp = new_timestamp
         self.order_list.volume -= (self.quantity - new_quantity) # update volume
-        self.timestamp = new_timestamp
         self.quantity = new_quantity
 
-    def __str__0(self):
-        return "{}@{}/{} - {} - {}".format(self.quantity,
-                                           self.price,
-                                           self.trade_id,
-                                           self.timestamp,
-                                           self.order_id)
     def __str__(self):
         order = {}
         order["size"] = self.quantity

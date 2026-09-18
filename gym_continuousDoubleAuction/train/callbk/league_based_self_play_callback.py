@@ -67,6 +67,13 @@ def _new_tally() -> dict:
         "agent_steps": 0,
         "passes": 0,
         "rejections": 0,
+        # modify/cancel actions that found no order to act on. The third
+        # silent no-op beside a pass and a refusal (doc/15 S4-14).
+        "unmatched": 0,
+        # Agent-steps on which at least one observation element was clipped to
+        # the declared bounds (doc/15 S4-15). A bound that is wrong for the
+        # market shows here, not as a silent saturation.
+        "clipped_steps": 0,
         # Per agent, because the maker share summed over *all* agents is a
         # tautology: `process_acc` runs once per side of every trade, both
         # sides increment `num_trades_step`, and only the passive side
@@ -331,20 +338,35 @@ class SelfPlayCallback(RLlibCallback):
 
         pass_fraction = tally["passes"] / agent_steps
         rejection_fraction = tally["rejections"] / agent_steps
+        unmatched_fraction = tally["unmatched"] / agent_steps
+        clip_fraction = tally["clipped_steps"] / agent_steps
 
         metrics_logger.log_value("pass_action_fraction", pass_fraction, window=10)
         metrics_logger.log_value(
             "order_rejection_fraction", rejection_fraction, window=10
         )
+        # A modify or cancel that named no resting order. Together the three
+        # fractions bound how much of the league's activity is a no-op: an
+        # agent whose policy has drifted to "cancel" at every step scores
+        # exactly like one that passes, and neither the return series nor
+        # pass_action_fraction would say so.
+        metrics_logger.log_value(
+            "unmatched_action_fraction", unmatched_fraction, window=10
+        )
+        # Share of agent-steps whose observation hit a declared bound. The
+        # bounds are measured claims (doc/16 section 16.22); this is the
+        # number that says whether the market has since escaped them.
+        metrics_logger.log_value("obs_clip_fraction", clip_fraction, window=10)
 
         self._log_reward_terms(tally, agent_steps, metrics_logger)
 
         self._log_maker_ratio(tally, metrics_logger)
 
         logger.debug(
-            "episode %s activity: %s agent-steps, %.1f%% pass, %.1f%% rejected",
+            "episode %s activity: %s agent-steps, %.1f%% pass, %.1f%% rejected, "
+            "%.1f%% unmatched",
             episode.id_, agent_steps, 100 * pass_fraction,
-            100 * rejection_fraction,
+            100 * rejection_fraction, 100 * unmatched_fraction,
         )
 
     #: Trades an agent needs before its maker share is worth reporting. Below
@@ -601,6 +623,9 @@ class SelfPlayCallback(RLlibCallback):
             if agent_info.get("is_pass_action"):
                 tally["passes"] += 1
             tally["rejections"] += int(agent_info.get("num_rejected_step", 0) or 0)
+            tally["unmatched"] += int(agent_info.get("num_unmatched_step", 0) or 0)
+            if int(agent_info.get("num_obs_clipped_step", 0) or 0) > 0:
+                tally["clipped_steps"] += 1
 
             trades = int(agent_info.get("num_trades_step", 0) or 0)
             if trades:

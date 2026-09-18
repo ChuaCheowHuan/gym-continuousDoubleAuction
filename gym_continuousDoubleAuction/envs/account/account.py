@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from decimal import Decimal
+from typing import Any, Dict
 
 from .cash_processor import Cash_Processor
 from .calculate import Calculate
@@ -10,7 +13,7 @@ from tabulate import tabulate
 logger = get_logger(__name__)
 
 class Account(Calculate, Cash_Processor):
-    def __init__(self, ID, cash=env_default("init_cash")):
+    def __init__(self, ID: int, cash=env_default("init_cash")) -> None:
         self.ID = ID
         self.cash = Decimal(cash)
         # nav is used to calculate P&L & r per t step
@@ -22,14 +25,32 @@ class Account(Calculate, Cash_Processor):
         self.prev_nav = Decimal(cash) # nav @t-1
         # assuming only one ticker (1 type of contract)
         self.net_position = 0 # number of contracts currently holding long (positive) or short (negative)
-        self.VWAP = Decimal(0) # VWAP
+        # The carrying basis of the open position, as the EXACT Decimal sum of
+        # the trade values that built it: buys minus sells for a long, sells
+        # minus buys for a short (so it is positive on both sides). This is
+        # the ledger's primary quantity; `VWAP` is derived from it as a
+        # property and is display only.
+        #
+        # It used to be the other way round - `VWAP` was stored as the
+        # quotient `cost / size` and the basis recomputed as `size * VWAP` -
+        # and that is why NAV conservation held only to ~1e-22: the quotient
+        # rounds at the 28-digit Decimal context whenever it does not
+        # terminate, and `mark_to_mkt` then multiplied it back in two
+        # independently rounded products. Every trade moves the same exact
+        # value between two accounts' cash and basis, so with the basis held
+        # as that sum the conservation identity is exact by construction
+        # (doc/15 S3-23, doc/16 16.19).
+        #
+        # Realised P&L is deliberately rolled into it on a partial close:
+        # `_size_decrease` subtracts the trade VALUE, not `VWAP x quantity`.
+        # That roll is load-bearing - on the short side `position_val` is
+        # `2*cost_basis - mkt_val`, so removing it would move NAV - and it is
+        # what lets the derived `VWAP` go negative: long 2 @ 100, sell 1 @ 250
+        # leaves a basis of -50 on the remaining lot.
+        self.cost_basis = Decimal(0)
         # The average price actually paid for the lots still held.
         #
-        # `VWAP` above is NOT that, and has not been since `_size_decrease`
-        # started rolling realised P&L into the remaining lot's basis. That
-        # roll is load-bearing - on the short side `position_val` is
-        # `2*raw_val - mkt_val`, so removing it would move NAV - but it leaves
-        # `VWAP` free to go negative: long 2 @ 100, sell 1 @ 250 gives -50.
+        # `VWAP` is NOT that, for the reason just given.
         #
         # That mattered because `set_private_state` reported
         # `vwap_vs_mid = ... if vwap > 0 else 0.0`, and 0.0 is the encoding for
@@ -56,6 +77,18 @@ class Account(Calculate, Cash_Processor):
         # one whose order was refused, and those are opposite behaviours - the
         # second is an agent repeatedly quoting past its cash (doc/11 2.2).
         self.num_rejected_step = 0
+        # `modify` / `cancel` actions this step that named no resting order to
+        # act on. The other half of doc/15 S4-14: `num_rejected_step` counts an
+        # order the cash check refused, `is_pass_action` a deliberate pass, and
+        # until this existed the third silent outcome - an order-management
+        # action with nothing to manage - left no trace at all. From the
+        # policy's side all three look identical: nothing happened.
+        self.num_unmatched_step = 0
+        # Observation elements `set_next_state` clipped to the declared bounds
+        # this step (doc/15 S4-15). Assigned, not incremented: one observation
+        # is built per agent per step. Non-zero means a bound in
+        # `observation_bounds` is tighter than the market it is describing.
+        self.num_obs_clipped_step = 0
 
         # Written by Reward_Helper.set_reward each step, read by Info_Helper.
         # The reward used to be a single number with its five components
@@ -67,7 +100,7 @@ class Account(Calculate, Cash_Processor):
         self.drawdown = 0.0 # max_nav - nav, the level the penalty uses
         self.reward_terms = {} # signed contributions, summing to self.reward
 
-    def reset_acc(self, ID, cash=env_default("init_cash")):
+    def reset_acc(self, ID: int, cash=env_default("init_cash")) -> None:
         self.ID = ID
         self.cash = Decimal(cash)
         # nav is used to calculate P&L & r per t step
@@ -79,7 +112,7 @@ class Account(Calculate, Cash_Processor):
         self.prev_nav = Decimal(cash) # nav @t-1
         # assuming only one ticker (1 type of contract)
         self.net_position = 0 # number of contracts currently holding long (positive) or short (negative)
-        self.VWAP = Decimal(0) # VWAP
+        self.cost_basis = Decimal(0) # exact sum of trade values; see __init__
         # The real cost basis; see __init__ for why it is not VWAP.
         self.entry_vwap = Decimal(0)
         self.profit = Decimal(0) # profit @ each trade(tick) within a single t step
@@ -93,10 +126,32 @@ class Account(Calculate, Cash_Processor):
         self.num_passive_fills_step = 0
         self.order_step_placed = 0
         self.num_rejected_step = 0
+        self.num_unmatched_step = 0
+        self.num_obs_clipped_step = 0
 
         # See __init__ for what these are and why they exist.
         self.drawdown = 0.0
         self.reward_terms = {}
+
+    @property
+    def VWAP(self) -> Decimal:
+        """The carrying basis per contract, derived: `cost_basis / |net_position|`.
+
+        A Decimal quotient, so it can be inexact - which is fine for a display
+        value and is exactly why it is no longer what the ledger stores. Zero
+        when flat, as it always was.
+        """
+        if self.net_position == 0:
+            return Decimal(0)
+        return self.cost_basis / abs(self.net_position)
+
+    @VWAP.setter
+    def VWAP(self, value):
+        """Set the basis from a per-contract price, for callers that build a
+        position by hand (the tests do). `net_position` must already be set;
+        with a flat position there is nothing to carry and the basis is 0.
+        """
+        self.cost_basis = Decimal(value) * abs(self.net_position)
 
     def print_acc(self, msg):
         acc = {}
@@ -141,14 +196,16 @@ class Account(Calculate, Cash_Processor):
     def _size_increase(self, trade, position, party, trade_val):
         # Sizes add in int; only the value terms below are Decimal.
         total_size = abs(self.net_position) + int(trade.get('quantity'))
-        # VWAP
-        self.VWAP = (abs(self.net_position) * self.VWAP + trade_val) / total_size
-        # The real cost basis, rolled the same way but from its own previous
-        # value, so a prior partial close cannot leak into it.
+        # The basis grows by exactly the trade value. No quotient anywhere on
+        # the ledger path - see cost_basis in __init__.
+        self.cost_basis += trade_val
+        # The real cost basis per contract, rolled from its own previous
+        # value, so a prior partial close cannot leak into it. Observation
+        # only; its rounding never reaches NAV.
         self.entry_vwap = (
             abs(self.net_position) * self.entry_vwap + trade_val
         ) / total_size
-        raw_val = total_size * self.VWAP # value acquired with VWAP
+        raw_val = self.cost_basis # value acquired, exactly
         mkt_val = total_size * trade.get('price')
         self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
         self.size_increase_cash_transfer(party, trade_val)
@@ -159,23 +216,26 @@ class Account(Calculate, Cash_Processor):
         Entire position covered, net position = 0
         """
 
-        raw_val = abs(self.net_position) * self.VWAP # value acquired with VWAP
+        raw_val = self.cost_basis # value acquired, exactly
         mkt_val = abs(self.net_position) * trade.get('price')
         self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
         self.size_zero_cash_transfer(mkt_val)
-        # reset to 0 - as Decimal, not int. position_val is money and VWAP is a
-        # price, so both are Decimal everywhere else; assigning a bare 0 here
+        # reset to 0 - as Decimal, not int. position_val and cost_basis are
+        # money, so both are Decimal everywhere else; assigning a bare 0 here
         # was what made VWAP read back as an int once a position went flat.
         self.position_val = Decimal(0)
-        self.VWAP = Decimal(0)
+        self.cost_basis = Decimal(0)
         self.entry_vwap = Decimal(0)
         return mkt_val
 
     def _size_decrease(self, trade, position, party, trade_val):
         size_left = abs(self.net_position) - int(trade.get('quantity'))
         if size_left > 0:
-            self.VWAP = (abs(self.net_position) * self.VWAP - trade_val) / size_left
-            raw_val = size_left * self.VWAP # value acquired with VWAP
+            # The trade VALUE comes off the basis, not VWAP x quantity: the
+            # realised P&L stays in the basis of the remaining lots. See
+            # cost_basis in __init__ for why that is load-bearing.
+            self.cost_basis -= trade_val
+            raw_val = self.cost_basis # value acquired, exactly
             mkt_val = size_left * trade.get('price')
             self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
         else: # size_left == 0
@@ -189,15 +249,15 @@ class Account(Calculate, Cash_Processor):
         # deal with remaining size that cause position change
         new_size = int(trade.get('quantity')) - abs(self.net_position)
         self.position_val = new_size * trade.get('price') # traded value
-        self.VWAP = trade.get('price')
         # The flip opened a fresh position at this price, so the basis is it.
+        self.cost_basis = self.position_val
         self.entry_vwap = trade.get('price')
         self.size_increase_cash_transfer(party, self.position_val)
         return 0
 
     def _neutral(self, trade_val, trade, party):
         self.position_val += trade_val
-        self.VWAP = trade.get('price')
+        self.cost_basis = trade_val
         self.entry_vwap = trade.get('price')
         self.size_increase_cash_transfer(party, trade_val)
 
@@ -238,7 +298,7 @@ class Account(Calculate, Cash_Processor):
                 self.net_position += trade_quantity
         return 0
 
-    def process_acc(self, trade, party):
+    def process_acc(self, trade: Dict[str, Any], party: str) -> int:
         self.num_trades += 1
         self.num_trades_step += 1
         

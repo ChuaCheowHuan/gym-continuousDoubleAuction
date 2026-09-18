@@ -43,6 +43,7 @@ If you want a genuinely custom architecture later, subclass
 `DefaultPPOTorchRLModule` and pass it as `RLModuleSpec(module_class=...)` in
 policy_handler.build_multi_rl_module_spec - not via ModelCatalog.
 """
+import numpy as np
 from ray.rllib.algorithms.ppo.ppo_catalog import PPOCatalog
 from ray.rllib.core.columns import Columns
 from ray.rllib.core.models.configs import ModelConfig
@@ -62,6 +63,7 @@ from gym_continuousDoubleAuction.train.model.encoders import (
     module_class_for,
     validate_encoder_type,
 )
+from gym_continuousDoubleAuction.train.model.action_mask import mask_slice
 
 
 class RandomRLModule(RLModule):
@@ -72,7 +74,8 @@ class RandomRLModule(RLModule):
     through a learned distribution. For this env's `spaces.Dict` action space
     that means each component is sampled from its own declared range:
     `category` uniform over 9, `price` over 10, `price_offset` over 3,
-    `size_mean` ~ U(-1, 1), `size_sigma` ~ U(0, 1).
+    `order_slot` over max_own_orders + 1, `size_mean` ~ U(-1, 1),
+    `size_sigma` ~ U(0, 1).
 
     This is the distinction that matters versus a *frozen randomly-initialised*
     PPO network, which is what the old `PolicySpec(RandomPolicy, ...)` wiring
@@ -84,16 +87,32 @@ class RandomRLModule(RLModule):
     MUST be excluded from `policies_to_train` - `_forward_train` raises.
     """
 
+    _obs_mask = None
+
     @override(RLModule)
     def _forward(self, batch, **kwargs):
         # This env's observation space is a flat Box, so the batch dimension is
         # just len() of the obs tensor. (RLlib's own example uses dm-tree here
         # to cope with nested observation spaces; not needed for a Box.)
-        obs_batch_size = len(batch[Columns.OBS])
-        actions = batch_func(
-            [self.action_space.sample() for _ in range(obs_batch_size)]
-        )
-        return {Columns.ACTIONS: actions}
+        obs = batch[Columns.OBS]
+        obs_batch_size = len(obs)
+        samples = [self.action_space.sample() for _ in range(obs_batch_size)]
+
+        # Honour the observation's action mask (doc/06 section 6): a category
+        # the env says is impossible is redrawn uniformly among the possible
+        # ones, so the baseline is "random among what can be done" rather than
+        # "random including the dead actions". With the mask off the env
+        # emits all ones and nothing is redrawn.
+        if self._obs_mask is None:
+            self._obs_mask = mask_slice(self.observation_space) or False
+        if self._obs_mask:
+            rows = obs.detach().cpu().numpy() if hasattr(obs, "detach") else np.asarray(obs)
+            rng = self.action_space.np_random
+            for sample, row in zip(samples, rows):
+                allowed = np.flatnonzero(row[self._obs_mask] > 0.5)
+                if len(allowed) and row[self._obs_mask][int(sample["category"])] <= 0.5:
+                    sample["category"] = int(rng.choice(allowed))
+        return {Columns.ACTIONS: batch_func(samples)}
 
     @override(RLModule)
     def _forward_train(self, *args, **kwargs):
@@ -231,6 +250,9 @@ def build_trainable_module_spec(obs_space, act_space, encoder_type=None,
                 "the checkpoint was trained for."
             )
         return RLModuleSpec(
+            # The mask-aware module (identical to the stock one otherwise);
+            # no catalog_class, so the encoder is still RLlib's own MLP.
+            module_class=CDAPPOTorchRLModule,
             observation_space=obs_space,
             action_space=act_space,
             model_config=model_config,

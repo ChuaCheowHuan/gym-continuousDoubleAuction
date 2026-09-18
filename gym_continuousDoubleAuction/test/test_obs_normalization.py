@@ -1,13 +1,18 @@
 import numpy as np
 import pytest
-from decimal import Decimal
 
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import continuousDoubleAuctionEnv
 from gym_continuousDoubleAuction.envs.exchg.state_helper import (
     BOOK_DIM,
     PRIVATE_DIM,
-    SNAPSHOT_DIM,
+    EXTRA_DIM,
+    K_ROWS,
+    BOOK_ROW_ORDER,
 )
+
+
+#: One `levels`-mode snapshot: the six raw rows normalised, plus the scalars.
+LEVELS_SNAPSHOT_DIM = len(BOOK_ROW_ORDER) * K_ROWS + EXTRA_DIM
 
 
 class TestObsNormalization:
@@ -15,7 +20,7 @@ class TestObsNormalization:
     Tests for LOB observation normalization (set_agg_LOB):
       - Midpoint-based symmetric price normalization
       - sqrt-based volume normalization
-      - Observation sign preservation (bids >= 0, asks <= 0)
+      - Observation sign: both sides >= 0 (S4-17 removed the negated-ask convention)
       - agg_LOB_raw stores unnormalized raw values
       - Division-by-zero safety (empty book falls back to last_price)
       - Action price unnormalization: _set_price() uses agg_LOB_raw
@@ -33,7 +38,10 @@ class TestObsNormalization:
     # ------------------------------------------------------------------
 
     def _make_env(self, extra_config=None):
-        cfg = dict(self.BASE_CONFIG)
+        # These tests describe the `levels` book layout - price rows and their
+        # normalisation - so they build that mode explicitly (S3-15 made the
+        # fixed tick-offset grid the default).
+        cfg = dict(self.BASE_CONFIG, book_mode="levels")
         if extra_config:
             cfg.update(extra_config)
         env = continuousDoubleAuctionEnv(cfg)
@@ -63,7 +71,7 @@ class TestObsNormalization:
         """
         vector = obs[agent_id]
         end = len(vector) - PRIVATE_DIM
-        return vector[end - SNAPSHOT_DIM:end]
+        return vector[end - LEVELS_SNAPSHOT_DIM:end]
 
     # ------------------------------------------------------------------
     # 1. agg_LOB_raw is always populated after reset and step
@@ -76,10 +84,10 @@ class TestObsNormalization:
         assert hasattr(env, "agg_LOB_raw"), "agg_LOB_raw attribute missing after reset"
         raw = env.agg_LOB_raw
         assert isinstance(raw, np.ndarray)
-        assert raw.shape == (40,)
+        assert raw.shape == (BOOK_DIM,)  # 6 rows x k_rows since S3-14
 
     def test_agg_LOB_raw_updated_after_step(self):
-        """agg_LOB_raw must be updated (and remain shape (40,)) after each step."""
+        """agg_LOB_raw must be updated (and remain shape (BOOK_DIM,)) after each step."""
         env = self._make_env()
         env.reset()
         raw_before = env.agg_LOB_raw.copy()
@@ -88,7 +96,7 @@ class TestObsNormalization:
         self._place_limit(env, "agent_0", category=2, level=0, offset=1)
 
         raw_after = env.agg_LOB_raw
-        assert raw_after.shape == (40,)
+        assert raw_after.shape == (BOOK_DIM,)
         # Raw should now be non-zero in bid price slot
         assert not np.array_equal(raw_before, raw_after), \
             "agg_LOB_raw did not change after placing an order"
@@ -130,8 +138,12 @@ class TestObsNormalization:
         assert np.all(bid_prices >= 0), f"Bid prices in obs must be >= 0, got {bid_prices}"
         assert np.all(bid_sizes >= 0), f"Bid sizes in obs must be >= 0, got {bid_sizes}"
 
-    def test_ask_obs_non_positive_with_orders(self):
-        """After placing ask orders, ask price & size features must be <= 0."""
+    def test_ask_obs_non_negative_with_orders(self):
+        """After placing ask orders, ask price & size features must be >= 0.
+
+        Asks used to be negated (the sign encoded the side); S4-17 dropped
+        that, since the block's position already says which side it is.
+        """
         env = self._make_env()
         env.reset()
 
@@ -145,8 +157,8 @@ class TestObsNormalization:
         ask_prices = snap[20:30]
         ask_sizes  = snap[30:40]
 
-        assert np.all(ask_prices <= 0), f"Ask prices in obs must be <= 0, got {ask_prices}"
-        assert np.all(ask_sizes <= 0), f"Ask sizes in obs must be <= 0, got {ask_sizes}"
+        assert np.all(ask_prices >= 0), f"Ask prices in obs must be >= 0, got {ask_prices}"
+        assert np.all(ask_sizes >= 0), f"Ask sizes in obs must be >= 0, got {ask_sizes}"
 
     # ------------------------------------------------------------------
     # 3. Midpoint price normalization correctness
@@ -176,7 +188,7 @@ class TestObsNormalization:
 
         raw = env.agg_LOB_raw  # [bid_prices(10), bid_sizes(10), ask_prices(10), ask_sizes(10)]
         P_bid_1 = raw[0]       # best bid price (raw, positive)
-        P_ask_1 = abs(raw[20]) # best ask price (raw, positive magnitude)
+        P_ask_1 = raw[20]      # best ask price (raw, positive)
 
         # Only proceed if both sides were actually placed
         if P_bid_1 == 0 or P_ask_1 == 0:
@@ -186,8 +198,8 @@ class TestObsNormalization:
 
         # Expected normalized best bid price
         expected_norm_bid = (M - P_bid_1) / M
-        # Expected normalized best ask price (negative)
-        expected_norm_ask = -((P_ask_1 - M) / M)
+        # Expected normalized best ask price: distance above M, positive
+        expected_norm_ask = (P_ask_1 - M) / M
 
         snap = self._get_snapshot(obs_step)
         actual_norm_bid = snap[0]    # first bid price slot
@@ -216,7 +228,7 @@ class TestObsNormalization:
 
         raw = env.agg_LOB_raw
         P_bid_1 = raw[0]
-        P_ask_1 = abs(raw[20])
+        P_ask_1 = raw[20]
 
         if P_bid_1 == 0 or P_ask_1 == 0:
             pytest.skip("Could not populate both book sides.")
@@ -249,7 +261,7 @@ class TestObsNormalization:
         raw = env.agg_LOB_raw
         # [bid_prices(10), bid_sizes(10), ask_prices(10), ask_sizes(10)]
         raw_bid_size_l1 = raw[10]          # first bid size level
-        raw_ask_size_l1 = abs(raw[30])     # first ask size level (stored negative)
+        raw_ask_size_l1 = raw[30]          # first ask size level
 
         snap = self._get_snapshot(obs_step)
         norm_bid_size_l1 = float(snap[10])
@@ -260,9 +272,9 @@ class TestObsNormalization:
             assert norm_bid_size_l1 == pytest.approx(expected, abs=1e-4), \
                 "Bid size not sqrt-normalized"
         if raw_ask_size_l1 > 0:
-            expected = -np.sqrt(raw_ask_size_l1 / env.limit_max_size)
+            expected = np.sqrt(raw_ask_size_l1 / env.limit_max_size)
             assert norm_ask_size_l1 == pytest.approx(expected, abs=1e-4), \
-                "Ask size not sqrt-normalized (should be negative)"
+                "Ask size not sqrt-normalized"
 
     # ------------------------------------------------------------------
     # 5. Division-by-zero safety: empty book fallback to last_price

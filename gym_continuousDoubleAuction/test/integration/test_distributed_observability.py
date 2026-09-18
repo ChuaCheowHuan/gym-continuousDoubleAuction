@@ -24,7 +24,6 @@ import os
 import shutil
 import tempfile
 
-import pytest
 import ray
 from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
 

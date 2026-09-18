@@ -1,19 +1,15 @@
 import logging
 
 import numpy as np
-import pandas as pd
 
 import gymnasium as gym
 
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 
-from .orderbook.orderbook import OrderBook
 from .exchg.exchg_helper import Exchg_Helper
 from .agent.trader import Trader
 from ..config_loader import env_default
 from ..logging_setup import get_logger
-
-from tabulate import tabulate
 
 logger = get_logger(__name__)
 
@@ -41,6 +37,29 @@ class continuousDoubleAuctionEnv(
         mark_price_source = self._cfg("mark_price_source")
         tape_display_length = self._cfg("tape_display_length")
         self.max_step = self._cfg("max_step")
+        # Episode horizon: fixed at max_step, or drawn per episode from
+        # [max_step_min, max_step_max] at reset (doc/18 section 3.4). The
+        # horizon the agent is shown through `time_left` is the latest
+        # possible end, `time_left_horizon`, so a random draw stays unknown.
+        self.episode_length_mode = self._cfg("episode_length_mode")
+        if self.episode_length_mode not in ("fixed", "random"):
+            raise ValueError(
+                f"episode_length_mode must be 'fixed' or 'random'; got "
+                f"{self.episode_length_mode!r}."
+            )
+        self.max_step_min = int(self._cfg("max_step_min"))
+        self.max_step_max = int(self._cfg("max_step_max"))
+        if self.episode_length_mode == "random":
+            if self.max_step_min < 1 or self.max_step_min > self.max_step_max:
+                raise ValueError(
+                    f"episode_length_mode 'random' needs 1 <= max_step_min <= "
+                    f"max_step_max; got {self.max_step_min} and {self.max_step_max}."
+                )
+            self.time_left_horizon = self.max_step_max
+        else:
+            self.time_left_horizon = self.max_step
+        # The horizon of the episode in progress; `reset` sets it.
+        self.episode_horizon = self.time_left_horizon
         is_render = self._cfg("is_render")
         self.n_hist = self._cfg("n_hist")
 
@@ -58,6 +77,7 @@ class continuousDoubleAuctionEnv(
         drawdown_penalty = self._cfg("drawdown_penalty")
         passive_bonus = self._cfg("passive_bonus")
         loss_multiplier = self._cfg("loss_multiplier")
+        dead_action_penalty = self._cfg("dead_action_penalty")
 
         # Initialize parent classes
         super().__init__(
@@ -65,6 +85,10 @@ class continuousDoubleAuctionEnv(
             tick_size,
             tape_display_length,
             n_hist=self.n_hist,
+            book_mode=self._cfg("book_mode"),
+            action_mask=self._cfg("action_mask"),
+            matching_rule=self._cfg("matching_rule"),
+            step_clearing=self._cfg("step_clearing"),
             mark_price_source=mark_price_source,
             min_size=min_size,
             mkt_max_size=mkt_max_size,
@@ -77,6 +101,7 @@ class continuousDoubleAuctionEnv(
             drawdown_penalty=drawdown_penalty,
             passive_bonus=passive_bonus,
             loss_multiplier=loss_multiplier,
+            dead_action_penalty=dead_action_penalty,
         )
 
         self.next_states = {}
@@ -124,11 +149,22 @@ class continuousDoubleAuctionEnv(
         # `observation_space` / `action_space` on MultiAgentEnv are marked
         # @OldAPIStack in Ray 2.56 and mean something different (the space of a
         # single agent, not a per-agent dict).
+        #
+        # Finite bounds, from `observation_bounds` in tunable_constants.json
+        # via State_Helper (doc/15 S4-15): every feature is a ratio, a log or
+        # a tanh with a known or measured range, and `set_next_state` clips to
+        # these and counts what it clipped, so the Box is a true statement
+        # about what the env emits rather than the `(-inf, inf)` it used to
+        # declare, which disabled RLlib's space checks and observation filters.
+        if self.obs_low.shape != (self.n_hist * self.snapshot_dim + self.private_dim,):
+            raise ValueError(
+                f"observation_bounds built {self.obs_low.shape[0]} floats but the "
+                f"observation is {self.n_hist * self.snapshot_dim + self.private_dim}."
+            )
         self.observation_spaces = {
             agent_id: gym.spaces.Box(
-                low=-np.inf,
-                high=np.inf,
-                shape=(self.n_hist * self.snapshot_dim + self.private_dim,),
+                low=self.obs_low,
+                high=self.obs_high,
                 dtype=np.float32
             ) for agent_id in agent_ids
         }
@@ -175,41 +211,6 @@ class continuousDoubleAuctionEnv(
         """Observation space for a single agent (not the per-agent dict)."""
         return self.observation_spaces[agent_id]
         
-    # Override from RLlib
-    # def get_observation_space(self, agent_id):
-    #     """
-    #     observation space per agent:
-    #         array([[ 1.,  0., -1.,  0.,  0.,  0.,  0.,  0.,  0.,  0.],
-    #                 [-1., -4., -4.,  0.,  0.,  0.,  0.,  0.,  0.,  0.],
-    #                 [ 0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.],
-    #                 [ 0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.,  0.]])
-    #     """
-    #     inf = float('inf')
-    #     neg_inf = float('-inf')
-    #     obs_row = 4
-    #     obs_col = 10
-    
-    #     if agent_id.startswith("agent_"):
-    #         # return gym.spaces.Box(low=neg_inf, high=inf, shape=(obs_row, obs_col), dtype=np.float32)      
-    #         return gym.spaces.Box(low=neg_inf, high=inf, shape=(obs_row * obs_col,), dtype=np.float32)      
-    #     else:
-    #         raise ValueError(f"bad agent id: {agent_id}!")
-    
-    # def get_action_space(self, agent_id):
-    #     act_space = gym.spaces.Tuple((
-    #         gym.spaces.Discrete(3),  # side
-    #         gym.spaces.Discrete(4),  # type
-    #         gym.spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32),   # mean
-    #         gym.spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32),    # sigma
-    #         gym.spaces.Discrete(12),  # price
-    #     ))        
-    #     # Define action spaces for each agent type
-    #     if agent_id.startswith("agent_"):
-    #         # return act_space
-    #         return gym.spaces.Discrete(3)
-    #     else:
-    #         raise ValueError(f"bad agent id: {agent_id}!")
-                
     # Updated reset method to return proper format for new API
     def reset(self, *, seed=None, options=None):
         # Call parent reset if it exists.
@@ -228,12 +229,10 @@ class continuousDoubleAuctionEnv(
         if hasattr(super(), 'reset'):
             super().reset(seed=seed)
 
-        # Same tick the book was built with in Exchg_Helper, from the tick_size
-        # config key. This used to be a literal 1, which disagreed with any
-        # other configured tick_size - harmlessly, since OrderBook stores
-        # tick_size without ever reading it, but there is no reason to keep a
-        # second value here.
-        self.LOB = OrderBook(self.tick_size, self.tape_display_length) # new limit order book
+        # A fresh book. The tick grid is not the book's concern: it keys
+        # prices on whatever Decimal it is handed, and `Action_Helper.min_tick`
+        # is what puts every quoted price on the configured grid.
+        self.LOB = self.new_order_book() # new limit order book, under the matching rule
         self.agg_LOB = {}
         self.agg_LOB_raw = {}
         self.agg_LOB_aft = {}
@@ -265,46 +264,27 @@ class continuousDoubleAuctionEnv(
         high = self._cfg("initial_price_max")
         self.last_price = float(self.np_random.integers(low, high + 1))
 
+        # The horizon of this episode. Drawn from the env's own generator so a
+        # seeded reset reproduces it, like the price anchor above.
+        if self.episode_length_mode == "random":
+            self.episode_horizon = int(
+                self.np_random.integers(self.max_step_min, self.max_step_max + 1)
+            )
+        else:
+            self.episode_horizon = self.max_step
+
         self.reset_traders_acc()
 
         # Return observations and info dict (new format)
         observations = self.reset_traders_agg_LOB()
         # print(f'reset (observations): {observations}')
 
-        infos = {agent_id: {} for agent_id in self._agent_ids}
-        
+        # The drawn horizon is reported once, here, and never in the
+        # observation - `time_left` counts against `time_left_horizon`.
+        infos = {agent_id: {"episode_horizon": self.episode_horizon}
+                 for agent_id in self._agent_ids}
+
         return observations, infos
-
-    # # Updated step method to return 5 values: obs, rewards, terminated, truncated, infos
-    # def step(self, actions):
-
-    #     self.model_actions = actions
-    #     #self.print_table("Model actions:\n", actions)
-
-    #     self.next_states, self.rewards, self.terminateds, self.truncateds, self.infos = {}, {}, {}, {}, {}
-    #     self.agg_LOB = self.set_agg_LOB() # LOB state at t before processing LOB
-
-    #     actions = self.set_actions(actions) # format actions from nn output to be acceptable by LOB
-    #     self.LOB_actions = actions
-    #     #self.print_table("Formatted actions acceptable by LOB:\n", actions)
-
-    #     actions = self.rand_exec_seq(actions, None) # randomized traders execution sequence
-    #     self.shuffled_actions = actions
-    #     #self.print_table("Shuffled action queueing sequence for LOB executions:\n", actions)
-
-    #     self.seq_trades, self.seq_order_in_book = self.do_actions(actions) # Begin processing LOB
-    #     self.mark_to_mkt() # mark to market
-
-    #     # after processing LOB
-    #     state_input = self.prep_next_state()
-    #     self.next_states, self.rewards, self.terminateds, self.truncateds, self.infos = self.set_step_outputs(state_input)
-    #     # self.next_states, self.rewards, self.terminateds, self.truncateds, self.infos = self.set_step_outputs_new_api(state_input)
-
-    #     self.render()
-    #     self.t_step += 1
-
-    #     # Return 5 values as required by new API
-    #     return self.next_states, self.rewards, self.terminateds, self.truncateds, self.infos
 
     # Updated step method to return 5 values: obs, rewards, terminated, truncated, infos
     def step(self, actions):
@@ -314,9 +294,14 @@ class continuousDoubleAuctionEnv(
 
         self.next_states, self.rewards, self.terminateds, self.truncateds, self.infos = {}, {}, {}, {}, {}
 
-
-
-        self.agg_LOB = self.set_agg_LOB() # LOB state at t before processing LOB
+        # The pre-action snapshot. `prep_next_state` took one after the last
+        # step's orders, and nothing touches the book between then and now
+        # except `set_done` pulling a bankrupt trader's orders - which marks
+        # the snapshot stale. So it is rebuilt only then, or when the render
+        # wants the "@ t-1" table; measured at 5.9% of a step otherwise
+        # (doc/15 S4-11).
+        if self._snapshot_stale or (self.is_render and logger.isEnabledFor(logging.DEBUG)):
+            self.agg_LOB = self.set_agg_LOB() # LOB state at t before processing LOB
 
         # print(actions)
         # {
@@ -372,9 +357,6 @@ class continuousDoubleAuctionEnv(
         self.print_table("Model actions:\n", self.model_actions)
         self.print_table("Formatted actions acceptable by LOB:\n", self.LOB_actions)
         self.print_table("Shuffled action queueing sequence for LOB executions:\n", self.shuffled_actions)
-        self.model_actions = None
-        self.LOB_actions = None
-        self.shuffled_actions = None
 
         logger.debug(
             'rewards:\n%s\nterminateds:\n%s\ntruncateds:\n%s\ninfos:\n%s',
@@ -386,10 +368,13 @@ class continuousDoubleAuctionEnv(
 
         logger.debug('LOB:\n%s', self.LOB)  # the entire LOB, with tape
 
+        # Read-only. This used to null `model_actions`, `LOB_actions` and
+        # `shuffled_actions` and clear `seq_trades` / `seq_order_in_book`, so
+        # toggling the render changed what the *next* step's info saw (doc/15
+        # S4-7). Every one of those is reassigned at the top of `step()` and in
+        # `do_actions`, so the clearing bought nothing but the side effect.
         self.print_trades_all_seq(self.seq_trades)
-        self.seq_trades = []
         self.print_order_in_book_all_seq(self.seq_order_in_book)
-        self.seq_order_in_book = []
 
         #print("mark_to_mkt profit@t:")
         #self.mark_to_mkt() # mark to market

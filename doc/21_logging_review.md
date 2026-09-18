@@ -97,7 +97,7 @@ memory.
 retained.
 
 The cost is not small. A step dict for this repository's training shape (8 agents, `obs` of
-`(168,) float32` — the observation width when this was measured, now 193 — the full 21-field
+`(168,) float32` — the observation width when this was measured, now 216 — the full 21-field
 `info`) pickles to **8,314 bytes** **[verified]**, so one 4,096-step episode is **~34 MB** on disk
 and appreciably more live in Python objects, held per concurrent episode per runner. The widened
 observation makes that a floor rather than an estimate. `runtime_profiles.json` estimated ~10 MB; it is off by 3.4×, and has

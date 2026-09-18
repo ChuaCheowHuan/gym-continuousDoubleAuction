@@ -1,14 +1,13 @@
 import numpy as np
 import pandas as pd
 
-from .state_helper import State_Helper, BOOK_ROW_ORDER
+from .state_helper import State_Helper
 from .action_helper import Action_Helper
 from .reward_helper import Reward_Helper
 from .done_helper import Done_Helper
 from .info_helper import Info_Helper
 
 from ..orderbook.orderbook import OrderBook
-from ..agent.trader import Trader
 from ...config_loader import env_default
 from ...logging_setup import get_logger
 
@@ -25,16 +24,35 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
                  tape_display_length=env_default("tape_display_length"),
                  n_hist=env_default("n_hist"),
                  mark_price_source=env_default("mark_price_source"),
+                 matching_rule=env_default("matching_rule"),
+                 step_clearing=env_default("step_clearing"),
                  **kwargs):
         # tick_size goes on to Action_Helper as well: it is the tick the action
         # space quotes on, not just a property of the book.
         super().__init__(n_hist=n_hist, tick_size=tick_size, **kwargs)
 
-        # Kept so reset() can rebuild the book on the same tick rather than
-        # with a literal of its own.
+        # The matching regime (doc/06 section 8): how a price level is shared
+        # out, and whether a step's crossing orders clear on arrival or at one
+        # uniform price. Validated here so a typo fails at construction.
+        if matching_rule not in OrderBook.MATCHING_RULES:
+            raise ValueError(
+                f"matching_rule must be one of {OrderBook.MATCHING_RULES}; got {matching_rule!r}."
+            )
+        if step_clearing not in self.STEP_CLEARINGS:
+            raise ValueError(
+                f"step_clearing must be one of {self.STEP_CLEARINGS}; got {step_clearing!r}."
+            )
+        self.matching_rule = matching_rule
+        self.step_clearing = step_clearing
+
+        # The configured tick. The book itself takes no tick - it never read
+        # the one it used to be handed - so this is kept for callers that ask
+        # the env what grid it quotes on; the live copy the action layer uses
+        # is `Action_Helper.min_tick`, set from the same key.
         self.tick_size = tick_size
 
-        self.LOB = OrderBook(tick_size, tape_display_length) # limit order book
+        self.tape_display_length = tape_display_length
+        self.LOB = self.new_order_book() # limit order book
         self.agg_LOB = {} # aggregated or consolidated LOB
         self.agg_LOB_raw = {} # unnormalized raw aggregated LOB
         self.agg_LOB_aft = {} # aggregated or consolidated LOB after processing orders
@@ -43,7 +61,6 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         self.seq_order_in_book = [] # list of new order_in_book dicts
 
         self.init_cash = init_cash
-        self.tape_display_length = tape_display_length
 
         if mark_price_source not in self.MARK_PRICE_SOURCES:
             raise ValueError(
@@ -55,6 +72,49 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         self.model_actions = None
         self.LOB_actions = None
         self.shuffled_actions = None
+
+        # Top of book at the last `set_market_snapshot`; None until a step.
+        self.best_bid = None
+        self.best_ask = None
+        self.spread = None
+
+    #: `sequential`: each order matches on arrival in the step's shuffled
+    #: order. `batch`: the step's new orders clear together at one price.
+    STEP_CLEARINGS = ("sequential", "batch")
+
+    def new_order_book(self):
+        """A fresh book under this env's matching rule; `reset` builds one per episode."""
+        return OrderBook(self.tape_display_length, matching_rule=self.matching_rule)
+
+    def do_actions(self, actions):
+        """Process the step's actions under `step_clearing` (doc/06 section 8).
+
+        `sequential` is `Action_Helper.do_actions`: each order matches on
+        arrival, in shuffled order. `batch` opens the book's batch first, so
+        every new market or limit order (and a modify's re-entered quote) is
+        queued while cancels and the cash checks run as usual, then clears the
+        queue at one uniform price and settles each trader's result through
+        `Trader.settle_batch`. The per-action trade lists are aligned with the
+        shuffled actions either way, which is what the render path expects.
+        """
+        # Where this step's order ids start, for anything that wants to tell
+        # a new order from a resting one after the fact (the measurements do).
+        self.step_first_order_id = self.LOB.next_order_id + 1
+        if self.step_clearing != "batch":
+            return super().do_actions(actions)
+
+        self.LOB.begin_batch()
+        seq_trades, seq_order_in_book = super().do_actions(actions)
+        # The reference is the pre-batch book's, the same one the agents saw.
+        results = {tid: (trades, oib)
+                   for tid, trades, oib in self.LOB.clear_batch(reference_price=self.reference_price())}
+        for tid, (trades, oib) in results.items():
+            self.traders[tid].settle_batch(trades, oib, self.traders)
+        for i, action in enumerate(actions):
+            tid = int(action["ID"].split("_")[1])
+            if tid in results:
+                seq_trades[i], seq_order_in_book[i] = results[tid]
+        return seq_trades, seq_order_in_book
 
     def reset_traders_acc(self):
         """
@@ -205,6 +265,8 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
             trader.acc.num_passive_fills_step = 0
             trader.acc.order_step_placed = 0
             trader.acc.num_rejected_step = 0
+            trader.acc.num_unmatched_step = 0
+            trader.acc.num_obs_clipped_step = 0
 
         dones, truncateds = self.set_all_done(dones)
 
@@ -220,15 +282,16 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         """
         Tabulate data for display.
         If data is a 1D numpy array holding a flat LOB snapshot, reshape the book
-        block into a 4-column table: [bid_price, bid_size, ask_price, ask_size],
-        then log any trailing market-level scalars on their own line.
+        block into a `book_rows`-column table headed by BOOK_ROW_ORDER, then
+        log any trailing market-level scalars on their own line.
         """
-        if isinstance(data, np.ndarray) and data.ndim == 1 and data.size >= self.book_dim:
-            book = data[:self.book_dim]
-            extras = data[self.book_dim:]
-            # shape (k_rows, book_rows): each row is one price level
-            reshaped = book.reshape(self.book_rows, self.k_rows).T
-            headers = list(BOOK_ROW_ORDER)
+        if isinstance(data, np.ndarray) and data.ndim == 1 and data.size >= self.obs_book_dim:
+            book = data[:self.obs_book_dim]
+            extras = data[self.obs_book_dim:]
+            # shape (cells, rows): each row of the table is one level or one
+            # tick offset, depending on `book_mode`.
+            reshaped = book.reshape(len(self.obs_book_rows), self.obs_book_cells).T
+            headers = list(self.obs_book_rows)
             logger.debug("%s %s", msg, tabulate(reshaped, headers=headers))
             if extras.size == self.extra_dim:
                 logger.debug(

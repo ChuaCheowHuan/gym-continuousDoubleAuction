@@ -155,29 +155,45 @@ class TestEnvFallbacksComeFromTheFile:
         env.reset()
         assert env.last_price == 33.0
 
-    def test_book_is_built_on_the_configured_tick(self):
-        """reset() used to rebuild the book with a literal 1."""
+    def test_configured_tick_reaches_the_action_layer(self):
+        """The tick the env quotes on is the configured one, before and after reset.
+
+        The book no longer takes a tick at all - it stored one it never read
+        (doc/15 S3-4) - so the two places that carry the value are the env's
+        own attribute and `Action_Helper.min_tick`, which builds every price.
+        """
         env = continuousDoubleAuctionEnv({"num_of_agents": 2, "tick_size": 5})
-        env.reset()
-        assert env.LOB.tick_size == 5
+        assert env.tick_size == 5
         assert env.min_tick == 5
+        env.reset()
+        assert env.min_tick == 5
+        assert not hasattr(env.LOB, "tick_size")
+        # And it is the grid quoted prices land on.
+        for level in range(env.k_rows):
+            assert env._set_price(env.min_tick, "bid", level, 1) % 5 == 0
 
 
 class TestStructuralConstantsComeFromTheFile:
 
     def test_book_depth_drives_observation_and_action_spaces(self, config_tree):
         """k_rows is one definition, read by both spaces and by _set_price."""
+        # private_dim follows k_rows since the own-book block exists: 9 base
+        # + 2 x k_rows own sizes + 2 counts + 1 flag (doc/15 S3-24 phase 1).
         config_tree(
             "tunable_constants.json",
-            lambda raw: raw["observation_layout"].update(k_rows=6),
+            lambda raw: raw["observation_layout"].update(k_rows=6, private_dim=33),
         )
         env = continuousDoubleAuctionEnv({"num_of_agents": 2, "n_hist": 2})
 
         assert env.k_rows == 6
-        assert env.book_dim == 4 * 6
-        assert env.snapshot_dim == 4 * 6 + env.extra_dim
-        # + the per-agent private block, whose width k_rows does not touch.
-        expected = (2 * (4 * 6 + env.extra_dim) + env.private_dim,)
+        assert env.book_dim == 6 * 6  # the raw frame: six rows of six levels
+        # The emitted block follows the book mode: two size rows over a
+        # 2 * 6 + 1 window in `grid`, the six raw rows in `levels`.
+        cells = 2 * 6 + 1 if env.book_mode == "grid" else 6
+        assert env.obs_book_dim == len(env.obs_book_rows) * cells
+        assert env.snapshot_dim == env.obs_book_dim + env.extra_dim
+        assert env.private_dim == 33 == len(env.private_fields)  # 9 + 12 + 2 + 1 + 9
+        expected = (2 * env.snapshot_dim + env.private_dim,)
         assert env.observation_spaces["agent_0"].shape == expected
         assert env.action_spaces["agent_0"]["price"].n == 6
 
@@ -188,10 +204,11 @@ class TestStructuralConstantsComeFromTheFile:
         """The scalars are part of the snapshot, and k_rows does not touch them."""
         config_tree(
             "tunable_constants.json",
-            lambda raw: raw["observation_layout"].update(k_rows=5),
+            lambda raw: raw["observation_layout"].update(k_rows=5, private_dim=31),
         )
         env = continuousDoubleAuctionEnv({"num_of_agents": 2, "n_hist": 1})
-        assert env.snapshot_dim == 4 * 5 + env.extra_dim
+        cells = 2 * 5 + 1 if env.book_mode == "grid" else 5
+        assert env.snapshot_dim == len(env.obs_book_rows) * cells + env.extra_dim
 
     def test_extra_dim_must_match_what_set_agg_LOB_builds(self, config_tree):
         """Same rule as book_rows: a structural value code cannot honour raises.

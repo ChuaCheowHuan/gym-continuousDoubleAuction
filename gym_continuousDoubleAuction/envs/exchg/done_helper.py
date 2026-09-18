@@ -1,6 +1,9 @@
+from typing import Dict, Tuple
+
+
 class Done_Helper(object):
 
-    def set_done(self, terminateds, trader):
+    def set_done(self, terminateds: Dict[str, bool], trader) -> Dict[str, bool]:
         """
         When trader is broke (NAV <= 0), he's done ;)
 
@@ -32,11 +35,14 @@ class Done_Helper(object):
             self.done_set.add(agent) # done_set is a set
             terminateds[agent] = True
             # Its orders outlive it otherwise - see the docstring.
-            trader.cancel_all_orders(self.LOB)
+            if trader.cancel_all_orders(self.LOB):
+                # The post-action snapshot predates this; the next step must
+                # rebuild its pre-action view rather than reuse it.
+                self._snapshot_stale = True
 
         return terminateds
 
-    def is_live(self, trader):
+    def is_live(self, trader) -> bool:
         """Whether this trader still takes part in the episode.
 
         `set_step_outputs` asks before building an agent's observation, reward
@@ -45,7 +51,7 @@ class Done_Helper(object):
         """
         return f'agent_{trader.ID}' not in self.done_set
 
-    def set_all_done(self, terminateds):
+    def set_all_done(self, terminateds: Dict[str, bool]) -> Tuple[Dict[str, bool], Dict[str, bool]]:
         """
         Complete the per-agent `terminateds` and derive the two `__all__` keys.
 
@@ -84,7 +90,9 @@ class Done_Helper(object):
         # the (max_step + 1)-th step, so every episode ran one step long and
         # TrainConfig.train_batch_size (`max_step * num_episodes_per_iter`)
         # understated the batch by one step per episode.
-        episode_timed_out = self.t_step + 1 >= self.max_step
+        # `episode_horizon`, not `max_step`: the two agree in the fixed
+        # mode and differ when the horizon was drawn at reset.
+        episode_timed_out = self.t_step + 1 >= self.episode_horizon
 
         terminateds["__all__"] = True if all_agents_done else False
         truncateds["__all__"] = True if episode_timed_out else False

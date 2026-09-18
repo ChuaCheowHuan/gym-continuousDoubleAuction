@@ -3,12 +3,124 @@
   "_note": "Derived quantities are not listed. book_dim is book_rows * k_rows, snapshot_dim is book_dim + extra_dim, and the action space's price cardinality is k_rows. Writing a derived value here would create a second copy that can disagree with the first.",
   "observation_layout": {
     "_source": "gym_continuousDoubleAuction/envs/exchg/state_helper.py (State_Helper.__init__)",
-    "_note": "One observation snapshot is book_rows stacked rows of k_rows price levels - [bid_price, bid_size, ask_price, ask_size] - followed by extra_dim market-level scalars [log_mid, log1p_spread_ticks]. k_rows is the single definition of book depth: the observation exposes it, the action space's price code indexes it, and _set_price reshapes against it. book_rows is fixed by the four lists set_agg_LOB builds; changing it requires changing that function.",
-    "_note_private_dim": "private_dim is the width of the PER-AGENT block appended after the n_hist stacked snapshots, so an observation is n_hist * snapshot_dim + private_dim floats. The book prefix is still shared and computed once; only this tail differs between agents. It exists because the reward is f(nav, prev_nav, max_nav, ...) and none of those were observable - two agents holding opposite positions saw the byte-identical vector and needed opposite actions, which no policy can do (finding S1-2). Changing this number means changing State_Helper.set_private_state to match; PRIVATE_FIELDS there is the single definition of what the block contains, and its length is checked against this value at construction.",
+    "_note": "The RAW book snapshot (agg_LOB_raw, and every frame in the history) is book_rows stacked rows of k_rows price levels - [bid_price, bid_size, ask_price, ask_size, bid_occupied, ask_occupied] - followed by extra_dim market-level scalars [log_mid, log1p_spread_ticks, mid_return, signed_volume, log1p_trade_count, trade_direction] - EXTRA_FIELDS in state_helper.py is the definition, and its length is checked against extra_dim at construction. The two occupancy rows (doc/15 S3-14) are 1.0 where a level holds an order and 0.0 where it does not, so a price entry of 0.0 is no longer ambiguous between an absent level and a resting quote sitting exactly at the reference price - measured at 1.2% of occupied cells under random play at the shipped config and 22% at a thin-book stress config before the rows existed. k_rows is the single definition of book depth: the observation exposes it, the action space's price code indexes it, and _set_price reshapes against it. book_rows is fixed by the six lists set_agg_LOB builds (BOOK_ROW_ORDER in state_helper.py); changing it requires changing that function. What an observation snapshot EMITS depends on env_defaults.json -> book_mode: in 'levels' mode it is these six rows normalised; in 'grid' mode (the default since S3-15) it is two rows - bid sizes and ask sizes - over 2 * k_rows + 1 tick offsets around the reference price, built from the raw frame at emission so older frames re-anchor to the newest reference. k_rows is then both the half-width of the window and the cardinality of the action's price code.",
+    "_note_private_dim": "private_dim is the width of the PER-AGENT block appended after the n_hist stacked snapshots, so an observation is n_hist * snapshot_dim + private_dim floats. The book prefix is still shared and computed once; only this tail differs between agents. It exists because the reward is f(nav, prev_nav, max_nav, ...) and none of those were observable - two agents holding opposite positions saw the byte-identical vector and needed opposite actions, which no policy can do (finding S1-2). Changing this number means changing State_Helper.set_private_state to match; State_Helper.private_fields(k_rows) there is the single definition of what the block contains, and its length is checked against this value at construction. It is 9 base fields + 2 * k_rows own-book sizes + 2 own-order counts + 1 feedback flag + 9 action-mask entries (one per category, 1.0 where the category is possible for this agent this step; doc/06 section 6): 9 + 20 + 2 + 1 + 9 = 41 at k_rows 10.",
     "k_rows": 10,
-    "book_rows": 4,
+    "book_rows": 6,
     "extra_dim": 6,
-    "private_dim": 9
+    "private_dim": 41,
+    "_note_own_book": "The OWN-BOOK block (doc/15 S3-24 phase 1, closing the S1-2 tail): for each of the k_rows public levels on each side, THIS agent's resting size at that level on the public book's sqrt(V / limit_max_size) scale (non-negative on both sides since S4-17), then this agent's resting order count per side over action_space.max_own_orders, then unmatched_last_step - 1.0 if the agent's last modify/cancel named no resting order (phase 3), so the consequence of a dead action is in the next observation. Level k of the own book is level k of the public book in the same snapshot, which is what lets a tokenising encoder carry own size as two extra channels of each level token (tokenize.py)."
+  },
+  "observation_bounds": {
+    "_source": "gym_continuousDoubleAuction/envs/exchg/state_helper.py (State_Helper.observation_bounds, set_next_state)",
+    "_note": "Finite bounds of the observation Box (doc/15 S4-15), one [low, high] pair per feature family. State_Helper.observation_bounds builds the low/high arrays of the whole n_hist * snapshot_dim + private_dim vector from these, the env declares the Box with them, and set_next_state clips every emitted vector to them and counts the elements it clipped in num_obs_clipped_step (info, the episode record, and the obs_clip_fraction training metric). A bound is a claim about the range a feature can take, so the counter is what makes a wrong claim visible rather than a silent clip. The two occupancy rows and the nine action-mask entries are [0, 1] by definition. Every field named in BOOK_ROW_ORDER, EXTRA_FIELDS and private_fields() must have an entry here or in the own_size / own_count aliases; construction fails naming the field otherwise.",
+    "_note_derivation": "Where a bound is a mathematical identity it is exact: with P > 0, bid_price (M - P) / M is < 1 and ask_price (P - M) / M is > -1; mid_return M_t / M_prev - 1 is > -1; position is a tanh; trade_direction, time_left, the counts and the flag are defined on [-1, 1] or [0, 1]; drawdown is <= 0; vwap_vs_mid is (M - VWAP) / M < 1; sizes, spread, trade count, cash_on_hold and the own-book block are >= 0. The other sides are measured (doc/16 section 16.22: 20 seeded episodes x 400 steps of random play at the shipped config and 20 at a stress config - 6 agents, 20,000 cash, anchors 5..500, tick 0.1) and given at least 4x headroom over the widest value seen. The price rows are signed on their measured side because every frame in the stack is normalised by the NEWEST frame's midpoint (doc/05 section 2.2): an older frame's bid resting above M_t reads negative. The first smoke test of a [0, 1] bid_price bound clipped 192 elements in 50 steps for exactly that reason. The wide price and cost-basis tails come from the price level itself random-walking down toward the tick floor under random play (doc/16 section 16.23: every extreme cell sat in a TWO-SIDED book whose midpoint had fallen to a few ticks, e.g. M = 2.5 with tick 1), where one tick is a large fraction of price and a level a dozen ticks away reads as a multiple of the midpoint - the coordinate problem of doc/15 S3-15, not the one-sided fallback. Their true extremes are set by the config, not by chance - log_mid's floor is log(min_tick) - log_mid_centre (-6.21 at the stress config, exactly the value measured), and ask_price, bid_price, mid_return and vwap_vs_mid can in principle reach (price / min_tick - 1). These bounds cover everything measured with headroom; a run whose book collapses further is counted, not hidden, in num_obs_clipped_step. For the log features the headroom is on the argument (e^8 = 2,981 trades per step against 9 seen; e^10 = 22,026 ticks of spread against 44 seen). The NAV-normalised ratios share one envelope of 8, i.e. eight times the starting NAV.",
+    "book": {
+      "bid_price": [
+        -128.0,
+        1.0
+      ],
+      "bid_size": [
+        0.0,
+        8.0
+      ],
+      "ask_price": [
+        -1.0,
+        128.0
+      ],
+      "ask_size": [
+        0.0,
+        8.0
+      ],
+      "bid_occupied": [
+        0.0,
+        1.0
+      ],
+      "ask_occupied": [
+        0.0,
+        1.0
+      ]
+    },
+    "extra": {
+      "log_mid": [
+        -8.0,
+        8.0
+      ],
+      "log1p_spread_ticks": [
+        0.0,
+        10.0
+      ],
+      "mid_return": [
+        -1.0,
+        64.0
+      ],
+      "signed_volume": [
+        -8.0,
+        8.0
+      ],
+      "log1p_trade_count": [
+        0.0,
+        8.0
+      ],
+      "trade_direction": [
+        -1.0,
+        1.0
+      ]
+    },
+    "private": {
+      "position": [
+        -1.0,
+        1.0
+      ],
+      "position_val": [
+        -8.0,
+        8.0
+      ],
+      "cash": [
+        -8.0,
+        8.0
+      ],
+      "cash_on_hold": [
+        0.0,
+        8.0
+      ],
+      "nav": [
+        -8.0,
+        8.0
+      ],
+      "drawdown": [
+        -8.0,
+        0.0
+      ],
+      "vwap_vs_mid": [
+        -128.0,
+        1.0
+      ],
+      "realised_pnl": [
+        -8.0,
+        8.0
+      ],
+      "time_left": [
+        0.0,
+        1.0
+      ],
+      "own_size": [
+        0.0,
+        8.0
+      ],
+      "own_count": [
+        0.0,
+        1.0
+      ],
+      "unmatched_last_step": [
+        0.0,
+        1.0
+      ],
+      "action_mask": [
+        0.0,
+        1.0
+      ]
+    }
   },
   "action_space": {
     "_source": "gym_continuousDoubleAuction/envs/exchg/action_helper.py (Action_Helper.act_space)",
@@ -18,7 +130,9 @@
     "size_mean_low": -1.0,
     "size_mean_high": 1.0,
     "size_sigma_low": 0.0,
-    "size_sigma_high": 1.0
+    "size_sigma_high": 1.0,
+    "_note_order_slot": "order_slot aims a modify or cancel at one of the agent's OWN resting orders on the named side, counted from the touch (best price first, oldest first within a level) - slot 1 is the order nearest the market - and clamped to the deepest own order when the agent has fewer than the slot names. For cancel, slot 0 means every own order on that side. For modify, slot 0 keeps the pre-slot FIFO rule (the oldest order) so a policy that ignores the head loses nothing; slot k moves the k-th order to the price named by price + price_offset. The only miss left, counted in num_unmatched_step, is a modify or cancel with nothing resting on that side. Cancel no longer matches by price at all; limit still does, as the upsert rule. max_own_orders is the cardinality minus one, set to the p90 of resting orders measured under random play (4; doc/16 16.19). Why clamp rather than miss: a head whose upper slots were dead made modify WORSE for a uniformly random policy - the baseline opponents - than the FIFO rule it replaced (48% -> 23% of issued modifies hit) while cancel only rose from 7% to 19%; a learned policy gains nothing from dead slots because it can read its own-order counts and aim exactly. Clamped, any slot hits whenever the agent has an order on that side (doc/16 16.20).",
+    "max_own_orders": 4
   },
   "price_anchor_fallbacks": {
     "_source": "gym_continuousDoubleAuction/envs/exchg/action_helper.py (Action_Helper.__init__) and state_helper.py (set_agg_LOB)",
@@ -59,10 +173,5 @@
     "training_log_dir": "results",
     "training_log_fallback": "../results",
     "default_agent_id": "agent_0"
-  },
-  "inert_tick_size_copy": {
-    "_source": "gym_continuousDoubleAuction/envs/orderbook/orderbook.py (OrderBook.__init__)",
-    "_note": "DOCUMENTATION ONLY - the one value in this file that is not read from here. OrderBook accepts and stores a tick_size it never reads, and the envs/orderbook/ package is off-limits to changes, so its literal default stays in that module. The live tick is Action_Helper.min_tick, which comes from the tick_size config key. Deleting the dead parameter is the documented recommendation (doc/15 S3-4). The env side of this is fixed: reset() now builds the book with the configured tick_size instead of a literal 1.",
-    "orderbook_default_tick_size": 0.0001
   }
 }

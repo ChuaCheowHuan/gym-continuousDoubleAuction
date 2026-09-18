@@ -455,7 +455,12 @@ corrections in [README.md](../README.md).
 
 ---
 
-## 16.10 NAV conservation is exact; the `float()` round trip went blind above `init_cash` 1e10
+## 16.10 NAV conservation is exact to Decimal rounding; the `float()` round trip went blind above `init_cash` 1e10
+
+> **Corrected 2026-09-18.** The heading used to say conservation is *exact*. It is exact to about
+> one unit in the 22nd decimal place, not to zero - see §16.18 and [15](15_findings_and_recommendations.md) S3-23.
+> The 300-step probe below saw the residuals cancel; a longer one does not. Nothing else in this
+> section changes: the `float()` blindness it is about is real and fixed.
 
 The episode-end check used to parse `info["NAV"]` — the exact `str()` of a `Decimal` — back with
 `float()`. Three probes, run to decide whether that round trip was doing any harm and whether
@@ -887,3 +892,766 @@ the effect is not detectable at this scale, and that the metric which said other
 was measuring the agent's behaviour rather than its network.
 
 **Supports:** §25 3.3, §25 3.8, §23, §11, §18 5.6.4.
+
+
+## 16.17 A cancel that could not cancel, and a tick that split every level (2026-09-18)
+
+Two probes from the review pass recorded in [17](17_changelog.md) §44, both against the tree as
+merged in PR #84. Reproduce with the tests named at the end; the raw script is a dozen lines of
+`Trader` / `OrderBook` calls and a bare env at `tick_size` 0.1.
+
+### S2-13: the cancel
+
+One trader, 1,000 cash, rests a bid for all of it, then tries to cancel it and, separately, to
+shrink it.
+
+```
+=== before ===
+after limit 10 @ 100: cash 0.0   on_hold 1000.0  rejected 0
+after cancel        : cash 0.0   on_hold 1000.0  rejected 1  orders resting 1
+after modify 5 @ 100: cash 0.0   on_hold 1000.0  rejected 1  resting qty 10
+
+=== after ===
+after cancel        : cash 1000.0  on_hold 0.0   rejected 0  orders resting 0
+after modify 5 @ 100: cash 500.0   on_hold 500.0 rejected 0  resting qty 5
+```
+
+The "before" rows are the finding: the refusal is counted in `num_rejected_step` and the order
+stays live. Nothing else in the ledger moves, so NAV conservation never noticed.
+
+### S3-4: the tick grid
+
+A bare env at `tick_size` 0.1, anchor pinned at 100, one agent posting a limit bid at level 0 with
+the aggressive offset every step, the other passing. Each step should move the best bid up one
+tick and leave one order at each level.
+
+```
+=== before ===
+step 0 bid levels: [('100.0', '251')]
+step 1 bid levels: [('100.0', '251'), ('100.0999984741211', '251')]
+step 2 bid levels: [('100.0', '251'), ('100.0999984741211', '251'), ('100.19999694824219', '251')]
+step 3 bid levels: [..., ('100.29999542236328', '251')]
+LOB_actions last: [{... 'type': 'limit', 'size': 251, 'price': 100.29999542236328}]
+
+=== after ===
+step 1 bid levels: [('100.0', '251'), ('100.1', '251')]
+step 2 bid levels: [('100.0', '251'), ('100.1', '251'), ('100.2', '251')]
+step 3 bid levels: [('100.0', '251'), ('100.1', '251'), ('100.2', '251'), ('100.3', '251')]
+LOB_actions last: [{... 'type': 'limit', 'size': 251, 'price': 100.3}]
+```
+
+`100.0999984741211` is `float32(100.1)`. It came out of `agg_LOB_raw`, and the book keyed a price
+level on it. With the join offset instead of the aggressive one the same agent, before the fix,
+rested a *new* order at a new one-ulp level every step rather than upserting — which is what
+`test_tick_grid.py::TestFractionalTickBookStaysConsistent::test_requoting_the_same_level_upserts`
+now pins.
+
+### What this does not establish
+
+Both probes are at default `init_cash` and small books. The cancel fix is a change to the approval
+predicate only; whether agents *learn* to use cancels now that they work is a training question
+this log does not answer. The grid fix is exact for any tick that `str()` round-trips, which is
+every tick anyone writes in a JSON file; it does not make the book itself enforce a grid, and the
+dead `OrderBook.tick_size` parameter is still there (S3-4).
+
+**Tests:** `test_cash_check.py::TestCancelAndModifyNeverTrapCash` (7), `test_tick_grid.py` (14).
+Suite after: 935 unit + 153 integration = 1,088, all passing.
+
+**Supports:** §15 S2-13, §15 S3-4, §04 3, §06 1.5, §18 6.
+
+
+## 16.18 The recommendations pass: closing-side escrow, a rounding residual, and a protocol run once (2026-09-18)
+
+The six recommendations of [17](17_changelog.md) §44.5, executed in §45. Three of them produced
+measurements; the rest produced code and tests and are recorded there.
+
+### S1-5's tail: escrow held against closing orders
+
+Six seeds x 400 steps x 6 agents of uniformly random play, at two starting balances. "Closing-side
+escrow" is the notional escrowed against this trader's resting orders on the side that would
+reduce its position. A refusal "would have passed" if `cash + closing escrow` covered the order.
+
+```
+init_cash 20,000  (before)
+  agent-steps with closing-side escrow > 0:  4,898 / 14,400 (34.0%)
+  closing-side share of total escrow:        59.8%
+  refusals: 3,712; while closing escrow > 0: 1,602; would pass if it counted: 793
+init_cash 100,000 (before)
+  agent-steps with closing-side escrow > 0:  6,318 / 14,400 (43.9%)
+  closing-side share of total escrow:        47.5%
+  refusals: 607; while closing escrow > 0: 508; would pass if it counted: 409
+
+after (Trader._closing_escrow counted as spendable)
+  init_cash  20,000: refusals 3,241 (from 3,712)
+  init_cash 100,000: refusals   340 (from 607)
+```
+
+At 1,000,000 - the shipped default - the check never binds under random play (0 refusals), so
+the numbers above are the regime where it does. The "would pass" column is an estimate made with
+the same price estimate `_order_approved` uses; the "after" rows are the real count.
+
+### S3-23: conservation is exact to 1e-22, not to zero
+
+Twenty seeds x 600 steps x 4 agents, `init_cash` 100,000, `sum(nav) - 4 x init_cash` at every
+step, **on the tree before any ledger change in this pass** (`trader.py` at commit `cb348b6`):
+
+```
+steps: 12,000; steps with non-zero error: 2,116 (17.6%); worst |error|: 7E-22
+```
+
+Same measurement after the pass: 1,773 (14.8%), worst `8E-22`. The difference is the different
+sequence of fills, not the change. §16.10's "exactly conserved 300/300" was a 300-step sequence
+where the residuals happened to cancel; its heading is corrected below. Cause and fix are in
+[15](15_findings_and_recommendations.md) S3-23.
+
+### What the Hypothesis suite found on its first run
+
+Two failures, both real, both now fixed or reclassified:
+
+- **Time priority within a level was not reflected in timestamps.** At one ask level the stamps
+  read `[16, 12]`: a size-reducing `modify` kept the order's head-of-queue position (correct) and
+  overwrote its timestamp with the modify time (not correct - `_get_order_ID`'s FIFO rule for the
+  next modify then picked the wrong order). `Order.update_quantity` now moves the timestamp only
+  when it moves the order. Found at seed 15, six steps.
+- **The conservation residual above**, at seed 161.
+
+### The comparison driver, run once at smoke scale
+
+`python -m gym_continuousDoubleAuction.train.compare --encoders mlp transformer --seeds 0 1
+--iters 1 --agents 4 --trained-agents 2 --max-step 64 --episodes-per-iter 2 --probe-episodes 1
+--probe-steps 128 --horizons 1 5`, from an empty directory, 11 seconds of wall time:
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | separated on |
+|---|---|---|---|---|---|---|
+| mlp | 2 | 237,851 | -0.00161 ± 0.0014 | -1 ± 0 | 0.0957 ± 0.0193 | nothing |
+| transformer | 2 | 675,483 | -0.000987 ± 0.000112 | -0.338 ± 0.35 | 0.104 ± 0.0249 | nothing |
+
+Plus eight `probe:<target>@<horizon>` columns (the `two_sided` target was dropped by the harness
+because a 129-observation corpus had one class, which is the harness working as documented). The
+table is reproduced to show the *shape* of the output; every number in it is one iteration of
+training on 128 env steps and means nothing about either architecture, which is what the
+"Fewer than three seeds" footer the driver appends says. The protocol run at scale - 16 iterations,
+three seeds, every registered encoder - is the item still open in [10](10_testing.md) §8.
+
+**Supports:** §15 S1-5, S3-4, S3-7, S3-23, S4-6, S4-13, S4-14; §04 3; §10 2.2, 2.5, 8; §18 5.5, 6.
+
+
+## 16.19 Conservation made exact, and how often an order-management action lands (2026-09-18)
+
+### S3-23 closed
+
+`Account.cost_basis` replaces the stored VWAP quotient as the ledger's primary quantity, and
+`mark_to_mkt` forms `position_val` with one product. The §16.18 measurement, re-run unchanged:
+
+```
+init_cash 100,000, tick 1  : steps 12,000; non-zero conservation error: 0 (was 2,116 / 17.6%); worst 0 (was 7E-22)
+init_cash 100,000, tick 0.1: steps  3,600; non-zero conservation error: 0;                         worst 0
+```
+
+`test_orderbook_properties.py::TestEnvInvariants` asserts `sum(nav) == total` again, with a comment
+that a tolerance there would now be the regression. Every ledger test that builds a position by
+hand (`acc.net_position = ...; acc.VWAP = Decimal(100)`) still passes through the `VWAP` setter,
+which writes the basis as `value × |net_position|`.
+
+### S3-24 measured
+
+Five seeds × 400 steps × 6 agents of uniformly random play, at the shipped `init_cash`. An action
+"hit" if `num_unmatched_step` stayed 0 for that agent on that step.
+
+```
+modify: issued 2,659; agent had >=1 resting order 1,885 (71%); hit 1,269 (48% of issued, 67% of those with an order)
+cancel: issued 2,738; agent had >=1 resting order 1,992 (73%); hit   196 ( 7% of issued, 10% of those with an order)
+own resting orders per agent-step: mean 1.6, median 1, p90 4, max 7; none on 26% of agent-steps
+```
+
+The cancel number is the finding: with one order resting and thirty price codes, a cancel that
+does not know where the order sits lands one time in thirty, and random play is the policy that
+does not know. The modify number is the other half: it lands whenever *any* order is on that side,
+because it cannot choose which. The plan that follows from both is
+[15](15_findings_and_recommendations.md) S3-24.
+
+**Supports:** §15 S3-23, S3-24; §04 5; §10 2.5.
+
+
+## 16.20 Order management made aimable: the hit rates and the before/after run (2026-09-18)
+
+[15](15_findings_and_recommendations.md) S3-24, phases 1-4. Every number here is uniformly
+random play at the shipped config unless stated; "hit" means `num_unmatched_step` stayed 0 for
+that agent on that step.
+
+### The hit rate, through four designs
+
+Five seeds x 400 steps x 6 agents, the §16.19 script re-run on each tree:
+
+| aiming rule | cancel hits (of issued) | modify hits (of issued) | agents with >=1 order resting |
+|---|---|---|---|
+| by exact price (cancel) / FIFO (modify) - before | **7%** | 48% | 71-73% |
+| `order_slot`, 9 codes, a slot past the count misses | 12% | 14% | 69-70% |
+| `order_slot`, 5 codes, a slot past the count misses | 19% | 23% | 66-67% |
+| `order_slot`, 5 codes, **clamped** to the deepest own order - shipped | **35%** | **36%** | 58-60% |
+
+Of the times the agent had anything resting on either side, the shipped rule lands 58% of cancels
+and 62% of modifies; the remainder are actions on the side with nothing on it, which is the only
+miss the design leaves. Two things the table says that the plan did not predict: a slot head with
+dead upper slots makes *modify* worse for a random policy than the FIFO rule it replaced, because
+FIFO landed whenever any order existed; and the fourth column falls as cancels start to work -
+agents that can cancel hold fewer orders, so "had an order" is no longer a fixed 70%.
+
+### The before/after comparison run
+
+`train.compare --encoders mlp --seeds 0 1 2 --iters 8 --agents 4 --trained-agents 2 --max-step
+128 --episodes-per-iter 4 --no-probe`, once on the tree at `5462604` (before) and once on this
+one (after). Three seeds each, means ± standard deviation across seeds:
+
+| tree | params | return | vf_explained_var | pass_action_fraction | unmatched_action_fraction | maker_fill_ratio_max |
+|---|---|---|---|---|---|---|
+| before | 237,851 | -0.00207 ± 0.00157 | -0.46 ± 0.332 | 0.121 ± 0.0155 | 0.315 ± 0.00318 | 0.635 ± 0.028 |
+| after | 250,912 | -0.000759 ± 0.00175 | -0.374 ± 0.411 | 0.105 ± 0.00522 | 0.289 ± 0.0273 | 0.629 ± 0.00948 |
+
+Nothing is *separated* by the driver's rule, and nothing should be read as learning: 8 iterations
+at `lr` 5e-05 leaves both policies near their initialisation, and two of the four agents are the
+random baselines whose behaviour the aiming rule changes directly. What the table does show is
+the plumbing end to end - the new heads and fields flow through RLlib, the recorder and the
+metrics - and the direction of the mechanical effect: the league-wide dead-action share falls
+(0.315 → 0.289) while the pass and maker fractions hold, with 13,061 more parameters for the
+wider input and head. The learning claim of phase 4 - "agents that can aim cancels quote more and
+hold fewer stale orders" - needs the run at scale ([10](10_testing.md) §8).
+
+### Layout stamp
+
+Every checkpoint written on this tree carries `"layout": {"observation_version": 2,
+"action_version": 2, ...}` in its `league_state.json`; the checkpoints under
+`cmp_before/` carry no stamp, and `check_layout_stamp` refuses them as layout 1
+(`test_layout_version.py`).
+
+**Supports:** §15 S1-2, S3-24, S4-19; §05 1.0.1, 7.7; §06 1.5; §07 1; §10 2.6.
+
+
+## 16.21 The hygiene pass: two timings and a coverage number (2026-09-18)
+
+**S4-11, measured before touching it.** 300 random-play steps, 8 agents, `is_render` off:
+
+```
+step               1.05 ms
+set_agg_LOB        0.062 ms   (5.9% of a step)  <- the pre-action snapshot
+8-agent ID scan    0.2 us     <- _process_counter_party's loop
+```
+
+The scan was never a cost and is O(1) now only because the change is one line. The snapshot was
+worth gating: it is now rebuilt only when `set_done` pulled a bankrupt trader's orders after the
+post-action snapshot (`_snapshot_stale`), or when the render asks for its "@ t-1" table. In every
+other case the two snapshots were byte-identical - nothing touches the book between the end of one
+step and the start of the next - so the observation, the action prices and every test are
+unchanged.
+
+**S4-6, coverage.** `pytest --cov` over the unit suite, scoped by `pyproject.toml` to `envs/` and
+`train/` (tests, the orderbook example scripts and `visualize/` excluded):
+
+```
+TOTAL   5716 statements   1094 missed   1662 branches   186 partial   79.1%
+```
+
+Least covered, and why: `train/pretrain/__main__.py` and `train/probe/__main__.py` 0% (CLI entry
+points run by hand and by the runbook, not by a test); `cbp_learner.py` 13.5% (its 41 tests are in
+the integration suite, which this run excluded); `CDA_rand.py` 20% (the CI smoke run covers it);
+`evaluate.py` 27% (the integration test covers the rest); `exchg_helper.py` 52% (the render path,
+which the suite runs only at DEBUG).
+
+**Supports:** §15 S4-6, S4-11; §10 7, 8.
+
+## 16.22 Positive asks and a finite Box: the ranges, the clip the counter caught, and the before/after run (2026-09-18)
+
+S4-17 (drop the negated-ask convention) and S4-15 (finite observation bounds) were left out of the
+hygiene pass because each changes what every encoder is fed. This is the measured pass for both:
+observation layout version 3.
+
+**Protocol for the ranges.** `env.reset(seed)` and every agent's action space seeded, actions
+sampled from the space, 20 episodes × 400 steps, the *unclipped* vector recorded (bounds widened to
+±10¹² for the measurement), then the clip count against the shipped bounds. Two configs: the
+shipped one (8 agents, 1,000,000 cash, seeds 100–119) and a stress one (6 agents, 20,000 cash,
+anchors 5–500, tick 0.1, seeds 200–219). 64,000 and 48,000 agent-steps.
+
+| field | shipped min | shipped max | stress min | stress max | bound |
+|---|---|---|---|---|---|
+| `bid_price` | **−18.00** | 0.966 | −3.00 | 0.968 | [−128, 1] |
+| `bid_size` | 0 | 1.444 | 0 | 1.096 | [0, 8] |
+| `ask_price` | −0.706 | **22.00** | −0.500 | 7.50 | [−1, 128] |
+| `ask_size` | 0 | 1.343 | 0 | 1.044 | [0, 8] |
+| `log_mid` | −3.454 | 1.664 | **−5.522** | 2.291 | [−8, 8] |
+| `log1p_spread_ticks` | 0 | 3.689 | 0 | 3.497 | [0, 10] |
+| `mid_return` | −0.944 | **13.00** | −0.750 | 1.750 | [−1, 64] |
+| `signed_volume` | −0.526 | 0.411 | −0.495 | 0.379 | [−8, 8] |
+| `log1p_trade_count` | 0 | 2.079 | 0 | 1.792 | [0, 8] |
+| `trade_direction` | −1 | 1 | −1 | 1 | [−1, 1] |
+| `position` | −0.866 | 0.851 | −0.667 | 0.827 | [−1, 1] |
+| `position_val` | −0.039 | 0.206 | −0.078 | 1.035 | [−8, 8] |
+| `cash` | 0.723 | 1.031 | −0.913 | 1.064 | [−8, 8] |
+| `cash_on_hold` | 0 | 0.227 | 0 | 1.037 | [0, 8] |
+| `nav` | 0.923 | 1.078 | 0.755 | 1.143 | [−8, 8] |
+| `drawdown` | −0.090 | 0 | −0.273 | 0 | [−8, 0] |
+| `vwap_vs_mid` | **−31.23** | 0.950 | −13.29 | 0.750 | [−128, 1] |
+| `realised_pnl` | −0.077 | 0.078 | −0.245 | 0.143 | [−8, 8] |
+| `time_left` | 0 | 0.998 | 0 | 0.998 | [0, 1] |
+| own sizes | 0 | 0.961 | 0 | 0.812 | [0, 8] |
+| own counts, `unmatched_last_step` | 0 | 1 | 0 | 1 | [0, 1] |
+
+**Clipped under the shipped bounds: 0 of 64,000 agent-steps, 0 of 48,000.**
+
+Three things the table says.
+
+1. **The identities hold.** Every side that is mathematics — `bid_price < 1`, `ask_price > −1`,
+   `mid_return > −1`, `drawdown ≤ 0`, `vwap_vs_mid < 1`, the tanh, the `[0, 1]` fields — is
+   approached and never crossed. `log_mid` at the stress config sat at −5.52 against a floor of
+   `log(min_tick) − log_mid_centre = log(0.1) − log(50) = −6.21`; an unseeded run before this one
+   reached −6.21 exactly, which is the floor being touched, not noise.
+2. **The bold numbers are the tick floor, not prices.** An ask at 23× the midpoint, a bid at 19×
+   in an older frame, a midpoint that grew fourteenfold in one step, a cost basis at 32× the
+   mark. This section first attributed them to the one-sided-book fallback; §16.23 traced them
+   cell by cell and found every one in a book whose midpoint had random-walked down to one to
+   three ticks — mostly two-sided books — where a level a dozen ticks away is a multiple of the
+   price. Their extremes are set by `price / min_tick`, not by the sample, and vary run to run —
+   three 20-episode runs gave `ask_price` maxima of 18, 21 and 22. The bounds on those four fields
+   are therefore a choice of where the counter starts, at more than 4× the widest value seen,
+   rather than a claim that the market cannot exceed them; and the numbers are the first
+   measurement S3-15's coordinate problem has had against it.
+3. **Everything else is well inside**, by 4× or more: the sizes peak near 1.4 against 8, the
+   NAV-normalised ratios stay within −1 … 1.15 against ±8, `signed_volume` within ±0.6 against ±8.
+
+**The clip the counter caught.** The first candidate bounds put `bid_price` on `[0, 1]` and
+`ask_price` on `[0, 4]`, reasoning from the newest frame: `P_bid ≤ M ≤ P_ask`. The smoke test
+clipped **192 elements in 50 steps of 4 agents**, every one in an *older* frame's price row. The
+stack is normalised by the newest frame's midpoint (§16.12, S2-6), so a bid resting above `M_t`
+three steps ago reads `(M_t − P) / M_t < 0` — by design. A `(−inf, inf)` Box would have said
+nothing; a clipping Box without a counter would have silently flattened a fifth of the older
+frames' L1 prices to zero. The second candidate (`bid_price ≥ −4`, `ask_price ≤ 4`, `mid_return ≤
+4`, `vwap_vs_mid ≥ −8`) clipped 816 of 64,000 agent-steps (1.28%) at the shipped config, all in
+the four fallback-tail fields; that is what led to the wide bounds above.
+
+**Before/after with `train.compare`**, the S3-24 protocol of §16.20: `mlp` and `transformer`,
+seeds 0 1 2, 8 iterations, 4 agents (2 trained), `max_step` 128, 4 episodes per iteration, no
+probe. Before = commit `96bd34c` (layout 2, negated asks, infinite Box); after = this tree
+(layout 3). Same command, same seeds.
+
+**Before** (layout 2):
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | order_rejection_fraction | unmatched_action_fraction | maker_fill_ratio_max | separated on |
+|---|---|---|---|---|---|---|---|---|---|
+| mlp | 3 | 250,912 | −0.00147 ± 0.000765 | −0.392 ± 0.304 | 0.105 ± 0.00224 | 0 ± 0 | 0.293 ± 0.0159 | 0.67 ± 0.0235 | pass_action_fraction, maker_fill_ratio_max |
+| transformer | 3 | 682,016 | −0.00332 ± 0.00346 | −0.5 ± 0.193 | 0.136 ± 0.0153 | 0 ± 0 | 0.289 ± 0.0198 | 0.62 ± 0.0222 | pass_action_fraction, maker_fill_ratio_max |
+
+**After** (layout 3; the new `obs_clip_fraction` column):
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | order_rejection_fraction | unmatched_action_fraction | maker_fill_ratio_max | obs_clip_fraction | separated on |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlp | 3 | 250,912 | −0.00272 ± 0.00235 | −0.711 ± 0.105 | 0.111 ± 0.00674 | 0 ± 0 | 0.287 ± 0.0135 | 0.623 ± 0.0175 | 0 ± 0 | vf_explained_var, maker_fill_ratio_max |
+| transformer | 3 | 682,016 | −0.000517 ± 0.000946 | −0.465 ± 0.134 | 0.119 ± 0.0127 | 0 ± 0 | 0.269 ± 0.0217 | 0.668 ± 0.00828 | 0 ± 0 | vf_explained_var, maker_fill_ratio_max |
+
+How to read it, in the order the columns matter:
+
+- **`obs_clip_fraction` is 0 ± 0 for both encoders across all three seeds.** Training play, not
+  only random play, stayed inside the declared bounds. This is the one number this section
+  exists to produce.
+- **Nothing that separates the encoders before separates them after, and vice versa, at a
+  level that means anything.** Every return is within noise of zero, `vf_explained_var` is
+  negative on both trees (eight iterations of 512-step batches is far short of a critic), and the
+  "separated on" column flipped from `pass_action_fraction` to `vf_explained_var` between two runs
+  that differ only in the observation's sign convention and bounds - which is a statement about
+  the scale of this protocol, not about the layout. The activity fractions (`pass` 0.10–0.14,
+  `unmatched` 0.27–0.29, `rejection` 0) are the same on both trees to within a standard deviation:
+  the layout change did not alter what near-random policies do, which is what one expects of a
+  sign flip and a clip that never fires.
+- **The parameter counts are identical**, as they must be: same width, same heads.
+
+As with §16.20, this is a smoke-scale run. It proves the protocol runs on layout 3, that the
+clip counter is 0 in training, and that the change did not move the near-random baseline. Whether
+a positive-ask book lets an encoder learn faster is a question for the run at scale ([10](10_testing.md)
+§8), which no tree has had yet.
+
+**Supports:** §15 S4-15, S4-17, S3-14; §05 1.2, 2.2, 2.3, 7.6; §18 4.1.1; §10 (`test_observation_bounds.py`).
+
+## 16.23 What zero meant, how often, and where the price tails really come from (S3-14) (2026-09-18)
+
+The measured pass for S3-14. Same random-play protocol as §16.22: 20 seeded episodes × 400 steps at
+the shipped config (8 agents, 1,000,000 cash) and 20 at the stress config (6 agents, 20,000 cash,
+anchors 5–500, tick 0.1); `env.reset(seed)` and every action space seeded. Per step: which branch
+of the reference-price chain `mid_price` took, and for every price cell of the newest frame whether
+the level was occupied (raw size > 0) and whether the normalised price read exactly `0.0`.
+
+**Before** (layout 3):
+
+| | shipped | stress |
+|---|---|---|
+| steps two-sided | 7,363 (92.0%) | 1,883 (23.5%) |
+| steps bid-only / ask-only | 343 / 284 (**7.8%**) | 1,297 / 1,259 (**32.0%**) |
+| steps empty (→ `last_price`) | 10 (0.1%) | 3,561 (**44.5%**) |
+| occupied price cells, newest frame | 53,604 | 11,663 |
+| … reading exactly 0.0 | **627 (1.17%)** | **2,556 (21.9%)** |
+| … of which the lone L1 of a one-sided book | 627 (all) | 2,556 (all) |
+| … at L2+ or in a two-sided book | 0 | 0 |
+| occupied cells in the older frames reading 0.0 | 2,273 of 159,960 | 5,880 of 34,800 |
+| absent cells (the other meaning of 0.0) | 106,396 | 148,337 |
+
+So the ambiguity was exactly the third meaning: on every one-sided step the best quote *was* the
+reference price and read `0.0`, indistinguishable from the 106,396 absent cells around it. A price
+resting exactly at a two-sided midpoint never happened in the newest frame (it cannot: the midpoint
+sits strictly between the two best quotes), and in the older frames it is the same one-sided quote
+carried forward while the book stayed one-sided.
+
+**The tails, traced.** The six widest normalised price cells in each config, with the midpoint,
+the last trade and the chain branch at that step:
+
+```
+shipped:  value 9.8  M 2.5  last 27.0  two_sided   (ask at 27 against a mid of 2.5, tick 1)
+          value 9.8  M 2.5  last  4.0  two_sided   x5, same episode, consecutive steps
+stress:   value 3.5  M 0.4  last  0.7  two_sided   (tick 0.1)
+```
+
+Every one is a **two-sided** book whose price level has walked down to a few ticks — `M = 2.5` on a
+tick of 1 — so a resting level a dozen ticks away reads as a multiple of the price. Under random
+play every ghost quote is `last_price ± a few ticks` and every trade moves `last_price`, so the
+level random-walks; the median episode's lowest `M` was 0.60 of its anchor and the worst 0.017.
+§16.22 had attributed these tails to the one-sided fallback; they are the additive-tick coordinate
+of S3-15 instead, and §16.22 is corrected to say so.
+
+**The fix**, both halves of the register's proposal: two occupancy rows in every snapshot
+(`1.0` where the level holds an order, carried in the raw frame so each frame keeps the occupancy
+it was taken with), and the last trade as the reference price of a one-sided book — the chain
+`mark_price` has used since S2-5 — so the lone quote reads its distance from the print rather than
+`0.0`. Observation layout 4, 296 floats.
+
+**After** (layout 4), same seeds:
+
+| | shipped | stress |
+|---|---|---|
+| chain branches | unchanged (the book is the book) | unchanged |
+| occupancy row ≠ `size > 0`, any cell, any step | **0** | **0** |
+| occupied price cells reading exactly 0.0 | **354 (0.66%)** | **1,304 (11.2%)** |
+| … lone L1 of a one-sided book | 323 | 1,273 |
+| … elsewhere | 31 | 31 |
+
+The zeros that remain are quotes resting exactly at the last trade — the remainder of a partial
+fill, on a one-sided book, or a fresh quote at the print — and every one is now `occupied = 1.0`,
+so `0.0` means "at the reference price", not "nothing here". The widest cells after the change are
+the same tick-floor episodes (`value 22, M 1.0, last 1.0, ask_only` at the shipped config): the
+reference for a one-sided book is now the last trade, and when the last trade is at the tick floor
+so is the reference. The bounds of §16.22 still hold with 0 clips.
+
+**Before/after with `train.compare`**, the protocol of §16.20 and §16.22 (`mlp`, `transformer`,
+seeds 0 1 2, 8 iterations, 4 agents, 2 trained, `max_step` 128). Before = commit `1bbb264`
+(layout 3, the "after" table of §16.22); after = this tree (layout 4).
+
+**Before** (layout 3, 216 floats):
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | order_rejection_fraction | unmatched_action_fraction | maker_fill_ratio_max | obs_clip_fraction | separated on |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlp | 3 | 250,912 | −0.00272 ± 0.00235 | −0.711 ± 0.105 | 0.111 ± 0.00674 | 0 ± 0 | 0.287 ± 0.0135 | 0.623 ± 0.0175 | 0 ± 0 | vf_explained_var, maker_fill_ratio_max |
+| transformer | 3 | 682,016 | −0.000517 ± 0.000946 | −0.465 ± 0.134 | 0.119 ± 0.0127 | 0 ± 0 | 0.269 ± 0.0217 | 0.668 ± 0.00828 | 0 ± 0 | vf_explained_var, maker_fill_ratio_max |
+
+**After** (layout 4, 296 floats):
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | order_rejection_fraction | unmatched_action_fraction | maker_fill_ratio_max | obs_clip_fraction | separated on |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlp | 3 | 291,872 | −0.00209 ± 0.00112 | −0.332 ± 0.592 | 0.107 ± 0.00611 | 0 ± 0 | 0.289 ± 0.0253 | 0.645 ± 0.0153 | 0 ± 0 | nothing |
+| transformer | 3 | 682,528 | −0.00132 ± 0.001 | −0.189 ± 0.517 | 0.102 ± 0.00977 | 0 ± 0 | 0.298 ± 0.0208 | 0.639 ± 0.0406 | 0 ± 0 | nothing |
+
+Reading it:
+
+- **The parameter counts moved as the width did.** The `mlp` gained 40,960 parameters: its first
+  layer is `296 × 512` rather than `216 × 512`. The transformer gained 512: its input projection
+  is per token, and a level token went from 6 to 8 channels. That asymmetry is the tokenising
+  encoder's whole argument, made concrete - a feature added per level costs it almost nothing.
+- **`obs_clip_fraction` stays 0 ± 0**, so the occupancy rows and the new reference price sit
+  inside the §16.22 bounds under training play as well.
+- **Nothing separates, before or after, at a level that means anything.** The near-random
+  baseline did not move: pass fractions 0.10–0.12, unmatched 0.27–0.30, rejections 0. The
+  "separated on" column went from two metrics to none between two runs that differ only in this
+  layout change, which is a statement about the scale of the protocol (eight iterations of 512
+  steps), not about the layout. `vf_explained_var` is negative on both trees.
+
+As in §16.20 and §16.22, this proves the protocol runs on layout 4 and that the change did not
+move the near-random baseline. Whether a network that can see occupancy learns faster is the run
+at scale's question ([10](10_testing.md) §8).
+
+**Supports:** §15 S3-14, S3-15; §05 1.3, 2.1, 7.2; §18 4.1; §10 (`test_occupancy_channel.py`).
+
+## 16.24 The level index measured, and the grid that replaces it (S3-15) (2026-09-18)
+
+The measured pass for S3-15. Protocol as §16.22–16.23: 20 seeded episodes × 400 steps of random
+play at the shipped config (8 agents, 1,000,000 cash, tick 1) and at the stress config (6 agents,
+20,000 cash, anchors 5–500, tick 0.1). Three questions: how far does level *d* sit from the
+reference price `R` (the §2.1 chain snapped to the tick) and how often does its price change; where
+does the action's price code *j* actually land; and how much of the resting book a fixed window
+of ±`k_rows` ticks around `R` would show.
+
+**Before** (`levels` layout, commit `7353388`), shipped config:
+
+| level d | ticks from R, mean ± sd | range | P(price changed between steps) |
+|---|---|---|---|
+| 0 | 3.8 ± 2.5 | −20 … +27 | 0.35 |
+| 1 | 7.0 ± 3.8 | −14 … +37 | 0.47 |
+| 2 | 9.5 ± 4.3 | −12 … +46 | 0.53 |
+| 4 | 12.9 ± 4.8 | +3 … +43 | 0.52 |
+| 7 | 17.3 ± 5.9 | +9 … +41 | 0.33 |
+
+(bid side; the ask side is the same to within 0.5 tick.) The negative ranges are older-frame
+effects on one-sided books. So "level 3" is a coordinate that wanders over some forty ticks and
+moves on every second step.
+
+| price code j | realised ticks from R, bids | asks |
+|---|---|---|
+| 0 | 3.6 ± 2.5 | 4.0 ± 2.7 |
+| 1 | 6.5 ± 4.6 | 6.2 ± 4.4 |
+| 3 | 6.8 ± 5.6 | 7.0 ± 5.8 |
+| 6 | 7.2 ± 5.0 | 7.4 ± 4.9 |
+| 9 | 9.4 ± 4.9 | 10.0 ± 4.5 |
+
+The code carried almost no positional meaning: codes 1–6 indistinguishable, every code spanning
+0 to 20 ticks. Stress config: the same shape at slightly smaller numbers (level 0 at 3.7 ± 3.5,
+codes 0–9 from 2.0 to 9.8 with sd 2.3–3.5).
+
+Window coverage in `levels` mode — resting volume within ±w ticks of `R`:
+
+| | ±10 | ±16 | ±20 | ±32 |
+|---|---|---|---|---|
+| shipped | 72.5% | 93.9% | 97.5% | 99.8% |
+| stress | 81.4% | 96.8% | 98.9% | 100% |
+
+**The fix.** `book_mode: "grid"`: two size rows over `2 k_rows + 1` tick offsets from `R`, every
+frame re-gridded against the newest `R_t`, price code *j* quoting *j* ticks from `R` on the passive
+side ([05](05_observation_space.md) §1.4, [06](06_action_space.md) §2.1.1). The `levels` layout
+stays as the other value of the key.
+
+**After** (`grid`, this tree), same seeds:
+
+| price code j | realised ticks from R, bids | asks |
+|---|---|---|
+| 0 | −0.2 ± 0.9 | 0.2 ± 0.9 |
+| 1 | 0.7 ± 0.9 | 1.3 ± 0.9 |
+| 3 | 2.8 ± 0.9 | 3.3 ± 0.9 |
+| 6 | 5.7 ± 1.0 | 6.3 ± 0.9 |
+| 9 | 8.7 ± 1.1 | 9.2 ± 0.9 |
+
+Code *j* lands at *j* ± 0.9 ticks; the 0.9 is the `price_offset` head shading by one tick either
+way, and the ±0.3 skew between sides is the half-tick between `M` and `R` on a two-sided book. Same
+at the stress config (bids 1.0 → 8.9, asks 1.1 → 9.1, sd 0.8–0.9). The observation's cell for
+code *j* is `k_rows ∓ j` by construction, so the two coordinates are one.
+
+Coverage in `grid` mode, because the agents now quote on the grid:
+
+| | ±10 | ±16 | ±20 | ±32 |
+|---|---|---|---|---|
+| shipped | 93.3% | 99.5% | 99.9% | 100% |
+| stress | 93.9% | 99.8% | 100% | 100% |
+
+The occupied best level still sits 2.2 ± 1.7 ticks from `R` and changes on 40% of steps — the
+book is as dynamic as it was — but that is now something the observation *shows* (the cell that
+is non-zero moves) rather than something the coordinate *hides*. Occupied cells in the window:
+29% mean (shipped), 6.5% (stress). Every emitted vector stayed inside the §16.22 bounds with 0
+clips.
+
+**Before/after with `train.compare`**, the protocol of §16.20–16.23 (`mlp`, `transformer`, seeds
+0 1 2, 8 iterations, 4 agents, 2 trained, `max_step` 128). Before = `levels` (the "after" table of
+§16.23, which is this tree's `levels` mode byte for byte); after = `grid`.
+
+**Before** (`levels`, 296 floats):
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | order_rejection_fraction | unmatched_action_fraction | maker_fill_ratio_max | obs_clip_fraction | separated on |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlp | 3 | 291,872 | −0.00209 ± 0.00112 | −0.332 ± 0.592 | 0.107 ± 0.00611 | 0 ± 0 | 0.289 ± 0.0253 | 0.645 ± 0.0153 | 0 ± 0 | nothing |
+| transformer | 3 | 682,528 | −0.00132 ± 0.001 | −0.189 ± 0.517 | 0.102 ± 0.00977 | 0 ± 0 | 0.298 ± 0.0208 | 0.639 ± 0.0406 | 0 ± 0 | nothing |
+
+**After** (`grid`, 224 floats):
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | order_rejection_fraction | unmatched_action_fraction | maker_fill_ratio_max | obs_clip_fraction | separated on |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlp | 3 | 255,008 | −0.00346 ± 0.00211 | −0.47 ± 0.306 | 0.119 ± 0.00466 | 0 ± 0 | 0.291 ± 0.00514 | 0.621 ± 0.0497 | 0 ± 0 | nothing |
+| transformer | 3 | 684,832 | −0.00141 ± 0.00196 | −0.431 ± 0.489 | 0.119 ± 0.0138 | 0 ± 0 | 0.281 ± 0.0304 | 0.617 ± 0.0234 | 0 ± 0 | nothing |
+
+Reading it:
+
+- **The widths moved the way the layouts say.** The `mlp` lost 36,864 first-layer parameters
+  (296 → 224 inputs × 512); the transformer gained 2,304, because its level tokens are now 21 per
+  snapshot instead of 10 and its positional table grew with them, while the token width itself
+  fell from 8 to 6 (two size channels, two own channels, padded to the six scalars).
+- **`obs_clip_fraction` stays 0 ± 0**: the grid's cells sit inside the `bid_size` / `ask_size`
+  bounds of §16.22 under training play.
+- **The near-random baseline did not move**: pass fractions 0.10–0.12, unmatched 0.28–0.30,
+  rejections 0, returns within noise of zero, `vf_explained_var` negative on both trees. Nothing
+  separates the encoders under either layout at this scale.
+
+As in §16.20–16.23, this is a smoke-scale run: it proves the protocol runs on the grid and that the
+layout change did not alter what near-random policies do. Whether a stationary coordinate lets a
+policy *learn* a quoting rule is the run at scale's question ([10](10_testing.md) §8), and the one
+this row was raised to ask.
+
+**Supports:** §15 S3-15; §05 1.4, 7.4; §06 2.1.1; §18 3.0, 5.5; §10 (`test_grid_book.py`).
+
+## 16.25 The action mask: dead actions before and after (2026-09-18)
+
+Protocol as §16.22–16.24: 20 seeded episodes × 400 steps of random play at the shipped config
+(8 agents, 1,000,000 cash) and the stress config (6 agents, 20,000 cash, anchors 5–500, tick 0.1).
+"Mask honoured" means the sampler redraws a category the observation marks impossible uniformly
+among the possible ones, which is exactly what `RandomRLModule` does; "unmasked" is
+`action_space.sample()` as before. Fractions are of agent-steps.
+
+| | unmatched (`num_unmatched_step`) | rejected (`num_rejected_step`) | pass | categories redrawn | mask entries at 0 |
+|---|---|---|---|---|---|
+| shipped, unmasked | 29.58% | 0.00% | 10.96% | – | 29.4% |
+| shipped, masked | **0.20%** | 0.00% | 15.51% | 26.4% | 26.3% |
+| stress, unmasked | 25.39% | 33.90% | 11.02% | – | 39.7% |
+| stress, masked | **0.20%** | 33.17% | 18.41% | 39.0% | 38.8% |
+
+Three things the table says.
+
+1. **The unmatched dead action is gone**, to a residual of 0.2%. The residue is real and expected:
+   the mask is computed from the book as it stood when the observation was built, and an order
+   that rested then can be filled by another agent's action earlier in the same step's random
+   shuffle, so the modify or cancel that follows finds nothing. `num_unmatched_step` still counts
+   it, and after masking it is the only way that counter can move.
+2. **The rejected dead action barely moves.** At the stress config a third of agent-steps are
+   refused before and after. The mask asks whether the agent can afford *one contract at the
+   reference*, and almost always it can; the refusals come from the size head drawing hundreds of
+   contracts on 20,000 of cash. A category mask cannot reach a continuous head. Fixing that means
+   making the drawn size affordable - a clamp in the env, or a size head that knows the cash - and
+   that is the S3-1 to S3-3 territory, now with a number against it.
+3. **Pass rises** (11% → 15.5%, 11% → 18.4%) because a redraw among fewer possible categories lands
+   on pass in proportion; the redraw rate (26%, 39%) is the fraction of random draws that used to
+   be impossible.
+
+**Before/after with `train.compare`**, the protocol of §16.20–16.24 (`mlp`, `transformer`, seeds
+0 1 2, 8 iterations, 4 agents, 2 trained, `max_step` 128), the same tree with
+`--set action_mask=false` (before) and the default (after):
+
+**Before** (`--set action_mask=false`):
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | order_rejection_fraction | unmatched_action_fraction | maker_fill_ratio_max | obs_clip_fraction | separated on |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlp | 3 | 259,616 | −0.00132 ± 0.00144 | −0.52 ± 0.164 | 0.117 ± 0.00997 | 0 ± 0 | 0.302 ± 0.014 | 0.632 ± 0.0194 | 0 ± 0 | pass_action_fraction |
+| transformer | 3 | 687,136 | 0.00194 ± 0.00263 | −0.19 ± 0.288 | 0.102 ± 0.00123 | 0 ± 0 | 0.295 ± 0.0326 | 0.642 ± 0.0268 | 0 ± 0 | pass_action_fraction |
+
+**After** (the default, mask honoured):
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | order_rejection_fraction | unmatched_action_fraction | maker_fill_ratio_max | obs_clip_fraction | separated on |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlp | 3 | 259,616 | −0.0033 ± 0.00367 | −0.423 ± 0.733 | 0.162 ± 0.0154 | 0 ± 0 | **0.00114 ± 0.000282** | 0.603 ± 0.00551 | 0 ± 0 | maker_fill_ratio_max |
+| transformer | 3 | 687,136 | −0.000586 ± 0.00077 | −0.356 ± 0.338 | 0.143 ± 0.00395 | 0 ± 0 | **0.00163 ± 0.000564** | 0.62 ± 0.00833 | 0 ± 0 | maker_fill_ratio_max |
+
+Reading it:
+
+- **`unmatched_action_fraction` falls from 0.30 to 0.001 in training**, for both encoders and all
+  three seeds - the same three-hundredfold drop random play showed, now through the PPO modules'
+  masked logits and the random baselines' redraws. The residual is the same-step fill described
+  above. This is the number the mask exists to produce, and after it any non-negligible value of
+  this metric is a bug.
+- **The parameter counts are identical** before and after: the mask changes what the head is
+  allowed to say, not its shape. (They are 4,608 above §16.24's because the private block grew by
+  nine floats.)
+- **Pass rises** (0.10–0.12 → 0.14–0.16), as it did under random play, and the maker ratio dips a
+  little (0.63 → 0.60–0.62); with fewer dead actions the near-random policies trade slightly more
+  and rest slightly less.
+- **Returns and `vf_explained_var` are noise at this scale**, as in every compare so far; nothing
+  here says the mask makes a policy learn faster, only that the dead action is gone from what it
+  can do.
+
+
+**Supports:** §06 7; §15 S4-14; §18 3.0.1; §10 (`test_action_mask.py`).
+
+## 16.26 Who trades when orders cross within a step: sequential against batch clearing (2026-09-18)
+
+Protocol as §16.22–16.25: 20 seeded episodes × 400 steps of random play at the shipped config
+(8 agents, 1,000,000 cash), under each combination of `step_clearing` and `matching_rule`. Per
+step: the shuffle position of every agent that submitted a fresh order (a market or limit with
+nothing of its own resting beforehand, so any fill it gets is that order's), whether it filled
+(`num_trades_step > 0`), the number of distinct prices printed, the executed volume, and whether
+a fill's counter order arrived in the same step.
+
+| | fills by shuffle position 1 → 8 | first − last | prices / trading step (mean, max) | same-step counter | trades / step | volume / step |
+|---|---|---|---|---|---|---|
+| sequential, fifo | .581 .573 .546 .539 .529 .509 .497 .491 | **+0.089** | 1.58, 5 | 12.4% | 1.82 | 51 |
+| sequential, pro_rata | .602 .591 .562 .551 .541 .515 .497 .491 | **+0.111** | 1.58, 5 | 13.1% | 2.08 | 51 |
+| batch, fifo | .577 .558 .558 .553 .560 .564 .564 .571 | +0.006 | **1.00, 1** | 52.1% | 1.80 | 43 |
+| batch, pro_rata | .575 .560 .559 .556 .563 .570 .571 .577 | −0.001 | **1.00, 1** | 50.9% | 1.87 | 43 |
+
+About 1,540 fresh orders per position per row; NAV conserved exactly in every episode.
+
+What it says:
+
+1. **Under sequential clearing the shuffle decides.** Fill probability falls monotonically down the
+   queue, from 58% for the first arrival to 49% for the last: the early arrival takes the resting
+   liquidity and the late one finds it gone or, having rested for a moment, is the one that gets
+   hit. Pro-rata widens the gap slightly (+0.111), because it spreads the early arrival's fill over
+   more resting orders.
+2. **Under batch clearing it does not.** The curve is flat to ±0.01 either way. Position still
+   enters at the marginal price level, where resting orders come first and the batch's are
+   rationed under the rule, and that is where the residual ±0.01 lives.
+3. **One price per step**, where sequential clearing printed 1.58 on average and up to 5: the
+   uniform-price property of a call auction, and the reason half the batch's fills are between two
+   orders that arrived together (52%) against 12% sequentially.
+4. **Less volume**: 43 contracts a step against 51. A single price executes `min(D, S)` at that
+   price, where an aggressive arrival in the sequential engine sweeps several levels at several
+   prices. That is the call auction's known cost, and it is why `sequential` stays the default for
+   an environment named for the continuous double auction.
+
+A first version of this measurement attributed fills to the order that was the record's
+`init_party`, which under-counted the early arrival whose resting leg was hit later in the same
+step, and showed a *rising* curve for both regimes. Counting fresh orders by their owner's
+`num_trades_step` is what the table uses.
+
+**What the clip counter caught.** The first `train.compare` run under `batch` reported
+`obs_clip_fraction` of 0.02–0.03 where every other regime reports 0. Tracing the clipped field:
+`cash_on_hold`, a few contracts *below zero*, on 3.4% of agent-steps. The sequential engine fills
+a resting order at its own price, so the escrow it posted (`limit × quantity`) is exactly what the
+counter-party settlement releases (`trade price × quantity`); a batch clears at one uniform price,
+so a resting ask at 98 filled at 100 released more escrow than it held. `Trader.settle_batch` now
+re-bases the filled quantity's escrow to the trade price before the release - a transfer between
+`cash_on_hold` and `cash` that leaves NAV untouched, which is why NAV conservation had not caught
+it. After the fix: `cash_on_hold ≥ 0` on every agent-step of batch random play and
+`obs_clip_fraction` back to 0 (the table below is the rerun). S4-15's argument for a finite Box
+with a counted clip was that a wrong bound should be a counted event; this was a wrong *ledger*,
+and the same counter found it.
+
+**With `train.compare`**, the protocol of §16.20–16.25 on this tree: `--set step_clearing=batch`
+and `--set matching_rule=pro_rata` against the default (the "after" table of §16.25):
+
+**Default** (`sequential`, `fifo` - the "after" table of §16.25):
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | order_rejection_fraction | unmatched_action_fraction | maker_fill_ratio_max | obs_clip_fraction | separated on |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlp | 3 | 259,616 | −0.0033 ± 0.00367 | −0.423 ± 0.733 | 0.162 ± 0.0154 | 0 ± 0 | 0.00114 ± 0.000282 | 0.603 ± 0.00551 | 0 ± 0 | maker_fill_ratio_max |
+| transformer | 3 | 687,136 | −0.000586 ± 0.00077 | −0.356 ± 0.338 | 0.143 ± 0.00395 | 0 ± 0 | 0.00163 ± 0.000564 | 0.62 ± 0.00833 | 0 ± 0 | maker_fill_ratio_max |
+
+**`--set step_clearing=batch`** (rerun after the escrow fix above):
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | order_rejection_fraction | unmatched_action_fraction | maker_fill_ratio_max | obs_clip_fraction | separated on |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlp | 3 | 259,616 | −0.00137 ± 0.00114 | −0.491 ± 0.388 | 0.173 ± 0.00698 | 0 ± 0 | **0 ± 0** | **0.341 ± 0.0287** | 0 ± 0 | nothing |
+| transformer | 3 | 687,136 | −0.00311 ± 0.00332 | −0.055 ± 0.251 | 0.148 ± 0.0196 | 0 ± 0 | **0 ± 0** | **0.324 ± 0.0219** | 0 ± 0 | nothing |
+
+**`--set matching_rule=pro_rata`**:
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | order_rejection_fraction | unmatched_action_fraction | maker_fill_ratio_max | obs_clip_fraction | separated on |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlp | 3 | 259,616 | −0.0031 ± 0.000232 | −0.275 ± 0.376 | 0.165 ± 0.00776 | 0 ± 0 | 0.000814 ± 0.00102 | 0.606 ± 0.0207 | 0 ± 0 | nothing |
+| transformer | 3 | 687,136 | −0.00478 ± 0.00186 | −0.071 ± 0.0791 | 0.151 ± 0.0222 | 0 ± 0 | 0.0013 ± 0.00102 | 0.609 ± 0.053 | 0 ± 0 | nothing |
+
+Reading it:
+
+- **Under batch clearing the unmatched fraction is exactly 0**, where the default's 0.001 residue
+  is an order filled mid-step before a later cancel reached it. In a batch nothing is filled
+  mid-step - new orders are queued and cancels act on the book as it stood - so the residue
+  vanishes. That closes the last leak the action mask left.
+- **The maker ratio halves** (0.60–0.62 → 0.32–0.34). Not a behaviour change: half the fills in a
+  batch are between two orders that arrived in the same step, and neither party rested, so the
+  fill has no passive side. `maker_fill_ratio_max` measures who rested, and under a call auction
+  fewer fills have a rester. Read the metric with the regime in mind.
+- **`obs_clip_fraction` is 0** again after the escrow fix; the first run's 0.02–0.03 was the
+  negative `cash_on_hold`.
+- **Pro-rata moves nothing** at this scale: the same fractions as fifo to within a standard
+  deviation, as the random-play measurement predicted (same volume, slightly more and smaller
+  fills). Whether a *trained* policy learns to post larger orders under it - the rule's known
+  incentive - is the run at scale's question.
+- **Returns and `vf_explained_var` are noise**, as in every compare so far. The parameter counts
+  are identical across the three regimes, as they must be: the regime changes the game, not the
+  layout.
+
+**Supports:** §06 8; §15 S3-25; §18 3.0.2; §10 (`test_matching_regimes.py`, `test_clearing_env.py`).

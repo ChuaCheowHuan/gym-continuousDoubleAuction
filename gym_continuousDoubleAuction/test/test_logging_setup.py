@@ -12,7 +12,6 @@ but the three properties this package needs from it:
 
 See doc/11_logging_and_observability.md.
 """
-import importlib
 import json
 import logging
 import shutil
@@ -614,7 +613,7 @@ for i in range(200):
     def test_two_workers_write_separate_files_and_lose_nothing(self, tmp_path):
         """The per-worker name, doing its job: both processes' output survives."""
         env_var = logging_setup.log_dir_env_var()
-        kwargs = f"log_dir=None"
+        kwargs = "log_dir=None"
 
         import os
         import subprocess

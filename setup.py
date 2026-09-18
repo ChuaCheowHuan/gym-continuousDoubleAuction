@@ -116,12 +116,6 @@ setup(
         # pins, because Ray 2.56.x hard-pins gymnasium==1.2.2 and the two
         # cannot be bumped independently.
         "ray[rllib]==2.56.1",
-        # `six.moves.cStringIO` in envs/orderbook/{orderbook,orderlist}.py.
-        # A Python-2 shim that `io.StringIO` replaces, but envs/orderbook/ is
-        # off-limits to changes (doc/15 S3-4), so the dependency is declared
-        # rather than removed. It had been resolving only by accident, as a
-        # transitive dependency of pandas.
-        "six>=1.16",
     ],
     extras_require={
         # pip install -e ".[rllib]"
@@ -134,6 +128,11 @@ setup(
             "tensorboardX>=2.6.5",
         ],
         "plot": ["matplotlib>=3.11,<4", "scipy>=1.18,<2"],
-        "dev": ["pytest>=8"],
+        # pytest runs the suite; pyflakes is what `test_lint.py` runs over the
+        # package, so lint is enforced by the same CI step as the tests without
+        # a workflow change; hypothesis drives the order-book invariant tests.
+        # pytest-cov for `pytest --cov` (the [tool.coverage] tables in
+        # pyproject.toml scope it); the measured number is in doc/10 section 7.
+        "dev": ["pytest>=8", "pyflakes>=3.2", "hypothesis>=6.100", "pytest-cov>=5"],
     },
 )

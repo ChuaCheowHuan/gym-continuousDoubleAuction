@@ -337,7 +337,7 @@ explicitly. See [18 §5.1](18_configuration.md#51-sample_timeout_s-and-the-run-t
 ### Cost to watch: the per-step episode record
 
 With `episode_data_dir` set (the default), each runner records sampled episodes to Parquet - one row
-per (episode, step, agent), carrying the obs (193 floats), the action and every `info` field. At
+per (episode, step, agent), carrying the obs (216 floats), the action and every `info` field. At
 `max_step=4096` and 8 agents an episode is ~34 MB.
 
 Three things bound it, and all three matter more with several runners, because each one records

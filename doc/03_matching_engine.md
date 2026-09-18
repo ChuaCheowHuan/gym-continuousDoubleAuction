@@ -251,23 +251,30 @@ These are asserted by the test suite and should be preserved by any change to th
 
 ---
 
-## 5. Caveat: `sys.exit()` in the engine
+## 5. Malformed input raises `ValueError`
 
-[`orderbook.py`](../gym_continuousDoubleAuction/envs/orderbook/orderbook.py) calls `sys.exit()`
-on six bad-input paths — a non-positive quantity, an order type that is neither market nor limit,
-and a `side` that is neither `bid` nor `ask` in each of `process_market_order`,
-`process_limit_order`, `cancel_order` and `modify_order` (two more are commented out):
+[`orderbook.py`](../gym_continuousDoubleAuction/envs/orderbook/orderbook.py) refuses six kinds of
+bad input — a non-positive quantity, an order type that is neither market nor limit, and a `side`
+that is neither `bid` nor `ask` in each of `process_market_order`, `process_limit_order`,
+`cancel_order` and `modify_order` — and each refusal is a `ValueError` naming the method and the
+value:
 
 ```python
 if quote['quantity'] <= 0:
-    sys.exit('process_order() given order of quantity <= 0')
+    raise ValueError(
+        f"process_order(): order quantity must be > 0, got "
+        f"{quote['quantity']!r} (trade_id {quote.get('trade_id')!r})"
+    )
 ```
 
-`sys.exit` raises `SystemExit`, which derives from `BaseException`, not `Exception`. Inside a Ray
-EnvRunner actor this will not be caught by ordinary handlers: it kills the worker, RLlib marks it
-unhealthy, and the training run degrades or hangs rather than failing with a usable traceback.
-These should all be `raise ValueError(...)`.
+Until 2026-09-18 these were `sys.exit(...)`. `SystemExit` derives from `BaseException`, not
+`Exception`, so inside a Ray EnvRunner actor it was not caught by ordinary handlers: it killed the
+worker, RLlib marked it unhealthy and restarted it, and the run degraded rather than failing with a
+usable traceback. None of the six is reachable from the action layer — decoded size is
+`rint(abs(N(...))) + min_size ≥ 1` — but they were one action-space change away, and they are
+what a test can now assert (`test_orderbook_new.py::TestMalformedInputRaisesInsteadOfExiting`).
+Tracked as S3-7 in [15_findings_and_recommendations.md](15_findings_and_recommendations.md), fixed.
 
-Currently unreachable in practice — decoded size is `rint(abs(N(...))) + min_size ≥ 1` — but it
-is one action-space change away from being reachable. Tracked as S3-6 in
-[15_findings_and_recommendations.md](15_findings_and_recommendations.md).
+The book also no longer accepts a `tick_size`. It never read the one it stored, and the parameter
+suggested a grid the matching path does not enforce — every price is keyed as the `Decimal` it
+arrives as. The grid is the action layer's (`Action_Helper._set_price`; S3-4).

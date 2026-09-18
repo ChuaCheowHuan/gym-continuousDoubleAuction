@@ -2794,3 +2794,442 @@ audit's run, not a claim about now.
 
 This is the third pass to re-count these (§36, §37.7, here), which suggests the counts want a
 generator rather than a reviewer.
+
+
+## 44. The 2026-09-18 review pass: a cancel that could not cancel, and a grid that was not one
+
+A code review of the merged tree, in the same shape as §37 and §43: read everything, run
+everything, probe what the tests do not reach. The suite was green before (914 + 153) and is green
+after (935 + 153). Two defects in the simulator's action path were found by asking what happens at
+the edges the tests do not visit — a trader with nothing left to spend, and a tick that is not 1 —
+and both turned out to be the rule at those edges rather than the exception.
+
+### 44.1 A cancel was cash-checked, so an over-committed trader could not cancel (S2-13)
+
+`Trader._order_approved` applied the same predicate to every order type. For a `cancel` that meant
+"is `size × price` affordable from `cash`", where `size` and `price` are the cancel's own,
+irrelevant, decoded values. A trader with all its cash escrowed in resting orders — the one state
+in which cancelling is the thing to do — was therefore refused the cancel, silently, with
+`num_rejected_step` incremented as if it had quoted past its means. A `modify` that shrank an
+order, or re-priced it at the same notional, was refused the same way, because the check compared
+against `cash` before `cancel_cash_transfer` had returned the old order's escrow.
+
+A cancel is now approved unconditionally once the `nav > 0` gate passes. A `modify` or a
+`limit` upsert may spend the escrow the order it replaces gives back, so only a real increase in
+notional beyond `cash + released` is refused. `_replaced_order` returns the order alongside its id
+so the exclusion S1-5 introduced and the release this needs come from one lookup. Seven tests in
+`test_cash_check.py`. [15](15_findings_and_recommendations.md) S2-13, [16](16_verification_log.md)
+§16.17.
+
+### 44.2 The action layer put off-grid prices in the book on any non-integer tick (S3-4)
+
+[15](15_findings_and_recommendations.md) S3-4 said `_set_price` emits on-grid prices "by
+construction" and measured the drift as one combination in sixty. That measured the anchor path.
+The level path — taken whenever the targeted book level is occupied — read the resting price out
+of `agg_LOB_raw`, a **float32** array, so 100.1 came back as `100.0999984741211`, and the offset
+was then added in float. The book keys its price map on `Decimal(str(price))` and rounds nothing,
+so every re-quote at an occupied level opened a new level one ulp away, and `_get_order_ID`,
+comparing the book's `Decimal` with the action's `float`, never found the trader's own order:
+cancels were no-ops and a same-price limit rested a second order instead of upserting. At default
+`tick_size` 1 none of this fires, which is why nothing noticed.
+
+Three changes: `agg_LOB_raw` is float64 (the observation is still float32 at emission),
+`_set_price` snaps its result to the tick grid in `Decimal`, and `_get_order_ID` compares as
+`Decimal(str(price))` — the book's own conversion. `test_tick_grid.py` (14 tests) covers seven
+ticks including 0.3 and 0.0001, the upsert, the cancel and NAV conservation under random play at
+0.1. The dead `OrderBook.tick_size` parameter is the only part of S3-4 left, and it stays for the
+reason it always did: `envs/orderbook/` is off-limits.
+
+### 44.3 Smaller
+
+- Two unused locals (`counter_party` in `_process_trades`, `best_bid` / `best_ask` in
+  `_set_price`) and one placeholder-less f-string in `test_logging_setup.py`, all flagged by
+  pyflakes, which otherwise reports only unused imports across the package.
+- `tunable_constants.json`'s `observation_layout` note still listed two market scalars; there
+  have been six since §37.4.
+- [10](10_testing.md) §8 still carried `test_insufficient_funds` as an empty `pass`; it has
+  asserted the behaviour since §37, and S4-5 in [15](15_findings_and_recommendations.md) now
+  says so.
+
+### 44.4 A runbook
+
+[26](26_runbook.md) is new: the install, the checks, the train / restore / inspect loop, the
+reward-free tools, what to watch while a run is going, and a troubleshooting table — each command
+verified against `--help` and, for the training loop, against a two-iteration run whose output
+tree is reproduced there. The information existed across [18](18_configuration.md),
+[19](19_docker.md), [20](20_colab.md), [11](11_logging_and_observability.md) and the module
+docstrings; there was no single page an operator could follow top to bottom.
+
+### 44.5 Recommendations carried forward
+
+Recorded in [15](15_findings_and_recommendations.md) and the closing message of the review rather
+than acted on here, because each is a scope decision: the dead `OrderBook.tick_size` parameter and
+`from decimal import *` in `order.py` (both blocked on the `envs/orderbook/` policy); a counter for
+a `modify` / `cancel` that finds nothing to target (S4-14, the remaining half); the escrow that
+still charges closing orders (S1-5's open tail); a lint step in CI, which this pass could not add
+because the push credential has no workflow scope (§37 hit the same wall); and the multi-seed
+encoder comparison [10](10_testing.md) §8 has called the largest gap for three passes running.
+
+
+## 45. The recommendations of §44, carried out
+
+§44.5 listed six things a review pass should not decide on its own. Asked to proceed, this pass
+did all six. The suite grows from 935 to 979 unit tests; the first run of the new property suite
+found two defects of its own, which is the best argument for it.
+
+### 45.1 The `envs/orderbook/` freeze is lifted (S3-4, S3-7, S4-3, S4-4)
+
+The package had been off-limits since the first review, on the grounds that nothing tested its
+invariants well enough to change it safely. §45.4 changed that, and with the invariant suite in
+place the deferred items went through: `OrderBook` takes no `tick_size` (it stored one and never
+read it - `OrderBook(0.0001, 10)` is now a `TypeError`, and the `inert_tick_size_copy`
+documentation block is gone); all six `sys.exit` calls raise `ValueError` naming the method and the
+refused value; `from decimal import *` is `from decimal import Decimal`; `six.moves.cStringIO` is
+`io.StringIO`, so `six` leaves `install_requires` and `requirements.txt`; and ~150 lines of
+commented-out and superseded code (`__str__0` twice, `to_str`, the old `modify_order`, the shadowed
+`Order.next_order`/`prev_order` methods) are deleted. `test_config_sources` no longer asserts the
+book carries the tick, because nothing does but the action layer.
+
+### 45.2 The third silent no-op is counted (S4-14)
+
+`num_unmatched_step` on the account, incremented when a `modify` or `cancel` names no resting
+order, reset per step with the other counters, reported in `info`, given a column in the episode
+record, and aggregated into `unmatched_action_fraction` beside the pass and rejection fractions.
+Ten tests in `test_unmatched_actions.py` and three in `test_activity_metrics.py`.
+
+### 45.3 Lint is enforced without a workflow change (S4-6)
+
+The push credential cannot edit `.github/workflows/` (§37.6), so `test_lint.py` runs pyflakes over
+the package and fails on any message, and CI enforces it through the test step it already runs.
+Getting there meant removing 69 unused imports and declaring `__all__` in the five `__init__`
+files that re-export (`envs`, `orderbook`, `probe`, `pretrain`, and the encoder registry, whose
+side-effect imports are now named as `REGISTERED_ENCODER_MODULES`). `pyflakes` and `hypothesis`
+join the `dev` extra.
+
+### 45.4 Property-based tests, and what they found (S4-13, S3-23)
+
+`test_orderbook_properties.py` drives Hypothesis-generated order sequences through `Trader` and
+`OrderBook`, and Hypothesis-chosen seeds through the whole env at three ticks, asserting the
+invariants [10](10_testing.md) §8 had listed for three passes: tree caches against a walk, time
+priority within a level, no locked or crossed book, escrow equal to own resting notional,
+positions netting to zero, NAV conservation, `cash + cash_on_hold >= 0`, prices on the grid.
+
+Its first run failed twice. A size-reducing `modify` kept an order's queue position but stamped it
+with the modify time, so `_get_order_ID`'s "oldest order" rule could pick the wrong one next time;
+`Order.update_quantity` now moves the timestamp only when it moves the order. And NAV conservation
+is exact only to about `1e-22`: the VWAP quotient rounds at the Decimal context and
+`mark_to_mkt` multiplies it back in two independently rounded products. That is not a regression -
+17.6% of steps carried the residual on the tree before this pass - but [16](16_verification_log.md)
+§16.10 had recorded conservation as exact, and the `nav_tolerance` note says the expected error
+is zero. Both are corrected; the finding is S3-23, with the cost-basis-as-sum fix that would make
+it exact.
+
+### 45.5 The encoder comparison protocol, as a command (doc/18 §5.5)
+
+`python -m gym_continuousDoubleAuction.train.compare` runs every (encoder, seed) as a separate
+training run with the seed pinned and its own checkpoint tree, scores each final checkpoint on
+the probe harness against one shared corpus, and writes per-run JSON plus a Markdown table of
+means and standard deviations across seeds. It reports two encoders as *separated* on a metric
+only when the gap exceeds both standard deviations and each side has at least three seeds; below
+that the footer calls the table a smoke test. Run once at smoke scale ([16](16_verification_log.md)
+§16.18) to prove the path; the run at scale remains the open item in [10](10_testing.md) §8.
+Twelve tests cover the aggregation; the `cda_compare` group in `cli_defaults.json` holds its
+defaults.
+
+### 45.6 The S1-5 tail, measured and closed
+
+Escrow against a resting order that would only close the position was treated as spent by the
+cash check. Measured first: at `init_cash` 100,000 under random play, 84% of refusals happened
+while such escrow existed and 67% would have passed had it counted. Then fixed in the approval
+predicate alone - `Trader._closing_escrow`, capped at the quantity that actually closes, oldest
+order first - leaving the ledger and every partial-fill path untouched. `cash` may now sit below
+zero by at most that amount while both orders rest; the property suite asserts `cash +
+cash_on_hold >= 0` and NAV is unaffected. Refusals at 100,000 fell from 607 to 340.
+
+### 45.7 Still open after this pass
+
+The run of §45.5 at scale; the cost-basis fix of S3-23; a formatter, coverage and type hints in
+`envs/` (the rest of S4-6); the remaining dead code in `continuousDoubleAuction_env.py` and
+`action_helper.py` (S4-3, S4-4); and whether a dead action should cost the agent anything, which
+is a reward question rather than an accounting one.
+
+
+## 46. Conservation exact, and a plan for aimable order management
+
+### 46.1 S3-23 closed the day it was opened
+
+§45.4 found that NAV conservation held only to about `1e-22`, because the ledger stored the
+position's basis as a VWAP quotient and rebuilt it by multiplication. The basis is now stored as
+what it always was in substance: `Account.cost_basis`, the exact `Decimal` sum of the trade values
+that built the position, which every path reads and writes directly. `VWAP` is a derived property
+over it, kept for display and for the tests that construct positions by hand. `mark_to_mkt` forms
+`position_val` from the basis with one product, so for a long it is `|pos| × mark` exactly and for
+a short `2 × cost_basis − |pos| × mark`. Re-measured over the same 12,000 steps: zero residual, at
+`tick_size` 1 and 0.1. The property suite asserts `==` again; the `nav_tolerance` note is true
+again and now says why. [15](15_findings_and_recommendations.md) S3-23,
+[16](16_verification_log.md) §16.19, [04](04_accounting.md) §1 and §5.
+
+### 46.2 A plan for making `modify` and `cancel` usable (S3-24)
+
+Measured first: under random play a `cancel` hits one of the agent's own orders **7%** of the time
+it is issued and a `modify` 48%, with agents holding 1.6 orders on average. The three causes -
+the agent cannot see its own orders, a cancel is aimed by exact price out of thirty codes, a modify
+is aimed by FIFO - and the four-phase plan that follows (own-book observation block; aim by
+`order_slot`; make a miss visible in the next observation; prove it learned with `train.compare`)
+are written up as [15](15_findings_and_recommendations.md) S3-24, with effort and the structural
+consequence: both layout changes should land as one checkpoint generation, and that is the moment
+to record a layout version (S4-19).
+
+
+## 47. Order management made aimable (S3-24, phases 1–4; S1-2 and S4-19 closed)
+
+The plan of §46.2, carried out as one checkpoint generation. The observation is 216 floats (from
+193), the action Dict has six heads (from five), and every checkpoint now says which layout it was
+trained against.
+
+### 47.1 Phase 1 — the own-book block
+
+The private block is `[9 base | own bid sizes (k_rows) | own ask sizes (k_rows) | own counts (2) |
+unmatched_last_step]`, built by `State_Helper.private_fields(k_rows)` so a config tree with a
+different depth gets the block for its depth. Own size at level k is this agent's resting quantity
+at the price of public level k, read from the live book after the step's orders and put on the
+public book's scale and sign. `tokenize` writes the two own sizes into channels 4 and 5 of the
+newest snapshot's level tokens — the channels the six market scalars had left as zero padding on
+level tokens — so every tokenising encoder sees them per level at no extra width, and `ObsLayout`
+learns where the block sits from the env's own definition rather than a second constant.
+
+### 47.2 Phase 2 — `order_slot`
+
+A sixth action head, `Discrete(max_own_orders + 1)` with `max_own_orders` 4, the measured p90 of
+resting orders. Slot k names the agent's k-th own order from the touch (best price first, oldest
+first within a level, the order the own-book block lists them in); 0 is "all on this side" for a
+cancel and the oldest order for a modify, which is the pre-slot FIFO rule so a policy that ignores
+the head loses nothing. A cancel no longer reads `price`.
+
+**One departure from the plan, forced by measurement.** The plan had a slot past the agent's count
+miss. Under random play that made modify worse than FIFO — 48% → 23% of issued modifies landed —
+while cancel rose only from 7% to 19%, because a uniform policy spends a fifth of its order
+management on each slot and the upper ones name orders it does not have. A learned policy gains
+nothing from dead slots: it can read its own-order counts and aim exactly. So a slot past the count
+now clamps to the deepest own order, the only miss left is a side with nothing resting on it, and
+under random play 35–36% of issued cancels and modifies land, 58–62% of those with anything
+resting. [16](16_verification_log.md) §16.20 has the four-row table.
+
+### 47.3 Phase 3 — feedback
+
+`unmatched_last_step` in the private block, 1.0 on the observation after a dead modify or cancel.
+And a sixth reward term, `dead_action_penalty`, shipped at 0.0 with the S1-3 warning on the knob:
+`x + (-0.0) == x`, so the reward is bit for bit what it was, and the term is in
+`info["reward_terms"]`, the record and the variance-share metrics like the other five.
+
+### 47.4 Phase 4 — proving it, as far as this session can
+
+`train.compare` collects `order_rejection_fraction`, `unmatched_action_fraction` and
+`maker_fill_ratio_max` beside returns, and was run before and after at three seeds × 8 iterations
+of the scaled-down protocol. The dead-action share fell 0.315 → 0.289 with pass and maker
+fractions unchanged; nothing is separated by the driver's rule and nothing at that scale is
+learning, so this proves plumbing and direction, not the claim. The Hypothesis suite drives
+slot-aimed modifies and cancels through every book, escrow and ledger invariant.
+
+### 47.5 S4-19 — the layout stamp
+
+`envs/layout_version.py` writes the observation and action layout versions, the private-field list
+and the action-key list into every checkpoint's `league_state.json`, and `build_algo` compares
+before restoring. A pre-stamp sidecar is layout 1 by definition, so every checkpoint written before
+today is refused by name rather than by tensor shape.
+
+### 47.6 What else moved
+
+`test_cbp` pins the policy head at 31 outputs (was 26). `test_config_sources` sets `private_dim`
+alongside `k_rows` when it swaps a depth in. The tokeniser test that said the private block never
+reaches a token now says everything but the own-book block never does. Fourteen documents that
+stated 193 state 216. Suite: 1,019 unit + 153 integration.
+
+
+## 48. The hygiene group
+
+The S4 rows that needed no design decision, done in one pass. Two of the group turned out not to
+be hygiene and are marked as such rather than done.
+
+- **S4-1, S4-2, S4-3, S4-4 — dead code.** `train/helper/helper.py` and `envs/agent/random_agent.py`
+  are deleted, `Trader` no longer inherits from the legacy random agent, the last dead methods
+  (`state_diff`, `_set_side`, `_set_type`, `_higher`, `_lower`) and the last ~200 lines of
+  commented-out code (the old `step` and space getters, the old `Tuple` action space) are gone.
+- **S4-6 — tooling.** `pyproject.toml` with a `ruff` selection matching the pyflakes rules
+  `test_lint.py` enforces, a `pytest` block and `coverage` tables; `pytest-cov` in the `dev` extra;
+  the unit suite measured at **79.1%** line-and-branch ([16](16_verification_log.md) §16.21); type
+  hints on the public API of every `envs/` module. No formatter pass - that is one deliberate
+  commit of churn, not a side effect of a hygiene pass - and no coverage threshold yet, because at
+  79% it would ratchet the CLI mains first.
+- **S4-7 — rendering.** `is_render` defaults to `false`, and `_render` no longer mutates the
+  state it prints, so a rendered run and a silent one evolve identically.
+- **S4-8 — Docker.** The image installs from `requirements.txt` on its own cached layer.
+- **S4-10 — defensive reads.** Every `getattr(self, ..., default)` in `envs/` is gone; the
+  attributes are initialised where their mixin is built and read directly. The mixin architecture
+  itself stands - unwinding it is a redesign, and the row says so.
+- **S4-11 — two hot-path claims, measured.** The counter-party scan cost 0.2 µs and is O(1)
+  anyway; the pre-action snapshot cost 5.9% of a step and is now rebuilt only when the book
+  changed since the last one, which is exactly after a bankruptcy cancels orders.
+- **S4-12 — `train.evaluate`.** The repository can now *use* a checkpoint: restore it, roll
+  episodes with its own mapping function and modules through `forward_inference` (unsquashing the
+  normalised Box heads the way the env runner does - without that, half the sampled
+  `size_sigma`s are negative and the env refuses them), and report per module what the policies
+  did. Seven tests, three of them against a real one-iteration checkpoint.
+- **S4-18** was already fixed; the row was stale.
+- **S4-15 and S4-17 are not done**, and the register now says why: both change the observation's
+  representation - its bounds, or the sign convention every encoder is fed - which is a layout
+  version bump and a learning-problem change, to be made with `train.compare` in hand rather than
+  in a hygiene pass.
+
+Suite: 1,023 unit + 156 integration.
+
+## 49. Positive asks and a finite observation Box (S4-17, S4-15; layout version 3)
+
+The two S4 rows the hygiene pass declined, done as a measured pass ([16](16_verification_log.md)
+§16.22). Same 216-float width; different meaning, so `OBSERVATION_LAYOUT_VERSION` is 3 and a
+version-2 checkpoint is refused by name (S4-19) rather than silently reading every ask as a bid.
+
+- **S4-17 — the ask sign is gone.** `set_agg_LOB` stores ask prices and sizes as they are;
+  `_normalise_frame` emits `(P_ask − M) / M ≥ 0` and `+sqrt(V / limit_max_size)`; `_l1_prices` and
+  `own_book` follow; `_set_price` reads the positive row; the probe's `depth_imbalance` is
+  `(bids − asks) / (bids + asks)` and the order-book visualizer no longer un-negates. Side is the
+  block, which is what lets an encoder share weights between the two halves. Seven tests that
+  pinned the old sign now pin the new one.
+- **S4-15 — the Box is finite.** `observation_bounds` in `tunable_constants.json` gives one
+  `[low, high]` per feature family, exact where the range is an identity and measured with
+  headroom where it is not ([18](18_configuration.md) §4.1.1, [05](05_observation_space.md) §1.2);
+  `State_Helper.observation_bounds` tiles them over the vector and the env declares the `Box` with
+  them. A field without a bound fails construction by name.
+- **Every clip is counted.** `set_next_state` clips to the bounds and writes the count to
+  `num_obs_clipped_step`: in `info`, in the episode record (`INFO_COLUMNS`), aggregated into the
+  `obs_clip_fraction` metric ([11](11_logging_and_observability.md) §1.2) and reported by
+  `train.compare`. It reads 0 on every one of the 112,000 agent-steps measured, and it caught the
+  first candidate bounds being wrong — older frames' price rows go negative against the newest
+  midpoint — before any training run did.
+- **A measurement against S3-14.** Deriving the bounds put numbers on the one-sided-book fallback:
+  under random play the midpoint falls to a lone quote at the tick floor and the price ratios reach
+  20× and more. The row in [15](15_findings_and_recommendations.md) carries them now.
+- **Tests.** `test_observation_bounds.py` (12) and two `obs_clip_fraction` tests in
+  `test_activity_metrics.py`. `integration/test_evaluate_checkpoint.py` now accepts a promoted
+  champion among the checkpoint's opponents - whether the one training iteration promotes one
+  depends on the returns drawn, and the first full run on this layout did. Suite: **1,037 unit +
+  156 integration**.
+
+## 50. Zero means one thing: occupancy rows and the last-trade reference (S3-14; layout version 4)
+
+The first of the pre-existing S3 rows taken through the measure-first pass
+([16](16_verification_log.md) §16.23).
+
+- **Measured first.** Under random play at the shipped config 7.8% of steps had a one-sided book,
+  and on every one of them the best quote read exactly `0.0` - the same value as an absent level;
+  1.2% of occupied price cells in all, and 22% at a thin-book stress config where 77% of steps
+  were one-sided or empty. No other source of ambiguous zeros exists in the newest frame.
+- **Two occupancy rows per snapshot** (`bid_occupied`, `ask_occupied`, 0/1), built in
+  `set_agg_LOB` beside the price and size rows so every frame in the stack keeps its own, passed
+  through normalisation unchanged, bounded on `[0, 1]`. `book_rows` is 6, a snapshot 66 floats,
+  the observation 296. The tokenising encoders carry them as two more channels of each level token.
+- **The reference price of a one-sided book is the last trade**, not the lone quote
+  (`State_Helper.mid_price`; [05](05_observation_space.md) §2.1). The quote then reads its distance
+  from the print. This is the chain `Exchg_Helper.mark_price` has used since S2-5, so the price the
+  agent sees and the price it is marked at now agree whenever the book is not two-sided.
+- **After:** the row equals `size > 0` on every cell of every step; the zeros that remain (0.66%
+  shipped, 11.2% stress) are quotes resting exactly at the last print and are labelled occupied.
+- **A correction to §49's story.** The extreme price tails found while deriving the S4-15 bounds
+  were traced cell by cell: every one sat in a book whose midpoint had random-walked down to one to
+  three ticks, mostly two-sided. They are S3-15's additive-tick coordinate, not the one-sided
+  fallback; §16.22, [05](05_observation_space.md) §1.2 and the S3-14 row now say so.
+- **Layout version 4.** A version-3 checkpoint is refused by name (S4-19).
+- **Tests.** `test_occupancy_channel.py` (11); one more branch of the reference chain in
+  `test_obs_market_features.py`; the width literals in five test files follow the layout. Suite:
+  **1,049 unit + 156 integration**.
+
+## 51. The book as a fixed tick-offset grid (S3-15; layout version 5)
+
+The second pre-existing S3 row taken through the measure-first pass
+([16](16_verification_log.md) §16.24).
+
+- **Measured first.** In the `levels` layout the best occupied level sat 3.8 ± 2.5 ticks from the
+  reference under random play, its price changed on 35–54% of steps, and the action's price code
+  *j* landed anywhere from 0 to 20 ticks out with codes 1–6 indistinguishable. A ±10-tick window
+  around the reference held 72.5% of resting volume.
+- **`book_mode: "grid"`, the new default** ([05](05_observation_space.md) §1.4). Two size rows over
+  `2 k_rows + 1` tick offsets from the reference price `R` (the §2.1 chain snapped to the tick);
+  cell *c* is the price `R + (c − k_rows) × tick`; every frame in the stack is re-gridded against
+  the newest `R_t`, so a resting order sits in the same cell of every frame. 48 floats per snapshot,
+  224 in all. The raw six-row frame is unchanged underneath, which is what makes the re-gridding
+  possible and keeps `agg_LOB_raw` and the L1 reads as they were.
+- **The action shares the grid** ([06](06_action_space.md) §2.1.1). Price code *j* quotes exactly
+  *j* ticks from `R` on the passive side; the offset head still shades by a tick; ghost pricing is
+  a `levels`-mode path. After: code *j* lands at *j* ± 0.9 ticks, and the window now holds 93% of
+  resting volume because the agents quote on it (99.5% at ±16).
+- **`levels` is kept** as the other value of the key, per env instance, so `train.compare --set
+  book_mode=levels` runs the comparison. `TrainConfig.book_mode`, the env config and the layout
+  stamp carry it; a checkpoint from the other mode is refused by name, which matters because the
+  two widths coincide at one `n_hist`.
+- **Consumers follow the mode by name.** `ObsLayout` infers the mode from the space (default
+  first) and exposes `row_slice`; the tokeniser puts own sizes on the cell their tick offset names;
+  the probe's `depth_imbalance`, the visualizer and `print_table` address rows by name.
+- **`train.compare --set FIELD=VALUE`** overrides any `TrainConfig` field for every run, coerced to
+  the field's type - the switch the remaining S3 comparisons need.
+- **Tests.** `test_grid_book.py` (14), two more in `test_layout_version.py`; the `levels`-mode
+  tests build that mode explicitly. Suite: **1,065 unit + 156 integration**.
+
+## 52. Episode horizons: fixed, or drawn from a range
+
+`episode_length_mode` in the env config ([18](18_configuration.md) §3.4): `"fixed"` is the
+behaviour to date, every episode truncated at `max_step`; `"random"` draws each episode's horizon
+uniformly from `[max_step_min, max_step_max]` with the env's seeded generator, reports it once as
+`episode_horizon` in the reset infos, and keeps it out of the observation - `time_left` counts
+against the latest possible end, so the policy sees a bound but not the draw. Truncation lands on
+the draw; bankruptcy termination is unchanged; `TrainConfig.train_batch_size` is sized by the mean
+of the range. `test_episode_horizon.py` (14). Suite: **1,079 unit + 156 integration**.
+
+## 53. Action masking: what is impossible is never chosen
+
+The recommendation of the last review, done as asked: mask what is impossible, let the policy
+learn what is merely unwise ([06](06_action_space.md) §7, [16](16_verification_log.md) §16.25).
+
+- **The observation carries the mask.** Nine `can_<category>` entries close each agent's private
+  block (41 fields; 233 floats in grid mode), set by `Action_Helper.action_mask_for`: a modify or
+  cancel needs a resting order on that side, a market or limit order needs to pass the same cash
+  check that judges the order, for the minimum size at the reference price. Pass is always
+  possible. Layout version 6.
+- **The modules honour it.** `CDAPPOTorchRLModule` adds −10⁹ to a masked category's logit on every
+  forward pass, and is now the module for the `mlp` path too (stock encoder and catalog, so nothing
+  else changes); `RandomRLModule` redraws a masked category among the possible ones. Where the mask
+  and the logits sit is derived from the spaces (`train/model/action_mask.py`).
+- **Measured.** Unmatched actions under random play: 29.6% → 0.2% of agent-steps (the residue is
+  an order filled earlier in the same step's shuffle). Rejections at the thin-cash stress config:
+  33.9% → 33.2% - size-driven, out of a category mask's reach, and a pointer at S3-1 to S3-3.
+- **`action_mask: false`** makes the env emit all ones, same layout, for the unmasked baseline in
+  `train.compare`.
+- **Tests.** `test_action_mask.py` (16). Suite: **1,095 unit + 156 integration**.
+
+## 54. Pluggable matching, and fair clearing within a step (S3-25)
+
+As asked: fifo stays the default, the allocation rule and the step's clearing are pluggable, and
+orders that cross within the same instant can be cleared without the shuffle deciding
+([06](06_action_space.md) §8, [16](16_verification_log.md) §16.26).
+
+- **`matching_rule`** on `OrderBook` (keyword-only): `fifo` or `pro_rata`. `allocate` is the one
+  place a level is shared out; `process_order_list` executes its answer. Pro-rata floors to whole
+  contracts and hands the residue out in time order, so totals are exact.
+- **`step_clearing: "batch"`**: `OrderBook.begin_batch` queues the step's new market and limit
+  orders and a modify's re-entered quote; `clear_batch` clears them against the resting book at one
+  uniform price - volume-maximising, then least imbalance, then nearest the reference, which is a
+  candidate - with resting orders first at the margin and the batch rationed under
+  `matching_rule`; leftovers rest or lapse as before. `Exchg_Helper.do_actions` runs it and settles
+  each trader through `Trader.settle_batch`, which books a same-batch counter party without an
+  escrow release (`counter_party['resting']` on the record). The per-action trade lists stay
+  aligned with the shuffled actions for the render path.
+- **Measured.** Sequential: the first agent in the shuffle fills 58.1% of its fresh orders, the
+  last 49.1%, monotonically; 1.58 prices per trading step. Batch: 57.7% to 57.1%, one price, 43
+  contracts a step against 51. NAV conserved exactly under all four combinations.
+- **Both are env-config keys and `TrainConfig` fields**, for `train.compare --set`.
+- **A settlement bug the clip counter found.** The first batch compare showed `obs_clip_fraction`
+  0.02–0.03: `cash_on_hold` a few contracts negative, because a resting order filled at a better
+  price than its limit released escrow at the trade price while it had posted it at the limit.
+  `settle_batch` re-bases the escrow first; NAV conservation alone had not caught it, S4-15's
+  counter did.
+- **Tests.** `test_matching_regimes.py` (19) at the book, `test_clearing_env.py` (13) through the
+  env. Suite: **1,127 unit + 156 integration**.

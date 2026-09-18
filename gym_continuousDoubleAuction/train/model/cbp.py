@@ -44,8 +44,8 @@ the paper would never be reached. See `doc/25` and the `_note_cadence` in
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 import torch
 import torch.nn as nn

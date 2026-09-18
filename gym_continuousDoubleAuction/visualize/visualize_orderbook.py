@@ -7,6 +7,7 @@ from gym_continuousDoubleAuction.config_loader import constant
 from gym_continuousDoubleAuction.envs.exchg.state_helper import (
     PRIVATE_DIM,
     SNAPSHOT_DIM,
+    obs_row_slice,
 )
 from gym_continuousDoubleAuction.visualize.episode_data import load_episode
 
@@ -54,14 +55,9 @@ def visualize_episode_data(run_dir=None, episode_id=None, agent_id=None):
     observation rather than a live env, so it uses the module-level
     SNAPSHOT_DIM / PRIVATE_DIM instead of an instance attribute.
 
-    Within one snapshot:
-
-    [0:10]  Bid Prices
-    [10:20] Bid Sizes
-    [20:30] Ask Prices (negated)
-    [30:40] Ask Sizes (negated)
-    [40]    log_mid
-    [41]    log1p_spread_ticks
+    Rows are addressed by name through `obs_row_slice`, which follows the
+    process default `book_mode` (env_defaults.json): the two size rows over
+    2 * k_rows + 1 tick offsets in `grid` mode, or the six `levels` rows.
 
     run_dir/episode_id default to the most recently recorded run/episode; see
     `episode_data.load_episode`.
@@ -86,8 +82,8 @@ def visualize_episode_data(run_dir=None, episode_id=None, agent_id=None):
     total_ask_size = []
     for obs in episode["obs"]:
         snapshot = _newest_snapshot(obs)
-        b_s = snapshot[10:20]
-        a_s = -snapshot[30:40]  # Negated in env, restore to positive
+        b_s = snapshot[obs_row_slice("bid_size")]
+        a_s = snapshot[obs_row_slice("ask_size")]
         total_bid_size.append(b_s.sum())
         total_ask_size.append(a_s.sum())
 

@@ -71,7 +71,9 @@ NAV conservation check passes to the cent.
 
 **Buying power is enforced before execution.** `_order_approved` computes the *opening* portion
 of an order — the part that increases risk — and only cash-checks that. Closing or covering is
-always permitted. It even estimates a market order's cost from the contra side's best price,
+always permitted, a cancel is never checked, a modify may spend the escrow it releases (it used
+to be refused exactly when the trader was fully committed — S2-13), and margin held against a
+resting *exit* order counts as buying power for a new position (S1-5's tail, closed 2026-09-18). It even estimates a market order's cost from the contra side's best price,
 falling back to the last tape print.
 `test_cash_check.py::test_position_flip_insufficient_cash` covers the hard case (long 10, sell
 20, only the 10-lot short leg needs cash). This is subtle and right.
@@ -224,7 +226,7 @@ stay within ±0.58 in the same rollout.
 
 | Feature | Why |
 |---|---|
-| **Order-flow imbalance** | The single strongest short-horizon predictor in the microstructure literature. Helper code for it already exists — `train/helper/helper.py` computes `ord_imb` / `sum_ord_imb` — but it is imported by nothing. |
+| **Order-flow imbalance** | The single strongest short-horizon predictor in the microstructure literature. It reached the observation as `signed_volume` (S2-7); the old unused helper that computed `ord_imb` / `sum_ord_imb` — but it is imported by nothing. |
 | **Trade flow / signed volume** | Aggressor-side volume over the last k steps. The tape loop in `set_agg_LOB` is a dead placeholder where this was clearly intended ([05](05_observation_space.md) §7.3). |
 | Realised volatility | Rolling σ of mid returns |
 | Microprice | `(bid_sz·ask_px + ask_sz·bid_px)/(bid_sz+ask_sz)` — better fair value than mid |

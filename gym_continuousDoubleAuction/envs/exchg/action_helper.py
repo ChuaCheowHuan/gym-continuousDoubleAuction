@@ -1,5 +1,7 @@
+from typing import Any, Dict, List, Optional
+
 import numpy as np
-import random
+from decimal import Decimal, ROUND_HALF_UP
 
 from gymnasium import spaces
 
@@ -22,11 +24,23 @@ _CATEGORY_MAP = {
 }
 
 
+#: Keys of the per-agent action Dict, in the order gymnasium's `Dict` holds them
+#: (it sorts keys), which is the order a flattened action lists its parts.
+#: Named so the layout stamp (envs/layout_version.py) and the record can list
+#: them without instantiating a space.
+ACTION_KEYS = ("category", "order_slot", "price", "price_offset", "size_mean", "size_sigma")
+
+#: Bumped whenever the action Dict changes shape or meaning (doc/15 S4-19).
+#: 1 was the five-component Dict; 2 added `order_slot`.
+ACTION_LAYOUT_VERSION = 2
+
+
 class Action_Helper():
     def __init__(self, min_size=env_default("min_size"),
                  mkt_max_size=env_default("mkt_max_size"),
                  limit_size_multiple=env_default("limit_size_multiple"),
-                 tick_size=env_default("tick_size"), **kwargs):
+                 tick_size=env_default("tick_size"),
+                 action_mask=None, **kwargs):
         """
         Arguments:
             min_size: Smallest order size; also the offset added to every
@@ -35,11 +49,17 @@ class Action_Helper():
             limit_size_multiple: Limit orders may be this many times larger
                                  than market orders.
             tick_size: Price tick. Order prices are built on this grid.
+            action_mask: Whether the observation's mask says what is possible
+                         (`action_mask_for`). False emits all ones. None reads
+                         `env_defaults.json`.
 
         Defaults come from `config/env_defaults.json`; the env always passes
         all four explicitly, so they apply only to a bare Action_Helper.
         """
         self.min_size = min_size
+        self.action_mask_enabled = bool(
+            env_default("action_mask") if action_mask is None else action_mask
+        )
         self.mkt_max_size = mkt_max_size
         self.limit_size_multiple = limit_size_multiple
         self.limit_max_size = self.mkt_max_size * self.limit_size_multiple
@@ -60,6 +80,8 @@ class Action_Helper():
         self.last_price = float(
             constant("price_anchor_fallbacks", "action_helper_last_price")
         )
+        # Which agents passed this step; set_actions rebuilds it every step.
+        self.pass_agents = set()
 
         super().__init__(**kwargs)
 
@@ -78,6 +100,12 @@ class Action_Helper():
                 f"but the side/type mapping defines {len(_CATEGORY_MAP)} "
                 f"categories. Change _CATEGORY_MAP in action_helper.py to match."
             )
+        if int(self._act["max_own_orders"]) < 1:
+            raise ValueError(
+                f"tunable_constants.json: action_space.max_own_orders="
+                f"{self._act['max_own_orders']} must be >= 1: it is the number "
+                f"of own resting orders a modify or cancel can be aimed at."
+            )
         price_offset_n = self._act["price_offset_n"]
         if price_offset_n < 1 or price_offset_n % 2 == 0:
             raise ValueError(
@@ -86,21 +114,7 @@ class Action_Helper():
                 f"neutral 'join' offset is the middle code."
             )
 
-    # def act_space(self):
-    #     '''
-    #     The action space.
-
-    #     Example for 1 agent:
-    #         model_out: [0, 3, array([0.47555637], dtype=float32), array([0.5383144], dtype=float32), 5]
-    #     '''
-
-    #     return spaces.Tuple((spaces.Discrete(3), # side: none, bid, ask (0 to 2)
-    #                          spaces.Discrete(4), # type: market, limit, modify, cancel (0 to 3)
-    #                          spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32), # array of mean for size selection
-    #                          spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32), # array of sigma for size selection
-    #                          spaces.Discrete(12), # price: based on mkt depth from 0 to 11
-    #                         ))
-    def act_space(self, num_agents):
+    def act_space(self, num_agents: int) -> Dict[str, Any]:
         '''
         The action space for multiple agents, returned as a dictionary.
 
@@ -115,6 +129,10 @@ class Action_Helper():
             - size_sigma: Box(size_sigma_low, size_sigma_high)
             - price: Discrete(k_rows) -> book levels 1 to k_rows
             - price_offset: Discrete(price_offset_n) -> 0: Passive (-1 tick), 1: Join (0 tick), 2: Aggressive (+1 tick)
+            - order_slot: Discrete(max_own_orders + 1) -> which of the agent's OWN
+              resting orders a modify or cancel targets, counted from the touch
+              (1 = nearest the market). 0 = every own order on that side for a
+              cancel, the oldest order for a modify. Ignored by market and limit.
 
         Args:
             num_agents (int): Number of agents.
@@ -135,6 +153,11 @@ class Action_Helper():
             # observation exposes and the same depth _set_price indexes into.
             "price": spaces.Discrete(self.k_rows),
             "price_offset": spaces.Discrete(self._act["price_offset_n"]),
+            # Aims a modify or cancel at one of this agent's own orders - see
+            # Trader._get_order_ID. Before this head existed a cancel had to
+            # name its order's exact price out of thirty codes and landed 7%
+            # of the time under random play (doc/15 S3-24).
+            "order_slot": spaces.Discrete(int(self._act["max_own_orders"]) + 1),
         })
 
         # Create a dictionary mapping for all agents
@@ -142,7 +165,7 @@ class Action_Helper():
 
         return space_dict
 
-    def set_actions(self, model_outs):
+    def set_actions(self, model_outs: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Set model outputs to actions acceptable by LOB.
 
@@ -171,7 +194,7 @@ class Action_Helper():
 
         return acts
 
-    def rand_exec_seq(self, actions, seed=None):
+    def rand_exec_seq(self, actions: List[Dict[str, Any]], seed: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Shuffle actions execution sequence.
 
@@ -198,7 +221,7 @@ class Action_Helper():
         rng = np.random.default_rng(seed) if seed is not None else self.np_random
         return [actions[i] for i in rng.permutation(len(actions))]
 
-    def do_actions(self, actions):
+    def do_actions(self, actions: List[Dict[str, Any]]):
         """
         Process actions for all agents.
 
@@ -228,17 +251,17 @@ class Action_Helper():
 
 
             ID = int(ID_str.split('_')[1])
-            
-
+            slot = action.get("slot", 0)
 
             trader = self.traders[ID]
-            self.trades, self.order_in_book = trader.place_order(type, side, size, price, self.LOB, self.traders)
+            self.trades, self.order_in_book = trader.place_order(
+                type, side, size, price, self.LOB, self.traders, slot=slot)
             seq_trades.append(self.trades)
             seq_order_in_book.append(self.order_in_book)
 
         return seq_trades, seq_order_in_book
 
-    def _set_action_mkt_depth(self, ID, model_out):
+    def _set_action_mkt_depth(self, ID: str, model_out: Dict[str, Any]) -> Dict[str, Any]:
         """
         Sets the action of each agent from the model.
 
@@ -256,9 +279,13 @@ class Action_Helper():
         price_code = model_out.get("price", 0)
         # Default to the neutral 'join' offset, which is the middle code.
         price_offset = model_out.get("price_offset", self._neutral_price_offset())
+        # 0 when absent: "all" for a cancel, FIFO for a modify - the pre-slot
+        # behaviour, so an action dict from before the head existed decodes.
+        order_slot = int(model_out.get("order_slot", 0))
 
         act = {}
         act["ID"] = ID
+        act["slot"] = order_slot
 
         # Mapping Category to Side and Type
         # 0: None, 1: Buy Mkt, 2: Buy Lmt, 3: Buy Mod, 4: Buy Can,
@@ -282,31 +309,49 @@ class Action_Helper():
 
         return act
 
+    def action_mask_for(self, trader, n_bid: int, n_ask: int) -> np.ndarray:
+        """Which of the `category_n` action categories `trader` can take now.
+
+        One float per category in `_CATEGORY_MAP` order, 1.0 where the action
+        is possible (doc/06 section 6). Two impossibilities, both exact:
+
+        * `modify` / `cancel` on a side with none of this trader's orders
+          resting - the "unmatched" dead action, which `num_unmatched_step`
+          counts and which 27-30% of random agent-steps used to be.
+        * a `market` or `limit` order the cash check would refuse for the
+          minimum size at the reference price - the "rejected" dead action.
+          Judged by the same `Trader._order_approved` that judges the order,
+          so the mask and the refusal cannot disagree about what is affordable
+          at that price; a larger size or a worse price may still be refused,
+          and that residue stays counted in `num_rejected_step`.
+
+        Pass (category 0) is always possible, so the mask never empties. With
+        `action_mask` off every entry is 1.0: the layout is the same and only
+        the information is withheld, which is what makes the two comparable.
+        """
+        n = self._act["category_n"]
+        mask = np.ones(n, dtype=np.float32)
+        if not self.action_mask_enabled:
+            return mask
+        resting = {"bid": n_bid, "ask": n_ask}
+        reference = None
+        for category, (side, kind) in _CATEGORY_MAP.items():
+            if side is None:
+                continue
+            if kind in ("modify", "cancel"):
+                if resting[side] <= 0:
+                    mask[category] = 0.0
+                continue
+            if reference is None:
+                reference = self.reference_price()
+            price = -1.0 if kind == "market" else reference
+            if not trader._order_approved(side, self.min_size, price, self.LOB, kind):
+                mask[category] = 0.0
+        return mask
+
     def _neutral_price_offset(self):
         """The 'join' offset code: the middle of the price_offset codes."""
         return self._act["price_offset_n"] // 2
-
-    def _set_side(self, side):
-        if side == 0:
-            side = None
-        elif side == 1:
-            side = 'bid'
-        else:
-            side = 'ask'
-
-        return side
-
-    def _set_type(self, type):
-        if type == 0:
-            type = 'market'
-        elif type == 1:
-            type = 'limit'
-        elif type == 2:
-            type = 'modify'
-        else:
-            type = 'cancel'
-
-        return type
 
     def _set_size(self, type, mkt_size_mean_mul, limit_size_mean_mul, mean, sigma):
         """
@@ -338,7 +383,8 @@ class Action_Helper():
         # neither is usable as a size without a further conversion.
         return int(np.rint(np.abs(sample)).item())
 
-    def _set_price(self, min_tick, side, price_code, price_offset=None):
+    def _set_price(self, min_tick: float, side: str, price_code: int,
+                   price_offset: Optional[int] = None) -> float:
         """
         Set price according to price_code (a book level, 0 to k_rows - 1) and
         price_offset (0 to price_offset_n - 1).
@@ -352,11 +398,10 @@ class Action_Helper():
         the range symmetrically: with 5 codes the offsets run -2..+2 ticks.
 
         Returns:
-            set_price: Price, a real number.
+            set_price: Price, a float that sits exactly on the `min_tick`
+            grid, so that `Decimal(str(price))` - the conversion the book
+            applies on the way in - names the same price level every time.
         """
-
-        best_bid = self.LOB.get_best_bid()
-        best_ask = self.LOB.get_best_ask()
 
         # Deterministic Reference Price (always use last_price as requested)
         ref_price = self.last_price
@@ -368,23 +413,38 @@ class Action_Helper():
         # level_idx: 0 to k_rows - 1, representing book levels 1 to k_rows
         level_idx = price_code
 
-        # Use unnormalized raw prices array for action price calculation
-        agg_LOB_source = getattr(self, 'agg_LOB_raw', self.agg_LOB)
-        book = np.array(agg_LOB_source).reshape(self.book_rows, self.k_rows)
+        if self.book_mode == "grid":
+            # The observation's coordinate is the action's (doc/15 S3-15):
+            # code j is the cell j ticks from the reference on the passive
+            # side, whatever is resting there. No ghost logic is needed - every
+            # code names a price - and a bid can cross only through the
+            # offset head, by one tick, or a market order.
+            R = self.reference_price()
+            if side == 'bid':
+                set_price = R - level_idx * min_tick + offset_multiplier * min_tick
+            else:
+                set_price = R + level_idx * min_tick - offset_multiplier * min_tick
+            set_price = max(min_tick, set_price)
+            return self._snap_price(set_price, min_tick)
+
+        # Use unnormalized raw prices array for action price calculation.
+        # Always present: reset builds it, and every step rebuilds it.
+        book = np.array(self.agg_LOB_raw).reshape(self.book_rows, self.k_rows)
 
         if side == 'bid':
             price_array = book[BOOK_ROW_ORDER.index("bid_price")] # raw bid prices
             p = price_array[level_idx]
             
             # If level is empty, use ghost logic relative to ref_price
-            base_price = (ref_price - (level_idx + 1) * min_tick) if p == 0 else abs(p)
+            base_price = (ref_price - (level_idx + 1) * min_tick) if p == 0 else p
             
             # Apply offset: Bid +1 is aggressive, Bid -1 is passive
             set_price = base_price + (offset_multiplier * min_tick)
 
         else: # 'ask'
             price_array = book[BOOK_ROW_ORDER.index("ask_price")] # raw ask prices
-            p = abs(price_array[level_idx])
+            # Positive, like the bid row; the sign convention is gone (S4-17).
+            p = price_array[level_idx]
             
             # If level is empty, use ghost logic relative to ref_price
             base_price = (ref_price + (level_idx + 1) * min_tick) if p == 0 else p
@@ -394,16 +454,30 @@ class Action_Helper():
 
         # Final safety checks
         set_price = max(min_tick, set_price)
-        return float(set_price)
+        return self._snap_price(set_price, min_tick)
 
-    def _higher(self, min_tick, price):
-        """
-        Sets the price of the order to 1 tick higher.
-        """
-        return price + min_tick
-
-    def _lower(self, min_tick, price):
-        """
-        Sets the price of the order to 1 tick lower, ensuring it's not below min_tick.
-        """
-        return max(min_tick, price - min_tick)
+    @staticmethod
+    def _snap_price(set_price: float, min_tick: float) -> float:
+        """`set_price` on the `min_tick` grid, exactly, as the book will key it."""
+        # Snap to the tick grid, in Decimal, before handing the price over.
+        #
+        # Two things above put a price off the grid on any non-integer tick.
+        # `p` is read out of the raw snapshot, which used to be float32 - so a
+        # resting level at 100.1 came back as 100.0999984741211 - and the
+        # offset is added in float, so 100.1 + 0.1 is 100.19999999999999.
+        # `OrderBook.process_order` keys its price map on `Decimal(str(price))`
+        # and does no rounding of its own, so each of those became a *new*
+        # price level one float-ulp away from the one the agent meant.
+        # Measured at tick_size 0.1: an agent re-quoting the same level every
+        # step opened a fresh level every step, and its own cancels and
+        # upserts never found the order they targeted. doc/15 S3-4 called this
+        # a rare drift on the anchor path; on the level path it was the rule.
+        #
+        # Decimal throughout so the result is exact: `Decimal(str(x))` is the
+        # same conversion the book applies, and float(Decimal('100.2')) round
+        # trips through str() as '100.2'.
+        tick = Decimal(str(min_tick))
+        snapped = (
+            Decimal(str(set_price)) / tick
+        ).to_integral_value(rounding=ROUND_HALF_UP) * tick
+        return float(snapped)

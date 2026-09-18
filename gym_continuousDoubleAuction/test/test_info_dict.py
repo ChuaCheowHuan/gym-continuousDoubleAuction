@@ -100,11 +100,11 @@ class TestBackCompat:
 class TestRewardDecomposition:
     """doc/11 2.4: the five terms, individually, and they must add up."""
 
-    def test_all_five_terms_are_reported(self, stepped_env):
+    def test_all_six_terms_are_reported(self, stepped_env):
         _, infos, _, _ = stepped_env
         expected = {
             "nav_term", "order_penalty", "trade_penalty",
-            "drawdown_penalty", "passive_bonus",
+            "drawdown_penalty", "passive_bonus", "dead_action_penalty",
         }
         for i in range(NUM_AGENTS):
             assert set(infos[f"agent_{i}"]["reward_terms"]) == expected

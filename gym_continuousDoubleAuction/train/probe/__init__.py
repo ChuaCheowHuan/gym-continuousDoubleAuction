@@ -59,37 +59,46 @@ represents the market, not that PPO can exploit it. That second question needs
 S1-1 and S1-3 fixed first, and this harness is deliberately independent of both
 so its answer stays valid when they are.
 """
-from gym_continuousDoubleAuction.train.probe.corpus import (  # noqa: F401
+from gym_continuousDoubleAuction.train.probe.corpus import (
     ProbeCorpus,
     from_parquet,
     from_rollouts,
 )
-from gym_continuousDoubleAuction.train.probe.features import (  # noqa: F401
+from gym_continuousDoubleAuction.train.probe.features import (
     RAW_FEATURES,
     build_module,
     latents,
     load_module,
     raw,
 )
-from gym_continuousDoubleAuction.train.probe.rank import (  # noqa: F401
+from gym_continuousDoubleAuction.train.probe.rank import (
     RankRow,
     effective_rank,
     rank_table,
 )
-from gym_continuousDoubleAuction.train.probe.probe import (  # noqa: F401
+from gym_continuousDoubleAuction.train.probe.probe import (
     ProbeResult,
     balanced_accuracy,
     fit_and_score,
     r2,
 )
-from gym_continuousDoubleAuction.train.probe.report import (  # noqa: F401
+from gym_continuousDoubleAuction.train.probe.report import (
     Row,
     render,
     run,
 )
-from gym_continuousDoubleAuction.train.probe.targets import (  # noqa: F401
+from gym_continuousDoubleAuction.train.probe.targets import (
     TARGET_REGISTRY,
     Target,
     horizon_mask,
     selectable_targets,
 )
+
+__all__ = [
+    "ProbeCorpus", "from_parquet", "from_rollouts",
+    "RAW_FEATURES", "build_module", "latents", "load_module", "raw",
+    "RankRow", "effective_rank", "rank_table",
+    "ProbeResult", "balanced_accuracy", "fit_and_score", "r2",
+    "Row", "render", "run",
+    "TARGET_REGISTRY", "Target", "horizon_mask", "selectable_targets",
+]

@@ -39,7 +39,7 @@ flowchart LR
     ACC --> MTM
     MTM --> OBS
     MTM --> REW
-    OBS -->|"observation, 193 floats"| POL
+    OBS -->|"observation, 233 floats"| POL
     REW -->|"reward"| POL
     REW --> CB
     CB -->|"agent to module mapping"| POL
@@ -72,6 +72,7 @@ mindmap
       11 Logging
       21 Logging under runners
     Operations
+      26 Runbook
       18 Configuration
       19 Docker
       20 Colab
@@ -94,6 +95,7 @@ mindmap
 | # | Document | What it answers |
 |---|---|---|
 | 1 | [01_overview.md](doc/01_overview.md) | What this project is, the market it models, the research question, what an episode looks like |
+| 26 | [26_runbook.md](doc/26_runbook.md) | Install, check, train, resume, inspect, probe and pretrain, step by step, with what to watch and a troubleshooting table |
 | 2 | [02_architecture.md](doc/02_architecture.md) | Layer map, package tree, the mixin/MRO chain, the step lifecycle, config keys, data flow, tech stack |
 
 ### Core mechanisms (reference)
@@ -102,7 +104,7 @@ mindmap
 |---|---|---|
 | 3 | [03_matching_engine.md](doc/03_matching_engine.md) | Book data structures, limit/market processing, modify-order semantics and the six accounting scenarios, invariants |
 | 4 | [04_accounting.md](doc/04_accounting.md) | Cash escrow, order approval, position transitions including atomic flips, mark-to-market, NAV conservation |
-| 5 | [05_observation_space.md](doc/05_observation_space.md) | The 46-float snapshot: midpoint normalization, `√(V/limit_max_size)` sizing, the six market scalars, temporal stacking, the raw/normalized split, measured feature scales |
+| 5 | [05_observation_space.md](doc/05_observation_space.md) | The 48-float grid snapshot (and the 66-float level view): the fixed tick-offset grid shared with the action, `√(V/limit_max_size)` sizing, the six market scalars, temporal stacking, the raw/normalized split, measured bounds and feature scales |
 | 6 | [06_action_space.md](doc/06_action_space.md) | The `Dict` action space, ghost-level price anchoring, the two degenerate size dimensions, the legacy `Tuple` design it replaced |
 | 7 | [07_reward_function.md](doc/07_reward_function.md) | The five-term formula, its account plumbing, the measured decomposition, a coefficient tuning guide |
 
@@ -135,6 +137,7 @@ mindmap
 
 | # | Document | What it answers |
 |---|---|---|
+| 26 | [26_runbook.md](doc/26_runbook.md) | The operator's page: every command in order, where each output lands, what to watch during a run, and what to do when it goes wrong |
 | 18 | [18_configuration.md](doc/18_configuration.md) | The five `config/` files and what each owns, the loader's rules, precedence between file and flags, the runtime profiles that pick a hardware set, how to add a knob |
 | 19 | [19_docker.md](doc/19_docker.md) | The GPU training image: build and run, what each flag is for, GPU prerequisites, where artefacts land in an ephemeral container, troubleshooting |
 | 20 | [20_colab.md](doc/20_colab.md) | Running the notebook on a free Colab VM: setup, the forced restart, what the free tier gives you, where output goes, resuming after a disconnect |
@@ -174,7 +177,7 @@ the cadence caveat that decides whether a result means anything) →
 [15](doc/15_findings_and_recommendations.md) (S1-1, S1-3, which gate the returns comparison)
 
 **Setting up training**
-[18](doc/18_configuration.md) (where every value lives) → [08](doc/08_self_play_league.md) →
+[26](doc/26_runbook.md) (the commands, in order) → [18](doc/18_configuration.md) (where every value lives) → [08](doc/08_self_play_league.md) →
 [09](doc/09_distributed_training.md) (if raising `num_env_runners` or `num_learners` above their
 `0` defaults) → [11](doc/11_logging_and_observability.md)
 
@@ -200,7 +203,7 @@ This repository implements a multi-agent continuous double auction system, struc
 
 In this environment, agents act as traders who can submit market, limit, modify, and cancel orders to a shared order book. They are marked to market based on the trade tape, and receive rewards derived from a multi-term NAV-based function. The codebase also includes a matching engine, supports `Decimal`-based accounting, includes the necessary RLlib league wiring, and comes with CI unit tests.
 
-**Main problems:** The weak points were concentrated in the learning problem formulation rather than in the simulator — agents observed no private state, the reward was strictly negative-sum with a dominant do-nothing strategy, and the reward scale silently disabled PPO's critic entirely. All three are now fixed ([17_changelog.md](doc/17_changelog.md) §29-30). The observation pipeline's own defects — the per-frame normalizer, the missing trade-flow features, and a size block two orders of magnitude off the price block — are fixed too (§37.4). What remains there: the agent's own resting orders are still invisible to it, and the price level index is still a non-stationary coordinate ([05](doc/05_observation_space.md) §7.2, §7.4, §7.7).
+**Main problems:** The weak points were concentrated in the learning problem formulation rather than in the simulator — agents observed no private state, the reward was strictly negative-sum with a dominant do-nothing strategy, and the reward scale silently disabled PPO's critic entirely. All three are now fixed ([17_changelog.md](doc/17_changelog.md) §29-30). The observation pipeline's own defects — the per-frame normalizer, the missing trade-flow features, and a size block two orders of magnitude off the price block — are fixed too (§37.4), as are the two action-path defects the 2026-09-18 review found: a cancel that was cash-checked and so refused exactly when a trader was fully committed, and a price grid that was only a grid at `tick_size` 1 (§44). The follow-up pass (§45) lifted the freeze on the matching engine, added Hypothesis invariant tests that immediately found a timestamp defect and a Decimal rounding residual in NAV conservation, made the linter part of the suite, and turned the encoder comparison protocol into one command. What remains there: the agent's own resting orders are still invisible to it, and the price level index is still a non-stationary coordinate ([05](doc/05_observation_space.md) §7.2, §7.4, §7.7).
 
 ---
 

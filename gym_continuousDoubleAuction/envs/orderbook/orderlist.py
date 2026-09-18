@@ -98,18 +98,12 @@ class OrderList(object):
         self.tail_order = order
 
     def __str__(self):
-        from six.moves import cStringIO as StringIO
+        from io import StringIO
         temp_file = StringIO()
         for order in self:
             temp_file.write("%s\n" % str(order))
         #temp_file.write("%s\n" % str(self.head_order))
         return temp_file.getvalue()
-
-    def to_str(self):
-        res_str = ""
-        for order in self:
-             res_str = res_str + str(order)
-        return res_str
 
     def to_list(self):
         res_list = []

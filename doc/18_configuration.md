@@ -54,6 +54,7 @@ mindmap
     tunable_constants.json
       structural, not per-run
       observation_layout
+      observation_bounds
       action_space
       module_id_prefixes
       logging
@@ -191,6 +192,37 @@ The `environment` group of `train_config.json`, forwarded as an `env_config` dic
 [02_architecture.md](02_architecture.md) §2.6 for the table of the original seven keys and their
 `TrainConfig` counterparts.
 
+### 3.0 The book layout: `book_mode`
+
+`"grid"` (default) or `"levels"` ([05](05_observation_space.md) §1.4, S3-15). An env-config key
+rather than a structural constant so that a test or a `train.compare --set book_mode=levels` run
+can build the other layout beside the default; `TrainConfig.book_mode` carries it, it is one of the
+structural keys a restore cannot change (§5.3), and it travels in the checkpoint's layout stamp.
+The module-level `SNAPSHOT_DIM` and `obs_row_slice` in `state_helper` follow the process default
+from `env_defaults.json`.
+
+### 3.0.1 The action mask: `action_mask`
+
+`true` (default) or `false` ([06](06_action_space.md) §7). The env always emits the nine `can_*`
+entries at the end of the private block; with the key on they say which action categories are
+possible for the agent this step and the modules refuse the others, with it off they are all ones
+and the policy is free to choose dead actions. Same layout either way, so
+`train.compare --set action_mask=false` is the unmasked baseline. `TrainConfig.action_mask` carries
+it into training.
+
+### 3.0.2 The matching regime: `matching_rule`, `step_clearing`
+
+| Key | Default | Meaning |
+|---|---|---|
+| `matching_rule` | `"fifo"` | How the quantity reaching one price level is split among the orders resting there: `"fifo"` (oldest first) or `"pro_rata"` (in proportion to size, largest-remainder rounded, residue in time order) |
+| `step_clearing` | `"sequential"` | `"sequential"`: each order matches on arrival in the step's shuffled order. `"batch"`: the step's new orders clear together against the resting book at one uniform price |
+
+Both are pluggable so the regimes can be compared under identical seeds
+(`train.compare --set step_clearing=batch`); both change the game the agents play rather than the
+layout, so a checkpoint restores across them. [06](06_action_space.md) §8 has the mechanics and the
+measurement: under sequential clearing the first agent in the shuffle fills 18% more often than the
+last, under batch the curve is flat and every step prints one price, at about 15% less volume.
+
 ### 3.1 Order sizing
 
 | Key | Value | Meaning |
@@ -215,6 +247,7 @@ unit of initial capital", and `1e-05` is one basis point of it.
 | `drawdown_penalty` | 0.2 | Per unit of *change* in NAV below the running peak |
 | `passive_bonus` | 2e-05 | Per passive (liquidity-providing) fill this step (0.2 bps) |
 | `loss_multiplier` | 1.0 | Extra weight on negative NAV changes |
+| `dead_action_penalty` | 0.0 | Per `modify`/`cancel` that named no resting order. Zero on purpose: a positive value is negative-sum (S1-3); the miss is already observable as `unmatched_last_step` |
 
 Two of these are less free than they look:
 
@@ -260,6 +293,29 @@ would have given it.
 
 ---
 
+### 3.4 Episode horizon: fixed or random
+
+| Key | Default | Meaning |
+|---|---|---|
+| `episode_length_mode` | `"fixed"` | `"fixed"`: every episode truncates at `max_step`. `"random"`: each reset draws the horizon uniformly from `[max_step_min, max_step_max]` (inclusive) with the env's seeded generator, so `reset(seed=...)` reproduces it |
+| `max_step_min`, `max_step_max` | `max_step / 2`, `max_step` | The range of the draw. Ignored in `"fixed"` mode |
+
+The drawn horizon is reported once, as `episode_horizon` in the reset `infos`, and never shown
+to the policy: `time_left` ([05](05_observation_space.md) §1) counts against `time_left_horizon`,
+the **latest possible end** (`max_step_max` in random mode, `max_step` in fixed), so at truncation
+it reads `1 − h / max_step_max` rather than 0. Showing the draw would hand the horizon back.
+Termination on bankruptcy is unchanged in both modes, and `TrainConfig.train_batch_size` is sized
+by the mean of the range (`expected_episode_length`), so `num_episodes_per_iter` is the number of
+episodes an iteration holds *on average*.
+
+**Why one would want it.** A known horizon makes the end of the episode a free option: an agent
+learns that the last steps are where inventory can be dumped or spread crossed without a
+tomorrow, and `time_left` tells it exactly when. A horizon drawn from a range removes the exact
+end while keeping a bound the value function can still see. The cost is a noisier value estimate
+near the end - the agent does not know whether a step is its last - and `time_left` no longer
+reaching 0 in most episodes. Which of these matters is an empirical question; both modes run under
+`train.compare --set episode_length_mode=random --set max_step_min=... --set max_step_max=...`.
+
 ## 4. Structural constants
 
 `config/tunable_constants.json`. These shape the observation and action spaces, the module-ID
@@ -270,8 +326,9 @@ naming contract, and the plot and path defaults.
 | Key | Value | Meaning |
 |---|---|---|
 | `k_rows` | 10 | Book depth — price levels per side |
-| `book_rows` | 4 | Rows in the book block: bid_price, bid_size, ask_price, ask_size |
-| `extra_dim` | 2 | Market-level scalars appended: log_mid, log1p_spread_ticks |
+| `book_rows` | 6 | Rows in the book block: bid_price, bid_size, ask_price, ask_size, bid_occupied, ask_occupied (the last two 0/1, S3-14) |
+| `extra_dim` | 6 | Market-level scalars appended: log_mid, log1p_spread_ticks, mid_return, signed_volume, log1p_trade_count, trade_direction |
+| `private_dim` | 32 | The per-agent block: 9 base fields + 2 × k_rows own-book sizes + 2 counts + 1 flag ([05](05_observation_space.md) §1) |
 
 `k_rows` is **one** definition with four consumers: the observation space, the action space's
 `price` component, the reshape in `_set_price`, and the reshape in `print_table`. These were once
@@ -288,7 +345,27 @@ concatenates. A value the code cannot honour raises at env construction rather t
 
 The module-level `K_ROWS` / `BOOK_DIM` / `SNAPSHOT_DIM` names still exist in `state_helper`, read
 from the same config at import. They are for consumers with no env instance to ask — the
-visualizers, which read a pickled observation, and the tests.
+visualizers, which read a pickled observation, and the tests. `BOOK_DIM` is the raw six-row frame
+in either mode; `SNAPSHOT_DIM` is the emitted width at the process default `book_mode` (§3.0):
+2 × (2 × k_rows + 1) + extra_dim = 48 in `grid`, book_rows × k_rows + extra_dim = 66 in `levels`.
+
+#### 4.1.1 Observation bounds
+
+`observation_bounds` is the finite `[low, high]` of every observation feature, in three
+sub-groups keyed by the field names the layout uses — `book` (`BOOK_ROW_ORDER`, the two occupancy
+rows on `[0, 1]`), `extra`
+(`EXTRA_FIELDS`) and `private` (`BASE_PRIVATE_FIELDS`, plus `own_size` for the 2 × k_rows own-book
+sizes, `own_count` for the two counts, and `unmatched_last_step`). `State_Helper.observation_bounds`
+tiles them into the `low` / `high` arrays of the whole `n_hist * snapshot_dim + private_dim`
+vector, the env declares its `Box` with those, and `set_next_state` clips to them and counts what
+it clipped ([05](05_observation_space.md) §1.2). A field with no entry fails env construction by
+name; a pair with `low >= high` fails too.
+
+The values are the identity where the range is one and measured with 4× headroom where it is not;
+the `_note_derivation` key in the file carries the numbers, and [16](16_verification_log.md) §16.22
+the measurement. Tightening a bound is a representation decision — it is a `tanh`-friendly clip
+that also throws information away — and the `obs_clip_fraction` metric is how to see what a
+tighter bound costs before believing a result trained under it.
 
 ### 4.2 Action space
 
@@ -296,6 +373,7 @@ visualizers, which read a pickled observation, and the tests.
 |---|---|---|
 | `category_n` | 9 | Side/type codes: none, then bid and ask × {market, limit, modify, cancel} |
 | `price_offset_n` | 3 | Passive / join / aggressive, in ticks |
+| `max_own_orders` | 4 | Cardinality minus one of the `order_slot` head that aims a modify or cancel at one of the agent's own orders; also the normaliser of the two own-order counts in the observation. The measured p90 of resting orders under random play ([06](06_action_space.md) §1.5) |
 | `size_mean_low` / `size_mean_high` | -1.0 / 1.0 | Bounds of the size-mean Box |
 | `size_sigma_low` / `size_sigma_high` | 0.0 / 1.0 | Bounds of the size-sigma Box |
 
@@ -306,6 +384,7 @@ real config rather than documentation:
 
 - `category_n` must equal the size of `_CATEGORY_MAP`, the side/type table in `action_helper`. The
   old `if`/`elif` chain hardwired 9, so changing the number did nothing.
+- `max_own_orders` must be ≥ 1; the head has `max_own_orders + 1` codes because 0 means "all" (cancel) or "oldest" (modify).
 - `price_offset_n` must be odd, so the neutral "join" code is the middle one. The offset is now
   `price_offset - price_offset_n // 2` rather than a hardcoded `- 1`, so widening it to 5 extends
   the range symmetrically to ±2 ticks and works.
@@ -525,6 +604,12 @@ and said nothing.
 
 It is now loud in both directions:
 
+- **A layout change is fatal, by name.** Every checkpoint carries a layout stamp in its
+  `league_state.json` — the observation and action layout versions plus the private-field and
+  action-key lists (`envs/layout_version.py`) — and `build_algo` compares it before restoring.
+  A checkpoint from the 193-float / five-head layout (version 1) resumed into this code fails with
+  a message naming both versions and the fields that differ, rather than at a tensor shape on the
+  first step or, worse, not at all. That is S4-19, closed.
 - **A structural change is fatal.** `num_agents`, `n_hist`, `encoder_type`, `encoder_spec` or the
   policy set changing means the restored weights do not fit the requested problem, so the restore
   raises rather than training something other than what was asked for. Revert the key, or start a
@@ -665,36 +750,43 @@ was stored and never read. Setting `tick_size` therefore had no effect anywhere.
 of configuration; it now uses `self.tick_size`. The change is inert — see below — but there is no
 reason to keep a second value in the env.
 
-**The book's copy is still there, and still inert.** `OrderBook` accepts a `tick_size`, stores it,
-and never reads it; there is no rounding or tick validation anywhere in the matching path. Its
-literal default of `0.0001` is **the one value in the project not read from `config/`**, recorded
-in `tunable_constants.json` under `inert_tick_size_copy` as documentation.
+**Every price the action layer emits is on this grid, for any tick.** `_set_price` snaps its
+result to `min_tick` in `Decimal` before returning it, and `Trader._get_order_ID` compares prices
+as `Decimal(str(price))`, the book's own conversion. Neither was true until the 2026-09-18 pass:
+the level path read prices from a float32 snapshot, so on `tick_size` 0.1 every re-quote at an
+occupied level opened a new price level one float-ulp away and a cancel never found its order
+([15](15_findings_and_recommendations.md) S3-4, [16](16_verification_log.md) §16.17). At the
+default `tick_size` of 1 nothing changes.
 
-**The recommendation is to delete the book's copy, not to enforce it** — the action layer should be
-the single definition. There is exactly one price producer in the system: every price reaching
-`process_order` comes from `_set_price` via `place_order`, and it emits on-grid prices by
-construction, so validation in the book would re-derive a guarantee the producer already provides.
-Deletion is nearly free — 9 of the 11 `OrderBook(...)` call sites already use the no-arg form.
+**The book's copy is gone.** `OrderBook` used to accept a `tick_size`, store it, and never read
+it; its literal default of `0.0001` was the one value in the project not read from `config/`. On
+2026-09-18 the parameter was deleted along with the `inert_tick_size_copy` block that documented
+it. There is no rounding or tick validation anywhere in the matching path, and now nothing
+suggests there is: the grid is the action layer's alone.
 
-**This is deferred**: the `envs/orderbook/` package is off-limits to changes, and deleting the
-parameter means editing `orderbook.py`. Tracked as S3-4 in
-[15_findings_and_recommendations.md](15_findings_and_recommendations.md).
+**Why deletion rather than enforcement.** There is exactly one price producer in the system:
+every price reaching `process_order` comes from `_set_price` via `place_order`, and it now emits
+on-grid prices by construction (§6.1). Validation in the book would re-derive a guarantee the
+producer already provides. Enforcement in `OrderBook.process_order` becomes the right call only if
+a second price source appears that the action layer does not control — scripted or human agents,
+replayed real order flow, an external feed.
 
-Enforcement in `OrderBook.process_order` would be the right call instead of deletion only if a
-second price source appears that the action layer does not control — scripted or human agents,
-replayed order flow, an external feed.
+### 6.1 Float-grid caveat — closed
 
-### 6.1 Float-grid caveat
+This subsection used to say `_set_price` performed no quantization and that off-grid drift was
+rare: one combination over all anchors 10–100 and six ticks. That count covered the *anchor* path
+only. The *level* path — taken whenever the targeted book level is occupied — read the resting
+price out of `agg_LOB_raw`, a float32 array, so a level at 100.1 read back as
+`100.0999984741211` and the offset was added to that in float. On any non-integer tick every
+re-quote at an occupied level therefore opened a new price-map entry one float-ulp from the one
+the agent meant, and a cancel or same-price limit never found the trader's own order
+([15](15_findings_and_recommendations.md) S3-4, [16](16_verification_log.md) §16.17).
 
-`_set_price` performs **no** quantization, so a tick that is not binary-exact can in principle
-produce a price whose `Decimal(str(price))` key sits off the grid, splitting one book level into
-two price-map entries.
-
-This is rarer than it sounds. Over all anchors 10–100, ticks {0.01, 0.05, 0.1, 0.2, 0.25, 0.3} and
-ten levels either side, exactly one combination drifts: `10 − 9 × 0.3` → `7.300000000000001`.
-Ticks of `1`, `0.5` and `0.25` are exact in binary and cannot be affected. Worth adding a `Decimal`
-quantize step if non-integer ticks are ever used in earnest; it is not by itself a reason to change
-anything.
+Closed on 2026-09-18: `agg_LOB_raw` is float64, `_set_price` snaps its result to the tick grid
+with a `Decimal` quantize before returning it, and `Trader._get_order_ID` compares as
+`Decimal(str(price))`. `test_tick_grid.py` asserts the grid for ticks {1, 0.5, 0.1, 0.05, 0.01,
+0.3, 0.0001} on both paths. Ticks of `1`, `0.5` and `0.25` were never affected on the anchor path
+and are exact throughout now.
 
 ---
 
@@ -781,7 +873,7 @@ placing a learner on a device that is not there.
 #### The `lstm` encoder and its two time axes
 
 `lstm` is the *structured* recurrent encoder, not RLlib's `use_lstm` shortcut. The
-shortcut feeds the raw 193-float observation to a stock MLP tokenizer, discarding
+shortcut feeds the raw 216-float observation to a stock MLP tokenizer, discarding
 the book structure exactly as `mlp` does. This one's tokenizer reads the grid.
 
 Two different time axes are involved and they are easy to confuse:
@@ -843,7 +935,7 @@ pushed — the same confound the per-encoder `lr` override exists to remove. Ave
 the floor is `top_k` at perfectly uniform routing, so an untrained gate reads just
 above 2 at the shipped settings regardless of depth.
 
-**Expect collapse, and watch for it.** This env’s observation is 193 floats and the
+**Expect collapse, and watch for it.** This env’s observation is 216 floats and the
 league is small, so MoE's premise — capacity you cannot afford densely — may simply
 not apply. A collapsed mixture and a healthy one have identical losses and identical
 throughput; the only difference is `moe_max_expert_share` and `moe_min_expert_share`
@@ -872,6 +964,11 @@ The `encoder` group exists to make architectures comparable, and a comparison is
 to run in a way that measures the wrong thing. Four points, in rough order of how much
 damage getting them wrong does:
 
+0. **Change one thing.** `train.compare --set FIELD=VALUE` (repeatable) overrides any
+   `TrainConfig` field for every run in the comparison, coerced to the field's type, so a
+   representation or matching regime can be compared under identical seeds and encoders:
+   `--set book_mode=levels`, for instance, against the default grid.
+
 1. **Fix the seed, and use more than one.** `run.seed` ships as `null`, so each run
    draws its own. Single-seed RL comparisons are mostly noise, and self-play league
    dynamics are noisier than most — the champion pool amplifies an early divergence for
@@ -897,6 +994,16 @@ damage getting them wrong does:
    At the shipped settings the alternatives are 3–6.5× the MLP. A win at 6.5× the
    parameters and a fraction of the throughput is a different claim from a win at
    parity, and the per-iteration line reports `env steps sampled` for the other half.
+
+0. **Run the protocol as a command.** Points 1, 2 and 4 are what
+   `python -m gym_continuousDoubleAuction.train.compare` does for you: every (encoder, seed) is a
+   separate run with the seed pinned and its own `log_base_dir`, the parameter count is recorded,
+   and the final checkpoint is scored on the probe of point 5 against one shared corpus. It writes
+   per-run JSON and a Markdown table of means and standard deviations, and marks two encoders as
+   *separated* on a metric only when the gap exceeds both standard deviations with at least three
+   seeds a side. Defaults are in `cli_defaults.json` under `cda_compare`; see
+   [26](26_runbook.md) §26.9 for the command and [16](16_verification_log.md) §16.18 for a
+   smoke-scale run.
 
 5. **Score them without the reward first.** Points 1–4 are about running the comparison
    well; this one is about whether the comparison can answer anything at all. While S1-1

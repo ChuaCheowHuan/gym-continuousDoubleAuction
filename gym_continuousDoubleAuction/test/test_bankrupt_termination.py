@@ -9,7 +9,6 @@ stand behind.
 """
 from decimal import Decimal
 
-import pytest
 
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
     continuousDoubleAuctionEnv,

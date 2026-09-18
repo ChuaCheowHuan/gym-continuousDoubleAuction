@@ -19,8 +19,11 @@ Each agent's action is a `gymnasium.spaces.Dict`
 | `category` | `Discrete(9)` | `action_space.category_n` | Trade action — side and type combined |
 | `size_mean` | `Box(-1.0, 1.0)` | `action_space.size_mean_low` / `_high` | Mean for size sampling |
 | `size_sigma` | `Box(0.0, 1.0)` | `action_space.size_sigma_low` / `_high` | Sigma for size sampling |
-| `price` | `Discrete(10)` | `observation_layout.k_rows` | Market depth level index (0–9 for levels 1–10) |
+| `price` | `Discrete(10)` | `observation_layout.k_rows` | Ticks from the reference price on the passive side (`book_mode: "grid"`, the default); book level index 0–9 in `levels` mode |
 | `price_offset` | `Discrete(3)` | `action_space.price_offset_n` | Stance relative to that level: 0 passive, 1 join, 2 aggressive |
+
+Which of the nine categories an agent can actually take on a step is part of its observation,
+and the policy modules refuse the others: §7.
 
 Every cardinality and bound comes from
 [`config/tunable_constants.json`](../config/tunable_constants.json). `category_n` and
@@ -33,7 +36,7 @@ value the decoder cannot honour raises rather than being silently ignored. See
 
 ```mermaid
 flowchart TD
-    NN["RLModule emits a Dict:<br/>category, size_mean, size_sigma, price, price_offset"] --> CAT{"_CATEGORY_MAP[category]"}
+    NN["RLModule emits a Dict:<br/>category, order_slot, price, price_offset,<br/>size_mean, size_sigma"] --> CAT{"_CATEGORY_MAP[category]"}
     CAT -->|"0 -> (None, market)"| PASS["side is None:<br/>dropped by set_actions,<br/>agent recorded in pass_agents"]
     CAT -->|"1-4 -> bid {market, limit, modify, cancel}"| SIZE
     CAT -->|"5-8 -> ask {market, limit, modify, cancel}"| SIZE
@@ -43,14 +46,17 @@ flowchart TD
     TYPE -->|"yes"| MKT["price = -1.0<br/>price and price_offset ignored"]
     TYPE -->|"no"| PR["_set_price(min_tick, side, price, price_offset)"]
 
-    PR --> LVL{"is agg_LOB_raw[level] occupied?"}
+    PR --> MODE{"book_mode?"}
+    MODE -->|"grid"| GRID["base = R -/+ code * min_tick<br/>R = reference price snapped to the tick"]
+    MODE -->|"levels"| LVL{"is agg_LOB_raw[level] occupied?"}
     LVL -->|"yes"| REAL["base = that level's raw price"]
     LVL -->|"no"| GHOST["base = last_price -/+ (level + 1) * min_tick<br/>(ghost level)"]
-    REAL --> OFF["apply price_offset:<br/>bid + k*tick, ask - k*tick"]
+    GRID --> OFF["apply price_offset:<br/>bid + k*tick, ask - k*tick"]
+    REAL --> OFF
     GHOST --> OFF
     OFF --> CLAMP["max(min_tick, price)"]
 
-    MKT --> OUT["order dict {ID, side, type, size, price}"]
+    MKT --> OUT["order dict {ID, side, type, size, price, slot}"]
     CLAMP --> OUT
     OUT --> QUEUE["appended to acts, then shuffled by rand_exec_seq"]
 ```
@@ -109,12 +115,40 @@ price is set to `-1.0` — the sentinel telling the matching engine to execute i
 whatever is available. `test_market_order_mapping` proves this by submitting a deliberately
 "dirty" price level with a market category.
 
-### 1.5 Multi-order targeting
+### 1.5 Aiming a modify or cancel: `order_slot`
 
-- **Modify** uses FIFO: it targets the agent's **oldest existing order** on that side, ignoring
-  price.
-- **Cancel** and **limit** match the specific price named by the `price` + `price_offset`
-  combination.
+Since 2026-09-18 ([15](15_findings_and_recommendations.md) S3-24, phase 2) the Dict carries a
+sixth head, `order_slot: Discrete(max_own_orders + 1)`, and it is what aims the two
+order-management categories:
+
+| `order_slot` | `cancel` | `modify` |
+|---|---|---|
+| 0 | every own order on that side | the **oldest** own order on that side (the pre-slot FIFO rule, so a policy that ignores the head loses nothing) |
+| k ≥ 1 | the k-th own order from the touch — best price first, oldest first within a level, the order the own-book observation lists them in ([05](05_observation_space.md) §1.0.1) — **clamped to the deepest** when the agent has fewer than k | the same order, moved to the price `price` + `price_offset` names, with the size head's quantity |
+
+The only miss left, counted in `num_unmatched_step` and shown to the agent as
+`unmatched_last_step` in its next observation, is a modify or cancel on a side where it has
+nothing resting. A **cancel no longer reads `price` at all**. Before this a cancel had to name its
+order's exact price out of thirty codes and landed 7% of the time under random play; a modify
+always took the oldest order and so could not choose which to move.
+
+Why clamp a slot past the count rather than count it as a miss: measured under uniformly random
+play — which is what the baseline opponents are — a head with dead upper slots made modify *worse*
+than the FIFO rule it replaced (48% → 23% of issued modifies landed) while cancel rose only from
+7% to 19%; a learned policy gains nothing from dead slots, because it can read its own-order
+counts and aim exactly. Clamped, any slot lands whenever the agent has an order on that side:
+35–36% of issued modifies and cancels under random play, 58–62% of those where it had anything
+resting at all ([16](16_verification_log.md) §16.20). `max_own_orders` is 4, the measured p90 of
+resting orders per agent ([18](18_configuration.md) §4.2).
+
+- **Limit** still matches by price: a limit at a price the agent already rests at is an upsert.
+  The match is made in `Decimal`, the type the book stores prices in, and `_set_price` snaps every
+  price it emits to the `tick_size` grid before handing it over — so the price an agent names is
+  the price level the book has, on any tick, not only on `tick_size` 1
+  ([15](15_findings_and_recommendations.md) S3-4).
+- A **cancel** is never cash-checked; it only releases escrow. A **modify** may spend the escrow
+  of the order it replaces, so shrinking or re-pricing an order is always possible
+  ([15](15_findings_and_recommendations.md) S2-13).
 
 See [03_matching_engine.md](03_matching_engine.md) §3.5 for why the two differ.
 
@@ -132,12 +166,24 @@ thin or empty.
 - **Dynamic:** `mark_to_mkt` sets `last_price` to the **last traded price** from the LOB tape
   after every step that produced a trade.
 
-### 2.2 Populated levels
+### 2.1.1 Grid mode — the default since 2026-09-18
+
+With `book_mode: "grid"` ([05](05_observation_space.md) §1.4, S3-15) the price code is a tick offset,
+not a level index: a bid with code *j* is placed at `R − j × min_tick` and an ask at
+`R + j × min_tick`, where `R` is the observation's reference price (the two-sided midpoint, else
+the last trade, snapped to the tick). `price_offset` then shades by one tick as below. Every code
+names a price, so §2.2 and §2.3 do not apply; the observation's cell `k_rows − j` (bids) or
+`k_rows + j` (asks) is exactly where the order will show. Measured under random play, code *j*
+lands at *j* ± 0.9 ticks on both sides — the 0.9 is the offset head — where the `levels` path
+landed it anywhere from 0 to 20 ticks out ([16](16_verification_log.md) §16.24). Sections 2.2 and
+2.3 describe the `levels` path, kept for comparison.
+
+### 2.2 Populated levels (`levels` mode)
 
 If the targeted book level exists, its price is read from the **unnormalized** `agg_LOB_raw`
 ([05_observation_space.md](05_observation_space.md) §5), and `price_offset` is applied.
 
-### 2.3 Ghost levels
+### 2.3 Ghost levels (`levels` mode)
 
 If the targeted level is empty, the price is extrapolated deterministically from the anchor:
 
@@ -316,3 +362,120 @@ direction that would have hidden the original bug. S3-5, fixed.
 
 The explicit `seed` parameter still works for a caller that wants to pin this one shuffle without
 touching the env's stream.
+
+---
+
+## 7. Action masking: what is impossible is never chosen
+
+Added 2026-09-18 ([16](16_verification_log.md) §16.25). Three of the nine categories used to be
+chosen and then do nothing, and from the policy's side a dead action and a pass are the same
+event, so a policy could learn to avoid them only slowly: under random play **29.6%** of
+agent-steps were a `modify` or `cancel` with nothing of the agent's resting on that side, and at
+a thin-cash stress config a further **33.9%** were orders the cash check refused.
+
+**The mask.** The last nine entries of each agent's private block
+([05](05_observation_space.md) §1) are `can_<category>`, `1.0` where that category is *possible*
+for that agent on the coming step, in `_CATEGORY_MAP` order. `Action_Helper.action_mask_for` sets
+them, and "possible" is exact rather than advisory:
+
+| Category | Possible when |
+|---|---|
+| pass | always — the mask can never be empty |
+| bid / ask `modify`, `cancel` | the agent has at least one order resting on that side |
+| bid / ask `market`, `limit` | `Trader._order_approved` would approve the **minimum size** at the **reference price** (market: at the best opposing quote), i.e. the same check that judges the order, so the mask and the refusal cannot disagree about affordability at that price |
+
+**How it is applied.** `CDAPPOTorchRLModule` adds `−10⁹` to a masked category's logit on every
+forward pass — inference, exploration and training alike — so the sampler draws no mass there,
+`log_prob` of the drawn action is unchanged and the entropy counts only the live categories; the
+`mlp` path now uses this module too (with RLlib's own encoder and catalog). `RandomRLModule`
+redraws a masked category uniformly among the possible ones, so the baseline is "random among
+what can be done". Where the mask sits in the observation and where the category logits sit in
+`ACTION_DIST_INPUTS` are derived from the layouts, not assumed (`train/model/action_mask.py`).
+`train.evaluate` inherits both. `action_mask: false` in the env config makes the env emit all
+ones — same layout, information withheld — which is the unmasked baseline for
+`train.compare --set action_mask=false`.
+
+**What it does, measured** (random play, 20 seeded episodes × 400 steps, mask honoured by the
+sampler the way `RandomRLModule` honours it):
+
+| | unmatched | rejected | pass |
+|---|---|---|---|
+| shipped, unmasked | 29.6% | 0.0% | 11.0% |
+| shipped, masked | **0.2%** | 0.0% | 15.5% |
+| stress, unmasked | 25.4% | 33.9% | 11.0% |
+| stress, masked | **0.2%** | 33.2% | 18.4% |
+
+The unmatched fraction goes to a residual 0.2%: an order that rested when the mask was computed
+and was filled by another agent's action earlier in the same step's shuffle. The rejection
+fraction **barely moves**, and that is the second finding: at the stress config the refusals are
+size-driven — the agent can afford a contract at the reference, so the category is possible, but
+the size head then draws hundreds — and a category mask cannot touch that. Making the size head
+affordable is a different mechanism (clamping the drawn size to what the cash check allows, which
+changes the action's meaning), and it belongs with the size-head rows S3-1 to S3-3. The pass
+fraction rises because a redraw among fewer categories lands on pass more often.
+
+**What is left to learning.** Everything the mask does not cover: cancelling a good quote, quoting
+away from the market, sizing past one's cash. That split is deliberate — the mask encodes the
+env's rules, not a trading opinion — and it makes the activity metrics interpretable: after
+masking, a non-negligible `unmatched_action_fraction` would be a bug, not a behaviour.
+
+---
+
+## 8. Matching regimes: the allocation rule, and clearing within a step
+
+Added 2026-09-18 ([16](16_verification_log.md) §16.26). Two knobs on the env, both kept for
+comparison rather than to change the default, which stays the continuous double auction's
+price-time priority with sequential arrival.
+
+### 8.1 `matching_rule`: how a price level is shared
+
+`fifo` (default): the oldest order at the level fills first. `pro_rata`: the quantity reaching the
+level is split in proportion to each order's size, floored to whole contracts, with the rounding
+residue handed out one contract at a time in time order (`OrderBook.allocate`; totals are exact).
+Under pro-rata a small order behind a large one gets a share fifo denies it, and a policy that
+learns the rule will post larger orders to win allocation — the incentive some futures markets
+run and the reason it is not the default here. Measured under random play the difference is
+mostly in fill count, 1.82 trades per step against 2.08, at the same volume.
+
+### 8.2 `step_clearing`: what happens when orders cross within one step
+
+All agents act at the same instant. Under `sequential` (default) the step's actions are shuffled
+and each order is matched on arrival, so a pair of crossing orders trades at whichever price the
+shuffle reached first and the first arrival gets first claim on the resting liquidity. Under
+`batch` the step's new market and limit orders — and the re-entered quote of a modify — are
+queued (`OrderBook.begin_batch`) while cancels and the cash checks run as usual, and then cleared
+together against the resting book at **one uniform price** (`OrderBook.clear_batch`):
+
+- the clearing price maximises executable volume, then minimises the leftover imbalance, then
+  lies closest to the reference price (which is itself a candidate, so a bid at 102 against an
+  ask at 98 clears at 100, not at an end);
+- every buy with a limit above it and every sell with a limit below it fills in full; the
+  marginal level is rationed, resting orders first in time order, then the batch's under
+  `matching_rule`;
+- leftover limits rest at their own price, leftover markets lapse, as in the sequential engine;
+- a fill against a resting order is a passive fill for the rester as before; a fill between two
+  batch orders has no passive side, and the record's `counter_party['resting']` says so, because
+  neither party had escrow to release (`Trader.settle_batch`).
+
+**Measured, random play, 20 seeded episodes × 400 steps, 8 agents.** The probability that an
+agent's fresh order fills this step, by its position in the shuffle:
+
+| position in the shuffle | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| sequential, fifo | 0.581 | 0.573 | 0.546 | 0.539 | 0.529 | 0.509 | 0.497 | 0.491 |
+| batch, fifo | 0.577 | 0.558 | 0.558 | 0.553 | 0.560 | 0.564 | 0.564 | 0.571 |
+
+Under sequential clearing the first arrival fills 18% more often than the last (0.581 against
+0.491), monotonically down the queue: that is the shuffle deciding who trades. Under batch clearing
+the curve is flat to ±0.01. Every trading step under batch prints at exactly one price where
+sequential printed 1.58 on average and up to 5; half the batch fills are between two orders that
+arrived in the same step, against 12% sequentially. The cost is volume: 43 contracts a step
+against 51, because a single clearing price executes `min(demand, supply)` where sequential
+arrival lets an aggressive order sweep several levels. NAV is conserved exactly under all four
+combinations.
+
+Both knobs are env-config keys and `TrainConfig` fields ([18](18_configuration.md) §3.0.2), so
+`train.compare --set step_clearing=batch` or `--set matching_rule=pro_rata` runs the same seeds
+and encoders under another regime. They change the game the agents play, not the layout, so a
+checkpoint restores across them; whether it *should* be evaluated across them is the researcher's
+question.

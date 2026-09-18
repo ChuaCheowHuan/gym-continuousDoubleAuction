@@ -27,7 +27,13 @@ from ray.rllib.algorithms.ppo.torch.ppo_torch_learner import PPOTorchLearner
 from ray.rllib.algorithms.ppo.torch.default_ppo_torch_rl_module import (
     DefaultPPOTorchRLModule,
 )
+from ray.rllib.core.columns import Columns
 from ray.rllib.utils.annotations import override
+
+from gym_continuousDoubleAuction.train.model.action_mask import (
+    masked_logits,
+    slices_for,
+)
 
 #: `fwd_out` key holding the summed load-balancing loss.
 MOE_AUX_LOSS = "moe_aux_loss"
@@ -81,15 +87,36 @@ def _collect(encoder) -> Dict[str, Any]:
 
 
 class CDAPPOTorchRLModule(DefaultPPOTorchRLModule):
-    """The stock PPO module, plus MoE stats forwarded to the Learner.
+    """The stock PPO module, plus the action mask and MoE stats.
 
-    Identical to its base for every encoder that produces no stats, which is all
-    of them except `moe_transformer`.
+    Two additions to its base. The observation's action mask (doc/06 section
+    6) is applied to the category logits on every forward pass - inference,
+    exploration and training alike, so the distribution the sampler draws from
+    and the one the loss is computed on are the same masked distribution. And
+    the MoE statistics are forwarded to the Learner; identical to the base for
+    every encoder that produces none, which is all of them except
+    `moe_transformer`.
     """
+
+    _mask_slices = None
+
+    def _apply_mask(self, batch, out):
+        if self._mask_slices is None:
+            self._mask_slices = slices_for(self.observation_space, self.action_space)
+        obs_mask, cat = self._mask_slices
+        if obs_mask is not None and Columns.OBS in batch:
+            out[Columns.ACTION_DIST_INPUTS] = masked_logits(
+                out[Columns.ACTION_DIST_INPUTS], batch[Columns.OBS], obs_mask, cat
+            )
+        return out
+
+    @override(DefaultPPOTorchRLModule)
+    def _forward(self, batch: Dict[str, Any], **kwargs) -> Dict[str, Any]:
+        return self._apply_mask(batch, super()._forward(batch, **kwargs))
 
     @override(DefaultPPOTorchRLModule)
     def _forward_train(self, batch: Dict[str, Any], **kwargs) -> Dict[str, Any]:
-        out = super()._forward_train(batch, **kwargs)
+        out = self._apply_mask(batch, super()._forward_train(batch, **kwargs))
         # Immediately after the encoder ran, so the stats are this batch's.
         out.update(_collect(self.encoder))
         return out

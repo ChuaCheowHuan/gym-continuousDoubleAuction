@@ -27,7 +27,8 @@ from gym_continuousDoubleAuction.envs.exchg.state_helper import PRIVATE_FIELDS
 def _rollout(steps=400, seed=7, agents=4):
     """Random play, returning the last snapshot of each step and the privates."""
     env = continuousDoubleAuctionEnv(
-        {"num_of_agents": agents, "max_step": steps, "is_render": False}
+        {"num_of_agents": agents, "max_step": steps, "is_render": False,
+         "book_mode": "levels"}  # the block slices below are the levels layout's
     )
     obs, _ = env.reset(seed=seed)
     # `reset(seed=)` seeds the env's own generator, not the action spaces -

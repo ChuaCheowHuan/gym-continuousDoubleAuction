@@ -22,7 +22,6 @@ they passed only because something seeded the global stream, they would pass
 just as well against the code this is fixing.
 """
 import numpy as np
-import pytest
 
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
     continuousDoubleAuctionEnv,

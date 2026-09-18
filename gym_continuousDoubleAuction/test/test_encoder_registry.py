@@ -237,25 +237,66 @@ def test_time_tokenization_preserves_the_book(spaces):
     assert torch.equal(tokens.reshape(2, -1), book)
 
 
-def test_tokenize_ignores_the_private_block(spaces):
-    """Changing an agent's private state must not move a single book token.
+def test_tokenize_ignores_the_private_block_except_the_own_book(spaces):
+    """Changing an agent's private scalars must not move a single book token.
 
     The tail is per-agent and the book prefix is shared, so a tokeniser that
     let the tail leak in would make one agent's attention depend on another's
-    inventory - and it would do so silently.
+    inventory - and it would do so silently. The one deliberate exception is
+    the own-book block (doc/15 S3-24 phase 1): it is per LEVEL, and it rides
+    on the newest snapshot's level tokens as two extra channels. So perturbing
+    everything in the tail *except* that block must move nothing.
     """
     obs_space, _ = spaces
     layout = ObsLayout.from_obs_space(obs_space)
+    assert layout.own_book_offset is not None, "the shipped tail carries the own book"
     obs = torch.from_numpy(np.stack([obs_space.sample()]))
 
     other = obs.clone()
     other[0, layout.book_flat_dim :] += 1.0
+    start = layout.book_flat_dim + layout.own_book_offset
+    other[0, start : start + 2 * layout.k_rows] = obs[0, start : start + 2 * layout.k_rows]
 
     for tokenization in TOKENIZATIONS:
         assert torch.equal(
             tokenize(obs, layout, tokenization),
             tokenize(other, layout, tokenization),
         ), tokenization
+
+
+def test_own_book_rides_on_the_newest_level_tokens(spaces):
+    """Own bid/ask size at level k sits in channels 4 and 5 of level token k,
+    of the newest snapshot only; the time tokenisation carries none of it."""
+    obs_space, _ = spaces
+    layout = ObsLayout.from_obs_space(obs_space)
+    obs = torch.from_numpy(np.stack([obs_space.sample()]))
+    k = layout.own_levels
+    cells = layout.k_rows
+    start = layout.book_flat_dim + layout.own_book_offset
+    own_bid = obs[0, start : start + k]
+    own_ask = obs[0, start + k : start + 2 * k]
+    # Where own entry d lands: level d in `levels` mode; in `grid` mode the
+    # cell d ticks below / above the reference cell (S3-15).
+    d = torch.arange(k)
+    bid_at = k - d if layout.book_mode == "grid" else d
+    ask_at = k + d if layout.book_mode == "grid" else d
+
+    level = tokenize(obs, layout, "level")
+    assert torch.equal(level[0, bid_at, layout.book_rows], own_bid)
+    assert torch.equal(level[0, ask_at, layout.book_rows + 1], own_ask)
+    assert torch.all(level[0, cells, layout.book_rows:] == 0) or layout.extra_dim > layout.book_rows
+
+    both = tokenize(obs, layout, "both")
+    stride = cells + 1
+    newest = both[0, (layout.n_hist - 1) * stride : layout.n_hist * stride]
+    assert torch.equal(newest[bid_at, layout.book_rows], own_bid)
+    for t in range(layout.n_hist - 1):
+        older = both[0, t * stride : (t + 1) * stride]
+        assert torch.all(older[:cells, layout.book_rows : layout.book_rows + 2] == 0), t
+
+    # `time` is a pure reshape of the book part.
+    assert torch.equal(tokenize(obs, layout, "time").reshape(1, -1),
+                       split_private(obs, layout)[0])
 
 
 def test_level_tokens_carry_one_level_per_token(spaces):
@@ -281,7 +322,11 @@ def test_level_tokens_carry_one_level_per_token(spaces):
         expected = torch.zeros(width, dtype=tokens.dtype)
         for field in range(layout.book_rows):
             expected[field] = newest[field * layout.k_rows + level]
-        assert torch.equal(tokens[0, level], expected)
+        # The two channels after the book fields are the own-book block's
+        # (see test_own_book_rides_on_the_newest_level_tokens); everything
+        # else in the token is book, and nothing past them is set.
+        assert torch.equal(tokens[0, level, : layout.book_rows], expected[: layout.book_rows])
+        assert torch.all(tokens[0, level, layout.book_rows + layout.own_channels :] == 0)
 
 
 def test_level_tokenization_appends_a_global_token(spaces):

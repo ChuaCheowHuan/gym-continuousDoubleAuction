@@ -63,20 +63,14 @@ RUN pip install \
         torchaudio \
         --extra-index-url https://download.pytorch.org/whl/cu128
 
-# Ray 2.56.x hard-pins gymnasium==1.2.2 - do not bump it independently.
-RUN pip install \
-        "ray[rllib]==2.56.1" \
-        "gymnasium==1.2.2" \
-        "numpy>=2.2,<3" \
-        "pandas>=3.0,<4" \
-        "scipy>=1.18,<2" \
-        "matplotlib>=3.11,<4" \
-        "sortedcontainers>=2.4" \
-        "tabulate>=0.10" \
-        "tensorboardX>=2.6.5" \
-        gputil \
-        jupyterlab \
-        notebook
+# The project's own dependency list, copied in on its own so this layer is
+# cached until requirements.txt changes rather than on every source edit. It
+# used to be a second, hand-maintained copy of that list here (doc/15 S4-8),
+# which is how a pin drifts. torch is already satisfied by the CUDA wheel
+# above, so `torch>=2.13.0,<3` in the file resolves to it and pulls no CPU
+# build. Ray 2.56.x hard-pins gymnasium==1.2.2 - do not bump it independently.
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install -r /tmp/requirements.txt jupyterlab notebook
 
 # The project itself, installed editable. Two things follow from that:
 #

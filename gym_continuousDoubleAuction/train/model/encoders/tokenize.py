@@ -16,8 +16,13 @@ Three tokenisations, selected per encoder by its `tokenization` spec key:
              This is the default: the other two are each a projection of it,
              and are kept so an ablation can ask which axis is doing the work.
 
-Under "level" and "both" a token is 4 floats `[bid_price, bid_size, ask_price,
-ask_size]` for one level, and the 2 market-level scalars have nowhere to go -
+Under "level" and "both" a token is one cell of the book: in `grid` mode
+`[bid_size, ask_size, own_bid_size, own_ask_size]` at one tick offset from the
+reference (S3-15), in `levels` mode `[bid_price, bid_size, ask_price, ask_size,
+bid_occupied, ask_occupied, own_bid_size, own_ask_size]` at one occupied level -
+the occupancy pair says whether the level holds an order at all (S3-14). The
+own pair is from the agent's own book, newest snapshot only. The 6 market-level
+scalars have nowhere to go -
 they are per-snapshot, not per-level. They are carried instead on a separate
 *global token* per snapshot, appended to the sequence, so they stay inside the
 attention rather than being dropped or smeared across every level. Under "time"
@@ -64,7 +69,7 @@ def token_width(layout: ObsLayout) -> int:
     and LSTM no longer received, which is a difference between architectures
     that nothing would report.
     """
-    return max(layout.book_rows, layout.extra_dim)
+    return max(layout.book_rows + layout.own_channels, layout.extra_dim)
 
 
 def token_shape(layout: ObsLayout, tokenization: str) -> Tuple[int, int]:
@@ -131,6 +136,24 @@ def tokenize(obs: torch.Tensor, layout: ObsLayout, tokenization: str) -> torch.T
     )
     tokens[..., : layout.k_rows, : layout.book_rows] = book
     tokens[..., layout.k_rows, : layout.extra_dim] = extras
+
+    # The own-book block: this agent's resting bid and ask size at each level,
+    # as two more channels of the NEWEST snapshot's level tokens. Level k of
+    # the block is level k of the public book in that snapshot, which is what
+    # makes it a per-level quantity rather than a private scalar. Older
+    # snapshots keep zeros there; the env does not record own-order history.
+    if layout.own_book_offset is not None:
+        k = layout.own_levels
+        start = layout.own_book_offset
+        own = _private[..., start : start + 2 * k].reshape(batch, 2, k)
+        if layout.book_mode == "grid":
+            # Own entry d is d ticks from the reference on the passive side:
+            # public cell `levels - d` for bids and `levels + d` for asks.
+            d = torch.arange(k, device=obs.device)
+            tokens[:, -1, k - d, layout.book_rows] = own[:, 0, :]
+            tokens[:, -1, k + d, layout.book_rows + 1] = own[:, 1, :]
+        else:
+            tokens[:, -1, :k, layout.book_rows : layout.book_rows + 2] = own.transpose(-1, -2)
 
     if tokenization == "level":
         # Newest snapshot only.

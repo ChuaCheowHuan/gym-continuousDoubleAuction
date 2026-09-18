@@ -66,7 +66,7 @@ Pretraining only on `--episodes` rollouts fits a market the agent will never
 trade in. Once a run exists, prefer `--parquet` over its episode record, or
 treat random-agent data as a warm start only.
 """
-from gym_continuousDoubleAuction.train.pretrain.pretrain import (  # noqa: F401
+from gym_continuousDoubleAuction.train.pretrain.pretrain import (
     FINGERPRINT_FILE,
     MODULE_SUBDIR,
     PRETRAINABLE,
@@ -78,3 +78,9 @@ from gym_continuousDoubleAuction.train.pretrain.pretrain import (  # noqa: F401
     save,
     verify_fingerprint,
 )
+
+__all__ = [
+    "FINGERPRINT_FILE", "MODULE_SUBDIR", "PRETRAINABLE", "WEIGHTS_FILE",
+    "PretrainReport", "load_into", "module_state_path", "pretrain", "save",
+    "verify_fingerprint",
+]

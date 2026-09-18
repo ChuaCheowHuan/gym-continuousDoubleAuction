@@ -41,6 +41,11 @@ from gym_continuousDoubleAuction.config_loader import (
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
     continuousDoubleAuctionEnv,
 )
+from gym_continuousDoubleAuction.envs.layout_version import (
+    LAYOUT_KEY,
+    check_layout_stamp,
+    layout_stamp,
+)
 from gym_continuousDoubleAuction.logging_setup import configure as configure_logging
 from gym_continuousDoubleAuction.logging_setup import get_logger
 from gym_continuousDoubleAuction.logging_setup import (
@@ -155,8 +160,25 @@ class TrainConfig:
     mark_price_source: str = _default("mark_price_source")
     tape_display_length: int = _default("tape_display_length")
     max_step: int = _default("max_step")
+    # "fixed" truncates every episode at max_step; "random" draws the horizon
+    # per episode from [max_step_min, max_step_max] (doc/18 section 3.4).
+    episode_length_mode: str = _default("episode_length_mode")
+    max_step_min: int = _default("max_step_min")
+    max_step_max: int = _default("max_step_max")
     is_render: bool = _default("is_render")
     n_hist: int = _default("n_hist")
+    # How the public book is laid out in each snapshot: "grid" (fixed tick
+    # offsets shared with the action's price code, S3-15) or "levels" (the
+    # k_rows best occupied prices). A layout choice, recorded in the stamp.
+    book_mode: str = _default("book_mode")
+    # The observation's action mask says what each agent can do this step and
+    # the modules refuse the rest; False emits all ones (doc/06 section 6).
+    action_mask: bool = _default("action_mask")
+    # The matching regime (doc/06 section 8): how a price level is shared out
+    # ("fifo" / "pro_rata") and whether a step's crossing orders clear on
+    # arrival or at one uniform price ("sequential" / "batch").
+    matching_rule: str = _default("matching_rule")
+    step_clearing: str = _default("step_clearing")
 
     # Bounds of the per-episode price anchor, drawn as randint(min, max) in
     # reset(). These were readable by the env but had no TrainConfig field, so
@@ -180,6 +202,8 @@ class TrainConfig:
     drawdown_penalty: float = _default("drawdown_penalty")
     passive_bonus: float = _default("passive_bonus")
     loss_multiplier: float = _default("loss_multiplier")
+    # Per dead order-management action. Ships at 0.0; see the config note.
+    dead_action_penalty: float = _default("dead_action_penalty")
 
     # --- Rollouts ------------------------------------------------------------
     # 0 keeps sampling in the driver process, which is the right setting for a
@@ -401,7 +425,19 @@ class TrainConfig:
 
     @property
     def train_batch_size(self) -> int:
-        return self.max_step * self.num_episodes_per_iter
+        """Timesteps per iteration: `num_episodes_per_iter` episodes' worth.
+
+        Under a random horizon an episode's length is a draw, so the batch is
+        sized by the mean of the range - the number of episodes it holds is
+        then `num_episodes_per_iter` on average rather than exactly.
+        """
+        return self.expected_episode_length * self.num_episodes_per_iter
+
+    @property
+    def expected_episode_length(self) -> int:
+        if self.episode_length_mode == "random":
+            return (self.max_step_min + self.max_step_max) // 2
+        return self.max_step
 
     @property
     def checkpoint_dir(self) -> str:
@@ -487,8 +523,15 @@ class TrainConfig:
             "mark_price_source": self.mark_price_source,
             "tape_display_length": self.tape_display_length,
             "max_step": self.max_step,
+            "episode_length_mode": self.episode_length_mode,
+            "max_step_min": self.max_step_min,
+            "max_step_max": self.max_step_max,
             "is_render": self.is_render,
             "n_hist": self.n_hist,
+            "book_mode": self.book_mode,
+            "action_mask": self.action_mask,
+            "matching_rule": self.matching_rule,
+            "step_clearing": self.step_clearing,
             "initial_price_min": self.initial_price_min,
             "initial_price_max": self.initial_price_max,
             "min_size": self.min_size,
@@ -500,6 +543,7 @@ class TrainConfig:
             "drawdown_penalty": self.drawdown_penalty,
             "passive_bonus": self.passive_bonus,
             "loss_multiplier": self.loss_multiplier,
+            "dead_action_penalty": self.dead_action_penalty,
         }
 
     def resolved_gpus_per_learner(self) -> float:
@@ -947,6 +991,11 @@ def _write_league_state(path: str, algo, iteration: int) -> None:
 
     state = callback.league_state()
     state["training_iteration"] = iteration
+    # Which observation and action layout the weights in this checkpoint were
+    # trained against (doc/15 S4-19). A restore into a different layout fails
+    # by name at `build_algo`, before RLlib gets as far as a tensor shape.
+    env_config = getattr(getattr(algo, "config", None), "env_config", None) or {}
+    state[LAYOUT_KEY] = layout_stamp(env_config.get("book_mode"))
     with open(os.path.join(path, LEAGUE_STATE_FILE), "w") as fh:
         json.dump(state, fh, indent=2)
 
@@ -1033,6 +1082,7 @@ STRUCTURAL_CONFIG_KEYS = (
     "policies_to_train",
     "env_config.num_of_agents",
     "env_config.n_hist",
+    "env_config.book_mode",
     "encoder_type",
     "encoder_spec",
 )
@@ -1388,6 +1438,10 @@ def build_algo(cfg: TrainConfig):
         logger.info(
             "restoring from %scheckpoint: %s", "pinned " if pinned else "", path,
         )
+        # Before touching RLlib: a checkpoint from another observation or
+        # action layout can never be resumed into this one, and falling back
+        # to an older save would only find the same layout again.
+        check_layout_stamp(_read_league_state(path), path, book_mode=cfg.book_mode)
         try:
             algo = Algorithm.from_checkpoint(path)
         except Exception as exc:

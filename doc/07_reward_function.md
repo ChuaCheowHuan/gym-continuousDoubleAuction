@@ -1,6 +1,6 @@
 # 7. Reward Function
 
-The five-term formula, the account plumbing that feeds it, its measured decomposition, and how to
+The six-term formula (five that shape trading and a sixth, shipped at zero, that can charge dead order-management actions), the account plumbing that feeds it, its measured decomposition, and how to
 tune it.
 
 Related: [04_accounting.md](04_accounting.md) (where the inputs come from),
@@ -21,6 +21,11 @@ the reward is shaped to encourage five behaviours:
    default best action unless conviction is high.
 4. **Lower drawdown risk** — a drawdown penalty plus asymmetric loss aversion.
 5. **Capture spread** — a bonus for passive fills, to encourage liquidity provision.
+6. **Do not fire dead order-management actions** — `dead_action_penalty`, per `modify`/`cancel`
+   that named no resting order. **Ships at 0.0**: any positive value makes the game negative-sum
+   (S1-3), so it is a knob for a measured run, not a default; the miss already reaches the policy
+   through the `unmatched_last_step` observation field, which costs nothing
+   ([15](15_findings_and_recommendations.md) S3-24, phase 3).
 
 The intent is sound and reads like it was written by someone who trades. §5 shows how much of it
 actually binds.
@@ -31,7 +36,7 @@ actually binds.
 
 From
 [`reward_helper.py`](../gym_continuousDoubleAuction/envs/exchg/reward_helper.py).
-The five coefficients are `env_config` keys, set on the helper in
+The six coefficients are `env_config` keys, set on the helper in
 [`reward_helper.py`](../gym_continuousDoubleAuction/envs/exchg/reward_helper.py) —
 see [18_configuration.md](18_configuration.md) §2.2:
 
@@ -146,7 +151,7 @@ flowchart LR
     DDD --> T4["- drawdown_penalty x the SIGNED CHANGE"]
     NPF["num_passive_fills_step"] --> T5["+ passive_bonus x it"]
 
-    T1 --> SUM["reward = sum of the five, left to right"]
+    T1 --> SUM["reward = sum of the six, left to right<br/>(dead_action_penalty is -0.0 at the shipped coefficient)"]
     T2 --> SUM
     T3 --> SUM
     T4 --> SUM
@@ -184,7 +189,7 @@ updates `max_nav` automatically whenever a new peak is reached.
 cost-free, so an agent can manage risk without being penalised for it.
 
 **[`exchg_helper.py`](../gym_continuousDoubleAuction/envs/exchg/exchg_helper.py)** — the per-step
-counters (now four, with `num_rejected_step`) are reset to 0 at the end of each step, *after*
+counters (now six, with `num_rejected_step`, `num_unmatched_step` and `num_obs_clipped_step`) are reset to 0 at the end of each step, *after*
 `set_reward` **and** `set_info` have read them. That ordering is correct and easy to break.
 
 Two fields exist purely so the reward is observable rather than only computed: `acc.reward_terms`
@@ -379,9 +384,9 @@ During training, monitor each term's contribution to total reward variance. A he
 | Penalties | ~20% |
 | Bonuses | ~10% |
 
-All five terms are logged individually, in `info["reward_terms"]`, as signed contributions that
+All six terms are logged individually, in `info["reward_terms"]`, as signed contributions that
 sum exactly to the reward. They are also **already reduced**: `reward_term_mean_<term>` and
-`reward_term_var_share_<term>` are emitted per episode, the shares normalised across the five so
+`reward_term_var_share_<term>` are emitted per episode, the shares normalised across the six so
 they sum to 1. "The drawdown penalty is now 80% of the signal" is therefore something a run says
 while it is happening, not something recovered afterwards from a file. See
 [11_logging_and_observability.md](11_logging_and_observability.md) §1.2 and §2.4.
