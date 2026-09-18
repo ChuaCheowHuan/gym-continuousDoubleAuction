@@ -186,10 +186,10 @@ class TestStructuralConstantsComeFromTheFile:
         env = continuousDoubleAuctionEnv({"num_of_agents": 2, "n_hist": 2})
 
         assert env.k_rows == 6
-        assert env.book_dim == 4 * 6
-        assert env.snapshot_dim == 4 * 6 + env.extra_dim
+        assert env.book_dim == 6 * 6
+        assert env.snapshot_dim == 6 * 6 + env.extra_dim
         assert env.private_dim == 24 == len(env.private_fields)
-        expected = (2 * (4 * 6 + env.extra_dim) + env.private_dim,)
+        expected = (2 * (6 * 6 + env.extra_dim) + env.private_dim,)
         assert env.observation_spaces["agent_0"].shape == expected
         assert env.action_spaces["agent_0"]["price"].n == 6
 
@@ -203,7 +203,7 @@ class TestStructuralConstantsComeFromTheFile:
             lambda raw: raw["observation_layout"].update(k_rows=5, private_dim=22),
         )
         env = continuousDoubleAuctionEnv({"num_of_agents": 2, "n_hist": 1})
-        assert env.snapshot_dim == 4 * 5 + env.extra_dim
+        assert env.snapshot_dim == 6 * 5 + env.extra_dim
 
     def test_extra_dim_must_match_what_set_agg_LOB_builds(self, config_tree):
         """Same rule as book_rows: a structural value code cannot honour raises.

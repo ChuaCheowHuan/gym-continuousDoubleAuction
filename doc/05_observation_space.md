@@ -13,17 +13,19 @@ Related: [02_architecture.md](02_architecture.md) §2.5 (step 6),
 ## 1. Shape at a glance
 
 ```
-snapshot (one frame) = 46 floats
-  index    0:10   normalized bid prices
-          10:20   normalized bid sizes
-          20:30   normalized ask prices
-          30:40   normalized ask sizes
-             40   log_mid              ln(M_frame) - log_mid_centre
-             41   log1p_spread_ticks   0.0 if the book is not two-sided
-             42   mid_return           M_frame / M_previous_frame - 1
-             43   signed_volume        initiator-signed qty / limit_max_size
-             44   log1p_trade_count    trades since the previous frame
-             45   trade_direction      last initiator: +1 buy, -1 sell, 0 none
+snapshot (one frame) = 66 floats
+  index    0:10   normalized bid prices    (M_t - P) / M_t
+          10:20   normalized bid sizes     sqrt(V / limit_max_size)
+          20:30   normalized ask prices    (P - M_t) / M_t
+          30:40   normalized ask sizes     sqrt(V / limit_max_size)
+          40:50   bid occupancy            1.0 where the level holds an order (S3-14)
+          50:60   ask occupancy
+             60   log_mid              ln(M_frame) - log_mid_centre
+             61   log1p_spread_ticks   0.0 if the book is not two-sided
+             62   mid_return           M_frame / M_previous_frame - 1
+             63   signed_volume        initiator-signed qty / limit_max_size
+             64   log1p_trade_count    trades since the previous frame
+             65   trade_direction      last initiator: +1 buy, -1 sell, 0 none
 
 private block (per agent) = 32 floats = 9 base + 2 x k_rows own book + 2 counts + 1 flag
              0   position        tanh(net_position / position_scale)
@@ -43,7 +45,7 @@ private block (per agent) = 32 floats = 9 base + 2 x k_rows own book + 2 counts 
             31   unmatched_last_step   1.0 if its last modify/cancel named no order
 
 observation = n_hist frames concatenated, then the private block
-  default n_hist = 4  →  shape (216,) = 4x46 + 32
+  default n_hist = 4  →  shape (296,) = 4x66 + 32
   layout: [ O_{t-3} | O_{t-2} | O_{t-1} | O_t | private ]
   the most recent frame ends at index n_hist * SNAPSHOT_DIM, NOT at the end
 ```
@@ -143,9 +145,9 @@ flowchart TD
 
     RAW --> M{"L1 sides present?"}
     M -->|"both"| M1["M = (bid1 + ask1) / 2"]
-    M -->|"bid only"| M2["M = bid1"]
-    M -->|"ask only"| M3["M = ask1"]
-    M -->|"neither"| M4["M = last_price,<br/>or 100.0 if that is <= 0"]
+    M -->|"one side or none,<br/>a trade has printed"| M2["M = last_price"]
+    M -->|"one side, no print"| M3["M = the lone L1 quote"]
+    M -->|"nothing at all"| M4["M = 100.0"]
 
     M1 --> MID["M"]
     M2 --> MID
@@ -163,13 +165,13 @@ flowchart TD
     SENT --> FRAME
     MR --> FRAME
     TAPE --> FRAME
-    FRAME["RAW frame: 40 book floats + M, spread_ticks, mid_return,<br/>signed_volume, trade_count, trade_direction"]
+    FRAME["RAW frame: 60 book floats (4 rows of prices and sizes,<br/>2 rows of 0/1 occupancy) + M, spread_ticks, mid_return,<br/>signed_volume, trade_count, trade_direction"]
 
     FRAME --> DEQ["obs_history deque, maxlen = n_hist<br/>holds RAW frames"]
-    DEQ --> NORM["prep_next_state: normalise the WHOLE stack by M_t<br/>prices -> (M_t - P)/M_t; sizes -> sqrt(V / limit_max_size)<br/>M -> log_mid (centred); spread_ticks -> log1p;<br/>the other three pass through, being frame-local already"]
-    NORM --> OBS["concatenate -> n_hist x 46 = 184 book floats,<br/>shared by every agent"]
-    OBS --> PRIV["+ 9 private floats per agent<br/>position, cash, NAV, drawdown, ..."]
-    PRIV --> FULL["observation: 216 floats"]
+    DEQ --> NORM["prep_next_state: normalise the WHOLE stack by M_t<br/>prices -> distance from M_t; sizes -> sqrt(V / limit_max_size)<br/>occupancy passes through; M -> log_mid (centred); spread_ticks -> log1p;<br/>the other three pass through, being frame-local already"]
+    NORM --> OBS["concatenate -> n_hist x 66 = 264 book floats,<br/>shared by every agent"]
+    OBS --> PRIV["+ 32 private floats per agent<br/>position, cash, NAV, drawdown, own book, ..."]
+    PRIV --> FULL["observation: 296 floats"]
 ```
 
 Two things this picture makes concrete. The raw book is kept **beside** the normalised one and is
@@ -190,6 +192,7 @@ space declares one `[low, high]` pair per feature family, from `observation_boun
 | `bid_price` | −128 | 1 | `(M − P) / M < 1` for `P > 0` is exact; the low side is a fallback tail (an older frame's bid above a collapsed `M_t` reads negative) |
 | `ask_price` | −1 | 128 | `(P − M) / M > −1` is exact; the high side is a fallback tail |
 | `bid_size`, `ask_size`, own sizes | 0 | 8 | `sqrt(V / limit_max_size)`; about 1.4 is the widest seen |
+| `bid_occupied`, `ask_occupied` | 0 | 1 | 0/1 by definition (§1.3) |
 | `log_mid` | −8 | 8 | floor is `log(min_tick) − log_mid_centre`, −6.21 at the stress config and exactly what was measured; e⁸ is a 2,981× drift from the anchor centre |
 | `log1p_spread_ticks` | 0 | 10 | e¹⁰ is 22,026 ticks; the widest possible spread is `(P_max − min_tick) / min_tick`, 4,999 ticks at the stress config |
 | `mid_return` | −1 | 64 | `M_t / M_prev − 1 > −1` is exact; the high side is a fallback tail |
@@ -207,15 +210,44 @@ at a stress config (6 agents, 20,000 cash, anchors 5–500, tick 0.1), with at l
 over the widest value seen on every side that is not an identity; the exact numbers, and the
 protocol, are in [16](16_verification_log.md) §16.22.
 
-**The fallback tails.** Four fields have a tail that no sample pins down: when one side of a thin
-book empties, `M` falls back to the other side's best quote (§2.1), which the `min_tick` floor on
-order prices can put at a single tick, and every ratio against `M` then explodes — an ask at 22×
-the midpoint, a cost basis at 44×, a midpoint that grew sevenfold in one step were all seen in
-random play, none of them prices that traded. Their extremes are set by the config, not by chance:
-`(price / min_tick − 1)` for the price rows, `mid_return` and `vwap_vs_mid`, and `log(min_tick) −
-log_mid_centre` for `log_mid`. The bounds above cover every value measured with headroom; a book
-that collapses further is **counted, not hidden** — that is what the clip counter is for — and the
-root cause is §7.2 / S3-14, which now has these numbers against it.
+**The floor tails.** Four fields have a tail that no sample pins down. Under random play the price
+level itself random-walks — every ghost quote is `last_price ± a few ticks`, every trade moves
+`last_price` — and in some episodes it walks down to the tick floor, where a tick is a large
+fraction of price and a level a dozen ticks away reads as a multiple of the midpoint: an ask at
+23× the midpoint, a cost basis at 32×, a midpoint that grew fourteenfold in one step were all seen
+(every one in a book whose `M` was one to three ticks; [16](16_verification_log.md) §16.23 traced
+them). Their extremes are set by the config, not by chance: `(price / min_tick − 1)` for the price
+rows, `mid_return` and `vwap_vs_mid`, and `log(min_tick) − log_mid_centre` for `log_mid`. The
+bounds above cover every value measured with headroom; a price that collapses further is
+**counted, not hidden** — that is what the clip counter is for. This is the additive-tick
+coordinate problem of §7.4 / S3-15, not the zero-ambiguity of §7.2, which is closed (§1.3).
+
+### 1.3 Occupancy, and what zero means
+
+Closed on 2026-09-18 ([15](15_findings_and_recommendations.md) S3-14, [16](16_verification_log.md)
+§16.23). A price cell reading `0.0` used to mean three things: an absent level, a quote resting
+exactly at the reference price, and the lone best quote of a one-sided book — whose own price
+*was* the reference, so `(M − P) / M` was zero by construction. Measured under random play before
+the fix, **7.8%** of steps at the shipped config had a one-sided book and every one of them put an
+occupied best quote at `0.0`; **1.2%** of all occupied price cells read `0.0`, and **22%** at a
+thin-book stress config where 77% of steps were one-sided or empty.
+
+Two changes:
+
+- **Two occupancy rows per snapshot** (indices 40–59): `1.0` where the level holds an order. They
+  ride in the raw frame, so every frame in the stack keeps the occupancy it was taken with, and pass
+  through normalisation unchanged. With them, `occupied and 0.0` reads "a quote at the reference
+  price" and `absent and 0.0` reads "nothing here" — two values, two meanings. A tokenising encoder
+  gets them as two more channels of each level token (`tokenize.py`).
+- **A one-sided book is referenced to the last trade, not to its lone quote** (§2.1). The best
+  quote then reads its distance from the price that printed, which is information; before, it read
+  `0.0` on every one-sided step. This is also the chain `Exchg_Helper.mark_price` has used since
+  S2-5, so what the agent sees and what its NAV is marked at agree on a one-sided book.
+
+After: the occupancy row equals `size > 0` on every cell of every step (pinned by
+`test_occupancy_channel.py`); the occupied cells that still read `0.0` (0.66% shipped, 11.2%
+stress) are quotes sitting exactly at the last trade — the remainder of a partial fill — and are
+now unambiguous. Layout version 4: same fields plus 20 per snapshot, 296 floats at defaults.
 
 `set_next_state` clips every emitted vector to these bounds and writes the number of elements it
 clipped to `num_obs_clipped_step`, which reaches `info`, the episode record and the training
@@ -231,15 +263,19 @@ frames' negative entries — which is the case `test_observation_bounds.py` now 
 
 ### 2.1 Level-1 midpoint `M`
 
-Let `P_bid,1` and `P_ask,1 = |ask_price_list[0]|` be the Level-1 prices.
+Let `P_bid,1` and `P_ask,1` be the Level-1 prices.
 
 | Condition | `M` |
 |---|---|
 | both L1 sides present | `(P_bid,1 + P_ask,1) / 2` |
-| bid side only | `P_bid,1` |
-| ask side only | `P_ask,1` |
-| empty book | `self.last_price` |
-| result `<= 0` | `100.0` (hard floor) |
+| otherwise, a trade has printed (`last_price > 0`) | `self.last_price` |
+| one side only and nothing has printed | that side's L1 quote |
+| nothing at all | `100.0` (`price_anchor_fallbacks.state_helper_midpoint`) |
+
+The last trade comes before the lone quote since S3-14 (2026-09-18); it was the other way round,
+which made the best quote of every one-sided book read exactly `0.0` (§1.3). The chain is now the
+one `Exchg_Helper.mark_price` uses for the NAV mark ([07](07_reward_function.md)), so the price the
+agent is shown and the price it is marked at agree whenever the book is not two-sided.
 
 `M` is therefore always strictly positive, so no division or logarithm in the pipeline can fault.
 
@@ -564,11 +600,10 @@ mindmap
         the deque holds raw frames
         one M_t normalises the stack
         S2-6 closed by 17 section 37.4
-      7.2 zero means three things
-        absent level
-        price exactly at M
-        L1 of a one-sided book
-        S3-14
+      7.2 zero means three things - fixed
+        two occupancy rows per snapshot
+        one-sided book referenced to the last trade
+        S3-14 closed by 17 section 50
       7.4 level index is non-stationary
         k-th occupied price, not a fixed distance
         S3-15
@@ -588,9 +623,9 @@ mindmap
 
 **Most of these are now closed.** §7.1, §7.3, §7.5, §7.7 and two of the three points of §7.6 are
 kept rather than deleted because each records a failure mode worth recognising again, and because
-the fix only makes sense against what it replaced. What is still open is §7.2, §7.4 and the
-stacking point of §7.6 — and §7.2 has a new measurement against it (§1.2: the price tails the
-one-sided fallback produces).
+the fix only makes sense against what it replaced. What is still open is §7.4 and the stacking
+point of §7.6 — and §7.4 has a new measurement against it (§1.2: the floor tails, which are the
+additive-tick coordinate at work).
 
 ### 7.1 Each frame in the stack is normalized by a different denominator — **fixed**
 
@@ -613,18 +648,21 @@ its own `log_mid`. A bid resting at 90 while the midpoint moves 100 → 96 read 
 now reads 0.0625 in both. [17](17_changelog.md) §37.4, measured in
 [16](16_verification_log.md) §16.12.
 
-### 7.2 Zero means three different things
+### 7.2 Zero means three different things — **fixed**
 
-`0.0` is the sentinel for "level absent". It is also the exact value of a price *at* the
-midpoint. And on a one-sided book `M` falls back to that side's L1 price, so
-`(M − P_bid,1)/M = 0` **exactly** — the best bid in a bid-only book is numerically identical to an
-empty level. The same holds for an ask-only book.
+`0.0` was the sentinel for "level absent". It was also the exact value of a price *at* the
+midpoint. And on a one-sided book `M` fell back to that side's L1 price, so
+`(M − P_bid,1)/M = 0` **exactly** — the best bid in a bid-only book was numerically identical to an
+empty level. The same held for an ask-only book.
 
-This is not a corner case: the book starts empty every episode and is frequently one-sided early
-on. There is no validity mask, so the network cannot disambiguate.
+This was not a corner case. Measured under random play ([16](16_verification_log.md) §16.23): 7.8%
+of steps one-sided at the shipped config, 32% at a thin-book stress config where a further 44.5% of
+steps had an empty book; 1.2% and 22% of occupied price cells reading `0.0`.
 
-**Fix.** An explicit per-level occupancy channel (10 bits per side), or a clearly out-of-range
-sentinel.
+**Fixed (2026-09-18)** by both of the proposed routes at once: two occupancy rows per snapshot,
+and the last trade as the reference price of a one-sided book — §1.3. The row equals `size > 0` on
+every cell of every step, and the zeros that remain are quotes at the last trade, which the row
+now labels as occupied.
 
 ### 7.3 The tape loop is dead code — there is no trade-flow information at all — **fixed**
 
@@ -786,14 +824,15 @@ signed_volume = 0.012000; log1p_trade_count = 1.098612; trade_direction = 1.0000
 Any policy checkpoint built against an older observation width will not load against the current
 one, and an episode Parquet record written under one width has `obs` lists of a different length
 than the reader expects. This is unavoidable whenever the observation dimension
-changes; the width has changed five times (40 → 160 with stacking, 160 → 168 with the first two
+changes; the width has changed six times (40 → 160 with stacking, 160 → 168 with the first two
 market scalars, 168 → 177 with the private block, 177 → 193 with the four trade-flow and
-mid-return scalars, and 193 → 216 with the own-book block, §1.0.1). Layout version 3 (2026-09-18)
-changed the **meaning** without the width: asks positive (§2.2) and finite bounds (§1.2) — a
-mismatch the tensor shapes would never catch.
+mid-return scalars, 193 → 216 with the own-book block, §1.0.1, and 216 → 296 with the occupancy
+rows, §1.3). Layout version 3 (2026-09-18) changed the **meaning** without the width: asks positive
+(§2.2) and finite bounds (§1.2) — a mismatch the tensor shapes would never catch.
 
 Since S4-19 the observation and action layout versions, the private-field list and the action-key
 list are written into `league_state.json` beside every checkpoint, and `train.build_algo` and
 `train.evaluate` compare them before restoring, refusing a mismatch by name. Observation layouts:
 1 the 193-float vector, 2 the 216-float vector with the own-book block, 3 the same width with
-positive asks and finite bounds.
+positive asks and finite bounds, 4 the 296-float vector with the occupancy rows and the last-trade
+reference for a one-sided book.

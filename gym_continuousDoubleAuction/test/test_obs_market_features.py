@@ -85,15 +85,29 @@ class TestObsMarketFeatures:
         expected_M = (98 + 102) / 2.0
         assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(expected_M)) - env.log_mid_centre, abs=1e-5)
 
-    def test_log_mid_bid_only_book(self):
+    def test_log_mid_bid_only_book_uses_last_price(self):
+        """S3-14: a one-sided book is referenced to the last trade, not to its
+        lone quote - otherwise that quote read exactly 0.0, like an absent
+        level. Before 2026-09-18 this test expected log(47)."""
         env = self._make_env()
+        env.last_price = 41.0
         self._insert(env, 'bid', 47, 10)
 
         snap = env.set_agg_LOB()
-        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(47.0)) - env.log_mid_centre, abs=1e-5)
+        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(41.0)) - env.log_mid_centre, abs=1e-5)
 
-    def test_log_mid_ask_only_book(self):
+    def test_log_mid_ask_only_book_uses_last_price(self):
         env = self._make_env()
+        env.last_price = 41.0
+        self._insert(env, 'ask', 63, 10)
+
+        snap = env.set_agg_LOB()
+        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(41.0)) - env.log_mid_centre, abs=1e-5)
+
+    def test_log_mid_one_sided_book_without_a_last_price_uses_the_quote(self):
+        """The lone quote is still the reference when nothing has ever printed."""
+        env = self._make_env()
+        env.last_price = 0.0
         self._insert(env, 'ask', 63, 10)
 
         snap = env.set_agg_LOB()

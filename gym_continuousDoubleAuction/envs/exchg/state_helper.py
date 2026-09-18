@@ -10,7 +10,7 @@ from ...config_loader import constant, constants, env_default
 # `config/tunable_constants.json` -> observation_layout.
 #
 # The book block is `book_rows` stacked rows of `k_rows` price levels:
-#   [bid_price, bid_size, ask_price, ask_size]
+#   [bid_price, bid_size, ask_price, ask_size, bid_occupied, ask_occupied]
 # followed by the `extra_dim` market-level scalars `EXTRA_FIELDS` names below.
 #
 # These module-level names are the layout as it was at import time, kept for
@@ -33,7 +33,17 @@ SNAPSHOT_DIM = BOOK_DIM + EXTRA_DIM
 #: Order in which `set_agg_LOB` concatenates the book rows. This is the
 #: definition of the book block's layout, and what `book_rows` is checked
 #: against - it lets consumers name a row instead of indexing a magic number.
-BOOK_ROW_ORDER = ("bid_price", "bid_size", "ask_price", "ask_size")
+#:
+#: The two occupancy rows are 1.0 where the level holds an order and 0.0 where
+#: it does not (doc/15 S3-14). Without them a price entry of 0.0 meant three
+#: things - an absent level, a quote sitting exactly at the reference price,
+#: and the lone best quote of a one-sided book - and a policy could not tell
+#: which. Measured under random play: 1.2% of occupied price cells read 0.0
+#: at the shipped config and 22% at a thin-book stress config (doc/16 section
+#: 16.23). They ride in the raw frame so that every frame in the history keeps
+#: its own occupancy, and pass through normalisation unchanged.
+BOOK_ROW_ORDER = ("bid_price", "bid_size", "ask_price", "ask_size",
+                  "bid_occupied", "ask_occupied")
 
 #: The market-level scalars appended after the book block, in order. Same rule
 #: as BOOK_ROW_ORDER and PRIVATE_FIELDS: `extra_dim` in tunable_constants.json
@@ -176,8 +186,11 @@ OWN_BOOK_OFFSET = own_book_offset()
 #: 3 kept the shape and changed the meaning: ask blocks are positive rather
 #: than negated (S4-17) and the space has finite, measured bounds that the
 #: emitted vector is clipped to (S4-15). A version-2 policy fed version-3
-#: observations would read every ask as a bid.
-OBSERVATION_LAYOUT_VERSION = 3
+#: observations would read every ask as a bid. 4 added the two occupancy rows
+#: to every snapshot (66 floats, 296 in all at defaults) and changed the
+#: reference price of a one-sided book from its lone quote to the last trade
+#: (S3-14).
+OBSERVATION_LAYOUT_VERSION = 4
 
 
 class State_Helper(object):
@@ -374,6 +387,8 @@ class State_Helper(object):
         bid_size = book[k:2 * k]
         ask_price = book[2 * k:3 * k]
         ask_size = book[3 * k:4 * k]
+        # Already 0/1; the frame they were taken with decides them, not M_t.
+        occupancy = book[4 * k:6 * k]
 
         norm_bid_price = np.where(bid_price > 0, (M_t - bid_price) / M_t, 0.0)
         # Asks are positive, like bids (doc/15 S4-17): the block's position
@@ -404,7 +419,7 @@ class State_Helper(object):
 
         return np.concatenate([
             norm_bid_price, norm_bid_size, norm_ask_price, norm_ask_size,
-            scalars,
+            occupancy, scalars,
         ]).astype(np.float32)
 
     def _trade_flow(self):
@@ -454,11 +469,23 @@ class State_Helper(object):
     def mid_price(self) -> float:
         """The Level-1 midpoint `M`, always strictly positive.
 
-        The fallback chain, in order: both sides present, bid only, ask only,
-        then the last traded price, then `midpoint_fallback`. Guaranteeing a
-        positive result is what lets every division and logarithm downstream -
-        the price normalisation, `log_mid`, the private block's `vwap_vs_mid` -
-        be written without a guard of its own.
+        The fallback chain, in order: the midpoint of a two-sided book, then
+        the last traded price, then the lone quote of a one-sided book, then
+        `midpoint_fallback`. Guaranteeing a positive result is what lets every
+        division and logarithm downstream - the price normalisation, `log_mid`,
+        the private block's `vwap_vs_mid` - be written without a guard of its
+        own.
+
+        The last trade comes before the lone quote since S3-14 (it used to be
+        the other way round). With the lone quote as the reference, the best
+        quote of every one-sided book read exactly 0.0 - the same number as
+        an absent level - on 7.8% of steps under random play at the shipped
+        config and 32% at a thin-book stress config (doc/16 section 16.23);
+        against the last trade it reads its distance from the price that
+        actually printed, which is information. It also puts the observation
+        on the same chain as `Exchg_Helper.mark_price`, which never marked off
+        a lone quote when a trade existed (doc/15 S2-5), so what the agent is
+        shown and what its NAV is marked at agree on a one-sided book.
 
         See doc/05 2.1.
         """
@@ -466,13 +493,15 @@ class State_Helper(object):
 
         if l1_bid > 0 and l1_ask > 0:
             return (l1_bid + l1_ask) / 2.0
+
+        M = float(self.last_price)
+        if M > 0:
+            return M
         if l1_bid > 0:
             return l1_bid
         if l1_ask > 0:
             return l1_ask
-
-        M = float(self.last_price)
-        return M if M > 0 else self.midpoint_fallback
+        return self.midpoint_fallback
 
     def set_private_state(self, trader, elapsed_steps=None) -> np.ndarray:
         """This trader's private block: `private_dim` floats, all O(1).
@@ -729,6 +758,8 @@ class State_Helper(object):
         bid_size_list = np.zeros(k_rows)
         ask_price_list = np.zeros(k_rows)
         ask_size_list = np.zeros(k_rows)
+        bid_occupied = np.zeros(k_rows)
+        ask_occupied = np.zeros(k_rows)
 
         # LOB bids
         if self.LOB.bids != None and len(self.LOB.bids) > 0:
@@ -737,6 +768,7 @@ class State_Helper(object):
                 if k < k_rows:
                     bid_price_list[k] = set[0] # set[0] is price (key)
                     bid_size_list[k] = set[1].volume # set[1] is an OrderList object (value) & volume is total volume of the OrderList object
+                    bid_occupied[k] = 1.0
                 else:
                     break
         # LOB asks
@@ -746,6 +778,7 @@ class State_Helper(object):
                 if k < k_rows:
                     ask_price_list[k] = set[0]
                     ask_size_list[k] = set[1].volume
+                    ask_occupied[k] = 1.0
                 else:
                     break
         self._snapshot_stale = False
@@ -755,7 +788,10 @@ class State_Helper(object):
         # float32 cannot hold 100.1 (it reads back 100.0999984741211). The
         # emitted observation is cast to float32 at emission, in `_stack`; the
         # raw array is the one consumer that needs the price exact.
-        flattened_raw = np.concatenate([bid_price_list, bid_size_list, ask_price_list, ask_size_list]).astype(np.float64)
+        flattened_raw = np.concatenate([
+            bid_price_list, bid_size_list, ask_price_list, ask_size_list,
+            bid_occupied, ask_occupied,
+        ]).astype(np.float64)
         self.agg_LOB_raw = flattened_raw
 
         # Calculate Level 1 midpoint price M. Both this and `mid_price` read

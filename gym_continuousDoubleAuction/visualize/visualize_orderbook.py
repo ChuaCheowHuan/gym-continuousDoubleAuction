@@ -60,8 +60,10 @@ def visualize_episode_data(run_dir=None, episode_id=None, agent_id=None):
     [10:20] Bid Sizes
     [20:30] Ask Prices
     [30:40] Ask Sizes
-    [40]    log_mid
-    [41]    log1p_spread_ticks
+    [40:50] Bid occupancy (0/1)
+    [50:60] Ask occupancy (0/1)
+    [60]    log_mid
+    [61]    log1p_spread_ticks
 
     run_dir/episode_id default to the most recently recorded run/episode; see
     `episode_data.load_episode`.

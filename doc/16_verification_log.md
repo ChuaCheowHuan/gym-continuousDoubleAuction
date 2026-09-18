@@ -1204,14 +1204,16 @@ Three things the table says.
    approached and never crossed. `log_mid` at the stress config sat at −5.52 against a floor of
    `log(min_tick) − log_mid_centre = log(0.1) − log(50) = −6.21`; an unseeded run before this one
    reached −6.21 exactly, which is the floor being touched, not noise.
-2. **The bold numbers are the one-sided-book fallback, not prices.** An ask at 23× the midpoint, a
-   bid at 19× in an older frame, a midpoint that grew fourteenfold in one step, a cost basis at
-   32× the mark: every one is `M` falling to a lone quote at the tick floor when the other side of
-   a thin book emptied ([05](05_observation_space.md) §2.1). Their extremes are set by
-   `price / min_tick`, not by the sample, and vary run to run — three 20-episode runs gave
-   `ask_price` maxima of 18, 21 and 22. The bounds on those four fields are therefore a choice of
-   where the counter starts, at more than 4× the widest value seen, rather than a claim that the
-   market cannot exceed them; and the numbers are the first measurement S3-14 has had against it.
+2. **The bold numbers are the tick floor, not prices.** An ask at 23× the midpoint, a bid at 19×
+   in an older frame, a midpoint that grew fourteenfold in one step, a cost basis at 32× the
+   mark. This section first attributed them to the one-sided-book fallback; §16.23 traced them
+   cell by cell and found every one in a book whose midpoint had random-walked down to one to
+   three ticks — mostly two-sided books — where a level a dozen ticks away is a multiple of the
+   price. Their extremes are set by `price / min_tick`, not by the sample, and vary run to run —
+   three 20-episode runs gave `ask_price` maxima of 18, 21 and 22. The bounds on those four fields
+   are therefore a choice of where the counter starts, at more than 4× the widest value seen,
+   rather than a claim that the market cannot exceed them; and the numbers are the first
+   measurement S3-15's coordinate problem has had against it.
 3. **Everything else is well inside**, by 4× or more: the sizes peak near 1.4 against 8, the
    NAV-normalised ratios stay within −1 … 1.15 against ±8, `signed_volume` within ±0.6 against ±8.
 
@@ -1266,3 +1268,108 @@ a positive-ask book lets an encoder learn faster is a question for the run at sc
 §8), which no tree has had yet.
 
 **Supports:** §15 S4-15, S4-17, S3-14; §05 1.2, 2.2, 2.3, 7.6; §18 4.1.1; §10 (`test_observation_bounds.py`).
+
+## 16.23 What zero meant, how often, and where the price tails really come from (S3-14) (2026-09-18)
+
+The measured pass for S3-14. Same random-play protocol as §16.22: 20 seeded episodes × 400 steps at
+the shipped config (8 agents, 1,000,000 cash) and 20 at the stress config (6 agents, 20,000 cash,
+anchors 5–500, tick 0.1); `env.reset(seed)` and every action space seeded. Per step: which branch
+of the reference-price chain `mid_price` took, and for every price cell of the newest frame whether
+the level was occupied (raw size > 0) and whether the normalised price read exactly `0.0`.
+
+**Before** (layout 3):
+
+| | shipped | stress |
+|---|---|---|
+| steps two-sided | 7,363 (92.0%) | 1,883 (23.5%) |
+| steps bid-only / ask-only | 343 / 284 (**7.8%**) | 1,297 / 1,259 (**32.0%**) |
+| steps empty (→ `last_price`) | 10 (0.1%) | 3,561 (**44.5%**) |
+| occupied price cells, newest frame | 53,604 | 11,663 |
+| … reading exactly 0.0 | **627 (1.17%)** | **2,556 (21.9%)** |
+| … of which the lone L1 of a one-sided book | 627 (all) | 2,556 (all) |
+| … at L2+ or in a two-sided book | 0 | 0 |
+| occupied cells in the older frames reading 0.0 | 2,273 of 159,960 | 5,880 of 34,800 |
+| absent cells (the other meaning of 0.0) | 106,396 | 148,337 |
+
+So the ambiguity was exactly the third meaning: on every one-sided step the best quote *was* the
+reference price and read `0.0`, indistinguishable from the 106,396 absent cells around it. A price
+resting exactly at a two-sided midpoint never happened in the newest frame (it cannot: the midpoint
+sits strictly between the two best quotes), and in the older frames it is the same one-sided quote
+carried forward while the book stayed one-sided.
+
+**The tails, traced.** The six widest normalised price cells in each config, with the midpoint,
+the last trade and the chain branch at that step:
+
+```
+shipped:  value 9.8  M 2.5  last 27.0  two_sided   (ask at 27 against a mid of 2.5, tick 1)
+          value 9.8  M 2.5  last  4.0  two_sided   x5, same episode, consecutive steps
+stress:   value 3.5  M 0.4  last  0.7  two_sided   (tick 0.1)
+```
+
+Every one is a **two-sided** book whose price level has walked down to a few ticks — `M = 2.5` on a
+tick of 1 — so a resting level a dozen ticks away reads as a multiple of the price. Under random
+play every ghost quote is `last_price ± a few ticks` and every trade moves `last_price`, so the
+level random-walks; the median episode's lowest `M` was 0.60 of its anchor and the worst 0.017.
+§16.22 had attributed these tails to the one-sided fallback; they are the additive-tick coordinate
+of S3-15 instead, and §16.22 is corrected to say so.
+
+**The fix**, both halves of the register's proposal: two occupancy rows in every snapshot
+(`1.0` where the level holds an order, carried in the raw frame so each frame keeps the occupancy
+it was taken with), and the last trade as the reference price of a one-sided book — the chain
+`mark_price` has used since S2-5 — so the lone quote reads its distance from the print rather than
+`0.0`. Observation layout 4, 296 floats.
+
+**After** (layout 4), same seeds:
+
+| | shipped | stress |
+|---|---|---|
+| chain branches | unchanged (the book is the book) | unchanged |
+| occupancy row ≠ `size > 0`, any cell, any step | **0** | **0** |
+| occupied price cells reading exactly 0.0 | **354 (0.66%)** | **1,304 (11.2%)** |
+| … lone L1 of a one-sided book | 323 | 1,273 |
+| … elsewhere | 31 | 31 |
+
+The zeros that remain are quotes resting exactly at the last trade — the remainder of a partial
+fill, on a one-sided book, or a fresh quote at the print — and every one is now `occupied = 1.0`,
+so `0.0` means "at the reference price", not "nothing here". The widest cells after the change are
+the same tick-floor episodes (`value 22, M 1.0, last 1.0, ask_only` at the shipped config): the
+reference for a one-sided book is now the last trade, and when the last trade is at the tick floor
+so is the reference. The bounds of §16.22 still hold with 0 clips.
+
+**Before/after with `train.compare`**, the protocol of §16.20 and §16.22 (`mlp`, `transformer`,
+seeds 0 1 2, 8 iterations, 4 agents, 2 trained, `max_step` 128). Before = commit `1bbb264`
+(layout 3, the "after" table of §16.22); after = this tree (layout 4).
+
+**Before** (layout 3, 216 floats):
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | order_rejection_fraction | unmatched_action_fraction | maker_fill_ratio_max | obs_clip_fraction | separated on |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlp | 3 | 250,912 | −0.00272 ± 0.00235 | −0.711 ± 0.105 | 0.111 ± 0.00674 | 0 ± 0 | 0.287 ± 0.0135 | 0.623 ± 0.0175 | 0 ± 0 | vf_explained_var, maker_fill_ratio_max |
+| transformer | 3 | 682,016 | −0.000517 ± 0.000946 | −0.465 ± 0.134 | 0.119 ± 0.0127 | 0 ± 0 | 0.269 ± 0.0217 | 0.668 ± 0.00828 | 0 ± 0 | vf_explained_var, maker_fill_ratio_max |
+
+**After** (layout 4, 296 floats):
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | order_rejection_fraction | unmatched_action_fraction | maker_fill_ratio_max | obs_clip_fraction | separated on |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlp | 3 | 291,872 | −0.00209 ± 0.00112 | −0.332 ± 0.592 | 0.107 ± 0.00611 | 0 ± 0 | 0.289 ± 0.0253 | 0.645 ± 0.0153 | 0 ± 0 | nothing |
+| transformer | 3 | 682,528 | −0.00132 ± 0.001 | −0.189 ± 0.517 | 0.102 ± 0.00977 | 0 ± 0 | 0.298 ± 0.0208 | 0.639 ± 0.0406 | 0 ± 0 | nothing |
+
+Reading it:
+
+- **The parameter counts moved as the width did.** The `mlp` gained 40,960 parameters: its first
+  layer is `296 × 512` rather than `216 × 512`. The transformer gained 512: its input projection
+  is per token, and a level token went from 6 to 8 channels. That asymmetry is the tokenising
+  encoder's whole argument, made concrete - a feature added per level costs it almost nothing.
+- **`obs_clip_fraction` stays 0 ± 0**, so the occupancy rows and the new reference price sit
+  inside the §16.22 bounds under training play as well.
+- **Nothing separates, before or after, at a level that means anything.** The near-random
+  baseline did not move: pass fractions 0.10–0.12, unmatched 0.27–0.30, rejections 0. The
+  "separated on" column went from two metrics to none between two runs that differ only in this
+  layout change, which is a statement about the scale of the protocol (eight iterations of 512
+  steps), not about the layout. `vf_explained_var` is negative on both trees.
+
+As in §16.20 and §16.22, this proves the protocol runs on layout 4 and that the change did not
+move the near-random baseline. Whether a network that can see occupancy learns faster is the run
+at scale's question ([10](10_testing.md) §8).
+
+**Supports:** §15 S3-14, S3-15; §05 1.3, 2.1, 7.2; §18 4.1; §10 (`test_occupancy_channel.py`).

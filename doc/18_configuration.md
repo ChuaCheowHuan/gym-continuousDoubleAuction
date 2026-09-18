@@ -272,7 +272,7 @@ naming contract, and the plot and path defaults.
 | Key | Value | Meaning |
 |---|---|---|
 | `k_rows` | 10 | Book depth — price levels per side |
-| `book_rows` | 4 | Rows in the book block: bid_price, bid_size, ask_price, ask_size |
+| `book_rows` | 6 | Rows in the book block: bid_price, bid_size, ask_price, ask_size, bid_occupied, ask_occupied (the last two 0/1, S3-14) |
 | `extra_dim` | 6 | Market-level scalars appended: log_mid, log1p_spread_ticks, mid_return, signed_volume, log1p_trade_count, trade_direction |
 | `private_dim` | 32 | The per-agent block: 9 base fields + 2 × k_rows own-book sizes + 2 counts + 1 flag ([05](05_observation_space.md) §1) |
 
@@ -296,7 +296,8 @@ visualizers, which read a pickled observation, and the tests.
 #### 4.1.1 Observation bounds
 
 `observation_bounds` is the finite `[low, high]` of every observation feature, in three
-sub-groups keyed by the field names the layout uses — `book` (`BOOK_ROW_ORDER`), `extra`
+sub-groups keyed by the field names the layout uses — `book` (`BOOK_ROW_ORDER`, the two occupancy
+rows on `[0, 1]`), `extra`
 (`EXTRA_FIELDS`) and `private` (`BASE_PRIVATE_FIELDS`, plus `own_size` for the 2 × k_rows own-book
 sizes, `own_count` for the two counts, and `unmatched_last_step`). `State_Helper.observation_bounds`
 tiles them into the `low` / `high` arrays of the whole `n_hist * snapshot_dim + private_dim`

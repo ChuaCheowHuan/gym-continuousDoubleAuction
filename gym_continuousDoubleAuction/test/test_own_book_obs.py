@@ -66,9 +66,11 @@ class TestLayout:
     def test_env_declares_the_width(self):
         env = _env()
         assert env.private_dim == 32
-        assert env.observation_spaces["agent_0"].shape == (4 * 46 + 32,)
-        # 3: positive asks (S4-17) and finite bounds (S4-15), same shape as 2.
-        assert OBSERVATION_LAYOUT_VERSION == 3
+        # 6 book rows x 10 levels + 6 scalars = 66 per snapshot since S3-14.
+        assert env.observation_spaces["agent_0"].shape == (4 * 66 + 32,)
+        # 3: positive asks (S4-17) and finite bounds (S4-15), same shape as 2;
+        # 4: the occupancy rows and the last-trade reference (S3-14).
+        assert OBSERVATION_LAYOUT_VERSION == 4
 
     def test_reset_shows_an_empty_own_book(self):
         env = _env()

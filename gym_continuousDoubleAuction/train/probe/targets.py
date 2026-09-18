@@ -15,8 +15,10 @@ The layout is `State_Helper.set_agg_LOB`'s, via `ObsLayout`:
     [k:2k]       norm_bid_size   = sqrt(V_bid)              >= 0
     [2k:3k]      norm_ask_price  = (P_ask - M) / M          >= 0
     [3k:4k]      norm_ask_size   = sqrt(V_ask)              >= 0
-    [4k]         log_mid         = log(M)
-    [4k + 1]     log1p_spread_ticks, with 0.0 as the "no two-sided market"
+    [4k:5k]      bid_occupied    = 1 where the level holds an order (S3-14)
+    [5k:6k]      ask_occupied
+    [6k]         log_mid         = log(M)
+    [6k + 1]     log1p_spread_ticks, with 0.0 as the "no two-sided market"
                  sentinel - a resting book can never be locked or crossed, so
                  a real two-sided spread is at least log1p(1) = 0.693 and the
                  sentinel is unambiguous.

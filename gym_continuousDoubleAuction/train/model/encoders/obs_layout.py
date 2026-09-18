@@ -11,6 +11,7 @@ market-level scalars:
                  bid_size (0..k-1),         laid out FIELD-major
                  ask_price(0..k-1),
                  ask_size (0..k-1),
+                 bid_occupied(0..k-1), ask_occupied(0..k-1)  - 0/1 (S3-14),
                  log_mid, log1p_spread_ticks,
                  mid_return, signed_volume,
                  log1p_trade_count, trade_direction ]   <- extra_dim=6 scalars
@@ -59,7 +60,8 @@ from gym_continuousDoubleAuction.config_loader import group
 #: Field order within a snapshot's book block, matching the `np.concatenate` in
 #: `State_Helper.set_agg_LOB`. Named here so a token's channels can be
 #: identified in a test or a debugger without counting offsets by hand.
-BOOK_FIELDS = ("bid_price", "bid_size", "ask_price", "ask_size")
+BOOK_FIELDS = ("bid_price", "bid_size", "ask_price", "ask_size",
+               "bid_occupied", "ask_occupied")
 
 #: Scalar order within a snapshot's trailing block, same source
 #: (`State_Helper.EXTRA_FIELDS`).

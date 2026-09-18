@@ -75,10 +75,10 @@ class TestObsNormalization:
         assert hasattr(env, "agg_LOB_raw"), "agg_LOB_raw attribute missing after reset"
         raw = env.agg_LOB_raw
         assert isinstance(raw, np.ndarray)
-        assert raw.shape == (40,)
+        assert raw.shape == (BOOK_DIM,)  # 6 rows x k_rows since S3-14
 
     def test_agg_LOB_raw_updated_after_step(self):
-        """agg_LOB_raw must be updated (and remain shape (40,)) after each step."""
+        """agg_LOB_raw must be updated (and remain shape (BOOK_DIM,)) after each step."""
         env = self._make_env()
         env.reset()
         raw_before = env.agg_LOB_raw.copy()
@@ -87,7 +87,7 @@ class TestObsNormalization:
         self._place_limit(env, "agent_0", category=2, level=0, offset=1)
 
         raw_after = env.agg_LOB_raw
-        assert raw_after.shape == (40,)
+        assert raw_after.shape == (BOOK_DIM,)
         # Raw should now be non-zero in bid price slot
         assert not np.array_equal(raw_before, raw_after), \
             "agg_LOB_raw did not change after placing an order"

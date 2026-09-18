@@ -18,7 +18,7 @@ from gym_continuousDoubleAuction.envs.exchg.state_helper import PRIVATE_FIELDS
 
 def test_stamp_describes_the_current_layout():
     stamp = layout_stamp()
-    assert stamp["observation_version"] == 3
+    assert stamp["observation_version"] == 4
     assert stamp["action_version"] == 2
     assert stamp["private_fields"] == list(PRIVATE_FIELDS)
     assert stamp["action_keys"] == list(ACTION_KEYS)

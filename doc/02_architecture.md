@@ -94,7 +94,7 @@ gym_continuousDoubleAuction/
 │   ├── run_all.py                        regenerates every chart
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               1,037 unit tests
+└── test/                               1,049 unit tests
     └── integration/                    156 tests that build real Algorithms
 ```
 
@@ -336,26 +336,29 @@ are exactly 0.
 `set_agg_LOB`
 ([`state_helper.py`](../gym_continuousDoubleAuction/envs/exchg/state_helper.py))
 builds one **raw** frame; `prep_next_state` normalises the whole stack at emission, giving a
-46-float snapshot:
+66-float snapshot:
 
 ```
- [ 0:10]  normalised bid prices   (M_t − P_bid)/M_t      ≥ 0
+ [ 0:10]  normalised bid prices   (M_t − P_bid)/M_t
  [10:20]  sqrt(bid size / limit_max_size)                ≥ 0
- [20:30]  normalised ask prices  −(P_ask − M_t)/M_t      ≤ 0
- [30:40]  −sqrt(ask size / limit_max_size)               ≤ 0
- [40]     log_mid                    price-level anchor, centred
- [41]     log1p(spread / min_tick)   0.0 ⇒ no two-sided market
- [42]     mid_return                 M_frame / M_prev − 1
- [43]     signed_volume              initiator-signed qty / limit_max_size
- [44]     log1p(trade count)         trades since the previous frame
- [45]     trade_direction            last initiator: +1 buy, −1 sell, 0 none
+ [20:30]  normalised ask prices   (P_ask − M_t)/M_t
+ [30:40]  sqrt(ask size / limit_max_size)                ≥ 0
+ [40:50]  bid occupancy              1.0 where the level holds an order
+ [50:60]  ask occupancy
+ [60]     log_mid                    price-level anchor, centred
+ [61]     log1p(spread / min_tick)   0.0 ⇒ no two-sided market
+ [62]     mid_return                 M_frame / M_prev − 1
+ [63]     signed_volume              initiator-signed qty / limit_max_size
+ [64]     log1p(trade count)         trades since the previous frame
+ [65]     trade_direction            last initiator: +1 buy, −1 sell, 0 none
 ```
 
-`M` is the L1 midpoint with a documented fallback chain (one-sided book → that side's best;
-empty book → `last_price`; degenerate → 100.0), so `log_mid` is always defined. Every frame in
-the stack is divided by `M_t`, the newest frame's midpoint, so the same absolute price reads the
-same in all of them; each frame keeps its own `log_mid`. The final observation is `n_hist`
-snapshots concatenated plus a per-agent private block, default 4 × 46 + 32 → **216 floats**. On
+`M` is the L1 midpoint with a documented fallback chain (not two-sided → `last_price`; one side
+and nothing has ever printed → that side's best; degenerate → 100.0), so `log_mid` is always
+defined. Every frame in the stack is divided by `M_t`, the newest frame's midpoint, so the same
+absolute price reads the same in all of them; each frame keeps its own `log_mid`. The final
+observation is `n_hist` snapshots concatenated plus a per-agent private block, default
+4 × 66 + 32 → **296 floats**. On
 reset the deque is pre-filled with `n_hist` copies of the initial raw frame so the shape is
 constant from step 0.
 
@@ -588,7 +591,7 @@ flowchart TB
     BOOK -->|"trades, residue"| BOOK
     BOOK -->|"mark_to_mkt"| ENV
     ENV --> OBSH
-    OBSH -->|"obs 216 floats"| RLM
+    OBSH -->|"obs 296 floats"| RLM
     ENV -->|"reward, info"| HOOKS
     HOOKS --> REC --> PARQ
     HOOKS -->|"NAV table, violation ERROR"| RLOG

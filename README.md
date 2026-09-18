@@ -39,7 +39,7 @@ flowchart LR
     ACC --> MTM
     MTM --> OBS
     MTM --> REW
-    OBS -->|"observation, 216 floats"| POL
+    OBS -->|"observation, 296 floats"| POL
     REW -->|"reward"| POL
     REW --> CB
     CB -->|"agent to module mapping"| POL
@@ -104,7 +104,7 @@ mindmap
 |---|---|---|
 | 3 | [03_matching_engine.md](doc/03_matching_engine.md) | Book data structures, limit/market processing, modify-order semantics and the six accounting scenarios, invariants |
 | 4 | [04_accounting.md](doc/04_accounting.md) | Cash escrow, order approval, position transitions including atomic flips, mark-to-market, NAV conservation |
-| 5 | [05_observation_space.md](doc/05_observation_space.md) | The 46-float snapshot: midpoint normalization, `√(V/limit_max_size)` sizing, the six market scalars, temporal stacking, the raw/normalized split, measured feature scales |
+| 5 | [05_observation_space.md](doc/05_observation_space.md) | The 66-float snapshot: midpoint normalization, `√(V/limit_max_size)` sizing, the occupancy rows, the six market scalars, temporal stacking, the raw/normalized split, measured bounds and feature scales |
 | 6 | [06_action_space.md](doc/06_action_space.md) | The `Dict` action space, ghost-level price anchoring, the two degenerate size dimensions, the legacy `Tuple` design it replaced |
 | 7 | [07_reward_function.md](doc/07_reward_function.md) | The five-term formula, its account plumbing, the measured decomposition, a coefficient tuning guide |
 

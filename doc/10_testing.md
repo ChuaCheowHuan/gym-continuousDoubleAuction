@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (1,193 tests: 1,037 unit + 156 integration)
+# everything (1,205 tests: 1,049 unit + 156 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -72,7 +72,8 @@ Counts re-measured with `--collect-only`.
 | `test_new_action_space.py` | 10 | Action decoding, ghost pricing, `tick_size` reaching the action layer, price levels matching book depth |
 | `test_obs_normalization.py` | 12 | Price/volume normalization (both sides positive since S4-17), action unnormalization |
 | `test_observation_history.py` | 6 | Temporal stacking, and the shared-book / private-tail split (S1-2) |
-| `test_obs_market_features.py` | 17 | `log_mid`, `log1p_spread_ticks`, observation shape across `n_hist` |
+| `test_obs_market_features.py` | 18 | `log_mid` under every branch of the reference-price chain, `log1p_spread_ticks`, observation shape across `n_hist` |
+| `test_occupancy_channel.py` | 11 | The two occupancy rows equal `size > 0` on every cell of every step and ride with their frame; an absent level and a quote at the reference price differ; a one-sided book is referenced to the last trade, agreeing with `mark_price`; layout version 4 (S3-14) |
 | `test_reward_logic.py` | 8 | Reward formula components: normalisation by `init_nav`, scale invariance, the signed drawdown telescoping, zero-sum symmetry |
 | `test_env_lifecycle.py` | 10 | The bare env is tradable (S1-4) and truncation lands exactly on `max_step` (S3-19) |
 | `test_seeding.py` | 11 | `reset(seed=...)` really seeds the episode: anchor, sizes, queueing order; the global NumPy stream is not the source; `sklearn` is not imported (S3-5, S3-6) |
@@ -105,7 +106,7 @@ Counts re-measured with `--collect-only`.
 | `test_cbp.py` | 48 | Continual Backprop's algorithm core, with no Ray and no `Algorithm` — §6.6.1 |
 | `test_compare.py` | 12 | The encoder comparison driver's aggregation: means and standard deviations across seeds, the separation rule and its three-seed floor, the rendered table and its caveats |
 | `test_lint.py` | 1 | The package is pyflakes-clean; any message fails the suite (S4-6) |
-| **unit total** | **1,037** | |
+| **unit total** | **1,049** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -150,12 +151,13 @@ mindmap
       tick grid 14
         on-grid prices for any tick
     Learning problem
-      observation 70
+      observation 82
         normalization, stacking
         one normaliser per stack
         the six market scalars
         feature scales on one range
         finite bounds, clips counted
+        occupancy rows, last-trade reference
       action 10
         decoding, ghost pricing
       reward 8
@@ -503,7 +505,7 @@ shared/private split.
 > Slicing off the end returns the private block plus a truncated snapshot — right shape, every
 > field misaligned.
 
-### 4.3 `test_obs_market_features.py` (17 tests)
+### 4.3 `test_obs_market_features.py` (18 tests)
 
 Covers the two market-level scalars ([05_observation_space.md](05_observation_space.md) §3):
 

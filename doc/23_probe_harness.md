@@ -83,7 +83,7 @@ Three kinds of column, and the comparison needs all three:
 
 | Column | What it is | Why it must be there |
 |---|---|---|
-| `raw` | The observation itself, all 216 floats | The floor. Every latent is a *function* of this vector |
+| `raw` | The observation itself, all 296 floats | The floor. Every latent is a *function* of this vector |
 | `<encoder>` | That architecture **at initialisation** | The inductive-bias term: tokenisation, the two-axis positional encoding and the input LayerNorm, before any training |
 | `<module>@ckpt` | The same architecture with trained weights | Trained minus untrained is what training actually taught it |
 
@@ -127,7 +127,7 @@ otherwise be a knob tuned per feature set — and tuning per feature set is how 
 starts measuring the tuning. `λ` is chosen on a validation split from a fixed grid, identically for
 every feature set and every target.
 
-The grid reaches `1e7` deliberately. `raw` is 216 standardised features, and a short corpus gives a
+The grid reaches `1e7` deliberately. `raw` is 296 standardised features, and a short corpus gives a
 few hundred training rows; under-regularised, that fit scores an R² of **−125** and the report ranks
 overfitting rather than representation. With the grid reaching far enough the validation split
 simply declines those fits and the score falls back toward 0 — the honest answer for "these
@@ -290,7 +290,7 @@ mlp              112     256     44% *
 ```
 
 Stable rank as the Nature paper's Methods defines it: the fewest singular values carrying 99% of
-the total mass. Read it against `width` — absolute values are not comparable between a 216-float
+the total mass. Read it against `width` — absolute values are not comparable between a 296-float
 observation and a 256-unit latent. The `*` marks a set whose rank is bounded by the corpus rather
 than by the encoder (rank cannot exceed `min(rows, width)`), which is a warning that the number
 describes the corpus and not the thing you wanted to compare.

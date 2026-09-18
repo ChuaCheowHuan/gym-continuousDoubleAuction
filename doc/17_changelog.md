@@ -3114,3 +3114,31 @@ version-2 checkpoint is refused by name (S4-19) rather than silently reading eve
   champion among the checkpoint's opponents - whether the one training iteration promotes one
   depends on the returns drawn, and the first full run on this layout did. Suite: **1,037 unit +
   156 integration**.
+
+## 50. Zero means one thing: occupancy rows and the last-trade reference (S3-14; layout version 4)
+
+The first of the pre-existing S3 rows taken through the measure-first pass
+([16](16_verification_log.md) §16.23).
+
+- **Measured first.** Under random play at the shipped config 7.8% of steps had a one-sided book,
+  and on every one of them the best quote read exactly `0.0` - the same value as an absent level;
+  1.2% of occupied price cells in all, and 22% at a thin-book stress config where 77% of steps
+  were one-sided or empty. No other source of ambiguous zeros exists in the newest frame.
+- **Two occupancy rows per snapshot** (`bid_occupied`, `ask_occupied`, 0/1), built in
+  `set_agg_LOB` beside the price and size rows so every frame in the stack keeps its own, passed
+  through normalisation unchanged, bounded on `[0, 1]`. `book_rows` is 6, a snapshot 66 floats,
+  the observation 296. The tokenising encoders carry them as two more channels of each level token.
+- **The reference price of a one-sided book is the last trade**, not the lone quote
+  (`State_Helper.mid_price`; [05](05_observation_space.md) §2.1). The quote then reads its distance
+  from the print. This is the chain `Exchg_Helper.mark_price` has used since S2-5, so the price the
+  agent sees and the price it is marked at now agree whenever the book is not two-sided.
+- **After:** the row equals `size > 0` on every cell of every step; the zeros that remain (0.66%
+  shipped, 11.2% stress) are quotes resting exactly at the last print and are labelled occupied.
+- **A correction to §49's story.** The extreme price tails found while deriving the S4-15 bounds
+  were traced cell by cell: every one sat in a book whose midpoint had random-walked down to one to
+  three ticks, mostly two-sided. They are S3-15's additive-tick coordinate, not the one-sided
+  fallback; §16.22, [05](05_observation_space.md) §1.2 and the S3-14 row now say so.
+- **Layout version 4.** A version-3 checkpoint is refused by name (S4-19).
+- **Tests.** `test_occupancy_channel.py` (11); one more branch of the reference chain in
+  `test_obs_market_features.py`; the width literals in five test files follow the layout. Suite:
+  **1,049 unit + 156 integration**.

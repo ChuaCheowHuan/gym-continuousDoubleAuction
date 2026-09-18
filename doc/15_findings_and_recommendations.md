@@ -46,6 +46,7 @@ mindmap
         S3-7 sys.exit in the engine — fixed
         S3-23 NAV conservation exact only to Decimal rounding — fixed
         S3-24 modify and cancel cannot be aimed — fixed
+        S3-14 zero means three things — fixed
         S3-20 dead escrow path — fixed
       training and league
         S3-8 detached callback — fixed
@@ -838,24 +839,34 @@ episodes per training iteration also means very few samples of the episode-level
 (price anchor, opponent draw). `lambda_=1.0` (RLlib's PPO default, not the usual 0.95) makes
 advantages pure Monte-Carlo.
 
-### S3-14 · Zero means three different things in the observation
+### S3-14 · Zero means three different things in the observation **[verified, fixed]**
 
-`0.0` is the sentinel for "level absent", the exact value of a price *at* the midpoint, and — on
-a one-sided book, where `M` falls back to that side's L1 price — the value of the best quote
-itself. The book starts empty every episode and is frequently one-sided early on, and there is no
+`0.0` was the sentinel for "level absent", the exact value of a price *at* the midpoint, and — on
+a one-sided book, where `M` fell back to that side's L1 price — the value of the best quote
+itself. The book starts empty every episode and is frequently one-sided early on, and there was no
 validity mask.
-**Fix:** an explicit occupancy channel, or an out-of-range sentinel.
 
-**Measured, 2026-09-18** (while deriving the observation bounds, [16](16_verification_log.md)
-§16.22): over 20 seeded random-play episodes at the shipped config the fallback chain produced a
-normalised ask price of **22** (an ask at 23× the midpoint), a bid of **−18** in an older frame, a
-`mid_return` of **13** and a `vwap_vs_mid` of **−31**; at the stress config `log_mid` came within
-0.7 of its floor of `log(min_tick) − log_mid_centre` (an unseeded run touched it exactly) - none of
-them prices that traded, all of them the midpoint falling to a lone quote at the tick floor when
-one side of a thin book emptied. Those tails are why the price bounds of
-[05](05_observation_space.md) §1.2 are as wide as they are, and they are the first numbers this
-row has had against it: any fix here (a mask, a sentinel, a different fallback) should be judged
-by whether it removes them, with `train.compare` on the learning side.
+**Measured before the fix, 2026-09-18** (20 seeded random-play episodes × 400 steps per config,
+[16](16_verification_log.md) §16.23). Shipped config: 92.0% of steps two-sided, **7.8% one-sided**,
+0.1% empty; **627 of 53,604 occupied price cells (1.17%) read exactly 0.0**, every one the lone best
+quote of a one-sided book; a further 2,273 of 159,960 occupied cells in the older frames read 0.0.
+Stress config (6 agents, 20,000 cash, anchors 5–500, tick 0.1): 23.5% two-sided, **32% one-sided,
+44.5% empty**; **2,556 of 11,663 occupied cells (21.9%) read 0.0**. No occupied cell away from L1
+ever read 0.0 in the newest frame: the ambiguity was entirely the one-sided case.
+
+**Fixed** by both proposed routes at once ([05](05_observation_space.md) §1.3, §2.1): two occupancy
+rows per snapshot (`1.0` where the level holds an order, carried in the raw frame so every frame
+keeps its own), and the last trade as the reference price of a one-sided book, which is the chain
+`mark_price` has used since S2-5, so the observation and the NAV mark agree. After: the occupancy
+row equals `size > 0` on every cell of every step; the occupied cells still reading 0.0 (0.66%
+shipped, 11.2% stress) are quotes resting exactly at the last print — a real state, now labelled.
+Observation layout version 4, 296 floats. `train.compare` before and after in §16.23.
+
+**What the measurement also settled.** The extreme price tails found while deriving the S4-15
+bounds — an ask at 23× the midpoint, a `vwap_vs_mid` of −31 — were traced cell by cell: every one
+sat in a book whose midpoint had **random-walked down to one to three ticks**, mostly two-sided.
+They are not this row's; they are S3-15's additive-tick coordinate at work, and they are the first
+numbers that row has had against it.
 
 ### S3-15 · Level index is a non-stationary coordinate
 
@@ -1172,7 +1183,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **1,037 unit tests pass** (plus 156 integration), covering every position-flip path, cash-check edge case, modify-order
+- **1,049 unit tests pass** (plus 156 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 
@@ -1206,7 +1217,8 @@ Roughly two to three weeks of work, ordered so each step unblocks the next.
 **Phase 3 — fix the observation pipeline (≈3 days)**
 10. Normalize the whole stack by the current `M_t`; expose `M_t / M_{t−1} − 1` (S2-6)
 11. Finish the tape loop into trade-flow features; wire in `helper.py`'s order imbalance (S2-7)
-12. Occupancy mask (S3-14); consider the fixed tick-offset grid (S3-15)
+12. ~~Occupancy mask (S3-14)~~ — **done**, with the last-trade reference for a one-sided book;
+    consider the fixed tick-offset grid (S3-15), which now has the floor-tail measurement against it
 
 **Phase 4 — market realism (≈3 days)**
 13. Maker/taker fees in bps inside settlement (S2-3)

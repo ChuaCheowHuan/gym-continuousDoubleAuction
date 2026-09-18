@@ -17,8 +17,10 @@ Three tokenisations, selected per encoder by its `tokenization` spec key:
              and are kept so an ablation can ask which axis is doing the work.
 
 Under "level" and "both" a token is `[bid_price, bid_size, ask_price, ask_size,
-own_bid_size, own_ask_size]` for one level - the last two from the agent's own
-book, newest snapshot only - and the 6 market-level scalars have nowhere to go -
+bid_occupied, ask_occupied, own_bid_size, own_ask_size]` for one level - the
+occupancy pair says whether the level holds an order at all (S3-14), the last
+two are from the agent's own book, newest snapshot only - and the 6
+market-level scalars have nowhere to go -
 they are per-snapshot, not per-level. They are carried instead on a separate
 *global token* per snapshot, appended to the sequence, so they stay inside the
 attention rather than being dropped or smeared across every level. Under "time"

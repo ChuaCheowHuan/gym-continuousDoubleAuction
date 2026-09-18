@@ -228,8 +228,8 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         """
         Tabulate data for display.
         If data is a 1D numpy array holding a flat LOB snapshot, reshape the book
-        block into a 4-column table: [bid_price, bid_size, ask_price, ask_size],
-        then log any trailing market-level scalars on their own line.
+        block into a `book_rows`-column table headed by BOOK_ROW_ORDER, then
+        log any trailing market-level scalars on their own line.
         """
         if isinstance(data, np.ndarray) and data.ndim == 1 and data.size >= self.book_dim:
             book = data[:self.book_dim]
