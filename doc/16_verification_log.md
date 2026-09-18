@@ -1522,6 +1522,36 @@ Three things the table says.
 0 1 2, 8 iterations, 4 agents, 2 trained, `max_step` 128), the same tree with
 `--set action_mask=false` (before) and the default (after):
 
-<<AFTER_TABLE_MASK>>
+**Before** (`--set action_mask=false`):
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | order_rejection_fraction | unmatched_action_fraction | maker_fill_ratio_max | obs_clip_fraction | separated on |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlp | 3 | 259,616 | −0.00132 ± 0.00144 | −0.52 ± 0.164 | 0.117 ± 0.00997 | 0 ± 0 | 0.302 ± 0.014 | 0.632 ± 0.0194 | 0 ± 0 | pass_action_fraction |
+| transformer | 3 | 687,136 | 0.00194 ± 0.00263 | −0.19 ± 0.288 | 0.102 ± 0.00123 | 0 ± 0 | 0.295 ± 0.0326 | 0.642 ± 0.0268 | 0 ± 0 | pass_action_fraction |
+
+**After** (the default, mask honoured):
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | order_rejection_fraction | unmatched_action_fraction | maker_fill_ratio_max | obs_clip_fraction | separated on |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlp | 3 | 259,616 | −0.0033 ± 0.00367 | −0.423 ± 0.733 | 0.162 ± 0.0154 | 0 ± 0 | **0.00114 ± 0.000282** | 0.603 ± 0.00551 | 0 ± 0 | maker_fill_ratio_max |
+| transformer | 3 | 687,136 | −0.000586 ± 0.00077 | −0.356 ± 0.338 | 0.143 ± 0.00395 | 0 ± 0 | **0.00163 ± 0.000564** | 0.62 ± 0.00833 | 0 ± 0 | maker_fill_ratio_max |
+
+Reading it:
+
+- **`unmatched_action_fraction` falls from 0.30 to 0.001 in training**, for both encoders and all
+  three seeds - the same three-hundredfold drop random play showed, now through the PPO modules'
+  masked logits and the random baselines' redraws. The residual is the same-step fill described
+  above. This is the number the mask exists to produce, and after it any non-negligible value of
+  this metric is a bug.
+- **The parameter counts are identical** before and after: the mask changes what the head is
+  allowed to say, not its shape. (They are 4,608 above §16.24's because the private block grew by
+  nine floats.)
+- **Pass rises** (0.10–0.12 → 0.14–0.16), as it did under random play, and the maker ratio dips a
+  little (0.63 → 0.60–0.62); with fewer dead actions the near-random policies trade slightly more
+  and rest slightly less.
+- **Returns and `vf_explained_var` are noise at this scale**, as in every compare so far; nothing
+  here says the mask makes a policy learn faster, only that the dead action is gone from what it
+  can do.
+
 
 **Supports:** §06 7; §15 S4-14; §18 3.0.1; §10 (`test_action_mask.py`).
