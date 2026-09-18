@@ -1,3 +1,5 @@
+from typing import Any, Dict
+
 import numpy as np
 
 
@@ -35,7 +37,7 @@ def _as_float(value):
 
 class Info_Helper(object):
 
-    def set_info(self, infos, trader):
+    def set_info(self, infos: Dict[str, Dict[str, Any]], trader) -> Dict[str, Dict[str, Any]]:
         """
         Update the infos dictionary with the latest data from the trader.
 
@@ -96,7 +98,7 @@ class Info_Helper(object):
         # Did this agent choose to do nothing this step? The two behaviours a
         # return series cannot tell apart: passing, and quoting past your cash
         # so that every order is refused.
-        info["is_pass_action"] = agent_key in getattr(self, "pass_agents", set())
+        info["is_pass_action"] = agent_key in self.pass_agents
 
         # Reward decomposition (doc/11 2.4). The five signed contributions that
         # sum to `reward`, so the variance split in doc/07 6.4 is measurable
@@ -112,16 +114,16 @@ class Info_Helper(object):
         # check depends on it; these are read for plots and diagnostics, where a
         # float is both sufficient and directly usable. None stays None.
         info.update({
-            "last_price": _as_float(getattr(self, "last_price", None)),
-            "best_bid": _as_float(getattr(self, "best_bid", None)),
-            "best_ask": _as_float(getattr(self, "best_ask", None)),
-            "spread": _as_float(getattr(self, "spread", None)),
+            "last_price": _as_float(self.last_price),
+            "best_bid": _as_float(self.best_bid),
+            "best_ask": _as_float(self.best_ask),
+            "spread": _as_float(self.spread),
         })
 
         # The action this agent actually submitted, as the model emitted it -
-        # before set_actions reshapes it for the LOB. Cleared at the end of
-        # step(), so it is live here but absent on any other call path.
-        model_actions = getattr(self, "model_actions", None) or {}
+        # before set_actions reshapes it for the LOB. Set at the top of step()
+        # and None before the first one.
+        model_actions = self.model_actions or {}
         if agent_key in model_actions:
             info["model_action"] = _plain(model_actions[agent_key])
 

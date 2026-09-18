@@ -12,7 +12,7 @@ class Cash_Processor(object):
         as if he has an unlimited amount of cash.
     """
 
-    def order_in_book_passive_party(self, order_in_book):
+    def order_in_book_passive_party(self, order_in_book) -> int:
         """
         If there are new unfilled orders for this trader(passive party),
         reduce his cash & increase his cash_on_hold.
@@ -28,14 +28,14 @@ class Cash_Processor(object):
 
         return 0
 
-    def size_increase_cash_transfer(self, party, trade_val):
+    def size_increase_cash_transfer(self, party: str, trade_val: Decimal) -> int:
         if party == 'init_party':
             self.cash -= trade_val # initial order cash reduction
         else: #counter_party
             self.cash_on_hold -= trade_val # reduce cash_on_hold for initial order cash_on_hold increase
         return 0
 
-    def size_decrease_cash_transfer(self, party, trade_val):
+    def size_decrease_cash_transfer(self, party: str, trade_val: Decimal) -> int:
         if party == 'init_party':
             self.cash += trade_val # portion covered goes back to cash
         else: #counter_party
@@ -44,7 +44,7 @@ class Cash_Processor(object):
             self.cash += trade_val # portion covered goes back to cash
         return 0
 
-    def size_zero_cash_transfer(self, trade_val):
+    def size_zero_cash_transfer(self, trade_val: Decimal) -> int:
         """
         add position_val back to cash minus trade_val, trade_val is handled in size_decrease_cash_transfer
         """
@@ -52,7 +52,7 @@ class Cash_Processor(object):
         self.cash += self.position_val - trade_val
         return 0
 
-    def init_is_counter_cash_transfer(self, trade_val):
+    def init_is_counter_cash_transfer(self, trade_val: Decimal) -> int:
         """
         init_party is also counter_party.
         """
@@ -82,7 +82,7 @@ class Cash_Processor(object):
     # modify - it is what lets a modify cross the spread, which this function
     # assumes never happens. See doc/15 S3-20.
 
-    def cancel_cash_transfer(self, order):
+    def cancel_cash_transfer(self, order) -> int:
         """
         Update account of trader accordingly if his order in LOB is cancelled.
 

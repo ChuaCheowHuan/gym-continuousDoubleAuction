@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from decimal import Decimal
+from typing import Any, Dict
 
 from .cash_processor import Cash_Processor
 from .calculate import Calculate
@@ -10,7 +13,7 @@ from tabulate import tabulate
 logger = get_logger(__name__)
 
 class Account(Calculate, Cash_Processor):
-    def __init__(self, ID, cash=env_default("init_cash")):
+    def __init__(self, ID: int, cash=env_default("init_cash")) -> None:
         self.ID = ID
         self.cash = Decimal(cash)
         # nav is used to calculate P&L & r per t step
@@ -92,7 +95,7 @@ class Account(Calculate, Cash_Processor):
         self.drawdown = 0.0 # max_nav - nav, the level the penalty uses
         self.reward_terms = {} # signed contributions, summing to self.reward
 
-    def reset_acc(self, ID, cash=env_default("init_cash")):
+    def reset_acc(self, ID: int, cash=env_default("init_cash")) -> None:
         self.ID = ID
         self.cash = Decimal(cash)
         # nav is used to calculate P&L & r per t step
@@ -125,7 +128,7 @@ class Account(Calculate, Cash_Processor):
         self.reward_terms = {}
 
     @property
-    def VWAP(self):
+    def VWAP(self) -> Decimal:
         """The carrying basis per contract, derived: `cost_basis / |net_position|`.
 
         A Decimal quotient, so it can be inexact - which is fine for a display
@@ -289,7 +292,7 @@ class Account(Calculate, Cash_Processor):
                 self.net_position += trade_quantity
         return 0
 
-    def process_acc(self, trade, party):
+    def process_acc(self, trade: Dict[str, Any], party: str) -> int:
         self.num_trades += 1
         self.num_trades_step += 1
         

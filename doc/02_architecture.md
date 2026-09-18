@@ -78,7 +78,6 @@ gym_continuousDoubleAuction/
 │   │   └── calculate.py                   NAV, P&L, mark-to-market
 │   └── agent/
 │       ├── trader.py                      order lifecycle + trade settlement
-│       └── random_agent.py                (legacy) random action sampler, still in Trader's MRO
 ├── train/
 │   ├── train.py                        TrainConfig, build_algo, checkpointing, progress.jsonl, CLI
 │   ├── runtime.py                      platform + hardware profile resolution (Colab / docker)
@@ -90,12 +89,12 @@ gym_continuousDoubleAuction/
 │   ├── pretrain/                       offline JEPA pretraining (doc/24)
 │   ├── model/jepa_learner.py           JEPA module + learner (doc/22 4.2)
 │   ├── callbk/…_self_play_callback.py  league: champions, matchmaking, metrics, the record
-│   └── helper/helper.py                order-imbalance / mid-price utilities (unused)
+│   ├── evaluate.py                     roll episodes with a checkpoint's policies (S4-12)
 ├── visualize/                          offline charts from the episode Parquet + progress.jsonl
 │   ├── run_all.py                        regenerates every chart
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               1,019 unit tests
+└── test/                               1,023 unit tests
     └── integration/                    153 tests that build real Algorithms
 ```
 
@@ -175,7 +174,7 @@ MRO health check: it exists only if `Action_Helper.__init__` ran to completion.
 The trader side uses the same idiom:
 
 ```
-Trader(Random_agent)         →  owns  Account(Calculate, Cash_Processor)
+Trader                       →  owns  Account(Calculate, Cash_Processor)
 ```
 
 **Cost of the pattern.** The five mixins are not behavioural variants — they are one class split

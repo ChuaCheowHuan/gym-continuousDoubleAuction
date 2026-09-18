@@ -63,19 +63,19 @@ import and reads its config tree relative to the repository root
 Three checks, cheapest first. All three are what CI runs ([10](10_testing.md) §7).
 
 ```bash
-# 1. the simulator and the training-side units: ~2 min, 1,019 tests (incl. pyflakes and Hypothesis)
+# 1. the simulator and the training-side units: ~2 min, 1,023 tests (incl. pyflakes and Hypothesis)
 python -m pytest gym_continuousDoubleAuction/test -q \
     --ignore=gym_continuousDoubleAuction/test/integration
 
 # 2. a random-agent episode through the whole env, no learning: a few seconds
 python -m gym_continuousDoubleAuction.CDA_rand --steps 200 --agents 4
 
-# 3. RLlib wiring, real Algorithm builds, save/restore: ~10-15 min, 153 tests
+# 3. RLlib wiring, real Algorithm builds, save/restore, evaluate: ~10-15 min, 156 tests
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 ```
 
-Expected: `1019 passed`, a line reading `completed 200 steps with 4 random agents.`, and
-`153 passed`. `pytest` is the only runner that works; `python test_x.py` defines classes and exits
+Expected: `1023 passed`, a line reading `completed 200 steps with 4 random agents.`, and
+`156 passed`. `pytest` is the only runner that works; `python test_x.py` defines classes and exits
 ([10](10_testing.md) §0).
 
 To see the env work step by step, ask for the render, which writes at DEBUG:
@@ -321,6 +321,26 @@ Output: `compare_out/compare_results.json` (every per-run number) and
 `compare_out/compare_table.md`. The `separated on` column names metrics where one encoder's mean
 sits clear of every other's by more than both standard deviations, and only with three or more
 seeds a side; below that the footer says the table is a smoke test, and it is right.
+
+### 26.9.1 Use a trained checkpoint
+
+Roll episodes with a checkpoint's policies and no learning ([15](15_findings_and_recommendations.md)
+S4-12). The checkpoint's own mapping function assigns modules to agents, so the random baselines
+and any champions play their parts; the trainable modules act through the same inference path
+the env runner uses.
+
+```bash
+python -m gym_continuousDoubleAuction.train.evaluate --checkpoint results/chkpt/iter_00016 \
+    --episodes 4 --seed 0 --out eval.json
+python -m gym_continuousDoubleAuction.train.evaluate --checkpoint results/chkpt/iter_00016 \
+    --episodes 4 --seed 0 --deterministic --max-step 512
+```
+
+The log gets a table per module: return, NAV change, trades, and the pass, rejected and unmatched
+fractions, as means over the agent-episodes that module played. `--seed` pins episode seeds
+(episode i uses seed + i), so two checkpoints evaluated with the same seed face the same price
+anchors and opponent draws and the difference is the policies. A checkpoint from another
+observation or action layout is refused by name.
 
 ---
 

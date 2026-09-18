@@ -3044,3 +3044,41 @@ today is refused by name rather than by tensor shape.
 alongside `k_rows` when it swaps a depth in. The tokeniser test that said the private block never
 reaches a token now says everything but the own-book block never does. Fourteen documents that
 stated 193 state 216. Suite: 1,019 unit + 153 integration.
+
+
+## 48. The hygiene group
+
+The S4 rows that needed no design decision, done in one pass. Two of the group turned out not to
+be hygiene and are marked as such rather than done.
+
+- **S4-1, S4-2, S4-3, S4-4 — dead code.** `train/helper/helper.py` and `envs/agent/random_agent.py`
+  are deleted, `Trader` no longer inherits from the legacy random agent, the last dead methods
+  (`state_diff`, `_set_side`, `_set_type`, `_higher`, `_lower`) and the last ~200 lines of
+  commented-out code (the old `step` and space getters, the old `Tuple` action space) are gone.
+- **S4-6 — tooling.** `pyproject.toml` with a `ruff` selection matching the pyflakes rules
+  `test_lint.py` enforces, a `pytest` block and `coverage` tables; `pytest-cov` in the `dev` extra;
+  the unit suite measured at **79.1%** line-and-branch ([16](16_verification_log.md) §16.21); type
+  hints on the public API of every `envs/` module. No formatter pass - that is one deliberate
+  commit of churn, not a side effect of a hygiene pass - and no coverage threshold yet, because at
+  79% it would ratchet the CLI mains first.
+- **S4-7 — rendering.** `is_render` defaults to `false`, and `_render` no longer mutates the
+  state it prints, so a rendered run and a silent one evolve identically.
+- **S4-8 — Docker.** The image installs from `requirements.txt` on its own cached layer.
+- **S4-10 — defensive reads.** Every `getattr(self, ..., default)` in `envs/` is gone; the
+  attributes are initialised where their mixin is built and read directly. The mixin architecture
+  itself stands - unwinding it is a redesign, and the row says so.
+- **S4-11 — two hot-path claims, measured.** The counter-party scan cost 0.2 µs and is O(1)
+  anyway; the pre-action snapshot cost 5.9% of a step and is now rebuilt only when the book
+  changed since the last one, which is exactly after a bankruptcy cancels orders.
+- **S4-12 — `train.evaluate`.** The repository can now *use* a checkpoint: restore it, roll
+  episodes with its own mapping function and modules through `forward_inference` (unsquashing the
+  normalised Box heads the way the env runner does - without that, half the sampled
+  `size_sigma`s are negative and the env refuses them), and report per module what the policies
+  did. Seven tests, three of them against a real one-iteration checkpoint.
+- **S4-18** was already fixed; the row was stale.
+- **S4-15 and S4-17 are not done**, and the register now says why: both change the observation's
+  representation - its bounds, or the sign convention every encoder is fed - which is a layout
+  version bump and a learning-problem change, to be made with `train.compare` in hand rather than
+  in a hygiene pass.
+
+Suite: 1,023 unit + 156 integration.

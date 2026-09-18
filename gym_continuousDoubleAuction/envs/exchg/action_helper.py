@@ -1,3 +1,5 @@
+from typing import Any, Dict, List, Optional
+
 import numpy as np
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -71,6 +73,8 @@ class Action_Helper():
         self.last_price = float(
             constant("price_anchor_fallbacks", "action_helper_last_price")
         )
+        # Which agents passed this step; set_actions rebuilds it every step.
+        self.pass_agents = set()
 
         super().__init__(**kwargs)
 
@@ -103,21 +107,7 @@ class Action_Helper():
                 f"neutral 'join' offset is the middle code."
             )
 
-    # def act_space(self):
-    #     '''
-    #     The action space.
-
-    #     Example for 1 agent:
-    #         model_out: [0, 3, array([0.47555637], dtype=float32), array([0.5383144], dtype=float32), 5]
-    #     '''
-
-    #     return spaces.Tuple((spaces.Discrete(3), # side: none, bid, ask (0 to 2)
-    #                          spaces.Discrete(4), # type: market, limit, modify, cancel (0 to 3)
-    #                          spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32), # array of mean for size selection
-    #                          spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32), # array of sigma for size selection
-    #                          spaces.Discrete(12), # price: based on mkt depth from 0 to 11
-    #                         ))
-    def act_space(self, num_agents):
+    def act_space(self, num_agents: int) -> Dict[str, Any]:
         '''
         The action space for multiple agents, returned as a dictionary.
 
@@ -168,7 +158,7 @@ class Action_Helper():
 
         return space_dict
 
-    def set_actions(self, model_outs):
+    def set_actions(self, model_outs: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Set model outputs to actions acceptable by LOB.
 
@@ -197,7 +187,7 @@ class Action_Helper():
 
         return acts
 
-    def rand_exec_seq(self, actions, seed=None):
+    def rand_exec_seq(self, actions: List[Dict[str, Any]], seed: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Shuffle actions execution sequence.
 
@@ -224,7 +214,7 @@ class Action_Helper():
         rng = np.random.default_rng(seed) if seed is not None else self.np_random
         return [actions[i] for i in rng.permutation(len(actions))]
 
-    def do_actions(self, actions):
+    def do_actions(self, actions: List[Dict[str, Any]]):
         """
         Process actions for all agents.
 
@@ -264,7 +254,7 @@ class Action_Helper():
 
         return seq_trades, seq_order_in_book
 
-    def _set_action_mkt_depth(self, ID, model_out):
+    def _set_action_mkt_depth(self, ID: str, model_out: Dict[str, Any]) -> Dict[str, Any]:
         """
         Sets the action of each agent from the model.
 
@@ -316,28 +306,6 @@ class Action_Helper():
         """The 'join' offset code: the middle of the price_offset codes."""
         return self._act["price_offset_n"] // 2
 
-    def _set_side(self, side):
-        if side == 0:
-            side = None
-        elif side == 1:
-            side = 'bid'
-        else:
-            side = 'ask'
-
-        return side
-
-    def _set_type(self, type):
-        if type == 0:
-            type = 'market'
-        elif type == 1:
-            type = 'limit'
-        elif type == 2:
-            type = 'modify'
-        else:
-            type = 'cancel'
-
-        return type
-
     def _set_size(self, type, mkt_size_mean_mul, limit_size_mean_mul, mean, sigma):
         """
         Get size.
@@ -368,7 +336,8 @@ class Action_Helper():
         # neither is usable as a size without a further conversion.
         return int(np.rint(np.abs(sample)).item())
 
-    def _set_price(self, min_tick, side, price_code, price_offset=None):
+    def _set_price(self, min_tick: float, side: str, price_code: int,
+                   price_offset: Optional[int] = None) -> float:
         """
         Set price according to price_code (a book level, 0 to k_rows - 1) and
         price_offset (0 to price_offset_n - 1).
@@ -397,9 +366,9 @@ class Action_Helper():
         # level_idx: 0 to k_rows - 1, representing book levels 1 to k_rows
         level_idx = price_code
 
-        # Use unnormalized raw prices array for action price calculation
-        agg_LOB_source = getattr(self, 'agg_LOB_raw', self.agg_LOB)
-        book = np.array(agg_LOB_source).reshape(self.book_rows, self.k_rows)
+        # Use unnormalized raw prices array for action price calculation.
+        # Always present: reset builds it, and every step rebuilds it.
+        book = np.array(self.agg_LOB_raw).reshape(self.book_rows, self.k_rows)
 
         if side == 'bid':
             price_array = book[BOOK_ROW_ORDER.index("bid_price")] # raw bid prices
@@ -446,15 +415,3 @@ class Action_Helper():
             Decimal(str(set_price)) / tick
         ).to_integral_value(rounding=ROUND_HALF_UP) * tick
         return float(snapped)
-
-    def _higher(self, min_tick, price):
-        """
-        Sets the price of the order to 1 tick higher.
-        """
-        return price + min_tick
-
-    def _lower(self, min_tick, price):
-        """
-        Sets the price of the order to 1 tick lower, ensuring it's not below min_tick.
-        """
-        return max(min_tick, price - min_tick)

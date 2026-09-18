@@ -131,7 +131,7 @@ break in a way that reads like a missing install.
 `--no-deps` is deliberate: every entry in `setup.py`'s `install_requires` is already installed by the
 layer above, at versions chosen to match this CUDA build. Letting pip re-resolve risks it quietly
 swapping one. The tradeoff — **a dependency added to `setup.py` will not be installed by that line**.
-Add it to the explicit `pip install` block in the Dockerfile too.
+Add it to `requirements.txt`; the Dockerfile installs from that file (S4-8), so there is no second list to keep in step.
 
 ### Everything installs into a venv at `/opt/venv`
 

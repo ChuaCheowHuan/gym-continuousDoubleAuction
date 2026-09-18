@@ -226,7 +226,7 @@ stay within ±0.58 in the same rollout.
 
 | Feature | Why |
 |---|---|
-| **Order-flow imbalance** | The single strongest short-horizon predictor in the microstructure literature. Helper code for it already exists — `train/helper/helper.py` computes `ord_imb` / `sum_ord_imb` — but it is imported by nothing. |
+| **Order-flow imbalance** | The single strongest short-horizon predictor in the microstructure literature. It reached the observation as `signed_volume` (S2-7); the old unused helper that computed `ord_imb` / `sum_ord_imb` — but it is imported by nothing. |
 | **Trade flow / signed volume** | Aggressor-side volume over the last k steps. The tape loop in `set_agg_LOB` is a dead placeholder where this was clearly intended ([05](05_observation_space.md) §7.3). |
 | Realised volatility | Rolling σ of mid returns |
 | Microprice | `(bid_sz·ask_px + ask_sz·bid_px)/(bid_sz+ask_sz)` — better fair value than mid |

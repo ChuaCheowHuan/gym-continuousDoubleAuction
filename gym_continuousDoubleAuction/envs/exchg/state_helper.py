@@ -1,3 +1,5 @@
+from typing import Dict, Tuple
+
 import numpy as np
 from collections import deque
 from itertools import islice
@@ -259,6 +261,12 @@ class State_Helper(object):
         self._tape_cursor = 0
         self._prev_frame_mid = None
 
+        # True when the book has changed since `agg_LOB_raw` was last built,
+        # so `step()` knows whether the pre-action snapshot must be rebuilt.
+        # `set_agg_LOB` clears it; `Done_Helper.set_done` sets it when it pulls
+        # a bankrupt trader's orders after the post-action snapshot was taken.
+        self._snapshot_stale = True
+
         # Used when the book has no two-sided market and last_price is unusable.
         self.midpoint_fallback = float(
             constant("price_anchor_fallbacks", "state_helper_midpoint")
@@ -269,7 +277,7 @@ class State_Helper(object):
         super().__init__(**kwargs)
 
     # reset traders LOB observations/states
-    def reset_traders_agg_LOB(self):
+    def reset_traders_agg_LOB(self) -> Dict[str, np.ndarray]:
         """
         Set observation state for all traders with temporal history window.
         Populates the shared obs_history deque with n_hist copies of the
@@ -300,7 +308,7 @@ class State_Helper(object):
 
         return states
         
-    def prep_next_state(self):
+    def prep_next_state(self) -> np.ndarray:
         """
         Return:
             stacked_obs: The temporal stacked state of the aggregated LOB after
@@ -431,7 +439,7 @@ class State_Helper(object):
         ask = float(raw[2 * self.k_rows])
         return (bid if bid > 0 else 0.0), (abs(ask) if ask != 0 else 0.0)
 
-    def mid_price(self):
+    def mid_price(self) -> float:
         """The Level-1 midpoint `M`, always strictly positive.
 
         The fallback chain, in order: both sides present, bid only, ask only,
@@ -451,10 +459,10 @@ class State_Helper(object):
         if l1_ask > 0:
             return l1_ask
 
-        M = float(getattr(self, 'last_price', self.midpoint_fallback))
+        M = float(self.last_price)
         return M if M > 0 else self.midpoint_fallback
 
-    def set_private_state(self, trader, elapsed_steps=None):
+    def set_private_state(self, trader, elapsed_steps=None) -> np.ndarray:
         """This trader's private block: `private_dim` floats, all O(1).
 
         Everything here is normalised by the trader's own `init_nav` or is
@@ -566,7 +574,7 @@ class State_Helper(object):
             )
         return private
 
-    def own_book(self, trader):
+    def own_book(self, trader) -> Tuple[np.ndarray, np.ndarray, int, int]:
         """This trader's resting size at each public level, and its order counts.
 
         Returns `(own_bid, own_ask, n_bid, n_ask)`: two `(k_rows,)` float32
@@ -604,8 +612,8 @@ class State_Helper(object):
         n_ask = sum(1 for o in self.LOB.asks.order_map.values() if o.trade_id == trader.ID)
         return own_bid, own_ask, n_bid, n_ask
 
-    def set_next_state(self, next_states, trader, state_input,
-                       elapsed_steps=None):
+    def set_next_state(self, next_states: Dict[str, np.ndarray], trader, state_input,
+                       elapsed_steps=None) -> Dict[str, np.ndarray]:
         """
         Set next state.
 
@@ -629,7 +637,7 @@ class State_Helper(object):
 
         return next_states
 
-    def set_agg_LOB(self):
+    def set_agg_LOB(self) -> np.ndarray:
         """
         Set the aggregated LOB.
 
@@ -664,6 +672,8 @@ class State_Helper(object):
                     ask_size_list[k] = -set[1].volume
                 else:
                     break
+        self._snapshot_stale = False
+
         # Raw unnormalized snapshot. float64, not float32: `_set_price`
         # reads resting prices out of this array to quote at a book level, and
         # float32 cannot hold 100.1 (it reads back 100.0999984741211). The
@@ -687,10 +697,7 @@ class State_Helper(object):
         # log1p >= log1p(1) = 0.693. That leaves 0.0 as an unambiguous sentinel for
         # "no two-sided market".
         if l1_bid > 0 and l1_ask > 0:
-            min_tick = getattr(self, 'min_tick', env_default("tick_size"))
-            if min_tick <= 0:
-                min_tick = env_default("tick_size")
-            spread_ticks = (l1_ask - l1_bid) / min_tick
+            spread_ticks = (l1_ask - l1_bid) / self.min_tick
         else:
             spread_ticks = 0.0
 
@@ -731,25 +738,3 @@ class State_Helper(object):
         # normalised snapshot" - for the render path and its callers.
         return self._normalise_frame(self.agg_LOB_frame, M)
     
-    def state_diff(self, agg_LOB, agg_LOB_aft):
-        """
-        Argument:
-            agg_LOB: Aggregated LOB at time step t.
-            agg_LOB_aft: Aggregated LOB at time step t+1.
-
-        Returns:
-            state_diff: The difference between agg_LOB_aft & agg_LOB.
-
-        Notes:
-            state_diff should be used in obs preprocessing if needed
-        """
-        state_diff = []
-        for (state_row, next_state_row) in zip(agg_LOB, agg_LOB_aft):
-            diff = next_state_row - state_row
-            list_diff = list(diff)
-            state_diff.append(list_diff)
-        state_diff = np.array(state_diff)
-
-        #print('state_diff.shape:', state_diff.shape)
-
-        return state_diff

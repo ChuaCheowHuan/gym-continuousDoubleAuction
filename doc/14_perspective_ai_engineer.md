@@ -15,7 +15,7 @@ production-deployable as a service, but as a research codebase it is above avera
 
 > **This section is the original audit and is no longer accurate.** It was measured against a
 > tree of 7,478 Python lines with 90 unit tests and no logging module. The repository is now
-> 34,257 lines across 124 files, with 1,019 unit and 153 integration tests, a 523-line
+> 34,257 lines across 124 files, with 1,023 unit and 156 integration tests, a 523-line
 > `logging_setup` and a test that fails the build on a bare `print` in `envs/` or `train/`. The
 > `sklearn.utils.shuffle` import it names was removed (`action_helper.py:182` records that), and
 > the `install_requires` block it quotes no longer exists - `ray[rllib]` and `six` are in it and
@@ -35,8 +35,8 @@ production-deployable as a service, but as a research codebase it is above avera
 | `print()` calls in `envs/` + `train/` | ~86, incl. **42 in the self-play callback** and 13 in the env |
 | `sys.exit()` in library code | **0** — the six in `orderbook.py` raise `ValueError` since 2026-09-18 (S3-7) |
 | Broad `except Exception` in the callback | 2 (one deliberate, one questionable) |
-| Type hints | present in `train/`, essentially absent from `envs/` |
-| Linter / formatter config | pyflakes, enforced by `test_lint.py` (zero findings); no formatter, no `pyproject.toml` |
+| Type hints | present in `train/`; on the public API of every `envs/` module since 2026-09-18 (S4-6) |
+| Linter / formatter config | pyflakes, enforced by `test_lint.py` (zero findings); `pyproject.toml` with a matching `ruff` selection, `pytest` and `coverage` tables; no formatter pass yet |
 | Pre-commit hooks | none |
 
 The quality gradient across the repository is steep. `train/train.py`, `policy_handler.py` and
@@ -282,16 +282,16 @@ Full inventory in [10_testing.md](10_testing.md). Engineering-relevant summary:
 | Item | Status |
 |---|---|
 | ~~`train/storage/store_handler.py`, `train/logger/log_handler.py`, `train/plotter/plot_handler.py`~~ | **Deleted.** ~270 LOC depending on a `g_store` actor that was never created — see [11 §1.4](11_logging_and_observability.md) |
-| `train/helper/helper.py` | `ord_imb` / `mid_price` utilities, imported by nothing (only a commented-out import) **[verified]** |
-| `envs/agent/random_agent.py` | `select_random_action` returns the **old 5-tuple** action format; superseded by `RandomRLModule`; nothing calls it, but `Trader` still inherits from `Random_agent` **[verified]** |
-| `State_Helper.state_diff` | never called **[verified]** |
-| `Action_Helper._set_side` / `_set_type` / `_higher` / `_lower` | never called (superseded by the category mapping) |
+| ~~`train/helper/helper.py`~~ | **Deleted** (2026-09-18, S4-1) |
+| ~~`envs/agent/random_agent.py`~~ | **Deleted** (2026-09-18, S4-2); `Trader` no longer inherits from it |
+| ~~`State_Helper.state_diff`~~ | **Deleted** (2026-09-18, S4-3) |
+| ~~`Action_Helper._set_side` / `_set_type` / `_higher` / `_lower`~~ | **Deleted** (2026-09-18, S4-3) |
 | `Action_Helper.max_price` | passed into `_set_price` and never used in its body |
 | ~~`OrderBook.__str__0`, `Order.__str__0`, `OrderList.to_str`~~ | **Deleted** (2026-09-18), with the shadowed `Order.next_order`/`prev_order` methods |
 | ~~`OrderBook.get_volume_at_price`~~ | **Deleted** (2026-09-18), with the commented-out old `modify_order` |
 | `envs/orderbook/test/example.py`, `genOrders.py` (353 LOC) | standalone scripts, not collected by pytest |
-| ~200 LOC of commented-out code | The old `step` and the old space getters in `continuousDoubleAuction_env.py`, the old `modify_order` and `get_volume_at_price` in `orderbook.py`, the old `Tuple` `act_space` in `action_helper.py` |
-| `CODEOWNER` **and** `CODEOWNERS` | duplicate files at the repo root |
+| ~~~200 LOC of commented-out code~~ | **Deleted** (2026-09-18, S4-4) |
+| ~~`CODEOWNER` **and** `CODEOWNERS`~~ | **Fixed**; only `CODEOWNERS` remains |
 
 The ~270 LOC of unreachable telemetry in `train/` — three modules that looked like a working
 pipeline and were a broken one — has been deleted. What remains above is smaller and less
@@ -320,7 +320,7 @@ observation rather than dropping (see [13](13_perspective_financial_trader.md) �
 | Gap | Impact |
 |---|---|
 | ~~**`build_algo` returns a detached callback on the restore path**~~ | Fixed — see §5.9.1, along with four adjacent checkpoint defects. |
-| **The Docker image `pip install`s a hardcoded dependency list** | Duplicates `requirements.txt` rather than `COPY`ing it. Two places to update; already at risk of drift. |
+| ~~**The Docker image `pip install`s a hardcoded dependency list**~~ | **Fixed** (S4-8): it `COPY`s `requirements.txt` and installs from it |
 | **No inference/serving path** | Nothing loads a checkpoint and runs a policy. There is no `evaluate.py`, no Ray Serve deployment, no exported TorchScript/ONNX. |
 | **No config validation** | `TrainConfig` accepts `num_trained_agents > num_agents` (caught later, in `build_multi_rl_module_spec`), negative `max_step`, etc. |
 | **No experiment tracking** | No MLflow / W&B; results are TensorBoard + stdout. |

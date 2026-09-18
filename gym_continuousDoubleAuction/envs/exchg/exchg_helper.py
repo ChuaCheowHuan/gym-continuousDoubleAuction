@@ -57,6 +57,11 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         self.LOB_actions = None
         self.shuffled_actions = None
 
+        # Top of book at the last `set_market_snapshot`; None until a step.
+        self.best_bid = None
+        self.best_ask = None
+        self.spread = None
+
     def reset_traders_acc(self):
         """
         Reset traders accounts.

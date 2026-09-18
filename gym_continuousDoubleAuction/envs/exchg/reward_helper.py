@@ -1,3 +1,5 @@
+from typing import Dict
+
 from ...config_loader import env_default
 
 class Reward_Helper(object):
@@ -49,7 +51,7 @@ class Reward_Helper(object):
 
         super().__init__(**kwargs)
 
-    def set_reward(self, rewards, trader):
+    def set_reward(self, rewards: Dict[str, float], trader) -> Dict[str, float]:
         """
         Calculate and set the reward for the trader at the current time step.
 

@@ -1,0 +1,37 @@
+# Tooling configuration only. Packaging stays in setup.py (its build_py stages
+# config/ into the wheel; see the docstring there), so this file declares no
+# [build-system] and no [project] table - adding either would switch the build
+# to PEP 517 and skip that staging.
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# The same rule family test_lint.py enforces with pyflakes (F = pyflakes), so
+# `ruff check .` locally and the suite in CI agree on what a finding is. Style
+# rules are deliberately not selected: an 18,000-line tree that has never had a
+# formatter is reformatted in one deliberate pass or not at all, not rule by
+# rule in unrelated commits (doc/15 S4-6).
+select = ["F"]
+
+[tool.pytest.ini_options]
+testpaths = ["gym_continuousDoubleAuction/test"]
+# The integration suite builds real RLlib Algorithms and takes minutes; select
+# it explicitly (`pytest gym_continuousDoubleAuction/test/integration`) rather
+# than by default.
+addopts = "-p no:cacheprovider"
+
+[tool.coverage.run]
+source = ["gym_continuousDoubleAuction"]
+omit = [
+    "gym_continuousDoubleAuction/test/*",
+    "gym_continuousDoubleAuction/envs/orderbook/test/*",
+    "gym_continuousDoubleAuction/visualize/*",
+]
+branch = true
+
+[tool.coverage.report]
+skip_covered = false
+show_missing = false
+precision = 1

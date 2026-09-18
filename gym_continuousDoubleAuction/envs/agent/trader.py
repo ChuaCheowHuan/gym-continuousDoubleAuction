@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 from decimal import Decimal
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ..account.account import Account
-from .random_agent import Random_agent
 from ...config_loader import env_default
 
 
@@ -37,12 +39,13 @@ def _normalise_trade_sizes(trades):
         trade['quantity'] = as_int
 
 
-class Trader(Random_agent):
-    def __init__(self, ID, cash=env_default("init_cash")):
+class Trader:
+    def __init__(self, ID: int, cash=env_default("init_cash")) -> None:
         self.ID = ID # trader unique ID
         self.acc = Account(ID, cash)
 
-    def place_order(self, type, side, size, price, LOB, agents, slot=0):
+    def place_order(self, type: str, side: Optional[str], size: int, price: float,
+                    LOB, agents: Sequence["Trader"], slot: int = 0) -> Tuple[List[dict], Any]:
         """
         Execute an action.
 
@@ -120,7 +123,7 @@ class Trader(Random_agent):
             self.acc.num_rejected_step += 1
             return trades, order_in_book
 
-    def _prevent_self_match(self, LOB, type, side, price):
+    def _prevent_self_match(self, LOB, type: str, side: Optional[str], price: float) -> int:
         """Cancel this trader's own resting orders the incoming order would cross.
 
         The "cancel resting order" self-match-prevention mode: the older order
@@ -185,7 +188,7 @@ class Trader(Random_agent):
 
         return len(doomed)
 
-    def _resting_exposure(self, LOB, side, exclude_order_id=None):
+    def _resting_exposure(self, LOB, side: str, exclude_order_id: Optional[int] = None) -> int:
         """This trader's own live resting quantity on `side`.
 
         Walks the tree's `order_map` for this trader's `trade_id`, the way
@@ -213,7 +216,7 @@ class Trader(Random_agent):
 
         return total
 
-    def _closing_escrow(self, LOB, exclude_order_id=None):
+    def _closing_escrow(self, LOB, exclude_order_id: Optional[int] = None) -> Decimal:
         """Escrow held against this trader's resting orders that would only
         flatten its position.
 
@@ -287,7 +290,8 @@ class Trader(Random_agent):
         """The order id this quote would replace, or None. See `_replaced_order`."""
         return self._replaced_order(LOB, type, side, price, slot)[0]
 
-    def _order_approved(self, side, size, price, LOB, type=None, slot=0):
+    def _order_approved(self, side: str, size: int, price: float, LOB,
+                        type: Optional[str] = None, slot: int = 0) -> bool:
         """
         Conditions for order approval. Handles:
         1. NAV positivity.
@@ -386,7 +390,7 @@ class Trader(Random_agent):
 
         return False
 
-    def _create_order(self, type, side, size, price, slot=0):
+    def _create_order(self, type: str, side: str, size: int, price: float, slot: int = 0) -> Dict[str, Any]:
         """
         Create the order dictionary.
 
@@ -507,7 +511,7 @@ class Trader(Random_agent):
 
         return trades, order_in_book
 
-    def _own_orders_from_touch(self, orderBook, side):
+    def _own_orders_from_touch(self, orderBook, side: str) -> List[tuple]:
         """This trader's resting orders on `side`, nearest the market first.
 
         Best price first - highest bid, lowest ask - and oldest first within a
@@ -527,7 +531,7 @@ class Trader(Random_agent):
             mine.sort(key=lambda item: (item[1].price, item[1].timestamp))
         return mine
 
-    def cancel_all_orders(self, LOB):
+    def cancel_all_orders(self, LOB) -> int:
         """Pull every order this trader has resting, on both sides.
 
         Used when a trader is terminated: a bankrupt agent stops acting, but
@@ -558,7 +562,7 @@ class Trader(Random_agent):
 
         return cancelled
 
-    def _get_order_ID(self, orderBook, qoute):
+    def _get_order_ID(self, orderBook, qoute: Dict[str, Any]) -> tuple:
         """
         Find the order in the order tree.
 
@@ -640,7 +644,7 @@ class Trader(Random_agent):
         else:
             return None
 
-    def _process_trades(self, trades, agents):
+    def _process_trades(self, trades: List[dict], agents: Sequence["Trader"]) -> int:
         """
         Process trades for the init_party & counter_party.
 
@@ -675,11 +679,20 @@ class Trader(Random_agent):
             agent: A trader object.
         """
 
+        wanted = trade.get('counter_party').get('ID')
+        # In the env the roster is indexed by trader ID (agent_i is
+        # traders[i]), so the counter-party is one lookup. The scan is kept as
+        # the fallback for callers that pass an arbitrary list - the tests do -
+        # and for a roster whose IDs are not its indices (doc/15 S4-11).
         agent = None
-        for counter_party in agents: # search for counter_party
-            if counter_party.ID == trade.get('counter_party').get('ID'):
-                counter_party.acc.process_acc(trade, 'counter_party')
-                agent = counter_party
-                break
+        if isinstance(wanted, int) and 0 <= wanted < len(agents) and agents[wanted].ID == wanted:
+            agent = agents[wanted]
+        else:
+            for counter_party in agents: # search for counter_party
+                if counter_party.ID == wanted:
+                    agent = counter_party
+                    break
+        if agent is not None:
+            agent.acc.process_acc(trade, 'counter_party')
 
         return agent

@@ -1,7 +1,10 @@
 
+from decimal import Decimal
+
+
 class Calculate(object):
 
-    def cal_nav(self):
+    def cal_nav(self) -> Decimal:
         """
         The trader's cash, cash_on_hold & his holding's value (position_val) at
         this current t step.
@@ -12,7 +15,7 @@ class Calculate(object):
             self.max_nav = self.nav
         return self.nav
 
-    def cal_total_profit(self):
+    def cal_total_profit(self) -> Decimal:
         """
         The current NAV at t step minus the initial NAV at the start of the trading session.
         """
@@ -20,7 +23,7 @@ class Calculate(object):
         self.total_profit = self.nav - self.init_nav
         return self.total_profit
 
-    def cal_profit(self, position, mkt_val, raw_val):
+    def cal_profit(self, position: str, mkt_val: Decimal, raw_val: Decimal) -> Decimal:
         """
         The profit or loss from current holdings (position_val).
         """
@@ -31,7 +34,7 @@ class Calculate(object):
             self.profit = raw_val - mkt_val
         return self.profit
 
-    def mark_to_mkt(self, ID, mkt_price):
+    def mark_to_mkt(self, ID: int, mkt_price: Decimal) -> int:
         """
         Update acc for a trader with last price in most recent entry of tape.
 

@@ -1125,3 +1125,36 @@ Every checkpoint written on this tree carries `"layout": {"observation_version":
 (`test_layout_version.py`).
 
 **Supports:** §15 S1-2, S3-24, S4-19; §05 1.0.1, 7.7; §06 1.5; §07 1; §10 2.6.
+
+
+## 16.21 The hygiene pass: two timings and a coverage number (2026-09-18)
+
+**S4-11, measured before touching it.** 300 random-play steps, 8 agents, `is_render` off:
+
+```
+step               1.05 ms
+set_agg_LOB        0.062 ms   (5.9% of a step)  <- the pre-action snapshot
+8-agent ID scan    0.2 us     <- _process_counter_party's loop
+```
+
+The scan was never a cost and is O(1) now only because the change is one line. The snapshot was
+worth gating: it is now rebuilt only when `set_done` pulled a bankrupt trader's orders after the
+post-action snapshot (`_snapshot_stale`), or when the render asks for its "@ t-1" table. In every
+other case the two snapshots were byte-identical - nothing touches the book between the end of one
+step and the start of the next - so the observation, the action prices and every test are
+unchanged.
+
+**S4-6, coverage.** `pytest --cov` over the unit suite, scoped by `pyproject.toml` to `envs/` and
+`train/` (tests, the orderbook example scripts and `visualize/` excluded):
+
+```
+TOTAL   5716 statements   1094 missed   1662 branches   186 partial   79.1%
+```
+
+Least covered, and why: `train/pretrain/__main__.py` and `train/probe/__main__.py` 0% (CLI entry
+points run by hand and by the runbook, not by a test); `cbp_learner.py` 13.5% (its 41 tests are in
+the integration suite, which this run excluded); `CDA_rand.py` 20% (the CI smoke run covers it);
+`evaluate.py` 27% (the integration test covers the rest); `exchg_helper.py` 52% (the render path,
+which the suite runs only at DEBUG).
+
+**Supports:** §15 S4-6, S4-11; §10 7, 8.

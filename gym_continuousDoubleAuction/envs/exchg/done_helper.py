@@ -1,6 +1,9 @@
+from typing import Dict, Tuple
+
+
 class Done_Helper(object):
 
-    def set_done(self, terminateds, trader):
+    def set_done(self, terminateds: Dict[str, bool], trader) -> Dict[str, bool]:
         """
         When trader is broke (NAV <= 0), he's done ;)
 
@@ -32,11 +35,14 @@ class Done_Helper(object):
             self.done_set.add(agent) # done_set is a set
             terminateds[agent] = True
             # Its orders outlive it otherwise - see the docstring.
-            trader.cancel_all_orders(self.LOB)
+            if trader.cancel_all_orders(self.LOB):
+                # The post-action snapshot predates this; the next step must
+                # rebuild its pre-action view rather than reuse it.
+                self._snapshot_stale = True
 
         return terminateds
 
-    def is_live(self, trader):
+    def is_live(self, trader) -> bool:
         """Whether this trader still takes part in the episode.
 
         `set_step_outputs` asks before building an agent's observation, reward
@@ -45,7 +51,7 @@ class Done_Helper(object):
         """
         return f'agent_{trader.ID}' not in self.done_set
 
-    def set_all_done(self, terminateds):
+    def set_all_done(self, terminateds: Dict[str, bool]) -> Tuple[Dict[str, bool], Dict[str, bool]]:
         """
         Complete the per-agent `terminateds` and derive the two `__all__` keys.
 

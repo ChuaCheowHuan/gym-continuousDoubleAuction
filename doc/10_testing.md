@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (1,172 tests: 1,019 unit + 153 integration)
+# everything (1,179 tests: 1,023 unit + 156 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -46,7 +46,7 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `1019 passed` on the unit half. There is no xfail: the one that pinned S1-1 XPASSed when S1-1 was fixed and was deleted (see §6.2.2).
+**[verified]** — `1023 passed` on the unit half. There is no xfail: the one that pinned S1-1 XPASSed when S1-1 was fixed and was deleted (see §6.2.2).
 
 ### File inventory
 
@@ -65,6 +65,7 @@ Counts re-measured with `--collect-only`.
 | `test_order_slot.py` | 17 | `order_slot`: cancel by slot, cancel-all, modify by slot and by FIFO, clamping, the cash check on the slotted order, the head in the action space, and a random-play hit-rate floor (S3-24 phase 2) |
 | `test_dead_action_penalty.py` | 3 | The sixth reward term: zero by default and bit-for-bit neutral, charged per miss when set, forwarded by `TrainConfig` |
 | `test_layout_version.py` | 7 | The layout stamp: written beside every checkpoint, passes for the current layout, refuses a version or field mismatch by name (S4-19) |
+| `test_evaluate.py` | 4 | `train.evaluate`'s pure half: unbatching a Dict action, per-module means, the rendered table, the CLI defaults (S4-12) |
 | `test_tick_grid.py` | 14 | Every action price sits on the `tick_size` grid; upsert and cancel find their order on a fractional tick (S3-4) |
 | `test_modify_order.py` | 7 | The six modify-order accounting scenarios, plus a guard that the dead escrow helper stays deleted |
 | `test_new_action_space.py` | 10 | Action decoding, ghost pricing, `tick_size` reaching the action layer, price levels matching book depth |
@@ -103,9 +104,10 @@ Counts re-measured with `--collect-only`.
 | `test_cbp.py` | 48 | Continual Backprop's algorithm core, with no Ray and no `Algorithm` — §6.6.1 |
 | `test_compare.py` | 12 | The encoder comparison driver's aggregation: means and standard deviations across seeds, the separation rule and its three-seed floor, the rendered table and its caveats |
 | `test_lint.py` | 1 | The package is pyflakes-clean; any message fails the suite (S4-6) |
-| **unit total** | **1,019** | |
+| **unit total** | **1,023** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
+| `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
 | `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported, finite, and **above 1e-3** — a live guard since S1-1 was fixed |
 | `integration/test_distributed_observability.py` | 10 | A real `num_env_runners=1` iteration: every episode-hook metric arrives on the driver, and the episode record is written by the *worker* into the driver's absolute run-scoped path |
 | `integration/test_encoder_wiring.py` | 48 | Champions inherit the encoder; a restore cannot change it; the recurrent and MoE paths train end to end; a real checkpoint round-trip with a custom encoder |
@@ -128,7 +130,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((1172 tests))
+  root((1179 tests))
     Simulator
       orderbook 23
         components, matching, invariants
@@ -180,8 +182,9 @@ mindmap
         obs layout, tokenisation
         the contract every encoder meets
         transformer, lstm, MoE specifics
-      tooling 13
+      tooling 20
         lint enforced, comparison driver
+        evaluate a checkpoint
       observability 214
         logging, progress log, info dict
         activity metrics, episode record
@@ -985,6 +988,13 @@ is how S4-6's linter reached CI without a workflow edit (the push credential has
 scope - [17](17_changelog.md) §37.6). `pyflakes` and `hypothesis` are in the `dev` extra the
 install step already pulls.
 
+Coverage is not a CI step (the workflow file cannot be edited from these sessions) but is one
+command locally, and the number it produced on 2026-09-18 is in §8:
+
+```bash
+python -m pytest gym_continuousDoubleAuction/test -q --ignore=gym_continuousDoubleAuction/test/integration --cov
+```
+
 A second job, **`packaging`**, covers what none of those can see: what a *user* gets from
 `pip install`. Every step above installs the full `requirements.txt` from a checkout, which is
 exactly why both halves of S3-6 / S3-18 went unnoticed — `install_requires` did not name
@@ -1012,7 +1022,7 @@ Honest accounting of what the suite does **not** cover.
 | **No encoder is tested for whether it *learns*** | **Still the largest gap, now with the tool to close it and one dry run of it.** §6.4 proves only mechanics, and `train/probe/` routes around the reward entirely ([23](23_probe_harness.md)). The protocol in [18](18_configuration.md) §5.5 is one command, `python -m gym_continuousDoubleAuction.train.compare`, run once at smoke scale to prove the path and once more, before and after the S3-24 layout change, at three seeds × 8 iterations of the scaled-down protocol ([16](16_verification_log.md) §16.18, §16.20). Both runs are at a scale where the policies are still near random, so they prove plumbing. **The run at scale - 16 iterations, three seeds, every registered encoder, `jepa` included - has not been done.** Until it is, no claim that one encoder trades better than another, or that agents learn to use the new order-management heads, is supported by anything in this repository. |
 | **Edge cases in league matchmaking** | Empty pools and zero weights are untested. |
 | ~~**No property-based tests**~~ | **Closed.** `test_orderbook_properties.py` (§2.5). Its first run found two defects the example suite had not, which is the argument for it. |
-| **No coverage measurement** | No `pytest-cov`, no threshold. |
+| ~~**No coverage measurement**~~ | **Measured, not yet thresholded.** `pytest --cov` (pytest-cov in the `dev` extra, scoped by `pyproject.toml`) on the unit suite: **79.1%** line-and-branch over `envs/` and `train/`. Least covered: the two CLI `__main__` modules (0%, exercised only by hand), `cbp_learner` (13.5%, its tests are in the integration suite), `CDA_rand` (20%, the CI smoke run), `evaluate` (27% from the unit half; the integration test covers the rest), `policy_handler` (41%), `compare` (51%), `exchg_helper` (52%, the render path). A threshold at 79% would ratchet the CLI mains first, which is the wrong thing to spend a failing build on; set one once those are either tested or accepted as untested. |
 | **No performance regression test** | Nothing catches a 10× slowdown in the matching engine. |
 | **`envs/orderbook/test/example.py` and `genOrders.py`** | 353 LOC of standalone scripts not collected by pytest and not run by CI. |
 | **`visualize/` is almost entirely untested** | `test_visualize_orderbook.py` covers the one slice that can be silently wrong; the other eight modules in the package have no tests. That gap is what let the private-block layout change reach a plotting path unnoticed for three commits ([17](17_changelog.md) §36.1) — every one of those modules reads recorded data and renders it, so a wrong read looks like a plausible chart rather than an error. |

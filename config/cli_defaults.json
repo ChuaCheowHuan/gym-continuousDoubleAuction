@@ -93,5 +93,13 @@
     ],
     "module_id": "policy_0",
     "log_level": null
+  },
+  "cda_evaluate": {
+    "_module": "python -m gym_continuousDoubleAuction.train.evaluate",
+    "_note": "Roll episodes with a trained checkpoint's policies, no learning, and report per module what they did - doc/15 S4-12, doc/26 section 26.10. The env config comes from the checkpoint itself; only max_step can be overridden. seed pins the episode seeds (episode i uses seed + i) so two checkpoints evaluated with the same seed face the same anchors and opponent draws. out null writes no JSON; the table always goes to the log.",
+    "episodes": 4,
+    "seed": 0,
+    "out": null,
+    "log_level": null
   }
 }
