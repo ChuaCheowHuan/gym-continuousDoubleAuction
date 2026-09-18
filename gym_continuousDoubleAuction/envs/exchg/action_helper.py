@@ -39,7 +39,8 @@ class Action_Helper():
     def __init__(self, min_size=env_default("min_size"),
                  mkt_max_size=env_default("mkt_max_size"),
                  limit_size_multiple=env_default("limit_size_multiple"),
-                 tick_size=env_default("tick_size"), **kwargs):
+                 tick_size=env_default("tick_size"),
+                 action_mask=None, **kwargs):
         """
         Arguments:
             min_size: Smallest order size; also the offset added to every
@@ -48,11 +49,17 @@ class Action_Helper():
             limit_size_multiple: Limit orders may be this many times larger
                                  than market orders.
             tick_size: Price tick. Order prices are built on this grid.
+            action_mask: Whether the observation's mask says what is possible
+                         (`action_mask_for`). False emits all ones. None reads
+                         `env_defaults.json`.
 
         Defaults come from `config/env_defaults.json`; the env always passes
         all four explicitly, so they apply only to a bare Action_Helper.
         """
         self.min_size = min_size
+        self.action_mask_enabled = bool(
+            env_default("action_mask") if action_mask is None else action_mask
+        )
         self.mkt_max_size = mkt_max_size
         self.limit_size_multiple = limit_size_multiple
         self.limit_max_size = self.mkt_max_size * self.limit_size_multiple
@@ -301,6 +308,46 @@ class Action_Helper():
             act["price"] = self._set_price(self.min_tick, act["side"], price_code, price_offset)
 
         return act
+
+    def action_mask_for(self, trader, n_bid: int, n_ask: int) -> np.ndarray:
+        """Which of the `category_n` action categories `trader` can take now.
+
+        One float per category in `_CATEGORY_MAP` order, 1.0 where the action
+        is possible (doc/06 section 6). Two impossibilities, both exact:
+
+        * `modify` / `cancel` on a side with none of this trader's orders
+          resting - the "unmatched" dead action, which `num_unmatched_step`
+          counts and which 27-30% of random agent-steps used to be.
+        * a `market` or `limit` order the cash check would refuse for the
+          minimum size at the reference price - the "rejected" dead action.
+          Judged by the same `Trader._order_approved` that judges the order,
+          so the mask and the refusal cannot disagree about what is affordable
+          at that price; a larger size or a worse price may still be refused,
+          and that residue stays counted in `num_rejected_step`.
+
+        Pass (category 0) is always possible, so the mask never empties. With
+        `action_mask` off every entry is 1.0: the layout is the same and only
+        the information is withheld, which is what makes the two comparable.
+        """
+        n = self._act["category_n"]
+        mask = np.ones(n, dtype=np.float32)
+        if not self.action_mask_enabled:
+            return mask
+        resting = {"bid": n_bid, "ask": n_ask}
+        reference = None
+        for category, (side, kind) in _CATEGORY_MAP.items():
+            if side is None:
+                continue
+            if kind in ("modify", "cancel"):
+                if resting[side] <= 0:
+                    mask[category] = 0.0
+                continue
+            if reference is None:
+                reference = self.reference_price()
+            price = -1.0 if kind == "market" else reference
+            if not trader._order_approved(side, self.min_size, price, self.LOB, kind):
+                mask[category] = 0.0
+        return mask
 
     def _neutral_price_offset(self):
         """The 'join' offset code: the middle of the price_offset codes."""

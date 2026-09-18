@@ -181,7 +181,7 @@ class TestStructuralConstantsComeFromTheFile:
         # + 2 x k_rows own sizes + 2 counts + 1 flag (doc/15 S3-24 phase 1).
         config_tree(
             "tunable_constants.json",
-            lambda raw: raw["observation_layout"].update(k_rows=6, private_dim=24),
+            lambda raw: raw["observation_layout"].update(k_rows=6, private_dim=33),
         )
         env = continuousDoubleAuctionEnv({"num_of_agents": 2, "n_hist": 2})
 
@@ -192,7 +192,7 @@ class TestStructuralConstantsComeFromTheFile:
         cells = 2 * 6 + 1 if env.book_mode == "grid" else 6
         assert env.obs_book_dim == len(env.obs_book_rows) * cells
         assert env.snapshot_dim == env.obs_book_dim + env.extra_dim
-        assert env.private_dim == 24 == len(env.private_fields)
+        assert env.private_dim == 33 == len(env.private_fields)  # 9 + 12 + 2 + 1 + 9
         expected = (2 * env.snapshot_dim + env.private_dim,)
         assert env.observation_spaces["agent_0"].shape == expected
         assert env.action_spaces["agent_0"]["price"].n == 6
@@ -204,7 +204,7 @@ class TestStructuralConstantsComeFromTheFile:
         """The scalars are part of the snapshot, and k_rows does not touch them."""
         config_tree(
             "tunable_constants.json",
-            lambda raw: raw["observation_layout"].update(k_rows=5, private_dim=22),
+            lambda raw: raw["observation_layout"].update(k_rows=5, private_dim=31),
         )
         env = continuousDoubleAuctionEnv({"num_of_agents": 2, "n_hist": 1})
         cells = 2 * 5 + 1 if env.book_mode == "grid" else 5

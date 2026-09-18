@@ -72,7 +72,7 @@ class TestLayout:
         assert env.observation_spaces["agent_0"].shape == (env.n_hist * env.snapshot_dim + env.private_dim,)
         # The raw snapshot the price logic reads is still the six-row levels frame.
         assert env.agg_LOB_raw.shape == (BOOK_DIM,)
-        assert OBSERVATION_LAYOUT_VERSION == 5
+        assert OBSERVATION_LAYOUT_VERSION == 6
 
     def test_module_helpers_agree(self):
         assert obs_book_rows("grid") == GRID_ROWS

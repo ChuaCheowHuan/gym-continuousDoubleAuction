@@ -87,6 +87,7 @@ class continuousDoubleAuctionEnv(
             tape_display_length,
             n_hist=self.n_hist,
             book_mode=self._cfg("book_mode"),
+            action_mask=self._cfg("action_mask"),
             mark_price_source=mark_price_source,
             min_size=min_size,
             mkt_max_size=mkt_max_size,

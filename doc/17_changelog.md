@@ -3183,3 +3183,24 @@ uniformly from `[max_step_min, max_step_max]` with the env's seeded generator, r
 against the latest possible end, so the policy sees a bound but not the draw. Truncation lands on
 the draw; bankruptcy termination is unchanged; `TrainConfig.train_batch_size` is sized by the mean
 of the range. `test_episode_horizon.py` (14). Suite: **1,079 unit + 156 integration**.
+
+## 53. Action masking: what is impossible is never chosen
+
+The recommendation of the last review, done as asked: mask what is impossible, let the policy
+learn what is merely unwise ([06](06_action_space.md) §7, [16](16_verification_log.md) §16.25).
+
+- **The observation carries the mask.** Nine `can_<category>` entries close each agent's private
+  block (41 fields; 233 floats in grid mode), set by `Action_Helper.action_mask_for`: a modify or
+  cancel needs a resting order on that side, a market or limit order needs to pass the same cash
+  check that judges the order, for the minimum size at the reference price. Pass is always
+  possible. Layout version 6.
+- **The modules honour it.** `CDAPPOTorchRLModule` adds −10⁹ to a masked category's logit on every
+  forward pass, and is now the module for the `mlp` path too (stock encoder and catalog, so nothing
+  else changes); `RandomRLModule` redraws a masked category among the possible ones. Where the mask
+  and the logits sit is derived from the spaces (`train/model/action_mask.py`).
+- **Measured.** Unmatched actions under random play: 29.6% → 0.2% of agent-steps (the residue is
+  an order filled earlier in the same step's shuffle). Rejections at the thin-cash stress config:
+  33.9% → 33.2% - size-driven, out of a category mask's reach, and a pointer at S3-1 to S3-3.
+- **`action_mask: false`** makes the env emit all ones, same layout, for the unmasked baseline in
+  `train.compare`.
+- **Tests.** `test_action_mask.py` (16). Suite: **1,095 unit + 156 integration**.

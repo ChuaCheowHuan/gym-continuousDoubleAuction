@@ -67,7 +67,7 @@ class TestLayout:
         assert BOOK_ROW_ORDER[4:] == ("bid_occupied", "ask_occupied")
         assert env.book_rows == 6
         assert env.snapshot_dim == 6 * env.k_rows + env.extra_dim
-        assert OBSERVATION_LAYOUT_VERSION == 5
+        assert OBSERVATION_LAYOUT_VERSION == 6
 
     def test_raw_snapshot_carries_the_rows(self):
         env = _env()

@@ -201,6 +201,15 @@ structural keys a restore cannot change (§5.3), and it travels in the checkpoin
 The module-level `SNAPSHOT_DIM` and `obs_row_slice` in `state_helper` follow the process default
 from `env_defaults.json`.
 
+### 3.0.1 The action mask: `action_mask`
+
+`true` (default) or `false` ([06](06_action_space.md) §7). The env always emits the nine `can_*`
+entries at the end of the private block; with the key on they say which action categories are
+possible for the agent this step and the modules refuse the others, with it off they are all ones
+and the policy is free to choose dead actions. Same layout either way, so
+`train.compare --set action_mask=false` is the unmasked baseline. `TrainConfig.action_mask` carries
+it into training.
+
 ### 3.1 Order sizing
 
 | Key | Value | Meaning |

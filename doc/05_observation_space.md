@@ -33,7 +33,7 @@ snapshot (one frame), book_mode "levels" (kept for comparison) = 66 floats
           50:60   ask occupancy
           60:66   the same six scalars
 
-private block (per agent) = 32 floats = 9 base + 2 x k_rows own book + 2 counts + 1 flag
+private block (per agent) = 41 floats = 9 base + 2 x k_rows own book + 2 counts + 1 flag + 9 mask
              0   position        tanh(net_position / position_scale)
              1   position_val    mark-to-market exposure / init_nav
              2   cash            free cash / init_nav
@@ -49,9 +49,11 @@ private block (per agent) = 32 floats = 9 base + 2 x k_rows own book + 2 counts 
             29   own_bid_count   this agent's resting bids / max_own_orders, clipped to 1
             30   own_ask_count   same for asks
             31   unmatched_last_step   1.0 if its last modify/cancel named no order
+         32-40   can_<category>  the action mask: 1.0 where that category is possible for
+                                 this agent on the coming step (06 section 7); pass always 1.0
 
 observation = n_hist frames concatenated, then the private block
-  default n_hist = 4  →  shape (224,) = 4x48 + 32 in grid mode; (296,) = 4x66 + 32 in levels mode
+  default n_hist = 4  →  shape (233,) = 4x48 + 41 in grid mode; (305,) = 4x66 + 41 in levels mode
   layout: [ O_{t-3} | O_{t-2} | O_{t-1} | O_t | private ]
   the most recent frame ends at index n_hist * SNAPSHOT_DIM, NOT at the end
 ```
@@ -176,8 +178,8 @@ flowchart TD
     FRAME --> DEQ["obs_history deque, maxlen = n_hist<br/>holds RAW frames"]
     DEQ --> NORM["prep_next_state: normalise the WHOLE stack against the newest frame<br/>grid mode: every level re-gridded to its tick offset from R_t = snap(M_t)<br/>levels mode: prices -> distance from M_t, occupancy passes through<br/>sizes -> sqrt(V / limit_max_size); M -> log_mid (centred); spread_ticks -> log1p;<br/>the other three pass through, being frame-local already"]
     NORM --> OBS["concatenate -> n_hist x 48 = 192 book floats (grid)<br/>or n_hist x 66 = 264 (levels), shared by every agent"]
-    OBS --> PRIV["+ 32 private floats per agent<br/>position, cash, NAV, drawdown, own book, ..."]
-    PRIV --> FULL["observation: 224 floats (grid), 296 (levels)"]
+    OBS --> PRIV["+ 41 private floats per agent<br/>position, cash, NAV, drawdown, own book, action mask"]
+    PRIV --> FULL["observation: 233 floats (grid), 305 (levels)"]
 ```
 
 Two things this picture makes concrete. The raw book is kept **beside** the normalised one and is
@@ -209,7 +211,7 @@ space declares one `[low, high]` pair per feature family, from `observation_boun
 | `cash_on_hold` | 0 | 8 | ≥ 0 by construction |
 | `drawdown` | −8 | 0 | ≤ 0 by construction |
 | `vwap_vs_mid` | −128 | 1 | `(M − VWAP) / M < 1` is exact; the low side is a fallback tail |
-| `time_left`, counts, `unmatched_last_step` | 0 | 1 | defined so |
+| `time_left`, counts, `unmatched_last_step`, `can_*` | 0 | 1 | defined so |
 
 **Measured** means 20 seeded episodes × 400 steps of random play at the shipped config and 20 more
 at a stress config (6 agents, 20,000 cash, anchors 5–500, tick 0.1), with at least **4× headroom**
@@ -892,4 +894,5 @@ list are written into `league_state.json` beside every checkpoint, and `train.bu
 1 the 193-float vector, 2 the 216-float vector with the own-book block, 3 the same width with
 positive asks and finite bounds, 4 the 296-float vector with the occupancy rows and the last-trade
 reference for a one-sided book, 5 the `book_mode` key with the 224-float grid as the default and
-the 296-float `levels` layout kept beside it.
+the 296-float `levels` layout kept beside it, 6 the nine-entry action mask at the end of the
+private block (233 and 305 floats).

@@ -94,7 +94,7 @@ gym_continuousDoubleAuction/
 │   ├── run_all.py                        regenerates every chart
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               1,079 unit tests
+└── test/                               1,095 unit tests
     └── integration/                    156 tests that build real Algorithms
 ```
 
@@ -359,7 +359,7 @@ and nothing has ever printed → that side's best; degenerate → 100.0), so `lo
 defined. Every frame in the stack is divided by `M_t`, the newest frame's midpoint, so the same
 absolute price reads the same in all of them; each frame keeps its own `log_mid`. The final
 observation is `n_hist` snapshots concatenated plus a per-agent private block, default
-4 × 48 + 32 → **224 floats** (296 in `levels` mode). On
+4 × 48 + 41 → **233 floats** (305 in `levels` mode). On
 reset the deque is pre-filled with `n_hist` copies of the initial raw frame so the shape is
 constant from step 0.
 
@@ -592,7 +592,7 @@ flowchart TB
     BOOK -->|"trades, residue"| BOOK
     BOOK -->|"mark_to_mkt"| ENV
     ENV --> OBSH
-    OBSH -->|"obs 224 floats"| RLM
+    OBSH -->|"obs 233 floats"| RLM
     ENV -->|"reward, info"| HOOKS
     HOOKS --> REC --> PARQ
     HOOKS -->|"NAV table, violation ERROR"| RLOG

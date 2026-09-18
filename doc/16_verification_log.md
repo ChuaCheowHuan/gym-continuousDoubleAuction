@@ -1485,3 +1485,43 @@ policy *learn* a quoting rule is the run at scale's question ([10](10_testing.md
 this row was raised to ask.
 
 **Supports:** §15 S3-15; §05 1.4, 7.4; §06 2.1.1; §18 3.0, 5.5; §10 (`test_grid_book.py`).
+
+## 16.25 The action mask: dead actions before and after (2026-09-18)
+
+Protocol as §16.22–16.24: 20 seeded episodes × 400 steps of random play at the shipped config
+(8 agents, 1,000,000 cash) and the stress config (6 agents, 20,000 cash, anchors 5–500, tick 0.1).
+"Mask honoured" means the sampler redraws a category the observation marks impossible uniformly
+among the possible ones, which is exactly what `RandomRLModule` does; "unmasked" is
+`action_space.sample()` as before. Fractions are of agent-steps.
+
+| | unmatched (`num_unmatched_step`) | rejected (`num_rejected_step`) | pass | categories redrawn | mask entries at 0 |
+|---|---|---|---|---|---|
+| shipped, unmasked | 29.58% | 0.00% | 10.96% | – | 29.4% |
+| shipped, masked | **0.20%** | 0.00% | 15.51% | 26.4% | 26.3% |
+| stress, unmasked | 25.39% | 33.90% | 11.02% | – | 39.7% |
+| stress, masked | **0.20%** | 33.17% | 18.41% | 39.0% | 38.8% |
+
+Three things the table says.
+
+1. **The unmatched dead action is gone**, to a residual of 0.2%. The residue is real and expected:
+   the mask is computed from the book as it stood when the observation was built, and an order
+   that rested then can be filled by another agent's action earlier in the same step's random
+   shuffle, so the modify or cancel that follows finds nothing. `num_unmatched_step` still counts
+   it, and after masking it is the only way that counter can move.
+2. **The rejected dead action barely moves.** At the stress config a third of agent-steps are
+   refused before and after. The mask asks whether the agent can afford *one contract at the
+   reference*, and almost always it can; the refusals come from the size head drawing hundreds of
+   contracts on 20,000 of cash. A category mask cannot reach a continuous head. Fixing that means
+   making the drawn size affordable - a clamp in the env, or a size head that knows the cash - and
+   that is the S3-1 to S3-3 territory, now with a number against it.
+3. **Pass rises** (11% → 15.5%, 11% → 18.4%) because a redraw among fewer possible categories lands
+   on pass in proportion; the redraw rate (26%, 39%) is the fraction of random draws that used to
+   be impossible.
+
+**Before/after with `train.compare`**, the protocol of §16.20–16.24 (`mlp`, `transformer`, seeds
+0 1 2, 8 iterations, 4 agents, 2 trained, `max_step` 128), the same tree with
+`--set action_mask=false` (before) and the default (after):
+
+<<AFTER_TABLE_MASK>>
+
+**Supports:** §06 7; §15 S4-14; §18 3.0.1; §10 (`test_action_mask.py`).

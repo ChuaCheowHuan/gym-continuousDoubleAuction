@@ -17,6 +17,7 @@ from gym_continuousDoubleAuction.envs.exchg.state_helper import (
     OBSERVATION_LAYOUT_VERSION,
     OWN_BOOK_OFFSET,
     PRIVATE_FIELDS,
+    MASK_FIELDS,
     own_book_fields,
     private_fields,
 )
@@ -61,20 +62,22 @@ class TestLayout:
         assert fields[:9] == BASE_PRIVATE_FIELDS
         assert fields[9:9 + k] == own_book_fields(k)[:k]
         assert fields[9 + k:9 + 2 * k] == own_book_fields(k)[k:]
-        assert fields[-3:] == ("own_bid_count", "own_ask_count", "unmatched_last_step")
-        assert len(fields) == 32 == len(PRIVATE_FIELDS)
+        assert fields[9 + 2 * k:9 + 2 * k + 3] == ("own_bid_count", "own_ask_count", "unmatched_last_step")
+        assert fields[-9:] == MASK_FIELDS  # the action mask closes the block (doc/06 section 6)
+        assert len(fields) == 41 == len(PRIVATE_FIELDS)
         assert OWN_BOOK_OFFSET == 9
         assert fields[OWN_BOOK_OFFSET] == "own_bid_size_0"
 
     def test_env_declares_the_width(self):
         env = _env()
-        assert env.private_dim == 32
+        assert env.private_dim == 41
         # 6 book rows x 10 levels + 6 scalars = 66 per snapshot since S3-14.
-        assert env.observation_spaces["agent_0"].shape == (4 * 66 + 32,)
+        assert env.observation_spaces["agent_0"].shape == (4 * 66 + 41,)
         # 3: positive asks (S4-17) and finite bounds (S4-15), same shape as 2;
         # 4: the occupancy rows and the last-trade reference (S3-14);
-        # 5: the grid book mode as the default (S3-15) - this env is `levels`.
-        assert OBSERVATION_LAYOUT_VERSION == 5
+        # 5: the grid book mode as the default (S3-15) - this env is `levels`;
+        # 6: the action mask in the private block.
+        assert OBSERVATION_LAYOUT_VERSION == 6
 
     def test_reset_shows_an_empty_own_book(self):
         env = _env()

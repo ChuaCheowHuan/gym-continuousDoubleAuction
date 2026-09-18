@@ -90,7 +90,8 @@ class TestTheSpace:
         tail_high = env.obs_high[-env.private_dim:]
         for i, name in enumerate(env.private_fields):
             key = ("own_size" if name.startswith("own_bid_size") or name.startswith("own_ask_size")
-                   else "own_count" if name.endswith("_count") else name)
+                   else "own_count" if name.endswith("_count")
+                   else "action_mask" if name.startswith("can_") else name)
             lo, hi = cfg["private"][key]
             assert tail_low[i] == np.float32(lo), name
             assert tail_high[i] == np.float32(hi), name

@@ -171,6 +171,9 @@ class TrainConfig:
     # offsets shared with the action's price code, S3-15) or "levels" (the
     # k_rows best occupied prices). A layout choice, recorded in the stamp.
     book_mode: str = _default("book_mode")
+    # The observation's action mask says what each agent can do this step and
+    # the modules refuse the rest; False emits all ones (doc/06 section 6).
+    action_mask: bool = _default("action_mask")
 
     # Bounds of the per-episode price anchor, drawn as randint(min, max) in
     # reset(). These were readable by the env but had no TrainConfig field, so
@@ -521,6 +524,7 @@ class TrainConfig:
             "is_render": self.is_render,
             "n_hist": self.n_hist,
             "book_mode": self.book_mode,
+            "action_mask": self.action_mask,
             "initial_price_min": self.initial_price_min,
             "initial_price_max": self.initial_price_max,
             "min_size": self.min_size,

@@ -22,6 +22,9 @@ Each agent's action is a `gymnasium.spaces.Dict`
 | `price` | `Discrete(10)` | `observation_layout.k_rows` | Ticks from the reference price on the passive side (`book_mode: "grid"`, the default); book level index 0–9 in `levels` mode |
 | `price_offset` | `Discrete(3)` | `action_space.price_offset_n` | Stance relative to that level: 0 passive, 1 join, 2 aggressive |
 
+Which of the nine categories an agent can actually take on a step is part of its observation,
+and the policy modules refuse the others: §7.
+
 Every cardinality and bound comes from
 [`config/tunable_constants.json`](../config/tunable_constants.json). `category_n` and
 `price_offset_n` are validated against the code that decodes them — the `_CATEGORY_MAP` table, and
@@ -359,3 +362,59 @@ direction that would have hidden the original bug. S3-5, fixed.
 
 The explicit `seed` parameter still works for a caller that wants to pin this one shuffle without
 touching the env's stream.
+
+---
+
+## 7. Action masking: what is impossible is never chosen
+
+Added 2026-09-18 ([16](16_verification_log.md) §16.25). Three of the nine categories used to be
+chosen and then do nothing, and from the policy's side a dead action and a pass are the same
+event, so a policy could learn to avoid them only slowly: under random play **29.6%** of
+agent-steps were a `modify` or `cancel` with nothing of the agent's resting on that side, and at
+a thin-cash stress config a further **33.9%** were orders the cash check refused.
+
+**The mask.** The last nine entries of each agent's private block
+([05](05_observation_space.md) §1) are `can_<category>`, `1.0` where that category is *possible*
+for that agent on the coming step, in `_CATEGORY_MAP` order. `Action_Helper.action_mask_for` sets
+them, and "possible" is exact rather than advisory:
+
+| Category | Possible when |
+|---|---|
+| pass | always — the mask can never be empty |
+| bid / ask `modify`, `cancel` | the agent has at least one order resting on that side |
+| bid / ask `market`, `limit` | `Trader._order_approved` would approve the **minimum size** at the **reference price** (market: at the best opposing quote), i.e. the same check that judges the order, so the mask and the refusal cannot disagree about affordability at that price |
+
+**How it is applied.** `CDAPPOTorchRLModule` adds `−10⁹` to a masked category's logit on every
+forward pass — inference, exploration and training alike — so the sampler draws no mass there,
+`log_prob` of the drawn action is unchanged and the entropy counts only the live categories; the
+`mlp` path now uses this module too (with RLlib's own encoder and catalog). `RandomRLModule`
+redraws a masked category uniformly among the possible ones, so the baseline is "random among
+what can be done". Where the mask sits in the observation and where the category logits sit in
+`ACTION_DIST_INPUTS` are derived from the layouts, not assumed (`train/model/action_mask.py`).
+`train.evaluate` inherits both. `action_mask: false` in the env config makes the env emit all
+ones — same layout, information withheld — which is the unmasked baseline for
+`train.compare --set action_mask=false`.
+
+**What it does, measured** (random play, 20 seeded episodes × 400 steps, mask honoured by the
+sampler the way `RandomRLModule` honours it):
+
+| | unmatched | rejected | pass |
+|---|---|---|---|
+| shipped, unmasked | 29.6% | 0.0% | 11.0% |
+| shipped, masked | **0.2%** | 0.0% | 15.5% |
+| stress, unmasked | 25.4% | 33.9% | 11.0% |
+| stress, masked | **0.2%** | 33.2% | 18.4% |
+
+The unmatched fraction goes to a residual 0.2%: an order that rested when the mask was computed
+and was filled by another agent's action earlier in the same step's shuffle. The rejection
+fraction **barely moves**, and that is the second finding: at the stress config the refusals are
+size-driven — the agent can afford a contract at the reference, so the category is possible, but
+the size head then draws hundreds — and a category mask cannot touch that. Making the size head
+affordable is a different mechanism (clamping the drawn size to what the cash check allows, which
+changes the action's meaning), and it belongs with the size-head rows S3-1 to S3-3. The pass
+fraction rises because a redraw among fewer categories lands on pass more often.
+
+**What is left to learning.** Everything the mask does not cover: cancelling a good quote, quoting
+away from the market, sizing past one's cash. That split is deliberate — the mask encodes the
+env's rules, not a trading opinion — and it makes the activity metrics interpretable: after
+masking, a non-negligible `unmatched_action_fraction` would be a bug, not a behaviour.

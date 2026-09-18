@@ -18,7 +18,7 @@ from gym_continuousDoubleAuction.envs.exchg.state_helper import BOOK_MODE, PRIVA
 
 def test_stamp_describes_the_current_layout():
     stamp = layout_stamp()
-    assert stamp["observation_version"] == 5
+    assert stamp["observation_version"] == 6
     assert stamp["action_version"] == 2
     assert stamp["book_mode"] == BOOK_MODE
     assert layout_stamp("levels")["book_mode"] == "levels"

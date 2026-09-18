@@ -199,6 +199,21 @@ FEEDBACK_FIELDS = (
     "unmatched_last_step",  # 1.0 if the agent's last modify/cancel named no order
 )
 
+#: The action mask (doc/06 section 6): one entry per action category, in the
+#: category's order (`Action_Helper._CATEGORY_MAP`), 1.0 where the category is
+#: possible for this agent on the coming step. "Possible" is exact, not
+#: advisory: a modify or cancel needs a resting order on that side, a market
+#: or limit order needs to pass the cash check for the minimum size at the
+#: reference price. The PPO modules add `log(mask)` to the category logits and
+#: the random baselines resample, so an impossible category is never chosen;
+#: what is merely unwise is left to the policy. With `action_mask` off the env
+#: emits all ones, so the layout does not change between the two.
+MASK_FIELDS = (
+    "can_pass",
+    "can_bid_market", "can_bid_limit", "can_bid_modify", "can_bid_cancel",
+    "can_ask_market", "can_ask_limit", "can_ask_modify", "can_ask_cancel",
+)
+
 
 def own_book_fields(k_rows):
     """Names of the own-book sizes: bids at levels 0..k-1, then asks."""
@@ -212,7 +227,7 @@ def private_fields(k_rows):
     """The private block's layout at a given book depth, in order.
 
     `[base (9) | own bid sizes (k) | own ask sizes (k) | own counts (2) |
-    unmatched_last_step (1)]`. The own-book block is the S1-2 tail closed
+    unmatched_last_step (1) | action mask (9)]`. The own-book block is the S1-2 tail closed
     (doc/15 S3-24 phase 1): the agent used to see how much cash it had
     escrowed but not where, so a cancel was a guess about state the policy
     was never shown - measured at a 7% hit rate under random play. Level k of
@@ -227,7 +242,8 @@ def private_fields(k_rows):
     `observation_layout.private_dim` in tunable_constants.json must equal
     `len(private_fields(k_rows))`; `State_Helper.__init__` checks that.
     """
-    return BASE_PRIVATE_FIELDS + own_book_fields(k_rows) + OWN_COUNT_FIELDS + FEEDBACK_FIELDS
+    return (BASE_PRIVATE_FIELDS + own_book_fields(k_rows) + OWN_COUNT_FIELDS
+            + FEEDBACK_FIELDS + MASK_FIELDS)
 
 
 def own_book_offset():
@@ -235,11 +251,17 @@ def own_book_offset():
     return len(BASE_PRIVATE_FIELDS)
 
 
+def action_mask_offset(k_rows):
+    """Index within the private block where `can_pass` sits."""
+    return len(BASE_PRIVATE_FIELDS) + 2 * k_rows + len(OWN_COUNT_FIELDS) + len(FEEDBACK_FIELDS)
+
+
 #: The private block at the import-time layout, for consumers with no env to
 #: ask - the visualizers and the tests. Runtime code uses
 #: `self.private_fields`, built from the instance's `k_rows`.
 PRIVATE_FIELDS = private_fields(K_ROWS)
 OWN_BOOK_OFFSET = own_book_offset()
+ACTION_MASK_OFFSET = action_mask_offset(K_ROWS)
 
 #: Bumped whenever the observation vector's layout changes shape or meaning,
 #: so a checkpoint records which layout its weights were trained against and a
@@ -255,8 +277,9 @@ OWN_BOOK_OFFSET = own_book_offset()
 #: (S3-14). 5 added `book_mode` (S3-15): the default emitted snapshot is the
 #: fixed tick-offset grid (48 floats, 224 in all at defaults) and the mode
 #: travels in the layout stamp, so a `levels` checkpoint cannot restore into a
-#: `grid` run or the reverse.
-OBSERVATION_LAYOUT_VERSION = 5
+#: `grid` run or the reverse. 6 appended the nine-entry action mask to the
+#: private block (41 fields; 233 floats at defaults in grid mode).
+OBSERVATION_LAYOUT_VERSION = 6
 
 
 class State_Helper(object):
@@ -330,7 +353,7 @@ class State_Helper(object):
                 f"tunable_constants.json: observation_layout.private_dim="
                 f"{self.private_dim} but set_private_state builds "
                 f"{len(self.private_fields)} fields at k_rows={self.k_rows} "
-                f"(9 base + 2*k_rows own-book + 2 counts + 1 flag). Set "
+                f"(9 base + 2*k_rows own-book + 2 counts + 1 flag + 9 mask). Set "
                 f"private_dim to {len(self.private_fields)} or change "
                 f"private_fields() to match."
             )
@@ -737,7 +760,10 @@ class State_Helper(object):
             1.0 if acc.num_unmatched_step > 0 else 0.0,
         ], dtype=np.float32)
 
-        private = np.concatenate([base, own_bid, own_ask, tail]).astype(np.float32)
+        # Which categories are possible on the coming step (Action_Helper).
+        mask = self.action_mask_for(trader, n_bid, n_ask)
+
+        private = np.concatenate([base, own_bid, own_ask, tail, mask]).astype(np.float32)
 
         if len(private) != self.private_dim:
             raise ValueError(
@@ -845,6 +871,8 @@ class State_Helper(object):
                 return pair("private", "own_size")
             if name in OWN_COUNT_FIELDS:
                 return pair("private", "own_count")
+            if name in MASK_FIELDS:
+                return pair("private", "action_mask")
             return pair("private", name)
 
         private = [private_pair(name) for name in self.private_fields]
