@@ -36,6 +36,8 @@ def _env(**overrides):
         "is_render": False,
         "initial_price_min": 100,
         "initial_price_max": 100,
+        # These tests read the price rows of the `levels` layout.
+        "book_mode": "levels",
     }
     config.update(overrides)
     env = continuousDoubleAuctionEnv(config)
@@ -52,7 +54,7 @@ def _frames(env, stacked):
 
 
 def _scalar(env, frame, name):
-    return float(frame[env.book_dim + EXTRA_FIELDS.index(name)])
+    return float(frame[env.obs_book_dim + EXTRA_FIELDS.index(name)])
 
 
 class TestOneNormaliserForTheWholeStack:

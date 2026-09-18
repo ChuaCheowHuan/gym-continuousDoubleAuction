@@ -162,6 +162,10 @@ class TrainConfig:
     max_step: int = _default("max_step")
     is_render: bool = _default("is_render")
     n_hist: int = _default("n_hist")
+    # How the public book is laid out in each snapshot: "grid" (fixed tick
+    # offsets shared with the action's price code, S3-15) or "levels" (the
+    # k_rows best occupied prices). A layout choice, recorded in the stamp.
+    book_mode: str = _default("book_mode")
 
     # Bounds of the per-episode price anchor, drawn as randint(min, max) in
     # reset(). These were readable by the env but had no TrainConfig field, so
@@ -496,6 +500,7 @@ class TrainConfig:
             "max_step": self.max_step,
             "is_render": self.is_render,
             "n_hist": self.n_hist,
+            "book_mode": self.book_mode,
             "initial_price_min": self.initial_price_min,
             "initial_price_max": self.initial_price_max,
             "min_size": self.min_size,
@@ -958,7 +963,8 @@ def _write_league_state(path: str, algo, iteration: int) -> None:
     # Which observation and action layout the weights in this checkpoint were
     # trained against (doc/15 S4-19). A restore into a different layout fails
     # by name at `build_algo`, before RLlib gets as far as a tensor shape.
-    state[LAYOUT_KEY] = layout_stamp()
+    env_config = getattr(getattr(algo, "config", None), "env_config", None) or {}
+    state[LAYOUT_KEY] = layout_stamp(env_config.get("book_mode"))
     with open(os.path.join(path, LEAGUE_STATE_FILE), "w") as fh:
         json.dump(state, fh, indent=2)
 
@@ -1045,6 +1051,7 @@ STRUCTURAL_CONFIG_KEYS = (
     "policies_to_train",
     "env_config.num_of_agents",
     "env_config.n_hist",
+    "env_config.book_mode",
     "encoder_type",
     "encoder_spec",
 )
@@ -1403,7 +1410,7 @@ def build_algo(cfg: TrainConfig):
         # Before touching RLlib: a checkpoint from another observation or
         # action layout can never be resumed into this one, and falling back
         # to an older save would only find the same layout again.
-        check_layout_stamp(_read_league_state(path), path)
+        check_layout_stamp(_read_league_state(path), path, book_mode=cfg.book_mode)
         try:
             algo = Algorithm.from_checkpoint(path)
         except Exception as exc:

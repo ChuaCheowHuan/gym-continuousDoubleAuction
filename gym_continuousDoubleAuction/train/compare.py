@@ -80,6 +80,38 @@ TABLE_METRICS = (
 )
 
 
+def parse_overrides(items) -> Dict[str, Any]:
+    """`FIELD=VALUE` strings into TrainConfig field values of the right type.
+
+    The type comes from the dataclass field's annotation (`int`, `float`,
+    `bool`, `str`, or an `Optional[...]` of one), so `--set max_step=64` is an
+    int and `--set action_mask=false` a bool. An unknown field is an error
+    rather than a silently ignored typo.
+    """
+    from gym_continuousDoubleAuction.train.train import TrainConfig
+
+    fields = {f.name: f for f in dataclasses.fields(TrainConfig)}
+    out: Dict[str, Any] = {}
+    for item in items:
+        if "=" not in item:
+            raise SystemExit(f"--set expects FIELD=VALUE, got {item!r}")
+        name, raw = item.split("=", 1)
+        if name not in fields:
+            raise SystemExit(f"--set: TrainConfig has no field {name!r}")
+        annotation = str(fields[name].type).replace("Optional[", "").rstrip("]")
+        if raw.lower() in ("none", "null"):
+            out[name] = None
+        elif "bool" in annotation:
+            out[name] = raw.lower() in ("1", "true", "yes", "on")
+        elif "int" in annotation:
+            out[name] = int(raw)
+        elif "float" in annotation:
+            out[name] = float(raw)
+        else:
+            out[name] = raw
+    return out
+
+
 def _cli(key):
     return cli_default("cda_compare", key)
 
@@ -321,6 +353,9 @@ def main(argv=None) -> int:
     p.add_argument("--targets", nargs="*", default=_cli("targets"))
     p.add_argument("--horizons", nargs="*", type=int, default=_cli("horizons"))
     p.add_argument("--module-id", type=str, default=_cli("module_id"))
+    p.add_argument("--set", action="append", default=[], metavar="FIELD=VALUE",
+                   help="Override any TrainConfig field for every run, e.g. --set book_mode=levels "
+                        "--set action_mask=false. Repeatable; the value is coerced to the field's type.")
     p.add_argument("--no-probe", action="store_true")
     p.add_argument("--log-level", type=str, default=_cli("log_level"))
     args = p.parse_args(argv)
@@ -336,6 +371,7 @@ def main(argv=None) -> int:
     apply_env_vars()
 
     base = TrainConfig.from_json(args.config) if args.config else TrainConfig()
+    base = dataclasses.replace(base, **parse_overrides(args.set))
     overrides = {
         k: v for k, v in vars(args).items()
         if k in {"num_agents", "num_trained_agents", "max_step", "num_episodes_per_iter"}

@@ -37,6 +37,7 @@ def _env(**overrides):
         "initial_price_max": 100,
     }
     config.update(overrides)
+    config.setdefault("book_mode", "levels")
     env = continuousDoubleAuctionEnv(config)
     env.reset(seed=1)
     return env
@@ -66,7 +67,7 @@ class TestLayout:
         assert BOOK_ROW_ORDER[4:] == ("bid_occupied", "ask_occupied")
         assert env.book_rows == 6
         assert env.snapshot_dim == 6 * env.k_rows + env.extra_dim
-        assert OBSERVATION_LAYOUT_VERSION == 4
+        assert OBSERVATION_LAYOUT_VERSION == 5
 
     def test_raw_snapshot_carries_the_rows(self):
         env = _env()

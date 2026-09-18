@@ -186,10 +186,14 @@ class TestStructuralConstantsComeFromTheFile:
         env = continuousDoubleAuctionEnv({"num_of_agents": 2, "n_hist": 2})
 
         assert env.k_rows == 6
-        assert env.book_dim == 6 * 6
-        assert env.snapshot_dim == 6 * 6 + env.extra_dim
+        assert env.book_dim == 6 * 6  # the raw frame: six rows of six levels
+        # The emitted block follows the book mode: two size rows over a
+        # 2 * 6 + 1 window in `grid`, the six raw rows in `levels`.
+        cells = 2 * 6 + 1 if env.book_mode == "grid" else 6
+        assert env.obs_book_dim == len(env.obs_book_rows) * cells
+        assert env.snapshot_dim == env.obs_book_dim + env.extra_dim
         assert env.private_dim == 24 == len(env.private_fields)
-        expected = (2 * (6 * 6 + env.extra_dim) + env.private_dim,)
+        expected = (2 * env.snapshot_dim + env.private_dim,)
         assert env.observation_spaces["agent_0"].shape == expected
         assert env.action_spaces["agent_0"]["price"].n == 6
 
@@ -203,7 +207,8 @@ class TestStructuralConstantsComeFromTheFile:
             lambda raw: raw["observation_layout"].update(k_rows=5, private_dim=22),
         )
         env = continuousDoubleAuctionEnv({"num_of_agents": 2, "n_hist": 1})
-        assert env.snapshot_dim == 6 * 5 + env.extra_dim
+        cells = 2 * 5 + 1 if env.book_mode == "grid" else 5
+        assert env.snapshot_dim == len(env.obs_book_rows) * cells + env.extra_dim
 
     def test_extra_dim_must_match_what_set_agg_LOB_builds(self, config_tree):
         """Same rule as book_rows: a structural value code cannot honour raises.

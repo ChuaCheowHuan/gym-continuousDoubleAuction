@@ -5,8 +5,14 @@ from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import continu
 from gym_continuousDoubleAuction.envs.exchg.state_helper import (
     BOOK_DIM,
     PRIVATE_DIM,
-    SNAPSHOT_DIM,
+    EXTRA_DIM,
+    K_ROWS,
+    BOOK_ROW_ORDER,
 )
+
+
+#: One `levels`-mode snapshot: the six raw rows normalised, plus the scalars.
+LEVELS_SNAPSHOT_DIM = len(BOOK_ROW_ORDER) * K_ROWS + EXTRA_DIM
 
 
 class TestObsNormalization:
@@ -32,7 +38,10 @@ class TestObsNormalization:
     # ------------------------------------------------------------------
 
     def _make_env(self, extra_config=None):
-        cfg = dict(self.BASE_CONFIG)
+        # These tests describe the `levels` book layout - price rows and their
+        # normalisation - so they build that mode explicitly (S3-15 made the
+        # fixed tick-offset grid the default).
+        cfg = dict(self.BASE_CONFIG, book_mode="levels")
         if extra_config:
             cfg.update(extra_config)
         env = continuousDoubleAuctionEnv(cfg)
@@ -62,7 +71,7 @@ class TestObsNormalization:
         """
         vector = obs[agent_id]
         end = len(vector) - PRIVATE_DIM
-        return vector[end - SNAPSHOT_DIM:end]
+        return vector[end - LEVELS_SNAPSHOT_DIM:end]
 
     # ------------------------------------------------------------------
     # 1. agg_LOB_raw is always populated after reset and step

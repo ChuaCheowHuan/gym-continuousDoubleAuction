@@ -1,3 +1,4 @@
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Dict, Tuple
 
 import numpy as np
@@ -27,8 +28,9 @@ def _layout():
 
 
 K_ROWS, BOOK_ROWS, EXTRA_DIM, PRIVATE_DIM = _layout()
+#: Width of the RAW book snapshot (`agg_LOB_raw`, and each frame in the
+#: history): `book_rows` rows of `k_rows` occupied levels. Mode-independent.
 BOOK_DIM = BOOK_ROWS * K_ROWS
-SNAPSHOT_DIM = BOOK_DIM + EXTRA_DIM
 
 #: Order in which `set_agg_LOB` concatenates the book rows. This is the
 #: definition of the book block's layout, and what `book_rows` is checked
@@ -44,6 +46,67 @@ SNAPSHOT_DIM = BOOK_DIM + EXTRA_DIM
 #: its own occupancy, and pass through normalisation unchanged.
 BOOK_ROW_ORDER = ("bid_price", "bid_size", "ask_price", "ask_size",
                   "bid_occupied", "ask_occupied")
+
+#: How the public book is laid out in an EMITTED snapshot (doc/15 S3-15).
+#:
+#: ``"levels"``: the raw rows above, normalised - the `k_rows` best occupied
+#: prices per side. Slot k of that layout means "the k-th occupied price",
+#: whose distance from the market wanders: measured under random play, the
+#: best level sat 3.8 +- 2.5 ticks from the reference and its price changed on
+#: 35-54% of steps, and the action's price code j landed anywhere from 0 to 20
+#: ticks out, codes 1-6 indistinguishable (doc/16 section 16.24).
+#:
+#: ``"grid"``: two rows, bid sizes and ask sizes, over a window of
+#: `2 * k_rows + 1` tick offsets centred on the reference price `R`
+#: (`reference_price`: the two-sided midpoint, else the last trade, snapped to
+#: the tick). Cell c is the price `R + (c - k_rows) * tick`, so the same cell
+#: means the same distance on every step, and - because every frame in the
+#: stack is re-gridded against the NEWEST `R` at emission - the same absolute
+#: price lands in the same cell of every frame. Prices are the coordinate, so
+#: there is no price row and no zero-ambiguity; the action's price code j
+#: quotes exactly j ticks from `R` on the passive side. What the window does
+#: not show is anything more than `k_rows` ticks away: 27% of resting volume
+#: under random play at the shipped config, mostly stale far quotes.
+BOOK_MODES = ("levels", "grid")
+GRID_ROWS = ("bid_size", "ask_size")
+
+
+def check_book_mode(mode):
+    if mode not in BOOK_MODES:
+        raise ValueError(f"book_mode must be one of {BOOK_MODES}; got {mode!r}.")
+    return mode
+
+
+def obs_book_rows(mode):
+    """Names of the rows an emitted snapshot's book block carries, in order."""
+    check_book_mode(mode)
+    return BOOK_ROW_ORDER if mode == "levels" else GRID_ROWS
+
+
+def obs_book_cells(mode, k_rows):
+    """Cells per emitted row: `k_rows` levels, or the `2 * k_rows + 1` window."""
+    check_book_mode(mode)
+    return k_rows if mode == "levels" else 2 * k_rows + 1
+
+
+def obs_row_slice(name, mode=None, k_rows=None):
+    """Where row `name` sits inside one emitted snapshot."""
+    mode = BOOK_MODE if mode is None else mode
+    k_rows = K_ROWS if k_rows is None else k_rows
+    rows, cells = obs_book_rows(mode), obs_book_cells(mode, k_rows)
+    i = rows.index(name)
+    return slice(i * cells, (i + 1) * cells)
+
+
+#: The process default mode (env_defaults.json -> book_mode), and the emitted
+#: layout at that mode, for consumers with no env to ask - the visualizers and
+#: the tests. An env instance may be built in the other mode (`book_mode` in
+#: its config) and then carries its own `obs_book_*` / `snapshot_dim`.
+BOOK_MODE = check_book_mode(env_default("book_mode"))
+OBS_BOOK_ROWS = obs_book_rows(BOOK_MODE)
+OBS_BOOK_CELLS = obs_book_cells(BOOK_MODE, K_ROWS)
+OBS_BOOK_DIM = len(OBS_BOOK_ROWS) * OBS_BOOK_CELLS
+SNAPSHOT_DIM = OBS_BOOK_DIM + EXTRA_DIM
 
 #: The market-level scalars appended after the book block, in order. Same rule
 #: as BOOK_ROW_ORDER and PRIVATE_FIELDS: `extra_dim` in tunable_constants.json
@@ -189,8 +252,11 @@ OWN_BOOK_OFFSET = own_book_offset()
 #: observations would read every ask as a bid. 4 added the two occupancy rows
 #: to every snapshot (66 floats, 296 in all at defaults) and changed the
 #: reference price of a one-sided book from its lone quote to the last trade
-#: (S3-14).
-OBSERVATION_LAYOUT_VERSION = 4
+#: (S3-14). 5 added `book_mode` (S3-15): the default emitted snapshot is the
+#: fixed tick-offset grid (48 floats, 224 in all at defaults) and the mode
+#: travels in the layout stamp, so a `levels` checkpoint cannot restore into a
+#: `grid` run or the reverse.
+OBSERVATION_LAYOUT_VERSION = 5
 
 
 class State_Helper(object):
@@ -199,8 +265,15 @@ class State_Helper(object):
                  initial_price_min=env_default("initial_price_min"),
                  initial_price_max=env_default("initial_price_max"),
                  position_scale=env_default("position_scale"),
+                 book_mode=None,
                  **kwargs):
         self.n_hist = n_hist
+        # How the public book is emitted (BOOK_MODES above). Per instance, so a
+        # test or a `train.compare` run can build the other mode beside the
+        # default; the module constants describe the process default only.
+        self.book_mode = check_book_mode(
+            env_default("book_mode") if book_mode is None else book_mode
+        )
         self.obs_history = deque(maxlen=self.n_hist)
 
         # Centre of the `log_mid` feature: the log of the geometric mean of the
@@ -267,8 +340,13 @@ class State_Helper(object):
         self.max_own_orders = int(constant("action_space", "max_own_orders"))
         if self.max_own_orders < 1:
             raise ValueError("action_space.max_own_orders must be >= 1")
+        # The RAW frame: `book_rows` x `k_rows`, mode-independent.
         self.book_dim = self.book_rows * self.k_rows
-        self.snapshot_dim = self.book_dim + self.extra_dim
+        # The EMITTED book block and snapshot, by mode.
+        self.obs_book_rows = obs_book_rows(self.book_mode)
+        self.obs_book_cells = obs_book_cells(self.book_mode, self.k_rows)
+        self.obs_book_dim = len(self.obs_book_rows) * self.obs_book_cells
+        self.snapshot_dim = self.obs_book_dim + self.extra_dim
 
         # The finite bounds of the whole vector (S4-15), built once. The env
         # declares its Box with them and `set_next_state` clips to them.
@@ -365,12 +443,53 @@ class State_Helper(object):
 
     def _stack(self, M_t):
         """Every frame in the history, normalised by `M_t`, end to end."""
+        R_t = self._snap_to_tick(M_t) if self.book_mode == "grid" else None
         return np.concatenate(
-            [self._normalise_frame(frame, M_t) for frame in self.obs_history],
+            [self._normalise_frame(frame, M_t, R_t) for frame in self.obs_history],
             axis=0,
         ).astype(np.float32)
 
-    def _normalise_frame(self, frame, M_t):
+    def _snap_to_tick(self, price: float) -> float:
+        """`price` rounded (half up) to the nearest multiple of `min_tick`, >= one tick."""
+        tick = Decimal(str(self.min_tick))
+        n = (Decimal(str(float(price))) / tick).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+        return float(max(n, Decimal(1)) * tick)
+
+    def reference_price(self) -> float:
+        """The grid's origin `R`: `mid_price()` snapped to the tick (S3-15).
+
+        Reads the raw snapshot like `mid_price`, so it names the same book the
+        observation was built from. In `grid` mode this is also what
+        `Action_Helper._set_price` quotes from, which is what makes the action's
+        price code and the observation's cells one coordinate.
+        """
+        return self._snap_to_tick(self.mid_price())
+
+    def _grid_rows(self, book, R_t):
+        """The two size rows of the grid layout, from one raw frame's levels.
+
+        Cell c of each row is the price `R_t + (c - k_rows) * tick`. Levels
+        whose price falls outside the window are not shown - the raw frame
+        holds them, the grid does not - and a level exactly on the tick grid
+        lands in exactly one cell, so `+=` is a plain assignment in practice.
+        """
+        k = self.k_rows
+        cells = self.obs_book_cells
+        tick = float(self.min_tick)
+        size_scale = float(self.limit_max_size)
+        rows = np.zeros((2, cells))
+        for r, (price_row, size_row) in enumerate((("bid_price", "bid_size"), ("ask_price", "ask_size"))):
+            prices = book[BOOK_ROW_ORDER.index(price_row) * k:(BOOK_ROW_ORDER.index(price_row) + 1) * k]
+            sizes = book[BOOK_ROW_ORDER.index(size_row) * k:(BOOK_ROW_ORDER.index(size_row) + 1) * k]
+            for price, size in zip(prices, sizes):
+                if price <= 0 or size <= 0:
+                    continue
+                cell = k + int(round((price - R_t) / tick))
+                if 0 <= cell < cells:
+                    rows[r, cell] += np.sqrt(size / size_scale)
+        return rows[0], rows[1]
+
+    def _normalise_frame(self, frame, M_t, R_t=None):
         """One raw frame as `snapshot_dim` normalised floats.
 
         Prices are measured against `M_t` - the midpoint of the newest frame,
@@ -378,10 +497,30 @@ class State_Helper(object):
         frame of the stack. `log_mid` keeps each frame's OWN midpoint, which is
         what lets an agent recover the level it was at; the frame is normalised
         against a common denominator, not stripped of its own.
+
+        In `grid` mode the same rule holds for the coordinate: every frame is
+        gridded against the newest `R_t`, so a resting order that has not
+        moved sits in the same cell of every frame.
         """
         k = self.k_rows
         book = frame[:self.book_dim]
         extras = frame[self.book_dim:]
+
+        M_frame = float(extras[_FRAME_M])
+        spread_ticks = float(extras[_FRAME_SPREAD_TICKS])
+
+        scalars = np.array([
+            np.log(M_frame) - self.log_mid_centre,
+            np.log1p(max(0.0, spread_ticks)) if spread_ticks > 0 else 0.0,
+            extras[_FRAME_MID_RETURN],
+            extras[_FRAME_SIGNED_VOLUME],
+            np.log1p(max(0.0, float(extras[_FRAME_TRADE_COUNT]))),
+            extras[_FRAME_TRADE_DIRECTION],
+        ])
+
+        if self.book_mode == "grid":
+            bid_grid, ask_grid = self._grid_rows(book, R_t)
+            return np.concatenate([bid_grid, ask_grid, scalars]).astype(np.float32)
 
         bid_price = book[0:k]
         bid_size = book[k:2 * k]
@@ -404,18 +543,6 @@ class State_Helper(object):
             bid_size > 0, np.sqrt(bid_size / size_scale), 0.0)
         norm_ask_size = np.where(
             ask_size > 0, np.sqrt(ask_size / size_scale), 0.0)
-
-        M_frame = float(extras[_FRAME_M])
-        spread_ticks = float(extras[_FRAME_SPREAD_TICKS])
-
-        scalars = np.array([
-            np.log(M_frame) - self.log_mid_centre,
-            np.log1p(max(0.0, spread_ticks)) if spread_ticks > 0 else 0.0,
-            extras[_FRAME_MID_RETURN],
-            extras[_FRAME_SIGNED_VOLUME],
-            np.log1p(max(0.0, float(extras[_FRAME_TRADE_COUNT]))),
-            extras[_FRAME_TRADE_DIRECTION],
-        ])
 
         return np.concatenate([
             norm_bid_price, norm_bid_size, norm_ask_price, norm_ask_size,
@@ -629,11 +756,35 @@ class State_Helper(object):
         the newest snapshot was taken from, and level k here is level k there.
         Own orders deeper than `k_rows` are in the counts but not the sizes,
         the same way the public book hides them.
+
+        In `grid` mode entry d is this trader's size resting exactly d ticks
+        from the reference on the passive side - `R - d * tick` for bids,
+        `R + d * tick` for asks - which is public cell `k_rows - d` and
+        `k_rows + d` respectively. Own orders on the far side of `R` (possible
+        on a one-sided book, whose reference is the last trade) are in the
+        counts and in the public grid but not here.
         """
         k = self.k_rows
         size_scale = float(self.limit_max_size)
         own_bid = np.zeros(k, dtype=np.float32)
         own_ask = np.zeros(k, dtype=np.float32)
+
+        n_bid = sum(1 for o in self.LOB.bids.order_map.values() if o.trade_id == trader.ID)
+        n_ask = sum(1 for o in self.LOB.asks.order_map.values() if o.trade_id == trader.ID)
+
+        if self.book_mode == "grid":
+            R = self.reference_price()
+            tick = float(self.min_tick)
+            for tree, out, sign in ((self.LOB.bids, own_bid, -1.0), (self.LOB.asks, own_ask, 1.0)):
+                qty = np.zeros(k)
+                for order in tree.order_map.values():
+                    if order.trade_id != trader.ID:
+                        continue
+                    d = int(round(sign * (float(order.price) - R) / tick))
+                    if 0 <= d < k:
+                        qty[d] += int(order.quantity)
+                out[:] = np.sqrt(qty / size_scale)
+            return own_bid, own_ask, n_bid, n_ask
 
         def fill(levels, out):
             for level, (_price, order_list) in enumerate(levels):
@@ -648,9 +799,6 @@ class State_Helper(object):
 
         fill(reversed(self.LOB.bids.price_map.items()), own_bid)
         fill(self.LOB.asks.price_map.items(), own_ask)
-
-        n_bid = sum(1 for o in self.LOB.bids.order_map.values() if o.trade_id == trader.ID)
-        n_ask = sum(1 for o in self.LOB.asks.order_map.values() if o.trade_id == trader.ID)
         return own_bid, own_ask, n_bid, n_ask
 
     def observation_bounds(self) -> Tuple[np.ndarray, np.ndarray]:
@@ -684,7 +832,7 @@ class State_Helper(object):
                 )
             return float(low), float(high)
 
-        book = [pair("book", row) for row in BOOK_ROW_ORDER]
+        book = [pair("book", row) for row in self.obs_book_rows]
         extra = [pair("extra", name) for name in EXTRA_FIELDS]
         own_sizes = set(own_book_fields(self.k_rows))
 
@@ -697,11 +845,12 @@ class State_Helper(object):
 
         private = [private_pair(name) for name in self.private_fields]
 
+        cells = self.obs_book_cells
         snap_low = np.concatenate(
-            [np.full(self.k_rows, lo) for lo, _ in book] + [np.array([lo for lo, _ in extra])]
+            [np.full(cells, lo) for lo, _ in book] + [np.array([lo for lo, _ in extra])]
         )
         snap_high = np.concatenate(
-            [np.full(self.k_rows, hi) for _, hi in book] + [np.array([hi for _, hi in extra])]
+            [np.full(cells, hi) for _, hi in book] + [np.array([hi for _, hi in extra])]
         )
         low = np.concatenate([np.tile(snap_low, self.n_hist), [lo for lo, _ in private]])
         high = np.concatenate([np.tile(snap_high, self.n_hist), [hi for _, hi in private]])
@@ -848,5 +997,6 @@ class State_Helper(object):
         # time that is `M_t`, so the newest frame of a stack is identical
         # either way; this keeps `set_agg_LOB`'s contract - "return the
         # normalised snapshot" - for the render path and its callers.
-        return self._normalise_frame(self.agg_LOB_frame, M)
+        R = self._snap_to_tick(M) if self.book_mode == "grid" else None
+        return self._normalise_frame(self.agg_LOB_frame, M, R)
     

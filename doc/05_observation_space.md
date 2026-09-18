@@ -13,19 +13,25 @@ Related: [02_architecture.md](02_architecture.md) §2.5 (step 6),
 ## 1. Shape at a glance
 
 ```
-snapshot (one frame) = 66 floats
-  index    0:10   normalized bid prices    (M_t - P) / M_t
+snapshot (one frame), book_mode "grid" (the default, S3-15) = 48 floats
+  index    0:21   bid sizes at tick offsets -10..+10 from the reference R
+                  cell c is the price R + (c - 10) * tick; sqrt(V / limit_max_size)
+          21:42   ask sizes at the same 21 offsets
+             42   log_mid              ln(M_frame) - log_mid_centre
+             43   log1p_spread_ticks   0.0 if the book is not two-sided
+             44   mid_return           M_frame / M_previous_frame - 1
+             45   signed_volume        initiator-signed qty / limit_max_size
+             46   log1p_trade_count    trades since the previous frame
+             47   trade_direction      last initiator: +1 buy, -1 sell, 0 none
+
+snapshot (one frame), book_mode "levels" (kept for comparison) = 66 floats
+  index    0:10   normalized bid prices    (M_t - P) / M_t      of the 10 best occupied levels
           10:20   normalized bid sizes     sqrt(V / limit_max_size)
           20:30   normalized ask prices    (P - M_t) / M_t
           30:40   normalized ask sizes     sqrt(V / limit_max_size)
           40:50   bid occupancy            1.0 where the level holds an order (S3-14)
           50:60   ask occupancy
-             60   log_mid              ln(M_frame) - log_mid_centre
-             61   log1p_spread_ticks   0.0 if the book is not two-sided
-             62   mid_return           M_frame / M_previous_frame - 1
-             63   signed_volume        initiator-signed qty / limit_max_size
-             64   log1p_trade_count    trades since the previous frame
-             65   trade_direction      last initiator: +1 buy, -1 sell, 0 none
+          60:66   the same six scalars
 
 private block (per agent) = 32 floats = 9 base + 2 x k_rows own book + 2 counts + 1 flag
              0   position        tanh(net_position / position_scale)
@@ -45,7 +51,7 @@ private block (per agent) = 32 floats = 9 base + 2 x k_rows own book + 2 counts 
             31   unmatched_last_step   1.0 if its last modify/cancel named no order
 
 observation = n_hist frames concatenated, then the private block
-  default n_hist = 4  →  shape (296,) = 4x66 + 32
+  default n_hist = 4  →  shape (224,) = 4x48 + 32 in grid mode; (296,) = 4x66 + 32 in levels mode
   layout: [ O_{t-3} | O_{t-2} | O_{t-1} | O_t | private ]
   the most recent frame ends at index n_hist * SNAPSHOT_DIM, NOT at the end
 ```
@@ -168,10 +174,10 @@ flowchart TD
     FRAME["RAW frame: 60 book floats (4 rows of prices and sizes,<br/>2 rows of 0/1 occupancy) + M, spread_ticks, mid_return,<br/>signed_volume, trade_count, trade_direction"]
 
     FRAME --> DEQ["obs_history deque, maxlen = n_hist<br/>holds RAW frames"]
-    DEQ --> NORM["prep_next_state: normalise the WHOLE stack by M_t<br/>prices -> distance from M_t; sizes -> sqrt(V / limit_max_size)<br/>occupancy passes through; M -> log_mid (centred); spread_ticks -> log1p;<br/>the other three pass through, being frame-local already"]
-    NORM --> OBS["concatenate -> n_hist x 66 = 264 book floats,<br/>shared by every agent"]
+    DEQ --> NORM["prep_next_state: normalise the WHOLE stack against the newest frame<br/>grid mode: every level re-gridded to its tick offset from R_t = snap(M_t)<br/>levels mode: prices -> distance from M_t, occupancy passes through<br/>sizes -> sqrt(V / limit_max_size); M -> log_mid (centred); spread_ticks -> log1p;<br/>the other three pass through, being frame-local already"]
+    NORM --> OBS["concatenate -> n_hist x 48 = 192 book floats (grid)<br/>or n_hist x 66 = 264 (levels), shared by every agent"]
     OBS --> PRIV["+ 32 private floats per agent<br/>position, cash, NAV, drawdown, own book, ..."]
-    PRIV --> FULL["observation: 296 floats"]
+    PRIV --> FULL["observation: 224 floats (grid), 296 (levels)"]
 ```
 
 Two things this picture makes concrete. The raw book is kept **beside** the normalised one and is
@@ -192,7 +198,7 @@ space declares one `[low, high]` pair per feature family, from `observation_boun
 | `bid_price` | −128 | 1 | `(M − P) / M < 1` for `P > 0` is exact; the low side is a fallback tail (an older frame's bid above a collapsed `M_t` reads negative) |
 | `ask_price` | −1 | 128 | `(P − M) / M > −1` is exact; the high side is a fallback tail |
 | `bid_size`, `ask_size`, own sizes | 0 | 8 | `sqrt(V / limit_max_size)`; about 1.4 is the widest seen |
-| `bid_occupied`, `ask_occupied` | 0 | 1 | 0/1 by definition (§1.3) |
+| `bid_occupied`, `ask_occupied` | 0 | 1 | 0/1 by definition (§1.3); `levels` mode only |
 | `log_mid` | −8 | 8 | floor is `log(min_tick) − log_mid_centre`, −6.21 at the stress config and exactly what was measured; e⁸ is a 2,981× drift from the anchor centre |
 | `log1p_spread_ticks` | 0 | 10 | e¹⁰ is 22,026 ticks; the widest possible spread is `(P_max − min_tick) / min_tick`, 4,999 ticks at the stress config |
 | `mid_return` | −1 | 64 | `M_t / M_prev − 1 > −1` is exact; the high side is a fallback tail |
@@ -248,6 +254,50 @@ After: the occupancy row equals `size > 0` on every cell of every step (pinned b
 `test_occupancy_channel.py`); the occupied cells that still read `0.0` (0.66% shipped, 11.2%
 stress) are quotes sitting exactly at the last trade — the remainder of a partial fill — and are
 now unambiguous. Layout version 4: same fields plus 20 per snapshot, 296 floats at defaults.
+
+The occupancy rows belong to the `levels` layout. In the `grid` layout (§1.4, the default since
+S3-15) the price is the coordinate, so there is no price row and no zero to disambiguate; the
+last-trade reference applies in both.
+
+### 1.4 The book as a fixed tick-offset grid
+
+Closed on 2026-09-18 ([15](15_findings_and_recommendations.md) S3-15, [16](16_verification_log.md)
+§16.24). In the `levels` layout slot *k* means "the *k*-th occupied price", whose distance from the
+market wanders. Measured under random play at the shipped config: the best level sat **3.8 ± 2.5
+ticks** from the reference (range −20 to +27), the second **7.0 ± 3.8**, and the price at a given
+slot changed on **35–54%** of consecutive steps. The action's price code selected by the same
+index, so code *j* landed anywhere from 0 to 20 ticks out, with codes 1–6 indistinguishable at
+6.5–7.2 ticks each.
+
+`book_mode: "grid"` (an env-config key, [18](18_configuration.md) §3) replaces the level index
+with a fixed coordinate:
+
+- **Reference price** `R = snap_to_tick(M)`, with `M` the chain of §2.1. `R` is a tick-grid price.
+- **Two rows, `bid_size` and `ask_size`, over `2 × k_rows + 1` cells.** Cell *c* is the price
+  `R + (c − k_rows) × tick`, and holds `sqrt(V / limit_max_size)` of what rests there. Same cell,
+  same distance, on every step.
+- **Every frame in the stack is re-gridded against the newest `R_t`** at emission, so a resting
+  order that has not moved sits in the same cell of every frame — the §7.1 property, in grid
+  coordinates. The history deque still holds the raw six-row `levels` frames, which is how the
+  re-gridding is possible.
+- **The action shares the grid.** Price code *j* quotes exactly `R − j × tick` for a bid and
+  `R + j × tick` for an ask; the `price_offset` head still shades by one tick. There is no ghost
+  logic, because every code names a price. Measured after the change, code *j* landed at **j ± 0.9
+  ticks** on both sides at both configs, the 0.9 being the offset head.
+- **The own-book block follows**: entry *d* is this agent's size *d* ticks from `R` on the passive
+  side, which is public cell `k_rows − d` (bids) or `k_rows + d` (asks); the tokeniser puts it on
+  that cell's token.
+
+**What the window costs.** Anything more than `k_rows` ticks from `R` is not shown. Under random
+play in `levels` mode a ±10-tick window covered 72.5% of resting volume (shipped) and 81.4%
+(stress); once the agents quote *on* the grid it covers 93.3% and 93.9%, and ±16 covers 99.5% and
+99.8% ([16](16_verification_log.md) §16.24 has the curve). `k_rows` is the knob, and it also sets the
+price code's cardinality — the two are one number on purpose.
+
+**Layout version 5.** The mode is recorded in every checkpoint's layout stamp, so a `levels`
+checkpoint is refused by a `grid` run by name rather than by width — and the two can have the same
+width at exactly one `n_hist`. `ObsLayout.from_obs_space` infers the mode from the width, trying
+the process default first.
 
 `set_next_state` clips every emitted vector to these bounds and writes the number of elements it
 clipped to `num_obs_clipped_step`, which reaches `info`, the episode record and the training
@@ -604,9 +654,9 @@ mindmap
         two occupancy rows per snapshot
         one-sided book referenced to the last trade
         S3-14 closed by 17 section 50
-      7.4 level index is non-stationary
-        k-th occupied price, not a fixed distance
-        S3-15
+      7.4 level index is non-stationary - fixed
+        fixed tick-offset grid, shared with the action
+        S3-15 closed by 17 section 51
     Scaling
       7.5 size block was 80-250x the price block - fixed
         sqrt(V / limit_max_size), ratio now 3.7x
@@ -623,9 +673,9 @@ mindmap
 
 **Most of these are now closed.** §7.1, §7.3, §7.5, §7.7 and two of the three points of §7.6 are
 kept rather than deleted because each records a failure mode worth recognising again, and because
-the fix only makes sense against what it replaced. What is still open is §7.4 and the stacking
-point of §7.6 — and §7.4 has a new measurement against it (§1.2: the floor tails, which are the
-additive-tick coordinate at work).
+the fix only makes sense against what it replaced. What is still open is the stacking point of
+§7.6. (The floor tails of §1.2 are the additive tick itself — a tick is a fixed fraction of nothing
+— and the grid does not change that; they remain counted, not hidden.)
 
 ### 7.1 Each frame in the stack is normalized by a different denominator — **fixed**
 
@@ -695,16 +745,20 @@ suggests it was intended to be there.
 *not* there: the last traded **price** is still absent as a feature, though `mid_return` and the
 midpoint fallback chain make most of what it would carry recoverable.
 
-### 7.4 Level index is a non-stationary coordinate
+### 7.4 Level index is a non-stationary coordinate — **fixed**
 
-Position *k* in the vector means "the *k*-th occupied price", not a fixed price. The mapping from
-index to distance-from-mid changes every step as levels are created and consumed. The action
-space selects by the **same** unstable index, so a learned association such as "level 3 is a good
-place to quote" has no fixed meaning across steps.
+Position *k* in the vector meant "the *k*-th occupied price", not a fixed price. The mapping from
+index to distance-from-mid changed every step as levels were created and consumed. The action
+space selected by the **same** unstable index, so a learned association such as "level 3 is a good
+place to quote" had no fixed meaning across steps. Measured ([16](16_verification_log.md) §16.24):
+the best level 3.8 ± 2.5 ticks from the reference, its price changing on 35–54% of steps; price
+code *j* landing 0–20 ticks out.
 
-**Fix.** A fixed grid — one slot per tick offset from the midpoint, out to ±N ticks, holding the
-volume at that price. This is stationary, makes empty levels naturally zero-volume rather than
-sentinel-encoded, and makes observation and action share one coordinate system.
+**Fixed (2026-09-18)** by exactly the proposed grid — §1.4. One cell per tick offset from the
+reference out to ±`k_rows`, holding the size at that price; empty cells are zero rather than
+sentinel-encoded; observation and action share the coordinate, and the price code lands at *j* ±
+0.9 ticks. The `levels` layout is kept as `book_mode: "levels"` so the two can be compared with
+`train.compare --set book_mode=levels`.
 
 ### 7.5 Feature scales differ by one to two orders of magnitude after "normalization" — **fixed**
 
@@ -806,8 +860,8 @@ Anything that slices an observation must use `SNAPSHOT_DIM` / `BOOK_DIM`:
 | Site | Usage |
 |---|---|
 | [`continuousDoubleAuction_env.py`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py) | `Box` shape is `(n_hist * SNAPSHOT_DIM + PRIVATE_DIM,)`, with `low` / `high` from `State_Helper.observation_bounds` (§1.2) |
-| [`exchg_helper.py`](../gym_continuousDoubleAuction/envs/exchg/exchg_helper.py) `print_table` | Slices the book block before `reshape(4, K_ROWS)`, then prints trailing scalars on their own line. Without the slice, `reshape` raises `ValueError` on **every rendered step**. |
-| [`visualize_orderbook.py`](../gym_continuousDoubleAuction/visualize/visualize_orderbook.py) | Slices the newest frame at `[(n_hist-1) * SNAPSHOT_DIM : n_hist * SNAPSHOT_DIM]`, deriving `n_hist` from the width after taking `PRIVATE_DIM` off — deliberately **not** `obs[-SNAPSHOT_DIM:]`, which returns the private block plus a truncated frame |
+| [`exchg_helper.py`](../gym_continuousDoubleAuction/envs/exchg/exchg_helper.py) `print_table` | Slices the emitted book block (`obs_book_dim`) before reshaping it `(rows, cells)` for the mode, then prints trailing scalars on their own line. Without the slice, `reshape` raises `ValueError` on **every rendered step**. |
+| [`visualize_orderbook.py`](../gym_continuousDoubleAuction/visualize/visualize_orderbook.py) | Slices the newest frame at `[(n_hist-1) * SNAPSHOT_DIM : n_hist * SNAPSHOT_DIM]`, deriving `n_hist` from the width after taking `PRIVATE_DIM` off — deliberately **not** `obs[-SNAPSHOT_DIM:]`, which returns the private block plus a truncated frame — and reads rows by name through `obs_row_slice`, which follows the process default `book_mode` |
 | `test_obs_normalization.py`, `test_observation_history.py`, `test_obs_market_features.py` | All shape literals derive from the constants |
 
 Rendered output for the scalars looks like:
@@ -826,13 +880,16 @@ one, and an episode Parquet record written under one width has `obs` lists of a 
 than the reader expects. This is unavoidable whenever the observation dimension
 changes; the width has changed six times (40 → 160 with stacking, 160 → 168 with the first two
 market scalars, 168 → 177 with the private block, 177 → 193 with the four trade-flow and
-mid-return scalars, 193 → 216 with the own-book block, §1.0.1, and 216 → 296 with the occupancy
-rows, §1.3). Layout version 3 (2026-09-18) changed the **meaning** without the width: asks positive
-(§2.2) and finite bounds (§1.2) — a mismatch the tensor shapes would never catch.
+mid-return scalars, 193 → 216 with the own-book block, §1.0.1, 216 → 296 with the occupancy
+rows, §1.3, and 296 → 224 with the grid as the default layout, §1.4). Layout version 3
+(2026-09-18) changed the **meaning** without the width: asks positive (§2.2) and finite bounds
+(§1.2) — a mismatch the tensor shapes would never catch. Layout version 5 introduced a mode whose
+two settings can share a width at one `n_hist`, which is why the mode travels in the stamp.
 
 Since S4-19 the observation and action layout versions, the private-field list and the action-key
 list are written into `league_state.json` beside every checkpoint, and `train.build_algo` and
 `train.evaluate` compare them before restoring, refusing a mismatch by name. Observation layouts:
 1 the 193-float vector, 2 the 216-float vector with the own-book block, 3 the same width with
 positive asks and finite bounds, 4 the 296-float vector with the occupancy rows and the last-trade
-reference for a one-sided book.
+reference for a one-sided book, 5 the `book_mode` key with the 224-float grid as the default and
+the 296-float `levels` layout kept beside it.

@@ -18,25 +18,33 @@ from gym_continuousDoubleAuction.envs.exchg.action_helper import (
     ACTION_LAYOUT_VERSION,
 )
 from gym_continuousDoubleAuction.envs.exchg.state_helper import (
+    BOOK_MODE,
     OBSERVATION_LAYOUT_VERSION,
     PRIVATE_FIELDS,
+    check_book_mode,
 )
 
 #: The key the stamp is stored under in `league_state.json`.
 LAYOUT_KEY = "layout"
 
 
-def layout_stamp() -> dict:
-    """The current layout, as plain JSON-able data."""
+def layout_stamp(book_mode=None) -> dict:
+    """The current layout, as plain JSON-able data.
+
+    `book_mode` is the run's (doc/15 S3-15); None means the process default.
+    It travels in the stamp because the two modes have different widths and
+    meanings under the same version number.
+    """
     return {
         "observation_version": OBSERVATION_LAYOUT_VERSION,
         "action_version": ACTION_LAYOUT_VERSION,
+        "book_mode": check_book_mode(BOOK_MODE if book_mode is None else book_mode),
         "private_fields": list(PRIVATE_FIELDS),
         "action_keys": list(ACTION_KEYS),
     }
 
 
-def check_layout_stamp(sidecar, path: str) -> None:
+def check_layout_stamp(sidecar, path: str, book_mode=None) -> None:
     """Raise if a checkpoint's recorded layout is not the current one.
 
     Args:
@@ -44,6 +52,10 @@ def check_layout_stamp(sidecar, path: str) -> None:
             has none (the old single-directory layout). No sidecar means no
             claim, and the restore proceeds as it always did.
         path: the checkpoint directory, for the message.
+        book_mode: the mode this run will build its env in, to compare with
+            the checkpoint's. None skips that comparison - `train.evaluate`
+            builds its env from the checkpoint's own config, so the two agree
+            by construction.
 
     Raises:
         ValueError: naming both versions and the fields or keys that differ.
@@ -63,6 +75,9 @@ def check_layout_stamp(sidecar, path: str) -> None:
         ours = current[f"{axis}_version"]
         if theirs != ours:
             problems.append(f"{axis} layout v{theirs} (checkpoint) != v{ours} (this code)")
+    theirs = stamp.get("book_mode")
+    if book_mode is not None and theirs is not None and theirs != book_mode:
+        problems.append(f"book_mode {theirs!r} (checkpoint) != {book_mode!r} (this run)")
     for listing in ("private_fields", "action_keys"):
         theirs, ours = stamp.get(listing), current[listing]
         if theirs is not None and list(theirs) != list(ours):

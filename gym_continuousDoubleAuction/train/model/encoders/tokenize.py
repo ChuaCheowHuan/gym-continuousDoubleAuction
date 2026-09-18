@@ -16,11 +16,13 @@ Three tokenisations, selected per encoder by its `tokenization` spec key:
              This is the default: the other two are each a projection of it,
              and are kept so an ablation can ask which axis is doing the work.
 
-Under "level" and "both" a token is `[bid_price, bid_size, ask_price, ask_size,
-bid_occupied, ask_occupied, own_bid_size, own_ask_size]` for one level - the
-occupancy pair says whether the level holds an order at all (S3-14), the last
-two are from the agent's own book, newest snapshot only - and the 6
-market-level scalars have nowhere to go -
+Under "level" and "both" a token is one cell of the book: in `grid` mode
+`[bid_size, ask_size, own_bid_size, own_ask_size]` at one tick offset from the
+reference (S3-15), in `levels` mode `[bid_price, bid_size, ask_price, ask_size,
+bid_occupied, ask_occupied, own_bid_size, own_ask_size]` at one occupied level -
+the occupancy pair says whether the level holds an order at all (S3-14). The
+own pair is from the agent's own book, newest snapshot only. The 6 market-level
+scalars have nowhere to go -
 they are per-snapshot, not per-level. They are carried instead on a separate
 *global token* per snapshot, appended to the sequence, so they stay inside the
 attention rather than being dropped or smeared across every level. Under "time"
@@ -141,10 +143,17 @@ def tokenize(obs: torch.Tensor, layout: ObsLayout, tokenization: str) -> torch.T
     # makes it a per-level quantity rather than a private scalar. Older
     # snapshots keep zeros there; the env does not record own-order history.
     if layout.own_book_offset is not None:
-        k = layout.k_rows
+        k = layout.own_levels
         start = layout.own_book_offset
         own = _private[..., start : start + 2 * k].reshape(batch, 2, k)
-        tokens[:, -1, :k, layout.book_rows : layout.book_rows + 2] = own.transpose(-1, -2)
+        if layout.book_mode == "grid":
+            # Own entry d is d ticks from the reference on the passive side:
+            # public cell `levels - d` for bids and `levels + d` for asks.
+            d = torch.arange(k, device=obs.device)
+            tokens[:, -1, k - d, layout.book_rows] = own[:, 0, :]
+            tokens[:, -1, k + d, layout.book_rows + 1] = own[:, 1, :]
+        else:
+            tokens[:, -1, :k, layout.book_rows : layout.book_rows + 2] = own.transpose(-1, -2)
 
     if tokenization == "level":
         # Newest snapshot only.

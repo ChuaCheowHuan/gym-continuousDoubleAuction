@@ -19,7 +19,7 @@ Each agent's action is a `gymnasium.spaces.Dict`
 | `category` | `Discrete(9)` | `action_space.category_n` | Trade action — side and type combined |
 | `size_mean` | `Box(-1.0, 1.0)` | `action_space.size_mean_low` / `_high` | Mean for size sampling |
 | `size_sigma` | `Box(0.0, 1.0)` | `action_space.size_sigma_low` / `_high` | Sigma for size sampling |
-| `price` | `Discrete(10)` | `observation_layout.k_rows` | Market depth level index (0–9 for levels 1–10) |
+| `price` | `Discrete(10)` | `observation_layout.k_rows` | Ticks from the reference price on the passive side (`book_mode: "grid"`, the default); book level index 0–9 in `levels` mode |
 | `price_offset` | `Discrete(3)` | `action_space.price_offset_n` | Stance relative to that level: 0 passive, 1 join, 2 aggressive |
 
 Every cardinality and bound comes from
@@ -43,10 +43,13 @@ flowchart TD
     TYPE -->|"yes"| MKT["price = -1.0<br/>price and price_offset ignored"]
     TYPE -->|"no"| PR["_set_price(min_tick, side, price, price_offset)"]
 
-    PR --> LVL{"is agg_LOB_raw[level] occupied?"}
+    PR --> MODE{"book_mode?"}
+    MODE -->|"grid"| GRID["base = R -/+ code * min_tick<br/>R = reference price snapped to the tick"]
+    MODE -->|"levels"| LVL{"is agg_LOB_raw[level] occupied?"}
     LVL -->|"yes"| REAL["base = that level's raw price"]
     LVL -->|"no"| GHOST["base = last_price -/+ (level + 1) * min_tick<br/>(ghost level)"]
-    REAL --> OFF["apply price_offset:<br/>bid + k*tick, ask - k*tick"]
+    GRID --> OFF["apply price_offset:<br/>bid + k*tick, ask - k*tick"]
+    REAL --> OFF
     GHOST --> OFF
     OFF --> CLAMP["max(min_tick, price)"]
 
@@ -160,12 +163,24 @@ thin or empty.
 - **Dynamic:** `mark_to_mkt` sets `last_price` to the **last traded price** from the LOB tape
   after every step that produced a trade.
 
-### 2.2 Populated levels
+### 2.1.1 Grid mode — the default since 2026-09-18
+
+With `book_mode: "grid"` ([05](05_observation_space.md) §1.4, S3-15) the price code is a tick offset,
+not a level index: a bid with code *j* is placed at `R − j × min_tick` and an ask at
+`R + j × min_tick`, where `R` is the observation's reference price (the two-sided midpoint, else
+the last trade, snapped to the tick). `price_offset` then shades by one tick as below. Every code
+names a price, so §2.2 and §2.3 do not apply; the observation's cell `k_rows − j` (bids) or
+`k_rows + j` (asks) is exactly where the order will show. Measured under random play, code *j*
+lands at *j* ± 0.9 ticks on both sides — the 0.9 is the offset head — where the `levels` path
+landed it anywhere from 0 to 20 ticks out ([16](16_verification_log.md) §16.24). Sections 2.2 and
+2.3 describe the `levels` path, kept for comparison.
+
+### 2.2 Populated levels (`levels` mode)
 
 If the targeted book level exists, its price is read from the **unnormalized** `agg_LOB_raw`
 ([05_observation_space.md](05_observation_space.md) §5), and `price_offset` is applied.
 
-### 2.3 Ghost levels
+### 2.3 Ghost levels (`levels` mode)
 
 If the targeted level is empty, the price is extrapolated deterministically from the anchor:
 

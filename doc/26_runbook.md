@@ -63,7 +63,7 @@ import and reads its config tree relative to the repository root
 Three checks, cheapest first. All three are what CI runs ([10](10_testing.md) §7).
 
 ```bash
-# 1. the simulator and the training-side units: ~3 min, 1,049 tests (incl. pyflakes and Hypothesis)
+# 1. the simulator and the training-side units: ~3 min, 1,065 tests (incl. pyflakes and Hypothesis)
 python -m pytest gym_continuousDoubleAuction/test -q \
     --ignore=gym_continuousDoubleAuction/test/integration
 
@@ -316,6 +316,10 @@ python -m gym_continuousDoubleAuction.train.compare --encoders mlp transformer l
 python -m gym_continuousDoubleAuction.train.compare --encoders mlp transformer --seeds 0 1 \
     --iters 1 --agents 4 --trained-agents 2 --max-step 64 --episodes-per-iter 2 \
     --probe-episodes 1 --probe-steps 128 --horizons 1 5 --out compare_smoke
+
+# the same protocol under another regime: --set overrides any TrainConfig field for every run
+python -m gym_continuousDoubleAuction.train.compare --encoders mlp transformer --seeds 0 1 2 \
+    --set book_mode=levels --out compare_levels
 ```
 
 Output: `compare_out/compare_results.json` (every per-run number) and

@@ -47,6 +47,7 @@ mindmap
         S3-23 NAV conservation exact only to Decimal rounding — fixed
         S3-24 modify and cancel cannot be aimed — fixed
         S3-14 zero means three things — fixed
+        S3-15 level index non-stationary — fixed
         S3-20 dead escrow path — fixed
       training and league
         S3-8 detached callback — fixed
@@ -868,12 +869,29 @@ sat in a book whose midpoint had **random-walked down to one to three ticks**, m
 They are not this row's; they are S3-15's additive-tick coordinate at work, and they are the first
 numbers that row has had against it.
 
-### S3-15 · Level index is a non-stationary coordinate
+### S3-15 · Level index is a non-stationary coordinate **[verified, fixed]**
 
-Slot *k* means "the *k*-th occupied price", not a fixed distance from mid, and the action space
-selects by the same unstable index. A learned association such as "level 3 is a good place to
-quote" has no fixed meaning across steps.
-**Fix:** a fixed tick-offset grid shared by observation and action.
+Slot *k* meant "the *k*-th occupied price", not a fixed distance from mid, and the action space
+selected by the same unstable index. A learned association such as "level 3 is a good place to
+quote" had no fixed meaning across steps.
+
+**Measured before the fix, 2026-09-18** (20 seeded random-play episodes × 400 steps per config,
+[16](16_verification_log.md) §16.24). Shipped config: the best level sat **3.8 ± 2.5 ticks** from
+the reference (range −20 to +27), the second **7.0 ± 3.8**, the fifth **12.9 ± 4.8**; the price at
+a given slot changed between consecutive steps on **35–54%** of the steps it was occupied on both.
+The action's price code *j* landed at a realised distance of 3.6 ticks (code 0) rising only to 9.4
+(code 9) with a standard deviation of ~5 ticks throughout, codes 1–6 indistinguishable at 6.5–7.2.
+Same picture at the stress config.
+
+**Fixed** by exactly the proposed grid ([05](05_observation_space.md) §1.4, [06](06_action_space.md)
+§2.1.1): `book_mode: "grid"`, two size rows over `2 × k_rows + 1` tick offsets from the reference
+price, every frame re-gridded against the newest reference, and price code *j* quoting *j* ticks
+from the reference on the passive side. After: code *j* lands at ***j* ± 0.9 ticks** (the offset
+head) on both sides at both configs, and a ±10-tick window covers **93%** of resting volume against
+73% before, because the agents now quote on the grid; ±16 covers 99.5%. The `levels` layout is
+kept as `book_mode: "levels"` for comparison, the mode travels in the layout stamp, and
+`train.compare --set book_mode=...` runs either. Observation layout version 5, 224 floats.
+`train.compare` before and after in §16.24.
 
 ### S3-16 · One undrawn opponent kills champion promotion for the rest of the run **[verified, fixed]**
 
@@ -1183,7 +1201,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **1,049 unit tests pass** (plus 156 integration), covering every position-flip path, cash-check edge case, modify-order
+- **1,065 unit tests pass** (plus 156 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 
@@ -1217,8 +1235,8 @@ Roughly two to three weeks of work, ordered so each step unblocks the next.
 **Phase 3 — fix the observation pipeline (≈3 days)**
 10. Normalize the whole stack by the current `M_t`; expose `M_t / M_{t−1} − 1` (S2-6)
 11. Finish the tape loop into trade-flow features; wire in `helper.py`'s order imbalance (S2-7)
-12. ~~Occupancy mask (S3-14)~~ — **done**, with the last-trade reference for a one-sided book;
-    consider the fixed tick-offset grid (S3-15), which now has the floor-tail measurement against it
+12. ~~Occupancy mask (S3-14); the fixed tick-offset grid (S3-15)~~ — **both done**; the grid is
+    the default layout and the level view is kept for comparison
 
 **Phase 4 — market realism (≈3 days)**
 13. Maker/taker fees in bps inside settlement (S2-3)

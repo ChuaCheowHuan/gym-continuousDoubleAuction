@@ -3142,3 +3142,34 @@ The first of the pre-existing S3 rows taken through the measure-first pass
 - **Tests.** `test_occupancy_channel.py` (11); one more branch of the reference chain in
   `test_obs_market_features.py`; the width literals in five test files follow the layout. Suite:
   **1,049 unit + 156 integration**.
+
+## 51. The book as a fixed tick-offset grid (S3-15; layout version 5)
+
+The second pre-existing S3 row taken through the measure-first pass
+([16](16_verification_log.md) §16.24).
+
+- **Measured first.** In the `levels` layout the best occupied level sat 3.8 ± 2.5 ticks from the
+  reference under random play, its price changed on 35–54% of steps, and the action's price code
+  *j* landed anywhere from 0 to 20 ticks out with codes 1–6 indistinguishable. A ±10-tick window
+  around the reference held 72.5% of resting volume.
+- **`book_mode: "grid"`, the new default** ([05](05_observation_space.md) §1.4). Two size rows over
+  `2 k_rows + 1` tick offsets from the reference price `R` (the §2.1 chain snapped to the tick);
+  cell *c* is the price `R + (c − k_rows) × tick`; every frame in the stack is re-gridded against
+  the newest `R_t`, so a resting order sits in the same cell of every frame. 48 floats per snapshot,
+  224 in all. The raw six-row frame is unchanged underneath, which is what makes the re-gridding
+  possible and keeps `agg_LOB_raw` and the L1 reads as they were.
+- **The action shares the grid** ([06](06_action_space.md) §2.1.1). Price code *j* quotes exactly
+  *j* ticks from `R` on the passive side; the offset head still shades by a tick; ghost pricing is
+  a `levels`-mode path. After: code *j* lands at *j* ± 0.9 ticks, and the window now holds 93% of
+  resting volume because the agents quote on it (99.5% at ±16).
+- **`levels` is kept** as the other value of the key, per env instance, so `train.compare --set
+  book_mode=levels` runs the comparison. `TrainConfig.book_mode`, the env config and the layout
+  stamp carry it; a checkpoint from the other mode is refused by name, which matters because the
+  two widths coincide at one `n_hist`.
+- **Consumers follow the mode by name.** `ObsLayout` infers the mode from the space (default
+  first) and exposes `row_slice`; the tokeniser puts own sizes on the cell their tick offset names;
+  the probe's `depth_imbalance`, the visualizer and `print_table` address rows by name.
+- **`train.compare --set FIELD=VALUE`** overrides any `TrainConfig` field for every run, coerced to
+  the field's type - the switch the remaining S3 comparisons need.
+- **Tests.** `test_grid_book.py` (14), two more in `test_layout_version.py`; the `levels`-mode
+  tests build that mode explicitly. Suite: **1,065 unit + 156 integration**.

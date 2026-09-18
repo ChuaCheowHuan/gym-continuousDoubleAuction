@@ -10,7 +10,10 @@ class TestActionSpaceRobust:
             "init_cash": 100000,
             "initial_price_min": 100,
             "initial_price_max": 200,
-            "is_render": False
+            "is_render": False,
+            # Ghost pricing and level-relative offsets are the `levels` book
+            # mode's; the grid's price codes are pinned in test_grid_book.py.
+            "book_mode": "levels",
         }
         cls.env = continuousDoubleAuctionEnv(cls.config)
 
@@ -164,6 +167,7 @@ class TestTickGrid:
             "initial_price_min": anchor,
             "initial_price_max": anchor,
             "is_render": False,
+            "book_mode": "levels",
         })
         env.reset()
         return env

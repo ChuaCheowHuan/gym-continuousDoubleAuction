@@ -9,7 +9,10 @@ alone, so they stay valid however the reward is eventually fixed.
 
 Reading a snapshot
 ------------------
-The layout is `State_Helper.set_agg_LOB`'s, via `ObsLayout`:
+The layout is `State_Helper`'s, via `ObsLayout`, which knows both book modes
+(doc/15 S3-15). Rows are addressed by name through `layout.row_slice`; the
+listing below is the `levels` mode, and in `grid` mode the book block is the
+two size rows over `2k + 1` tick offsets with the scalars following:
 
     [0:k]        norm_bid_price  = (M - P_bid) / M          >= 0
     [k:2k]       norm_bid_size   = sqrt(V_bid)              >= 0
@@ -124,9 +127,8 @@ def depth_imbalance(snapshots: np.ndarray, layout: ObsLayout) -> np.ndarray:
     converting back would claim a precision the encoder never sees. Zero for an
     empty book, which is the neutral value rather than a sentinel.
     """
-    k = layout.k_rows
-    bid = snapshots[:, k:2 * k].astype(np.float64).sum(axis=1)
-    ask = snapshots[:, 3 * k:4 * k].astype(np.float64).sum(axis=1)
+    bid = snapshots[:, layout.row_slice("bid_size")].astype(np.float64).sum(axis=1)
+    ask = snapshots[:, layout.row_slice("ask_size")].astype(np.float64).sum(axis=1)
     total = bid + ask
     return np.divide(bid - ask, total, out=np.zeros_like(total), where=total > 0)
 

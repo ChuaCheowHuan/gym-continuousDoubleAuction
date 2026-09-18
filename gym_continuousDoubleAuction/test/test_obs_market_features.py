@@ -3,9 +3,12 @@ import pytest
 
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import continuousDoubleAuctionEnv
 from gym_continuousDoubleAuction.envs.exchg.state_helper import (
-    BOOK_DIM, EXTRA_DIM, EXTRA_FIELDS, PRIVATE_DIM, SNAPSHOT_DIM,
+    BOOK_DIM, EXTRA_DIM, EXTRA_FIELDS, OBS_BOOK_DIM, PRIVATE_DIM, SNAPSHOT_DIM,
 )
 
+#: In `levels` mode the emitted book block is the raw block, so the scalars
+#: start at BOOK_DIM.
+LEVELS_SNAPSHOT_DIM = BOOK_DIM + EXTRA_DIM
 LOG_MID_IDX = BOOK_DIM
 LOG1P_SPREAD_IDX = BOOK_DIM + 1
 
@@ -25,6 +28,9 @@ class TestObsMarketFeatures:
         "init_cash": 1_000_000,
         "is_render": False,
         "n_hist": 1,
+        # The scalar offsets below index a `levels` snapshot (S3-15 made the
+        # grid the default; the scalars sit after the book block in both).
+        "book_mode": "levels",
     }
 
     def _make_env(self, extra_config=None):
@@ -51,7 +57,9 @@ class TestObsMarketFeatures:
     # ------------------------------------------------------------------
 
     def test_snapshot_dim_is_book_plus_extras(self):
-        assert SNAPSHOT_DIM == BOOK_DIM + EXTRA_DIM
+        assert SNAPSHOT_DIM == OBS_BOOK_DIM + EXTRA_DIM
+        env = self._make_env()
+        assert env.snapshot_dim == env.obs_book_dim + env.extra_dim == LEVELS_SNAPSHOT_DIM
         assert EXTRA_DIM == len(EXTRA_FIELDS)
 
     def test_observation_shape_across_n_hist(self):
@@ -59,7 +67,9 @@ class TestObsMarketFeatures:
             env = continuousDoubleAuctionEnv({"num_of_agents": 2, "is_render": False,
                                               "n_hist": n_hist})
             obs, _ = env.reset()
+            # The default mode's width (grid since S3-15), n_hist times.
             expected = (n_hist * SNAPSHOT_DIM + PRIVATE_DIM,)
+            assert SNAPSHOT_DIM == env.snapshot_dim
             for agent_id in env.agents:
                 assert env.observation_spaces[agent_id].shape == expected
                 assert obs[agent_id].shape == expected
@@ -202,14 +212,14 @@ class TestObsMarketFeatures:
         """reset() pads the history with n_hist copies, so every frame carries them."""
         n_hist = 4
         env = continuousDoubleAuctionEnv({"num_of_agents": 2, "is_render": False,
-                                          "n_hist": n_hist})
+                                          "n_hist": n_hist, "book_mode": "levels"})
         obs, _ = env.reset()
         stacked = obs["agent_0"]
         expected_log_mid = float(np.log(env.last_price)) - env.log_mid_centre
 
         for k in range(n_hist):
-            frame = stacked[k * SNAPSHOT_DIM:(k + 1) * SNAPSHOT_DIM]
-            assert frame.shape == (SNAPSHOT_DIM,)
+            frame = stacked[k * LEVELS_SNAPSHOT_DIM:(k + 1) * LEVELS_SNAPSHOT_DIM]
+            assert frame.shape == (LEVELS_SNAPSHOT_DIM,)
             assert float(frame[LOG_MID_IDX]) == pytest.approx(expected_log_mid, abs=1e-5)
             assert float(frame[LOG1P_SPREAD_IDX]) == 0.0
 
@@ -235,11 +245,12 @@ class TestObsMarketFeatures:
 
     def test_no_nan_or_inf_across_random_rollout(self):
         env = continuousDoubleAuctionEnv({"num_of_agents": 3, "init_cash": 1_000_000,
-                                          "is_render": False, "max_step": 32})
+                                          "is_render": False, "max_step": 32,
+                                          "book_mode": "levels"})
         obs, _ = env.reset()
         for _ in range(20):
             actions = {a: env.action_spaces[a].sample() for a in env.agents}
             obs, _, _, _, _ = env.step(actions)
             for agent_id, vector in obs.items():
                 assert np.isfinite(vector).all(), f"non-finite observation for {agent_id}"
-                assert vector.shape == (env.n_hist * SNAPSHOT_DIM + PRIVATE_DIM,)
+                assert vector.shape == (env.n_hist * LEVELS_SNAPSHOT_DIM + PRIVATE_DIM,)

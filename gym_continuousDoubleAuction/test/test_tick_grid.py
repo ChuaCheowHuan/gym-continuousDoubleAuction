@@ -67,9 +67,11 @@ class TestSetPriceIsOnTheGrid:
     def test_resting_levels_read_back_on_grid(self, tick):
         """The level path: a price read out of the snapshot, not the anchor."""
         env = _env(tick)
-        # Rest one bid and one ask, then quote at level 0 on both sides.
-        env.step({"agent_0": _act(2, price=0, offset=1),
-                  "agent_1": _act(6, price=0, offset=1)})
+        # Rest one bid and one ask - passive offsets, so they sit a tick
+        # either side of the reference in grid mode rather than crossing -
+        # then quote at level 0 on both sides.
+        env.step({"agent_0": _act(2, price=0, offset=0),
+                  "agent_1": _act(6, price=0, offset=0)})
         assert env.LOB.get_best_bid() is not None
         assert env.LOB.get_best_ask() is not None
         for side in ("bid", "ask"):

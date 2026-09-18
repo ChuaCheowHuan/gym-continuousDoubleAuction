@@ -63,6 +63,9 @@ from gym_continuousDoubleAuction.config_loader import group
 BOOK_FIELDS = ("bid_price", "bid_size", "ask_price", "ask_size",
                "bid_occupied", "ask_occupied")
 
+#: The two rows of the `grid` book mode (State_Helper.GRID_ROWS).
+GRID_FIELDS = ("bid_size", "ask_size")
+
 #: Scalar order within a snapshot's trailing block, same source
 #: (`State_Helper.EXTRA_FIELDS`).
 EXTRA_FIELDS = (
@@ -76,10 +79,19 @@ class ObsLayout:
     """How to read the flat observation vector as a (time, level, field) grid."""
 
     n_hist: int
+    #: Rows in the emitted book block: 6 in `levels` mode, 2 in `grid` mode.
     book_rows: int
+    #: Cells per row - the token count per snapshot: `k_rows` levels in
+    #: `levels` mode, the `2 * k_rows + 1` tick offsets in `grid` mode.
     k_rows: int
     extra_dim: int
     private_dim: int
+    #: "levels" or "grid" (State_Helper.BOOK_MODES; doc/15 S3-15).
+    book_mode: str = "levels"
+    #: The config's `k_rows`: the own-book block is `2 * levels` wide in both
+    #: modes, and in `grid` mode `levels` is also the window's half-width, so
+    #: the reference cell is `levels`. None means "same as k_rows".
+    levels: Optional[int] = None
     #: Index in the private tail where this agent's own-book block starts:
     #: `k_rows` own bid sizes, then `k_rows` own ask sizes, level-aligned with
     #: the public book (State_Helper.private_fields). None when the tail does
@@ -91,6 +103,21 @@ class ObsLayout:
     def own_channels(self) -> int:
         """Extra channels a level token carries for own bid/ask size: 2 or 0."""
         return 2 if self.own_book_offset is not None else 0
+
+    @property
+    def own_levels(self) -> int:
+        """Entries per side of the own-book block."""
+        return self.k_rows if self.levels is None else self.levels
+
+    @property
+    def book_fields(self):
+        """Row names of the emitted book block, in order."""
+        return GRID_FIELDS if self.book_mode == "grid" else BOOK_FIELDS
+
+    def row_slice(self, name: str) -> slice:
+        """Where row `name` sits inside one snapshot."""
+        i = self.book_fields.index(name)
+        return slice(i * self.k_rows, (i + 1) * self.k_rows)
 
     @property
     def book_dim(self) -> int:
@@ -128,8 +155,14 @@ class ObsLayout:
         return self.n_hist * self.k_rows
 
     @classmethod
-    def from_obs_space(cls, obs_space: gym.Space) -> "ObsLayout":
+    def from_obs_space(cls, obs_space: gym.Space, book_mode: Optional[str] = None) -> "ObsLayout":
         """Derive the layout from a single agent's observation space.
+
+        `book_mode` names the mode the env was built in. When it is None the
+        process default (env_defaults.json) is tried first and the other mode
+        second, since the two have different snapshot widths - so a space that
+        fits only one of them is read correctly either way, and a width that
+        fits both (it happens at exactly one `n_hist`) is read as the default.
 
         Raises:
             TypeError: if the space is not a 1-D Box - the layouts below all
@@ -145,23 +178,41 @@ class ObsLayout:
                 "a space of that shape."
             )
 
+        from gym_continuousDoubleAuction.envs.exchg.state_helper import (
+            BOOK_MODE,
+            BOOK_MODES,
+            check_book_mode,
+            obs_book_cells,
+            obs_book_rows,
+        )
+
         layout = group("tunable_constants.json", "observation_layout")
-        book_rows = layout["book_rows"]
-        k_rows = layout["k_rows"]
+        levels = layout["k_rows"]
         extra_dim = layout["extra_dim"]
         private_dim = layout["private_dim"]
 
-        snapshot_dim = book_rows * k_rows + extra_dim
         flat_dim = int(obs_space.shape[0])
         book_flat_dim = flat_dim - private_dim
-        n_hist, remainder = divmod(book_flat_dim, snapshot_dim)
-        if remainder or n_hist < 1:
+        if book_mode is not None:
+            candidates = [check_book_mode(book_mode)]
+        else:
+            candidates = [BOOK_MODE] + [m for m in BOOK_MODES if m != BOOK_MODE]
+        tried = []
+        for mode in candidates:
+            rows = len(obs_book_rows(mode))
+            cells = obs_book_cells(mode, levels)
+            snapshot_dim = rows * cells + extra_dim
+            n_hist, remainder = divmod(book_flat_dim, snapshot_dim)
+            tried.append(f"{mode}: {rows} rows x {cells} cells + {extra_dim} = {snapshot_dim}")
+            if not remainder and n_hist >= 1:
+                book_mode, book_rows, k_rows = mode, rows, cells
+                break
+        else:
             raise ValueError(
                 f"Observation space of {flat_dim} floats, less a "
                 f"{private_dim}-float private block, leaves {book_flat_dim} - "
-                f"not a whole number of {snapshot_dim}-float snapshots "
-                f"(book_rows={book_rows} * k_rows={k_rows} + "
-                f"extra_dim={extra_dim}). Either the env's observation changed "
+                f"not a whole number of snapshots under any book mode "
+                f"({'; '.join(tried)}). Either the env's observation changed "
                 "without observation_layout in tunable_constants.json "
                 "following it, or this space did not come from this env."
             )
@@ -176,7 +227,7 @@ class ObsLayout:
         )
 
         offset = None
-        if private_dim == len(private_fields(k_rows)):
+        if private_dim == len(private_fields(levels)):
             offset = own_book_offset()
 
         return cls(
@@ -186,6 +237,8 @@ class ObsLayout:
             extra_dim=extra_dim,
             private_dim=private_dim,
             own_book_offset=offset,
+            book_mode=book_mode,
+            levels=levels,
         )
 
 

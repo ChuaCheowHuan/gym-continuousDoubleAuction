@@ -270,23 +270,29 @@ def test_own_book_rides_on_the_newest_level_tokens(spaces):
     obs_space, _ = spaces
     layout = ObsLayout.from_obs_space(obs_space)
     obs = torch.from_numpy(np.stack([obs_space.sample()]))
-    k = layout.k_rows
+    k = layout.own_levels
+    cells = layout.k_rows
     start = layout.book_flat_dim + layout.own_book_offset
     own_bid = obs[0, start : start + k]
     own_ask = obs[0, start + k : start + 2 * k]
+    # Where own entry d lands: level d in `levels` mode; in `grid` mode the
+    # cell d ticks below / above the reference cell (S3-15).
+    d = torch.arange(k)
+    bid_at = k - d if layout.book_mode == "grid" else d
+    ask_at = k + d if layout.book_mode == "grid" else d
 
     level = tokenize(obs, layout, "level")
-    assert torch.equal(level[0, :k, layout.book_rows], own_bid)
-    assert torch.equal(level[0, :k, layout.book_rows + 1], own_ask)
-    assert torch.all(level[0, k, layout.book_rows:] == 0) or layout.extra_dim > layout.book_rows
+    assert torch.equal(level[0, bid_at, layout.book_rows], own_bid)
+    assert torch.equal(level[0, ask_at, layout.book_rows + 1], own_ask)
+    assert torch.all(level[0, cells, layout.book_rows:] == 0) or layout.extra_dim > layout.book_rows
 
     both = tokenize(obs, layout, "both")
-    stride = k + 1
+    stride = cells + 1
     newest = both[0, (layout.n_hist - 1) * stride : layout.n_hist * stride]
-    assert torch.equal(newest[:k, layout.book_rows], own_bid)
+    assert torch.equal(newest[bid_at, layout.book_rows], own_bid)
     for t in range(layout.n_hist - 1):
         older = both[0, t * stride : (t + 1) * stride]
-        assert torch.all(older[:k, layout.book_rows : layout.book_rows + 2] == 0), t
+        assert torch.all(older[:cells, layout.book_rows : layout.book_rows + 2] == 0), t
 
     # `time` is a pure reshape of the book part.
     assert torch.equal(tokenize(obs, layout, "time").reshape(1, -1),

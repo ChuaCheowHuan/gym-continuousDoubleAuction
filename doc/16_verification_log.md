@@ -1373,3 +1373,115 @@ move the near-random baseline. Whether a network that can see occupancy learns f
 at scale's question ([10](10_testing.md) §8).
 
 **Supports:** §15 S3-14, S3-15; §05 1.3, 2.1, 7.2; §18 4.1; §10 (`test_occupancy_channel.py`).
+
+## 16.24 The level index measured, and the grid that replaces it (S3-15) (2026-09-18)
+
+The measured pass for S3-15. Protocol as §16.22–16.23: 20 seeded episodes × 400 steps of random
+play at the shipped config (8 agents, 1,000,000 cash, tick 1) and at the stress config (6 agents,
+20,000 cash, anchors 5–500, tick 0.1). Three questions: how far does level *d* sit from the
+reference price `R` (the §2.1 chain snapped to the tick) and how often does its price change; where
+does the action's price code *j* actually land; and how much of the resting book a fixed window
+of ±`k_rows` ticks around `R` would show.
+
+**Before** (`levels` layout, commit `7353388`), shipped config:
+
+| level d | ticks from R, mean ± sd | range | P(price changed between steps) |
+|---|---|---|---|
+| 0 | 3.8 ± 2.5 | −20 … +27 | 0.35 |
+| 1 | 7.0 ± 3.8 | −14 … +37 | 0.47 |
+| 2 | 9.5 ± 4.3 | −12 … +46 | 0.53 |
+| 4 | 12.9 ± 4.8 | +3 … +43 | 0.52 |
+| 7 | 17.3 ± 5.9 | +9 … +41 | 0.33 |
+
+(bid side; the ask side is the same to within 0.5 tick.) The negative ranges are older-frame
+effects on one-sided books. So "level 3" is a coordinate that wanders over some forty ticks and
+moves on every second step.
+
+| price code j | realised ticks from R, bids | asks |
+|---|---|---|
+| 0 | 3.6 ± 2.5 | 4.0 ± 2.7 |
+| 1 | 6.5 ± 4.6 | 6.2 ± 4.4 |
+| 3 | 6.8 ± 5.6 | 7.0 ± 5.8 |
+| 6 | 7.2 ± 5.0 | 7.4 ± 4.9 |
+| 9 | 9.4 ± 4.9 | 10.0 ± 4.5 |
+
+The code carried almost no positional meaning: codes 1–6 indistinguishable, every code spanning
+0 to 20 ticks. Stress config: the same shape at slightly smaller numbers (level 0 at 3.7 ± 3.5,
+codes 0–9 from 2.0 to 9.8 with sd 2.3–3.5).
+
+Window coverage in `levels` mode — resting volume within ±w ticks of `R`:
+
+| | ±10 | ±16 | ±20 | ±32 |
+|---|---|---|---|---|
+| shipped | 72.5% | 93.9% | 97.5% | 99.8% |
+| stress | 81.4% | 96.8% | 98.9% | 100% |
+
+**The fix.** `book_mode: "grid"`: two size rows over `2 k_rows + 1` tick offsets from `R`, every
+frame re-gridded against the newest `R_t`, price code *j* quoting *j* ticks from `R` on the passive
+side ([05](05_observation_space.md) §1.4, [06](06_action_space.md) §2.1.1). The `levels` layout
+stays as the other value of the key.
+
+**After** (`grid`, this tree), same seeds:
+
+| price code j | realised ticks from R, bids | asks |
+|---|---|---|
+| 0 | −0.2 ± 0.9 | 0.2 ± 0.9 |
+| 1 | 0.7 ± 0.9 | 1.3 ± 0.9 |
+| 3 | 2.8 ± 0.9 | 3.3 ± 0.9 |
+| 6 | 5.7 ± 1.0 | 6.3 ± 0.9 |
+| 9 | 8.7 ± 1.1 | 9.2 ± 0.9 |
+
+Code *j* lands at *j* ± 0.9 ticks; the 0.9 is the `price_offset` head shading by one tick either
+way, and the ±0.3 skew between sides is the half-tick between `M` and `R` on a two-sided book. Same
+at the stress config (bids 1.0 → 8.9, asks 1.1 → 9.1, sd 0.8–0.9). The observation's cell for
+code *j* is `k_rows ∓ j` by construction, so the two coordinates are one.
+
+Coverage in `grid` mode, because the agents now quote on the grid:
+
+| | ±10 | ±16 | ±20 | ±32 |
+|---|---|---|---|---|
+| shipped | 93.3% | 99.5% | 99.9% | 100% |
+| stress | 93.9% | 99.8% | 100% | 100% |
+
+The occupied best level still sits 2.2 ± 1.7 ticks from `R` and changes on 40% of steps — the
+book is as dynamic as it was — but that is now something the observation *shows* (the cell that
+is non-zero moves) rather than something the coordinate *hides*. Occupied cells in the window:
+29% mean (shipped), 6.5% (stress). Every emitted vector stayed inside the §16.22 bounds with 0
+clips.
+
+**Before/after with `train.compare`**, the protocol of §16.20–16.23 (`mlp`, `transformer`, seeds
+0 1 2, 8 iterations, 4 agents, 2 trained, `max_step` 128). Before = `levels` (the "after" table of
+§16.23, which is this tree's `levels` mode byte for byte); after = `grid`.
+
+**Before** (`levels`, 296 floats):
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | order_rejection_fraction | unmatched_action_fraction | maker_fill_ratio_max | obs_clip_fraction | separated on |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlp | 3 | 291,872 | −0.00209 ± 0.00112 | −0.332 ± 0.592 | 0.107 ± 0.00611 | 0 ± 0 | 0.289 ± 0.0253 | 0.645 ± 0.0153 | 0 ± 0 | nothing |
+| transformer | 3 | 682,528 | −0.00132 ± 0.001 | −0.189 ± 0.517 | 0.102 ± 0.00977 | 0 ± 0 | 0.298 ± 0.0208 | 0.639 ± 0.0406 | 0 ± 0 | nothing |
+
+**After** (`grid`, 224 floats):
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | order_rejection_fraction | unmatched_action_fraction | maker_fill_ratio_max | obs_clip_fraction | separated on |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlp | 3 | 255,008 | −0.00346 ± 0.00211 | −0.47 ± 0.306 | 0.119 ± 0.00466 | 0 ± 0 | 0.291 ± 0.00514 | 0.621 ± 0.0497 | 0 ± 0 | nothing |
+| transformer | 3 | 684,832 | −0.00141 ± 0.00196 | −0.431 ± 0.489 | 0.119 ± 0.0138 | 0 ± 0 | 0.281 ± 0.0304 | 0.617 ± 0.0234 | 0 ± 0 | nothing |
+
+Reading it:
+
+- **The widths moved the way the layouts say.** The `mlp` lost 36,864 first-layer parameters
+  (296 → 224 inputs × 512); the transformer gained 2,304, because its level tokens are now 21 per
+  snapshot instead of 10 and its positional table grew with them, while the token width itself
+  fell from 8 to 6 (two size channels, two own channels, padded to the six scalars).
+- **`obs_clip_fraction` stays 0 ± 0**: the grid's cells sit inside the `bid_size` / `ask_size`
+  bounds of §16.22 under training play.
+- **The near-random baseline did not move**: pass fractions 0.10–0.12, unmatched 0.28–0.30,
+  rejections 0, returns within noise of zero, `vf_explained_var` negative on both trees. Nothing
+  separates the encoders under either layout at this scale.
+
+As in §16.20–16.23, this is a smoke-scale run: it proves the protocol runs on the grid and that the
+layout change did not alter what near-random policies do. Whether a stationary coordinate lets a
+policy *learn* a quoting rule is the run at scale's question ([10](10_testing.md) §8), and the one
+this row was raised to ask.
+
+**Supports:** §15 S3-15; §05 1.4, 7.4; §06 2.1.1; §18 3.0, 5.5; §10 (`test_grid_book.py`).

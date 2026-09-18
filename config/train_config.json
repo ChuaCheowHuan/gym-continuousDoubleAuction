@@ -13,6 +13,8 @@
     "max_step": 4096,
     "is_render": false,
     "n_hist": 4,
+    "_note_book_mode": "See env_defaults.json. 'grid' (fixed tick-offset window shared by observation and action, S3-15) or 'levels' (the k_rows best occupied prices per side). Changing it is a layout change: a checkpoint records its mode and is refused by a run in the other.",
+    "book_mode": "grid",
     "initial_price_min": 10,
     "initial_price_max": 100,
     "min_size": 1,

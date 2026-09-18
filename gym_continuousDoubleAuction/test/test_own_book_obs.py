@@ -25,7 +25,10 @@ from gym_continuousDoubleAuction.envs.exchg.state_helper import (
 def _env(agents=2, **cfg):
     env = continuousDoubleAuctionEnv({
         "num_of_agents": agents, "is_render": False, "max_step": 64,
-        "initial_price_min": 100, "initial_price_max": 100, **cfg,
+        "initial_price_min": 100, "initial_price_max": 100,
+        # Level-aligned own sizes are the `levels` mode's; the grid's alignment
+        # is pinned in test_grid_book.py.
+        "book_mode": "levels", **cfg,
     })
     env.reset(seed=7)
     return env
@@ -69,8 +72,9 @@ class TestLayout:
         # 6 book rows x 10 levels + 6 scalars = 66 per snapshot since S3-14.
         assert env.observation_spaces["agent_0"].shape == (4 * 66 + 32,)
         # 3: positive asks (S4-17) and finite bounds (S4-15), same shape as 2;
-        # 4: the occupancy rows and the last-trade reference (S3-14).
-        assert OBSERVATION_LAYOUT_VERSION == 4
+        # 4: the occupancy rows and the last-trade reference (S3-14);
+        # 5: the grid book mode as the default (S3-15) - this env is `levels`.
+        assert OBSERVATION_LAYOUT_VERSION == 5
 
     def test_reset_shows_an_empty_own_book(self):
         env = _env()

@@ -192,6 +192,15 @@ The `environment` group of `train_config.json`, forwarded as an `env_config` dic
 [02_architecture.md](02_architecture.md) §2.6 for the table of the original seven keys and their
 `TrainConfig` counterparts.
 
+### 3.0 The book layout: `book_mode`
+
+`"grid"` (default) or `"levels"` ([05](05_observation_space.md) §1.4, S3-15). An env-config key
+rather than a structural constant so that a test or a `train.compare --set book_mode=levels` run
+can build the other layout beside the default; `TrainConfig.book_mode` carries it, it is one of the
+structural keys a restore cannot change (§5.3), and it travels in the checkpoint's layout stamp.
+The module-level `SNAPSHOT_DIM` and `obs_row_slice` in `state_helper` follow the process default
+from `env_defaults.json`.
+
 ### 3.1 Order sizing
 
 | Key | Value | Meaning |
@@ -291,7 +300,9 @@ concatenates. A value the code cannot honour raises at env construction rather t
 
 The module-level `K_ROWS` / `BOOK_DIM` / `SNAPSHOT_DIM` names still exist in `state_helper`, read
 from the same config at import. They are for consumers with no env instance to ask — the
-visualizers, which read a pickled observation, and the tests.
+visualizers, which read a pickled observation, and the tests. `BOOK_DIM` is the raw six-row frame
+in either mode; `SNAPSHOT_DIM` is the emitted width at the process default `book_mode` (§3.0):
+2 × (2 × k_rows + 1) + extra_dim = 48 in `grid`, book_rows × k_rows + extra_dim = 66 in `levels`.
 
 #### 4.1.1 Observation bounds
 
@@ -907,6 +918,11 @@ indistinguishable from a value nobody chose.
 The `encoder` group exists to make architectures comparable, and a comparison is easy
 to run in a way that measures the wrong thing. Four points, in rough order of how much
 damage getting them wrong does:
+
+0. **Change one thing.** `train.compare --set FIELD=VALUE` (repeatable) overrides any
+   `TrainConfig` field for every run in the comparison, coerced to the field's type, so a
+   representation or matching regime can be compared under identical seeds and encoders:
+   `--set book_mode=levels`, for instance, against the default grid.
 
 1. **Fix the seed, and use more than one.** `run.seed` ships as `null`, so each run
    draws its own. Single-seed RL comparisons are mostly noise, and self-play league

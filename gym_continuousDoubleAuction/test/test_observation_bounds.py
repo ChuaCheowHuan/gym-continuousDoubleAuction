@@ -38,6 +38,7 @@ def _env(**overrides):
         "initial_price_max": 100,
     }
     config.update(overrides)
+    config.setdefault("book_mode", "levels")
     env = continuousDoubleAuctionEnv(config)
     env.reset(seed=1)
     return env
@@ -72,18 +73,19 @@ class TestTheSpace:
         once, and the private block follows the last frame."""
         env = _env()
         cfg = state_helper.constants("observation_bounds")
-        k = env.k_rows
+        cells = env.obs_book_cells
+        assert env.obs_book_rows == BOOK_ROW_ORDER  # this env is in `levels` mode
         for frame in range(env.n_hist):
             base = frame * env.snapshot_dim
-            for r, row in enumerate(BOOK_ROW_ORDER):
+            for r, row in enumerate(env.obs_book_rows):
                 lo, hi = cfg["book"][row]
-                sl = slice(base + r * k, base + (r + 1) * k)
+                sl = slice(base + r * cells, base + (r + 1) * cells)
                 assert (env.obs_low[sl] == np.float32(lo)).all(), row
                 assert (env.obs_high[sl] == np.float32(hi)).all(), row
             for e, name in enumerate(EXTRA_FIELDS):
                 lo, hi = cfg["extra"][name]
-                assert env.obs_low[base + env.book_dim + e] == np.float32(lo), name
-                assert env.obs_high[base + env.book_dim + e] == np.float32(hi), name
+                assert env.obs_low[base + env.obs_book_dim + e] == np.float32(lo), name
+                assert env.obs_high[base + env.obs_book_dim + e] == np.float32(hi), name
         tail_low = env.obs_low[-env.private_dim:]
         tail_high = env.obs_high[-env.private_dim:]
         for i, name in enumerate(env.private_fields):

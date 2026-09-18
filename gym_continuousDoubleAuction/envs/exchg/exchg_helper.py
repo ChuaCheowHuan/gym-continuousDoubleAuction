@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from .state_helper import State_Helper, BOOK_ROW_ORDER
+from .state_helper import State_Helper
 from .action_helper import Action_Helper
 from .reward_helper import Reward_Helper
 from .done_helper import Done_Helper
@@ -231,12 +231,13 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         block into a `book_rows`-column table headed by BOOK_ROW_ORDER, then
         log any trailing market-level scalars on their own line.
         """
-        if isinstance(data, np.ndarray) and data.ndim == 1 and data.size >= self.book_dim:
-            book = data[:self.book_dim]
-            extras = data[self.book_dim:]
-            # shape (k_rows, book_rows): each row is one price level
-            reshaped = book.reshape(self.book_rows, self.k_rows).T
-            headers = list(BOOK_ROW_ORDER)
+        if isinstance(data, np.ndarray) and data.ndim == 1 and data.size >= self.obs_book_dim:
+            book = data[:self.obs_book_dim]
+            extras = data[self.obs_book_dim:]
+            # shape (cells, rows): each row of the table is one level or one
+            # tick offset, depending on `book_mode`.
+            reshaped = book.reshape(len(self.obs_book_rows), self.obs_book_cells).T
+            headers = list(self.obs_book_rows)
             logger.debug("%s %s", msg, tabulate(reshaped, headers=headers))
             if extras.size == self.extra_dim:
                 logger.debug(

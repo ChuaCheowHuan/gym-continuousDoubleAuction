@@ -13,15 +13,31 @@ from gym_continuousDoubleAuction.envs.layout_version import (
     layout_stamp,
 )
 from gym_continuousDoubleAuction.envs.exchg.action_helper import ACTION_KEYS
-from gym_continuousDoubleAuction.envs.exchg.state_helper import PRIVATE_FIELDS
+from gym_continuousDoubleAuction.envs.exchg.state_helper import BOOK_MODE, PRIVATE_FIELDS
 
 
 def test_stamp_describes_the_current_layout():
     stamp = layout_stamp()
-    assert stamp["observation_version"] == 4
+    assert stamp["observation_version"] == 5
     assert stamp["action_version"] == 2
+    assert stamp["book_mode"] == BOOK_MODE
+    assert layout_stamp("levels")["book_mode"] == "levels"
     assert stamp["private_fields"] == list(PRIVATE_FIELDS)
     assert stamp["action_keys"] == list(ACTION_KEYS)
+
+
+def test_book_mode_mismatch_is_refused_by_name():
+    """S3-15: same version, different width and meaning - the mode travels."""
+    stamp = layout_stamp("levels")
+    with pytest.raises(ValueError, match="book_mode 'levels' .* 'grid'"):
+        check_layout_stamp({LAYOUT_KEY: stamp}, "/x", book_mode="grid")
+    check_layout_stamp({LAYOUT_KEY: stamp}, "/x", book_mode="levels")
+    check_layout_stamp({LAYOUT_KEY: stamp}, "/x")  # None: not compared
+
+
+def test_an_unknown_book_mode_is_rejected():
+    with pytest.raises(ValueError, match="book_mode"):
+        layout_stamp("ladder")
 
 
 def test_current_stamp_passes():

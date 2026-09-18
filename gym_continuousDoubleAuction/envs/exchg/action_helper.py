@@ -366,6 +366,20 @@ class Action_Helper():
         # level_idx: 0 to k_rows - 1, representing book levels 1 to k_rows
         level_idx = price_code
 
+        if self.book_mode == "grid":
+            # The observation's coordinate is the action's (doc/15 S3-15):
+            # code j is the cell j ticks from the reference on the passive
+            # side, whatever is resting there. No ghost logic is needed - every
+            # code names a price - and a bid can cross only through the
+            # offset head, by one tick, or a market order.
+            R = self.reference_price()
+            if side == 'bid':
+                set_price = R - level_idx * min_tick + offset_multiplier * min_tick
+            else:
+                set_price = R + level_idx * min_tick - offset_multiplier * min_tick
+            set_price = max(min_tick, set_price)
+            return self._snap_price(set_price, min_tick)
+
         # Use unnormalized raw prices array for action price calculation.
         # Always present: reset builds it, and every step rebuilds it.
         book = np.array(self.agg_LOB_raw).reshape(self.book_rows, self.k_rows)
@@ -393,7 +407,11 @@ class Action_Helper():
 
         # Final safety checks
         set_price = max(min_tick, set_price)
+        return self._snap_price(set_price, min_tick)
 
+    @staticmethod
+    def _snap_price(set_price: float, min_tick: float) -> float:
+        """`set_price` on the `min_tick` grid, exactly, as the book will key it."""
         # Snap to the tick grid, in Decimal, before handing the price over.
         #
         # Two things above put a price off the grid on any non-integer tick.
