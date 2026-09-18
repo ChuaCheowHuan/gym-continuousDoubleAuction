@@ -142,7 +142,7 @@ def _module_path(checkpoint: str, module_id: str) -> str:
         if _is_module_dir(candidate):
             return candidate
 
-    available = _available_modules(checkpoint)
+    available = available_modules(checkpoint)
     raise FileNotFoundError(
         f"No module {module_id!r} under {checkpoint!r}. Looked for {direct} "
         f"and for {checkpoint} itself as a module directory. "
@@ -156,8 +156,13 @@ def _is_module_dir(path: str) -> bool:
     return os.path.isfile(os.path.join(path, _MODULE_MARKER))
 
 
-def _available_modules(checkpoint: str) -> list:
-    """Module ids in a checkpoint, so the error can name them."""
+def available_modules(checkpoint: str) -> list:
+    """Module ids in a checkpoint, sorted.
+
+    Public because `train.export` lists them for the user rather than only
+    naming them in an error, and a second implementation of "which directories
+    under `rl_module/` are modules" is a second answer that can disagree.
+    """
     root = os.path.join(checkpoint, *_MODULE_SUBPATH)
     if not os.path.isdir(root):
         return []

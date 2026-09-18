@@ -63,7 +63,7 @@ import and reads its config tree relative to the repository root
 Three checks, cheapest first. All three are what CI runs ([10](10_testing.md) §7).
 
 ```bash
-# 1. the simulator and the training-side units: ~4 min, 1,127 tests (incl. pyflakes and Hypothesis)
+# 1. the simulator and the training-side units: ~4 min, 1,144 tests (incl. pyflakes and Hypothesis)
 python -m pytest gym_continuousDoubleAuction/test -q \
     --ignore=gym_continuousDoubleAuction/test/integration
 
@@ -350,6 +350,43 @@ fractions, as means over the agent-episodes that module played. `--seed` pins ep
 (episode i uses seed + i), so two checkpoints evaluated with the same seed face the same price
 anchors and opponent draws and the difference is the policies. A checkpoint from another
 observation or action layout is refused by name.
+
+
+### 26.9.2 Take a policy's weights out of a checkpoint
+
+The other half of "use a trained policy" ([14](14_perspective_ai_engineer.md) §5.9): not running
+it, but getting the network out. `league_state.json` beside every checkpoint names the champions,
+so the winner can be chosen without unpickling anything.
+
+```bash
+# what this checkpoint holds: its modules, its champions, which scored best
+python -m gym_continuousDoubleAuction.train.export \
+    --checkpoint results/chkpt/iter_00016 --list
+
+# the best champion's weights, as a plain torch file
+python -m gym_continuousDoubleAuction.train.export \
+    --checkpoint results/chkpt/iter_00016 --out champion.pt
+
+# a specific module instead
+python -m gym_continuousDoubleAuction.train.export \
+    --checkpoint results/chkpt/iter_00016 --module-id policy_1 --out policy_1.pt
+```
+
+The file is a `torch.save` of the `state_dict` plus the module id and class, the checkpoint and
+iteration, the promotion record, and the layout stamp — weights without that stamp read the wrong
+observation as soon as the layout moves ([17](17_changelog.md) §47.5).
+
+Two things it is not. The default module is a **guess**: a champion's `return` ranks it against
+the league of the iteration it was promoted in, so two champions' returns are not comparable.
+Settle it with `train.evaluate --seed` (§26.9.1) and pass the winning module id back with
+`--module-id`. And it is not a frozen graph: reloading the file still needs `ray[rllib]` and this
+package, because the architecture is rebuilt from the checkpoint's own spec rather than written
+down a second time. There is still no TorchScript or ONNX export.
+
+To run what you exported, the inference path is `evaluate.act` — `forward_inference`, the module's
+own distribution class, then `unsquash_action`. Skipping that unsquash hands the env a negative
+`size_sigma` on about half the samples. The action mask travels inside the observation and is
+applied inside the module, so nothing extra is needed for it.
 
 ---
 

@@ -15,7 +15,7 @@ production-deployable as a service, but as a research codebase it is above avera
 
 > **This section is the original audit and is no longer accurate.** It was measured against a
 > tree of 7,478 Python lines with 90 unit tests and no logging module. The repository is now
-> 34,257 lines across 124 files, with 1,127 unit and 156 integration tests, a 523-line
+> 34,257 lines across 124 files, with 1,144 unit and 163 integration tests, a 523-line
 > `logging_setup` and a test that fails the build on a bare `print` in `envs/` or `train/`. The
 > `sklearn.utils.shuffle` import it names was removed (`action_helper.py:182` records that), and
 > the `install_requires` block it quotes no longer exists - `ray[rllib]` and `six` are in it and
@@ -321,7 +321,7 @@ observation rather than dropping (see [13](13_perspective_financial_trader.md) �
 |---|---|
 | ~~**`build_algo` returns a detached callback on the restore path**~~ | Fixed — see §5.9.1, along with four adjacent checkpoint defects. |
 | ~~**The Docker image `pip install`s a hardcoded dependency list**~~ | **Fixed** (S4-8): it `COPY`s `requirements.txt` and installs from it |
-| **No inference/serving path** | Nothing loads a checkpoint and runs a policy. There is no `evaluate.py`, no Ray Serve deployment, no exported TorchScript/ONNX. |
+| ~~**No inference/serving path**~~ | **Partly closed.** `train/evaluate.py` rolls episodes with a checkpoint's policies (S4-12) and `train/export.py` writes one module's weights to a torch file (doc/26 §26.9.2). What remains: no Ray Serve deployment, and no TorchScript/ONNX — the exported file still needs `ray[rllib]` and this package to rebuild the architecture. |
 | **No config validation** | `TrainConfig` accepts `num_trained_agents > num_agents` (caught later, in `build_multi_rl_module_spec`), negative `max_step`, etc. |
 | **No experiment tracking** | No MLflow / W&B; results are TensorBoard + stdout. |
 | **No Ray Tune integration** | `train()` is a hand-rolled loop; using `tune.Tuner` would bring scheduling, fault tolerance and sweeps essentially for free. |

@@ -94,6 +94,14 @@
     "module_id": "policy_0",
     "log_level": null
   },
+  "cda_export": {
+    "_module": "python -m gym_continuousDoubleAuction.train.export",
+    "_note": "Take one module's weights out of a checkpoint as a plain torch file - doc/14 section 5.9, doc/26 section 26.9.2. module_id null exports the champion with the best return recorded in league_state.json; out null writes <module_id>.pt in the working directory. log_level null defers to the logging group of tunable_constants.json.",
+    "_note_module_id": "Left null on purpose rather than defaulting to policy_0 the way cda_probe does. The probe scores an encoder, where any trainable module is a fair sample; this exports the winner, and silently handing back policy_0 when a league full of champions exists would be the wrong module with no warning.",
+    "module_id": null,
+    "out": null,
+    "log_level": null
+  },
   "cda_evaluate": {
     "_module": "python -m gym_continuousDoubleAuction.train.evaluate",
     "_note": "Roll episodes with a trained checkpoint's policies, no learning, and report per module what they did - doc/15 S4-12, doc/26 section 26.10. The env config comes from the checkpoint itself; only max_step can be overridden. seed pins the episode seeds (episode i uses seed + i) so two checkpoints evaluated with the same seed face the same anchors and opponent draws. out null writes no JSON; the table always goes to the log.",

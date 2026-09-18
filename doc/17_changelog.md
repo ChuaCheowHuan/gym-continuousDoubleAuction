@@ -3233,3 +3233,35 @@ orders that cross within the same instant can be cleared without the shuffle dec
   counter did.
 - **Tests.** `test_matching_regimes.py` (19) at the book, `test_clearing_env.py` (13) through the
   env. Suite: **1,127 unit + 156 integration**.
+
+## 55. Taking a trained policy out of a checkpoint (`train.export`)
+
+[14](14_perspective_ai_engineer.md) §5.9 listed "no inference/serving path" as a production gap.
+`evaluate.py` closed half of it — a checkpoint can be *run*. This closes the other half: a
+checkpoint's weights can be taken *out*, and the module to take is chosen for you.
+
+- **`python -m gym_continuousDoubleAuction.train.export --checkpoint <iter_n> --out champion.pt`**
+  writes a `torch.save` of one module's `state_dict`, plus what makes those tensors mean anything:
+  the module id and class, the checkpoint and iteration, the promotion record, and the
+  observation/action layout stamp (§47.5). `--list` prints the checkpoint's modules and its
+  champion table without exporting; `--module-id` names a module directly.
+- **The default is the league's winner.** With no `--module-id` it reads `champion_history` from
+  the `league_state.json` the checkpoint already carries and takes the champion with the best
+  recorded return — no unpickling, no `Algorithm` restore.
+- **And it says that this is a guess.** A champion's `return` is its score relative to the league
+  of the iteration it was promoted in, so two champions' returns are not comparable; `--list` says
+  so in its own output and points at `train.evaluate --seed`, whose per-module table settles it on
+  shared seeds and names a module id to pass back.
+- **A foreign layout warns rather than refuses**, unlike `evaluate`. Nothing here drives the env,
+  reading old weights is a reasonable thing to want, and the stamp travels in the file either way.
+- **No second path resolution.** The module directory inside a checkpoint is resolved by
+  `probe.features.load_module`, which already knew where one lives and already had the error that
+  names the modules actually present; `_available_modules` became public as `available_modules` for
+  the `--list` output rather than being reimplemented.
+- **Deliberately not TorchScript or ONNX.** The architecture is rebuilt from the checkpoint's own
+  spec, so reloading needs `ray[rllib]` and this package. A frozen graph would be a second
+  definition of the network to keep in step with the first, and §5.9 still names it as open.
+- **Tests.** `test_export.py` (17) for the choice and the record, integration
+  `test_export_checkpoint.py` (7) for a real train → promote → save → export → reload round trip,
+  which asserts the exported tensors equal the source policy's rather than a fresh initialisation.
+  Suite: **1,144 unit + 163 integration**.
