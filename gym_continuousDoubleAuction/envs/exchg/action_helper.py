@@ -22,6 +22,17 @@ _CATEGORY_MAP = {
 }
 
 
+#: Keys of the per-agent action Dict, in the order gymnasium's `Dict` holds them
+#: (it sorts keys), which is the order a flattened action lists its parts.
+#: Named so the layout stamp (envs/layout_version.py) and the record can list
+#: them without instantiating a space.
+ACTION_KEYS = ("category", "order_slot", "price", "price_offset", "size_mean", "size_sigma")
+
+#: Bumped whenever the action Dict changes shape or meaning (doc/15 S4-19).
+#: 1 was the five-component Dict; 2 added `order_slot`.
+ACTION_LAYOUT_VERSION = 2
+
+
 class Action_Helper():
     def __init__(self, min_size=env_default("min_size"),
                  mkt_max_size=env_default("mkt_max_size"),
@@ -78,6 +89,12 @@ class Action_Helper():
                 f"but the side/type mapping defines {len(_CATEGORY_MAP)} "
                 f"categories. Change _CATEGORY_MAP in action_helper.py to match."
             )
+        if int(self._act["max_own_orders"]) < 1:
+            raise ValueError(
+                f"tunable_constants.json: action_space.max_own_orders="
+                f"{self._act['max_own_orders']} must be >= 1: it is the number "
+                f"of own resting orders a modify or cancel can be aimed at."
+            )
         price_offset_n = self._act["price_offset_n"]
         if price_offset_n < 1 or price_offset_n % 2 == 0:
             raise ValueError(
@@ -115,6 +132,10 @@ class Action_Helper():
             - size_sigma: Box(size_sigma_low, size_sigma_high)
             - price: Discrete(k_rows) -> book levels 1 to k_rows
             - price_offset: Discrete(price_offset_n) -> 0: Passive (-1 tick), 1: Join (0 tick), 2: Aggressive (+1 tick)
+            - order_slot: Discrete(max_own_orders + 1) -> which of the agent's OWN
+              resting orders a modify or cancel targets, counted from the touch
+              (1 = nearest the market). 0 = every own order on that side for a
+              cancel, the oldest order for a modify. Ignored by market and limit.
 
         Args:
             num_agents (int): Number of agents.
@@ -135,6 +156,11 @@ class Action_Helper():
             # observation exposes and the same depth _set_price indexes into.
             "price": spaces.Discrete(self.k_rows),
             "price_offset": spaces.Discrete(self._act["price_offset_n"]),
+            # Aims a modify or cancel at one of this agent's own orders - see
+            # Trader._get_order_ID. Before this head existed a cancel had to
+            # name its order's exact price out of thirty codes and landed 7%
+            # of the time under random play (doc/15 S3-24).
+            "order_slot": spaces.Discrete(int(self._act["max_own_orders"]) + 1),
         })
 
         # Create a dictionary mapping for all agents
@@ -228,11 +254,11 @@ class Action_Helper():
 
 
             ID = int(ID_str.split('_')[1])
-            
-
+            slot = action.get("slot", 0)
 
             trader = self.traders[ID]
-            self.trades, self.order_in_book = trader.place_order(type, side, size, price, self.LOB, self.traders)
+            self.trades, self.order_in_book = trader.place_order(
+                type, side, size, price, self.LOB, self.traders, slot=slot)
             seq_trades.append(self.trades)
             seq_order_in_book.append(self.order_in_book)
 
@@ -256,9 +282,13 @@ class Action_Helper():
         price_code = model_out.get("price", 0)
         # Default to the neutral 'join' offset, which is the middle code.
         price_offset = model_out.get("price_offset", self._neutral_price_offset())
+        # 0 when absent: "all" for a cancel, FIFO for a modify - the pre-slot
+        # behaviour, so an action dict from before the head existed decodes.
+        order_slot = int(model_out.get("order_slot", 0))
 
         act = {}
         act["ID"] = ID
+        act["slot"] = order_slot
 
         # Mapping Category to Side and Type
         # 0: None, 1: Buy Mkt, 2: Buy Lmt, 3: Buy Mod, 4: Buy Can,

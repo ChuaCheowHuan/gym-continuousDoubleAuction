@@ -52,11 +52,25 @@ class TestTraderCounter:
         self.t.place_order('modify', 'ask', 1, 100, self.book, [self.t])
         assert self.t.acc.num_unmatched_step == 1
 
-    def test_cancel_at_the_wrong_price_counts(self):
+    def test_cancel_on_the_empty_side_counts(self):
+        """A cancel is aimed by slot now, not by price (doc/15 S3-24), and the
+        only miss left is a side with nothing of the agent's resting on it."""
         self.t.place_order('limit', 'bid', 1, 100, self.book, [self.t])
-        self.t.place_order('cancel', 'bid', 1, 99, self.book, [self.t])
+        self.t.place_order('cancel', 'ask', 1, 99, self.book, [self.t], slot=2)
         assert self.t.acc.num_unmatched_step == 1
-        assert len(self.book.bids) == 1, "the order at 100 is untouched"
+        assert len(self.book.bids) == 1, "the bid is untouched"
+
+    def test_slot_past_the_count_clamps_rather_than_misses(self):
+        self.t.place_order('limit', 'bid', 1, 100, self.book, [self.t])
+        self.t.place_order('cancel', 'bid', 1, 99, self.book, [self.t], slot=4)
+        assert self.t.acc.num_unmatched_step == 0
+        assert len(self.book.bids) == 0
+
+    def test_cancel_price_is_ignored(self):
+        self.t.place_order('limit', 'bid', 1, 100, self.book, [self.t])
+        self.t.place_order('cancel', 'bid', 1, 99, self.book, [self.t], slot=1)
+        assert self.t.acc.num_unmatched_step == 0
+        assert len(self.book.bids) == 0
 
     def test_matched_actions_do_not_count(self):
         self.t.place_order('limit', 'bid', 2, 100, self.book, [self.t])

@@ -1071,3 +1071,57 @@ because it cannot choose which. The plan that follows from both is
 [15](15_findings_and_recommendations.md) S3-24.
 
 **Supports:** §15 S3-23, S3-24; §04 5; §10 2.5.
+
+
+## 16.20 Order management made aimable: the hit rates and the before/after run (2026-09-18)
+
+[15](15_findings_and_recommendations.md) S3-24, phases 1-4. Every number here is uniformly
+random play at the shipped config unless stated; "hit" means `num_unmatched_step` stayed 0 for
+that agent on that step.
+
+### The hit rate, through four designs
+
+Five seeds x 400 steps x 6 agents, the §16.19 script re-run on each tree:
+
+| aiming rule | cancel hits (of issued) | modify hits (of issued) | agents with >=1 order resting |
+|---|---|---|---|
+| by exact price (cancel) / FIFO (modify) - before | **7%** | 48% | 71-73% |
+| `order_slot`, 9 codes, a slot past the count misses | 12% | 14% | 69-70% |
+| `order_slot`, 5 codes, a slot past the count misses | 19% | 23% | 66-67% |
+| `order_slot`, 5 codes, **clamped** to the deepest own order - shipped | **35%** | **36%** | 58-60% |
+
+Of the times the agent had anything resting on either side, the shipped rule lands 58% of cancels
+and 62% of modifies; the remainder are actions on the side with nothing on it, which is the only
+miss the design leaves. Two things the table says that the plan did not predict: a slot head with
+dead upper slots makes *modify* worse for a random policy than the FIFO rule it replaced, because
+FIFO landed whenever any order existed; and the fourth column falls as cancels start to work -
+agents that can cancel hold fewer orders, so "had an order" is no longer a fixed 70%.
+
+### The before/after comparison run
+
+`train.compare --encoders mlp --seeds 0 1 2 --iters 8 --agents 4 --trained-agents 2 --max-step
+128 --episodes-per-iter 4 --no-probe`, once on the tree at `5462604` (before) and once on this
+one (after). Three seeds each, means ± standard deviation across seeds:
+
+| tree | params | return | vf_explained_var | pass_action_fraction | unmatched_action_fraction | maker_fill_ratio_max |
+|---|---|---|---|---|---|---|
+| before | 237,851 | -0.00207 ± 0.00157 | -0.46 ± 0.332 | 0.121 ± 0.0155 | 0.315 ± 0.00318 | 0.635 ± 0.028 |
+| after | 250,912 | -0.000759 ± 0.00175 | -0.374 ± 0.411 | 0.105 ± 0.00522 | 0.289 ± 0.0273 | 0.629 ± 0.00948 |
+
+Nothing is *separated* by the driver's rule, and nothing should be read as learning: 8 iterations
+at `lr` 5e-05 leaves both policies near their initialisation, and two of the four agents are the
+random baselines whose behaviour the aiming rule changes directly. What the table does show is
+the plumbing end to end - the new heads and fields flow through RLlib, the recorder and the
+metrics - and the direction of the mechanical effect: the league-wide dead-action share falls
+(0.315 → 0.289) while the pass and maker fractions hold, with 13,061 more parameters for the
+wider input and head. The learning claim of phase 4 - "agents that can aim cancels quote more and
+hold fewer stale orders" - needs the run at scale ([10](10_testing.md) §8).
+
+### Layout stamp
+
+Every checkpoint written on this tree carries `"layout": {"observation_version": 2,
+"action_version": 2, ...}` in its `league_state.json`; the checkpoints under
+`cmp_before/` carry no stamp, and `check_layout_stamp` refuses them as layout 1
+(`test_layout_version.py`).
+
+**Supports:** §15 S1-2, S3-24, S4-19; §05 1.0.1, 7.7; §06 1.5; §07 1; §10 2.6.

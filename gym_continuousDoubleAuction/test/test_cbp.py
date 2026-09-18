@@ -100,12 +100,17 @@ class TestLayerDiscovery:
         assert all(layer.num_units == 256 for layer in layers)
 
     def test_the_last_hidden_layer_consumes_into_the_head(self, spaces):
-        """The policy head has 26 outputs and the value head exactly 1."""
+        """The policy head has 31 outputs and the value head exactly 1.
+
+        31 = 9 category + 5 order_slot + 10 price + 3 price_offset + 2 x 2
+        for the two Box heads' mean and log-std. It was 26 before the
+        `order_slot` head existed (doc/15 S3-24).
+        """
         by_name = {l.name: l for l in find_replaceable_layers(build_module(spaces))}
 
         actor = by_name["encoder.actor_encoder.net.mlp.2"]
         critic = by_name["encoder.critic_encoder.net.mlp.2"]
-        assert [out.out_features for out in actor.outgoing] == [26]
+        assert [out.out_features for out in actor.outgoing] == [31]
         assert [out.out_features for out in critic.outgoing] == [1]
 
         # The first hidden layer's consumer is still inside the encoder.
@@ -123,7 +128,7 @@ class TestLayerDiscovery:
         )
         assert len(layers) == 2
         last = max(layers, key=lambda layer: layer.name)
-        assert sorted(out.out_features for out in last.outgoing) == [1, 26]
+        assert sorted(out.out_features for out in last.outgoing) == [1, 31]
 
     def test_frozen_layers_are_skipped(self, spaces):
         """The `jepa` encoder's EMA target trunk must not be replaceable.

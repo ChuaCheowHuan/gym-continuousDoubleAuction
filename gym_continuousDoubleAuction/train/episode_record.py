@@ -104,6 +104,7 @@ REWARD_TERMS = (
     "trade_penalty",
     "drawdown_penalty",
     "passive_bonus",
+    "dead_action_penalty",
 )
 
 #: How long `close` will wait for room in the writer's queue before giving the

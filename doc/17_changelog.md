@@ -2979,3 +2979,68 @@ is aimed by FIFO - and the four-phase plan that follows (own-book observation bl
 are written up as [15](15_findings_and_recommendations.md) S3-24, with effort and the structural
 consequence: both layout changes should land as one checkpoint generation, and that is the moment
 to record a layout version (S4-19).
+
+
+## 47. Order management made aimable (S3-24, phases 1–4; S1-2 and S4-19 closed)
+
+The plan of §46.2, carried out as one checkpoint generation. The observation is 216 floats (from
+193), the action Dict has six heads (from five), and every checkpoint now says which layout it was
+trained against.
+
+### 47.1 Phase 1 — the own-book block
+
+The private block is `[9 base | own bid sizes (k_rows) | own ask sizes (k_rows) | own counts (2) |
+unmatched_last_step]`, built by `State_Helper.private_fields(k_rows)` so a config tree with a
+different depth gets the block for its depth. Own size at level k is this agent's resting quantity
+at the price of public level k, read from the live book after the step's orders and put on the
+public book's scale and sign. `tokenize` writes the two own sizes into channels 4 and 5 of the
+newest snapshot's level tokens — the channels the six market scalars had left as zero padding on
+level tokens — so every tokenising encoder sees them per level at no extra width, and `ObsLayout`
+learns where the block sits from the env's own definition rather than a second constant.
+
+### 47.2 Phase 2 — `order_slot`
+
+A sixth action head, `Discrete(max_own_orders + 1)` with `max_own_orders` 4, the measured p90 of
+resting orders. Slot k names the agent's k-th own order from the touch (best price first, oldest
+first within a level, the order the own-book block lists them in); 0 is "all on this side" for a
+cancel and the oldest order for a modify, which is the pre-slot FIFO rule so a policy that ignores
+the head loses nothing. A cancel no longer reads `price`.
+
+**One departure from the plan, forced by measurement.** The plan had a slot past the agent's count
+miss. Under random play that made modify worse than FIFO — 48% → 23% of issued modifies landed —
+while cancel rose only from 7% to 19%, because a uniform policy spends a fifth of its order
+management on each slot and the upper ones name orders it does not have. A learned policy gains
+nothing from dead slots: it can read its own-order counts and aim exactly. So a slot past the count
+now clamps to the deepest own order, the only miss left is a side with nothing resting on it, and
+under random play 35–36% of issued cancels and modifies land, 58–62% of those with anything
+resting. [16](16_verification_log.md) §16.20 has the four-row table.
+
+### 47.3 Phase 3 — feedback
+
+`unmatched_last_step` in the private block, 1.0 on the observation after a dead modify or cancel.
+And a sixth reward term, `dead_action_penalty`, shipped at 0.0 with the S1-3 warning on the knob:
+`x + (-0.0) == x`, so the reward is bit for bit what it was, and the term is in
+`info["reward_terms"]`, the record and the variance-share metrics like the other five.
+
+### 47.4 Phase 4 — proving it, as far as this session can
+
+`train.compare` collects `order_rejection_fraction`, `unmatched_action_fraction` and
+`maker_fill_ratio_max` beside returns, and was run before and after at three seeds × 8 iterations
+of the scaled-down protocol. The dead-action share fell 0.315 → 0.289 with pass and maker
+fractions unchanged; nothing is separated by the driver's rule and nothing at that scale is
+learning, so this proves plumbing and direction, not the claim. The Hypothesis suite drives
+slot-aimed modifies and cancels through every book, escrow and ledger invariant.
+
+### 47.5 S4-19 — the layout stamp
+
+`envs/layout_version.py` writes the observation and action layout versions, the private-field list
+and the action-key list into every checkpoint's `league_state.json`, and `build_algo` compares
+before restoring. A pre-stamp sidecar is layout 1 by definition, so every checkpoint written before
+today is refused by name rather than by tensor shape.
+
+### 47.6 What else moved
+
+`test_cbp` pins the policy head at 31 outputs (was 26). `test_config_sources` sets `private_dim`
+alongside `k_rows` when it swaps a depth in. The tokeniser test that said the private block never
+reaches a token now says everything but the own-book block never does. Fourteen documents that
+stated 193 state 216. Suite: 1,019 unit + 153 integration.

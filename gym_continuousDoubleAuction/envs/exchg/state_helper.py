@@ -87,8 +87,23 @@ _FRAME_EXTRAS = 6
 #: Every entry is normalised to O(1) and bounded, because these sit in the same
 #: vector as the book block and feed the same `tanh` MLP - an unbounded private
 #: field would saturate it exactly as the raw sizes do (S2-2).
-PRIVATE_FIELDS = (
-    "position",        # tanh(net_position / limit_max_size), signed, in (-1, 1)
+#: The per-agent fields that do not depend on book depth, in order. These are
+#: the nine the private block started with; `private_fields` appends the
+#: depth-dependent own-book block after them.
+#:
+#: This block is why the reward is learnable at all. It is
+#: f(nav, prev_nav, max_nav, ...) and every one of those was unobservable, so
+#: two agents holding opposite positions received the byte-identical vector and
+#: needed opposite actions - which a policy, being a function of its
+#: observation, cannot do (finding S1-2). `drawdown` matters especially: it is
+#: a path functional over the whole episode, so no amount of recurrence could
+#: have recovered it from a stream that never showed it.
+#:
+#: Every entry is normalised to O(1) and bounded, because these sit in the same
+#: vector as the book block and feed the same `tanh` MLP - an unbounded private
+#: field would saturate it exactly as the raw sizes do (S2-2).
+BASE_PRIVATE_FIELDS = (
+    "position",        # tanh(net_position / position_scale), signed, in (-1, 1)
     "position_val",    # mark-to-market exposure / init_nav, signed
     "cash",            # free cash / init_nav
     "cash_on_hold",    # cash escrowed against live orders / init_nav
@@ -98,6 +113,64 @@ PRIVATE_FIELDS = (
     "realised_pnl",    # total_profit / init_nav
     "time_left",       # 1 - t_step / max_step, in [0, 1]
 )
+
+#: The two own-order counts that follow the own-book sizes, and the feedback
+#: flag that follows them. See `private_fields`.
+OWN_COUNT_FIELDS = (
+    "own_bid_count",   # this agent's resting bids / max_own_orders, clipped to 1
+    "own_ask_count",   # this agent's resting asks / max_own_orders, clipped to 1
+)
+FEEDBACK_FIELDS = (
+    "unmatched_last_step",  # 1.0 if the agent's last modify/cancel named no order
+)
+
+
+def own_book_fields(k_rows):
+    """Names of the own-book sizes: bids at levels 0..k-1, then asks."""
+    return (
+        tuple(f"own_bid_size_{k}" for k in range(k_rows))
+        + tuple(f"own_ask_size_{k}" for k in range(k_rows))
+    )
+
+
+def private_fields(k_rows):
+    """The private block's layout at a given book depth, in order.
+
+    `[base (9) | own bid sizes (k) | own ask sizes (k) | own counts (2) |
+    unmatched_last_step (1)]`. The own-book block is the S1-2 tail closed
+    (doc/15 S3-24 phase 1): the agent used to see how much cash it had
+    escrowed but not where, so a cancel was a guess about state the policy
+    was never shown - measured at a 7% hit rate under random play. Level k of
+    the own book is level k of the public book in the same snapshot, on the
+    same `sqrt(V / limit_max_size)` scale and with asks negative, so a
+    tokenising encoder can carry own size as two more channels of each level
+    token (see `train/model/encoders/tokenize.py`). The counts cover orders
+    deeper than the book shows; the flag is phase 3 - the consequence of a
+    dead action, in the next observation rather than only in a log.
+
+    `observation_layout.private_dim` in tunable_constants.json must equal
+    `len(private_fields(k_rows))`; `State_Helper.__init__` checks that.
+    """
+    return BASE_PRIVATE_FIELDS + own_book_fields(k_rows) + OWN_COUNT_FIELDS + FEEDBACK_FIELDS
+
+
+def own_book_offset():
+    """Index within the private block where `own_bid_size_0` sits."""
+    return len(BASE_PRIVATE_FIELDS)
+
+
+#: The private block at the import-time layout, for consumers with no env to
+#: ask - the visualizers and the tests. Runtime code uses
+#: `self.private_fields`, built from the instance's `k_rows`.
+PRIVATE_FIELDS = private_fields(K_ROWS)
+OWN_BOOK_OFFSET = own_book_offset()
+
+#: Bumped whenever the observation vector's layout changes shape or meaning,
+#: so a checkpoint records which layout its weights were trained against and a
+#: restore into a different one fails by name rather than by tensor shape
+#: (doc/15 S4-19). 1 was the 193-float layout with a 9-field private block;
+#: 2 added the own-book block and the feedback flag (216 floats at defaults).
+OBSERVATION_LAYOUT_VERSION = 2
 
 
 class State_Helper(object):
@@ -155,13 +228,25 @@ class State_Helper(object):
                 f"{len(EXTRA_FIELDS)} scalars {EXTRA_FIELDS}. Change "
                 f"set_agg_LOB and EXTRA_FIELDS to match."
             )
-        if self.private_dim != len(PRIVATE_FIELDS):
+        # Built from this instance's depth, not the import-time constant, so a
+        # config tree swapped in under `$CDA_CONFIG_DIR` gets the block for
+        # ITS k_rows.
+        self.private_fields = private_fields(self.k_rows)
+        if self.private_dim != len(self.private_fields):
             raise ValueError(
                 f"tunable_constants.json: observation_layout.private_dim="
                 f"{self.private_dim} but set_private_state builds "
-                f"{len(PRIVATE_FIELDS)} fields {PRIVATE_FIELDS}. Change "
-                f"set_private_state and PRIVATE_FIELDS to match."
+                f"{len(self.private_fields)} fields at k_rows={self.k_rows} "
+                f"(9 base + 2*k_rows own-book + 2 counts + 1 flag). Set "
+                f"private_dim to {len(self.private_fields)} or change "
+                f"private_fields() to match."
             )
+        # Normaliser of the own-order counts, and the cardinality of the
+        # `order_slot` action head minus one - the same key, so what the agent
+        # is shown and what it can aim at agree.
+        self.max_own_orders = int(constant("action_space", "max_own_orders"))
+        if self.max_own_orders < 1:
+            raise ValueError("action_space.max_own_orders must be >= 1")
         self.book_dim = self.book_rows * self.k_rows
         self.snapshot_dim = self.book_dim + self.extra_dim
 
@@ -449,7 +534,7 @@ class State_Helper(object):
         elapsed = (float(elapsed_steps) / float(self.max_step)
                    if self.max_step else 1.0)
 
-        private = np.array([
+        base = np.array([
             position,
             float(acc.position_val) / scale,
             float(acc.cash) / scale,
@@ -462,12 +547,62 @@ class State_Helper(object):
             max(0.0, 1.0 - elapsed),
         ], dtype=np.float32)
 
+        own_bid, own_ask, n_bid, n_ask = self.own_book(trader)
+        cap = float(self.max_own_orders)
+        tail = np.array([
+            min(1.0, n_bid / cap),
+            min(1.0, n_ask / cap),
+            # Read before `set_step_outputs` zeroes the counter, so this is the
+            # step just finished: did this agent's modify/cancel name nothing?
+            1.0 if acc.num_unmatched_step > 0 else 0.0,
+        ], dtype=np.float32)
+
+        private = np.concatenate([base, own_bid, own_ask, tail]).astype(np.float32)
+
         if len(private) != self.private_dim:
             raise ValueError(
                 f"set_private_state built {len(private)} fields but "
                 f"private_dim is {self.private_dim}."
             )
         return private
+
+    def own_book(self, trader):
+        """This trader's resting size at each public level, and its order counts.
+
+        Returns `(own_bid, own_ask, n_bid, n_ask)`: two `(k_rows,)` float32
+        arrays on the public book's `sqrt(V / limit_max_size)` scale, asks
+        negative, zero where the trader has nothing at that level (or the
+        level is empty); and the trader's resting order count per side over
+        the whole book, not only the shown depth.
+
+        Reads the live book, not the snapshot: `set_private_state` runs after
+        `prep_next_state` in `set_step_outputs`, so the book here is the one
+        the newest snapshot was taken from, and level k here is level k there.
+        Own orders deeper than `k_rows` are in the counts but not the sizes,
+        the same way the public book hides them.
+        """
+        k = self.k_rows
+        size_scale = float(self.limit_max_size)
+        own_bid = np.zeros(k, dtype=np.float32)
+        own_ask = np.zeros(k, dtype=np.float32)
+
+        def fill(tree, levels, out, sign):
+            for level, (_price, order_list) in enumerate(levels):
+                if level >= k:
+                    break
+                qty = 0
+                for order in order_list:
+                    if order.trade_id == trader.ID:
+                        qty += int(order.quantity)
+                if qty:
+                    out[level] = sign * np.sqrt(qty / size_scale)
+
+        fill(self.LOB.bids, reversed(self.LOB.bids.price_map.items()), own_bid, 1.0)
+        fill(self.LOB.asks, self.LOB.asks.price_map.items(), own_ask, -1.0)
+
+        n_bid = sum(1 for o in self.LOB.bids.order_map.values() if o.trade_id == trader.ID)
+        n_ask = sum(1 for o in self.LOB.asks.order_map.values() if o.trade_id == trader.ID)
+        return own_bid, own_ask, n_bid, n_ask
 
     def set_next_state(self, next_states, trader, state_input,
                        elapsed_steps=None):

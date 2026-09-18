@@ -84,7 +84,7 @@ Five reasons, in descending order of strength.
 ### 2.1 The observation is already the grid JEPA masks
 
 [`tokenize.py`](../gym_continuousDoubleAuction/train/model/encoders/tokenize.py) turns the book part of the
-observation - 184 of its 193 floats, the private tail having been split off first - into
+observation - 184 of its 216 floats, the private tail having been split off first - into
 `(B, n_hist × (k_rows + 1), 6)` tokens whose position is a `(time, level)`
 pair, and [`transformer.py`](../gym_continuousDoubleAuction/train/model/encoders/transformer.py)
 already carries a **two-axis learned positional embedding** for exactly that grid. A JEPA
@@ -311,7 +311,7 @@ head, and let PPO and the JEPA objective share one trunk.
 
 ```mermaid
 flowchart TD
-    OBS["observation, 193 floats"] --> SPLIT["split_private"]
+    OBS["observation, 216 floats"] --> SPLIT["split_private"]
     SPLIT -->|"184 book"| TOK["tokenize (both)<br/>44 tokens x 6"]
     SPLIT -->|"9 private"| PTOK["PrivateToken<br/>1 token"]
     TOK --> MASK{"training?"}

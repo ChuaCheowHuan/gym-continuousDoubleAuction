@@ -31,8 +31,10 @@ final checkpoint:
 
 * `return`: `module_episode_returns_mean` averaged over the trainable modules.
 * `vf_explained_var`: the same average, of the critic's explained variance.
-* `pass_action_fraction`: the league-wide pass fraction, so a "winning" encoder
-  whose policy has collapsed to doing nothing is visible as such.
+* `pass_action_fraction`, `order_rejection_fraction`, `unmatched_action_fraction`:
+  the three ways an action can change nothing, so a "winning" encoder whose
+  policy has collapsed to doing nothing is visible as such.
+* `maker_fill_ratio_max`: the most maker-like agent's share of its own fills.
 * `parameters`: trainable parameter count of one trainable module.
 * `probe:<target>@<horizon>`: the probe score of the checkpoint's `policy_0`
   latents on that target, against the shared corpus.
@@ -69,6 +71,9 @@ TABLE_METRICS = (
     ("return", ".3g"),
     ("vf_explained_var", ".3g"),
     ("pass_action_fraction", ".3g"),
+    ("order_rejection_fraction", ".3g"),
+    ("unmatched_action_fraction", ".3g"),
+    ("maker_fill_ratio_max", ".3g"),
 )
 
 
@@ -126,6 +131,13 @@ def run_one(base_cfg, encoder: str, seed: int, out_dir: str, iters: int) -> Dict
             "return": _mean([returns.get(pid) for pid in trainable]),
             "vf_explained_var": _mean([vf.get(pid) for pid in trainable]),
             "pass_action_fraction": _as_float(env_runners.get("pass_action_fraction")),
+            # The two other no-op fractions and the maker ratio, because the
+            # claim an order-management change makes is about *activity*, not
+            # returns: "agents that can aim cancels quote more and hold fewer
+            # stale orders" shows up here first (doc/15 S3-24, phase 4).
+            "order_rejection_fraction": _as_float(env_runners.get("order_rejection_fraction")),
+            "unmatched_action_fraction": _as_float(env_runners.get("unmatched_action_fraction")),
+            "maker_fill_ratio_max": _as_float(env_runners.get("maker_fill_ratio_max")),
             "parameters": _parameter_count(algo, trainable[0]),
         }
         checkpoints = list_checkpoints(cfg.checkpoint_dir)

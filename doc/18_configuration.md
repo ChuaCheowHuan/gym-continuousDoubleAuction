@@ -215,6 +215,7 @@ unit of initial capital", and `1e-05` is one basis point of it.
 | `drawdown_penalty` | 0.2 | Per unit of *change* in NAV below the running peak |
 | `passive_bonus` | 2e-05 | Per passive (liquidity-providing) fill this step (0.2 bps) |
 | `loss_multiplier` | 1.0 | Extra weight on negative NAV changes |
+| `dead_action_penalty` | 0.0 | Per `modify`/`cancel` that named no resting order. Zero on purpose: a positive value is negative-sum (S1-3); the miss is already observable as `unmatched_last_step` |
 
 Two of these are less free than they look:
 
@@ -296,6 +297,7 @@ visualizers, which read a pickled observation, and the tests.
 |---|---|---|
 | `category_n` | 9 | Side/type codes: none, then bid and ask × {market, limit, modify, cancel} |
 | `price_offset_n` | 3 | Passive / join / aggressive, in ticks |
+| `max_own_orders` | 4 | Cardinality minus one of the `order_slot` head that aims a modify or cancel at one of the agent's own orders; also the normaliser of the two own-order counts in the observation. The measured p90 of resting orders under random play ([06](06_action_space.md) §1.5) |
 | `size_mean_low` / `size_mean_high` | -1.0 / 1.0 | Bounds of the size-mean Box |
 | `size_sigma_low` / `size_sigma_high` | 0.0 / 1.0 | Bounds of the size-sigma Box |
 
@@ -306,6 +308,7 @@ real config rather than documentation:
 
 - `category_n` must equal the size of `_CATEGORY_MAP`, the side/type table in `action_helper`. The
   old `if`/`elif` chain hardwired 9, so changing the number did nothing.
+- `max_own_orders` must be ≥ 1; the head has `max_own_orders + 1` codes because 0 means "all" (cancel) or "oldest" (modify).
 - `price_offset_n` must be odd, so the neutral "join" code is the middle one. The offset is now
   `price_offset - price_offset_n // 2` rather than a hardcoded `- 1`, so widening it to 5 extends
   the range symmetrically to ±2 ticks and works.
@@ -525,6 +528,12 @@ and said nothing.
 
 It is now loud in both directions:
 
+- **A layout change is fatal, by name.** Every checkpoint carries a layout stamp in its
+  `league_state.json` — the observation and action layout versions plus the private-field and
+  action-key lists (`envs/layout_version.py`) — and `build_algo` compares it before restoring.
+  A checkpoint from the 193-float / five-head layout (version 1) resumed into this code fails with
+  a message naming both versions and the fields that differ, rather than at a tensor shape on the
+  first step or, worse, not at all. That is S4-19, closed.
 - **A structural change is fatal.** `num_agents`, `n_hist`, `encoder_type`, `encoder_spec` or the
   policy set changing means the restored weights do not fit the requested problem, so the restore
   raises rather than training something other than what was asked for. Revert the key, or start a
@@ -788,7 +797,7 @@ placing a learner on a device that is not there.
 #### The `lstm` encoder and its two time axes
 
 `lstm` is the *structured* recurrent encoder, not RLlib's `use_lstm` shortcut. The
-shortcut feeds the raw 193-float observation to a stock MLP tokenizer, discarding
+shortcut feeds the raw 216-float observation to a stock MLP tokenizer, discarding
 the book structure exactly as `mlp` does. This one's tokenizer reads the grid.
 
 Two different time axes are involved and they are easy to confuse:
@@ -850,7 +859,7 @@ pushed — the same confound the per-encoder `lr` override exists to remove. Ave
 the floor is `top_k` at perfectly uniform routing, so an untrained gate reads just
 above 2 at the shipped settings regardless of depth.
 
-**Expect collapse, and watch for it.** This env’s observation is 193 floats and the
+**Expect collapse, and watch for it.** This env’s observation is 216 floats and the
 league is small, so MoE's premise — capacity you cannot afford densely — may simply
 not apply. A collapsed mixture and a healthy one have identical losses and identical
 throughput; the only difference is `moe_max_expert_share` and `moe_min_expert_share`

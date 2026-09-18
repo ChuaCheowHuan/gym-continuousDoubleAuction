@@ -25,8 +25,8 @@ snapshot (one frame) = 46 floats
              44   log1p_trade_count    trades since the previous frame
              45   trade_direction      last initiator: +1 buy, -1 sell, 0 none
 
-private block (per agent) = 9 floats
-             0   position        tanh(net_position / limit_max_size)
+private block (per agent) = 32 floats = 9 base + 2 x k_rows own book + 2 counts + 1 flag
+             0   position        tanh(net_position / position_scale)
              1   position_val    mark-to-market exposure / init_nav
              2   cash            free cash / init_nav
              3   cash_on_hold    escrowed against live orders / init_nav
@@ -35,9 +35,15 @@ private block (per agent) = 9 floats
              6   vwap_vs_mid     (M - VWAP) / M when a position is open, else 0
              7   realised_pnl    total_profit / init_nav
              8   time_left       1 - t_step / max_step
+          9-18   own_bid_size_k  THIS agent's resting size at public bid level k,
+                                 sqrt(V / limit_max_size), 0 where it has none
+         19-28   own_ask_size_k  same for asks, negative like the public ask block
+            29   own_bid_count   this agent's resting bids / max_own_orders, clipped to 1
+            30   own_ask_count   same for asks
+            31   unmatched_last_step   1.0 if its last modify/cancel named no order
 
 observation = n_hist frames concatenated, then the private block
-  default n_hist = 4  →  shape (193,) = 4x46 + 9
+  default n_hist = 4  →  shape (216,) = 4x46 + 32
   layout: [ O_{t-3} | O_{t-2} | O_{t-1} | O_t | private ]
   the most recent frame ends at index n_hist * SNAPSHOT_DIM, NOT at the end
 ```
@@ -59,7 +65,7 @@ Widths are defined once, in
 "k_rows": 10,      // book depth, price levels per side
 "book_rows": 4,    // bid_price, bid_size, ask_price, ask_size
 "extra_dim": 6,    // the market scalars; State_Helper.EXTRA_FIELDS names them
-"private_dim": 9   // the per-agent block; State_Helper.PRIVATE_FIELDS names them
+"private_dim": 32  // the per-agent block; State_Helper.private_fields(k_rows) names them
 ```
 
 ### 1.0 Why there is a private block at all
@@ -76,8 +82,26 @@ could reconstruct it from a stream that never showed it.
 
 Every field is normalised by the trader's own `init_nav` or is already a ratio, so the block is on
 the same O(1) scale as the normalised book. An unbounded private field would saturate the `tanh`
-MLP exactly as the raw sizes do (§7, S2-2). `State_Helper.PRIVATE_FIELDS` is the single definition
-of the layout, and `__init__` checks its length against `private_dim`. `BOOK_ROW_ORDER` and
+MLP exactly as the raw sizes do (§7, S2-2). `State_Helper.private_fields(k_rows)` is the single
+definition of the layout, and `__init__` checks its length against `private_dim`.
+
+#### 1.0.1 The own-book block (indices 9–30) and the dead-action flag (31)
+
+Closed on 2026-09-18 ([15](15_findings_and_recommendations.md) S3-24, phase 1 and phase 3). The
+agent used to see `cash_on_hold` — how much was escrowed — but not *where*, so a `cancel` was a
+guess about state the policy was never shown; measured under random play it landed 7% of the time.
+The block is this agent's resting size at each of the `k_rows` public levels on each side, on the
+public book's `sqrt(V / limit_max_size)` scale and sign convention, so level k of the own book is
+level k of the public book **in the same snapshot** — which is what lets the tokenising encoders
+carry own size as two extra channels of each level token
+(`train/model/encoders/tokenize.py`; the level tokens were zero-padded to the scalars' width
+anyway, so it costs no width). Orders deeper than the shown book are in the two counts, which are
+normalised by `action_space.max_own_orders` — the same number the `order_slot` action head is
+sized by, so what the agent sees and what it can aim at agree ([06](06_action_space.md) §1.5).
+`unmatched_last_step` is 1.0 on the observation that follows a `modify` or `cancel` with nothing
+resting on its side, so the consequence of a dead action is in the next input rather than only in
+a log. It is read from the live book after the step's orders are processed, which is the book the
+newest snapshot was taken from. `BOOK_ROW_ORDER` and
 `EXTRA_FIELDS` are checked the same way against `book_rows` and `extra_dim`, so a width set in the
 config that the builder does not produce raises at construction instead of misaligning every
 consumer downstream — `extra_dim` was documentation only until §37.4, and setting it was a silent
@@ -90,7 +114,7 @@ instance attributes `self.k_rows` / `self.book_dim` / `self.snapshot_dim`, which
 `SNAPSHOT_DIM` names read the same config at import and exist for consumers with no env instance —
 the visualizers and the tests. See [18_configuration.md](18_configuration.md) §4.1.
 
-**Never hardcode 40, 46, 160, 184, or 193.** Use `self.snapshot_dim`, or import `SNAPSHOT_DIM` (and
+**Never hardcode 40, 46, 160, 184, 193 or 216.** Use `self.snapshot_dim`, or import `SNAPSHOT_DIM` (and
 `BOOK_DIM` when you specifically mean the book block). The `[-40:]` slicing that predated `EXTRA_DIM` failed
 *silently* rather than loudly when the width changed — it returned the last 38 book values plus
 2 scalars, misaligning every block slice by 2 while still passing several assertions.
@@ -141,7 +165,7 @@ flowchart TD
     DEQ --> NORM["prep_next_state: normalise the WHOLE stack by M_t<br/>prices -> (M_t - P)/M_t; sizes -> sqrt(V / limit_max_size)<br/>M -> log_mid (centred); spread_ticks -> log1p;<br/>the other three pass through, being frame-local already"]
     NORM --> OBS["concatenate -> n_hist x 46 = 184 book floats,<br/>shared by every agent"]
     OBS --> PRIV["+ 9 private floats per agent<br/>position, cash, NAV, drawdown, ..."]
-    PRIV --> FULL["observation: 193 floats"]
+    PRIV --> FULL["observation: 216 floats"]
 ```
 
 Two things this picture makes concrete. The raw book is kept **beside** the normalised one and is
@@ -448,7 +472,7 @@ before the private block and the four new scalars existed, so the shape is the b
 its old width; the round trip itself is unaffected:
 
 ```
-OBS SHAPE          = (168,)   <- book only, extra_dim 2; the observation is 193 floats now
+OBS SHAPE          = (168,)   <- book only, extra_dim 2; the observation is 216 floats now
 best bid/ask raw   = 67.0 / 76.0
 exp(log_mid)       = 71.500015     ← matches (67 + 76) / 2 = 71.5
 expm1(log1p_spread)= 9.0           ← matches 76 - 67 = 9 ticks
@@ -613,18 +637,19 @@ is now a choice rather than a gap, because the features arrive on one scale.
   it "should be used in obs preprocessing if needed". Either use it or delete it.
 - **`Box(-inf, inf)` bounds.** Every quantity here is boundable.
 
-### 7.7 No private state — **fixed**, except resting orders
+### 7.7 No private state — **fixed**
 
 Nothing in the vector encoded the agent's own inventory, cash, NAV or drawdown, yet the reward is a
 deterministic function of exactly those. That was S1-2, the single biggest flaw, and it is closed:
-§1 documents the 9-float private block that every agent now receives, and
+§1 documents the private block that every agent now receives, and
 [17_changelog.md](17_changelog.md) §30 records the change.
 
-**What is still missing is own resting orders.** An agent sees `cash_on_hold` — how much cash is
-escrowed against live orders — but not *which* orders that cash is committed to, so `modify` and
-`cancel` remain partly blind. That is the larger half of what S1-2 left, and it is the one item on
-§8's private list still unbuilt. The analysis of why it mattered is in
-[12_perspective_rl_researcher.md](12_perspective_rl_researcher.md) §2.
+**Own resting orders were the last missing piece, and are in since 2026-09-18** (§1.0.1,
+[17](17_changelog.md) §47). An agent used to see `cash_on_hold` but not *which* orders that cash
+was committed to, so `modify` and `cancel` were blind; the own-book block shows its resting size
+at every public level, its order counts, and whether its last order-management action landed. The
+analysis of why it mattered is in [12_perspective_rl_researcher.md](12_perspective_rl_researcher.md)
+§2; what was done about the *action* side is [06](06_action_space.md) §1.5.
 
 ---
 
@@ -695,6 +720,7 @@ one, and an episode Parquet record written under one width has `obs` lists of a 
 than the reader expects. This is unavoidable whenever the observation dimension
 changes; the width has changed four times (40 → 160 with stacking, 160 → 168 with the first two
 market scalars, 168 → 177 with the private block, 177 → 193 with the four trade-flow and
+then 193 → 216 with the own-book block (§1.0.1), and
 mid-return scalars).
 `SNAPSHOT_DIM` is a good constant but is not recorded in the checkpoint, so the mismatch is not
 detected — it just fails.

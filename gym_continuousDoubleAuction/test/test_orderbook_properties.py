@@ -35,6 +35,9 @@ order = st.fixed_dictionaries({
     "side": st.sampled_from(["bid", "ask"]),
     "size": st.integers(1, 40),
     "price": st.sampled_from(PRICES),
+    # Which own order a modify/cancel aims at: 0 is all/oldest, k the k-th
+    # from the touch, past the count a counted miss (doc/15 S3-24).
+    "slot": st.integers(0, 5),
 })
 
 
@@ -79,7 +82,8 @@ class TestBookInvariants:
         for act in sequence:
             t = traders[act["who"]]
             price = -1.0 if act["type"] == "market" else float(act["price"])
-            t.place_order(act["type"], act["side"], act["size"], price, book, traders)
+            t.place_order(act["type"], act["side"], act["size"], price, book, traders,
+                          slot=act["slot"])
             check_book(book)
 
     @settings(max_examples=200, deadline=None)
@@ -97,7 +101,8 @@ class TestBookInvariants:
         for act in sequence:
             t = traders[act["who"]]
             price = -1.0 if act["type"] == "market" else float(act["price"])
-            t.place_order(act["type"], act["side"], act["size"], price, book, traders)
+            t.place_order(act["type"], act["side"], act["size"], price, book, traders,
+                          slot=act["slot"])
             for trader in traders:
                 resting = sum(
                     o.price * o.quantity
@@ -116,7 +121,8 @@ class TestBookInvariants:
         for act in sequence:
             t = traders[act["who"]]
             price = -1.0 if act["type"] == "market" else float(act["price"])
-            t.place_order(act["type"], act["side"], act["size"], price, book, traders)
+            t.place_order(act["type"], act["side"], act["size"], price, book, traders,
+                          slot=act["slot"])
             assert sum(tr.acc.net_position for tr in traders) == 0
 
 

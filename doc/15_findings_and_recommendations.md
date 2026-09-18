@@ -15,7 +15,7 @@ mindmap
       S1-1 critic got zero gradient — fixed
         rewards are now a fraction of init_nav
       S1-2 no private state — fixed
-        own resting orders still absent
+        own resting orders now shown too
       S1-3 doing nothing dominated — fixed
       S1-4 bare env could not trade — fixed
       S1-5 cash check bypassable — fixed
@@ -45,7 +45,7 @@ mindmap
         S3-5 seeding — fixed
         S3-7 sys.exit in the engine — fixed
         S3-23 NAV conservation exact only to Decimal rounding — fixed
-        S3-24 modify and cancel cannot be aimed — planned
+        S3-24 modify and cancel cannot be aimed — fixed
         S3-20 dead escrow path — fixed
       training and league
         S3-8 detached callback — fixed
@@ -66,6 +66,7 @@ mindmap
       S4-13 property-based tests — fixed
       S4-14 dead-action fraction — fixed
       S4-18 duplicate CODEOWNER files
+      S4-19 layout version in checkpoints — fixed
 ```
 
 ---
@@ -107,7 +108,7 @@ guard. The same change also closed S2-3 and made S2-1's fix expressible.
 → [12 §4](12_perspective_rl_researcher.md#4-the-critic-cannot-learn--vf_clip_param-saturation),
 [07 §2.1](07_reward_function.md)
 
-### S1-2 · Observation contains no private state **[verified, fixed — except resting orders]**
+### S1-2 · Observation contains no private state **[verified, fixed]**
 
 Every agent received the byte-identical 168-float public book vector (`distinct obs vectors
 across agents: 1`). Absent: `net_position`, `VWAP`, `nav`, `max_nav`, `cash`, own resting orders,
@@ -119,8 +120,9 @@ indistinguishable. The drawdown term depends on `max_nav`, a path functional ove
 episode, so this was not partial observability a recurrent net could recover. It also made the
 `modify` and `cancel` categories (4 of 9) blind.
 
-**Fixed.** The observation is now `[ n_hist × snapshot | private ]`, 193 floats: the book prefix
-is still shared and computed once, and a 9-float per-agent block is appended.
+**Fixed.** The observation is now `[ n_hist × snapshot | private ]` - 193 floats when this was
+first closed, 216 since the own-book block (S3-24 phase 1) completed it: the book prefix is still
+shared and computed once, and a per-agent block is appended.
 `State_Helper.PRIVATE_FIELDS` is the single definition of its layout and `__init__` checks its
 length against `private_dim`. Every field is normalised by the trader's own `init_nav` or is
 already a ratio, so the block is O(1) and cannot saturate the `tanh` MLP the way raw sizes do
@@ -958,7 +960,7 @@ suite asserts conservation with `==` again ([16](16_verification_log.md) §16.19
 `nav_tolerance` note's claim of exactness is true once more, and says why.
 
 
-### S3-24 · `modify` and `cancel` cannot be aimed, so they are mostly dead actions **[verified, plan]**
+### S3-24 · `modify` and `cancel` cannot be aimed, so they are mostly dead actions **[verified, fixed]**
 
 Two of the eight order categories are order management, and an agent cannot use either on
 purpose. Measured under uniformly random play, 5 seeds × 400 steps × 6 agents
@@ -995,7 +997,7 @@ checkpoint generation, not several.
 the private tail: for each of the `k_rows` levels on each side, this agent's resting size at that
 level, on the same `√(V / limit_max_size)` scale and sign convention as the public book, plus two
 scalars for own order count per side over a cap. That is `2 × k_rows + 2 = 22` floats, taking the
-observation from 193 to 215. It slots into the level tokenisation the encoders already use — a
+observation from 193 to 216. It slots into the level tokenisation the encoders already use — a
 level token gains an "own size" channel — so `obs_layout.py` and `tokenize.py` change in one place
 each. `PRIVATE_FIELDS` and `observation_layout.private_dim` are the two definitions to move
 together; the constructor check catches a mismatch. Deliverable: the block, its tests (own size at
@@ -1041,6 +1043,33 @@ without Phase 2 shows it a target it cannot hit. The modify semantics change (FI
 one behaviour change an existing policy would feel; the comparison in Phase 4 is what says whether
 it mattered.
 
+**Done (2026-09-18, all four phases; [17](17_changelog.md) §47, [16](16_verification_log.md) §16.20).**
+
+- *Phase 1.* `State_Helper.private_fields(k_rows)` is `[9 base | own bid sizes (k) | own ask
+  sizes (k) | own counts (2) | unmatched_last_step]`, 32 at `k_rows` 10; the observation is 216
+  floats. `own_book` reads the live book after the step's orders, so level k of the own book is
+  level k of the newest snapshot, and `tokenize` writes the two own sizes into channels 4 and 5 of
+  the newest snapshot's level tokens - the channels the scalars' width had left as zero padding -
+  so the transformer, LSTM, MoE and JEPA encoders see them per level at no extra width.
+- *Phase 2.* `order_slot: Discrete(max_own_orders + 1)`, `max_own_orders` 4 (the measured p90).
+  Slot k is the k-th own order from the touch; 0 is "all" for a cancel and the oldest for a modify.
+  **One design change against the plan as written:** a slot past the agent's count is *clamped*
+  to its deepest order rather than counted as a miss. Measured under random play, a head with dead
+  upper slots made modify worse than the FIFO rule it replaced (48% → 23% of issued modifies
+  landed) while cancel rose only from 7% to 19%, and a learned policy gains nothing from dead
+  slots because it can read its own-order counts. Clamped: 35–36% of issued modifies and cancels
+  land, 58–62% of those where the agent had anything resting, and the only miss left is a side
+  with nothing on it. A cancel no longer reads `price`.
+- *Phase 3.* `unmatched_last_step` in the private block, and a sixth reward term
+  `dead_action_penalty` shipped at 0.0 with the S1-3 warning on the knob.
+- *Phase 4.* `train.compare` collects the rejection, unmatched and maker metrics; run before and
+  after at three seeds × 8 iterations of the scaled-down protocol (§16.20). At that scale the
+  policies are still near random, so the run proves the protocol and the plumbing, not the
+  learning claim; that needs the run at scale. The Hypothesis suite drives slot-aimed modifies and
+  cancels through every invariant.
+- *S4-19.* `envs/layout_version.py` stamps every checkpoint with the observation and action layout
+  versions and field lists; `build_algo` refuses a mismatch by name.
+
 
 ---
 
@@ -1066,7 +1095,7 @@ it mattered.
 | S4-16 | **Fixed.** `test_shared_history_multi_agent_uniformity` encoded S1-2 as a requirement. It is replaced by a pair that splits the claim: the book prefix must still be shared between agents, the private tail must not be |
 | S4-17 | The sign convention on ask blocks is redundant (side is already encoded by block position) and prevents natural weight sharing between the two sides |
 | S4-18 | Duplicate `CODEOWNER` and `CODEOWNERS` files at the repo root |
-| S4-19 | No env/observation version recorded in checkpoints, so an observation-layout change invalidates old checkpoints silently |
+| S4-19 | **Fixed.** `envs/layout_version.py` writes the observation and action layout versions, the private-field list and the action-key list into every checkpoint's `league_state.json`; `train.build_algo` compares before restoring and refuses a mismatch naming what differs. A pre-stamp sidecar is layout 1 by definition |
 
 ---
 
@@ -1130,7 +1159,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **979 unit tests pass** (plus 153 integration), covering every position-flip path, cash-check edge case, modify-order
+- **1,019 unit tests pass** (plus 153 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 

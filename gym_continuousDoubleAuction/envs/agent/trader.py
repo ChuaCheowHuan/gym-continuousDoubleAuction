@@ -42,9 +42,20 @@ class Trader(Random_agent):
         self.ID = ID # trader unique ID
         self.acc = Account(ID, cash)
 
-    def place_order(self, type, side, size, price, LOB, agents):
+    def place_order(self, type, side, size, price, LOB, agents, slot=0):
         """
         Execute an action.
+
+        Arguments:
+            slot: Which of this trader's own resting orders a `modify` or
+                `cancel` targets, counted from the touch (1 = nearest the
+                market; best price first, oldest first within a level), and
+                clamped to the deepest one when the trader has fewer. 0 is
+                "every own order on that side" for a cancel and "the oldest
+                order" for a modify - the pre-slot rule, so callers that pass
+                nothing get the old behaviour. Ignored by market and limit.
+                A miss - counted in `num_unmatched_step` - is now only
+                "nothing resting on that side". See doc/15 S3-24.
 
         Return:
             trades: list
@@ -64,7 +75,7 @@ class Trader(Random_agent):
             return trades, order_in_book
 
         # normal execution
-        if self._order_approved(side, size, price, LOB, type):
+        if self._order_approved(side, size, price, LOB, type, slot=slot):
             # Before the order can reach the matcher. Every regulated venue
             # runs self-match prevention, and this one needs it more than
             # most: `Exchg_Helper.mark_to_mkt` marks *every* account off a
@@ -73,7 +84,7 @@ class Trader(Random_agent):
             # self-trader's own reward (doc/15 S2-5).
             self._prevent_self_match(LOB, type, side, price)
 
-            order = self._create_order(type, side, size, price)
+            order = self._create_order(type, side, size, price, slot=slot)
 
             # Option B: Flag only Market and Limit orders for entry penalty
             if order.get('type') in ['market', 'limit']:
@@ -248,7 +259,7 @@ class Trader(Random_agent):
             remaining -= covered
         return total
 
-    def _replaced_order(self, LOB, type, side, price):
+    def _replaced_order(self, LOB, type, side, price, slot=0):
         """The resting order this quote would replace, as `(order_id, order)`,
         or `(None, None)`.
 
@@ -266,17 +277,17 @@ class Trader(Random_agent):
 
         order_ID, order = self._get_order_ID(
             LOB, {'trade_id': self.ID, 'side': side,
-                  'price': price, 'type': type},
+                  'price': price, 'type': type, 'slot': slot},
         )
         if order_ID == -1:
             return None, None
         return order_ID, order
 
-    def _replaced_order_id(self, LOB, type, side, price):
+    def _replaced_order_id(self, LOB, type, side, price, slot=0):
         """The order id this quote would replace, or None. See `_replaced_order`."""
-        return self._replaced_order(LOB, type, side, price)[0]
+        return self._replaced_order(LOB, type, side, price, slot)[0]
 
-    def _order_approved(self, side, size, price, LOB, type=None):
+    def _order_approved(self, side, size, price, LOB, type=None, slot=0):
         """
         Conditions for order approval. Handles:
         1. NAV positivity.
@@ -311,7 +322,7 @@ class Trader(Random_agent):
         # the old order's escrow back to cash *before* the new quote is
         # processed. It is therefore excluded from the resting exposure below
         # and counted as available cash in the check at the bottom.
-        replaced_id, replaced = self._replaced_order(LOB, type, side, price)
+        replaced_id, replaced = self._replaced_order(LOB, type, side, price, slot)
         released = (
             replaced.price * replaced.quantity if replaced is not None
             else Decimal(0)
@@ -375,7 +386,7 @@ class Trader(Random_agent):
 
         return False
 
-    def _create_order(self, type, side, size, price):
+    def _create_order(self, type, side, size, price, slot=0):
         """
         Create the order dictionary.
 
@@ -399,13 +410,15 @@ class Trader(Random_agent):
                      'side': side,
                      'quantity': size,
                      'price': price,
-                     'trade_id': self.ID}
+                     'trade_id': self.ID,
+                     'slot': slot}
         elif type == 'cancel':
             order = {'type': type,
                      'side': side,
                      'quantity': size,
                      'price': price,
-                     'trade_id': self.ID}
+                     'trade_id': self.ID,
+                     'slot': slot}
         else:
             order = {}
 
@@ -463,24 +476,56 @@ class Trader(Random_agent):
         return trades, order_in_book
 
     def _cancel_limit_order(self, orderBook, qoute):
+        """Cancel by slot: 0 is every own order on the side, k the k-th from the touch.
+
+        A cancel used to match by exact price, which needed the agent to name
+        the one code in thirty that its order sat at, and landed 7% of the
+        time under random play (doc/15 S3-24). Both slot forms release each
+        cancelled order's escrow through `cancel_cash_transfer`, the same call
+        `cancel_all_orders` uses.
         """
-        Note:
-            If order is found in LOB,
-            handle cash transfer accordingly after cancel_order in LOB.
-        """
+        trades, order_in_book = [], []
+        slot = int(qoute.get('slot', 0) or 0)
+
+        if slot == 0:
+            mine = self._own_orders_from_touch(orderBook, qoute['side'])
+            if not mine:
+                # Nothing to cancel: the third silent outcome doc/15 S4-14 lists.
+                self.acc.num_unmatched_step += 1
+                return trades, order_in_book
+            for order_id, order in mine:
+                orderBook.cancel_order(qoute['side'], order_id)
+                self.acc.cancel_cash_transfer(order)
+            return trades, order_in_book
 
         order_id, order = self._get_order_ID(orderBook, qoute)
-        if order_id == -1:  # not found
-            # Same counter as the modify path: a cancel with nothing at the
-            # named price is the third silent outcome doc/15 S4-14 lists.
+        if order_id == -1:  # nothing resting on this side
             self.acc.num_unmatched_step += 1
-            trades, order_in_book = [],[]
         else:
             orderBook.cancel_order(qoute['side'], order_id)
             self.acc.cancel_cash_transfer(order)
-            trades, order_in_book = [],[]
 
         return trades, order_in_book
+
+    def _own_orders_from_touch(self, orderBook, side):
+        """This trader's resting orders on `side`, nearest the market first.
+
+        Best price first - highest bid, lowest ask - and oldest first within a
+        level, which is fill priority. Slot k of a modify or cancel is element
+        k-1 of this list, and it is also the order the own-book observation
+        block lists them in, so what the agent sees and what it can aim at
+        agree.
+        """
+        order_map = self._find_orderTree(orderBook, {'side': side})
+        if order_map is None:
+            return []
+        mine = [(order_ID, order) for order_ID, order in order_map.items()
+                if order.trade_id == self.ID]
+        if side == 'bid':
+            mine.sort(key=lambda item: (-item[1].price, item[1].timestamp))
+        else:
+            mine.sort(key=lambda item: (item[1].price, item[1].timestamp))
+        return mine
 
     def cancel_all_orders(self, LOB):
         """Pull every order this trader has resting, on both sides.
@@ -536,8 +581,29 @@ class Trader(Random_agent):
         if not matching_orders:
             return -1, None
 
-        if qoute.get('type') == 'modify':
-            # FIFO logic: find the oldest existing order (smallest timestamp)
+        if qoute.get('type') in ('modify', 'cancel'):
+            slot = int(qoute.get('slot', 0) or 0)
+            if slot > 0:
+                # Slot k is the k-th own order from the touch (doc/15 S3-24,
+                # phase 2), clamped to the deepest one when the agent has
+                # fewer than k. Clamped rather than missed: a slot past the
+                # count would be a dead action, and measured under random
+                # play (doc/16 16.20) a head with dead slots made modify
+                # WORSE than the FIFO rule it replaced (48% -> 23% hits) while
+                # a learned policy gains nothing from them - it can read its
+                # own-order counts and aim exactly. With the clamp the only
+                # miss left is the genuine one: nothing resting on that side.
+                ranked = self._own_orders_from_touch(orderBook, qoute['side'])
+                if not ranked:
+                    return -1, None
+                return ranked[min(slot, len(ranked)) - 1]
+            if qoute.get('type') == 'cancel':
+                # Slot 0 of a cancel is "all"; `_cancel_limit_order` handles
+                # it before reaching here. Asked anyway, answer the touch.
+                ranked = self._own_orders_from_touch(orderBook, qoute['side'])
+                return ranked[0] if ranked else (-1, None)
+            # modify, slot 0: FIFO - the oldest existing order (smallest
+            # timestamp), which is what a modify always did before slots.
             return min(matching_orders, key=lambda x: x[1].timestamp)
         
         # For 'cancel' or 'limit', we match the specific price.

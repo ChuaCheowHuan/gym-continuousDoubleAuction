@@ -41,6 +41,11 @@ from gym_continuousDoubleAuction.config_loader import (
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
     continuousDoubleAuctionEnv,
 )
+from gym_continuousDoubleAuction.envs.layout_version import (
+    LAYOUT_KEY,
+    check_layout_stamp,
+    layout_stamp,
+)
 from gym_continuousDoubleAuction.logging_setup import configure as configure_logging
 from gym_continuousDoubleAuction.logging_setup import get_logger
 from gym_continuousDoubleAuction.logging_setup import (
@@ -180,6 +185,8 @@ class TrainConfig:
     drawdown_penalty: float = _default("drawdown_penalty")
     passive_bonus: float = _default("passive_bonus")
     loss_multiplier: float = _default("loss_multiplier")
+    # Per dead order-management action. Ships at 0.0; see the config note.
+    dead_action_penalty: float = _default("dead_action_penalty")
 
     # --- Rollouts ------------------------------------------------------------
     # 0 keeps sampling in the driver process, which is the right setting for a
@@ -500,6 +507,7 @@ class TrainConfig:
             "drawdown_penalty": self.drawdown_penalty,
             "passive_bonus": self.passive_bonus,
             "loss_multiplier": self.loss_multiplier,
+            "dead_action_penalty": self.dead_action_penalty,
         }
 
     def resolved_gpus_per_learner(self) -> float:
@@ -947,6 +955,10 @@ def _write_league_state(path: str, algo, iteration: int) -> None:
 
     state = callback.league_state()
     state["training_iteration"] = iteration
+    # Which observation and action layout the weights in this checkpoint were
+    # trained against (doc/15 S4-19). A restore into a different layout fails
+    # by name at `build_algo`, before RLlib gets as far as a tensor shape.
+    state[LAYOUT_KEY] = layout_stamp()
     with open(os.path.join(path, LEAGUE_STATE_FILE), "w") as fh:
         json.dump(state, fh, indent=2)
 
@@ -1388,6 +1400,10 @@ def build_algo(cfg: TrainConfig):
         logger.info(
             "restoring from %scheckpoint: %s", "pinned " if pinned else "", path,
         )
+        # Before touching RLlib: a checkpoint from another observation or
+        # action layout can never be resumed into this one, and falling back
+        # to an older save would only find the same layout again.
+        check_layout_stamp(_read_league_state(path), path)
         try:
             algo = Algorithm.from_checkpoint(path)
         except Exception as exc:

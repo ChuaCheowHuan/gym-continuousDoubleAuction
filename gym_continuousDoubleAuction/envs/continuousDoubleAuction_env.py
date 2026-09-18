@@ -55,6 +55,7 @@ class continuousDoubleAuctionEnv(
         drawdown_penalty = self._cfg("drawdown_penalty")
         passive_bonus = self._cfg("passive_bonus")
         loss_multiplier = self._cfg("loss_multiplier")
+        dead_action_penalty = self._cfg("dead_action_penalty")
 
         # Initialize parent classes
         super().__init__(
@@ -74,6 +75,7 @@ class continuousDoubleAuctionEnv(
             drawdown_penalty=drawdown_penalty,
             passive_bonus=passive_bonus,
             loss_multiplier=loss_multiplier,
+            dead_action_penalty=dead_action_penalty,
         )
 
         self.next_states = {}

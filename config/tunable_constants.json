@@ -4,11 +4,12 @@
   "observation_layout": {
     "_source": "gym_continuousDoubleAuction/envs/exchg/state_helper.py (State_Helper.__init__)",
     "_note": "One observation snapshot is book_rows stacked rows of k_rows price levels - [bid_price, bid_size, ask_price, ask_size] - followed by extra_dim market-level scalars [log_mid, log1p_spread_ticks, mid_return, signed_volume, log1p_trade_count, trade_direction] - EXTRA_FIELDS in state_helper.py is the definition, and its length is checked against extra_dim at construction. k_rows is the single definition of book depth: the observation exposes it, the action space's price code indexes it, and _set_price reshapes against it. book_rows is fixed by the four lists set_agg_LOB builds; changing it requires changing that function.",
-    "_note_private_dim": "private_dim is the width of the PER-AGENT block appended after the n_hist stacked snapshots, so an observation is n_hist * snapshot_dim + private_dim floats. The book prefix is still shared and computed once; only this tail differs between agents. It exists because the reward is f(nav, prev_nav, max_nav, ...) and none of those were observable - two agents holding opposite positions saw the byte-identical vector and needed opposite actions, which no policy can do (finding S1-2). Changing this number means changing State_Helper.set_private_state to match; PRIVATE_FIELDS there is the single definition of what the block contains, and its length is checked against this value at construction.",
+    "_note_private_dim": "private_dim is the width of the PER-AGENT block appended after the n_hist stacked snapshots, so an observation is n_hist * snapshot_dim + private_dim floats. The book prefix is still shared and computed once; only this tail differs between agents. It exists because the reward is f(nav, prev_nav, max_nav, ...) and none of those were observable - two agents holding opposite positions saw the byte-identical vector and needed opposite actions, which no policy can do (finding S1-2). Changing this number means changing State_Helper.set_private_state to match; State_Helper.private_fields(k_rows) there is the single definition of what the block contains, and its length is checked against this value at construction. It is 9 base fields + 2 * k_rows own-book sizes + 2 own-order counts + 1 feedback flag: 9 + 20 + 2 + 1 = 32 at k_rows 10.",
     "k_rows": 10,
     "book_rows": 4,
     "extra_dim": 6,
-    "private_dim": 9
+    "private_dim": 32,
+    "_note_own_book": "The OWN-BOOK block (doc/15 S3-24 phase 1, closing the S1-2 tail): for each of the k_rows public levels on each side, THIS agent's resting size at that level on the public book's sqrt(V / limit_max_size) scale and sign convention (asks negative), then this agent's resting order count per side over action_space.max_own_orders, then unmatched_last_step - 1.0 if the agent's last modify/cancel named no resting order (phase 3), so the consequence of a dead action is in the next observation. Level k of the own book is level k of the public book in the same snapshot, which is what lets a tokenising encoder carry own size as two extra channels of each level token (tokenize.py)."
   },
   "action_space": {
     "_source": "gym_continuousDoubleAuction/envs/exchg/action_helper.py (Action_Helper.act_space)",
@@ -18,7 +19,9 @@
     "size_mean_low": -1.0,
     "size_mean_high": 1.0,
     "size_sigma_low": 0.0,
-    "size_sigma_high": 1.0
+    "size_sigma_high": 1.0,
+    "_note_order_slot": "order_slot aims a modify or cancel at one of the agent's OWN resting orders on the named side, counted from the touch (best price first, oldest first within a level) - slot 1 is the order nearest the market - and clamped to the deepest own order when the agent has fewer than the slot names. For cancel, slot 0 means every own order on that side. For modify, slot 0 keeps the pre-slot FIFO rule (the oldest order) so a policy that ignores the head loses nothing; slot k moves the k-th order to the price named by price + price_offset. The only miss left, counted in num_unmatched_step, is a modify or cancel with nothing resting on that side. Cancel no longer matches by price at all; limit still does, as the upsert rule. max_own_orders is the cardinality minus one, set to the p90 of resting orders measured under random play (4; doc/16 16.19). Why clamp rather than miss: a head whose upper slots were dead made modify WORSE for a uniformly random policy - the baseline opponents - than the FIFO rule it replaced (48% -> 23% of issued modifies hit) while cancel only rose from 7% to 19%; a learned policy gains nothing from dead slots because it can read its own-order counts and aim exactly. Clamped, any slot hits whenever the agent has an order on that side (doc/16 16.20).",
+    "max_own_orders": 4
   },
   "price_anchor_fallbacks": {
     "_source": "gym_continuousDoubleAuction/envs/exchg/action_helper.py (Action_Helper.__init__) and state_helper.py (set_agg_LOB)",

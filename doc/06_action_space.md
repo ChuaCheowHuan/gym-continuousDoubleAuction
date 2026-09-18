@@ -33,7 +33,7 @@ value the decoder cannot honour raises rather than being silently ignored. See
 
 ```mermaid
 flowchart TD
-    NN["RLModule emits a Dict:<br/>category, size_mean, size_sigma, price, price_offset"] --> CAT{"_CATEGORY_MAP[category]"}
+    NN["RLModule emits a Dict:<br/>category, order_slot, price, price_offset,<br/>size_mean, size_sigma"] --> CAT{"_CATEGORY_MAP[category]"}
     CAT -->|"0 -> (None, market)"| PASS["side is None:<br/>dropped by set_actions,<br/>agent recorded in pass_agents"]
     CAT -->|"1-4 -> bid {market, limit, modify, cancel}"| SIZE
     CAT -->|"5-8 -> ask {market, limit, modify, cancel}"| SIZE
@@ -50,7 +50,7 @@ flowchart TD
     GHOST --> OFF
     OFF --> CLAMP["max(min_tick, price)"]
 
-    MKT --> OUT["order dict {ID, side, type, size, price}"]
+    MKT --> OUT["order dict {ID, side, type, size, price, slot}"]
     CLAMP --> OUT
     OUT --> QUEUE["appended to acts, then shuffled by rand_exec_seq"]
 ```
@@ -109,14 +109,36 @@ price is set to `-1.0` — the sentinel telling the matching engine to execute i
 whatever is available. `test_market_order_mapping` proves this by submitting a deliberately
 "dirty" price level with a market category.
 
-### 1.5 Multi-order targeting
+### 1.5 Aiming a modify or cancel: `order_slot`
 
-- **Modify** uses FIFO: it targets the agent's **oldest existing order** on that side, ignoring
-  price.
-- **Cancel** and **limit** match the specific price named by the `price` + `price_offset`
-  combination. The match is made in `Decimal`, the type the book stores prices in, and
-  `_set_price` snaps every price it emits to the `tick_size` grid before handing it over — so the
-  price an agent names is the price level the book has, on any tick, not only on `tick_size` 1
+Since 2026-09-18 ([15](15_findings_and_recommendations.md) S3-24, phase 2) the Dict carries a
+sixth head, `order_slot: Discrete(max_own_orders + 1)`, and it is what aims the two
+order-management categories:
+
+| `order_slot` | `cancel` | `modify` |
+|---|---|---|
+| 0 | every own order on that side | the **oldest** own order on that side (the pre-slot FIFO rule, so a policy that ignores the head loses nothing) |
+| k ≥ 1 | the k-th own order from the touch — best price first, oldest first within a level, the order the own-book observation lists them in ([05](05_observation_space.md) §1.0.1) — **clamped to the deepest** when the agent has fewer than k | the same order, moved to the price `price` + `price_offset` names, with the size head's quantity |
+
+The only miss left, counted in `num_unmatched_step` and shown to the agent as
+`unmatched_last_step` in its next observation, is a modify or cancel on a side where it has
+nothing resting. A **cancel no longer reads `price` at all**. Before this a cancel had to name its
+order's exact price out of thirty codes and landed 7% of the time under random play; a modify
+always took the oldest order and so could not choose which to move.
+
+Why clamp a slot past the count rather than count it as a miss: measured under uniformly random
+play — which is what the baseline opponents are — a head with dead upper slots made modify *worse*
+than the FIFO rule it replaced (48% → 23% of issued modifies landed) while cancel rose only from
+7% to 19%; a learned policy gains nothing from dead slots, because it can read its own-order
+counts and aim exactly. Clamped, any slot lands whenever the agent has an order on that side:
+35–36% of issued modifies and cancels under random play, 58–62% of those where it had anything
+resting at all ([16](16_verification_log.md) §16.20). `max_own_orders` is 4, the measured p90 of
+resting orders per agent ([18](18_configuration.md) §4.2).
+
+- **Limit** still matches by price: a limit at a price the agent already rests at is an upsert.
+  The match is made in `Decimal`, the type the book stores prices in, and `_set_price` snaps every
+  price it emits to the `tick_size` grid before handing it over — so the price an agent names is
+  the price level the book has, on any tick, not only on `tick_size` 1
   ([15](15_findings_and_recommendations.md) S3-4).
 - A **cancel** is never cash-checked; it only releases escrow. A **modify** may spend the escrow
   of the order it replaces, so shrinking or re-pricing an order is always possible

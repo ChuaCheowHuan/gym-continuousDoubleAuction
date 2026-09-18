@@ -177,16 +177,18 @@ class TestStructuralConstantsComeFromTheFile:
 
     def test_book_depth_drives_observation_and_action_spaces(self, config_tree):
         """k_rows is one definition, read by both spaces and by _set_price."""
+        # private_dim follows k_rows since the own-book block exists: 9 base
+        # + 2 x k_rows own sizes + 2 counts + 1 flag (doc/15 S3-24 phase 1).
         config_tree(
             "tunable_constants.json",
-            lambda raw: raw["observation_layout"].update(k_rows=6),
+            lambda raw: raw["observation_layout"].update(k_rows=6, private_dim=24),
         )
         env = continuousDoubleAuctionEnv({"num_of_agents": 2, "n_hist": 2})
 
         assert env.k_rows == 6
         assert env.book_dim == 4 * 6
         assert env.snapshot_dim == 4 * 6 + env.extra_dim
-        # + the per-agent private block, whose width k_rows does not touch.
+        assert env.private_dim == 24 == len(env.private_fields)
         expected = (2 * (4 * 6 + env.extra_dim) + env.private_dim,)
         assert env.observation_spaces["agent_0"].shape == expected
         assert env.action_spaces["agent_0"]["price"].n == 6
@@ -198,7 +200,7 @@ class TestStructuralConstantsComeFromTheFile:
         """The scalars are part of the snapshot, and k_rows does not touch them."""
         config_tree(
             "tunable_constants.json",
-            lambda raw: raw["observation_layout"].update(k_rows=5),
+            lambda raw: raw["observation_layout"].update(k_rows=5, private_dim=22),
         )
         env = continuousDoubleAuctionEnv({"num_of_agents": 2, "n_hist": 1})
         assert env.snapshot_dim == 4 * 5 + env.extra_dim

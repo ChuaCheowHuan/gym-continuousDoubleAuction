@@ -7,6 +7,7 @@ class Reward_Helper(object):
                  drawdown_penalty=env_default("drawdown_penalty"),
                  passive_bonus=env_default("passive_bonus"),
                  loss_multiplier=env_default("loss_multiplier"),
+                 dead_action_penalty=env_default("dead_action_penalty"),
                  **kwargs):
         """
         Coefficients of the reward formula in `set_reward`.
@@ -40,6 +41,11 @@ class Reward_Helper(object):
         self.drawdown_penalty = drawdown_penalty
         self.passive_bonus = passive_bonus
         self.loss_multiplier = loss_multiplier
+        # Per modify/cancel that named no resting order. 0.0 by default: any
+        # positive value makes the game negative-sum (S1-3), so switching it
+        # on is a measured decision. The miss reaches the policy anyway
+        # through the `unmatched_last_step` observation field (doc/15 S3-24).
+        self.dead_action_penalty = dead_action_penalty
 
         super().__init__(**kwargs)
 
@@ -132,6 +138,9 @@ class Reward_Helper(object):
             "trade_penalty": -(trade_penalty * trader.acc.num_trades_step),
             "drawdown_penalty": -(drawdown_penalty * drawdown_change),
             "passive_bonus": passive_bonus * trader.acc.num_passive_fills_step,
+            # -0.0 at the shipped coefficient, which leaves the sum bit for bit
+            # what it was before the term existed: x + (-0.0) == x in IEEE 754.
+            "dead_action_penalty": -(self.dead_action_penalty * trader.acc.num_unmatched_step),
         }
 
         # Accumulated left to right, deliberately NOT with sum() or math.fsum().

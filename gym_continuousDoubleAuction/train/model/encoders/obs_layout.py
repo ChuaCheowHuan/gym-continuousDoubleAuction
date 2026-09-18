@@ -11,12 +11,17 @@ market-level scalars:
                  bid_size (0..k-1),         laid out FIELD-major
                  ask_price(0..k-1),
                  ask_size (0..k-1),
-                 log_mid, log1p_spread_ticks ]   <- extra_dim=2 scalars
+                 log_mid, log1p_spread_ticks,
+                 mid_return, signed_volume,
+                 log1p_trade_count, trade_direction ]   <- extra_dim=6 scalars
 
     private  = private_dim per-agent floats, appended ONCE after the whole
                stack rather than per frame - position, cash, NAV, drawdown and
-               so on. See State_Helper.PRIVATE_FIELDS. The book prefix is
-               shared between agents; only this tail differs.
+               so on, then the OWN-BOOK block: this agent's resting size at
+               each of the k_rows public levels, bids then asks, then its
+               order counts and the dead-action flag. See
+               State_Helper.private_fields. The book prefix is shared between
+               agents; only this tail differs.
 
 The MLP encoder throws all of that away and sees `n_hist * snapshot_dim`
 unrelated numbers. Every other encoder recovers it through this class, which is
@@ -31,17 +36,21 @@ rather than silently reshaping into garbage.
 
 Why the private block is a separate tail rather than extra channels
 -------------------------------------------------------------------
-`tokenize` builds tokens `max(book_rows, extra_dim)` channels wide. Folding
-`private_dim` into that width would take every token from 4 channels to 9 and
-right-pad the book tokens with five zeros - paying attention over padding on
-every level of every snapshot, to carry nine numbers that belong to none of
-them. So the split happens before tokenisation, `tokenize` never sees the
-private block, and an encoder that wants it projects it separately and appends
-it as a single token. `split_private` is that seam.
+`tokenize` builds tokens `max(book_rows + own_channels, extra_dim)` channels
+wide. Folding the whole `private_dim` into that width would pay attention over
+padding on every level of every snapshot to carry numbers that belong to no
+level. So the split happens before tokenisation and an encoder that wants the
+tail projects it separately and appends it as a single token; `split_private`
+is that seam. The one exception is the own-book block, which IS per level: its
+two sizes ride on the newest snapshot's level tokens as channels 4 and 5, where
+the level tokens were zero-padded to the scalars' width anyway. Older
+snapshots' level tokens carry zeros there - the env records own orders only
+for now.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 import gymnasium as gym
 
@@ -52,8 +61,12 @@ from gym_continuousDoubleAuction.config_loader import group
 #: identified in a test or a debugger without counting offsets by hand.
 BOOK_FIELDS = ("bid_price", "bid_size", "ask_price", "ask_size")
 
-#: Scalar order within a snapshot's trailing block, same source.
-EXTRA_FIELDS = ("log_mid", "log1p_spread_ticks")
+#: Scalar order within a snapshot's trailing block, same source
+#: (`State_Helper.EXTRA_FIELDS`).
+EXTRA_FIELDS = (
+    "log_mid", "log1p_spread_ticks", "mid_return", "signed_volume",
+    "log1p_trade_count", "trade_direction",
+)
 
 
 @dataclass(frozen=True)
@@ -65,6 +78,17 @@ class ObsLayout:
     k_rows: int
     extra_dim: int
     private_dim: int
+    #: Index in the private tail where this agent's own-book block starts:
+    #: `k_rows` own bid sizes, then `k_rows` own ask sizes, level-aligned with
+    #: the public book (State_Helper.private_fields). None when the tail does
+    #: not carry one - a layout built by hand in a test, or a pre-S3-24 env -
+    #: in which case `tokenize` adds no own-size channels.
+    own_book_offset: Optional[int] = None
+
+    @property
+    def own_channels(self) -> int:
+        """Extra channels a level token carries for own bid/ask size: 2 or 0."""
+        return 2 if self.own_book_offset is not None else 0
 
     @property
     def book_dim(self) -> int:
@@ -140,12 +164,26 @@ class ObsLayout:
                 "following it, or this space did not come from this env."
             )
 
+        # Does this private tail carry the own-book block? Ask the env's own
+        # definition of the block rather than assuming: a tail of exactly the
+        # width `private_fields(k_rows)` describes has it at the offset that
+        # function fixes, and any other width does not.
+        from gym_continuousDoubleAuction.envs.exchg.state_helper import (
+            own_book_offset,
+            private_fields,
+        )
+
+        offset = None
+        if private_dim == len(private_fields(k_rows)):
+            offset = own_book_offset()
+
         return cls(
             n_hist=n_hist,
             book_rows=book_rows,
             k_rows=k_rows,
             extra_dim=extra_dim,
             private_dim=private_dim,
+            own_book_offset=offset,
         )
 
 
