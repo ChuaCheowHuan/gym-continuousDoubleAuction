@@ -418,3 +418,64 @@ fraction rises because a redraw among fewer categories lands on pass more often.
 away from the market, sizing past one's cash. That split is deliberate — the mask encodes the
 env's rules, not a trading opinion — and it makes the activity metrics interpretable: after
 masking, a non-negligible `unmatched_action_fraction` would be a bug, not a behaviour.
+
+---
+
+## 8. Matching regimes: the allocation rule, and clearing within a step
+
+Added 2026-09-18 ([16](16_verification_log.md) §16.26). Two knobs on the env, both kept for
+comparison rather than to change the default, which stays the continuous double auction's
+price-time priority with sequential arrival.
+
+### 8.1 `matching_rule`: how a price level is shared
+
+`fifo` (default): the oldest order at the level fills first. `pro_rata`: the quantity reaching the
+level is split in proportion to each order's size, floored to whole contracts, with the rounding
+residue handed out one contract at a time in time order (`OrderBook.allocate`; totals are exact).
+Under pro-rata a small order behind a large one gets a share fifo denies it, and a policy that
+learns the rule will post larger orders to win allocation — the incentive some futures markets
+run and the reason it is not the default here. Measured under random play the difference is
+mostly in fill count, 1.82 trades per step against 2.08, at the same volume.
+
+### 8.2 `step_clearing`: what happens when orders cross within one step
+
+All agents act at the same instant. Under `sequential` (default) the step's actions are shuffled
+and each order is matched on arrival, so a pair of crossing orders trades at whichever price the
+shuffle reached first and the first arrival gets first claim on the resting liquidity. Under
+`batch` the step's new market and limit orders — and the re-entered quote of a modify — are
+queued (`OrderBook.begin_batch`) while cancels and the cash checks run as usual, and then cleared
+together against the resting book at **one uniform price** (`OrderBook.clear_batch`):
+
+- the clearing price maximises executable volume, then minimises the leftover imbalance, then
+  lies closest to the reference price (which is itself a candidate, so a bid at 102 against an
+  ask at 98 clears at 100, not at an end);
+- every buy with a limit above it and every sell with a limit below it fills in full; the
+  marginal level is rationed, resting orders first in time order, then the batch's under
+  `matching_rule`;
+- leftover limits rest at their own price, leftover markets lapse, as in the sequential engine;
+- a fill against a resting order is a passive fill for the rester as before; a fill between two
+  batch orders has no passive side, and the record's `counter_party['resting']` says so, because
+  neither party had escrow to release (`Trader.settle_batch`).
+
+**Measured, random play, 20 seeded episodes × 400 steps, 8 agents.** The probability that an
+agent's fresh order fills this step, by its position in the shuffle:
+
+| position in the shuffle | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| sequential, fifo | 0.581 | 0.573 | 0.546 | 0.539 | 0.529 | 0.509 | 0.497 | 0.491 |
+| batch, fifo | 0.577 | 0.558 | 0.558 | 0.553 | 0.560 | 0.564 | 0.564 | 0.571 |
+
+Under sequential clearing the first arrival fills 18% more often than the last (0.581 against
+0.491), monotonically down the queue: that is the shuffle deciding who trades. Under batch clearing
+the curve is flat to ±0.01. Every trading step under batch prints at exactly one price where
+sequential printed 1.58 on average and up to 5; half the batch fills are between two orders that
+arrived in the same step, against 12% sequentially. The cost is volume: 43 contracts a step
+against 51, because a single clearing price executes `min(demand, supply)` where sequential
+arrival lets an aggressive order sweep several levels. NAV is conserved exactly under all four
+combinations.
+
+Both knobs are env-config keys and `TrainConfig` fields ([18](18_configuration.md) §3.0.2), so
+`train.compare --set step_clearing=batch` or `--set matching_rule=pro_rata` runs the same seeds
+and encoders under another regime. They change the game the agents play, not the layout, so a
+checkpoint restores across them; whether it *should* be evaluated across them is the researcher's
+question.

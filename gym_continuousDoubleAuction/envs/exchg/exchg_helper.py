@@ -24,10 +24,26 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
                  tape_display_length=env_default("tape_display_length"),
                  n_hist=env_default("n_hist"),
                  mark_price_source=env_default("mark_price_source"),
+                 matching_rule=env_default("matching_rule"),
+                 step_clearing=env_default("step_clearing"),
                  **kwargs):
         # tick_size goes on to Action_Helper as well: it is the tick the action
         # space quotes on, not just a property of the book.
         super().__init__(n_hist=n_hist, tick_size=tick_size, **kwargs)
+
+        # The matching regime (doc/06 section 8): how a price level is shared
+        # out, and whether a step's crossing orders clear on arrival or at one
+        # uniform price. Validated here so a typo fails at construction.
+        if matching_rule not in OrderBook.MATCHING_RULES:
+            raise ValueError(
+                f"matching_rule must be one of {OrderBook.MATCHING_RULES}; got {matching_rule!r}."
+            )
+        if step_clearing not in self.STEP_CLEARINGS:
+            raise ValueError(
+                f"step_clearing must be one of {self.STEP_CLEARINGS}; got {step_clearing!r}."
+            )
+        self.matching_rule = matching_rule
+        self.step_clearing = step_clearing
 
         # The configured tick. The book itself takes no tick - it never read
         # the one it used to be handed - so this is kept for callers that ask
@@ -35,7 +51,8 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         # is `Action_Helper.min_tick`, set from the same key.
         self.tick_size = tick_size
 
-        self.LOB = OrderBook(tape_display_length) # limit order book
+        self.tape_display_length = tape_display_length
+        self.LOB = self.new_order_book() # limit order book
         self.agg_LOB = {} # aggregated or consolidated LOB
         self.agg_LOB_raw = {} # unnormalized raw aggregated LOB
         self.agg_LOB_aft = {} # aggregated or consolidated LOB after processing orders
@@ -44,7 +61,6 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         self.seq_order_in_book = [] # list of new order_in_book dicts
 
         self.init_cash = init_cash
-        self.tape_display_length = tape_display_length
 
         if mark_price_source not in self.MARK_PRICE_SOURCES:
             raise ValueError(
@@ -61,6 +77,44 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         self.best_bid = None
         self.best_ask = None
         self.spread = None
+
+    #: `sequential`: each order matches on arrival in the step's shuffled
+    #: order. `batch`: the step's new orders clear together at one price.
+    STEP_CLEARINGS = ("sequential", "batch")
+
+    def new_order_book(self):
+        """A fresh book under this env's matching rule; `reset` builds one per episode."""
+        return OrderBook(self.tape_display_length, matching_rule=self.matching_rule)
+
+    def do_actions(self, actions):
+        """Process the step's actions under `step_clearing` (doc/06 section 8).
+
+        `sequential` is `Action_Helper.do_actions`: each order matches on
+        arrival, in shuffled order. `batch` opens the book's batch first, so
+        every new market or limit order (and a modify's re-entered quote) is
+        queued while cancels and the cash checks run as usual, then clears the
+        queue at one uniform price and settles each trader's result through
+        `Trader.settle_batch`. The per-action trade lists are aligned with the
+        shuffled actions either way, which is what the render path expects.
+        """
+        # Where this step's order ids start, for anything that wants to tell
+        # a new order from a resting one after the fact (the measurements do).
+        self.step_first_order_id = self.LOB.next_order_id + 1
+        if self.step_clearing != "batch":
+            return super().do_actions(actions)
+
+        self.LOB.begin_batch()
+        seq_trades, seq_order_in_book = super().do_actions(actions)
+        # The reference is the pre-batch book's, the same one the agents saw.
+        results = {tid: (trades, oib)
+                   for tid, trades, oib in self.LOB.clear_batch(reference_price=self.reference_price())}
+        for tid, (trades, oib) in results.items():
+            self.traders[tid].settle_batch(trades, oib, self.traders)
+        for i, action in enumerate(actions):
+            tid = int(action["ID"].split("_")[1])
+            if tid in results:
+                seq_trades[i], seq_order_in_book[i] = results[tid]
+        return seq_trades, seq_order_in_book
 
     def reset_traders_acc(self):
         """

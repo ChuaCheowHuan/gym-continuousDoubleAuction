@@ -210,6 +210,19 @@ and the policy is free to choose dead actions. Same layout either way, so
 `train.compare --set action_mask=false` is the unmasked baseline. `TrainConfig.action_mask` carries
 it into training.
 
+### 3.0.2 The matching regime: `matching_rule`, `step_clearing`
+
+| Key | Default | Meaning |
+|---|---|---|
+| `matching_rule` | `"fifo"` | How the quantity reaching one price level is split among the orders resting there: `"fifo"` (oldest first) or `"pro_rata"` (in proportion to size, largest-remainder rounded, residue in time order) |
+| `step_clearing` | `"sequential"` | `"sequential"`: each order matches on arrival in the step's shuffled order. `"batch"`: the step's new orders clear together against the resting book at one uniform price |
+
+Both are pluggable so the regimes can be compared under identical seeds
+(`train.compare --set step_clearing=batch`); both change the game the agents play rather than the
+layout, so a checkpoint restores across them. [06](06_action_space.md) §8 has the mechanics and the
+measurement: under sequential clearing the first agent in the shuffle fills 18% more often than the
+last, under batch the curve is flat and every step prints one price, at about 15% less volume.
+
 ### 3.1 Order sizing
 
 | Key | Value | Meaning |

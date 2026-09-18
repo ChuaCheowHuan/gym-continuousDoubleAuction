@@ -644,6 +644,65 @@ class Trader:
         else:
             return None
 
+    def settle_batch(self, trades: List[dict], order_in_book, agents: Sequence["Trader"]) -> int:
+        """Account for what `OrderBook.clear_batch` did with this trader's order.
+
+        The batch engine defers a new order past `place_order`, so the
+        settlement `place_order` does inline for the sequential engine -
+        normalise the fills, book them for both parties, escrow the leftover -
+        runs here once the batch has cleared (doc/06 section 8). One difference
+        from `_process_trades`: a counter party whose order arrived in the same
+        batch has no escrow to release, so it is booked as an `init_party`
+        (cash settled directly) rather than a `counter_party`; the record's
+        `counter_party['resting']` flag says which.
+
+        A second difference is price improvement. The sequential engine fills
+        a resting order at its own price, so the escrow it posted (`limit x
+        quantity`) is exactly what the counter-party path releases (`trade
+        price x quantity`). A batch clears at one uniform price, so a resting
+        bid at 102 can fill at 100 and a resting ask at 98 at 100. The escrow
+        for the filled quantity is first re-based to the trade price - the
+        difference moves between `cash_on_hold` and `cash`, which leaves NAV
+        untouched - and the counter-party path then releases exactly what is
+        held. Without this a resting ask filled above its limit released more
+        escrow than it had posted: measured as `cash_on_hold` dipping a few
+        contracts negative on 3.4% of agent-steps, caught by the observation
+        bounds' clip counter (doc/16 section 16.26).
+        """
+        if trades:
+            _normalise_trade_sizes(trades)
+            for trade in trades:
+                counter = trade['counter_party']
+                if counter['ID'] == trade['init_party']['ID']:
+                    raise ValueError("a batch cannot pair an order with its owner's own order")
+                self.acc.process_acc(trade, 'init_party')
+                if counter.get('resting', True):
+                    limit = counter.get('limit_price')
+                    price = Decimal(str(trade['price']))
+                    if limit is not None and Decimal(str(limit)) != price:
+                        other = self._find_agent(agents, counter['ID'])
+                        if other is not None:
+                            rebase = (price - Decimal(str(limit))) * Decimal(int(trade['quantity']))
+                            other.acc.cash_on_hold += rebase
+                            other.acc.cash -= rebase
+                    self._process_counter_party(agents, trade)
+                else:
+                    other = self._find_agent(agents, counter['ID'])
+                    if other is not None:
+                        view = {'price': trade['price'], 'quantity': trade['quantity'],
+                                'init_party': counter}
+                        other.acc.process_acc(view, 'init_party')
+        self.acc.order_in_book_passive_party(order_in_book)
+        return 0
+
+    def _find_agent(self, agents, wanted):
+        if isinstance(wanted, int) and 0 <= wanted < len(agents) and agents[wanted].ID == wanted:
+            return agents[wanted]
+        for agent in agents:
+            if agent.ID == wanted:
+                return agent
+        return None
+
     def _process_trades(self, trades: List[dict], agents: Sequence["Trader"]) -> int:
         """
         Process trades for the init_party & counter_party.

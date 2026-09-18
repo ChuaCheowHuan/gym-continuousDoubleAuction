@@ -174,6 +174,11 @@ class TrainConfig:
     # The observation's action mask says what each agent can do this step and
     # the modules refuse the rest; False emits all ones (doc/06 section 6).
     action_mask: bool = _default("action_mask")
+    # The matching regime (doc/06 section 8): how a price level is shared out
+    # ("fifo" / "pro_rata") and whether a step's crossing orders clear on
+    # arrival or at one uniform price ("sequential" / "batch").
+    matching_rule: str = _default("matching_rule")
+    step_clearing: str = _default("step_clearing")
 
     # Bounds of the per-episode price anchor, drawn as randint(min, max) in
     # reset(). These were readable by the env but had no TrainConfig field, so
@@ -525,6 +530,8 @@ class TrainConfig:
             "n_hist": self.n_hist,
             "book_mode": self.book_mode,
             "action_mask": self.action_mask,
+            "matching_rule": self.matching_rule,
+            "step_clearing": self.step_clearing,
             "initial_price_min": self.initial_price_min,
             "initial_price_max": self.initial_price_max,
             "min_size": self.min_size,

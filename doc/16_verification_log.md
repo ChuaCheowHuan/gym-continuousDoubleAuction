@@ -1555,3 +1555,103 @@ Reading it:
 
 
 **Supports:** §06 7; §15 S4-14; §18 3.0.1; §10 (`test_action_mask.py`).
+
+## 16.26 Who trades when orders cross within a step: sequential against batch clearing (2026-09-18)
+
+Protocol as §16.22–16.25: 20 seeded episodes × 400 steps of random play at the shipped config
+(8 agents, 1,000,000 cash), under each combination of `step_clearing` and `matching_rule`. Per
+step: the shuffle position of every agent that submitted a fresh order (a market or limit with
+nothing of its own resting beforehand, so any fill it gets is that order's), whether it filled
+(`num_trades_step > 0`), the number of distinct prices printed, the executed volume, and whether
+a fill's counter order arrived in the same step.
+
+| | fills by shuffle position 1 → 8 | first − last | prices / trading step (mean, max) | same-step counter | trades / step | volume / step |
+|---|---|---|---|---|---|---|
+| sequential, fifo | .581 .573 .546 .539 .529 .509 .497 .491 | **+0.089** | 1.58, 5 | 12.4% | 1.82 | 51 |
+| sequential, pro_rata | .602 .591 .562 .551 .541 .515 .497 .491 | **+0.111** | 1.58, 5 | 13.1% | 2.08 | 51 |
+| batch, fifo | .577 .558 .558 .553 .560 .564 .564 .571 | +0.006 | **1.00, 1** | 52.1% | 1.80 | 43 |
+| batch, pro_rata | .575 .560 .559 .556 .563 .570 .571 .577 | −0.001 | **1.00, 1** | 50.9% | 1.87 | 43 |
+
+About 1,540 fresh orders per position per row; NAV conserved exactly in every episode.
+
+What it says:
+
+1. **Under sequential clearing the shuffle decides.** Fill probability falls monotonically down the
+   queue, from 58% for the first arrival to 49% for the last: the early arrival takes the resting
+   liquidity and the late one finds it gone or, having rested for a moment, is the one that gets
+   hit. Pro-rata widens the gap slightly (+0.111), because it spreads the early arrival's fill over
+   more resting orders.
+2. **Under batch clearing it does not.** The curve is flat to ±0.01 either way. Position still
+   enters at the marginal price level, where resting orders come first and the batch's are
+   rationed under the rule, and that is where the residual ±0.01 lives.
+3. **One price per step**, where sequential clearing printed 1.58 on average and up to 5: the
+   uniform-price property of a call auction, and the reason half the batch's fills are between two
+   orders that arrived together (52%) against 12% sequentially.
+4. **Less volume**: 43 contracts a step against 51. A single price executes `min(D, S)` at that
+   price, where an aggressive arrival in the sequential engine sweeps several levels at several
+   prices. That is the call auction's known cost, and it is why `sequential` stays the default for
+   an environment named for the continuous double auction.
+
+A first version of this measurement attributed fills to the order that was the record's
+`init_party`, which under-counted the early arrival whose resting leg was hit later in the same
+step, and showed a *rising* curve for both regimes. Counting fresh orders by their owner's
+`num_trades_step` is what the table uses.
+
+**What the clip counter caught.** The first `train.compare` run under `batch` reported
+`obs_clip_fraction` of 0.02–0.03 where every other regime reports 0. Tracing the clipped field:
+`cash_on_hold`, a few contracts *below zero*, on 3.4% of agent-steps. The sequential engine fills
+a resting order at its own price, so the escrow it posted (`limit × quantity`) is exactly what the
+counter-party settlement releases (`trade price × quantity`); a batch clears at one uniform price,
+so a resting ask at 98 filled at 100 released more escrow than it held. `Trader.settle_batch` now
+re-bases the filled quantity's escrow to the trade price before the release - a transfer between
+`cash_on_hold` and `cash` that leaves NAV untouched, which is why NAV conservation had not caught
+it. After the fix: `cash_on_hold ≥ 0` on every agent-step of batch random play and
+`obs_clip_fraction` back to 0 (the table below is the rerun). S4-15's argument for a finite Box
+with a counted clip was that a wrong bound should be a counted event; this was a wrong *ledger*,
+and the same counter found it.
+
+**With `train.compare`**, the protocol of §16.20–16.25 on this tree: `--set step_clearing=batch`
+and `--set matching_rule=pro_rata` against the default (the "after" table of §16.25):
+
+**Default** (`sequential`, `fifo` - the "after" table of §16.25):
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | order_rejection_fraction | unmatched_action_fraction | maker_fill_ratio_max | obs_clip_fraction | separated on |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlp | 3 | 259,616 | −0.0033 ± 0.00367 | −0.423 ± 0.733 | 0.162 ± 0.0154 | 0 ± 0 | 0.00114 ± 0.000282 | 0.603 ± 0.00551 | 0 ± 0 | maker_fill_ratio_max |
+| transformer | 3 | 687,136 | −0.000586 ± 0.00077 | −0.356 ± 0.338 | 0.143 ± 0.00395 | 0 ± 0 | 0.00163 ± 0.000564 | 0.62 ± 0.00833 | 0 ± 0 | maker_fill_ratio_max |
+
+**`--set step_clearing=batch`** (rerun after the escrow fix above):
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | order_rejection_fraction | unmatched_action_fraction | maker_fill_ratio_max | obs_clip_fraction | separated on |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlp | 3 | 259,616 | −0.00137 ± 0.00114 | −0.491 ± 0.388 | 0.173 ± 0.00698 | 0 ± 0 | **0 ± 0** | **0.341 ± 0.0287** | 0 ± 0 | nothing |
+| transformer | 3 | 687,136 | −0.00311 ± 0.00332 | −0.055 ± 0.251 | 0.148 ± 0.0196 | 0 ± 0 | **0 ± 0** | **0.324 ± 0.0219** | 0 ± 0 | nothing |
+
+**`--set matching_rule=pro_rata`**:
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | order_rejection_fraction | unmatched_action_fraction | maker_fill_ratio_max | obs_clip_fraction | separated on |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlp | 3 | 259,616 | −0.0031 ± 0.000232 | −0.275 ± 0.376 | 0.165 ± 0.00776 | 0 ± 0 | 0.000814 ± 0.00102 | 0.606 ± 0.0207 | 0 ± 0 | nothing |
+| transformer | 3 | 687,136 | −0.00478 ± 0.00186 | −0.071 ± 0.0791 | 0.151 ± 0.0222 | 0 ± 0 | 0.0013 ± 0.00102 | 0.609 ± 0.053 | 0 ± 0 | nothing |
+
+Reading it:
+
+- **Under batch clearing the unmatched fraction is exactly 0**, where the default's 0.001 residue
+  is an order filled mid-step before a later cancel reached it. In a batch nothing is filled
+  mid-step - new orders are queued and cancels act on the book as it stood - so the residue
+  vanishes. That closes the last leak the action mask left.
+- **The maker ratio halves** (0.60–0.62 → 0.32–0.34). Not a behaviour change: half the fills in a
+  batch are between two orders that arrived in the same step, and neither party rested, so the
+  fill has no passive side. `maker_fill_ratio_max` measures who rested, and under a call auction
+  fewer fills have a rester. Read the metric with the regime in mind.
+- **`obs_clip_fraction` is 0** again after the escrow fix; the first run's 0.02–0.03 was the
+  negative `cash_on_hold`.
+- **Pro-rata moves nothing** at this scale: the same fractions as fifo to within a standard
+  deviation, as the random-play measurement predicted (same volume, slightly more and smaller
+  fills). Whether a *trained* policy learns to post larger orders under it - the rule's known
+  incentive - is the run at scale's question.
+- **Returns and `vf_explained_var` are noise**, as in every compare so far. The parameter counts
+  are identical across the three regimes, as they must be: the regime changes the game, not the
+  layout.
+
+**Supports:** §06 8; §15 S3-25; §18 3.0.2; §10 (`test_matching_regimes.py`, `test_clearing_env.py`).

@@ -48,6 +48,7 @@ mindmap
         S3-24 modify and cancel cannot be aimed — fixed
         S3-14 zero means three things — fixed
         S3-15 level index non-stationary — fixed
+        S3-25 the shuffle decided who traded — fixed as an option
         S3-20 dead escrow path — fixed
       training and league
         S3-8 detached callback — fixed
@@ -1113,6 +1114,27 @@ it mattered.
   versions and field lists; `build_algo` refuses a mismatch by name.
 
 
+### S3-25 · Within a step, the shuffle decided who traded and at what price **[verified, fixed - as an option]**
+
+All agents act at the same instant, but the engine matched the step's orders one by one in a
+random order, so a crossing pair traded at whichever price arrived first and the first arrival had
+first claim on resting liquidity. Measured under random play ([16](16_verification_log.md)
+§16.26): the first agent in the shuffle filled on **58.1%** of its fresh orders and the last on
+**49.1%**, monotonically down the queue; trading steps printed at 1.58 prices on average and up
+to 5.
+
+**Fixed as `step_clearing: "batch"`** ([06](06_action_space.md) §8): the step's new orders clear
+together against the resting book at one uniform price (volume-maximising, then least imbalance,
+then nearest the reference), resting orders keep time priority, the marginal level is rationed
+under `matching_rule`. After: the fill curve is flat (57.7% to 57.1%), every trading step prints
+one price, and executed volume falls from 51 to 43 contracts a step - the call auction's price for
+its fairness. `sequential` stays the default, because a continuous double auction is what the
+project simulates; `matching_rule: "pro_rata"` is the other pluggable regime. NAV is conserved
+exactly under every combination, and `train.compare --set` runs them under identical seeds. The
+first batch run also surfaced a settlement bug - a resting order filled at a better price than its
+limit released more escrow than it held - found not by NAV conservation, which the error preserved,
+but by the S4-15 clip counter on `cash_on_hold`; `Trader.settle_batch` re-bases the escrow first.
+
 ---
 
 ## S4 — Minor
@@ -1201,7 +1223,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **1,095 unit tests pass** (plus 156 integration), covering every position-flip path, cash-check edge case, modify-order
+- **1,127 unit tests pass** (plus 156 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 

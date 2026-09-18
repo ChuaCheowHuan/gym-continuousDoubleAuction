@@ -6,7 +6,6 @@ import gymnasium as gym
 
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 
-from .orderbook.orderbook import OrderBook
 from .exchg.exchg_helper import Exchg_Helper
 from .agent.trader import Trader
 from ..config_loader import env_default
@@ -88,6 +87,8 @@ class continuousDoubleAuctionEnv(
             n_hist=self.n_hist,
             book_mode=self._cfg("book_mode"),
             action_mask=self._cfg("action_mask"),
+            matching_rule=self._cfg("matching_rule"),
+            step_clearing=self._cfg("step_clearing"),
             mark_price_source=mark_price_source,
             min_size=min_size,
             mkt_max_size=mkt_max_size,
@@ -231,7 +232,7 @@ class continuousDoubleAuctionEnv(
         # A fresh book. The tick grid is not the book's concern: it keys
         # prices on whatever Decimal it is handed, and `Action_Helper.min_tick`
         # is what puts every quoted price on the configured grid.
-        self.LOB = OrderBook(self.tape_display_length) # new limit order book
+        self.LOB = self.new_order_book() # new limit order book, under the matching rule
         self.agg_LOB = {}
         self.agg_LOB_raw = {}
         self.agg_LOB_aft = {}

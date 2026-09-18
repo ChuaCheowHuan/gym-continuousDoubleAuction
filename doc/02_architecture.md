@@ -94,7 +94,7 @@ gym_continuousDoubleAuction/
 │   ├── run_all.py                        regenerates every chart
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               1,095 unit tests
+└── test/                               1,127 unit tests
     └── integration/                    156 tests that build real Algorithms
 ```
 
@@ -198,7 +198,8 @@ two mixins would collide silently. See
  1. self.agg_LOB = set_agg_LOB()                 # pre-action book snapshot (display only)
  2. actions = set_actions(actions)               # Dict action  →  LOB order dicts; record passes
  3. actions = rand_exec_seq(actions, None)       # random arrival order, from self.np_random
- 4. seq_trades, seq_order_in_book = do_actions() # apply to book, settle fills
+ 4. seq_trades, seq_order_in_book = do_actions() # apply to book, settle fills - on arrival,
+                                                 # or as one uniform-price batch (step_clearing)
  5. mark_to_mkt()                                # prev_nav ← nav; re-mark all accounts
  6. state_input = prep_next_state()              # post-action snapshot, push into history
  7. set_step_outputs(state_input)                # market snapshot, then obs / reward /

@@ -3204,3 +3204,32 @@ learn what is merely unwise ([06](06_action_space.md) §7, [16](16_verification_
 - **`action_mask: false`** makes the env emit all ones, same layout, for the unmasked baseline in
   `train.compare`.
 - **Tests.** `test_action_mask.py` (16). Suite: **1,095 unit + 156 integration**.
+
+## 54. Pluggable matching, and fair clearing within a step (S3-25)
+
+As asked: fifo stays the default, the allocation rule and the step's clearing are pluggable, and
+orders that cross within the same instant can be cleared without the shuffle deciding
+([06](06_action_space.md) §8, [16](16_verification_log.md) §16.26).
+
+- **`matching_rule`** on `OrderBook` (keyword-only): `fifo` or `pro_rata`. `allocate` is the one
+  place a level is shared out; `process_order_list` executes its answer. Pro-rata floors to whole
+  contracts and hands the residue out in time order, so totals are exact.
+- **`step_clearing: "batch"`**: `OrderBook.begin_batch` queues the step's new market and limit
+  orders and a modify's re-entered quote; `clear_batch` clears them against the resting book at one
+  uniform price - volume-maximising, then least imbalance, then nearest the reference, which is a
+  candidate - with resting orders first at the margin and the batch rationed under
+  `matching_rule`; leftovers rest or lapse as before. `Exchg_Helper.do_actions` runs it and settles
+  each trader through `Trader.settle_batch`, which books a same-batch counter party without an
+  escrow release (`counter_party['resting']` on the record). The per-action trade lists stay
+  aligned with the shuffled actions for the render path.
+- **Measured.** Sequential: the first agent in the shuffle fills 58.1% of its fresh orders, the
+  last 49.1%, monotonically; 1.58 prices per trading step. Batch: 57.7% to 57.1%, one price, 43
+  contracts a step against 51. NAV conserved exactly under all four combinations.
+- **Both are env-config keys and `TrainConfig` fields**, for `train.compare --set`.
+- **A settlement bug the clip counter found.** The first batch compare showed `obs_clip_fraction`
+  0.02–0.03: `cash_on_hold` a few contracts negative, because a resting order filled at a better
+  price than its limit released escrow at the trade price while it had posted it at the limit.
+  `settle_batch` re-bases the escrow first; NAV conservation alone had not caught it, S4-15's
+  counter did.
+- **Tests.** `test_matching_regimes.py` (19) at the book, `test_clearing_env.py` (13) through the
+  env. Suite: **1,127 unit + 156 integration**.

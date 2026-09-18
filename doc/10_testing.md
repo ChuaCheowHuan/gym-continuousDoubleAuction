@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (1,251 tests: 1,095 unit + 156 integration)
+# everything (1,283 tests: 1,127 unit + 156 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -55,6 +55,8 @@ Counts re-measured with `--collect-only`.
 | File | Tests | Area |
 |---|---|---|
 | `test_orderbook_new.py` | 21 | Matching engine components and integration; malformed input raises `ValueError`, never `SystemExit` (S3-7); the constructor takes no tick (S3-4) |
+| `test_matching_regimes.py` | 19 | The allocation rule (fifo, pro-rata with exact largest-remainder rounding) and batch clearing at the book: the uniform price and its tie-breaks, resting-first rationing, position independence off the margin, deferred modifies, settlement that conserves NAV, and price improvement on a resting order re-basing its escrow so `cash_on_hold` never goes negative (S3-25) |
+| `test_clearing_env.py` | 13 | The regimes through the env config: defaults, validation, the rule on every episode's book, a crossing pair clearing at the reference whatever the shuffle, passive-fill accounting, render alignment, NAV conservation under random play in every combination |
 | `test_orderbook_properties.py` | 4 | Hypothesis: every book, escrow and ledger invariant, for any order sequence and under random env play at three ticks (S4-13) |
 | `test_orderbook_crossed_book.py` | 1 | Crossed-book invariant |
 | `test_orderbook_volume_sync.py` | 1 | Volume cache synchronization |
@@ -109,7 +111,7 @@ Counts re-measured with `--collect-only`.
 | `test_cbp.py` | 48 | Continual Backprop's algorithm core, with no Ray and no `Algorithm` — §6.6.1 |
 | `test_compare.py` | 12 | The encoder comparison driver's aggregation: means and standard deviations across seeds, the separation rule and its three-seed floor, the rendered table and its caveats |
 | `test_lint.py` | 1 | The package is pyflakes-clean; any message fails the suite (S4-6) |
-| **unit total** | **1,095** | |
+| **unit total** | **1,127** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -135,12 +137,13 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((1179 tests))
+  root((1283 tests))
     Simulator
-      orderbook 23
+      orderbook 55
         components, matching, invariants
         crossed book, volume cache
         bad input raises, not exits
+        fifo or pro-rata, sequential or batch
       properties 4
         Hypothesis: any order sequence
       accounting 72
