@@ -90,12 +90,13 @@ gym_continuousDoubleAuction/
 │   ├── model/jepa_learner.py           JEPA module + learner (doc/22 4.2)
 │   ├── callbk/…_self_play_callback.py  league: champions, matchmaking, metrics, the record
 │   ├── evaluate.py                     roll episodes with a checkpoint's policies (S4-12)
+│   ├── export.py                       one module's weights out of a checkpoint (doc/26 26.9.2)
 ├── visualize/                          offline charts from the episode Parquet + progress.jsonl
 │   ├── run_all.py                        regenerates every chart
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               1,127 unit tests
-    └── integration/                    156 tests that build real Algorithms
+└── test/                               1,144 unit tests
+    └── integration/                    163 tests that build real Algorithms
 ```
 
 `train/logger/`, `train/plotter/` and `train/storage/` — the legacy Ray-actor telemetry an earlier
