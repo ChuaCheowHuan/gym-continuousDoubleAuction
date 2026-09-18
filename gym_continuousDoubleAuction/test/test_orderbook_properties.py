@@ -137,19 +137,17 @@ class TestEnvInvariants:
             env.action_spaces[agent].seed(int(rng.integers(0, 2**31 - 1)))
         total = Decimal(INIT_CASH) * env.num_of_agents
         tick_d = Decimal(str(tick))
-        # Not `== total`. The ledger carries VWAP as a Decimal quotient, and
-        # `mark_to_mkt` builds position_val as |pos| x VWAP + |pos| x (mark -
-        # VWAP), whose two products round independently at the 28-digit
-        # context - so conservation holds to ~1e-22 on a 4e5 total, not to
-        # zero. This suite is what found that (seed 161, tick 1); doc/15 S3-23
-        # records it and what exactness would take. The bound used here is the
-        # `nav_tolerance` a training run applies (train_config.json), so the
-        # test asserts the same invariant a run enforces.
-        tolerance = Decimal("1e-6")
+        # Exact. The ledger carries the position's basis as the exact Decimal
+        # sum of trade values and `mark_to_mkt` multiplies once, so every term
+        # of the conservation identity is a sum of the same trade values with
+        # opposite signs. It held only to ~1e-22 while the basis was stored as
+        # a VWAP quotient and multiplied back - this suite is what found that
+        # (seed 161, tick 1; doc/15 S3-23) - so the assertion is `==`, and a
+        # tolerance here would be the regression.
         for _ in range(steps):
             actions = {a: env.action_spaces[a].sample() for a in env.agents}
             _, rewards, term, trunc, infos = env.step(actions)
-            assert abs(sum(t.acc.nav for t in env.traders) - total) <= tolerance
+            assert sum(t.acc.nav for t in env.traders) == total
             for t in env.traders:
                 # cash may dip below zero by at most the closing-side escrow
                 # (S1-5 tail), never the pair together.

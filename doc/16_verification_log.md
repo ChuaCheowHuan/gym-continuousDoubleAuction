@@ -1034,3 +1034,40 @@ training on 128 env steps and means nothing about either architecture, which is 
 three seeds, every registered encoder - is the item still open in [10](10_testing.md) §8.
 
 **Supports:** §15 S1-5, S3-4, S3-7, S3-23, S4-6, S4-13, S4-14; §04 3; §10 2.2, 2.5, 8; §18 5.5, 6.
+
+
+## 16.19 Conservation made exact, and how often an order-management action lands (2026-09-18)
+
+### S3-23 closed
+
+`Account.cost_basis` replaces the stored VWAP quotient as the ledger's primary quantity, and
+`mark_to_mkt` forms `position_val` with one product. The §16.18 measurement, re-run unchanged:
+
+```
+init_cash 100,000, tick 1  : steps 12,000; non-zero conservation error: 0 (was 2,116 / 17.6%); worst 0 (was 7E-22)
+init_cash 100,000, tick 0.1: steps  3,600; non-zero conservation error: 0;                         worst 0
+```
+
+`test_orderbook_properties.py::TestEnvInvariants` asserts `sum(nav) == total` again, with a comment
+that a tolerance there would now be the regression. Every ledger test that builds a position by
+hand (`acc.net_position = ...; acc.VWAP = Decimal(100)`) still passes through the `VWAP` setter,
+which writes the basis as `value × |net_position|`.
+
+### S3-24 measured
+
+Five seeds × 400 steps × 6 agents of uniformly random play, at the shipped `init_cash`. An action
+"hit" if `num_unmatched_step` stayed 0 for that agent on that step.
+
+```
+modify: issued 2,659; agent had >=1 resting order 1,885 (71%); hit 1,269 (48% of issued, 67% of those with an order)
+cancel: issued 2,738; agent had >=1 resting order 1,992 (73%); hit   196 ( 7% of issued, 10% of those with an order)
+own resting orders per agent-step: mean 1.6, median 1, p90 4, max 7; none on 26% of agent-steps
+```
+
+The cancel number is the finding: with one order resting and thirty price codes, a cancel that
+does not know where the order sits lands one time in thirty, and random play is the policy that
+does not know. The modify number is the other half: it lands whenever *any* order is on that side,
+because it cannot choose which. The plan that follows from both is
+[15](15_findings_and_recommendations.md) S3-24.
+
+**Supports:** §15 S3-23, S3-24; §04 5; §10 2.5.

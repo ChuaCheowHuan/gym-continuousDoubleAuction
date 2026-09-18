@@ -1,4 +1,3 @@
-from decimal import Decimal
 
 class Calculate(object):
 
@@ -41,12 +40,17 @@ class Calculate(object):
             net_position < 0 for short.
         """
 
-        price_diff = (self.VWAP - mkt_price, mkt_price - self.VWAP)[self.net_position >= 0] # (on_false, on_true)[condition]
-        self.profit = Decimal(abs(self.net_position)) * price_diff
-
-        #print('ID: {}; profit: {}'.format(ID, self.profit))
-
-        raw_val = abs(self.net_position) * self.VWAP
+        # Built from the exact basis and one product, `|pos| x mark`. It used
+        # to be `|pos| x VWAP + |pos| x (mark - VWAP)`: two products of a
+        # rounded quotient, rounded independently, which is where NAV
+        # conservation lost its last digit (doc/15 S3-23). For a long this is
+        # `mkt_val` exactly; for a short `2 x cost_basis - mkt_val`.
+        raw_val = self.cost_basis
+        mkt_val = abs(self.net_position) * mkt_price
+        if self.net_position >= 0:
+            self.profit = mkt_val - raw_val
+        else:
+            self.profit = raw_val - mkt_val
         self.position_val = raw_val + self.profit
 
         self.prev_nav = self.nav

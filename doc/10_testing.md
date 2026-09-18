@@ -350,8 +350,8 @@ trees: `num_orders`, `depth` and `volume` against the walk, every level's list l
 timestamps ascending within a level, no locked or crossed book, every trade on the tape positive.
 Two further properties: each trader's `cash_on_hold` equals the notional of its own resting
 orders, and positions net to zero across traders. `TestEnvInvariants` steps the whole env with
-random actions under a Hypothesis-chosen seed at ticks {1, 0.5, 0.1}: NAV conservation to
-`nav_tolerance`, `cash + cash_on_hold >= 0`, every price-map key on the grid, every `info["NAV"]`
+random actions under a Hypothesis-chosen seed at ticks {1, 0.5, 0.1}: NAV conservation **exactly**
+(`==`, since S3-23 was fixed), `cash + cash_on_hold >= 0`, every price-map key on the grid, every `info["NAV"]`
 parsing back to the ledger exactly, finite rewards. Its first run found S3-23 and the modify
 timestamp defect ([16](16_verification_log.md) §16.18).
 

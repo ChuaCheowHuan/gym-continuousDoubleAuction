@@ -2952,3 +2952,30 @@ The run of §45.5 at scale; the cost-basis fix of S3-23; a formatter, coverage a
 `envs/` (the rest of S4-6); the remaining dead code in `continuousDoubleAuction_env.py` and
 `action_helper.py` (S4-3, S4-4); and whether a dead action should cost the agent anything, which
 is a reward question rather than an accounting one.
+
+
+## 46. Conservation exact, and a plan for aimable order management
+
+### 46.1 S3-23 closed the day it was opened
+
+§45.4 found that NAV conservation held only to about `1e-22`, because the ledger stored the
+position's basis as a VWAP quotient and rebuilt it by multiplication. The basis is now stored as
+what it always was in substance: `Account.cost_basis`, the exact `Decimal` sum of the trade values
+that built the position, which every path reads and writes directly. `VWAP` is a derived property
+over it, kept for display and for the tests that construct positions by hand. `mark_to_mkt` forms
+`position_val` from the basis with one product, so for a long it is `|pos| × mark` exactly and for
+a short `2 × cost_basis − |pos| × mark`. Re-measured over the same 12,000 steps: zero residual, at
+`tick_size` 1 and 0.1. The property suite asserts `==` again; the `nav_tolerance` note is true
+again and now says why. [15](15_findings_and_recommendations.md) S3-23,
+[16](16_verification_log.md) §16.19, [04](04_accounting.md) §1 and §5.
+
+### 46.2 A plan for making `modify` and `cancel` usable (S3-24)
+
+Measured first: under random play a `cancel` hits one of the agent's own orders **7%** of the time
+it is issued and a `modify` 48%, with agents holding 1.6 orders on average. The three causes -
+the agent cannot see its own orders, a cancel is aimed by exact price out of thirty codes, a modify
+is aimed by FIFO - and the four-phase plan that follows (own-book observation block; aim by
+`order_slot`; make a miss visible in the next observation; prove it learned with `train.compare`)
+are written up as [15](15_findings_and_recommendations.md) S3-24, with effort and the structural
+consequence: both layout changes should land as one checkpoint generation, and that is the moment
+to record a layout version (S4-19).

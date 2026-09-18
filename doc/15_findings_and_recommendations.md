@@ -44,7 +44,8 @@ mindmap
         S3-4 tick_size — fixed; the book takes no tick
         S3-5 seeding — fixed
         S3-7 sys.exit in the engine — fixed
-        S3-23 NAV conservation exact only to Decimal rounding
+        S3-23 NAV conservation exact only to Decimal rounding — fixed
+        S3-24 modify and cancel cannot be aimed — planned
         S3-20 dead escrow path — fixed
       training and league
         S3-8 detached callback — fixed
@@ -924,7 +925,7 @@ action-conditioned term never runs — its parameters would be saved randomly in
 into a training run by a `strict` load, silently.
 
 
-### S3-23 · NAV conservation is exact only to Decimal context rounding **[verified]**
+### S3-23 · NAV conservation is exact only to Decimal context rounding **[verified, fixed]**
 
 [16](16_verification_log.md) §16.10 established that conservation is "exact under Decimal" and
 the config note for `nav_tolerance` says the expected error is 0. The Hypothesis suite found
@@ -945,12 +946,100 @@ tolerance is what the training-time check applies. What is wrong is the *claim*.
 here, in §16.10's heading, and in `test_orderbook_properties.py`, which asserts conservation to
 `nav_tolerance` rather than to zero and says why.
 
-**Fix, if exactness is ever wanted:** carry the position's cost basis as the exact `Decimal` *sum*
-of trade values (which is what `cash` already does) and derive VWAP from it for display, rather
-than storing the quotient and multiplying it back. Every quantity in the conservation identity is
-then a sum of the same trade values with opposite signs, and the residual is zero by construction.
-It is a contained change to `account.py` and `calculate.py`, and the property suite is the test
-for it.
+**Fixed (2026-09-18, the same day).** `Account.cost_basis` is the position's basis as the exact
+`Decimal` sum of trade values, and it is what every ledger path reads and writes: `_size_increase`
+adds the trade value, `_size_decrease` subtracts it (the realised-P&L roll is unchanged, it is
+now simply *stated* as a sum), `_covered` resets it, `_neutral` and `_covered_side_chg` set it to
+the opening value, and `mark_to_mkt` forms `position_val` from it with one product,
+`|pos| × mark`. `VWAP` is a derived property, `cost_basis / |net_position|`, kept for display and
+for the tests that build a position by hand through its setter. Re-measured over the same 12,000
+random-play steps: **0 steps with a non-zero residual**, at `tick_size` 1 and at 0.1; the property
+suite asserts conservation with `==` again ([16](16_verification_log.md) §16.19). The
+`nav_tolerance` note's claim of exactness is true once more, and says why.
+
+
+### S3-24 · `modify` and `cancel` cannot be aimed, so they are mostly dead actions **[verified, plan]**
+
+Two of the eight order categories are order management, and an agent cannot use either on
+purpose. Measured under uniformly random play, 5 seeds × 400 steps × 6 agents
+([16](16_verification_log.md) §16.19):
+
+| action | issued | agent had ≥1 resting order | hit an order |
+|---|---|---|---|
+| `cancel` | 2,738 | 73% | **7%** of issued (10% of those with an order) |
+| `modify` | 2,659 | 71% | 48% of issued (67% of those with an order) |
+
+Agents hold 1.6 resting orders on average (median 1, p90 4, none on 26% of agent-steps). Three
+causes, in the order they bite:
+
+1. **The agent cannot see its own orders.** The private block carries `cash_on_hold` — how much is
+   escrowed — but not where. Which levels hold its orders, how many, on which side: none of it
+   is observable ([05](05_observation_space.md) §7.7, the S1-2 tail). A cancel is therefore a guess
+   about state the policy was never shown.
+2. **A cancel is aimed by exact price.** `_get_order_ID` matches the agent's order at the price
+   `price_code` + `price_offset` resolves to. There are 10 levels × 3 offsets = 30 codes, the agent
+   typically has one order, and two of the three offsets name a price one tick off any level - so
+   even a policy that *knew* where its order sat has one code in thirty that hits it, and a random
+   one hits 7% of the time.
+3. **A modify is aimed by FIFO, and re-priced by level.** It always targets the agent's oldest
+   order on that side, and its `price_code` names the *new* price, so it cannot choose which order
+   to move. Its 48% hit rate is simply "did the agent have any order on that side".
+
+The 2026-09-18 pass made both actions *honest* — a cancel is never cash-checked (S2-13), prices sit
+on the grid so a hit is possible on any tick (S3-4), and a miss is counted (S4-14) — but not
+*aimable*. This is the plan for that, in the order the pieces depend on each other. Every phase is
+a structural change to the observation or action layout, so the whole plan is one new
+checkpoint generation, not several.
+
+**Phase 1 — show the agent its own orders (closes the S1-2 tail).** Add an "own book" block to
+the private tail: for each of the `k_rows` levels on each side, this agent's resting size at that
+level, on the same `√(V / limit_max_size)` scale and sign convention as the public book, plus two
+scalars for own order count per side over a cap. That is `2 × k_rows + 2 = 22` floats, taking the
+observation from 193 to 215. It slots into the level tokenisation the encoders already use — a
+level token gains an "own size" channel — so `obs_layout.py` and `tokenize.py` change in one place
+each. `PRIVATE_FIELDS` and `observation_layout.private_dim` are the two definitions to move
+together; the constructor check catches a mismatch. Deliverable: the block, its tests (own size at
+a level equals the sum of own orders there; zero elsewhere; sign; the shared/private split test in
+`test_observation_history.py` extended), and [05](05_observation_space.md) §1 and §7.7 rewritten.
+About a day.
+
+**Phase 2 — aim by slot, not by price.** Add an `order_slot: Discrete(max_own_orders + 1)`
+component to the action `Dict`. For `cancel`, `order_slot = k` names the agent's k-th own order on
+that side counted from the touch (best price first, oldest first within a level, the same order
+Phase 1 lists them in); `price_code` and `price_offset` are ignored, and slot 0 means "all on this
+side". For `modify`, `order_slot` names the order and `price_code` + `price_offset` name where it
+goes, so a modify can finally choose which order to move; the `size` head keeps its meaning. A slot
+beyond the agent's count is `num_unmatched_step`, as now. `Trader._get_order_ID` grows a
+`by_slot` path; `_prevent_self_match`, `_resting_exposure` and `_replaced_order` are unaffected
+because they resolve through the same lookup. `RandomRLModule` samples the new component for free
+and RLlib's `Dict` action distribution handles it without a custom model. Deliverable: the
+component, `tunable_constants.json` → `action_space.max_own_orders` (8, above the measured p90 of
+4), the decode in `_set_action_mkt_depth`, and tests that a cancel at slot k removes exactly that
+order on any tick. Expected effect on the same random-play measurement: a cancel hits whenever
+`slot ≤ count`, so roughly 60–70% of issued rather than 7%. About a day.
+
+**Phase 3 — make a miss visible to the policy, not only to the log.** `num_unmatched_step` reaches
+`info`, the record and the metrics; the policy sees none of those. Two options, both small, in
+order of preference: (a) add `unmatched_last_step` (0/1) to the private block so the consequence
+of a dead action is in the next observation, which is what a recurrent or stacked policy can learn
+from; (b) a `dead_action_penalty` reward coefficient, default **0.0**, because any non-zero value
+makes the game negative-sum (S1-3) and has to be weighed against that. Ship (a); expose (b) as a
+knob and leave the decision to a measured run. Half a day.
+
+**Phase 4 — prove it learned.** Run `train.compare` before and after at the scaled-down protocol,
+three seeds, reading `unmatched_action_fraction`, `pass_action_fraction` and the maker ratio
+beside returns: the claim to test is "agents that can aim cancels quote more and hold fewer stale
+orders", and the first two metrics are the ones that would show it. Then the Hypothesis suite
+extended with slot-aimed sequences, so the book and escrow invariants are asserted under the new
+action shape too. Half a day plus the runs.
+
+**Sequencing and risk.** Phases 1 and 2 are both structural (`n_hist`-class changes: a checkpoint
+from before cannot be restored after), so land them in one change and record a layout version in
+the checkpoint while at it — that is S4-19, and this is the moment it stops being hypothetical.
+Phase 2 without Phase 1 gives an agent a precise instrument it cannot see the target of; Phase 1
+without Phase 2 shows it a target it cannot hit. The modify semantics change (FIFO → slot) is the
+one behaviour change an existing policy would feel; the comparison in Phase 4 is what says whether
+it mattered.
 
 
 ---
@@ -971,7 +1060,7 @@ for it.
 | S4-10 | Mixin-based env architecture: helpers read attributes they do not own, guarded by defensive `getattr` defaults; not independently testable |
 | S4-11 | `_process_counter_party` linear-scans all agents per fill; `set_agg_LOB` is called twice per step (the pre-action call is display-only) |
 | S4-12 | No `evaluate.py` / serving path — no way to *use* a trained checkpoint |
-| S4-13 | **Fixed.** `test_orderbook_properties.py` (Hypothesis) asserts, for any order sequence: every tree cache equals a walk of its contents, time priority within a level, no locked or crossed book, escrow equals own resting notional, positions net to zero; and under random env play at three ticks, NAV conservation to `nav_tolerance`, `cash + cash_on_hold >= 0`, and every price on the grid. Its first run found two things the example suite had not: S3-23, and a size-reducing modify that bumped a resting order's timestamp while keeping its queue position |
+| S4-13 | **Fixed.** `test_orderbook_properties.py` (Hypothesis) asserts, for any order sequence: every tree cache equals a walk of its contents, time priority within a level, no locked or crossed book, escrow equals own resting notional, positions net to zero; and under random env play at three ticks, NAV conservation **exactly**, `cash + cash_on_hold >= 0`, and every price on the grid. Its first run found two things the example suite had not: S3-23, and a size-reducing modify that bumped a resting order's timestamp while keeping its queue position |
 | S4-14 | **Fixed.** Refused orders increment `num_rejected_step`; `is_pass_action` separates a deliberate pass; and a `modify` / `cancel` that names no resting order increments `num_unmatched_step`, which reaches `info`, the episode record and the `unmatched_action_fraction` metric. The three fractions together bound how much of an episode's activity changed nothing in the book. Whether a dead action should be *penalised* is a reward-design question and is left as such |
 | S4-15 | `Box(-inf, inf)` observation bounds, though every quantity is boundable; disables RLlib observation filters and space-based sanity checks |
 | S4-16 | **Fixed.** `test_shared_history_multi_agent_uniformity` encoded S1-2 as a requirement. It is replaced by a pair that splits the claim: the book prefix must still be shared between agents, the private tail must not be |
