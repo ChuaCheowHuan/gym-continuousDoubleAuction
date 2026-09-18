@@ -54,6 +54,7 @@ mindmap
     tunable_constants.json
       structural, not per-run
       observation_layout
+      observation_bounds
       action_space
       module_id_prefixes
       logging
@@ -272,7 +273,8 @@ naming contract, and the plot and path defaults.
 |---|---|---|
 | `k_rows` | 10 | Book depth — price levels per side |
 | `book_rows` | 4 | Rows in the book block: bid_price, bid_size, ask_price, ask_size |
-| `extra_dim` | 2 | Market-level scalars appended: log_mid, log1p_spread_ticks |
+| `extra_dim` | 6 | Market-level scalars appended: log_mid, log1p_spread_ticks, mid_return, signed_volume, log1p_trade_count, trade_direction |
+| `private_dim` | 32 | The per-agent block: 9 base fields + 2 × k_rows own-book sizes + 2 counts + 1 flag ([05](05_observation_space.md) §1) |
 
 `k_rows` is **one** definition with four consumers: the observation space, the action space's
 `price` component, the reshape in `_set_price`, and the reshape in `print_table`. These were once
@@ -290,6 +292,23 @@ concatenates. A value the code cannot honour raises at env construction rather t
 The module-level `K_ROWS` / `BOOK_DIM` / `SNAPSHOT_DIM` names still exist in `state_helper`, read
 from the same config at import. They are for consumers with no env instance to ask — the
 visualizers, which read a pickled observation, and the tests.
+
+#### 4.1.1 Observation bounds
+
+`observation_bounds` is the finite `[low, high]` of every observation feature, in three
+sub-groups keyed by the field names the layout uses — `book` (`BOOK_ROW_ORDER`), `extra`
+(`EXTRA_FIELDS`) and `private` (`BASE_PRIVATE_FIELDS`, plus `own_size` for the 2 × k_rows own-book
+sizes, `own_count` for the two counts, and `unmatched_last_step`). `State_Helper.observation_bounds`
+tiles them into the `low` / `high` arrays of the whole `n_hist * snapshot_dim + private_dim`
+vector, the env declares its `Box` with those, and `set_next_state` clips to them and counts what
+it clipped ([05](05_observation_space.md) §1.2). A field with no entry fails env construction by
+name; a pair with `low >= high` fails too.
+
+The values are the identity where the range is one and measured with 4× headroom where it is not;
+the `_note_derivation` key in the file carries the numbers, and [16](16_verification_log.md) §16.22
+the measurement. Tightening a bound is a representation decision — it is a `tanh`-friendly clip
+that also throws information away — and the `obs_clip_fraction` metric is how to see what a
+tighter bound costs before believing a result trained under it.
 
 ### 4.2 Action space
 

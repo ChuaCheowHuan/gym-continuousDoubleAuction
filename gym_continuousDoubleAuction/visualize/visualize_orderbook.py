@@ -58,8 +58,8 @@ def visualize_episode_data(run_dir=None, episode_id=None, agent_id=None):
 
     [0:10]  Bid Prices
     [10:20] Bid Sizes
-    [20:30] Ask Prices (negated)
-    [30:40] Ask Sizes (negated)
+    [20:30] Ask Prices
+    [30:40] Ask Sizes
     [40]    log_mid
     [41]    log1p_spread_ticks
 
@@ -87,7 +87,7 @@ def visualize_episode_data(run_dir=None, episode_id=None, agent_id=None):
     for obs in episode["obs"]:
         snapshot = _newest_snapshot(obs)
         b_s = snapshot[10:20]
-        a_s = -snapshot[30:40]  # Negated in env, restore to positive
+        a_s = snapshot[30:40]
         total_bid_size.append(b_s.sum())
         total_ask_size.append(a_s.sum())
 

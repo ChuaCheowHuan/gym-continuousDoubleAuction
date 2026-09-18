@@ -65,6 +65,8 @@ mindmap
       S4-6 pyflakes enforced by the suite
       S4-13 property-based tests — fixed
       S4-14 dead-action fraction — fixed
+      S4-15 finite observation bounds — fixed
+      S4-17 ask sign convention — fixed
       S4-18 duplicate CODEOWNER files
       S4-19 layout version in checkpoints — fixed
 ```
@@ -844,6 +846,17 @@ itself. The book starts empty every episode and is frequently one-sided early on
 validity mask.
 **Fix:** an explicit occupancy channel, or an out-of-range sentinel.
 
+**Measured, 2026-09-18** (while deriving the observation bounds, [16](16_verification_log.md)
+§16.22): over 20 seeded random-play episodes at the shipped config the fallback chain produced a
+normalised ask price of **22** (an ask at 23× the midpoint), a bid of **−18** in an older frame, a
+`mid_return` of **13** and a `vwap_vs_mid` of **−31**; at the stress config `log_mid` came within
+0.7 of its floor of `log(min_tick) − log_mid_centre` (an unseeded run touched it exactly) - none of
+them prices that traded, all of them the midpoint falling to a lone quote at the tick floor when
+one side of a thin book emptied. Those tails are why the price bounds of
+[05](05_observation_space.md) §1.2 are as wide as they are, and they are the first numbers this
+row has had against it: any fix here (a mask, a sentinel, a different fallback) should be judged
+by whether it removes them, with `train.compare` on the learning side.
+
 ### S3-15 · Level index is a non-stationary coordinate
 
 Slot *k* means "the *k*-th occupied price", not a fixed distance from mid, and the action space
@@ -1091,9 +1104,9 @@ it mattered.
 | S4-12 | **Fixed.** `python -m gym_continuousDoubleAuction.train.evaluate --checkpoint <iter_n>` restores a checkpoint, refuses a foreign layout by name, and rolls episodes with its own `policy_mapping_fn` assigning modules - so the random baselines and champions play their parts - taking actions through `forward_inference` the way the env runner does, including the unsquash of the normalised Box heads. Per module it reports return, NAV change, trades and the three activity fractions; `--seed` pins episode seeds so two checkpoints are compared on the same anchors; `--deterministic` takes the mode. [26](26_runbook.md) §26.9.1; `test_evaluate.py` and `integration/test_evaluate_checkpoint.py` |
 | S4-13 | **Fixed.** `test_orderbook_properties.py` (Hypothesis) asserts, for any order sequence: every tree cache equals a walk of its contents, time priority within a level, no locked or crossed book, escrow equals own resting notional, positions net to zero; and under random env play at three ticks, NAV conservation **exactly**, `cash + cash_on_hold >= 0`, and every price on the grid. Its first run found two things the example suite had not: S3-23, and a size-reducing modify that bumped a resting order's timestamp while keeping its queue position |
 | S4-14 | **Fixed.** Refused orders increment `num_rejected_step`; `is_pass_action` separates a deliberate pass; and a `modify` / `cancel` that names no resting order increments `num_unmatched_step`, which reaches `info`, the episode record and the `unmatched_action_fraction` metric. The three fractions together bound how much of an episode's activity changed nothing in the book. Whether a dead action should be *penalised* is a reward-design question and is left as such |
-| S4-15 | `Box(-inf, inf)` observation bounds, though every quantity is boundable; disables RLlib observation filters and space-based sanity checks. **Not hygiene**: tight bounds are a representation decision (`log_mid` and the price fractions depend on where the anchor is drawn), a wrong bound is a silent clip, and the space shape is structural. Left for a measured pass |
+| S4-15 | **Fixed, after measuring.** The Box has finite bounds from `observation_bounds` in `tunable_constants.json`, one `[low, high]` per feature family: exact where the range is an identity (`(M − P)/M < 1`, tanh, the `[0, 1]` fields), otherwise measured over 20 episodes × 400 steps of random play at the shipped config and 20 at a stress config, with at least 4× headroom ([05](05_observation_space.md) §1.2, [16](16_verification_log.md) §16.22). `set_next_state` clips to them and counts what it clipped: `num_obs_clipped_step` in `info` and the record, `obs_clip_fraction` in the metrics and `train.compare`. The counter is the answer to "a wrong bound is a silent clip" - it found one on the first smoke test (older frames' price rows go negative against the newest midpoint; the `[0, 1]` bid bound clipped 192 elements in 50 steps) and reads 0 over the 112,000 agent-steps measured with the shipped bounds. Layout version 3 with S4-17 |
 | S4-16 | **Fixed.** `test_shared_history_multi_agent_uniformity` encoded S1-2 as a requirement. It is replaced by a pair that splits the claim: the book prefix must still be shared between agents, the private tail must not be |
-| S4-17 | The sign convention on ask blocks is redundant (side is already encoded by block position) and prevents natural weight sharing between the two sides. **Not hygiene**: dropping it changes what every encoder is fed, is a layout version bump that invalidates checkpoints, and reaches the own-book block, the visualizers and the probe targets. Left for a measured pass with `train.compare` |
+| S4-17 | **Fixed, after measuring.** Ask prices and sizes are positive in the raw snapshot, the normalised frame, the own-book block and the L1 read; `_set_price`, the probe's `depth_imbalance` and the order-book visualizer read them so. `OBSERVATION_LAYOUT_VERSION` is 3 and a version-2 checkpoint is refused by name (S4-19) - same width, different meaning, which a shape check would never catch. `train.compare` at the S3-24 protocol (mlp and transformer, three seeds, 8 iterations) before and after: [16](16_verification_log.md) §16.22 |
 | S4-18 | **Fixed** (earlier than this row admitted: the tree has carried only `CODEOWNERS` for several passes; the row was stale) |
 | S4-19 | **Fixed.** `envs/layout_version.py` writes the observation and action layout versions, the private-field list and the action-key list into every checkpoint's `league_state.json`; `train.build_algo` compares before restoring and refuses a mismatch naming what differs. A pre-stamp sidecar is layout 1 by definition |
 
@@ -1159,7 +1172,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **1,023 unit tests pass** (plus 156 integration), covering every position-flip path, cash-check edge case, modify-order
+- **1,037 unit tests pass** (plus 156 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 

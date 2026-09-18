@@ -85,7 +85,7 @@ agent)**, with a declared schema.
 |---|---|
 | Identity | `run_id`, `iteration`, `episode_id`, `step`, `agent_id`, `module_id`, `wall_time`, `episode_complete` |
 | NAV | `nav` (float, for arithmetic), `nav_str` (the exact `Decimal` string) |
-| Account | `net_position`, `VWAP`, `cash`, `cash_on_hold`, `position_val`, `drawdown`, `max_nav`, `num_trades`, `num_trades_step`, `num_passive_fills_step`, `order_step_placed`, `num_rejected_step`, `is_pass_action` |
+| Account | `net_position`, `VWAP`, `carrying_vwap`, `cash`, `cash_on_hold`, `position_val`, `drawdown`, `max_nav`, `num_trades`, `num_trades_step`, `num_passive_fills_step`, `order_step_placed`, `num_rejected_step`, `num_unmatched_step`, `num_obs_clipped_step`, `is_pass_action` |
 | Market | `last_price`, `best_bid`, `best_ask`, `spread` |
 | Reward | `reward`, and `reward_term_*` for each of the five signed contributions |
 | Raw | `obs` (list), `action` (list), `info_extra` (JSON for any `info` key with no column) |
@@ -153,6 +153,7 @@ in the repository writes a pickle any more.
 | `pass_action_fraction` | Share of agent-steps where the agent chose `category=0` | 10 | `on_episode_end` |
 | `order_rejection_fraction` | Share of agent-steps where an order was refused for want of cash | 10 | `on_episode_end` |
 | `unmatched_action_fraction` | Share of agent-steps where a `modify` / `cancel` named no resting order (S4-14) | 10 | `on_episode_end` |
+| `obs_clip_fraction` | Share of agent-steps whose observation had at least one element clipped to the declared Box bounds (S4-15); 0 unless a bound is wrong for the market | 10 | `on_episode_end` |
 | `nav_conservation_violations` | Episodes that failed the check | `reduce="sum"` | `on_episode_end` |
 | `reward_term_mean_<term>` × 5 | Mean of each signed reward contribution | 10 | `on_episode_end` |
 | `reward_term_var_share_<term>` × 5 | That term's share of the reward's variance | 10 | `on_episode_end` |
@@ -404,7 +405,7 @@ is not settled here.
 
 | Group | Fields |
 |---|---|
-| Account (§2.3) | `net_position`, `VWAP`, `cash`, `cash_on_hold`, `position_val`, `drawdown`, `max_nav`, `num_trades_step`, `num_passive_fills_step`, `order_step_placed`, `num_rejected_step`, `num_unmatched_step` |
+| Account (§2.3) | `net_position`, `VWAP`, `cash`, `cash_on_hold`, `position_val`, `drawdown`, `max_nav`, `num_trades_step`, `num_passive_fills_step`, `order_step_placed`, `num_rejected_step`, `num_unmatched_step`, `num_obs_clipped_step` |
 | Activity (§2.2) | `is_pass_action` — did this agent choose to do nothing this step |
 | Market (§2.2) | `last_price`, `best_bid`, `best_ask`, `spread` |
 | Reward (§2.4) | `reward_terms`: `nav_term`, `order_penalty`, `trade_penalty`, `drawdown_penalty`, `passive_bonus` |

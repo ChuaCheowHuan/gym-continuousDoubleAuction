@@ -118,22 +118,22 @@ class TestSnapshotReaders:
         values = targets_module.log_mid(corpus.snapshots, layout)
         assert np.allclose(values, corpus.snapshots[:, layout.book_dim])
 
-    def test_depth_imbalance_uses_the_sign_convention(self, layout):
-        """Bid sizes are +sqrt(V) and ask sizes -sqrt(V), so the sum is signed.
+    def test_depth_imbalance_is_signed_by_side(self, layout):
+        """Both size blocks are +sqrt(V) (S4-17), so bids minus asks over total.
 
         A balanced book must give exactly 0 and a one-sided book exactly +/-1;
-        an implementation that took `abs` of the ask block and then subtracted
-        would agree on the first and disagree on the second.
+        an implementation still assuming the old negated-ask convention would
+        agree on the first and get the sign of the third wrong.
         """
         snapshot = np.zeros((3, layout.snapshot_dim), dtype=np.float32)
         k = layout.k_rows
         # Balanced.
         snapshot[0, k:2 * k] = 1.0
-        snapshot[0, 3 * k:4 * k] = -1.0
+        snapshot[0, 3 * k:4 * k] = 1.0
         # Bids only.
         snapshot[1, k:2 * k] = 1.0
         # Asks only.
-        snapshot[2, 3 * k:4 * k] = -1.0
+        snapshot[2, 3 * k:4 * k] = 1.0
 
         imbalance = targets_module.depth_imbalance(snapshot, layout)
         assert imbalance[0] == pytest.approx(0.0)

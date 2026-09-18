@@ -144,8 +144,9 @@ def private_fields(k_rows):
     escrowed but not where, so a cancel was a guess about state the policy
     was never shown - measured at a 7% hit rate under random play. Level k of
     the own book is level k of the public book in the same snapshot, on the
-    same `sqrt(V / limit_max_size)` scale and with asks negative, so a
-    tokenising encoder can carry own size as two more channels of each level
+    same `sqrt(V / limit_max_size)` scale and, like it, non-negative on both
+    sides (S4-17), so a tokenising encoder can carry own size as two more
+    channels of each level
     token (see `train/model/encoders/tokenize.py`). The counts cover orders
     deeper than the book shows; the flag is phase 3 - the consequence of a
     dead action, in the next observation rather than only in a log.
@@ -171,8 +172,12 @@ OWN_BOOK_OFFSET = own_book_offset()
 #: so a checkpoint records which layout its weights were trained against and a
 #: restore into a different one fails by name rather than by tensor shape
 #: (doc/15 S4-19). 1 was the 193-float layout with a 9-field private block;
-#: 2 added the own-book block and the feedback flag (216 floats at defaults).
-OBSERVATION_LAYOUT_VERSION = 2
+#: 2 added the own-book block and the feedback flag (216 floats at defaults);
+#: 3 kept the shape and changed the meaning: ask blocks are positive rather
+#: than negated (S4-17) and the space has finite, measured bounds that the
+#: emitted vector is clipped to (S4-15). A version-2 policy fed version-3
+#: observations would read every ask as a bid.
+OBSERVATION_LAYOUT_VERSION = 3
 
 
 class State_Helper(object):
@@ -251,6 +256,10 @@ class State_Helper(object):
             raise ValueError("action_space.max_own_orders must be >= 1")
         self.book_dim = self.book_rows * self.k_rows
         self.snapshot_dim = self.book_dim + self.extra_dim
+
+        # The finite bounds of the whole vector (S4-15), built once. The env
+        # declares its Box with them and `set_next_state` clips to them.
+        self.obs_low, self.obs_high = self.observation_bounds()
 
         # Where the tape had reached, and what the midpoint was, when the last
         # frame was committed to `obs_history`. Trade flow and `mid_return` are
@@ -367,8 +376,11 @@ class State_Helper(object):
         ask_size = book[3 * k:4 * k]
 
         norm_bid_price = np.where(bid_price > 0, (M_t - bid_price) / M_t, 0.0)
-        norm_ask_price = np.where(
-            ask_price != 0, -((np.abs(ask_price) - M_t) / M_t), 0.0)
+        # Asks are positive, like bids (doc/15 S4-17): the block's position
+        # says which side it is, so the sign carried nothing, and it stopped an
+        # encoder from sharing weights between the two sides. Both price rows
+        # are now the fractional distance from the midpoint, >= 0.
+        norm_ask_price = np.where(ask_price > 0, (ask_price - M_t) / M_t, 0.0)
 
         # Sizes carry no dependence on the midpoint, so they normalise the same
         # way in every frame. See set_agg_LOB for why they are divided.
@@ -376,7 +388,7 @@ class State_Helper(object):
         norm_bid_size = np.where(
             bid_size > 0, np.sqrt(bid_size / size_scale), 0.0)
         norm_ask_size = np.where(
-            ask_size != 0, -np.sqrt(np.abs(ask_size) / size_scale), 0.0)
+            ask_size > 0, np.sqrt(ask_size / size_scale), 0.0)
 
         M_frame = float(extras[_FRAME_M])
         spread_ticks = float(extras[_FRAME_SPREAD_TICKS])
@@ -431,13 +443,13 @@ class State_Helper(object):
         """(best bid, best ask) from the raw snapshot, 0.0 where a side is empty.
 
         Reads `agg_LOB_raw`, which `set_agg_LOB` stores before it needs either
-        value. Asks are held negated - the sign encodes the side - so the ask
-        comes back through `abs`.
+        value. Both sides are held as the prices they are; the block's
+        position, not a sign, says which side a row is (S4-17).
         """
         raw = self.agg_LOB_raw
         bid = float(raw[0])
         ask = float(raw[2 * self.k_rows])
-        return (bid if bid > 0 else 0.0), (abs(ask) if ask != 0 else 0.0)
+        return (bid if bid > 0 else 0.0), (ask if ask > 0 else 0.0)
 
     def mid_price(self) -> float:
         """The Level-1 midpoint `M`, always strictly positive.
@@ -578,8 +590,8 @@ class State_Helper(object):
         """This trader's resting size at each public level, and its order counts.
 
         Returns `(own_bid, own_ask, n_bid, n_ask)`: two `(k_rows,)` float32
-        arrays on the public book's `sqrt(V / limit_max_size)` scale, asks
-        negative, zero where the trader has nothing at that level (or the
+        arrays on the public book's `sqrt(V / limit_max_size)` scale, both
+        non-negative, zero where the trader has nothing at that level (or the
         level is empty); and the trader's resting order count per side over
         the whole book, not only the shown depth.
 
@@ -594,7 +606,7 @@ class State_Helper(object):
         own_bid = np.zeros(k, dtype=np.float32)
         own_ask = np.zeros(k, dtype=np.float32)
 
-        def fill(tree, levels, out, sign):
+        def fill(levels, out):
             for level, (_price, order_list) in enumerate(levels):
                 if level >= k:
                     break
@@ -603,14 +615,68 @@ class State_Helper(object):
                     if order.trade_id == trader.ID:
                         qty += int(order.quantity)
                 if qty:
-                    out[level] = sign * np.sqrt(qty / size_scale)
+                    out[level] = np.sqrt(qty / size_scale)
 
-        fill(self.LOB.bids, reversed(self.LOB.bids.price_map.items()), own_bid, 1.0)
-        fill(self.LOB.asks, self.LOB.asks.price_map.items(), own_ask, -1.0)
+        fill(reversed(self.LOB.bids.price_map.items()), own_bid)
+        fill(self.LOB.asks.price_map.items(), own_ask)
 
         n_bid = sum(1 for o in self.LOB.bids.order_map.values() if o.trade_id == trader.ID)
         n_ask = sum(1 for o in self.LOB.asks.order_map.values() if o.trade_id == trader.ID)
         return own_bid, own_ask, n_bid, n_ask
+
+    def observation_bounds(self) -> Tuple[np.ndarray, np.ndarray]:
+        """`(low, high)` float32 arrays over the whole observation vector.
+
+        Built from `observation_bounds` in tunable_constants.json, one pair per
+        feature family, laid out exactly as `_stack` and `set_private_state`
+        emit the vector: `n_hist` snapshots of `[book_rows x k_rows | extras]`,
+        then the private block. Every field name in `BOOK_ROW_ORDER`,
+        `EXTRA_FIELDS` and `self.private_fields` must be covered - the own-book
+        sizes through the `own_size` alias and the two counts through
+        `own_count` - and a field without a bound raises here, at
+        construction, rather than emitting an unbounded float into a Box that
+        claims otherwise (doc/15 S4-15).
+        """
+        cfg = constants("observation_bounds")
+
+        def pair(section, name):
+            try:
+                low, high = cfg[section][name]
+            except KeyError:
+                raise ValueError(
+                    f"tunable_constants.json: observation_bounds.{section} has "
+                    f"no entry for {name!r}; every observation field needs a "
+                    f"[low, high] pair."
+                ) from None
+            if not low < high:
+                raise ValueError(
+                    f"observation_bounds.{section}.{name} = {[low, high]} is "
+                    f"not an interval (low must be < high)."
+                )
+            return float(low), float(high)
+
+        book = [pair("book", row) for row in BOOK_ROW_ORDER]
+        extra = [pair("extra", name) for name in EXTRA_FIELDS]
+        own_sizes = set(own_book_fields(self.k_rows))
+
+        def private_pair(name):
+            if name in own_sizes:
+                return pair("private", "own_size")
+            if name in OWN_COUNT_FIELDS:
+                return pair("private", "own_count")
+            return pair("private", name)
+
+        private = [private_pair(name) for name in self.private_fields]
+
+        snap_low = np.concatenate(
+            [np.full(self.k_rows, lo) for lo, _ in book] + [np.array([lo for lo, _ in extra])]
+        )
+        snap_high = np.concatenate(
+            [np.full(self.k_rows, hi) for _, hi in book] + [np.array([hi for _, hi in extra])]
+        )
+        low = np.concatenate([np.tile(snap_low, self.n_hist), [lo for lo, _ in private]])
+        high = np.concatenate([np.tile(snap_high, self.n_hist), [hi for _, hi in private]])
+        return low.astype(np.float32), high.astype(np.float32)
 
     def set_next_state(self, next_states: Dict[str, np.ndarray], trader, state_input,
                        elapsed_steps=None) -> Dict[str, np.ndarray]:
@@ -622,6 +688,13 @@ class State_Helper(object):
         private tail differs per agent. That split is why `state_input` is
         still passed in rather than rebuilt here.
 
+        The vector is clipped to the declared bounds (S4-15) and the number
+        of elements that were clipped is written to
+        `trader.acc.num_obs_clipped_step`, so a bound the market escapes is a
+        counted event in `info` and the training metrics rather than a
+        silent saturation. Under the shipped bounds the count is 0 on every
+        step measured (doc/16 section 16.22).
+
         Argument:
             next_states: Dictionary.
             trader: A trader object.
@@ -631,9 +704,12 @@ class State_Helper(object):
         Returns:
             next_states: Dictionary of states for each trader.
         """
-        next_states[f'agent_{trader.ID}'] = np.concatenate(
+        obs = np.concatenate(
             [state_input, self.set_private_state(trader, elapsed_steps)]
         ).astype(np.float32)
+        clipped = np.clip(obs, self.obs_low, self.obs_high)
+        trader.acc.num_obs_clipped_step = int(np.count_nonzero(clipped != obs))
+        next_states[f'agent_{trader.ID}'] = clipped
 
         return next_states
 
@@ -668,8 +744,8 @@ class State_Helper(object):
             # lowest ask is the first entry in the np.array
             for k, set in enumerate(self.LOB.asks.price_map.items()):
                 if k < k_rows:
-                    ask_price_list[k] = -set[0]
-                    ask_size_list[k] = -set[1].volume
+                    ask_price_list[k] = set[0]
+                    ask_size_list[k] = set[1].volume
                 else:
                     break
         self._snapshot_stale = False

@@ -13,8 +13,8 @@ The layout is `State_Helper.set_agg_LOB`'s, via `ObsLayout`:
 
     [0:k]        norm_bid_price  = (M - P_bid) / M          >= 0
     [k:2k]       norm_bid_size   = sqrt(V_bid)              >= 0
-    [2k:3k]      norm_ask_price  = -(|P_ask| - M) / M       <= 0
-    [3k:4k]      norm_ask_size   = -sqrt(V_ask)             <= 0
+    [2k:3k]      norm_ask_price  = (P_ask - M) / M          >= 0
+    [3k:4k]      norm_ask_size   = sqrt(V_ask)              >= 0
     [4k]         log_mid         = log(M)
     [4k + 1]     log1p_spread_ticks, with 0.0 as the "no two-sided market"
                  sentinel - a resting book can never be locked or crossed, so
@@ -113,9 +113,10 @@ def spread(snapshots: np.ndarray, layout: ObsLayout) -> np.ndarray:
 def depth_imbalance(snapshots: np.ndarray, layout: ObsLayout) -> np.ndarray:
     """`(bid depth - ask depth) / total depth` over all `k_rows` levels.
 
-    Bid sizes are `+sqrt(V)` and ask sizes `-sqrt(V)`, so their sum is the
-    signed numerator and their difference the total - no `abs` needed, and the
-    sign convention is used rather than worked around.
+    Both size blocks are `+sqrt(V)` since S4-17 removed the negated-ask
+    convention, so the numerator is the plain difference and the total the
+    plain sum. Before that change the roles of `+` and `-` here were swapped,
+    which is why `test_probe` pins a one-sided book on each side.
 
     In `sqrt(V)` units, not shares. That is what the observation carries, and
     converting back would claim a precision the encoder never sees. Zero for an
@@ -124,8 +125,8 @@ def depth_imbalance(snapshots: np.ndarray, layout: ObsLayout) -> np.ndarray:
     k = layout.k_rows
     bid = snapshots[:, k:2 * k].astype(np.float64).sum(axis=1)
     ask = snapshots[:, 3 * k:4 * k].astype(np.float64).sum(axis=1)
-    total = bid - ask
-    return np.divide(bid + ask, total, out=np.zeros_like(total), where=total > 0)
+    total = bid + ask
+    return np.divide(bid - ask, total, out=np.zeros_like(total), where=total > 0)
 
 
 def _ahead(values: np.ndarray, horizon: int) -> np.ndarray:

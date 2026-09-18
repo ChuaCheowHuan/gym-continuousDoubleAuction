@@ -35,6 +35,8 @@ final checkpoint:
   the three ways an action can change nothing, so a "winning" encoder whose
   policy has collapsed to doing nothing is visible as such.
 * `maker_fill_ratio_max`: the most maker-like agent's share of its own fills.
+* `obs_clip_fraction`: agent-steps whose observation hit a declared bound
+  (S4-15); a number other than 0 means a bound is wrong for the market.
 * `parameters`: trainable parameter count of one trainable module.
 * `probe:<target>@<horizon>`: the probe score of the checkpoint's `policy_0`
   latents on that target, against the shared corpus.
@@ -74,6 +76,7 @@ TABLE_METRICS = (
     ("order_rejection_fraction", ".3g"),
     ("unmatched_action_fraction", ".3g"),
     ("maker_fill_ratio_max", ".3g"),
+    ("obs_clip_fraction", ".3g"),
 )
 
 
@@ -138,6 +141,9 @@ def run_one(base_cfg, encoder: str, seed: int, out_dir: str, iters: int) -> Dict
             "order_rejection_fraction": _as_float(env_runners.get("order_rejection_fraction")),
             "unmatched_action_fraction": _as_float(env_runners.get("unmatched_action_fraction")),
             "maker_fill_ratio_max": _as_float(env_runners.get("maker_fill_ratio_max")),
+            # Agent-steps whose observation was clipped to the declared Box
+            # bounds (doc/15 S4-15); should be 0 unless the bounds are wrong.
+            "obs_clip_fraction": _as_float(env_runners.get("obs_clip_fraction")),
             "parameters": _parameter_count(algo, trainable[0]),
         }
         checkpoints = list_checkpoints(cfg.checkpoint_dir)

@@ -123,11 +123,22 @@ class continuousDoubleAuctionEnv(
         # `observation_space` / `action_space` on MultiAgentEnv are marked
         # @OldAPIStack in Ray 2.56 and mean something different (the space of a
         # single agent, not a per-agent dict).
+        #
+        # Finite bounds, from `observation_bounds` in tunable_constants.json
+        # via State_Helper (doc/15 S4-15): every feature is a ratio, a log or
+        # a tanh with a known or measured range, and `set_next_state` clips to
+        # these and counts what it clipped, so the Box is a true statement
+        # about what the env emits rather than the `(-inf, inf)` it used to
+        # declare, which disabled RLlib's space checks and observation filters.
+        if self.obs_low.shape != (self.n_hist * self.snapshot_dim + self.private_dim,):
+            raise ValueError(
+                f"observation_bounds built {self.obs_low.shape[0]} floats but the "
+                f"observation is {self.n_hist * self.snapshot_dim + self.private_dim}."
+            )
         self.observation_spaces = {
             agent_id: gym.spaces.Box(
-                low=-np.inf,
-                high=np.inf,
-                shape=(self.n_hist * self.snapshot_dim + self.private_dim,),
+                low=self.obs_low,
+                high=self.obs_high,
                 dtype=np.float32
             ) for agent_id in agent_ids
         }

@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (1,179 tests: 1,023 unit + 156 integration)
+# everything (1,193 tests: 1,037 unit + 156 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -61,7 +61,8 @@ Counts re-measured with `--collect-only`.
 | `test_accounting.py` | 13 | Cash, position, NAV, position flips |
 | `test_cash_check.py` | 19 | Order approval and cash gating; a cancel is never cash-checked, a modify may spend the escrow it releases (S2-13); escrow against a closing order is spendable (S1-5) |
 | `test_unmatched_actions.py` | 12 | A `modify` / `cancel` on a side with nothing resting is counted, per step, in `info` and the record (S4-14); a slot past the count clamps rather than misses |
-| `test_own_book_obs.py` | 10 | The own-book block: this agent's resting size at each public level, sign and scale, the counts, alignment with the public book, and the dead-action flag (S3-24 phase 1, 3) |
+| `test_own_book_obs.py` | 10 | The own-book block: this agent's resting size at each public level, positive on both sides and on the public scale, the counts, alignment with the public book, and the dead-action flag (S3-24 phase 1, 3) |
+| `test_observation_bounds.py` | 12 | The Box is finite and laid out as the vector is; identity bounds are exact; a missing or inverted bound fails construction by name; every emitted observation is inside the space; ordinary play clips nothing; an older frame's negative price entry is not clipped; a clip is counted per step in `info` and has a record column (S4-15) |
 | `test_order_slot.py` | 17 | `order_slot`: cancel by slot, cancel-all, modify by slot and by FIFO, clamping, the cash check on the slotted order, the head in the action space, and a random-play hit-rate floor (S3-24 phase 2) |
 | `test_dead_action_penalty.py` | 3 | The sixth reward term: zero by default and bit-for-bit neutral, charged per miss when set, forwarded by `TrainConfig` |
 | `test_layout_version.py` | 7 | The layout stamp: written beside every checkpoint, passes for the current layout, refuses a version or field mismatch by name (S4-19) |
@@ -69,7 +70,7 @@ Counts re-measured with `--collect-only`.
 | `test_tick_grid.py` | 14 | Every action price sits on the `tick_size` grid; upsert and cancel find their order on a fractional tick (S3-4) |
 | `test_modify_order.py` | 7 | The six modify-order accounting scenarios, plus a guard that the dead escrow helper stays deleted |
 | `test_new_action_space.py` | 10 | Action decoding, ghost pricing, `tick_size` reaching the action layer, price levels matching book depth |
-| `test_obs_normalization.py` | 12 | Price/volume normalization, action unnormalization |
+| `test_obs_normalization.py` | 12 | Price/volume normalization (both sides positive since S4-17), action unnormalization |
 | `test_observation_history.py` | 6 | Temporal stacking, and the shared-book / private-tail split (S1-2) |
 | `test_obs_market_features.py` | 17 | `log_mid`, `log1p_spread_ticks`, observation shape across `n_hist` |
 | `test_reward_logic.py` | 8 | Reward formula components: normalisation by `init_nav`, scale invariance, the signed drawdown telescoping, zero-sum symmetry |
@@ -87,7 +88,7 @@ Counts re-measured with `--collect-only`.
 | `test_progress_log.py` | 35 | `progress.jsonl` writer, numpy/NaN handling, `vf_explained_var` extraction, per-run directory isolation, the iteration broadcast to env runners |
 | `test_info_dict.py` | 24 | Per-step `info`: back-compat, reward terms summing exactly, live counters, spread, pass/rejection fields, JSON, and 0-d numpy arrays — which only a *recurrent* module produces |
 | `test_type_policy.py` | 15 | Decimal money/prices, int sizes, no field changing type mid-episode, book boundary |
-| `test_activity_metrics.py` | 32 | `pass_action_fraction` / `order_rejection_fraction`: the S1-3 detector, per-episode tallies, pickling; the reward-term variance split, the maker-ratio metric and the end-of-episode account metrics |
+| `test_activity_metrics.py` | 34 | `pass_action_fraction` / `order_rejection_fraction` / `obs_clip_fraction`: the S1-3 detector, per-episode tallies, pickling; the reward-term variance split, the maker-ratio metric and the end-of-episode account metrics |
 | `test_episode_record.py` | 32 | The Parquet per-step record: declared schema and its drift guard against `Info_Helper`, identity columns, sampling rate, byte cap, eviction of episodes that never end, and the ways it must fail without raising |
 | `test_encoder_registry.py` | 46 | The selectable-encoder seam: registry, `CDACatalog`, the `mlp` pass-through staying byte-for-byte what it was, `ObsLayout`, tokenisation |
 | `test_encoder_architectures.py` | 170 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
@@ -104,7 +105,7 @@ Counts re-measured with `--collect-only`.
 | `test_cbp.py` | 48 | Continual Backprop's algorithm core, with no Ray and no `Algorithm` — §6.6.1 |
 | `test_compare.py` | 12 | The encoder comparison driver's aggregation: means and standard deviations across seeds, the separation rule and its three-seed floor, the rendered table and its caveats |
 | `test_lint.py` | 1 | The package is pyflakes-clean; any message fails the suite (S4-6) |
-| **unit total** | **1,023** | |
+| **unit total** | **1,037** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -149,11 +150,12 @@ mindmap
       tick grid 14
         on-grid prices for any tick
     Learning problem
-      observation 58
+      observation 70
         normalization, stacking
         one normaliser per stack
         the six market scalars
         feature scales on one range
+        finite bounds, clips counted
       action 10
         decoding, ghost pricing
       reward 8
@@ -185,7 +187,7 @@ mindmap
       tooling 20
         lint enforced, comparison driver
         evaluate a checkpoint
-      observability 214
+      observability 216
         logging, progress log, info dict
         activity metrics, episode record
         NAV conservation, book rendering
@@ -444,7 +446,7 @@ Modify and cancel accounting (categories 3, 4, 7, 8) is verified separately in
 |---|---|
 | `test_obs_signs_empty_book` | An empty book yields an all-zero **book block** with no NaN |
 | `test_bid_obs_non_negative_with_orders` | After 4 bid orders, `snapshot[0:10]` and `snapshot[10:20]` are all `>= 0` |
-| `test_ask_obs_non_positive_with_orders` | After 4 ask orders, `snapshot[20:30]` and `snapshot[30:40]` are all `<= 0` — catching a dropped negation |
+| `test_ask_obs_non_negative_with_orders` | After 4 ask orders, `snapshot[20:30]` and `snapshot[30:40]` are all `>= 0` — the side is the block, not a sign (S4-17; before 2026-09-18 this test asserted `<= 0` and caught a dropped negation) |
 
 **Group 3 — midpoint correctness**
 

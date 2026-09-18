@@ -209,10 +209,11 @@ class TestObsMarketFeatures:
         bid_prices, bid_sizes = snap[0:10], snap[10:20]
         ask_prices, ask_sizes = snap[20:30], snap[30:40]
 
+        # Both sides non-negative since S4-17: side is the block, not a sign.
         assert np.all(bid_prices >= 0)
         assert np.all(bid_sizes >= 0)
-        assert np.all(ask_prices <= 0)
-        assert np.all(ask_sizes <= 0)
+        assert np.all(ask_prices >= 0)
+        assert np.all(ask_sizes >= 0)
 
     # ------------------------------------------------------------------
     # 6. Rollout safety

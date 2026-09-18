@@ -87,6 +87,7 @@ INFO_COLUMNS = (
     ("order_step_placed", "int64"),
     ("num_rejected_step", "int64"),
     ("num_unmatched_step", "int64"),
+    ("num_obs_clipped_step", "int64"),
     ("is_pass_action", "bool"),
     ("last_price", "float64"),
     ("best_bid", "float64"),

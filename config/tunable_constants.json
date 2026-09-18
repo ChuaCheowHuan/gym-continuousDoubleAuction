@@ -9,7 +9,106 @@
     "book_rows": 4,
     "extra_dim": 6,
     "private_dim": 32,
-    "_note_own_book": "The OWN-BOOK block (doc/15 S3-24 phase 1, closing the S1-2 tail): for each of the k_rows public levels on each side, THIS agent's resting size at that level on the public book's sqrt(V / limit_max_size) scale and sign convention (asks negative), then this agent's resting order count per side over action_space.max_own_orders, then unmatched_last_step - 1.0 if the agent's last modify/cancel named no resting order (phase 3), so the consequence of a dead action is in the next observation. Level k of the own book is level k of the public book in the same snapshot, which is what lets a tokenising encoder carry own size as two extra channels of each level token (tokenize.py)."
+    "_note_own_book": "The OWN-BOOK block (doc/15 S3-24 phase 1, closing the S1-2 tail): for each of the k_rows public levels on each side, THIS agent's resting size at that level on the public book's sqrt(V / limit_max_size) scale (non-negative on both sides since S4-17), then this agent's resting order count per side over action_space.max_own_orders, then unmatched_last_step - 1.0 if the agent's last modify/cancel named no resting order (phase 3), so the consequence of a dead action is in the next observation. Level k of the own book is level k of the public book in the same snapshot, which is what lets a tokenising encoder carry own size as two extra channels of each level token (tokenize.py)."
+  },
+  "observation_bounds": {
+    "_source": "gym_continuousDoubleAuction/envs/exchg/state_helper.py (State_Helper.observation_bounds, set_next_state)",
+    "_note": "Finite bounds of the observation Box (doc/15 S4-15), one [low, high] pair per feature family. State_Helper.observation_bounds builds the low/high arrays of the whole n_hist * snapshot_dim + private_dim vector from these, the env declares the Box with them, and set_next_state clips every emitted vector to them and counts the elements it clipped in num_obs_clipped_step (info, the episode record, and the obs_clip_fraction training metric). A bound is a claim about the range a feature can take, so the counter is what makes a wrong claim visible rather than a silent clip. Every field named in BOOK_ROW_ORDER, EXTRA_FIELDS and private_fields() must have an entry here or in the own_size / own_count aliases; construction fails naming the field otherwise.",
+    "_note_derivation": "Where a bound is a mathematical identity it is exact: with P > 0, bid_price (M - P) / M is < 1 and ask_price (P - M) / M is > -1; mid_return M_t / M_prev - 1 is > -1; position is a tanh; trade_direction, time_left, the counts and the flag are defined on [-1, 1] or [0, 1]; drawdown is <= 0; vwap_vs_mid is (M - VWAP) / M < 1; sizes, spread, trade count, cash_on_hold and the own-book block are >= 0. The other sides are measured (doc/16 section 16.22: 20 seeded episodes x 400 steps of random play at the shipped config and 20 at a stress config - 6 agents, 20,000 cash, anchors 5..500, tick 0.1) and given at least 4x headroom over the widest value seen. The price rows are signed on their measured side because every frame in the stack is normalised by the NEWEST frame's midpoint (doc/05 section 2.2): an older frame's bid resting above M_t reads negative. The first smoke test of a [0, 1] bid_price bound clipped 192 elements in 50 steps for exactly that reason. The wide price and cost-basis tails come from the one-sided-book midpoint fallback on a thin random-play book (doc/15 S3-14): when one side empties, M falls to the other side's best quote, which the min_tick floor on order prices can put at a single tick, and every ratio against M then explodes. Their true extremes are set by the config, not by chance - log_mid's floor is log(min_tick) - log_mid_centre (-6.21 at the stress config, exactly the value measured), and ask_price, bid_price, mid_return and vwap_vs_mid can in principle reach (price / min_tick - 1). These bounds cover everything measured with headroom; a run whose book collapses further is counted, not hidden, in num_obs_clipped_step. For the log features the headroom is on the argument (e^8 = 2,981 trades per step against 9 seen; e^10 = 22,026 ticks of spread against 44 seen). The NAV-normalised ratios share one envelope of 8, i.e. eight times the starting NAV.",
+    "book": {
+      "bid_price": [
+        -128.0,
+        1.0
+      ],
+      "bid_size": [
+        0.0,
+        8.0
+      ],
+      "ask_price": [
+        -1.0,
+        128.0
+      ],
+      "ask_size": [
+        0.0,
+        8.0
+      ]
+    },
+    "extra": {
+      "log_mid": [
+        -8.0,
+        8.0
+      ],
+      "log1p_spread_ticks": [
+        0.0,
+        10.0
+      ],
+      "mid_return": [
+        -1.0,
+        64.0
+      ],
+      "signed_volume": [
+        -8.0,
+        8.0
+      ],
+      "log1p_trade_count": [
+        0.0,
+        8.0
+      ],
+      "trade_direction": [
+        -1.0,
+        1.0
+      ]
+    },
+    "private": {
+      "position": [
+        -1.0,
+        1.0
+      ],
+      "position_val": [
+        -8.0,
+        8.0
+      ],
+      "cash": [
+        -8.0,
+        8.0
+      ],
+      "cash_on_hold": [
+        0.0,
+        8.0
+      ],
+      "nav": [
+        -8.0,
+        8.0
+      ],
+      "drawdown": [
+        -8.0,
+        0.0
+      ],
+      "vwap_vs_mid": [
+        -128.0,
+        1.0
+      ],
+      "realised_pnl": [
+        -8.0,
+        8.0
+      ],
+      "time_left": [
+        0.0,
+        1.0
+      ],
+      "own_size": [
+        0.0,
+        8.0
+      ],
+      "own_count": [
+        0.0,
+        1.0
+      ],
+      "unmatched_last_step": [
+        0.0,
+        1.0
+      ]
+    }
   },
   "action_space": {
     "_source": "gym_continuousDoubleAuction/envs/exchg/action_helper.py (Action_Helper.act_space)",

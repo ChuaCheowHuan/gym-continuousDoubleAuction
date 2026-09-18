@@ -375,14 +375,15 @@ class Action_Helper():
             p = price_array[level_idx]
             
             # If level is empty, use ghost logic relative to ref_price
-            base_price = (ref_price - (level_idx + 1) * min_tick) if p == 0 else abs(p)
+            base_price = (ref_price - (level_idx + 1) * min_tick) if p == 0 else p
             
             # Apply offset: Bid +1 is aggressive, Bid -1 is passive
             set_price = base_price + (offset_multiplier * min_tick)
 
         else: # 'ask'
             price_array = book[BOOK_ROW_ORDER.index("ask_price")] # raw ask prices
-            p = abs(price_array[level_idx])
+            # Positive, like the bid row; the sign convention is gone (S4-17).
+            p = price_array[level_idx]
             
             # If level is empty, use ghost logic relative to ref_price
             base_price = (ref_price + (level_idx + 1) * min_tick) if p == 0 else p

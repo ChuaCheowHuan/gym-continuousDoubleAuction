@@ -63,7 +63,7 @@ import and reads its config tree relative to the repository root
 Three checks, cheapest first. All three are what CI runs ([10](10_testing.md) §7).
 
 ```bash
-# 1. the simulator and the training-side units: ~2 min, 1,023 tests (incl. pyflakes and Hypothesis)
+# 1. the simulator and the training-side units: ~2.5 min, 1,037 tests (incl. pyflakes and Hypothesis)
 python -m pytest gym_continuousDoubleAuction/test -q \
     --ignore=gym_continuousDoubleAuction/test/integration
 
@@ -205,6 +205,7 @@ The three failure modes a returns curve cannot show, and the number that shows e
 | `vf_explained_var` per trainable module | the `iter N/M` log line; `learners.<module>.vf_explained_var` in `progress.jsonl` | rises from noise toward positive values over the first iterations | stuck near 0 for the whole run: the critic is not learning (S1-1's symptom) |
 | `pass_action_fraction` | `env_runners.pass_action_fraction` | well below 1.0 and not trending to it | trending to 1.0: the league has collapsed to doing nothing, and promotion will still fire (S1-3) |
 | `order_rejection_fraction` | `env_runners.order_rejection_fraction` | small | high: agents quote past their cash every step and see nothing for it |
+| `obs_clip_fraction` | `env_runners.obs_clip_fraction` | exactly 0.0 | anything else: the market has escaped a bound in `observation_bounds` and the policy is being shown a clipped value ([05](05_observation_space.md) §1.2); widen the bound, or accept the clip knowingly |
 | `nav_conservation_error` | `env_runners.nav_conservation_error`; `Conserved` lines in `run.log` | exactly 0.0 | anything else stops the run under `strict_nav_check`; the ledger is corrupt |
 | `league.promoted`, `league.idle_modules` | `progress.jsonl` `league` block | promotions every few iterations; idle 0 | idle > 0 for many iterations: an opponent is never drawn ([08](08_self_play_league.md) §7) |
 | `iter N trained on no samples` | `run.log` WARNING | absent | present: raise `sample_timeout_s` or shrink the batch ([09](09_distributed_training.md)) |

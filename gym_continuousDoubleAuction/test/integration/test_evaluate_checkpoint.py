@@ -47,9 +47,13 @@ def test_rolls_episodes_with_the_checkpoints_policies(checkpoint):
         assert 1 <= ep["steps"] <= 16
         assert {row["agent"] for row in ep["agents"]} == {f"agent_{i}" for i in range(4)}
         modules = {row["module"] for row in ep["agents"]}
-        # Trainable slots are fixed; the opponent slots draw from the pool.
+        # Trainable slots are fixed; the opponent slots draw from the pool,
+        # which holds the random baselines and any champion the one training
+        # iteration promoted - a champion is a legitimate opponent here, and
+        # whether one exists after iteration 1 depends on the returns drawn.
         assert {"policy_0", "policy_1"} <= modules
-        assert modules <= {"policy_0", "policy_1", "policy_2", "policy_3"}
+        for module in modules:
+            assert module.startswith(("policy_", "champion_")), module
     summary = record["summary"]
     assert "policy_0" in summary and summary["policy_0"]["agent_episodes"] == 2
     # Every activity fraction is a fraction.

@@ -67,7 +67,8 @@ class TestLayout:
         env = _env()
         assert env.private_dim == 32
         assert env.observation_spaces["agent_0"].shape == (4 * 46 + 32,)
-        assert OBSERVATION_LAYOUT_VERSION == 2
+        # 3: positive asks (S4-17) and finite bounds (S4-15), same shape as 2.
+        assert OBSERVATION_LAYOUT_VERSION == 3
 
     def test_reset_shows_an_empty_own_book(self):
         env = _env()
@@ -94,13 +95,14 @@ class TestOwnSizes:
         assert p0["own_bid_count"] == np.float32(1 / env.max_own_orders)
         assert p1["own_bid_count"] == 0.0
 
-    def test_own_ask_is_negative_like_the_public_book(self):
+    def test_own_ask_is_positive_like_the_public_book(self):
+        """Both sides non-negative, on the public book's scale (S4-17)."""
         env = _env()
         obs, _, _, _, _ = env.step({"agent_0": _act(6), "agent_1": _PASS})
         p0 = _private(env, obs)
-        assert p0["own_ask_size_0"] < 0
+        assert p0["own_ask_size_0"] > 0
         book = obs["agent_0"][-env.private_dim - env.snapshot_dim:-env.private_dim]
-        # Same magnitude as the public ask size at level 0 (only one order there).
+        # Same value as the public ask size at level 0 (only one order there).
         public_ask_size_0 = book[3 * env.k_rows]
         assert p0["own_ask_size_0"] == public_ask_size_0
 

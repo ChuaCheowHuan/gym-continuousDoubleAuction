@@ -1158,3 +1158,111 @@ the integration suite, which this run excluded); `CDA_rand.py` 20% (the CI smoke
 which the suite runs only at DEBUG).
 
 **Supports:** §15 S4-6, S4-11; §10 7, 8.
+
+## 16.22 Positive asks and a finite Box: the ranges, the clip the counter caught, and the before/after run (2026-09-18)
+
+S4-17 (drop the negated-ask convention) and S4-15 (finite observation bounds) were left out of the
+hygiene pass because each changes what every encoder is fed. This is the measured pass for both:
+observation layout version 3.
+
+**Protocol for the ranges.** `env.reset(seed)` and every agent's action space seeded, actions
+sampled from the space, 20 episodes × 400 steps, the *unclipped* vector recorded (bounds widened to
+±10¹² for the measurement), then the clip count against the shipped bounds. Two configs: the
+shipped one (8 agents, 1,000,000 cash, seeds 100–119) and a stress one (6 agents, 20,000 cash,
+anchors 5–500, tick 0.1, seeds 200–219). 64,000 and 48,000 agent-steps.
+
+| field | shipped min | shipped max | stress min | stress max | bound |
+|---|---|---|---|---|---|
+| `bid_price` | **−18.00** | 0.966 | −3.00 | 0.968 | [−128, 1] |
+| `bid_size` | 0 | 1.444 | 0 | 1.096 | [0, 8] |
+| `ask_price` | −0.706 | **22.00** | −0.500 | 7.50 | [−1, 128] |
+| `ask_size` | 0 | 1.343 | 0 | 1.044 | [0, 8] |
+| `log_mid` | −3.454 | 1.664 | **−5.522** | 2.291 | [−8, 8] |
+| `log1p_spread_ticks` | 0 | 3.689 | 0 | 3.497 | [0, 10] |
+| `mid_return` | −0.944 | **13.00** | −0.750 | 1.750 | [−1, 64] |
+| `signed_volume` | −0.526 | 0.411 | −0.495 | 0.379 | [−8, 8] |
+| `log1p_trade_count` | 0 | 2.079 | 0 | 1.792 | [0, 8] |
+| `trade_direction` | −1 | 1 | −1 | 1 | [−1, 1] |
+| `position` | −0.866 | 0.851 | −0.667 | 0.827 | [−1, 1] |
+| `position_val` | −0.039 | 0.206 | −0.078 | 1.035 | [−8, 8] |
+| `cash` | 0.723 | 1.031 | −0.913 | 1.064 | [−8, 8] |
+| `cash_on_hold` | 0 | 0.227 | 0 | 1.037 | [0, 8] |
+| `nav` | 0.923 | 1.078 | 0.755 | 1.143 | [−8, 8] |
+| `drawdown` | −0.090 | 0 | −0.273 | 0 | [−8, 0] |
+| `vwap_vs_mid` | **−31.23** | 0.950 | −13.29 | 0.750 | [−128, 1] |
+| `realised_pnl` | −0.077 | 0.078 | −0.245 | 0.143 | [−8, 8] |
+| `time_left` | 0 | 0.998 | 0 | 0.998 | [0, 1] |
+| own sizes | 0 | 0.961 | 0 | 0.812 | [0, 8] |
+| own counts, `unmatched_last_step` | 0 | 1 | 0 | 1 | [0, 1] |
+
+**Clipped under the shipped bounds: 0 of 64,000 agent-steps, 0 of 48,000.**
+
+Three things the table says.
+
+1. **The identities hold.** Every side that is mathematics — `bid_price < 1`, `ask_price > −1`,
+   `mid_return > −1`, `drawdown ≤ 0`, `vwap_vs_mid < 1`, the tanh, the `[0, 1]` fields — is
+   approached and never crossed. `log_mid` at the stress config sat at −5.52 against a floor of
+   `log(min_tick) − log_mid_centre = log(0.1) − log(50) = −6.21`; an unseeded run before this one
+   reached −6.21 exactly, which is the floor being touched, not noise.
+2. **The bold numbers are the one-sided-book fallback, not prices.** An ask at 23× the midpoint, a
+   bid at 19× in an older frame, a midpoint that grew fourteenfold in one step, a cost basis at
+   32× the mark: every one is `M` falling to a lone quote at the tick floor when the other side of
+   a thin book emptied ([05](05_observation_space.md) §2.1). Their extremes are set by
+   `price / min_tick`, not by the sample, and vary run to run — three 20-episode runs gave
+   `ask_price` maxima of 18, 21 and 22. The bounds on those four fields are therefore a choice of
+   where the counter starts, at more than 4× the widest value seen, rather than a claim that the
+   market cannot exceed them; and the numbers are the first measurement S3-14 has had against it.
+3. **Everything else is well inside**, by 4× or more: the sizes peak near 1.4 against 8, the
+   NAV-normalised ratios stay within −1 … 1.15 against ±8, `signed_volume` within ±0.6 against ±8.
+
+**The clip the counter caught.** The first candidate bounds put `bid_price` on `[0, 1]` and
+`ask_price` on `[0, 4]`, reasoning from the newest frame: `P_bid ≤ M ≤ P_ask`. The smoke test
+clipped **192 elements in 50 steps of 4 agents**, every one in an *older* frame's price row. The
+stack is normalised by the newest frame's midpoint (§16.12, S2-6), so a bid resting above `M_t`
+three steps ago reads `(M_t − P) / M_t < 0` — by design. A `(−inf, inf)` Box would have said
+nothing; a clipping Box without a counter would have silently flattened a fifth of the older
+frames' L1 prices to zero. The second candidate (`bid_price ≥ −4`, `ask_price ≤ 4`, `mid_return ≤
+4`, `vwap_vs_mid ≥ −8`) clipped 816 of 64,000 agent-steps (1.28%) at the shipped config, all in
+the four fallback-tail fields; that is what led to the wide bounds above.
+
+**Before/after with `train.compare`**, the S3-24 protocol of §16.20: `mlp` and `transformer`,
+seeds 0 1 2, 8 iterations, 4 agents (2 trained), `max_step` 128, 4 episodes per iteration, no
+probe. Before = commit `96bd34c` (layout 2, negated asks, infinite Box); after = this tree
+(layout 3). Same command, same seeds.
+
+**Before** (layout 2):
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | order_rejection_fraction | unmatched_action_fraction | maker_fill_ratio_max | separated on |
+|---|---|---|---|---|---|---|---|---|---|
+| mlp | 3 | 250,912 | −0.00147 ± 0.000765 | −0.392 ± 0.304 | 0.105 ± 0.00224 | 0 ± 0 | 0.293 ± 0.0159 | 0.67 ± 0.0235 | pass_action_fraction, maker_fill_ratio_max |
+| transformer | 3 | 682,016 | −0.00332 ± 0.00346 | −0.5 ± 0.193 | 0.136 ± 0.0153 | 0 ± 0 | 0.289 ± 0.0198 | 0.62 ± 0.0222 | pass_action_fraction, maker_fill_ratio_max |
+
+**After** (layout 3; the new `obs_clip_fraction` column):
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | order_rejection_fraction | unmatched_action_fraction | maker_fill_ratio_max | obs_clip_fraction | separated on |
+|---|---|---|---|---|---|---|---|---|---|---|
+| mlp | 3 | 250,912 | −0.00272 ± 0.00235 | −0.711 ± 0.105 | 0.111 ± 0.00674 | 0 ± 0 | 0.287 ± 0.0135 | 0.623 ± 0.0175 | 0 ± 0 | vf_explained_var, maker_fill_ratio_max |
+| transformer | 3 | 682,016 | −0.000517 ± 0.000946 | −0.465 ± 0.134 | 0.119 ± 0.0127 | 0 ± 0 | 0.269 ± 0.0217 | 0.668 ± 0.00828 | 0 ± 0 | vf_explained_var, maker_fill_ratio_max |
+
+How to read it, in the order the columns matter:
+
+- **`obs_clip_fraction` is 0 ± 0 for both encoders across all three seeds.** Training play, not
+  only random play, stayed inside the declared bounds. This is the one number this section
+  exists to produce.
+- **Nothing that separates the encoders before separates them after, and vice versa, at a
+  level that means anything.** Every return is within noise of zero, `vf_explained_var` is
+  negative on both trees (eight iterations of 512-step batches is far short of a critic), and the
+  "separated on" column flipped from `pass_action_fraction` to `vf_explained_var` between two runs
+  that differ only in the observation's sign convention and bounds - which is a statement about
+  the scale of this protocol, not about the layout. The activity fractions (`pass` 0.10–0.14,
+  `unmatched` 0.27–0.29, `rejection` 0) are the same on both trees to within a standard deviation:
+  the layout change did not alter what near-random policies do, which is what one expects of a
+  sign flip and a clip that never fires.
+- **The parameter counts are identical**, as they must be: same width, same heads.
+
+As with §16.20, this is a smoke-scale run. It proves the protocol runs on layout 3, that the
+clip counter is 0 in training, and that the change did not move the near-random baseline. Whether
+a positive-ask book lets an encoder learn faster is a question for the run at scale ([10](10_testing.md)
+§8), which no tree has had yet.
+
+**Supports:** §15 S4-15, S4-17, S3-14; §05 1.2, 2.2, 2.3, 7.6; §18 4.1.1; §10 (`test_observation_bounds.py`).

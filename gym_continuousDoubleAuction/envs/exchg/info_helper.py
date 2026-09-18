@@ -93,6 +93,9 @@ class Info_Helper(object):
             # modify/cancel actions that named no resting order this step -
             # the third way an action can silently do nothing (doc/15 S4-14).
             "num_unmatched_step": acc.num_unmatched_step,
+            # Observation elements clipped to the declared Box bounds this
+            # step (doc/15 S4-15). Zero unless a bound is wrong for the market.
+            "num_obs_clipped_step": acc.num_obs_clipped_step,
         })
 
         # Did this agent choose to do nothing this step? The two behaviours a

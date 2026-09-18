@@ -189,7 +189,7 @@ updates `max_nav` automatically whenever a new peak is reached.
 cost-free, so an agent can manage risk without being penalised for it.
 
 **[`exchg_helper.py`](../gym_continuousDoubleAuction/envs/exchg/exchg_helper.py)** — the per-step
-counters (now five, with `num_rejected_step` and `num_unmatched_step`) are reset to 0 at the end of each step, *after*
+counters (now six, with `num_rejected_step`, `num_unmatched_step` and `num_obs_clipped_step`) are reset to 0 at the end of each step, *after*
 `set_reward` **and** `set_info` have read them. That ordering is correct and easy to break.
 
 Two fields exist purely so the reward is observable rather than only computed: `acc.reward_terms`

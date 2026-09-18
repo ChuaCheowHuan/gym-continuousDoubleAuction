@@ -84,6 +84,11 @@ class Account(Calculate, Cash_Processor):
         # action with nothing to manage - left no trace at all. From the
         # policy's side all three look identical: nothing happened.
         self.num_unmatched_step = 0
+        # Observation elements `set_next_state` clipped to the declared bounds
+        # this step (doc/15 S4-15). Assigned, not incremented: one observation
+        # is built per agent per step. Non-zero means a bound in
+        # `observation_bounds` is tighter than the market it is describing.
+        self.num_obs_clipped_step = 0
 
         # Written by Reward_Helper.set_reward each step, read by Info_Helper.
         # The reward used to be a single number with its five components
@@ -122,6 +127,7 @@ class Account(Calculate, Cash_Processor):
         self.order_step_placed = 0
         self.num_rejected_step = 0
         self.num_unmatched_step = 0
+        self.num_obs_clipped_step = 0
 
         # See __init__ for what these are and why they exist.
         self.drawdown = 0.0

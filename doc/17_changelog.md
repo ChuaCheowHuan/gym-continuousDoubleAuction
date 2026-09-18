@@ -3082,3 +3082,35 @@ be hygiene and are marked as such rather than done.
   in a hygiene pass.
 
 Suite: 1,023 unit + 156 integration.
+
+## 49. Positive asks and a finite observation Box (S4-17, S4-15; layout version 3)
+
+The two S4 rows the hygiene pass declined, done as a measured pass ([16](16_verification_log.md)
+§16.22). Same 216-float width; different meaning, so `OBSERVATION_LAYOUT_VERSION` is 3 and a
+version-2 checkpoint is refused by name (S4-19) rather than silently reading every ask as a bid.
+
+- **S4-17 — the ask sign is gone.** `set_agg_LOB` stores ask prices and sizes as they are;
+  `_normalise_frame` emits `(P_ask − M) / M ≥ 0` and `+sqrt(V / limit_max_size)`; `_l1_prices` and
+  `own_book` follow; `_set_price` reads the positive row; the probe's `depth_imbalance` is
+  `(bids − asks) / (bids + asks)` and the order-book visualizer no longer un-negates. Side is the
+  block, which is what lets an encoder share weights between the two halves. Seven tests that
+  pinned the old sign now pin the new one.
+- **S4-15 — the Box is finite.** `observation_bounds` in `tunable_constants.json` gives one
+  `[low, high]` per feature family, exact where the range is an identity and measured with
+  headroom where it is not ([18](18_configuration.md) §4.1.1, [05](05_observation_space.md) §1.2);
+  `State_Helper.observation_bounds` tiles them over the vector and the env declares the `Box` with
+  them. A field without a bound fails construction by name.
+- **Every clip is counted.** `set_next_state` clips to the bounds and writes the count to
+  `num_obs_clipped_step`: in `info`, in the episode record (`INFO_COLUMNS`), aggregated into the
+  `obs_clip_fraction` metric ([11](11_logging_and_observability.md) §1.2) and reported by
+  `train.compare`. It reads 0 on every one of the 112,000 agent-steps measured, and it caught the
+  first candidate bounds being wrong — older frames' price rows go negative against the newest
+  midpoint — before any training run did.
+- **A measurement against S3-14.** Deriving the bounds put numbers on the one-sided-book fallback:
+  under random play the midpoint falls to a lone quote at the tick floor and the price ratios reach
+  20× and more. The row in [15](15_findings_and_recommendations.md) carries them now.
+- **Tests.** `test_observation_bounds.py` (12) and two `obs_clip_fraction` tests in
+  `test_activity_metrics.py`. `integration/test_evaluate_checkpoint.py` now accepts a promoted
+  champion among the checkpoint's opponents - whether the one training iteration promotes one
+  depends on the returns drawn, and the first full run on this layout did. Suite: **1,037 unit +
+  156 integration**.

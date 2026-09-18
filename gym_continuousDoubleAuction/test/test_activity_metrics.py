@@ -52,10 +52,11 @@ class MockEpisode:
         return {}
 
 
-def _infos(passes=0, rejections=0, agents=NUM_AGENTS, trades=0, passive=0):
+def _infos(passes=0, rejections=0, agents=NUM_AGENTS, trades=0, passive=0, clipped=0):
     """One step's infos.
 
-    `passes` agents passed and `rejections` were refused this step. `trades` and
+    `passes` agents passed, `rejections` were refused and `clipped` had an
+    observation element clipped to the Box bounds this step. `trades` and
     `passive` are the *per-step* counters `exchg_helper` zeroes on every step -
     every agent reports the same values here, which is enough to check the
     accumulation.
@@ -67,6 +68,8 @@ def _infos(passes=0, rejections=0, agents=NUM_AGENTS, trades=0, passive=0):
             "num_rejected_step": 1 if i < rejections else 0,
             "num_trades_step": trades,
             "num_passive_fills_step": passive,
+            # Several elements on one step is still one clipped agent-step.
+            "num_obs_clipped_step": 3 if i < clipped else 0,
         }
     return out
 
@@ -169,6 +172,30 @@ class TestOrderRejectionFraction:
 
         assert h.emitted("pass_action_fraction").args[1] == pytest.approx(0.0)
         assert h.emitted("order_rejection_fraction").args[1] == pytest.approx(1.0)
+
+
+class TestObsClipFraction:
+    """S4-15: the share of agent-steps whose observation hit a declared bound."""
+
+    def test_clipped_steps_are_counted_per_agent_step(self):
+        h = ActivityHarness()
+        h.start("ep")
+        for _ in range(4):
+            h.step("ep", _infos(clipped=1))
+        h.end("ep")
+
+        call = h.emitted("obs_clip_fraction")
+        assert call is not None
+        assert call.args[1] == pytest.approx(1 / NUM_AGENTS)
+
+    def test_ordinary_play_reports_zero(self):
+        h = ActivityHarness()
+        h.start("ep")
+        for _ in range(4):
+            h.step("ep", _infos(passes=1, rejections=1))
+        h.end("ep")
+
+        assert h.emitted("obs_clip_fraction").args[1] == pytest.approx(0.0)
 
 
 class TestBookkeeping:
