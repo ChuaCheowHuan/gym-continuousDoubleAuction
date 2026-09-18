@@ -18,8 +18,6 @@ What these pin, in the order the algorithm runs:
 """
 import math
 
-import gymnasium as gym
-import numpy as np
 import pytest
 import torch
 import torch.nn as nn

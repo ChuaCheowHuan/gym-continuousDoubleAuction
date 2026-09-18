@@ -1,5 +1,4 @@
 
-import numpy as np
 import collections
 from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import SelfPlayCallback
 

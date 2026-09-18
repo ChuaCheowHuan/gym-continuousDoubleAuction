@@ -1,7 +1,3 @@
-import random
-import numpy as np
-import pandas as pd
-
 from decimal import Decimal
 
 from ..account.account import Account
@@ -206,6 +202,52 @@ class Trader(Random_agent):
 
         return total
 
+    def _closing_escrow(self, LOB, exclude_order_id=None):
+        """Escrow held against this trader's resting orders that would only
+        flatten its position.
+
+        The ledger escrows `price x quantity` for every resting order, whichever
+        side it is on and whatever it would do to the position. For an ask
+        resting against a long (or a bid against a short) that cash backs a
+        fill that can only *reduce* risk - it is margin against nothing - yet
+        the cash check treated it as spent, so an opening order elsewhere was
+        refused while the trader held inventory the resting order would merely
+        close. That is the tail of doc/15 S1-5, measured in doc/16 §16.18:
+        under random play at init_cash 100,000, 84% of refusals happened while
+        such escrow existed and 67% of all refusals would have passed had it
+        counted.
+
+        Only the portion that actually closes counts: resting quantity beyond
+        `|net_position|` would open the opposite position, and its escrow is
+        real margin. Orders are walked oldest first, matching the priority in
+        which they would fill. The order a modify or upsert is about to replace
+        is excluded, because `_order_approved` already counts its release.
+        """
+        pos = self.acc.net_position
+        if pos == 0:
+            return Decimal(0)
+        side = 'ask' if pos > 0 else 'bid'
+        order_map = self._find_orderTree(LOB, {'side': side})
+        if order_map is None:
+            return Decimal(0)
+
+        remaining = abs(pos)
+        total = Decimal(0)
+        mine = sorted(
+            (
+                (order_ID, order) for order_ID, order in order_map.items()
+                if order.trade_id == self.ID and order_ID != exclude_order_id
+            ),
+            key=lambda item: item[1].timestamp,
+        )
+        for _order_ID, order in mine:
+            if remaining <= 0:
+                break
+            covered = min(int(order.quantity), remaining)
+            total += order.price * covered
+            remaining -= covered
+        return total
+
     def _replaced_order(self, LOB, type, side, price):
         """The resting order this quote would replace, as `(order_id, order)`,
         or `(None, None)`.
@@ -318,7 +360,17 @@ class Trader(Random_agent):
         # call, so it is as spendable as cash for this quote. Without it a
         # trader with everything escrowed could neither re-price nor shrink
         # an order.
-        if self.acc.cash + released >= order_val:
+        #
+        # `closing` is the escrow held against resting orders that would only
+        # flatten the position - margin against a fill that reduces risk. It
+        # is spendable too: if that order fills, its escrow and the position's
+        # value both come back to cash; if it is cancelled, the escrow comes
+        # back directly. Either way the cash exists. Spending it can take
+        # `cash` transiently below zero by at most this amount, while
+        # `cash + cash_on_hold` never does, and NAV - which sums both - is
+        # untouched. See `_closing_escrow`.
+        closing = self._closing_escrow(LOB, exclude_order_id=replaced_id)
+        if self.acc.cash + released + closing >= order_val:
             return True
 
         return False
@@ -383,6 +435,9 @@ class Trader(Random_agent):
 
         order_id, order = self._get_order_ID(orderBook, qoute)
         if order_id == -1:  # not found
+            # Counted, so a policy that keeps modifying orders it does not
+            # have is distinguishable from one that manages real ones.
+            self.acc.num_unmatched_step += 1
             trades, order_in_book = [],[]
         else:
             trades, order_in_book = self.__modify_limit_order(orderBook, order_id, order, qoute)
@@ -416,6 +471,9 @@ class Trader(Random_agent):
 
         order_id, order = self._get_order_ID(orderBook, qoute)
         if order_id == -1:  # not found
+            # Same counter as the modify path: a cancel with nothing at the
+            # named price is the third silent outcome doc/15 S4-14 lists.
+            self.acc.num_unmatched_step += 1
             trades, order_in_book = [],[]
         else:
             orderBook.cancel_order(qoute['side'], order_id)

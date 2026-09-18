@@ -1,6 +1,6 @@
 #! /usr/bin/python
 from __future__ import print_function
-from random import *
+from random import randint, choice
 
 import sys
 if "../" not in sys.path:

@@ -43,12 +43,9 @@ scipy>=1.18,<2
 
 # --- Env internals ------------------------------------------------------------
 sortedcontainers>=2.4      # order book price-level trees
-# `six.moves.cStringIO` in envs/orderbook/{orderbook,orderlist}.py. A Python-2
-# shim io.StringIO replaces, but envs/orderbook/ is off-limits (doc/15 S3-4), so
-# it is declared rather than removed. It is in setup.py's install_requires and
-# was missing here, which contradicted this file's own "only what the project
-# imports directly".
-six>=1.16
+# six is no longer imported anywhere: the orderbook package's `six.moves.cStringIO`
+# was replaced by `io.StringIO` in the 2026-09-18 pass (doc/17 §45). It still
+# arrives transitively via python-dateutil, which is why it stays in the lock.
 tabulate>=0.10             # env render()
 
 # --- Plotting / metrics -------------------------------------------------------

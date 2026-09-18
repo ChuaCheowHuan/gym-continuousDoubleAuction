@@ -122,6 +122,13 @@ You never need capital to flatten. Otherwise `opening_size × est_price` is comp
 the escrow the order being replaced gives back, since `cancel_cash_transfer` returns it before the
 new quote is processed.
 
+   Also spendable: escrow held against this trader's resting orders that would only *close* its
+   position (`_closing_escrow`, capped at `|net_position|`, oldest order first). That cash backs a
+   fill that can only reduce risk, and treating it as spent refused two thirds of all orders at
+   `init_cash` 100,000 under random play ([15](15_findings_and_recommendations.md) S1-5,
+   [16](16_verification_log.md) §16.18). `cash` may therefore sit below zero by at most that
+   amount while both orders rest; `cash + cash_on_hold` never does and NAV is unaffected.
+
 3. **A `cancel` is never cash-checked.** It places nothing and only releases escrow. It used to be
    run through the same predicate with its own irrelevant size and price, so a trader with all its
    cash escrowed was refused the cancel that would have freed it

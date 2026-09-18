@@ -1,14 +1,28 @@
-import sys
-import math
+"""A price-time-priority limit order book.
+
+Adapted from https://github.com/dyn4mik3/OrderBook. Prices and sizes are
+`Decimal` inside the book; `process_order` converts an incoming limit price
+with `Decimal(str(price))`, which is the conversion every caller that later
+looks a price up must apply too (see `Trader._get_order_ID`).
+
+Malformed input raises `ValueError`. It used to exit the interpreter, which
+under RLlib ends an env-runner process rather than the order - and the
+traceback, swallowed by Ray's fault tolerance, restarted the worker instead
+of naming the caller that produced a zero-size order. Every raise below names
+the method and the value it refused.
+
+The book enforces no tick grid and never did: it keys its price map on
+whatever `Decimal` it is handed. The grid is the action layer's
+(`Action_Helper._set_price`, which snaps to `tick_size`). The constructor
+used to accept a `tick_size` it stored and never read; that parameter is
+gone, so the code no longer suggests a guarantee the book does not provide.
+"""
+from io import StringIO
+from itertools import chain
+from collections import deque # a faster insert/pop queue
+from decimal import Decimal
 
 import pandas as pd
-#import json
-
-from itertools import chain
-
-from collections import deque # a faster insert/pop queue
-from six.moves import cStringIO as StringIO
-from decimal import Decimal
 
 from .ordertree import OrderTree
 from ...logging_setup import get_logger
@@ -16,13 +30,12 @@ from ...logging_setup import get_logger
 logger = get_logger(__name__)
 
 class OrderBook(object):
-    def __init__(self, tick_size = 0.0001, tape_display_length=10):
+    def __init__(self, tape_display_length=10):
         self.tape = deque(maxlen=None) # Index[0] is most recent trade
         self.bids = OrderTree()
         self.asks = OrderTree()
         self.last_tick = None
         self.last_timestamp = 0
-        self.tick_size = tick_size
         self.time = 0
         self.next_order_id = 0
         self.tape_display_length = tape_display_length
@@ -39,7 +52,10 @@ class OrderBook(object):
             self.update_time()
             quote['timestamp'] = self.time
         if quote['quantity'] <= 0:
-            sys.exit('process_order() given order of quantity <= 0')
+            raise ValueError(
+                f"process_order(): order quantity must be > 0, got "
+                f"{quote['quantity']!r} (trade_id {quote.get('trade_id')!r})"
+            )
         if not from_data:
             self.next_order_id += 1
         if order_type == 'market':
@@ -55,7 +71,10 @@ class OrderBook(object):
 
             trades, order_in_book = self.process_limit_order(quote, from_data, verbose)
         else:
-            sys.exit("order_type for process_order() is neither 'market' or 'limit'")
+            raise ValueError(
+                f"process_order(): order type must be 'market' or 'limit', "
+                f"got {order_type!r}"
+            )
         return trades, order_in_book
 
     def process_order_list(self, side, order_list, quantity_still_to_trade, quote, verbose):
@@ -156,7 +175,9 @@ class OrderBook(object):
                 quantity_to_trade, new_trades = self.process_order_list('bid', best_price_bids, quantity_to_trade, quote, verbose)
                 trades += new_trades
         else:
-            sys.exit('process_market_order() recieved neither "bid" nor "ask"')
+            raise ValueError(
+                f"process_market_order(): side must be 'bid' or 'ask', got {side!r}"
+            )
         return trades
 
     def process_limit_order(self, quote, from_data, verbose):
@@ -190,7 +211,9 @@ class OrderBook(object):
                 self.asks.insert_order(quote)
                 order_in_book = quote
         else:
-            sys.exit('process_limit_order() given neither "bid" nor "ask"')
+            raise ValueError(
+                f"process_limit_order(): side must be 'bid' or 'ask', got {side!r}"
+            )
         return trades, order_in_book
 
     def cancel_order(self, side, order_id, time=None):
@@ -205,7 +228,9 @@ class OrderBook(object):
             if self.asks.order_exists(order_id):
                 self.asks.remove_order_by_id(order_id)
         else:
-            sys.exit('cancel_order() given neither "bid" nor "ask"')
+            raise ValueError(
+                f"cancel_order(): side must be 'bid' or 'ask', got {side!r}"
+            )
 
     def modify_order(self, order_id, order_update, time=None):
 
@@ -230,7 +255,9 @@ class OrderBook(object):
             original_order = self.asks.get_order(order_id)
             tree = self.asks
         else:
-            sys.exit('modify_order() given neither "bid" nor "ask"')
+            raise ValueError(
+                f"modify_order(): side must be 'bid' or 'ask', got {side!r}"
+            )
 
         original_price = original_order.price
         original_quantity = original_order.quantity
@@ -265,66 +292,6 @@ class OrderBook(object):
         # process_limit_order handles matching and returns trades, order_in_book
         return self.process_limit_order(quote, from_data=True, verbose=False)
 
-    # def modify_order(self, order_id, order_update, time=None):
-    #     if time:
-    #         self.time = time
-    #     else:
-    #         self.update_time()
-
-    #     side = order_update['side']
-    #     order_update['order_id'] = order_id
-    #     order_update['timestamp'] = self.time
-
-    #     # To ensure the matching engine is triggered, we remove the existing order
-    #     # and re-process it as a new limit order with the updated parameters.
-    #     if side == 'bid':
-    #         if self.bids.order_exists(order_id):
-    #             order = self.bids.get_order(order_id)
-    #             trade_id = order.trade_id
-    #             self.bids.remove_order_by_id(order_id)
-    #         else:
-    #             return None, None
-    #     elif side == 'ask':
-    #         if self.asks.order_exists(order_id):
-    #             order = self.asks.get_order(order_id)
-    #             trade_id = order.trade_id
-    #             self.asks.remove_order_by_id(order_id)
-    #         else:
-    #             return None, None
-    #     else:
-    #         sys.exit('modify_order() given neither "bid" nor "ask"')
-
-    #     # Prepare the quote for re-processing.
-    #     # We use Decimal(str(...)) to ensure precision consistent with process_order.
-    #     quote = {
-    #         'type': 'limit',
-    #         'side': side,
-    #         'quantity': Decimal(str(order_update['quantity'])),
-    #         'price': Decimal(str(order_update['price'])),
-    #         'trade_id': trade_id,
-    #         'timestamp': self.time,
-    #         'order_id': order_id
-    #     }
-
-    #     # process_limit_order will handle matching and updating the tape.
-    #     # from_data=True ensures we keep the same order_id.
-    #     return self.process_limit_order(quote, from_data=True, verbose=False)
-
-    # def get_volume_at_price(self, side, price):
-    #     price = Decimal(price)
-    #     if side == 'bid':
-    #         volume = 0
-    #         if self.bids.price_exists(price):
-    #             volume = self.bids.get_price(price).volume
-    #         return volume
-    #     elif side == 'ask':
-    #         volume = 0
-    #         if self.asks.price_exists(price):
-    #             volume = self.asks.get_price(price).volume
-    #         return volume
-    #     else:
-    #         sys.exit('get_volume_at_price() given neither "bid" nor "ask"')
-
     def get_best_bid(self):
         return self.bids.max_price()
 
@@ -345,54 +312,11 @@ class OrderBook(object):
                                                                     tapeitem['quantity']))
         dumpfile.close()
         if tapemode == 'wipe':
-            self.tape = []
-
-    # for print(order_book)
-    # print LOB & tape
-    def __str__0(self):
-        tempfile = StringIO()
-
-        tempfile.write("***Bids***\n")
-        if self.bids != None and len(self.bids) > 0:
-            # price_map is sorted dict, key is price, value is orderlist
-            for key, value in reversed(self.bids.price_map.items()):
-                tempfile.write('%s' % value)
-        tempfile.write("\n***Asks***\n")
-        if self.asks != None and len(self.asks) > 0:
-            for key, value in self.asks.price_map.items():
-                tempfile.write('%s' % value)
-
-        tempfile.write("\n***tape***\n")
-        tempfile.write('Q' +
-        " @ " + '$' +
-        " (" + 't' +
-        ") " + 'c' +
-        "/" + 'i' +
-        " " + 'side' +
-        "\n")
-        if self.tape != None and len(self.tape) > 0:
-            num = 0
-            for entry in reversed(self.tape):
-                if num < self.tape_display_length: # get last num of entries
-                    #tempfile.write(str(entry['quantity']) + " @ " + str(entry['price']) + " (" + str(entry['timestamp']) + ") " + str(entry['party1'][0]) + "/" + str(entry['party2'][0]) + "\n")
-                    tempfile.write(str(entry['quantity']) +
-                    " @ " + str(entry['price']) +
-                    " (" + str(entry['timestamp']) +
-                    ") " + str(entry['counter_party']['ID']) +
-                    "/" + str(entry['init_party']['ID']) +
-                    " " + str(entry['init_party']['side']) +
-                    "\n")
-                    num += 1
-                else:
-                    break
-        tempfile.write("\n")
-
-        return tempfile.getvalue()
+            self.tape.clear()
 
     def __str__(self):
         tempfile = StringIO()
 
-        #tempfile.write(self.__str__0() + "\n")
 
         tempfile.write("***Bids***\n")
         if self.bids != None and len(self.bids) > 0:

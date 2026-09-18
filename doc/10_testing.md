@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (1,088 tests: 935 unit + 153 integration)
+# everything (1,132 tests: 979 unit + 153 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -46,7 +46,7 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `935 passed` on the unit half. There is no xfail: the one that pinned S1-1 XPASSed when S1-1 was fixed and was deleted (see §6.2.2).
+**[verified]** — `979 passed` on the unit half. There is no xfail: the one that pinned S1-1 XPASSed when S1-1 was fixed and was deleted (see §6.2.2).
 
 ### File inventory
 
@@ -54,11 +54,13 @@ Counts re-measured with `--collect-only`.
 
 | File | Tests | Area |
 |---|---|---|
-| `test_orderbook_new.py` | 12 | Matching engine components and integration |
+| `test_orderbook_new.py` | 21 | Matching engine components and integration; malformed input raises `ValueError`, never `SystemExit` (S3-7); the constructor takes no tick (S3-4) |
+| `test_orderbook_properties.py` | 4 | Hypothesis: every book, escrow and ledger invariant, for any order sequence and under random env play at three ticks (S4-13) |
 | `test_orderbook_crossed_book.py` | 1 | Crossed-book invariant |
 | `test_orderbook_volume_sync.py` | 1 | Volume cache synchronization |
 | `test_accounting.py` | 13 | Cash, position, NAV, position flips |
-| `test_cash_check.py` | 14 | Order approval and cash gating; a cancel is never cash-checked, a modify may spend the escrow it releases (S2-13) |
+| `test_cash_check.py` | 19 | Order approval and cash gating; a cancel is never cash-checked, a modify may spend the escrow it releases (S2-13); escrow against a closing order is spendable (S1-5) |
+| `test_unmatched_actions.py` | 10 | A `modify` / `cancel` that names no resting order is counted, per step, in `info` and the record (S4-14) |
 | `test_tick_grid.py` | 14 | Every action price sits on the `tick_size` grid; upsert and cancel find their order on a fractional tick (S3-4) |
 | `test_modify_order.py` | 7 | The six modify-order accounting scenarios, plus a guard that the dead escrow helper stays deleted |
 | `test_new_action_space.py` | 10 | Action decoding, ghost pricing, `tick_size` reaching the action layer, price levels matching book depth |
@@ -80,7 +82,7 @@ Counts re-measured with `--collect-only`.
 | `test_progress_log.py` | 35 | `progress.jsonl` writer, numpy/NaN handling, `vf_explained_var` extraction, per-run directory isolation, the iteration broadcast to env runners |
 | `test_info_dict.py` | 24 | Per-step `info`: back-compat, reward terms summing exactly, live counters, spread, pass/rejection fields, JSON, and 0-d numpy arrays — which only a *recurrent* module produces |
 | `test_type_policy.py` | 15 | Decimal money/prices, int sizes, no field changing type mid-episode, book boundary |
-| `test_activity_metrics.py` | 29 | `pass_action_fraction` / `order_rejection_fraction`: the S1-3 detector, per-episode tallies, pickling; the reward-term variance split, the maker-ratio metric and the end-of-episode account metrics |
+| `test_activity_metrics.py` | 32 | `pass_action_fraction` / `order_rejection_fraction`: the S1-3 detector, per-episode tallies, pickling; the reward-term variance split, the maker-ratio metric and the end-of-episode account metrics |
 | `test_episode_record.py` | 32 | The Parquet per-step record: declared schema and its drift guard against `Info_Helper`, identity columns, sampling rate, byte cap, eviction of episodes that never end, and the ways it must fail without raising |
 | `test_encoder_registry.py` | 45 | The selectable-encoder seam: registry, `CDACatalog`, the `mlp` pass-through staying byte-for-byte what it was, `ObsLayout`, tokenisation |
 | `test_encoder_architectures.py` | 170 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
@@ -95,7 +97,9 @@ Counts re-measured with `--collect-only`.
 | `test_obs_feature_scales.py` | 10 | Every observation block lands on one scale — the size/price ratio and the centred `log_mid` (S2-2) |
 | `test_entry_points.py` | 8 | The two documented entry points work: `gymnasium.make("continuousDoubleAuction-v0")`, and `visualize/` being importable from a wheel |
 | `test_cbp.py` | 48 | Continual Backprop's algorithm core, with no Ray and no `Algorithm` — §6.6.1 |
-| **unit total** | **935** | |
+| `test_compare.py` | 12 | The encoder comparison driver's aggregation: means and standard deviations across seeds, the separation rule and its three-seed floor, the rendered table and its caveats |
+| `test_lint.py` | 1 | The package is pyflakes-clean; any message fails the suite (S4-6) |
+| **unit total** | **979** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported, finite, and **above 1e-3** — a live guard since S1-1 was fixed |
@@ -120,14 +124,18 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((1088 tests))
+  root((1132 tests))
     Simulator
-      orderbook 14
+      orderbook 23
         components, matching, invariants
         crossed book, volume cache
-      accounting 67
+        bad input raises, not exits
+      properties 4
+        Hypothesis: any order sequence
+      accounting 72
         escrow, flips, cash gating
         cancel and modify never trap cash
+        closing escrow is spendable
         modify scenarios, resting exposure
         entry VWAP, self-match prevention
       types 15
@@ -144,6 +152,8 @@ mindmap
         decoding, ghost pricing
       reward 8
         five terms, loss aversion
+      dead actions 10
+        unmatched modify and cancel
       env lifecycle 31
         bare env tradable
         truncation on max_step
@@ -161,7 +171,9 @@ mindmap
         obs layout, tokenisation
         the contract every encoder meets
         transformer, lstm, MoE specifics
-      observability 211
+      tooling 13
+        lint enforced, comparison driver
+      observability 214
         logging, progress log, info dict
         activity metrics, episode record
         NAV conservation, book rendering
@@ -288,7 +300,7 @@ in most scenarios.
 | 9 | `test_market_order_empty_book` | No accounting changes when a market order finds no liquidity |
 | 10–13 | `test_position_flip_{long_to_short,short_to_long}_{aggressor,passive}` | Flipping closes one position and opens the other atomically. Long 1, sell 2 → the first unit closes the long (releasing capital), the second opens the short (locking capital). `net_position` moves +1 → −1 (or the reverse) with cash and NAV preserved |
 
-### 2.2 `test_cash_check.py` (14 tests)
+### 2.2 `test_cash_check.py` (19 tests)
 
 Covers `Trader._order_approved` specifically ([04_accounting.md](04_accounting.md) §3). In the
 first class a trader is initialised with only $100.
@@ -315,6 +327,33 @@ escrowed in one bid, the state S2-13 is about:
 | `test_modify_beyond_cash_plus_released_is_still_refused` | 10 @ 100 → 20 @ 100 is refused and the original order is untouched |
 | `test_limit_upsert_at_same_price_spends_the_released_escrow` | A limit at an occupied own price upserts rather than being refused |
 | `test_bankrupt_trader_still_cannot_act` | The `nav > 0` gate stays ahead of the cancel shortcut |
+
+`TestClosingEscrowIsSpendable` (5 tests) is S1-5's tail: a trader long 10 with its exit ask
+resting and no free cash may still open a bid backed by that ask's escrow; only the portion of a
+resting ask that actually closes counts (30 resting against a long of 10 backs 1,000, not 3,000);
+a flat trader has none; the order a modify replaces is not counted twice; and when both orders
+fill against a real counterparty the two NAVs still sum to what they started at.
+
+### 2.2.2 `test_unmatched_actions.py` (10 tests)
+
+[15](15_findings_and_recommendations.md) S4-14's other half. At the `Trader`: a cancel or modify
+with nothing resting, or at the wrong price, increments `num_unmatched_step`; matched actions and
+ordinary new limits do not; `reset_acc` clears it. Through the env: the field is in `info` as an
+`int`, is per step, and has a column in the episode record.
+
+### 2.5 `test_orderbook_properties.py` (4 Hypothesis tests)
+
+The invariants §8 had listed as untested for three passes, asserted for *any* order sequence.
+`TestBookInvariants` drives 60-order sequences of limit, market, modify and cancel from three
+traders through `Trader.place_order` into one `OrderBook` and, after every order, walks both
+trees: `num_orders`, `depth` and `volume` against the walk, every level's list length and volume,
+timestamps ascending within a level, no locked or crossed book, every trade on the tape positive.
+Two further properties: each trader's `cash_on_hold` equals the notional of its own resting
+orders, and positions net to zero across traders. `TestEnvInvariants` steps the whole env with
+random actions under a Hypothesis-chosen seed at ticks {1, 0.5, 0.1}: NAV conservation to
+`nav_tolerance`, `cash + cash_on_hold >= 0`, every price-map key on the grid, every `info["NAV"]`
+parsing back to the ledger exactly, finite rewards. Its first run found S3-23 and the modify
+timestamp defect ([16](16_verification_log.md) §16.18).
 
 ### 2.2.1 `test_tick_grid.py` (14 tests)
 
@@ -913,6 +952,11 @@ distinguishable from the step name alone:
 2. **Random-agent env smoke run** — `python gym_continuousDoubleAuction/CDA_rand.py`
 3. **RLlib integration** — `pytest gym_continuousDoubleAuction/test/integration -q`
 
+Step 1 also lints: `test_lint.py` runs pyflakes over the package and fails on any message, which
+is how S4-6's linter reached CI without a workflow edit (the push credential has no `workflow`
+scope - [17](17_changelog.md) §37.6). `pyflakes` and `hypothesis` are in the `dev` extra the
+install step already pulls.
+
 A second job, **`packaging`**, covers what none of those can see: what a *user* gets from
 `pip install`. Every step above installs the full `requirements.txt` from a checkout, which is
 exactly why both halves of S3-6 / S3-18 went unnoticed — `install_requires` did not name
@@ -937,9 +981,9 @@ Honest accounting of what the suite does **not** cover.
 | **No information-content tests for the observation** | The suite would pass unchanged with the varying-denominator stack, the zero-collision ambiguity and the dead tape loop all present — and all three are present ([05](05_observation_space.md) §7). |
 | ~~**`test_shared_history_multi_agent_uniformity` encodes a defect as a requirement**~~ | **Closed.** S1-2 is fixed and the test is replaced by a pair that splits the claim — the book prefix stays shared, the private tail must not be. See §4.2. |
 | ~~**Reproducibility is untested**~~ | **Closed.** `test_seeding.py` (11 tests) asserts two identically-seeded episodes match and two differently-seeded ones do not, across all three randomness sources — and does it while seeding the *global* NumPy stream to different values, so it cannot pass for the wrong reason. What remains untested is reproducibility of a whole multi-worker *training run*, which is a different claim. |
-| **No encoder is tested for whether it *learns*** | **Still the largest gap, and now for a different reason.** §6.4 proves only mechanics, and `train/probe/` routes around the reward entirely — it scores an encoder on public microstructure targets with no policy or value function involved ([23](23_probe_harness.md)). S1-1 and S1-3 blocked the strong form of the question, and both are now fixed ([17](17_changelog.md) §29), so what remains is simply that **no multi-seed training comparison has been run**: the protocol in [18](18_configuration.md) §5.5 (pinned `seed`, three seeds per architecture, separate runs) is unexecuted for every architecture, `jepa` included. Until it is, no claim that one encoder trades better than another is supported by anything in this repository. |
+| **No encoder is tested for whether it *learns*** | **Still the largest gap, now with the tool to close it.** §6.4 proves only mechanics, and `train/probe/` routes around the reward entirely ([23](23_probe_harness.md)). The protocol in [18](18_configuration.md) §5.5 is now one command, `python -m gym_continuousDoubleAuction.train.compare`, which has been run once at smoke scale to prove the path ([16](16_verification_log.md) §16.18). **The run at scale - 16 iterations, three seeds, every registered encoder, `jepa` included - has not been done.** Until it is, no claim that one encoder trades better than another is supported by anything in this repository. |
 | **Edge cases in league matchmaking** | Empty pools and zero weights are untested. |
-| **No property-based tests** | The order book is an ideal Hypothesis target: "tree volume == Σ level volumes", "no crossed book", "Σ NAV == Σ initial cash" hold for *any* order sequence. |
+| ~~**No property-based tests**~~ | **Closed.** `test_orderbook_properties.py` (§2.5). Its first run found two defects the example suite had not, which is the argument for it. |
 | **No coverage measurement** | No `pytest-cov`, no threshold. |
 | **No performance regression test** | Nothing catches a 10× slowdown in the matching engine. |
 | **`envs/orderbook/test/example.py` and `genOrders.py`** | 353 LOC of standalone scripts not collected by pytest and not run by CI. |

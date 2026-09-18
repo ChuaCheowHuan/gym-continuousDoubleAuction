@@ -673,24 +673,18 @@ occupied level opened a new price level one float-ulp away and a cancel never fo
 ([15](15_findings_and_recommendations.md) S3-4, [16](16_verification_log.md) §16.17). At the
 default `tick_size` of 1 nothing changes.
 
-**The book's copy is still there, and still inert.** `OrderBook` accepts a `tick_size`, stores it,
-and never reads it; there is no rounding or tick validation anywhere in the matching path. Its
-literal default of `0.0001` is **the one value in the project not read from `config/`**, recorded
-in `tunable_constants.json` under `inert_tick_size_copy` as documentation.
+**The book's copy is gone.** `OrderBook` used to accept a `tick_size`, store it, and never read
+it; its literal default of `0.0001` was the one value in the project not read from `config/`. On
+2026-09-18 the parameter was deleted along with the `inert_tick_size_copy` block that documented
+it. There is no rounding or tick validation anywhere in the matching path, and now nothing
+suggests there is: the grid is the action layer's alone.
 
-**The recommendation is to delete the book's copy, not to enforce it** — the action layer should be
-the single definition. There is exactly one price producer in the system: every price reaching
-`process_order` comes from `_set_price` via `place_order`, and it emits on-grid prices by
-construction, so validation in the book would re-derive a guarantee the producer already provides.
-Deletion is nearly free — 9 of the 11 `OrderBook(...)` call sites already use the no-arg form.
-
-**This is deferred**: the `envs/orderbook/` package is off-limits to changes, and deleting the
-parameter means editing `orderbook.py`. Tracked as S3-4 in
-[15_findings_and_recommendations.md](15_findings_and_recommendations.md).
-
-Enforcement in `OrderBook.process_order` would be the right call instead of deletion only if a
-second price source appears that the action layer does not control — scripted or human agents,
-replayed order flow, an external feed.
+**Why deletion rather than enforcement.** There is exactly one price producer in the system:
+every price reaching `process_order` comes from `_set_price` via `place_order`, and it now emits
+on-grid prices by construction (§6.1). Validation in the book would re-derive a guarantee the
+producer already provides. Enforcement in `OrderBook.process_order` becomes the right call only if
+a second price source appears that the action layer does not control — scripted or human agents,
+replayed real order flow, an external feed.
 
 ### 6.1 Float-grid caveat — closed
 
@@ -910,6 +904,16 @@ damage getting them wrong does:
    At the shipped settings the alternatives are 3–6.5× the MLP. A win at 6.5× the
    parameters and a fraction of the throughput is a different claim from a win at
    parity, and the per-iteration line reports `env steps sampled` for the other half.
+
+0. **Run the protocol as a command.** Points 1, 2 and 4 are what
+   `python -m gym_continuousDoubleAuction.train.compare` does for you: every (encoder, seed) is a
+   separate run with the seed pinned and its own `log_base_dir`, the parameter count is recorded,
+   and the final checkpoint is scored on the probe of point 5 against one shared corpus. It writes
+   per-run JSON and a Markdown table of means and standard deviations, and marks two encoders as
+   *separated* on a metric only when the gap exceeds both standard deviations with at least three
+   seeds a side. Defaults are in `cli_defaults.json` under `cda_compare`; see
+   [26](26_runbook.md) §26.9 for the command and [16](16_verification_log.md) §16.18 for a
+   smoke-scale run.
 
 5. **Score them without the reward first.** Points 1–4 are about running the comparison
    well; this one is about whether the comparison can answer anything at all. While S1-1

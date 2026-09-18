@@ -206,3 +206,101 @@ class TestCancelAndModifyNeverTrapCash:
         self.t.place_order('cancel', 'bid', 10, 100, self.book, self.agents)
         assert self.t.acc.num_rejected_step == 1
         assert len(self.book.bids) == 1
+
+
+class TestClosingEscrowIsSpendable:
+    """doc/15 S1-5's open tail: escrow against a closing order is not spent cash.
+
+    A trader long 10 @ 100 with 1,000 cash rests an ask for all 10 - the order
+    that would flatten it. The ledger escrows 1,000 against that ask, which is
+    margin against a fill that can only reduce risk. The cash check used to
+    treat it as gone, so the trader could not open anything else while its
+    exit order rested; measured at init_cash 100,000 under random play, two
+    thirds of all refusals were this (doc/16 §16.18).
+    """
+
+    def _long_trader_with_exit_resting(self, cash=1000):
+        book = OrderBook()
+        t = Trader(ID=1, cash=cash)
+        t.acc.net_position = 10
+        t.acc.position_val = Decimal(1000)
+        t.acc.VWAP = Decimal(100)
+        t.acc.entry_vwap = Decimal(100)
+        t.acc.cal_nav()  # 2000
+        t.place_order('limit', 'ask', 10, 100, book, [t])  # the exit
+        assert t.acc.cash == Decimal(cash - 1000)
+        assert t.acc.cash_on_hold == Decimal(1000)
+        return book, t
+
+    def test_opening_bid_backed_by_closing_escrow_is_approved(self):
+        book, t = self._long_trader_with_exit_resting()
+        nav = t.acc.nav
+        t.place_order('limit', 'bid', 5, 90, book, [t])
+        assert t.acc.num_rejected_step == 0
+        assert len(book.bids) == 1
+        # cash may sit below zero by at most the closing escrow ...
+        assert t.acc.cash == Decimal(-450)
+        assert t.acc.cash + t.acc.cash_on_hold >= 0
+        # ... and NAV does not move on an order being placed.
+        assert t.acc.cash + t.acc.cash_on_hold + t.acc.position_val == nav
+
+    def test_only_the_closing_portion_counts(self):
+        """Resting asks beyond the long would open a short; that escrow is real."""
+        book = OrderBook()
+        t = Trader(ID=1, cash=3000)
+        t.acc.net_position = 10
+        t.acc.position_val = Decimal(1000)
+        t.acc.VWAP = Decimal(100)
+        t.acc.entry_vwap = Decimal(100)
+        t.acc.cal_nav()
+        t.place_order('limit', 'ask', 30, 100, book, [t])  # 10 close, 20 open a short
+        assert t.acc.cash == Decimal(0)
+        assert t._closing_escrow(book) == Decimal(1000)
+        # 11 @ 100 = 1100 > 0 + 1000 closing escrow: refused.
+        t.place_order('limit', 'bid', 11, 100, book, [t])
+        assert t.acc.num_rejected_step == 1
+        # 10 @ 100 = 1000 <= 1000: approved.
+        t.place_order('limit', 'bid', 10, 100, book, [t])
+        assert t.acc.num_rejected_step == 1
+        assert len(book.bids) == 1
+
+    def test_flat_trader_has_no_closing_escrow(self):
+        book = OrderBook()
+        t = Trader(ID=1, cash=1000)
+        t.place_order('limit', 'ask', 5, 100, book, [t])
+        assert t._closing_escrow(book) == Decimal(0)
+        t.place_order('limit', 'bid', 1, 600, book, [t])
+        assert t.acc.num_rejected_step == 1, "500 of cash cannot buy 600"
+
+    def test_replaced_order_is_not_counted_twice(self):
+        """A modify of the exit itself: its escrow is `released`, not `closing`."""
+        book, t = self._long_trader_with_exit_resting()
+        assert t._closing_escrow(book) == Decimal(1000)
+        order_id, _ = t._get_order_ID(
+            book, {'trade_id': 1, 'side': 'ask', 'price': 100, 'type': 'modify'})
+        assert t._closing_escrow(book, exclude_order_id=order_id) == Decimal(0)
+
+    def test_ledger_stays_consistent_when_both_orders_fill(self):
+        """A closed system: the long is bought from the counterparty, not conjured."""
+        book = OrderBook()
+        t = Trader(ID=1, cash=2000)
+        other = Trader(ID=2, cash=100_000)
+        agents = [t, other]
+        other.place_order('limit', 'ask', 10, 100, book, agents)
+        t.place_order('market', 'bid', 10, -1.0, book, agents)     # t long 10 @ 100, cash 1000
+        t.place_order('limit', 'ask', 10, 100, book, agents)       # the exit; escrow 1000, cash 0
+        assert t.acc.cash == Decimal(0)
+        t.place_order('limit', 'bid', 5, 90, book, agents)         # backed by the closing escrow
+        assert t.acc.cash == Decimal(-450)
+        for trader in agents:
+            trader.acc.mark_to_mkt(trader.ID, Decimal(100))
+        total_before = t.acc.nav + other.acc.nav
+        # The counterparty lifts the exit and hits the bid.
+        other.place_order('market', 'bid', 10, -1.0, book, agents)
+        other.place_order('market', 'ask', 5, -1.0, book, agents)
+        for trader in agents:
+            trader.acc.mark_to_mkt(trader.ID, Decimal(90))
+        assert t.acc.net_position == 5
+        assert t.acc.cash_on_hold == Decimal(0)
+        assert t.acc.cash >= 0
+        assert t.acc.nav + other.acc.nav == total_before

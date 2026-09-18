@@ -66,11 +66,13 @@ class TestGymnasiumMake:
 
 class TestVisualizeIsAPackage:
     def test_it_is_importable(self):
-        import gym_continuousDoubleAuction.visualize  # noqa: F401
+        import importlib
+        assert importlib.import_module("gym_continuousDoubleAuction.visualize")
 
     def test_its_entry_point_module_imports(self):
+        import importlib
         pytest.importorskip("matplotlib")
-        import gym_continuousDoubleAuction.visualize.run_all  # noqa: F401
+        assert importlib.import_module("gym_continuousDoubleAuction.visualize.run_all")
 
     def test_find_packages_lists_it(self):
         """What a wheel actually carries, without building one.

@@ -1,7 +1,6 @@
 import logging
 
 import numpy as np
-import pandas as pd
 
 import gymnasium as gym
 
@@ -12,8 +11,6 @@ from .exchg.exchg_helper import Exchg_Helper
 from .agent.trader import Trader
 from ..config_loader import env_default
 from ..logging_setup import get_logger
-
-from tabulate import tabulate
 
 logger = get_logger(__name__)
 
@@ -228,12 +225,10 @@ class continuousDoubleAuctionEnv(
         if hasattr(super(), 'reset'):
             super().reset(seed=seed)
 
-        # Same tick the book was built with in Exchg_Helper, from the tick_size
-        # config key. This used to be a literal 1, which disagreed with any
-        # other configured tick_size - harmlessly, since OrderBook stores
-        # tick_size without ever reading it, but there is no reason to keep a
-        # second value here.
-        self.LOB = OrderBook(self.tick_size, self.tape_display_length) # new limit order book
+        # A fresh book. The tick grid is not the book's concern: it keys
+        # prices on whatever Decimal it is handed, and `Action_Helper.min_tick`
+        # is what puts every quoted price on the configured grid.
+        self.LOB = OrderBook(self.tape_display_length) # new limit order book
         self.agg_LOB = {}
         self.agg_LOB_raw = {}
         self.agg_LOB_aft = {}

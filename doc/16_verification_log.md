@@ -455,7 +455,12 @@ corrections in [README.md](../README.md).
 
 ---
 
-## 16.10 NAV conservation is exact; the `float()` round trip went blind above `init_cash` 1e10
+## 16.10 NAV conservation is exact to Decimal rounding; the `float()` round trip went blind above `init_cash` 1e10
+
+> **Corrected 2026-09-18.** The heading used to say conservation is *exact*. It is exact to about
+> one unit in the 22nd decimal place, not to zero - see §16.18 and [15](15_findings_and_recommendations.md) S3-23.
+> The 300-step probe below saw the residuals cancel; a longer one does not. Nothing else in this
+> section changes: the `float()` blindness it is about is real and fixed.
 
 The episode-end check used to parse `info["NAV"]` — the exact `str()` of a `Decimal` — back with
 `float()`. Three probes, run to decide whether that round trip was doing any harm and whether
@@ -953,3 +958,79 @@ dead `OrderBook.tick_size` parameter is still there (S3-4).
 Suite after: 935 unit + 153 integration = 1,088, all passing.
 
 **Supports:** §15 S2-13, §15 S3-4, §04 3, §06 1.5, §18 6.
+
+
+## 16.18 The recommendations pass: closing-side escrow, a rounding residual, and a protocol run once (2026-09-18)
+
+The six recommendations of [17](17_changelog.md) §44.5, executed in §45. Three of them produced
+measurements; the rest produced code and tests and are recorded there.
+
+### S1-5's tail: escrow held against closing orders
+
+Six seeds x 400 steps x 6 agents of uniformly random play, at two starting balances. "Closing-side
+escrow" is the notional escrowed against this trader's resting orders on the side that would
+reduce its position. A refusal "would have passed" if `cash + closing escrow` covered the order.
+
+```
+init_cash 20,000  (before)
+  agent-steps with closing-side escrow > 0:  4,898 / 14,400 (34.0%)
+  closing-side share of total escrow:        59.8%
+  refusals: 3,712; while closing escrow > 0: 1,602; would pass if it counted: 793
+init_cash 100,000 (before)
+  agent-steps with closing-side escrow > 0:  6,318 / 14,400 (43.9%)
+  closing-side share of total escrow:        47.5%
+  refusals: 607; while closing escrow > 0: 508; would pass if it counted: 409
+
+after (Trader._closing_escrow counted as spendable)
+  init_cash  20,000: refusals 3,241 (from 3,712)
+  init_cash 100,000: refusals   340 (from 607)
+```
+
+At 1,000,000 - the shipped default - the check never binds under random play (0 refusals), so
+the numbers above are the regime where it does. The "would pass" column is an estimate made with
+the same price estimate `_order_approved` uses; the "after" rows are the real count.
+
+### S3-23: conservation is exact to 1e-22, not to zero
+
+Twenty seeds x 600 steps x 4 agents, `init_cash` 100,000, `sum(nav) - 4 x init_cash` at every
+step, **on the tree before any ledger change in this pass** (`trader.py` at commit `cb348b6`):
+
+```
+steps: 12,000; steps with non-zero error: 2,116 (17.6%); worst |error|: 7E-22
+```
+
+Same measurement after the pass: 1,773 (14.8%), worst `8E-22`. The difference is the different
+sequence of fills, not the change. §16.10's "exactly conserved 300/300" was a 300-step sequence
+where the residuals happened to cancel; its heading is corrected below. Cause and fix are in
+[15](15_findings_and_recommendations.md) S3-23.
+
+### What the Hypothesis suite found on its first run
+
+Two failures, both real, both now fixed or reclassified:
+
+- **Time priority within a level was not reflected in timestamps.** At one ask level the stamps
+  read `[16, 12]`: a size-reducing `modify` kept the order's head-of-queue position (correct) and
+  overwrote its timestamp with the modify time (not correct - `_get_order_ID`'s FIFO rule for the
+  next modify then picked the wrong order). `Order.update_quantity` now moves the timestamp only
+  when it moves the order. Found at seed 15, six steps.
+- **The conservation residual above**, at seed 161.
+
+### The comparison driver, run once at smoke scale
+
+`python -m gym_continuousDoubleAuction.train.compare --encoders mlp transformer --seeds 0 1
+--iters 1 --agents 4 --trained-agents 2 --max-step 64 --episodes-per-iter 2 --probe-episodes 1
+--probe-steps 128 --horizons 1 5`, from an empty directory, 11 seconds of wall time:
+
+| encoder | seeds | params | return | vf_explained_var | pass_action_fraction | separated on |
+|---|---|---|---|---|---|---|
+| mlp | 2 | 237,851 | -0.00161 ± 0.0014 | -1 ± 0 | 0.0957 ± 0.0193 | nothing |
+| transformer | 2 | 675,483 | -0.000987 ± 0.000112 | -0.338 ± 0.35 | 0.104 ± 0.0249 | nothing |
+
+Plus eight `probe:<target>@<horizon>` columns (the `two_sided` target was dropped by the harness
+because a 129-observation corpus had one class, which is the harness working as documented). The
+table is reproduced to show the *shape* of the output; every number in it is one iteration of
+training on 128 env steps and means nothing about either architecture, which is what the
+"Fewer than three seeds" footer the driver appends says. The protocol run at scale - 16 iterations,
+three seeds, every registered encoder - is the item still open in [10](10_testing.md) §8.
+
+**Supports:** §15 S1-5, S3-4, S3-7, S3-23, S4-6, S4-13, S4-14; §04 3; §10 2.2, 2.5, 8; §18 5.5, 6.

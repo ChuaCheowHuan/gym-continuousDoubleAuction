@@ -1,4 +1,6 @@
 import sys
+
+import pytest
 from decimal import Decimal
 
 # Add parent directory to path to import modules
@@ -205,3 +207,83 @@ class TestOrderBookInvariants:
         _, quote1 = self.ob.process_order({'type': 'limit', 'side': 'bid', 'quantity': Decimal('1'), 'price': Decimal('100'), 'trade_id': 'B1'}, False, False)
         _, quote2 = self.ob.process_order({'type': 'limit', 'side': 'bid', 'quantity': Decimal('1'), 'price': Decimal('100'), 'trade_id': 'B2'}, False, False)
         assert quote1['order_id'] != quote2['order_id']
+
+
+class TestMalformedInputRaisesInsteadOfExiting:
+    """doc/15 S3-7. The engine used to `sys.exit` on malformed input, which
+    under RLlib ends the env-runner process rather than the order and is
+    swallowed by Ray's fault tolerance as a worker restart. Every guard now
+    raises `ValueError` naming the method and the value it refused, so a
+    caller - and a test - can catch it.
+    """
+
+    def setup_method(self):
+        self.ob = OrderBook()
+
+    def test_zero_quantity_limit(self):
+        with pytest.raises(ValueError, match="quantity must be > 0"):
+            self.ob.process_order(
+                {'type': 'limit', 'side': 'bid', 'quantity': 0, 'price': 100,
+                 'trade_id': 1}, False, False)
+
+    def test_negative_quantity_market(self):
+        with pytest.raises(ValueError, match="quantity must be > 0"):
+            self.ob.process_order(
+                {'type': 'market', 'side': 'ask', 'quantity': -3, 'trade_id': 1},
+                False, False)
+
+    def test_unknown_order_type(self):
+        with pytest.raises(ValueError, match="order type must be"):
+            self.ob.process_order(
+                {'type': 'stop', 'side': 'bid', 'quantity': 1, 'price': 100,
+                 'trade_id': 1}, False, False)
+
+    @pytest.mark.parametrize("order_type", ["limit", "market"])
+    def test_unknown_side(self, order_type):
+        quote = {'type': order_type, 'side': 'buy', 'quantity': 1, 'price': 100,
+                 'trade_id': 1}
+        with pytest.raises(ValueError, match="side must be 'bid' or 'ask'"):
+            self.ob.process_order(quote, False, False)
+
+    def test_cancel_and_modify_unknown_side(self):
+        with pytest.raises(ValueError, match="cancel_order"):
+            self.ob.cancel_order('buy', 1)
+        with pytest.raises(ValueError, match="modify_order"):
+            self.ob.modify_order(1, {'side': 'buy', 'price': 100, 'quantity': 1})
+
+    def test_nothing_raises_system_exit(self):
+        """The class of the failure is what changed; pin it directly."""
+        for bad in (
+            lambda: self.ob.process_order(
+                {'type': 'limit', 'side': 'bid', 'quantity': 0, 'price': 100,
+                 'trade_id': 1}, False, False),
+            lambda: self.ob.cancel_order('buy', 1),
+        ):
+            try:
+                bad()
+            except ValueError:
+                pass
+            except SystemExit:  # pragma: no cover - the old behaviour
+                pytest.fail("the engine exited the interpreter")
+
+    def test_constructor_takes_no_tick(self):
+        """S3-4: the stored-and-never-read `tick_size` parameter is gone."""
+        ob = OrderBook(7)
+        assert ob.tape_display_length == 7
+        assert not hasattr(ob, "tick_size")
+        with pytest.raises(TypeError):
+            OrderBook(0.0001, 10)
+
+    def test_tape_wipe_keeps_the_deque(self, tmp_path):
+        """`tape_dump(..., 'wipe')` used to replace the deque with a list."""
+        from collections import deque
+        self.ob.process_order(
+            {'type': 'limit', 'side': 'ask', 'quantity': 1, 'price': 100,
+             'trade_id': 1}, False, False)
+        self.ob.process_order(
+            {'type': 'market', 'side': 'bid', 'quantity': 1, 'trade_id': 2},
+            False, False)
+        assert len(self.ob.tape) == 1
+        self.ob.tape_dump(str(tmp_path / "tape.txt"), "w", "wipe")
+        assert isinstance(self.ob.tape, deque)
+        assert len(self.ob.tape) == 0

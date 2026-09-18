@@ -63,7 +63,7 @@ import and reads its config tree relative to the repository root
 Three checks, cheapest first. All three are what CI runs ([10](10_testing.md) §7).
 
 ```bash
-# 1. the simulator and the training-side units: ~2 min, 935 tests
+# 1. the simulator and the training-side units: ~2 min, 979 tests (incl. pyflakes and Hypothesis)
 python -m pytest gym_continuousDoubleAuction/test -q \
     --ignore=gym_continuousDoubleAuction/test/integration
 
@@ -74,7 +74,7 @@ python -m gym_continuousDoubleAuction.CDA_rand --steps 200 --agents 4
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 ```
 
-Expected: `935 passed`, a line reading `completed 200 steps with 4 random agents.`, and
+Expected: `979 passed`, a line reading `completed 200 steps with 4 random agents.`, and
 `153 passed`. `pytest` is the only runner that works; `python test_x.py` defines classes and exits
 ([10](10_testing.md) §0).
 
@@ -302,6 +302,26 @@ python -m gym_continuousDoubleAuction.train.probe --pretrained pretrained/jepa \
 For pretraining watch `latent_std`, not the loss: a collapsed encoder has a perfect loss
 ([24](24_pretraining.md) §5). The CLI exits non-zero when it detects one.
 
+**Comparing encoders** is one command, the protocol of [18](18_configuration.md) §5.5: every
+(encoder, seed) is a separate run with the seed pinned, the final checkpoint is probed against one
+shared corpus, and the table reports means ± standard deviations across seeds:
+
+```bash
+# the real thing: three seeds, default iteration count, every encoder you name
+python -m gym_continuousDoubleAuction.train.compare --encoders mlp transformer lstm \
+    --seeds 0 1 2 --out compare_out
+
+# a smoke test of the path, seconds not hours
+python -m gym_continuousDoubleAuction.train.compare --encoders mlp transformer --seeds 0 1 \
+    --iters 1 --agents 4 --trained-agents 2 --max-step 64 --episodes-per-iter 2 \
+    --probe-episodes 1 --probe-steps 128 --horizons 1 5 --out compare_smoke
+```
+
+Output: `compare_out/compare_results.json` (every per-run number) and
+`compare_out/compare_table.md`. The `separated on` column names metrics where one encoder's mean
+sits clear of every other's by more than both standard deviations, and only with three or more
+seeds a side; below that the footer says the table is a smoke test, and it is right.
+
 ---
 
 ## 26.10 Troubleshooting
@@ -333,8 +353,13 @@ What CI runs, so run it first ([10](10_testing.md) §7):
 python -m pytest gym_continuousDoubleAuction/test -q --ignore=gym_continuousDoubleAuction/test/integration
 python gym_continuousDoubleAuction/CDA_rand.py
 python -m pytest gym_continuousDoubleAuction/test/integration -q
-pip install pyflakes && python -m pyflakes gym_continuousDoubleAuction   # not in CI; unused imports are the only expected output
 ```
+
+Lint is part of the first line: `test_lint.py` runs pyflakes over the package and fails on any
+message, so a stray import fails the same step a broken test would. To see the messages directly,
+`python -m pyflakes gym_continuousDoubleAuction` (pyflakes is in the `dev` extra). The
+Hypothesis-driven `test_orderbook_properties.py` is also in that step; if it fails, the shrunk
+failing example it prints is the bug report.
 
 The `packaging` CI job additionally builds the wheel and imports it from a directory with no
 checkout; reproduce it with `python -m build --wheel` and a clean venv if you touched `setup.py`,

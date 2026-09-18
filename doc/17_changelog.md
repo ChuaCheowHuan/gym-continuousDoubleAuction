@@ -2869,3 +2869,86 @@ a `modify` / `cancel` that finds nothing to target (S4-14, the remaining half); 
 still charges closing orders (S1-5's open tail); a lint step in CI, which this pass could not add
 because the push credential has no workflow scope (§37 hit the same wall); and the multi-seed
 encoder comparison [10](10_testing.md) §8 has called the largest gap for three passes running.
+
+
+## 45. The recommendations of §44, carried out
+
+§44.5 listed six things a review pass should not decide on its own. Asked to proceed, this pass
+did all six. The suite grows from 935 to 979 unit tests; the first run of the new property suite
+found two defects of its own, which is the best argument for it.
+
+### 45.1 The `envs/orderbook/` freeze is lifted (S3-4, S3-7, S4-3, S4-4)
+
+The package had been off-limits since the first review, on the grounds that nothing tested its
+invariants well enough to change it safely. §45.4 changed that, and with the invariant suite in
+place the deferred items went through: `OrderBook` takes no `tick_size` (it stored one and never
+read it - `OrderBook(0.0001, 10)` is now a `TypeError`, and the `inert_tick_size_copy`
+documentation block is gone); all six `sys.exit` calls raise `ValueError` naming the method and the
+refused value; `from decimal import *` is `from decimal import Decimal`; `six.moves.cStringIO` is
+`io.StringIO`, so `six` leaves `install_requires` and `requirements.txt`; and ~150 lines of
+commented-out and superseded code (`__str__0` twice, `to_str`, the old `modify_order`, the shadowed
+`Order.next_order`/`prev_order` methods) are deleted. `test_config_sources` no longer asserts the
+book carries the tick, because nothing does but the action layer.
+
+### 45.2 The third silent no-op is counted (S4-14)
+
+`num_unmatched_step` on the account, incremented when a `modify` or `cancel` names no resting
+order, reset per step with the other counters, reported in `info`, given a column in the episode
+record, and aggregated into `unmatched_action_fraction` beside the pass and rejection fractions.
+Ten tests in `test_unmatched_actions.py` and three in `test_activity_metrics.py`.
+
+### 45.3 Lint is enforced without a workflow change (S4-6)
+
+The push credential cannot edit `.github/workflows/` (§37.6), so `test_lint.py` runs pyflakes over
+the package and fails on any message, and CI enforces it through the test step it already runs.
+Getting there meant removing 69 unused imports and declaring `__all__` in the five `__init__`
+files that re-export (`envs`, `orderbook`, `probe`, `pretrain`, and the encoder registry, whose
+side-effect imports are now named as `REGISTERED_ENCODER_MODULES`). `pyflakes` and `hypothesis`
+join the `dev` extra.
+
+### 45.4 Property-based tests, and what they found (S4-13, S3-23)
+
+`test_orderbook_properties.py` drives Hypothesis-generated order sequences through `Trader` and
+`OrderBook`, and Hypothesis-chosen seeds through the whole env at three ticks, asserting the
+invariants [10](10_testing.md) §8 had listed for three passes: tree caches against a walk, time
+priority within a level, no locked or crossed book, escrow equal to own resting notional,
+positions netting to zero, NAV conservation, `cash + cash_on_hold >= 0`, prices on the grid.
+
+Its first run failed twice. A size-reducing `modify` kept an order's queue position but stamped it
+with the modify time, so `_get_order_ID`'s "oldest order" rule could pick the wrong one next time;
+`Order.update_quantity` now moves the timestamp only when it moves the order. And NAV conservation
+is exact only to about `1e-22`: the VWAP quotient rounds at the Decimal context and
+`mark_to_mkt` multiplies it back in two independently rounded products. That is not a regression -
+17.6% of steps carried the residual on the tree before this pass - but [16](16_verification_log.md)
+§16.10 had recorded conservation as exact, and the `nav_tolerance` note says the expected error
+is zero. Both are corrected; the finding is S3-23, with the cost-basis-as-sum fix that would make
+it exact.
+
+### 45.5 The encoder comparison protocol, as a command (doc/18 §5.5)
+
+`python -m gym_continuousDoubleAuction.train.compare` runs every (encoder, seed) as a separate
+training run with the seed pinned and its own checkpoint tree, scores each final checkpoint on
+the probe harness against one shared corpus, and writes per-run JSON plus a Markdown table of
+means and standard deviations across seeds. It reports two encoders as *separated* on a metric
+only when the gap exceeds both standard deviations and each side has at least three seeds; below
+that the footer calls the table a smoke test. Run once at smoke scale ([16](16_verification_log.md)
+§16.18) to prove the path; the run at scale remains the open item in [10](10_testing.md) §8.
+Twelve tests cover the aggregation; the `cda_compare` group in `cli_defaults.json` holds its
+defaults.
+
+### 45.6 The S1-5 tail, measured and closed
+
+Escrow against a resting order that would only close the position was treated as spent by the
+cash check. Measured first: at `init_cash` 100,000 under random play, 84% of refusals happened
+while such escrow existed and 67% would have passed had it counted. Then fixed in the approval
+predicate alone - `Trader._closing_escrow`, capped at the quantity that actually closes, oldest
+order first - leaving the ledger and every partial-fill path untouched. `cash` may now sit below
+zero by at most that amount while both orders rest; the property suite asserts `cash +
+cash_on_hold >= 0` and NAV is unaffected. Refusals at 100,000 fell from 607 to 340.
+
+### 45.7 Still open after this pass
+
+The run of §45.5 at scale; the cost-basis fix of S3-23; a formatter, coverage and type hints in
+`envs/` (the rest of S4-6); the remaining dead code in `continuousDoubleAuction_env.py` and
+`action_helper.py` (S4-3, S4-4); and whether a dead action should cost the agent anything, which
+is a reward question rather than an accounting one.

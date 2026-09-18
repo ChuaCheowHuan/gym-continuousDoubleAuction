@@ -1,6 +1,5 @@
 import numpy as np
 import pytest
-from decimal import Decimal
 
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import continuousDoubleAuctionEnv
 from gym_continuousDoubleAuction.envs.exchg.state_helper import (

@@ -43,7 +43,6 @@ import os
 import shutil
 import tempfile
 
-import pytest
 import ray
 
 from gym_continuousDoubleAuction.train.train import (

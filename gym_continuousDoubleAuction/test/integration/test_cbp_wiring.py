@@ -20,7 +20,6 @@ for the isolation tests here.
 """
 import shutil
 import tempfile
-from dataclasses import replace
 
 import pytest
 import ray
@@ -31,7 +30,6 @@ from gym_continuousDoubleAuction.train.model.cbp_learner import (
     CBPLearnerMixin,
     TunedAdamMixin,
     with_continual_backprop,
-    with_tuned_adam,
 )
 from gym_continuousDoubleAuction.train.model.jepa_learner import CDAJEPALearner
 from gym_continuousDoubleAuction.train.model.moe_learner import CDAPPOTorchLearner

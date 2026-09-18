@@ -12,7 +12,6 @@ but the three properties this package needs from it:
 
 See doc/11_logging_and_observability.md.
 """
-import importlib
 import json
 import logging
 import shutil

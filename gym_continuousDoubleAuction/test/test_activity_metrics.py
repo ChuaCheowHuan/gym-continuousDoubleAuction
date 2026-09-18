@@ -525,3 +525,53 @@ class TestMakerFillRatio:
         second = h.emitted("maker_fill_ratio_max").args[1]
 
         assert first == pytest.approx(second) == pytest.approx(0.5)
+
+
+class TestUnmatchedActionFraction:
+    """doc/15 S4-14, the other half: a modify or cancel with nothing to act on.
+
+    The third silent no-op. Its fraction is emitted beside the pass and
+    rejection fractions so the three together bound how much of an episode's
+    activity changed nothing in the book.
+    """
+
+    @staticmethod
+    def _infos_with_unmatched(unmatched_agents):
+        out = _infos()
+        for i in range(unmatched_agents):
+            out[f"agent_{i}"]["num_unmatched_step"] = 1
+        return out
+
+    def test_fraction_is_over_agent_steps(self):
+        h = ActivityHarness()
+        h.start("ep")
+        for _ in range(5):
+            h.step("ep", self._infos_with_unmatched(1))
+        h.end("ep")
+        call = h.emitted("unmatched_action_fraction")
+        assert call is not None
+        assert call.args[1] == pytest.approx(1 / NUM_AGENTS)
+        assert call.kwargs["window"] == 10
+
+    def test_absent_field_counts_as_zero(self):
+        """Rows recorded before the field existed must not break the tally."""
+        h = ActivityHarness()
+        h.start("ep")
+        for _ in range(3):
+            h.step("ep", _infos())
+        h.end("ep")
+        assert h.emitted("unmatched_action_fraction").args[1] == pytest.approx(0.0)
+
+    def test_independent_of_the_other_two_fractions(self):
+        h = ActivityHarness()
+        h.start("ep")
+        infos = self._infos_with_unmatched(NUM_AGENTS)
+        for info in infos.values():
+            info["is_pass_action"] = False
+            info["num_rejected_step"] = 0
+        for _ in range(4):
+            h.step("ep", infos)
+        h.end("ep")
+        assert h.emitted("unmatched_action_fraction").args[1] == pytest.approx(1.0)
+        assert h.emitted("pass_action_fraction").args[1] == pytest.approx(0.0)
+        assert h.emitted("order_rejection_fraction").args[1] == pytest.approx(0.0)

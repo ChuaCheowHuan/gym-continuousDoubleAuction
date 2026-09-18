@@ -8,7 +8,6 @@ from .done_helper import Done_Helper
 from .info_helper import Info_Helper
 
 from ..orderbook.orderbook import OrderBook
-from ..agent.trader import Trader
 from ...config_loader import env_default
 from ...logging_setup import get_logger
 
@@ -30,11 +29,13 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
         # space quotes on, not just a property of the book.
         super().__init__(n_hist=n_hist, tick_size=tick_size, **kwargs)
 
-        # Kept so reset() can rebuild the book on the same tick rather than
-        # with a literal of its own.
+        # The configured tick. The book itself takes no tick - it never read
+        # the one it used to be handed - so this is kept for callers that ask
+        # the env what grid it quotes on; the live copy the action layer uses
+        # is `Action_Helper.min_tick`, set from the same key.
         self.tick_size = tick_size
 
-        self.LOB = OrderBook(tick_size, tape_display_length) # limit order book
+        self.LOB = OrderBook(tape_display_length) # limit order book
         self.agg_LOB = {} # aggregated or consolidated LOB
         self.agg_LOB_raw = {} # unnormalized raw aggregated LOB
         self.agg_LOB_aft = {} # aggregated or consolidated LOB after processing orders
@@ -205,6 +206,7 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
             trader.acc.num_passive_fills_step = 0
             trader.acc.order_step_placed = 0
             trader.acc.num_rejected_step = 0
+            trader.acc.num_unmatched_step = 0
 
         dones, truncateds = self.set_all_done(dones)
 

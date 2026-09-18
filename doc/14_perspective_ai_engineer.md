@@ -15,7 +15,7 @@ production-deployable as a service, but as a research codebase it is above avera
 
 > **This section is the original audit and is no longer accurate.** It was measured against a
 > tree of 7,478 Python lines with 90 unit tests and no logging module. The repository is now
-> 34,257 lines across 124 files, with 935 unit and 153 integration tests, a 523-line
+> 34,257 lines across 124 files, with 979 unit and 153 integration tests, a 523-line
 > `logging_setup` and a test that fails the build on a bare `print` in `envs/` or `train/`. The
 > `sklearn.utils.shuffle` import it names was removed (`action_helper.py:182` records that), and
 > the `install_requires` block it quotes no longer exists - `ray[rllib]` and `six` are in it and
@@ -33,10 +33,10 @@ production-deployable as a service, but as a research codebase it is above avera
 | CI | GitHub Actions on Python 3.12: a `test` job (unit → random smoke run → RLlib integration) and a `packaging` job that installs the built wheel into a clean venv |
 | `logging` module usage | **0** — everything is `print()` |
 | `print()` calls in `envs/` + `train/` | ~86, incl. **42 in the self-play callback** and 13 in the env |
-| `sys.exit()` in library code | **6 live** (all in `orderbook.py`), 2 more commented out |
+| `sys.exit()` in library code | **0** — the six in `orderbook.py` raise `ValueError` since 2026-09-18 (S3-7) |
 | Broad `except Exception` in the callback | 2 (one deliberate, one questionable) |
 | Type hints | present in `train/`, essentially absent from `envs/` |
-| Linter / formatter config | none (no `ruff`, `black`, `flake8`, `pyproject.toml`) |
+| Linter / formatter config | pyflakes, enforced by `test_lint.py` (zero findings); no formatter, no `pyproject.toml` |
 | Pre-commit hooks | none |
 
 The quality gradient across the repository is steep. `train/train.py`, `policy_handler.py` and
@@ -170,20 +170,14 @@ This is the weakest engineering area. Full audit in
 
 ## 5.5 Error handling
 
-**`sys.exit()` in library code** — six live occurrences, all in `orderbook.py`:
-
-```python
-if quote['quantity'] <= 0:
-    sys.exit('process_order() given order of quantity <= 0')
-```
-
-`sys.exit` raises `SystemExit`, which derives from `BaseException`, not `Exception`. Inside a Ray
-EnvRunner actor this will not be caught by ordinary handlers and will kill the worker; RLlib will
-mark it unhealthy and the training run degrades (or hangs) rather than failing with a usable
-traceback. These should all be `raise ValueError(...)`.
-
-Currently unreachable in practice — decoded size is `rint(abs(N(...))) + min_size ≥ 1` — but it
-is one action-space change away from being reachable.
+**`sys.exit()` in library code — fixed (S3-7).** `orderbook.py` had six live occurrences. `sys.exit`
+raises `SystemExit`, which derives from `BaseException`, not `Exception`, so inside a Ray EnvRunner
+actor it killed the worker and RLlib restarted it rather than failing with a usable traceback. All
+six raise `ValueError` naming the method and the refused value, and
+`test_orderbook_new.py::TestMalformedInputRaisesInsteadOfExiting` asserts that nothing in the
+engine raises `SystemExit`. They were never reachable from the action layer - decoded size is
+`rint(abs(N(...))) + min_size ≥ 1` - which is why the fix waited on lifting the `envs/orderbook/`
+freeze ([17](17_changelog.md) §45.1).
 
 **The broad `except Exception` in champion creation** is *deliberate and defensible*: it rolls
 back the pool entry so matchmaking can never select a half-created module, and prints a
@@ -293,8 +287,8 @@ Full inventory in [10_testing.md](10_testing.md). Engineering-relevant summary:
 | `State_Helper.state_diff` | never called **[verified]** |
 | `Action_Helper._set_side` / `_set_type` / `_higher` / `_lower` | never called (superseded by the category mapping) |
 | `Action_Helper.max_price` | passed into `_set_price` and never used in its body |
-| `OrderBook.__str__0`, `Order.__str__0`, `OrderList.to_str` | superseded |
-| `OrderBook.get_volume_at_price` | commented out |
+| ~~`OrderBook.__str__0`, `Order.__str__0`, `OrderList.to_str`~~ | **Deleted** (2026-09-18), with the shadowed `Order.next_order`/`prev_order` methods |
+| ~~`OrderBook.get_volume_at_price`~~ | **Deleted** (2026-09-18), with the commented-out old `modify_order` |
 | `envs/orderbook/test/example.py`, `genOrders.py` (353 LOC) | standalone scripts, not collected by pytest |
 | ~200 LOC of commented-out code | The old `step` and the old space getters in `continuousDoubleAuction_env.py`, the old `modify_order` and `get_volume_at_price` in `orderbook.py`, the old `Tuple` `act_space` in `action_helper.py` |
 | `CODEOWNER` **and** `CODEOWNERS` | duplicate files at the repo root |
@@ -406,10 +400,8 @@ Low risk overall (a self-contained simulator), but two notes:
    `ray.data.read_parquet`, pandas or DuckDB without this package installed, so the
    arbitrary-code-execution-on-load surface is gone. The `visualize/inspect_latest_episode*.py`
    loaders read Parquet too, and the two committed `.pkl` files are deleted.
-2. **`sys.exit` in a worker process** (§5.5) — a denial-of-availability path for a long training
-   run, not a security issue as such. Still open (S3-7): it raises `SystemExit`, which derives
-   from `BaseException`, so inside a Ray actor it kills the worker rather than surfacing a
-   traceback.
+2. ~~**`sys.exit` in a worker process**~~ (§5.5) — **fixed** (S3-7). The six calls raise
+   `ValueError`; nothing in the engine can end an env-runner process.
 
 ---
 

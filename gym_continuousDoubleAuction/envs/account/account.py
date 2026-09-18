@@ -56,6 +56,13 @@ class Account(Calculate, Cash_Processor):
         # one whose order was refused, and those are opposite behaviours - the
         # second is an agent repeatedly quoting past its cash (doc/11 2.2).
         self.num_rejected_step = 0
+        # `modify` / `cancel` actions this step that named no resting order to
+        # act on. The other half of doc/15 S4-14: `num_rejected_step` counts an
+        # order the cash check refused, `is_pass_action` a deliberate pass, and
+        # until this existed the third silent outcome - an order-management
+        # action with nothing to manage - left no trace at all. From the
+        # policy's side all three look identical: nothing happened.
+        self.num_unmatched_step = 0
 
         # Written by Reward_Helper.set_reward each step, read by Info_Helper.
         # The reward used to be a single number with its five components
@@ -93,6 +100,7 @@ class Account(Calculate, Cash_Processor):
         self.num_passive_fills_step = 0
         self.order_step_placed = 0
         self.num_rejected_step = 0
+        self.num_unmatched_step = 0
 
         # See __init__ for what these are and why they exist.
         self.drawdown = 0.0

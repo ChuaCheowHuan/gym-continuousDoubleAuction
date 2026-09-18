@@ -19,7 +19,7 @@ mindmap
       S1-3 doing nothing dominated — fixed
       S1-4 bare env could not trade — fixed
       S1-5 cash check bypassable — fixed
-        escrow still charges closing orders
+        closing-side escrow now spendable — fixed
     S2 Major — all fixed
       S2-1 drawdown charged as a level — fixed
       S2-2 observation scales saturate tanh — fixed
@@ -41,9 +41,10 @@ mindmap
         S3-2 size_sigma is inert
         S3-3 env-side sampling breaks the log-prob
       simulator and config
-        S3-4 tick_size — action grid now enforced; book copy still dead
+        S3-4 tick_size — fixed; the book takes no tick
         S3-5 seeding — fixed
-        S3-7 sys.exit in the engine
+        S3-7 sys.exit in the engine — fixed
+        S3-23 NAV conservation exact only to Decimal rounding
         S3-20 dead escrow path — fixed
       training and league
         S3-8 detached callback — fixed
@@ -60,7 +61,9 @@ mindmap
     S4 Minor
       dead code, hygiene, tooling
       S4-9 pickle episode data — fixed
-      S4-14 dead-action fraction — partly fixed
+      S4-6 pyflakes enforced by the suite
+      S4-13 property-based tests — fixed
+      S4-14 dead-action fraction — fixed
       S4-18 duplicate CODEOWNER files
 ```
 
@@ -218,11 +221,25 @@ replace (a `limit` at a price it already rests at, or a `modify`, releases the o
 call that would otherwise be charged for it). The same sequence now refuses nine of the ten and the
 position goes flat instead of flipping. Pinned by `test_resting_exposure.py`.
 
-**Still open, and deliberately.** The escrow charges full notional for *any* resting order,
-including one that only closes, so a cash-poor trader closing a position drives `cash` negative
-while `cash_on_hold` rises by the same amount. That is a reclassification, not a loss — NAV is
-untouched — and it is asserted rather than fixed, because changing it means tracking escrow per
-order: every partial-fill path in `Cash_Processor` assumes escrow equals full notional.
+**The tail, measured and then closed (2026-09-18).** The escrow charges full notional for *any*
+resting order, including one that only closes, and the cash check treated that escrow as spent. So
+a trader long 10 with its exit ask resting could not open anything else, although the ask's fill
+could only reduce its risk. Measured under random play ([16](16_verification_log.md) §16.18):
+
+| `init_cash` | refusals | while closing-side escrow existed | would have passed had it counted |
+|---|---|---|---|
+| 20,000 | 3,712 | 1,602 (43%) | 793 (21%) |
+| 100,000 | 607 | 508 (84%) | 409 (67%) |
+
+Fixed in the approval predicate rather than the ledger: `Trader._closing_escrow` sums the escrow
+held against this trader's resting orders on the side that reduces its position, capped at the
+quantity that actually closes (`|net_position|`, oldest order first), and `_order_approved` counts
+it as spendable beside `cash` and the replaced order's release. The ledger is untouched, so every
+partial-fill path in `Cash_Processor` still sees escrow equal to full notional. The one visible
+consequence is that `cash` may sit below zero by at most that closing escrow while both orders
+rest; `cash + cash_on_hold` never does, and NAV is unaffected — `test_orderbook_properties.py`
+asserts the first under random play, and `test_cash_check.py::TestClosingEscrowIsSpendable`
+pins the cases. The same measurement after the fix: 3,241 and 340 refusals respectively.
 
 
 ---
@@ -562,39 +579,21 @@ not part of the action whose log-probability PPO uses in the importance ratio �
 never observes the realisation. Irreducible advantage variance.
 **Fix:** emit size directly as a `Box` action.
 
-### S3-4 · The order book's `tick_size` is inert **[fixed — the book's dead parameter remains]**
+### S3-4 · The order book's `tick_size` is inert **[verified, fixed]**
 
 `tick_size` used to exist as two independent values: a hardcoded `min_tick = 1` in
 `Action_Helper` that actually drove prices, and an `OrderBook` argument that was stored and never
 read. Setting the config key therefore changed nothing anywhere.
 
-**Fixed:** `Action_Helper.min_tick` now comes from the `tick_size` config key, so the key controls
-the price grid agents quote on. Both defaults were 1, so behaviour at default config is unchanged.
-
-**Also fixed:** `reset()` no longer rebuilds the book as `OrderBook(1, ...)`; it uses
-`self.tick_size`, the same tick `Exchg_Helper` built the first book with. The change is inert
-(the book never reads the value) but there is no reason to keep a second number in the env.
-
-**Deliberately not fixed — the action layer should be the single definition, and `OrderBook`'s
-copy should be deleted.** `OrderBook` still accepts a `tick_size`, stores it, and never reads it.
-That argument makes it look as though the matching engine enforces a grid, which it does not —
-there is no rounding or tick validation anywhere in the matching path.
-
-The reason to delete rather than enforce: there is exactly **one** price producer in the system.
-Every price reaching `process_order` comes from `_set_price` via `place_order`, and `_set_price`
-builds prices as `anchor ± k × min_tick`, so output is on the grid by construction. A snapping or
-validation step in the book would re-derive a guarantee the producer already provides. Deleting
-the parameter is also nearly free: 9 of the 11 `OrderBook(...)` call sites already use the no-arg
-form.
-
-**This is deferred because the `envs/orderbook/` package is off-limits to changes.** It requires
-editing `orderbook.py` plus the two call sites in `exchg_helper.py` and
-`continuousDoubleAuction_env.py`. Until then `tick_size` is half-live: it governs the action
-layer, not the book.
-
-Enforcement in `OrderBook.process_order` would be the right call instead of deletion only if a
-second price source appears that the action layer does not control — scripted or human agents,
-replayed real order flow, an external feed.
+**Fixed, in three steps across three passes.** `Action_Helper.min_tick` comes from the `tick_size`
+config key, so the key controls the grid agents quote on. `reset()` stopped rebuilding the book
+with a literal. And on 2026-09-18 the book's dead parameter was deleted: `OrderBook` takes only
+`tape_display_length`, `OrderBook(0.0001, 10)` is a `TypeError`, and the `inert_tick_size_copy`
+block that documented the literal is gone from `tunable_constants.json`. There is now exactly one
+definition of the tick, the action layer's, and the code no longer suggests a guarantee the
+matching path does not provide — the book keys its price map on whatever `Decimal` it is handed and
+never did enforce a grid. The `envs/orderbook/` package was off-limits until this pass; the
+invariant suite (`test_orderbook_properties.py`) is what made lifting that safe.
 
 **The float-grid caveat, re-measured and fixed.** An earlier version of this entry said
 `_set_price` "emits on-grid prices by construction" and that off-grid drift was rare — one
@@ -616,7 +615,7 @@ before returning it; and `_get_order_ID` compares prices as `Decimal(str(price))
 conversion the book applies on the way in. `test_tick_grid.py` (14 tests) asserts every level and
 offset lands on the grid for seven ticks including 0.3 and 0.0001, that re-quoting a level upserts,
 that a cancel at a fractional price finds its order, and that NAV is conserved under random play
-at `tick_size` 0.1. What remains of this finding is exactly the dead `OrderBook` parameter.
+at `tick_size` 0.1.
 
 Related, and still open as a *default*: the price anchor is drawn from `randint(10, 100)`, so with
 a fixed tick the *relative* tick varies **10×** across episodes — a large uncontrolled
@@ -759,12 +758,17 @@ spread, which this function assumes never happens.
 exact `cash` / `cash_on_hold` / `net_position`, which an escrow-shuffle cannot produce — and a
 seventh test now asserts the helper stays gone.
 
-### S3-7 · `sys.exit()` used for error handling in the matching engine
+### S3-7 · `sys.exit()` used for error handling in the matching engine **[fixed]**
 
 Six live occurrences in `orderbook.py`. `SystemExit` derives from `BaseException`, so inside a
 Ray actor it kills the worker rather than surfacing a traceback. Currently unreachable, but one
 action-space change away.
-**Fix:** `raise ValueError(...)`.
+
+**Fixed (2026-09-18).** All six raise `ValueError` naming the method and the value it refused
+(`process_order(): order quantity must be > 0, got 0 (trade_id 1)`), the two commented-out copies
+are deleted with the dead code around them, and `test_orderbook_new.py::
+TestMalformedInputRaisesInsteadOfExiting` pins each path and asserts that nothing raises
+`SystemExit`. `import sys` is gone from the module.
 
 ### S3-8 · `build_algo` returns a detached callback on the restore path **[fixed]**
 
@@ -920,6 +924,35 @@ action-conditioned term never runs — its parameters would be saved randomly in
 into a training run by a `strict` load, silently.
 
 
+### S3-23 · NAV conservation is exact only to Decimal context rounding **[verified]**
+
+[16](16_verification_log.md) §16.10 established that conservation is "exact under Decimal" and
+the config note for `nav_tolerance` says the expected error is 0. The Hypothesis suite found
+otherwise on its first run (seed 161, `tick_size` 1): a 4-agent total of `399999.9999999999999999999999`
+against 400,000. Re-measured on the tree *before* this pass's ledger change, so it is not a
+regression: over 12,000 random-play steps at `init_cash` 100,000, **17.6% of steps** carry a
+non-zero conservation error, the worst being `7E-22`.
+
+The cause is the VWAP-based ledger. `_size_increase` stores `VWAP = (|pos| x VWAP + trade_val) /
+total_size`, a quotient that rounds at the 28-digit context whenever it does not terminate, and
+`mark_to_mkt` then builds `position_val` as `|pos| x VWAP + |pos| x (mark - VWAP)`, two products
+that round independently. Algebraically the VWAP cancels; numerically it leaves a residual of one
+unit in the 22nd place. §16.10's probe happened on a 300-step sequence where the residuals
+cancelled, which is what "exactly conserved 300/300" recorded.
+
+Nothing downstream is wrong: the error is 27 orders of magnitude below the tolerance, and the
+tolerance is what the training-time check applies. What is wrong is the *claim*. It is corrected
+here, in §16.10's heading, and in `test_orderbook_properties.py`, which asserts conservation to
+`nav_tolerance` rather than to zero and says why.
+
+**Fix, if exactness is ever wanted:** carry the position's cost basis as the exact `Decimal` *sum*
+of trade values (which is what `cash` already does) and derive VWAP from it for display, rather
+than storing the quotient and multiplying it back. Every quantity in the conservation identity is
+then a sum of the same trade values with opposite signs, and the residual is zero by construction.
+It is a contained change to `account.py` and `calculate.py`, and the property suite is the test
+for it.
+
+
 ---
 
 ## S4 — Minor
@@ -928,18 +961,18 @@ into a training run by a `strict` load, silently.
 |---|---|
 | S4-1 | **Partly fixed.** The `g_store` trio (`store_handler`, `log_handler`, `plot_handler`, ~270 LOC) has been deleted; `helper.py`'s order-imbalance utilities are still unused (and would be valuable as observation features — S2-7) |
 | S4-2 | `envs/agent/random_agent.py` returns the **old 5-tuple** action format; superseded by `RandomRLModule` but still in `Trader`'s MRO **[verified]** |
-| S4-3 | Dead methods: `State_Helper.state_diff`, `Action_Helper._set_side/_set_type/_higher/_lower`, `OrderBook.__str__0`, `Order.__str__0`, `OrderList.to_str`. The unread `max_price` parameter of `_set_price` has since been removed |
-| S4-4 | ~200 LOC of commented-out code: the old `step` and space getters in `continuousDoubleAuction_env.py`, the old `modify_order` and `get_volume_at_price` in `orderbook.py`, the old `Tuple` `act_space` in `action_helper.py` |
+| S4-3 | **Partly fixed.** `OrderBook.__str__0`, `Order.__str__0`, `OrderList.to_str` and the shadowed `Order.next_order`/`prev_order` methods are deleted (2026-09-18). Still present: `State_Helper.state_diff`, `Action_Helper._set_side/_set_type/_higher/_lower`. The unread `max_price` parameter of `_set_price` was removed earlier |
+| S4-4 | **Partly fixed.** The old `modify_order` and `get_volume_at_price` in `orderbook.py` are deleted (2026-09-18). Still present: the old `step` and space getters in `continuousDoubleAuction_env.py`, the old `Tuple` `act_space` in `action_helper.py` |
 | S4-5 | **Fixed.** `test_accounting.py::test_insufficient_funds` asserts the refusal, the untouched ledger and the approved affordable half; it was an empty `pass` under a 15-line comment |
-| S4-6 | No linter, formatter, pre-commit or coverage tooling; type hints only in `train/` and essentially absent from `envs/` |
+| S4-6 | **Partly fixed.** pyflakes is enforced: `test_lint.py` runs it over the package and fails on any message, so CI enforces it through the existing test step with no workflow change, and the package was brought to zero findings (69 unused imports removed; re-exporting `__init__` files declare `__all__`). Still open: formatter, pre-commit, coverage measurement, type hints in `envs/` |
 | S4-7 | `is_render` defaults to **`True`** on the env, so a direct instantiation prints a full book/tape/account dump per step. `_render` also has **side effects** — it nulls `model_actions`/`LOB_actions`/`shuffled_actions` and clears `seq_trades`, so toggling it changes state evolution |
 | S4-8 | The Docker image duplicates the dependency list instead of `COPY`ing `requirements.txt` |
 | S4-9 | **Fixed.** The per-step record is Parquet with a declared schema, written off the sampling thread and bounded by `episode_sample_every` / `episode_max_bytes`; the two committed `.pkl` files are deleted. Nothing in the repository writes a pickle |
 | S4-10 | Mixin-based env architecture: helpers read attributes they do not own, guarded by defensive `getattr` defaults; not independently testable |
 | S4-11 | `_process_counter_party` linear-scans all agents per fill; `set_agg_LOB` is called twice per step (the pre-action call is display-only) |
 | S4-12 | No `evaluate.py` / serving path — no way to *use* a trained checkpoint |
-| S4-13 | No property-based tests, despite the order book having clearly stated invariants (tree volume == Σ level volumes, no crossed book, Σ NAV == Σ initial cash) |
-| S4-14 | **Partly fixed.** Refused orders increment `num_rejected_step`, which reaches `infos` and the `order_rejection_fraction` metric; `is_pass_action` separates a deliberate pass. Still open: `modify` / `cancel` with nothing to target has no counter, and no dead action is penalised or visible to the agent |
+| S4-13 | **Fixed.** `test_orderbook_properties.py` (Hypothesis) asserts, for any order sequence: every tree cache equals a walk of its contents, time priority within a level, no locked or crossed book, escrow equals own resting notional, positions net to zero; and under random env play at three ticks, NAV conservation to `nav_tolerance`, `cash + cash_on_hold >= 0`, and every price on the grid. Its first run found two things the example suite had not: S3-23, and a size-reducing modify that bumped a resting order's timestamp while keeping its queue position |
+| S4-14 | **Fixed.** Refused orders increment `num_rejected_step`; `is_pass_action` separates a deliberate pass; and a `modify` / `cancel` that names no resting order increments `num_unmatched_step`, which reaches `info`, the episode record and the `unmatched_action_fraction` metric. The three fractions together bound how much of an episode's activity changed nothing in the book. Whether a dead action should be *penalised* is a reward-design question and is left as such |
 | S4-15 | `Box(-inf, inf)` observation bounds, though every quantity is boundable; disables RLlib observation filters and space-based sanity checks |
 | S4-16 | **Fixed.** `test_shared_history_multi_agent_uniformity` encoded S1-2 as a requirement. It is replaced by a pair that splits the claim: the book prefix must still be shared between agents, the private tail must not be |
 | S4-17 | The sign convention on ask blocks is redundant (side is already encoded by block position) and prevents natural weight sharing between the two sides |
@@ -1008,7 +1041,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **935 unit tests pass** (plus 153 integration), covering every position-flip path, cash-check edge case, modify-order
+- **979 unit tests pass** (plus 153 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 

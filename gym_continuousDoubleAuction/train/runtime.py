@@ -103,9 +103,9 @@ def in_colab() -> bool:
     if "COLAB_RELEASE_TAG" in os.environ or "google.colab" in sys.modules:
         return True
     try:
-        import google.colab  # noqa: F401
+        import importlib.util
 
-        return True
+        return importlib.util.find_spec("google.colab") is not None
     except Exception:
         return False
 

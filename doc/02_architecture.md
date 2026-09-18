@@ -95,7 +95,7 @@ gym_continuousDoubleAuction/
 │   ├── run_all.py                        regenerates every chart
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               935 unit tests
+└── test/                               979 unit tests
     └── integration/                    153 tests that build real Algorithms
 ```
 
@@ -444,8 +444,8 @@ key changed nothing anywhere. Two of the three halves are fixed:
 | | Then | Now |
 |---|---|---|
 | `Action_Helper.min_tick` | hardcoded `1` | the `tick_size` config key — this is what builds every price |
-| `reset()` | `OrderBook(1, ...)` | `OrderBook(self.tick_size, ...)` |
-| `OrderBook.tick_size` | stored, never read | stored, never read — still inert |
+| `reset()` | `OrderBook(1, ...)` | `OrderBook(self.tape_display_length)` — the book takes no tick |
+| `OrderBook.tick_size` | stored, never read | **deleted** (2026-09-18); `OrderBook(0.0001, 10)` is a `TypeError` |
 
 There is no rounding or tick validation anywhere in the matching path; the book's parameter makes
 it look as though there is. The recommendation is to **delete** the book's copy rather than

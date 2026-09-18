@@ -59,10 +59,5 @@
     "training_log_dir": "results",
     "training_log_fallback": "../results",
     "default_agent_id": "agent_0"
-  },
-  "inert_tick_size_copy": {
-    "_source": "gym_continuousDoubleAuction/envs/orderbook/orderbook.py (OrderBook.__init__)",
-    "_note": "DOCUMENTATION ONLY - the one value in this file that is not read from here. OrderBook accepts and stores a tick_size it never reads, and the envs/orderbook/ package is off-limits to changes, so its literal default stays in that module. The live tick is Action_Helper.min_tick, which comes from the tick_size config key. Deleting the dead parameter is the documented recommendation (doc/15 S3-4). The env side of this is fixed: reset() now builds the book with the configured tick_size instead of a literal 1.",
-    "orderbook_default_tick_size": 0.0001
   }
 }

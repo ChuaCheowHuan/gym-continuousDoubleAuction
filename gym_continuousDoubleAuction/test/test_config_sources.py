@@ -155,12 +155,22 @@ class TestEnvFallbacksComeFromTheFile:
         env.reset()
         assert env.last_price == 33.0
 
-    def test_book_is_built_on_the_configured_tick(self):
-        """reset() used to rebuild the book with a literal 1."""
+    def test_configured_tick_reaches_the_action_layer(self):
+        """The tick the env quotes on is the configured one, before and after reset.
+
+        The book no longer takes a tick at all - it stored one it never read
+        (doc/15 S3-4) - so the two places that carry the value are the env's
+        own attribute and `Action_Helper.min_tick`, which builds every price.
+        """
         env = continuousDoubleAuctionEnv({"num_of_agents": 2, "tick_size": 5})
-        env.reset()
-        assert env.LOB.tick_size == 5
+        assert env.tick_size == 5
         assert env.min_tick == 5
+        env.reset()
+        assert env.min_tick == 5
+        assert not hasattr(env.LOB, "tick_size")
+        # And it is the grid quoted prices land on.
+        for level in range(env.k_rows):
+            assert env._set_price(env.min_tick, "bid", level, 1) % 5 == 0
 
 
 class TestStructuralConstantsComeFromTheFile:

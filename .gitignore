@@ -32,3 +32,5 @@ dist
 # build_py so the wheel carries it. Generated, never edited - the canonical
 # tree is ./config/, which config_dir() finds first when running in-tree.
 gym_continuousDoubleAuction/config
+# Hypothesis example database, written beside the tests it drives
+.hypothesis

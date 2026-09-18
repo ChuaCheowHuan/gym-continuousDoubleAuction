@@ -1,6 +1,5 @@
 import numpy as np
 import pytest
-import gymnasium as gym
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import continuousDoubleAuctionEnv
 
 class TestActionSpaceRobust:

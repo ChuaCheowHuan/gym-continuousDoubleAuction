@@ -489,11 +489,15 @@ def build_encoder_config(
 
 # Encoder modules are imported for their `@register` side effect, at the bottom
 # so they can import the registry above without a cycle.
-from gym_continuousDoubleAuction.train.model.encoders import (  # noqa: E402,F401
+from gym_continuousDoubleAuction.train.model.encoders import (  # noqa: E402
     jepa,
     lstm,
     moe_transformer,
     passthrough,
     transformer,
 )
+
+#: The registered encoder modules, named so the side-effect imports above read
+#: as the deliberate re-exports they are rather than as unused imports.
+REGISTERED_ENCODER_MODULES = (jepa, lstm, moe_transformer, passthrough, transformer)
 

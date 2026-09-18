@@ -88,6 +88,9 @@ class Info_Helper(object):
             "num_passive_fills_step": acc.num_passive_fills_step,
             "order_step_placed": acc.order_step_placed,
             "num_rejected_step": acc.num_rejected_step,
+            # modify/cancel actions that named no resting order this step -
+            # the third way an action can silently do nothing (doc/15 S4-14).
+            "num_unmatched_step": acc.num_unmatched_step,
         })
 
         # Did this agent choose to do nothing this step? The two behaviours a

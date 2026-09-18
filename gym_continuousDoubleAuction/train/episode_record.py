@@ -50,7 +50,7 @@ import queue
 import threading
 import time
 import zlib
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import numpy as np
 
@@ -86,6 +86,7 @@ INFO_COLUMNS = (
     ("num_passive_fills_step", "int64"),
     ("order_step_placed", "int64"),
     ("num_rejected_step", "int64"),
+    ("num_unmatched_step", "int64"),
     ("is_pass_action", "bool"),
     ("last_price", "float64"),
     ("best_bid", "float64"),

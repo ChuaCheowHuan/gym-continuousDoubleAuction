@@ -59,5 +59,39 @@
     "max_step": 512,
     "num_agents": 4,
     "log_level": null
+  },
+  "cda_compare": {
+    "_module": "python -m gym_continuousDoubleAuction.train.compare",
+    "_note": "The encoder comparison protocol of doc/18 section 5.5 as one command: every (encoder, seed) is a separate training run with the seed pinned and its own log_base_dir, then the final checkpoint is scored on the probe harness against one shared corpus. Everything not listed here comes from train_config.json, overridden per run only for encoder_type, seed, num_iters and the output paths. log_level null defers to the logging group of tunable_constants.json.",
+    "_note_seeds": "Three seeds is the floor at which the 'separated on' column can say anything; below it every row is a smoke test of the protocol. The defaults here are deliberately that floor, not a recommendation of sufficiency.",
+    "encoders": [
+      "mlp",
+      "transformer"
+    ],
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "num_iters": 16,
+    "out_dir": "compare_out",
+    "probe_episodes": 3,
+    "probe_steps": 512,
+    "probe_seed": 0,
+    "targets": [
+      "mid_return",
+      "mid_moves",
+      "spread_change",
+      "imbalance_change",
+      "two_sided",
+      "realized_vol"
+    ],
+    "horizons": [
+      1,
+      5,
+      20
+    ],
+    "module_id": "policy_0",
+    "log_level": null
   }
 }
