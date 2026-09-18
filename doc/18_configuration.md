@@ -665,6 +665,14 @@ was stored and never read. Setting `tick_size` therefore had no effect anywhere.
 of configuration; it now uses `self.tick_size`. The change is inert — see below — but there is no
 reason to keep a second value in the env.
 
+**Every price the action layer emits is on this grid, for any tick.** `_set_price` snaps its
+result to `min_tick` in `Decimal` before returning it, and `Trader._get_order_ID` compares prices
+as `Decimal(str(price))`, the book's own conversion. Neither was true until the 2026-09-18 pass:
+the level path read prices from a float32 snapshot, so on `tick_size` 0.1 every re-quote at an
+occupied level opened a new price level one float-ulp away and a cancel never found its order
+([15](15_findings_and_recommendations.md) S3-4, [16](16_verification_log.md) §16.17). At the
+default `tick_size` of 1 nothing changes.
+
 **The book's copy is still there, and still inert.** `OrderBook` accepts a `tick_size`, stores it,
 and never reads it; there is no rounding or tick validation anywhere in the matching path. Its
 literal default of `0.0001` is **the one value in the project not read from `config/`**, recorded
@@ -684,17 +692,22 @@ Enforcement in `OrderBook.process_order` would be the right call instead of dele
 second price source appears that the action layer does not control — scripted or human agents,
 replayed order flow, an external feed.
 
-### 6.1 Float-grid caveat
+### 6.1 Float-grid caveat — closed
 
-`_set_price` performs **no** quantization, so a tick that is not binary-exact can in principle
-produce a price whose `Decimal(str(price))` key sits off the grid, splitting one book level into
-two price-map entries.
+This subsection used to say `_set_price` performed no quantization and that off-grid drift was
+rare: one combination over all anchors 10–100 and six ticks. That count covered the *anchor* path
+only. The *level* path — taken whenever the targeted book level is occupied — read the resting
+price out of `agg_LOB_raw`, a float32 array, so a level at 100.1 read back as
+`100.0999984741211` and the offset was added to that in float. On any non-integer tick every
+re-quote at an occupied level therefore opened a new price-map entry one float-ulp from the one
+the agent meant, and a cancel or same-price limit never found the trader's own order
+([15](15_findings_and_recommendations.md) S3-4, [16](16_verification_log.md) §16.17).
 
-This is rarer than it sounds. Over all anchors 10–100, ticks {0.01, 0.05, 0.1, 0.2, 0.25, 0.3} and
-ten levels either side, exactly one combination drifts: `10 − 9 × 0.3` → `7.300000000000001`.
-Ticks of `1`, `0.5` and `0.25` are exact in binary and cannot be affected. Worth adding a `Decimal`
-quantize step if non-integer ticks are ever used in earnest; it is not by itself a reason to change
-anything.
+Closed on 2026-09-18: `agg_LOB_raw` is float64, `_set_price` snaps its result to the tick grid
+with a `Decimal` quantize before returning it, and `Trader._get_order_ID` compares as
+`Decimal(str(price))`. `test_tick_grid.py` asserts the grid for ticks {1, 0.5, 0.1, 0.05, 0.01,
+0.3, 0.0001} on both paths. Ticks of `1`, `0.5` and `0.25` were never affected on the anchor path
+and are exact throughout now.
 
 ---
 

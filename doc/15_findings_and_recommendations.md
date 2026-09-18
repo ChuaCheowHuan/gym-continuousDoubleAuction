@@ -34,13 +34,14 @@ mindmap
       S2-10 lstm encoder ignored the grid order — fixed
       S2-11 VWAP negative, obs reported flat — fixed
       S2-12 gymnasium.make raised — fixed
+      S2-13 cancel was cash-checked — fixed
     S3 Moderate
       action space
         S3-1 half of size_mean is a no-op
         S3-2 size_sigma is inert
         S3-3 env-side sampling breaks the log-prob
       simulator and config
-        S3-4 the book's tick_size is inert
+        S3-4 tick_size — action grid now enforced; book copy still dead
         S3-5 seeding — fixed
         S3-7 sys.exit in the engine
         S3-20 dead escrow path — fixed
@@ -498,6 +499,43 @@ finding. That flag is set only after fixing the spaces; doing it first would hav
 `TypeError` rather than fixed it. The CI packaging job now calls `make`.
 
 
+### S2-13 · A cancel was cash-checked like a new order, so an over-committed trader could not cancel **[verified, fixed]**
+
+`Trader._order_approved` ran the same check for every order type: compute the "opening" size,
+multiply by the price, compare against `cash`. For a `cancel` that is meaningless — a cancel
+places nothing, it *returns* escrow to cash — but it was applied anyway, with the cancel's own
+(irrelevant) size and price as the notional. The consequence is exactly backwards from what a
+solvency gate is for: **a trader whose cash was fully escrowed in resting orders was refused the
+one action that would have freed it.**
+
+Measured, before the fix ([16](16_verification_log.md) §16.17):
+
+```
+after limit  10 @ 100:  cash 0    on_hold 1000   rejected 0
+after cancel        :   cash 0    on_hold 1000   rejected 1   orders resting 1
+after modify 5 @ 100:   cash 0    on_hold 1000   rejected 1   resting qty 10
+```
+
+The same trap caught a `modify` that shrank an order, and a `modify` that re-priced one at the
+same or lower notional: `cancel_cash_transfer` hands the old order's escrow back *before* the new
+quote is processed, but the check did not know that and compared against the pre-release `cash`.
+
+Why it matters for learning rather than only for tidiness: the refusal is silent to the agent
+(`num_rejected_step` increments, nothing else happens), so from the policy's side "cancel" simply
+does nothing whenever it is over-committed. The agents most in need of managing their quotes are
+the ones for whom quote management was switched off, and the `order_rejection_fraction` metric
+counted these as if they were orders quoted past the agent's means.
+
+**Fixed.** A `cancel` is approved unconditionally once the `nav > 0` gate passes (a bankrupt
+trader is terminated and its orders pulled by `cancel_all_orders`, not by an action). For `modify`
+and for a `limit` at a price the trader already rests at — the upsert path — the escrow the
+replaced order releases is added to the cash the check may spend, so re-pricing and shrinking
+always pass and only a genuine increase in notional beyond `cash + released` is refused.
+`_replaced_order` returns the order as well as its id, so the same lookup that excludes it from
+`_resting_exposure` (S1-5) supplies the released amount. Seven tests in `test_cash_check.py` pin
+each case, including that a bankrupt trader still cannot act.
+
+
 ---
 
 ## S3 — Moderate
@@ -524,7 +562,7 @@ not part of the action whose log-probability PPO uses in the importance ratio �
 never observes the realisation. Irreducible advantage variance.
 **Fix:** emit size directly as a `Box` action.
 
-### S3-4 · The order book's `tick_size` is inert **[partly fixed]**
+### S3-4 · The order book's `tick_size` is inert **[fixed — the book's dead parameter remains]**
 
 `tick_size` used to exist as two independent values: a hardcoded `min_tick = 1` in
 `Action_Helper` that actually drove prices, and an `OrderBook` argument that was stored and never
@@ -558,12 +596,27 @@ Enforcement in `OrderBook.process_order` would be the right call instead of dele
 second price source appears that the action layer does not control — scripted or human agents,
 replayed real order flow, an external feed.
 
-**Float-grid caveat, for whoever picks this up.** `_set_price` performs no quantization, so a tick
-that is not binary-exact can in principle produce a price whose `Decimal(str(price))` key sits off
-the grid, splitting one book level into two price-map entries. This is rarer than it sounds: over
-all anchors 10–100, ticks {0.01, 0.05, 0.1, 0.2, 0.25, 0.3} and 10 levels either side, exactly one
-combination drifts (`10 − 9 × 0.3 → 7.300000000000001`). Worth a quantize step if non-integer
-ticks are ever used in earnest, but it is not the reason to make the change.
+**The float-grid caveat, re-measured and fixed.** An earlier version of this entry said
+`_set_price` "emits on-grid prices by construction" and that off-grid drift was rare — one
+combination over all anchors and six ticks. That analysis covered only the *anchor* path
+(`ref_price ± k × min_tick`). The *level* path, taken whenever the targeted book level is
+occupied, read the resting price out of `agg_LOB_raw`, which was a **float32** array: a level at
+100.1 read back as `100.0999984741211`, and adding a float offset to that gave
+`100.19999694824219`. `OrderBook.process_order` keys its price map on `Decimal(str(price))` with
+no rounding, so **every re-quote at an occupied level on a non-integer tick opened a new price
+level one ulp away from the one the agent meant**, and `Trader._get_order_ID` — which compared the
+book's `Decimal` against the action's `float` — never found the trader's own order, so cancels
+were silent no-ops and a limit at the same price rested a second order instead of upserting.
+Measured at `tick_size` 0.1: one new level per step from an agent quoting the same level every
+step ([16](16_verification_log.md) §16.17).
+
+Three changes close it, all on the action side: `agg_LOB_raw` is float64 (the emitted observation
+is still cast to float32 at emission); `_set_price` snaps its result to the tick grid in `Decimal`
+before returning it; and `_get_order_ID` compares prices as `Decimal(str(price))`, the same
+conversion the book applies on the way in. `test_tick_grid.py` (14 tests) asserts every level and
+offset lands on the grid for seven ticks including 0.3 and 0.0001, that re-quoting a level upserts,
+that a cancel at a fractional price finds its order, and that NAV is conserved under random play
+at `tick_size` 0.1. What remains of this finding is exactly the dead `OrderBook` parameter.
 
 Related, and still open as a *default*: the price anchor is drawn from `randint(10, 100)`, so with
 a fixed tick the *relative* tick varies **10×** across episodes — a large uncontrolled
@@ -877,7 +930,7 @@ into a training run by a `strict` load, silently.
 | S4-2 | `envs/agent/random_agent.py` returns the **old 5-tuple** action format; superseded by `RandomRLModule` but still in `Trader`'s MRO **[verified]** |
 | S4-3 | Dead methods: `State_Helper.state_diff`, `Action_Helper._set_side/_set_type/_higher/_lower`, `OrderBook.__str__0`, `Order.__str__0`, `OrderList.to_str`. The unread `max_price` parameter of `_set_price` has since been removed |
 | S4-4 | ~200 LOC of commented-out code: the old `step` and space getters in `continuousDoubleAuction_env.py`, the old `modify_order` and `get_volume_at_price` in `orderbook.py`, the old `Tuple` `act_space` in `action_helper.py` |
-| S4-5 | `test_accounting.py::test_insufficient_funds` is an empty `pass` with a 15-line comment debating the intended behaviour — a TODO shipped as a test |
+| S4-5 | **Fixed.** `test_accounting.py::test_insufficient_funds` asserts the refusal, the untouched ledger and the approved affordable half; it was an empty `pass` under a 15-line comment |
 | S4-6 | No linter, formatter, pre-commit or coverage tooling; type hints only in `train/` and essentially absent from `envs/` |
 | S4-7 | `is_render` defaults to **`True`** on the env, so a direct instantiation prints a full book/tape/account dump per step. `_render` also has **side effects** — it nulls `model_actions`/`LOB_actions`/`shuffled_actions` and clears `seq_trades`, so toggling it changes state evolution |
 | S4-8 | The Docker image duplicates the dependency list instead of `COPY`ing `requirements.txt` |
@@ -955,7 +1008,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **914 unit tests pass** (plus 153 integration), covering every position-flip path, cash-check edge case, modify-order
+- **935 unit tests pass** (plus 153 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 

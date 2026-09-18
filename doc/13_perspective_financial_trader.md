@@ -71,7 +71,8 @@ NAV conservation check passes to the cent.
 
 **Buying power is enforced before execution.** `_order_approved` computes the *opening* portion
 of an order — the part that increases risk — and only cash-checks that. Closing or covering is
-always permitted. It even estimates a market order's cost from the contra side's best price,
+always permitted, a cancel is never checked, and a modify may spend the escrow it releases (it
+used to be refused exactly when the trader was fully committed — S2-13). It even estimates a market order's cost from the contra side's best price,
 falling back to the last tape print.
 `test_cash_check.py::test_position_flip_insufficient_cash` covers the hard case (long 10, sell
 20, only the 10-lot short leg needs cash). This is subtle and right.

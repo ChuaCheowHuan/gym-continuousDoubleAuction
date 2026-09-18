@@ -2794,3 +2794,78 @@ audit's run, not a claim about now.
 
 This is the third pass to re-count these (§36, §37.7, here), which suggests the counts want a
 generator rather than a reviewer.
+
+
+## 44. The 2026-09-18 review pass: a cancel that could not cancel, and a grid that was not one
+
+A code review of the merged tree, in the same shape as §37 and §43: read everything, run
+everything, probe what the tests do not reach. The suite was green before (914 + 153) and is green
+after (935 + 153). Two defects in the simulator's action path were found by asking what happens at
+the edges the tests do not visit — a trader with nothing left to spend, and a tick that is not 1 —
+and both turned out to be the rule at those edges rather than the exception.
+
+### 44.1 A cancel was cash-checked, so an over-committed trader could not cancel (S2-13)
+
+`Trader._order_approved` applied the same predicate to every order type. For a `cancel` that meant
+"is `size × price` affordable from `cash`", where `size` and `price` are the cancel's own,
+irrelevant, decoded values. A trader with all its cash escrowed in resting orders — the one state
+in which cancelling is the thing to do — was therefore refused the cancel, silently, with
+`num_rejected_step` incremented as if it had quoted past its means. A `modify` that shrank an
+order, or re-priced it at the same notional, was refused the same way, because the check compared
+against `cash` before `cancel_cash_transfer` had returned the old order's escrow.
+
+A cancel is now approved unconditionally once the `nav > 0` gate passes. A `modify` or a
+`limit` upsert may spend the escrow the order it replaces gives back, so only a real increase in
+notional beyond `cash + released` is refused. `_replaced_order` returns the order alongside its id
+so the exclusion S1-5 introduced and the release this needs come from one lookup. Seven tests in
+`test_cash_check.py`. [15](15_findings_and_recommendations.md) S2-13, [16](16_verification_log.md)
+§16.17.
+
+### 44.2 The action layer put off-grid prices in the book on any non-integer tick (S3-4)
+
+[15](15_findings_and_recommendations.md) S3-4 said `_set_price` emits on-grid prices "by
+construction" and measured the drift as one combination in sixty. That measured the anchor path.
+The level path — taken whenever the targeted book level is occupied — read the resting price out
+of `agg_LOB_raw`, a **float32** array, so 100.1 came back as `100.0999984741211`, and the offset
+was then added in float. The book keys its price map on `Decimal(str(price))` and rounds nothing,
+so every re-quote at an occupied level opened a new level one ulp away, and `_get_order_ID`,
+comparing the book's `Decimal` with the action's `float`, never found the trader's own order:
+cancels were no-ops and a same-price limit rested a second order instead of upserting. At default
+`tick_size` 1 none of this fires, which is why nothing noticed.
+
+Three changes: `agg_LOB_raw` is float64 (the observation is still float32 at emission),
+`_set_price` snaps its result to the tick grid in `Decimal`, and `_get_order_ID` compares as
+`Decimal(str(price))` — the book's own conversion. `test_tick_grid.py` (14 tests) covers seven
+ticks including 0.3 and 0.0001, the upsert, the cancel and NAV conservation under random play at
+0.1. The dead `OrderBook.tick_size` parameter is the only part of S3-4 left, and it stays for the
+reason it always did: `envs/orderbook/` is off-limits.
+
+### 44.3 Smaller
+
+- Two unused locals (`counter_party` in `_process_trades`, `best_bid` / `best_ask` in
+  `_set_price`) and one placeholder-less f-string in `test_logging_setup.py`, all flagged by
+  pyflakes, which otherwise reports only unused imports across the package.
+- `tunable_constants.json`'s `observation_layout` note still listed two market scalars; there
+  have been six since §37.4.
+- [10](10_testing.md) §8 still carried `test_insufficient_funds` as an empty `pass`; it has
+  asserted the behaviour since §37, and S4-5 in [15](15_findings_and_recommendations.md) now
+  says so.
+
+### 44.4 A runbook
+
+[26](26_runbook.md) is new: the install, the checks, the train / restore / inspect loop, the
+reward-free tools, what to watch while a run is going, and a troubleshooting table — each command
+verified against `--help` and, for the training loop, against a two-iteration run whose output
+tree is reproduced there. The information existed across [18](18_configuration.md),
+[19](19_docker.md), [20](20_colab.md), [11](11_logging_and_observability.md) and the module
+docstrings; there was no single page an operator could follow top to bottom.
+
+### 44.5 Recommendations carried forward
+
+Recorded in [15](15_findings_and_recommendations.md) and the closing message of the review rather
+than acted on here, because each is a scope decision: the dead `OrderBook.tick_size` parameter and
+`from decimal import *` in `order.py` (both blocked on the `envs/orderbook/` policy); a counter for
+a `modify` / `cancel` that finds nothing to target (S4-14, the remaining half); the escrow that
+still charges closing orders (S1-5's open tail); a lint step in CI, which this pass could not add
+because the push credential has no workflow scope (§37 hit the same wall); and the multi-seed
+encoder comparison [10](10_testing.md) §8 has called the largest gap for three passes running.

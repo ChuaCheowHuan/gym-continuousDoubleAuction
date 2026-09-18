@@ -131,3 +131,78 @@ class TestCashCheck:
         # If it correctly uses Trade 2 (latest), it will FAIL.
         trades, _ = self.trader_A.place_order('market', 'bid', 1, -1, self.order_book, self.agents)
         assert len(trades) == 0, "Should use the LATEST price (200) and reject because 150 < 200"
+
+
+class TestCancelAndModifyNeverTrapCash:
+    """doc/15 S2-13: a cancel, or a modify that frees escrow, is not a new order.
+
+    `_order_approved` used to cash-check every order type against `cash`
+    alone. A trader with all its cash escrowed in resting orders could then
+    neither cancel them nor shrink them - the refusal counted in
+    `num_rejected_step` and the order stayed live. These pin the fix: a cancel
+    is always approved, and a modify or limit-upsert may spend the escrow the
+    order it replaces gives back.
+    """
+
+    def setup_method(self):
+        self.book = OrderBook()
+        self.t = Trader(ID=1, cash=1000)
+        self.agents = [self.t]
+        # Rest a bid for every unit of cash: 10 @ 100.
+        self.t.place_order('limit', 'bid', 10, 100, self.book, self.agents)
+        assert self.t.acc.cash == Decimal(0)
+        assert self.t.acc.cash_on_hold == Decimal(1000)
+
+    def test_cancel_with_zero_free_cash_is_approved(self):
+        self.t.place_order('cancel', 'bid', 10, 100, self.book, self.agents)
+        assert self.t.acc.num_rejected_step == 0
+        assert len(self.book.bids) == 0, "the cancel must reach the book"
+        assert self.t.acc.cash == Decimal(1000)
+        assert self.t.acc.cash_on_hold == Decimal(0)
+
+    def test_cancel_ignores_its_own_size_and_price(self):
+        # A cancel's size is meaningless; a huge one must not be cash-checked.
+        self.t.place_order('cancel', 'bid', 10 ** 6, 100, self.book, self.agents)
+        assert self.t.acc.num_rejected_step == 0
+        assert len(self.book.bids) == 0
+
+    def test_shrinking_modify_with_zero_free_cash_is_approved(self):
+        self.t.place_order('modify', 'bid', 5, 100, self.book, self.agents)
+        assert self.t.acc.num_rejected_step == 0
+        assert self.book.bids.volume == Decimal(5)
+        assert self.t.acc.cash == Decimal(500)
+        assert self.t.acc.cash_on_hold == Decimal(500)
+
+    def test_repricing_modify_spends_the_released_escrow(self):
+        # Same notional at a lower price: 10 @ 90 = 900 <= 0 cash + 1000 released.
+        self.t.place_order('modify', 'bid', 10, 90, self.book, self.agents)
+        assert self.t.acc.num_rejected_step == 0
+        assert self.book.get_best_bid() == Decimal(90)
+        assert self.t.acc.cash == Decimal(100)
+        assert self.t.acc.cash_on_hold == Decimal(900)
+
+    def test_modify_beyond_cash_plus_released_is_still_refused(self):
+        # 20 @ 100 = 2000 > 0 cash + 1000 released.
+        self.t.place_order('modify', 'bid', 20, 100, self.book, self.agents)
+        assert self.t.acc.num_rejected_step == 1
+        assert self.book.bids.volume == Decimal(10), "refused modify leaves the order as it was"
+        assert self.t.acc.cash == Decimal(0)
+        assert self.t.acc.cash_on_hold == Decimal(1000)
+
+    def test_limit_upsert_at_same_price_spends_the_released_escrow(self):
+        # A limit at a price this trader already rests at is an upsert.
+        self.t.place_order('limit', 'bid', 10, 100, self.book, self.agents)
+        assert self.t.acc.num_rejected_step == 0
+        assert len(self.book.bids) == 1
+        assert self.book.bids.volume == Decimal(10)
+        assert self.t.acc.cash == Decimal(0)
+        assert self.t.acc.cash_on_hold == Decimal(1000)
+
+    def test_bankrupt_trader_still_cannot_act(self):
+        # The NAV gate stays ahead of the cancel shortcut: a trader at or
+        # below zero NAV is terminated and its orders are pulled by
+        # `cancel_all_orders`, not by an action.
+        self.t.acc.nav = Decimal(0)
+        self.t.place_order('cancel', 'bid', 10, 100, self.book, self.agents)
+        assert self.t.acc.num_rejected_step == 1
+        assert len(self.book.bids) == 1

@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (1,067 tests: 914 unit + 153 integration)
+# everything (1,088 tests: 935 unit + 153 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -46,7 +46,7 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `914 passed` on the unit half. There is no xfail: the one that pinned S1-1 XPASSed when S1-1 was fixed and was deleted (see §6.2.2).
+**[verified]** — `935 passed` on the unit half. There is no xfail: the one that pinned S1-1 XPASSed when S1-1 was fixed and was deleted (see §6.2.2).
 
 ### File inventory
 
@@ -58,7 +58,8 @@ Counts re-measured with `--collect-only`.
 | `test_orderbook_crossed_book.py` | 1 | Crossed-book invariant |
 | `test_orderbook_volume_sync.py` | 1 | Volume cache synchronization |
 | `test_accounting.py` | 13 | Cash, position, NAV, position flips |
-| `test_cash_check.py` | 7 | Order approval and cash gating |
+| `test_cash_check.py` | 14 | Order approval and cash gating; a cancel is never cash-checked, a modify may spend the escrow it releases (S2-13) |
+| `test_tick_grid.py` | 14 | Every action price sits on the `tick_size` grid; upsert and cancel find their order on a fractional tick (S3-4) |
 | `test_modify_order.py` | 7 | The six modify-order accounting scenarios, plus a guard that the dead escrow helper stays deleted |
 | `test_new_action_space.py` | 10 | Action decoding, ghost pricing, `tick_size` reaching the action layer, price levels matching book depth |
 | `test_obs_normalization.py` | 12 | Price/volume normalization, action unnormalization |
@@ -94,7 +95,7 @@ Counts re-measured with `--collect-only`.
 | `test_obs_feature_scales.py` | 10 | Every observation block lands on one scale — the size/price ratio and the centred `log_mid` (S2-2) |
 | `test_entry_points.py` | 8 | The two documented entry points work: `gymnasium.make("continuousDoubleAuction-v0")`, and `visualize/` being importable from a wheel |
 | `test_cbp.py` | 48 | Continual Backprop's algorithm core, with no Ray and no `Algorithm` — §6.6.1 |
-| **unit total** | **914** | |
+| **unit total** | **935** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported, finite, and **above 1e-3** — a live guard since S1-1 was fixed |
@@ -119,17 +120,20 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((1067 tests))
+  root((1088 tests))
     Simulator
       orderbook 14
         components, matching, invariants
         crossed book, volume cache
-      accounting 60
+      accounting 67
         escrow, flips, cash gating
+        cancel and modify never trap cash
         modify scenarios, resting exposure
         entry VWAP, self-match prevention
       types 15
         Decimal money, int sizes
+      tick grid 14
+        on-grid prices for any tick
     Learning problem
       observation 58
         normalization, stacking
@@ -284,10 +288,10 @@ in most scenarios.
 | 9 | `test_market_order_empty_book` | No accounting changes when a market order finds no liquidity |
 | 10–13 | `test_position_flip_{long_to_short,short_to_long}_{aggressor,passive}` | Flipping closes one position and opens the other atomically. Long 1, sell 2 → the first unit closes the long (releasing capital), the second opens the short (locking capital). `net_position` moves +1 → −1 (or the reverse) with cash and NAV preserved |
 
-### 2.2 `test_cash_check.py` (7 tests)
+### 2.2 `test_cash_check.py` (14 tests)
 
-Covers `Trader._order_approved` specifically ([04_accounting.md](04_accounting.md) §3). A trader
-is initialised with only $100.
+Covers `Trader._order_approved` specifically ([04_accounting.md](04_accounting.md) §3). In the
+first class a trader is initialised with only $100.
 
 | Test | Verifies |
 |---|---|
@@ -298,6 +302,30 @@ is initialised with only $100.
 | `test_sell_long_no_cash` | Selling out of an existing long likewise needs no cash |
 | `test_position_flip_insufficient_cash` | On a flip, only the *opening* portion beyond flattening is cash-checked |
 | `test_price_estimation_fallback_to_tape` | With no opposite-side quote, the market-order price estimate falls back to the last tape price |
+
+`TestCancelAndModifyNeverTrapCash` (7 tests) starts a trader with every unit of its 1,000 cash
+escrowed in one bid, the state S2-13 is about:
+
+| Test | Verifies |
+|---|---|
+| `test_cancel_with_zero_free_cash_is_approved` | The cancel reaches the book and the escrow returns to cash; `num_rejected_step` stays 0 |
+| `test_cancel_ignores_its_own_size_and_price` | A cancel with a 10⁶ size is not cash-checked |
+| `test_shrinking_modify_with_zero_free_cash_is_approved` | 10 → 5 at the same price is approved and re-escrowed at 500 |
+| `test_repricing_modify_spends_the_released_escrow` | 10 @ 100 → 10 @ 90 passes on `0 cash + 1000 released` |
+| `test_modify_beyond_cash_plus_released_is_still_refused` | 10 @ 100 → 20 @ 100 is refused and the original order is untouched |
+| `test_limit_upsert_at_same_price_spends_the_released_escrow` | A limit at an occupied own price upserts rather than being refused |
+| `test_bankrupt_trader_still_cannot_act` | The `nav > 0` gate stays ahead of the cancel shortcut |
+
+### 2.2.1 `test_tick_grid.py` (14 tests)
+
+[15](15_findings_and_recommendations.md) S3-4's float-grid caveat, which turned out not to be a
+caveat. `TestSetPriceIsOnTheGrid` asserts that `_set_price` lands on the `tick_size` grid for every
+level and offset, on both sides, for ticks {1, 0.5, 0.1, 0.05, 0.01, 0.3, 0.0001} — both the ghost
+path and, with orders resting, the level path — and that `agg_LOB_raw` holds prices exactly
+(float64). `TestFractionalTickBookStaysConsistent` runs a bare env at `tick_size` 0.1: re-quoting
+the same level five times leaves one order at one level, a cancel at a fractional price finds and
+removes its order with the escrow returned, and sixty steps of random play conserve NAV exactly
+with every price-map key on the grid.
 
 ### 2.3 `test_modify_order.py` (7 tests)
 
@@ -905,7 +933,7 @@ Honest accounting of what the suite does **not** cover.
 | Gap | Risk |
 |---|---|
 | ~~**The learning-signal assertion is an xfail, not a guard**~~ | **Closed.** S1-1 is fixed and the `vf_explained_var >= 1e-3` threshold in `integration/test_progress_and_vf.py` is a live assertion — see §6.2.2. What is still unchecked is narrower than it was: `vf_loss` saturation, and "returns improve" across iterations. |
-| **`test_accounting.py::test_insufficient_funds` is an empty `pass`** | The body is a 15-line comment debating what the behaviour *should* be, ending "Will implement based on observed behavior or re-read code carefully." A TODO shipped as a test. The behaviour it was meant to cover is in fact tested by `test_cash_check.py`. |
+| ~~**`test_accounting.py::test_insufficient_funds` is an empty `pass`**~~ | **Closed.** It asserts the refusal, the untouched ledger and the approved affordable half. |
 | **No information-content tests for the observation** | The suite would pass unchanged with the varying-denominator stack, the zero-collision ambiguity and the dead tape loop all present — and all three are present ([05](05_observation_space.md) §7). |
 | ~~**`test_shared_history_multi_agent_uniformity` encodes a defect as a requirement**~~ | **Closed.** S1-2 is fixed and the test is replaced by a pair that splits the claim — the book prefix stays shared, the private tail must not be. See §4.2. |
 | ~~**Reproducibility is untested**~~ | **Closed.** `test_seeding.py` (11 tests) asserts two identically-seeded episodes match and two differently-seeded ones do not, across all three randomness sources — and does it while seeding the *global* NumPy stream to different values, so it cannot pass for the wrong reason. What remains untested is reproducibility of a whole multi-worker *training run*, which is a different claim. |

@@ -529,8 +529,12 @@ class State_Helper(object):
                     ask_size_list[k] = -set[1].volume
                 else:
                     break
-        # Raw unnormalized snapshot
-        flattened_raw = np.concatenate([bid_price_list, bid_size_list, ask_price_list, ask_size_list]).astype(np.float32)
+        # Raw unnormalized snapshot. float64, not float32: `_set_price`
+        # reads resting prices out of this array to quote at a book level, and
+        # float32 cannot hold 100.1 (it reads back 100.0999984741211). The
+        # emitted observation is cast to float32 at emission, in `_stack`; the
+        # raw array is the one consumer that needs the price exact.
+        flattened_raw = np.concatenate([bid_price_list, bid_size_list, ask_price_list, ask_size_list]).astype(np.float64)
         self.agg_LOB_raw = flattened_raw
 
         # Calculate Level 1 midpoint price M. Both this and `mid_price` read

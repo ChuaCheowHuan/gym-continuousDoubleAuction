@@ -206,22 +206,33 @@ class Trader(Random_agent):
 
         return total
 
-    def _replaced_order_id(self, LOB, type, side, price):
-        """The order id this quote would replace, or None.
+    def _replaced_order(self, LOB, type, side, price):
+        """The resting order this quote would replace, as `(order_id, order)`,
+        or `(None, None)`.
 
         Only `limit`, `modify` and `cancel` can replace an order, and each
         resolves its target through `_get_order_ID` - so this asks that same
         function rather than re-deriving the rule. A market order never
         replaces anything and never reaches the lookup.
+
+        Both halves are returned because `_order_approved` needs both: the id
+        to leave the order out of `_resting_exposure`, and the order itself to
+        know how much escrow its replacement releases.
         """
         if type not in ('limit', 'modify', 'cancel'):
-            return None
+            return None, None
 
-        order_ID, _order = self._get_order_ID(
+        order_ID, order = self._get_order_ID(
             LOB, {'trade_id': self.ID, 'side': side,
                   'price': price, 'type': type},
         )
-        return None if order_ID == -1 else order_ID
+        if order_ID == -1:
+            return None, None
+        return order_ID, order
+
+    def _replaced_order_id(self, LOB, type, side, price):
+        """The order id this quote would replace, or None. See `_replaced_order`."""
+        return self._replaced_order(LOB, type, side, price)[0]
 
     def _order_approved(self, side, size, price, LOB, type=None):
         """
@@ -238,6 +249,31 @@ class Trader(Random_agent):
         """
         if self.acc.nav <= 0:
             return False
+
+        # A cancel places nothing. It withdraws a resting order and returns its
+        # escrow to cash, so there is no notional to check it against - and
+        # checking it anyway is what used to happen: `opening_size` was the
+        # cancel's (meaningless) size and `est_price` its price, so a trader
+        # whose cash was fully escrowed in resting orders was *refused the
+        # cancel that would have freed it*. Measured: cash 0, 1,000 on hold in
+        # one bid, `cancel` -> `num_rejected_step` 1 and the order still
+        # resting. The same trap caught a size-reducing `modify`. That is the
+        # one action an over-committed agent needs, and it was the one it could
+        # not take. See doc/15 S2-13.
+        if type == 'cancel':
+            return True
+
+        # The order this quote replaces, if any. A `limit` at a price this
+        # trader already rests at is an upsert and a `modify` is a
+        # cancel-and-reprocess, so in both cases `cancel_cash_transfer` hands
+        # the old order's escrow back to cash *before* the new quote is
+        # processed. It is therefore excluded from the resting exposure below
+        # and counted as available cash in the check at the bottom.
+        replaced_id, replaced = self._replaced_order(LOB, type, side, price)
+        released = (
+            replaced.price * replaced.quantity if replaced is not None
+            else Decimal(0)
+        )
 
         # Determine how much of the order is "opening" a new/larger position
         net_pos = float(self.acc.net_position)
@@ -257,8 +293,8 @@ class Trader(Random_agent):
         # - all approved - and filled into a 90-lot short having never been
         # refused. That is doc/15 S1-5.
         else:
-            exclude = self._replaced_order_id(LOB, type, side, price)
-            resting = self._resting_exposure(LOB, side, exclude_order_id=exclude)
+            resting = self._resting_exposure(LOB, side,
+                                             exclude_order_id=replaced_id)
             closable = max(0, int(abs(net_pos)) - resting)
             opening_size = max(0, size - closable)
 
@@ -277,10 +313,14 @@ class Trader(Random_agent):
             est_price = price
 
         order_val = Decimal(str(opening_size)) * Decimal(str(est_price))
-        
-        if self.acc.cash >= order_val:
+
+        # `released` is the escrow the replaced order gives back on the same
+        # call, so it is as spendable as cash for this quote. Without it a
+        # trader with everything escrowed could neither re-price nor shrink
+        # an order.
+        if self.acc.cash + released >= order_val:
             return True
-        
+
         return False
 
     def _create_order(self, type, side, size, price):
@@ -442,8 +482,20 @@ class Trader(Random_agent):
             # FIFO logic: find the oldest existing order (smallest timestamp)
             return min(matching_orders, key=lambda x: x[1].timestamp)
         
-        # For 'cancel' or 'limit', we match the specific price
+        # For 'cancel' or 'limit', we match the specific price.
+        #
+        # Compared as Decimal, the type the book stores prices in. The action
+        # layer hands over a float, and `Decimal('100.1') == 100.1` is False
+        # (the float is 100.09999...), so on any non-integer tick a cancel
+        # never found its order and a limit at a price already rested at was
+        # placed as a second order instead of an upsert. `Decimal(str(x))` is
+        # exactly the conversion `OrderBook.process_order` applies on the way
+        # in, so the two sides of the comparison are built the same way.
         target_price = qoute.get('price')
+        if target_price is None:
+            return -1, None
+        if not isinstance(target_price, Decimal):
+            target_price = Decimal(str(target_price))
         for order_ID, order in matching_orders:
             if order.price == target_price:
                 return order_ID, order
@@ -477,7 +529,7 @@ class Trader(Random_agent):
 
             # init_party is not counter_party
             if trade.get('counter_party').get('ID') != trade.get('init_party').get('ID'):
-                counter_party = self._process_counter_party(agents, trade)
+                self._process_counter_party(agents, trade)
                 self.acc.process_acc(trade, 'init_party')
 
                 #self.acc.print_both_accs("\nAffected accounts_0:\n", i, counter_party, init_party=self)

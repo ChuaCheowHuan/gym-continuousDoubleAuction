@@ -1,5 +1,6 @@
 import numpy as np
 import random
+from decimal import Decimal, ROUND_HALF_UP
 
 from gymnasium import spaces
 
@@ -352,11 +353,10 @@ class Action_Helper():
         the range symmetrically: with 5 codes the offsets run -2..+2 ticks.
 
         Returns:
-            set_price: Price, a real number.
+            set_price: Price, a float that sits exactly on the `min_tick`
+            grid, so that `Decimal(str(price))` - the conversion the book
+            applies on the way in - names the same price level every time.
         """
-
-        best_bid = self.LOB.get_best_bid()
-        best_ask = self.LOB.get_best_ask()
 
         # Deterministic Reference Price (always use last_price as requested)
         ref_price = self.last_price
@@ -394,7 +394,29 @@ class Action_Helper():
 
         # Final safety checks
         set_price = max(min_tick, set_price)
-        return float(set_price)
+
+        # Snap to the tick grid, in Decimal, before handing the price over.
+        #
+        # Two things above put a price off the grid on any non-integer tick.
+        # `p` is read out of the raw snapshot, which used to be float32 - so a
+        # resting level at 100.1 came back as 100.0999984741211 - and the
+        # offset is added in float, so 100.1 + 0.1 is 100.19999999999999.
+        # `OrderBook.process_order` keys its price map on `Decimal(str(price))`
+        # and does no rounding of its own, so each of those became a *new*
+        # price level one float-ulp away from the one the agent meant.
+        # Measured at tick_size 0.1: an agent re-quoting the same level every
+        # step opened a fresh level every step, and its own cancels and
+        # upserts never found the order they targeted. doc/15 S3-4 called this
+        # a rare drift on the anchor path; on the level path it was the rule.
+        #
+        # Decimal throughout so the result is exact: `Decimal(str(x))` is the
+        # same conversion the book applies, and float(Decimal('100.2')) round
+        # trips through str() as '100.2'.
+        tick = Decimal(str(min_tick))
+        snapped = (
+            Decimal(str(set_price)) / tick
+        ).to_integral_value(rounding=ROUND_HALF_UP) * tick
+        return float(snapped)
 
     def _higher(self, min_tick, price):
         """

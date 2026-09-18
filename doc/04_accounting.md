@@ -118,7 +118,14 @@ if opening_size <= 0:
 ```
 
 You never need capital to flatten. Otherwise `opening_size × est_price` is compared against
-`cash` in `Decimal`.
+`cash` in `Decimal` — plus, for a `modify` or a `limit` at a price the trader already rests at,
+the escrow the order being replaced gives back, since `cancel_cash_transfer` returns it before the
+new quote is processed.
+
+3. **A `cancel` is never cash-checked.** It places nothing and only releases escrow. It used to be
+   run through the same predicate with its own irrelevant size and price, so a trader with all its
+   cash escrowed was refused the cancel that would have freed it
+   ([15](15_findings_and_recommendations.md) S2-13). Only the `nav > 0` gate applies to it.
 
 For market orders (`price == -1.0`) the estimate is the best price on the **opposite** side,
 falling back to the last tape price, falling back to 1:
@@ -131,7 +138,7 @@ est_price = LOB.get_best_ask() or (LOB.tape[-1]['price'] if LOB.tape else 1)   #
 20, and only the 10-lot short leg needs cash.
 
 > This supersedes an older documentation claim that the system "only validates `nav > 0`,
-> potentially allowing high leverage." A real cash check exists and is tested seven ways.
+> potentially allowing high leverage." A real cash check exists and is tested fourteen ways.
 
 **Rejections are counted now, but still cost nothing.** A refused order returns `([], [])`
 without a penalty and without reaching the book — but it increments `num_rejected_step`, which

@@ -887,3 +887,69 @@ the effect is not detectable at this scale, and that the metric which said other
 was measuring the agent's behaviour rather than its network.
 
 **Supports:** §25 3.3, §25 3.8, §23, §11, §18 5.6.4.
+
+
+## 16.17 A cancel that could not cancel, and a tick that split every level (2026-09-18)
+
+Two probes from the review pass recorded in [17](17_changelog.md) §44, both against the tree as
+merged in PR #84. Reproduce with the tests named at the end; the raw script is a dozen lines of
+`Trader` / `OrderBook` calls and a bare env at `tick_size` 0.1.
+
+### S2-13: the cancel
+
+One trader, 1,000 cash, rests a bid for all of it, then tries to cancel it and, separately, to
+shrink it.
+
+```
+=== before ===
+after limit 10 @ 100: cash 0.0   on_hold 1000.0  rejected 0
+after cancel        : cash 0.0   on_hold 1000.0  rejected 1  orders resting 1
+after modify 5 @ 100: cash 0.0   on_hold 1000.0  rejected 1  resting qty 10
+
+=== after ===
+after cancel        : cash 1000.0  on_hold 0.0   rejected 0  orders resting 0
+after modify 5 @ 100: cash 500.0   on_hold 500.0 rejected 0  resting qty 5
+```
+
+The "before" rows are the finding: the refusal is counted in `num_rejected_step` and the order
+stays live. Nothing else in the ledger moves, so NAV conservation never noticed.
+
+### S3-4: the tick grid
+
+A bare env at `tick_size` 0.1, anchor pinned at 100, one agent posting a limit bid at level 0 with
+the aggressive offset every step, the other passing. Each step should move the best bid up one
+tick and leave one order at each level.
+
+```
+=== before ===
+step 0 bid levels: [('100.0', '251')]
+step 1 bid levels: [('100.0', '251'), ('100.0999984741211', '251')]
+step 2 bid levels: [('100.0', '251'), ('100.0999984741211', '251'), ('100.19999694824219', '251')]
+step 3 bid levels: [..., ('100.29999542236328', '251')]
+LOB_actions last: [{... 'type': 'limit', 'size': 251, 'price': 100.29999542236328}]
+
+=== after ===
+step 1 bid levels: [('100.0', '251'), ('100.1', '251')]
+step 2 bid levels: [('100.0', '251'), ('100.1', '251'), ('100.2', '251')]
+step 3 bid levels: [('100.0', '251'), ('100.1', '251'), ('100.2', '251'), ('100.3', '251')]
+LOB_actions last: [{... 'type': 'limit', 'size': 251, 'price': 100.3}]
+```
+
+`100.0999984741211` is `float32(100.1)`. It came out of `agg_LOB_raw`, and the book keyed a price
+level on it. With the join offset instead of the aggressive one the same agent, before the fix,
+rested a *new* order at a new one-ulp level every step rather than upserting — which is what
+`test_tick_grid.py::TestFractionalTickBookStaysConsistent::test_requoting_the_same_level_upserts`
+now pins.
+
+### What this does not establish
+
+Both probes are at default `init_cash` and small books. The cancel fix is a change to the approval
+predicate only; whether agents *learn* to use cancels now that they work is a training question
+this log does not answer. The grid fix is exact for any tick that `str()` round-trips, which is
+every tick anyone writes in a JSON file; it does not make the book itself enforce a grid, and the
+dead `OrderBook.tick_size` parameter is still there (S3-4).
+
+**Tests:** `test_cash_check.py::TestCancelAndModifyNeverTrapCash` (7), `test_tick_grid.py` (14).
+Suite after: 935 unit + 153 integration = 1,088, all passing.
+
+**Supports:** §15 S2-13, §15 S3-4, §04 3, §06 1.5, §18 6.

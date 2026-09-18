@@ -114,7 +114,13 @@ whatever is available. `test_market_order_mapping` proves this by submitting a d
 - **Modify** uses FIFO: it targets the agent's **oldest existing order** on that side, ignoring
   price.
 - **Cancel** and **limit** match the specific price named by the `price` + `price_offset`
-  combination.
+  combination. The match is made in `Decimal`, the type the book stores prices in, and
+  `_set_price` snaps every price it emits to the `tick_size` grid before handing it over — so the
+  price an agent names is the price level the book has, on any tick, not only on `tick_size` 1
+  ([15](15_findings_and_recommendations.md) S3-4).
+- A **cancel** is never cash-checked; it only releases escrow. A **modify** may spend the escrow
+  of the order it replaces, so shrinking or re-pricing an order is always possible
+  ([15](15_findings_and_recommendations.md) S2-13).
 
 See [03_matching_engine.md](03_matching_engine.md) §3.5 for why the two differ.
 
