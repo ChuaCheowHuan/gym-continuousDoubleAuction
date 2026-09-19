@@ -361,6 +361,125 @@ class TestATerminatedAgentStillCounts:
         assert _emitted(metrics, NAV_VIOLATIONS_METRIC).args[1] == 1.0
 
 
+class _Acc:
+    def __init__(self, nav):
+        self.nav = Decimal(nav)
+
+
+class _Trader:
+    def __init__(self, ID, nav):
+        self.ID = ID
+        self.acc = _Acc(nav)
+
+
+class _LedgerEnv(MockEnv):
+    """A finished env whose accounts can be read, as RLlib's sub-env can be."""
+
+    def __init__(self, init_cash, navs):
+        super().__init__(init_cash, len(navs))
+        self.traders = [_Trader(i, nav) for i, nav in enumerate(navs)]
+
+    @property
+    def unwrapped(self):
+        return self
+
+
+class _VectorEnv:
+    """The shape RLlib passes on an env runner: sub-envs under `.envs`."""
+
+    def __init__(self, *envs):
+        self.envs = list(envs)
+
+    @property
+    def unwrapped(self):
+        return self
+
+
+class TestATerminatedAgentWithAPositionStillCounts:
+    """A bankrupt agent's NAV keeps moving after its last report.
+
+    `set_done` pulls a bankrupt trader's resting orders but leaves its
+    position, and `mark_to_mkt` keeps marking every trader. So after its last
+    report the terminated agent's real NAV moves one way and the survivors on
+    the other side of its position move the other. Adding its *frozen* NAV to
+    the survivors' *live* ones reports a breach of `position * price move` on a
+    ledger that is exact - which halted CDA_train.ipynb on iteration 1 with a
+    578,800 "violation". The check reads the finished env's own accounts.
+    """
+
+    init_cash = 1000000
+
+    def setup_method(self):
+        self.mock_runner = MagicMock()
+        self.mock_runner.config = MagicMock()
+        self.mock_runner.config.env_config = {
+            "init_cash": self.init_cash,
+            "num_of_agents": 4,
+        }
+
+    def _callback(self):
+        return SelfPlayCallback(
+            num_trainable_policies=2,
+            num_random_policies=2,
+            episode_data_dir=None,
+        )
+
+    def _run(self, env, final_navs):
+        """agent_0 reports -60 then terminates; the market moves on without it."""
+        callback = self._callback()
+        metrics = MagicMock()
+        episode = MockEpisode("ep_short_squeeze", {})
+        for info in (
+            {"agent_0": {"NAV": "-60"},
+             **{f"agent_{i}": {"NAV": "1333353.33"} for i in (1, 2, 3)}},
+            {f"agent_{i}": {"NAV": final_navs[i]} for i in (1, 2, 3)},
+        ):
+            episode.last_info = info
+            callback.on_episode_step(
+                episode=episode, env_runner=self.mock_runner,
+                metrics_logger=None, env=env, env_index=0, rl_module=None,
+            )
+        callback.on_episode_end(
+            episode=episode, env_runner=self.mock_runner,
+            metrics_logger=metrics, env=env, env_index=0, rl_module=None,
+        )
+        return metrics
+
+    # agent_0 is short; the price rose after it terminated, so it lost a further
+    # 174,105 and the survivors gained exactly that between them.
+    FINAL = ["-174165", "1391388", "1391388", "1391389"]
+
+    def test_the_ledger_is_read_from_the_finished_env(self):
+        env = _LedgerEnv(self.init_cash, self.FINAL)
+        metrics = self._run(env, self.FINAL)
+        assert _emitted(metrics, "nav_conservation_error").args[1] == 0.0
+        assert _emitted(metrics, NAV_VIOLATIONS_METRIC).args[1] == 0.0
+
+    def test_the_sub_env_is_found_under_a_vector_env(self):
+        other = _LedgerEnv(self.init_cash, ["1"] * 4)
+        env = _VectorEnv(_LedgerEnv(self.init_cash, self.FINAL), other)
+        metrics = self._run(env, self.FINAL)
+        assert _emitted(metrics, NAV_VIOLATIONS_METRIC).args[1] == 0.0
+
+    def test_the_frozen_nav_alone_would_have_read_as_a_breach(self):
+        """Without accounts to read, the carry is all there is - and it is short."""
+        metrics = self._run(MockEnv(self.init_cash, 4), self.FINAL)
+        assert _emitted(metrics, "nav_conservation_error").args[1] == 174105.0
+        assert _emitted(metrics, NAV_VIOLATIONS_METRIC).args[1] == 1.0
+
+    def test_an_env_that_is_not_this_episode_is_not_trusted(self):
+        """Accounts that disagree with what was reported are ignored (e.g. a reset)."""
+        env = _LedgerEnv(self.init_cash, ["1000000"] * 4)
+        metrics = self._run(env, self.FINAL)
+        assert _emitted(metrics, NAV_VIOLATIONS_METRIC).args[1] == 1.0
+
+    def test_a_genuine_breach_in_the_ledger_is_still_caught(self):
+        broken = ["-174165", "1391388", "1391388", "1000000"]
+        env = _LedgerEnv(self.init_cash, broken)
+        metrics = self._run(env, broken)
+        assert _emitted(metrics, NAV_VIOLATIONS_METRIC).args[1] == 1.0
+
+
 class TestDriverCheck:
     """The half that actually stops the run.
 
