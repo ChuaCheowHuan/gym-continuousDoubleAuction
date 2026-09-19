@@ -307,6 +307,15 @@ class Trader:
         if self.acc.nav <= 0:
             return False
 
+        # An account being liquidated gradually is frozen until the close-out
+        # is done (doc/04 section 8.5): it has nothing resting - the margin
+        # call pulled it - and the liquidation engine, not the agent, decides
+        # what it trades. Before the cancel exemption below on purpose, so the
+        # action mask, which asks this same function, marks every category
+        # but pass impossible and the freeze is visible to the policy.
+        if self.acc.liquidation_steps_left > 0:
+            return False
+
         # A cancel places nothing. It withdraws a resting order and returns its
         # escrow to cash, so there is no notional to check it against - and
         # checking it anyway is what used to happen: `opening_size` was the

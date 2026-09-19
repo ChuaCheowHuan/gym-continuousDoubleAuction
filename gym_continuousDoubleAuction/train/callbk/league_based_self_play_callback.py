@@ -661,6 +661,48 @@ class SelfPlayCallback(RLlibCallback):
                 episode, getattr(episode, "env_t", None) or tally["steps"]
             )
 
+    @staticmethod
+    def _ledger_navs(env, env_index, last_info, num_agents):
+        """Every trader's NAV from the finished env's own accounts, or None.
+
+        `env` is what RLlib hands the hook: the vector env on an env runner
+        (the episode's env is `env.envs[env_index]`), or a bare env. Its
+        vector wrapper resets a finished sub-env on the *next* `step()`
+        (`autoreset_mode="next_step"`), so at `on_episode_end` the traders
+        still hold this episode's accounts.
+
+        That is an assumption about RLlib, so it is checked rather than
+        trusted: every NAV the final step reported must equal the account it
+        came from. If any differs, or there are no traders to read (a test
+        double, another env), the answer is None and the caller falls back to
+        what was reported.
+        """
+        envs = getattr(env, "envs", None)
+        if envs is not None:
+            try:
+                env = envs[env_index]
+            except (IndexError, TypeError):
+                return None
+        env = getattr(env, "unwrapped", env)
+        traders = getattr(env, "traders", None)
+        if not traders or len(traders) != num_agents:
+            return None
+
+        try:
+            navs = {f"agent_{t.ID}": Decimal(str(t.acc.nav)) for t in traders}
+        except AttributeError:
+            return None
+        if len(navs) != num_agents:
+            return None
+
+        for agent_key, info in (last_info or {}).items():
+            reported = info.get("NAV") if isinstance(info, dict) else None
+            if reported is None:
+                continue
+            if navs.get(agent_key) != Decimal(str(reported)):
+                return None
+        return navs
+
     def on_episode_end(
         self,
         *,
@@ -738,18 +780,37 @@ class SelfPlayCallback(RLlibCallback):
         # strict run for a ledger that is perfectly intact.
         carried = carried_nav
 
+        # The carried NAV is only exact if the terminated agent holds no
+        # position. `set_done` pulls a bankrupt trader's resting orders but not
+        # its inventory, and `mark_to_mkt` keeps marking every trader, so its
+        # real NAV goes on moving after its last report while the survivors on
+        # the other side of that position move the opposite way. Summing the
+        # frozen value against the survivors' live ones is short by
+        # `position * price move since termination` - measured at up to 578,800
+        # on an intact ledger, which halted a strict run on iteration 1. So the
+        # finished env's own accounts are preferred wherever they can be
+        # reached, and the carry is the fallback.
+        ledger = self._ledger_navs(env, env_index, last_info, num_agents)
+
         total_nav = Decimal(0)
         per_agent = []
         for i in range(num_agents):
             agent_key = f"agent_{i}"
             info = last_info.get(agent_key) if last_info else None
             reported = info.get("NAV") if isinstance(info, dict) else None
-            if reported is None:
+            note = ""
+            if ledger is not None:
+                if reported is None:
+                    note = " (terminated; marked to the end of the episode)"
+                reported = ledger[agent_key]
+            elif reported is None:
                 reported = carried.get(agent_key)
+                if reported is not None:
+                    note = " (terminated; last reported)"
             if reported is not None:
                 nav = Decimal(str(reported))
                 total_nav += nav
-                per_agent.append(f"  {agent_key} NAV: {nav:,.2f}")
+                per_agent.append(f"  {agent_key} NAV: {nav:,.2f}{note}")
 
         error = total_nav - total_initial_cash
         # Inclusive: with the comparison exact, "within tolerance" includes the
