@@ -3311,3 +3311,42 @@ was never charged for it ([04](04_accounting.md) §8).
 - **Tests.** `test_liquidation.py` (14): the trigger, the band, book then ADL, a gap past
   bankruptcy, the reward across the close-out, termination flat, the pro-rata split, `"off"`, the
   config. Suite: **1,165 unit + 163 integration**.
+
+## 57. Gradual liquidation (`liquidation: "gradual_adl"`)
+
+§56 closed a liquidated position in one sweep, and the book took only 12% of it: the forced order
+emptied the whole opposite side and ADL did the rest. A real engine works a large position over
+time so the book can refill; this is that, as a third mode ([04](04_accounting.md) §8.5).
+
+- **Frozen, then sliced.** On breach the margin call pulls the resting orders and the account is
+  frozen (`liquidation_steps_left`; `Trader._order_approved` refuses every order, so the action
+  mask shows only pass). Each step closes `ceil(remaining / steps_left)` in the book, IOC, inside a
+  bankruptcy band recomputed from that step's NAV and mark; the shortfall rolls forward; ADL takes
+  what is left on the last of `liquidation_horizon` steps (default 10).
+- **Equity runs out midway** -> the remainder is closed at once, book at the mark then ADL, so a
+  terminated trader is still always flat. Irreversible once started; counted once, when it starts.
+- **`liquidation_horizon: 1` is `market_adl`** exactly, and `market_adl` reproduces §56's numbers
+  to the contract, so the refactor that shares the book and ADL stages changed nothing there.
+- **Measured** on §56's 12 training-config episodes of random play:
+
+  | | `market_adl` | `gradual_adl`, h=10 | `gradual_adl`, h=30 |
+  |---|---|---|---|
+  | Liquidations | 8 | 8 | 10 |
+  | **Closed by ADL** | **88%** | **48%** | **13%** |
+  | NAV change, trigger to flat (mean) | -1,856 | -40,348 | -56,264 |
+  | Agent-steps frozen | 0 | 72 | 290 |
+  | Lowest final NAV | +227,775 | +222,152 | +182,210 |
+  | Bankruptcies / terminated with a position | 0 / 0 | 0 / 0 | 0 / 0 |
+  | Ledger conservation, reported = ledger | exact | exact | exact |
+
+  The trade-off real engines weigh, measured. A longer horizon moves the close from ADL into the
+  book - 88% -> 13% forced on the other side - but the position stays open for longer, so the
+  liquidated trader pays for the price that keeps moving and for climbing the book slice by slice:
+  -1.9k to -56k between trigger and flat. The run at h=30 diverges into a different market (10
+  liquidations), so its contract totals are not directly comparable with the other two.
+- **Default unchanged** (`market_adl`); `train.compare --set liquidation=gradual_adl` and
+  `--set liquidation_horizon=N` compare them.
+- **Tests.** `test_liquidation.py` 14 -> 22: the exact slice sequence (23, 23, 4, then ADL 40), the
+  freeze and the mask, the freeze lifting, equity running out midway, counted once, horizon 1 ==
+  market, config. Suite: **1,173 unit**.
+

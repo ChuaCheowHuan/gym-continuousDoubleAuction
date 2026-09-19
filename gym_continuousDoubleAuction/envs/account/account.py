@@ -99,6 +99,11 @@ class Account(Calculate, Cash_Processor):
         self.liquidated_book_qty_step = 0
         self.liquidated_adl_qty_step = 0
         self.adl_qty_step = 0
+        # Under `gradual_adl`, the steps a liquidation in progress has left;
+        # 0 when none is. NOT a per-step counter - it carries across steps and
+        # is what freezes the account (`Trader._order_approved`) until the
+        # close-out is finished.
+        self.liquidation_steps_left = 0
 
         # Written by Reward_Helper.set_reward each step, read by Info_Helper.
         # The reward used to be a single number with its five components
@@ -142,6 +147,7 @@ class Account(Calculate, Cash_Processor):
         self.liquidated_book_qty_step = 0
         self.liquidated_adl_qty_step = 0
         self.adl_qty_step = 0
+        self.liquidation_steps_left = 0
 
         # See __init__ for what these are and why they exist.
         self.drawdown = 0.0

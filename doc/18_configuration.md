@@ -223,11 +223,12 @@ layout, so a checkpoint restores across them. [06](06_action_space.md) §8 has t
 measurement: under sequential clearing the first agent in the shuffle fills 18% more often than the
 last, under batch the curve is flat and every step prints one price, at about 15% less volume.
 
-### 3.0.3 Liquidation: `liquidation`, `maintenance_margin`
+### 3.0.3 Liquidation: `liquidation`, `maintenance_margin`, `liquidation_horizon`
 
 | Key | Default | Meaning |
 |---|---|---|
-| `liquidation` | `"market_adl"` | `"market_adl"`: a trader below maintenance margin is closed out at the end of the step - resting orders cancelled, an immediate-or-cancel order to the book limited to its bankruptcy price, ADL at the mark for the remainder. `"off"`: no margin; a trader terminated at NAV <= 0 keeps its position to the end of the episode (the behaviour before 2026-09-19) |
+| `liquidation` | `"market_adl"` | `"market_adl"`: a trader below maintenance margin is closed out at the end of the step - resting orders cancelled, an immediate-or-cancel order to the book limited to its bankruptcy price, ADL at the mark for the remainder. `"gradual_adl"`: the same spread over up to `liquidation_horizon` steps ([04](04_accounting.md) §8.5). `"off"`: no margin; a trader terminated at NAV <= 0 keeps its position to the end of the episode (the behaviour before 2026-09-19) |
+| `liquidation_horizon` | `10` | `"gradual_adl"` only: the most steps a close-out may take. The account is frozen, each step closes `ceil(remaining / steps_left)` in the book inside the band, and ADL takes what is left on the last step; if NAV reaches 0 first the remainder is closed at once. 1 is `"market_adl"`. Must be >= 1 |
 | `maintenance_margin` | `0.3` | Equity a position must keep, as a fraction of its value at the mark: liquidated when `nav <= m * |net_position| * mark`. In `[0, 1)`; 0 liquidates at bankruptcy |
 
 [04](04_accounting.md) §8 has the mechanism and a worked example. Positions are fully paid, so only

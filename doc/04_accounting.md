@@ -373,3 +373,35 @@ Four traders with 10,000 each. A is short 90 @ 100 against B's bid; C bids 1 @ 1
 | ADL | the other **40** from B at 175; B goes from long 90 to long 50 |
 | A afterwards | flat, NAV 3,250 − 50 × (180 − 175) = **3,000**; keeps trading |
 | Total NAV | 40,000, exactly |
+
+### 8.5 Gradual liquidation: `liquidation: "gradual_adl"`
+
+A real liquidation engine does not dump a large position into the book in one go; it works it
+over time so the book can refill between pieces. `gradual_adl` does that, over at most
+`liquidation_horizon` steps (default 10):
+
+1. **On breach** the margin call pulls the resting orders as before, and the account is **frozen**:
+   `liquidation_steps_left = liquidation_horizon`, and `Trader._order_approved` refuses every order
+   while it is set. The action mask asks that same function, so it shows only pass - the policy can
+   see it is being liquidated. The first slice is closed in the same step.
+2. **Each step** one TWAP slice, `ceil(remaining / steps_left)`, goes to the book as an
+   immediate-or-cancel order inside the bankruptcy band **recomputed from that step's NAV and
+   mark**. What the book does not take rolls into the later slices.
+3. **On the last step** ADL closes whatever is left, at that step's mark.
+4. **If NAV reaches zero meanwhile** - the price ran further while the position was being worked -
+   there is no equity left for a slower close to protect, and the remainder is closed at once:
+   book at the mark, ADL for the rest. So no trader is ever terminated holding a position.
+
+Once started it runs to completion, as on a real venue: a price that swings back does not hand a
+half-closed position back. It is counted once, in `num_liquidations_step` on the step it starts;
+`liquidation_steps_left` is in the info and the episode record. A horizon of 1 is `market_adl`
+exactly (`test_a_horizon_of_one_is_market_adl`).
+
+The trade-off is the one real engines weigh. Spreading the close gives the book time to refill and
+moves the price less per step, so more of the position is closed in the market and less by ADL;
+but the position stays open for longer, and a price still moving against it costs the liquidated
+trader more before it is flat. Measured under random play at the training config
+([17](17_changelog.md) §57): the ADL share falls from 88% (`market_adl`) to 48% at a horizon of 10
+and 13% at 30, while the liquidated trader's NAV change between trigger and flat goes from -1.9k to
+-40k and -56k.
+

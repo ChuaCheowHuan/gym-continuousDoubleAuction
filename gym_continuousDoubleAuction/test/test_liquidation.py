@@ -240,3 +240,101 @@ class TestConfig:
         assert cfg.env_config["liquidation"] == "off"
         assert cfg.env_config["maintenance_margin"] == 0.1
 
+
+class TestGradual:
+    """`gradual_adl`: the close-out spread over `liquidation_horizon` steps.
+
+    Same squeeze as above - agent_0 short 90 at a mid of 175, agent_3 offering
+    50 @ 180 - with a horizon of 4, so the slices are ceil(90/4) = 23, then
+    ceil(67/3) = 23, then ceil(44/2) = 22 of which the book has only 4 left,
+    then the last 40 by ADL.
+    """
+
+    def _squeeze(self, **config):
+        env = _env(liquidation="gradual_adl", **config)
+        _short_90(env)
+        _order(env, 2, "limit", "bid", 1, 170.0)
+        _order(env, 3, "limit", "ask", 50, 180.0)
+        return env
+
+    def test_a_horizon_of_one_is_market_adl(self):
+        results = []
+        for mode, extra in (("market_adl", {}), ("gradual_adl", {"liquidation_horizon": 1})):
+            env = _env(liquidation=mode, **extra)
+            _short_90(env)
+            _order(env, 2, "limit", "bid", 1, 170.0)
+            _order(env, 3, "limit", "ask", 50, 180.0)
+            env.mark_to_mkt()
+            (event,) = env.liquidate()
+            results.append((event["book_qty"], event["adl_qty"],
+                            [t.acc.nav for t in env.traders],
+                            [t.acc.net_position for t in env.traders]))
+        assert results[0] == results[1]
+
+    def test_it_closes_in_slices_and_adl_takes_the_rest_on_the_last_step(self):
+        env = self._squeeze(liquidation_horizon=4)
+        book, adl, positions = [], [], []
+        for _ in range(4):
+            _, _, dones, _, infos = env.step(_pass(env))
+            info = infos["agent_0"]
+            book.append(info["liquidated_book_qty_step"])
+            adl.append(info["liquidated_adl_qty_step"])
+            positions.append((info["net_position"], info["liquidation_steps_left"]))
+            assert _total_nav(env) == TOTAL
+        assert book == [23, 23, 4, 0]
+        assert adl == [0, 0, 0, 40]
+        assert positions == [(-67, 3), (-44, 2), (-40, 1), (0, 0)]
+        assert not dones["agent_0"]
+
+    def test_it_is_counted_once_when_it_starts(self):
+        env = self._squeeze(liquidation_horizon=4)
+        counts = [env.step(_pass(env))[4]["agent_0"]["num_liquidations_step"] for _ in range(4)]
+        assert counts == [1, 0, 0, 0]
+
+    def test_the_account_is_frozen_and_the_mask_shows_it(self):
+        env = self._squeeze(liquidation_horizon=4)
+        obs, *_ = env.step(_pass(env))
+        trader = env.traders[0]
+        assert not trader._order_approved("bid", 1, 100.0, env.LOB, "limit")
+        assert not trader._order_approved("ask", 1, 100.0, env.LOB, "market")
+        from gym_continuousDoubleAuction.envs.exchg.state_helper import MASK_FIELDS
+        mask = obs["agent_0"][-len(MASK_FIELDS):]
+        assert mask[0] == 1.0 and not any(mask[1:])
+
+    def test_the_freeze_lifts_when_the_position_is_closed(self):
+        env = self._squeeze(liquidation_horizon=4)
+        for _ in range(4):
+            env.step(_pass(env))
+        assert env.traders[0].acc.liquidation_steps_left == 0
+        assert env.traders[0]._order_approved("bid", 1, 100.0, env.LOB, "limit")
+
+    def test_if_the_equity_runs_out_midway_the_rest_is_closed_at_once(self):
+        env = self._squeeze(liquidation_horizon=4)
+        env.step(_pass(env))  # first slice: 23 closed, 67 left, frozen
+        # agent_3 withdraws its remaining offer and the market gaps to 405.
+        _order(env, 3, "cancel", "ask", 1, 0.0)
+        _order(env, 2, "limit", "bid", 1, 400.0)
+        _order(env, 1, "limit", "ask", 1, 410.0)
+        _, _, dones, _, infos = env.step(_pass(env))
+        info = infos["agent_0"]
+        assert info["net_position"] == 0 and info["liquidation_steps_left"] == 0
+        assert info["liquidated_adl_qty_step"] == 67
+        assert info["num_liquidations_step"] == 0  # the same liquidation, finished
+        assert dones["agent_0"]  # nothing left: terminated, flat
+        assert _total_nav(env) == TOTAL
+
+    def test_horizon_must_be_a_positive_whole_number(self):
+        for bad in (0, 2.5):
+            with pytest.raises(ValueError, match="liquidation_horizon"):
+                _env(liquidation="gradual_adl", liquidation_horizon=bad)
+
+    def test_train_config_forwards_the_horizon(self):
+        from gym_continuousDoubleAuction.train.compare import parse_overrides
+        from gym_continuousDoubleAuction.train.train import TrainConfig
+
+        cfg = dataclasses.replace(
+            TrainConfig(),
+            **parse_overrides(["liquidation=gradual_adl", "liquidation_horizon=20"]),
+        )
+        assert cfg.env_config["liquidation"] == "gradual_adl"
+        assert cfg.env_config["liquidation_horizon"] == 20

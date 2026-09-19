@@ -100,6 +100,7 @@ class Info_Helper(object):
             "liquidated_book_qty_step": acc.liquidated_book_qty_step,
             "liquidated_adl_qty_step": acc.liquidated_adl_qty_step,
             "adl_qty_step": acc.adl_qty_step,
+            "liquidation_steps_left": acc.liquidation_steps_left,
         })
 
         # Did this agent choose to do nothing this step? The two behaviours a

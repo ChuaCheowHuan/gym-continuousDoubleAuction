@@ -181,9 +181,13 @@ class TrainConfig:
     step_clearing: str = _default("step_clearing")
     # What happens when equity runs out (doc/04 section 8): "market_adl"
     # closes a trader out below maintenance_margin - book first, then ADL for
-    # the remainder - and "off" leaves a bankrupt trader holding its position.
+    # the remainder, "gradual_adl" the same spread over up to
+    # liquidation_horizon steps - and "off" leaves a bankrupt trader holding its position.
     liquidation: str = _default("liquidation")
     maintenance_margin: float = _default("maintenance_margin")
+    # "gradual_adl" only: the most steps a close-out may take before ADL
+    # takes the remainder.
+    liquidation_horizon: int = _default("liquidation_horizon")
 
     # Bounds of the per-episode price anchor, drawn as randint(min, max) in
     # reset(). These were readable by the env but had no TrainConfig field, so
@@ -539,6 +543,7 @@ class TrainConfig:
             "step_clearing": self.step_clearing,
             "liquidation": self.liquidation,
             "maintenance_margin": self.maintenance_margin,
+            "liquidation_horizon": self.liquidation_horizon,
             "initial_price_min": self.initial_price_min,
             "initial_price_max": self.initial_price_max,
             "min_size": self.min_size,

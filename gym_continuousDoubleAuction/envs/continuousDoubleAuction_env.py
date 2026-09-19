@@ -91,6 +91,7 @@ class continuousDoubleAuctionEnv(
             step_clearing=self._cfg("step_clearing"),
             liquidation=self._cfg("liquidation"),
             maintenance_margin=self._cfg("maintenance_margin"),
+            liquidation_horizon=self._cfg("liquidation_horizon"),
             mark_price_source=mark_price_source,
             min_size=min_size,
             mkt_max_size=mkt_max_size,

@@ -17,6 +17,14 @@ closed out at the end of the step, in the order a real venue would do it:
    shortens positions. This is the backstop, not the mechanism: it runs only
    for the remainder.
 
+`gradual_adl` spreads steps 2 and 3 over up to `liquidation_horizon` steps, as
+a real liquidation engine works a large position: the account is frozen, each
+step closes `ceil(remaining / steps_left)` in the book inside a band
+recomputed from that step's NAV, whatever the book did not take rolls forward
+so it can refill in between, and ADL closes what is left on the last step. If
+NAV reaches zero meanwhile there is nothing left to protect and the remainder
+is closed at once. A horizon of 1 is `market_adl`.
+
 Afterwards the trader is flat. With NAV > 0 it keeps trading on what is left,
 as a margin-called account does; with NAV <= 0 `Done_Helper.set_done`
 terminates it as before - but now flat, so its NAV is frozen and exact rather
@@ -41,13 +49,17 @@ logger = get_logger(__name__)
 
 
 class Liquidation_Helper(object):
-    #: `market_adl`: maintenance margin, then the book, then ADL. `off`: the
-    #: previous behaviour - no margin, a bankrupt trader keeps its position.
-    #: Not "none": `train.compare --set` reads none/null as None.
-    LIQUIDATION_MODES = ("market_adl", "off")
+    #: `market_adl`: maintenance margin, then the book, then ADL, all in the
+    #: step the breach is seen. `gradual_adl`: the same, spread over up to
+    #: `liquidation_horizon` steps so the book can refill between slices, ADL
+    #: for what is left at the end. `off`: the previous behaviour - no margin,
+    #: a bankrupt trader keeps its position. Not "none": `train.compare --set`
+    #: reads none/null as None.
+    LIQUIDATION_MODES = ("market_adl", "gradual_adl", "off")
 
     def __init__(self, liquidation=env_default("liquidation"),
-                 maintenance_margin=env_default("maintenance_margin"), **kwargs):
+                 maintenance_margin=env_default("maintenance_margin"),
+                 liquidation_horizon=env_default("liquidation_horizon"), **kwargs):
         """
         Arguments:
             liquidation: One of `LIQUIDATION_MODES`.
@@ -55,6 +67,9 @@ class Liquidation_Helper(object):
                 of its value at the mark. A trader is liquidated when
                 `NAV <= maintenance_margin * |net_position| * mark`. 0 means
                 "at bankruptcy", i.e. NAV <= 0.
+            liquidation_horizon: `gradual_adl` only - the most steps a
+                liquidation may take before ADL closes the remainder. 1 is
+                `market_adl`.
         """
         super().__init__(**kwargs)
         if liquidation not in self.LIQUIDATION_MODES:
@@ -66,8 +81,14 @@ class Liquidation_Helper(object):
             raise ValueError(
                 f"maintenance_margin must be in [0, 1); got {maintenance_margin!r}."
             )
+        if int(liquidation_horizon) != liquidation_horizon or liquidation_horizon < 1:
+            raise ValueError(
+                f"liquidation_horizon must be a whole number of steps >= 1; got "
+                f"{liquidation_horizon!r}."
+            )
         self.liquidation = liquidation
         self.maintenance_margin = margin
+        self.liquidation_horizon = int(liquidation_horizon)
 
     # ------------------------------------------------------------------ trigger
 
@@ -84,82 +105,160 @@ class Liquidation_Helper(object):
             return False
         return trader.acc.nav <= self.maintenance_margin * abs(pos) * mark
 
+    @staticmethod
+    def _liquidating(trader) -> bool:
+        return trader.acc.liquidation_steps_left > 0
+
     def liquidate(self) -> List[Dict]:
-        """Close out every live trader in breach, most distressed first.
+        """Run this step's liquidations; returns one record per action taken.
 
         Runs after the step's `mark_to_mkt` and before the observation is
         built, so the reward, the observation and the info of this step all
-        see the account after its close-out. A liquidation can put another
-        trader in breach - its forced order fills other agents' resting
-        orders and moves the mark - so the check repeats until nobody is,
-        which is the cascade a real squeeze produces. A liquidated trader is
-        flat with nothing resting, so it cannot breach again this step and the
-        loop ends within `len(traders)` rounds.
+        see the accounts after it.
 
-        Returns:
-            One record per liquidation, in the order they happened.
+        1. `gradual_adl` only: every liquidation already under way closes its
+           next slice, most distressed first.
+        2. Then, repeatedly until nothing is left to do: a live trader newly
+           in breach is liquidated - closed out in full (`market_adl`), or
+           frozen with its first slice closed now (`gradual_adl`) - and a
+           trader in liquidation whose NAV has reached zero is closed out in
+           full, since there is no equity left for a slower close to protect.
+           Each can move the mark and put someone else in breach, which is the
+           cascade a squeeze produces. Every action either starts a
+           liquidation (once per trader) or leaves a trader flat, so the loop
+           ends within `2 * len(traders)` rounds.
+
+        The invariant it leaves behind: no live trader with NAV <= 0 holds a
+        position, so `set_done` only ever terminates a flat account.
         """
         if self.liquidation == "off":
             return []
 
         events = []
-        for _ in range(len(self.traders)):
+        if self.liquidation == "gradual_adl":
             mark = self.mark_price()
-            breached = [t for t in self.traders
-                        if self.is_live(t) and self._in_breach(t, mark)]
-            if not breached:
+            under_way = [t for t in self.traders if self.is_live(t) and self._liquidating(t)]
+            for trader in sorted(under_way, key=lambda t: (self.margin_ratio(t, mark) or 0, t.ID)):
+                if trader.acc.net_position == 0:
+                    # Flattened meanwhile - by another liquidation's ADL.
+                    trader.acc.liquidation_steps_left = 0
+                    continue
+                if trader.acc.nav <= 0:
+                    continue  # no equity left: closed in full below
+                events.append(self._close_slice(trader, self.mark_price()))
+                self._remark_keeping_prev_nav()
+
+        for _ in range(2 * len(self.traders)):
+            mark = self.mark_price()
+            due = [t for t in self.traders if self.is_live(t) and (
+                (self._liquidating(t) and t.acc.net_position != 0 and t.acc.nav <= 0)
+                or (not self._liquidating(t) and self._in_breach(t, mark)))]
+            if not due:
                 break
-            trader = min(breached, key=lambda t: (self.margin_ratio(t, mark), t.ID))
-            events.append(self._liquidate_one(trader, mark))
+            trader = min(due, key=lambda t: (self.margin_ratio(t, mark), t.ID))
+            if self.liquidation == "gradual_adl" and trader.acc.nav > 0:
+                events.append(self._start_gradual(trader, mark))
+            else:
+                events.append(self._liquidate_one(trader, mark))
             self._remark_keeping_prev_nav()
         return events
 
     # -------------------------------------------------------------- close-out
 
-    def _liquidate_one(self, trader, mark) -> Dict:
-        acc = trader.acc
-        nav_before = acc.nav
-        position = acc.net_position
-
-        # 1. Margin call: pull every resting order. Their escrow returns to
-        # cash, and the forced order below can then never meet one of the
-        # trader's own orders.
+    def _margin_call(self, trader):
+        """Pull every resting order; their escrow returns to cash, and no forced
+        order can then meet one of the trader's own."""
         if trader.cancel_all_orders(self.LOB):
             self._snapshot_stale = True
 
-        # 2. The book, inside the bankruptcy band.
+    def _liquidate_one(self, trader, mark) -> Dict:
+        """Close the whole position now: the book inside the band, ADL the rest."""
+        acc = trader.acc
+        nav_before = acc.nav
+        position = acc.net_position
+        # Counted as a liquidation only if it is not the end of one already
+        # counted when it started (a gradual close-out whose NAV ran out).
+        if not self._liquidating(trader):
+            acc.num_liquidations_step += 1
+        self._margin_call(trader)
+
         side = 'bid' if position < 0 else 'ask'
         band = self._bankruptcy_price(trader, mark)
         book_qty = self._close_in_book(trader, side, abs(position), band)
 
-        # 3. ADL for the remainder, at the TRIGGER mark - the one the breach
-        # was measured at and the band built from - not the mark after the
-        # book stage. The book fills may have moved the mid against the
-        # trader; transferring at that newer price could take it below zero,
-        # which the band exists to prevent. At the trigger mark its final NAV
-        # is `nav_before` less the book stage's slippage, >= 0 whenever
+        # ADL for the remainder, at the TRIGGER mark - the one the breach was
+        # measured at and the band built from - not the mark after the book
+        # stage. The book fills may have moved the mid against the trader;
+        # transferring at that newer price could take it below zero, which the
+        # band exists to prevent. At the trigger mark its final NAV is
+        # `nav_before` less the book stage's slippage, >= 0 whenever
         # `nav_before` was.
         remainder = abs(acc.net_position)
         adl_qty = self._deleverage(trader, remainder, mark) if remainder else 0
 
-        acc.num_liquidations_step += 1
         acc.liquidated_book_qty_step += book_qty
         acc.liquidated_adl_qty_step += adl_qty
+        acc.liquidation_steps_left = 0
+        return self._record(trader, "close", position, mark, band, book_qty, adl_qty, nav_before)
 
+    def _start_gradual(self, trader, mark) -> Dict:
+        """Freeze the account and close its first slice in this same step.
+
+        The freeze is `liquidation_steps_left > 0`: `Trader._order_approved`
+        refuses every order while it is set, so the action mask marks every
+        category but pass impossible and the policy can see it is being
+        liquidated. Irreversible once started, as on a real venue - a price
+        that swings back does not hand a half-closed position back.
+        """
+        trader.acc.num_liquidations_step += 1
+        self._margin_call(trader)
+        trader.acc.liquidation_steps_left = self.liquidation_horizon
+        return self._close_slice(trader, mark)
+
+    def _close_slice(self, trader, mark) -> Dict:
+        """One TWAP slice: `ceil(remaining / steps_left)` in the book, inside
+        the band recomputed from this step's NAV and mark. What the book does
+        not take rolls into the later slices; on the last step ADL closes it.
+        """
+        acc = trader.acc
+        nav_before = acc.nav
+        position = acc.net_position
+        remaining = abs(position)
+        steps_left = acc.liquidation_steps_left
+        target = -(-remaining // steps_left)  # ceil
+
+        side = 'bid' if position < 0 else 'ask'
+        band = self._bankruptcy_price(trader, mark)
+        book_qty = self._close_in_book(trader, side, target, band)
+        acc.liquidated_book_qty_step += book_qty
+
+        acc.liquidation_steps_left = steps_left - 1
+        adl_qty = 0
+        left = abs(acc.net_position)
+        if left and acc.liquidation_steps_left == 0:
+            adl_qty = self._deleverage(trader, left, mark)
+            acc.liquidated_adl_qty_step += adl_qty
+        if acc.net_position == 0:
+            acc.liquidation_steps_left = 0
+        return self._record(trader, "slice", position, mark, band, book_qty, adl_qty, nav_before)
+
+    def _record(self, trader, kind, position, mark, band, book_qty, adl_qty, nav_before) -> Dict:
         event = {
             "ID": trader.ID,
+            "kind": kind,
             "position": position,
             "mark": mark,
             "band": band,
             "book_qty": book_qty,
             "adl_qty": adl_qty,
             "nav_before": nav_before,
+            "steps_left": trader.acc.liquidation_steps_left,
         }
         logger.info(
-            "liquidated agent_%s at t_step %s: position %s, NAV %s <= %s x value "
-            "at mark %s; %s closed in the book (band %s), %s by ADL",
-            trader.ID, getattr(self, "t_step", "?"), position, nav_before,
-            self.maintenance_margin, mark, book_qty, band, adl_qty,
+            "liquidation (%s) of agent_%s at t_step %s: position %s, NAV %s, mark %s; "
+            "%s closed in the book (band %s), %s by ADL, %s steps left",
+            kind, trader.ID, getattr(self, "t_step", "?"), position, nav_before,
+            mark, book_qty, band, adl_qty, trader.acc.liquidation_steps_left,
         )
         return event
 

@@ -95,6 +95,7 @@ INFO_COLUMNS = (
     ("liquidated_book_qty_step", "int64"),
     ("liquidated_adl_qty_step", "int64"),
     ("adl_qty_step", "int64"),
+    ("liquidation_steps_left", "int64"),
     ("is_pass_action", "bool"),
     ("last_price", "float64"),
     ("best_bid", "float64"),
