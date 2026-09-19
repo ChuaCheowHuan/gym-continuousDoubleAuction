@@ -211,15 +211,44 @@ class TestModulesHonourIt:
         assert set(np.asarray(cats).tolist()) <= {0, 1, 2, 5, 6}
         assert len(set(np.asarray(cats).tolist())) >= 3
 
-    def test_an_episode_of_masked_random_play_has_no_dead_actions(self):
-        """The point: with the mask honoured, `num_unmatched_step` is 0 on
-        every agent-step, where a fifth to a third used to be."""
-        env = _env(num_of_agents=4, max_step=50)
+
+class TestMaskedRandomPlay:
+    """Whole episodes of the random baseline with the mask honoured.
+
+    This used to be one test asserting `num_unmatched_step` is 0 on every
+    agent-step. It failed in about a fifth of runs (45 of 200 action seeds),
+    because it seeded the env but not the module: `RandomRLModule` draws from
+    `action_space.np_random`, which was left to OS entropy, so every run played
+    a different episode. Every one of the 59 misses across those 200 episodes
+    was the same thing - the mask bit was 1, the agent had an order resting on
+    that side when the step began, and by the time its modify or cancel ran in
+    the step's shuffle another agent's order had filled it. Under batch
+    clearing, where nothing fills until every action has been applied, the
+    same 200 seeds give 0 misses.
+
+    So the mask is exact and the residue is the race doc/16 section 16.25
+    measures at 0.2%: a mask built from the observation cannot see a fill that
+    happens earlier in the next step's random order. The three tests below pin
+    each half of that, with the action stream seeded.
+    """
+
+    def _play(self, action_seed, on_step=None, **config):
+        """One seeded episode; returns the total `num_unmatched_step`.
+
+        `on_step(env, obs)` is called before every step, with the observation
+        the actions are about to be drawn from.
+        """
+        env = _env(num_of_agents=4, max_step=50, **config)
         rnd = RLModuleSpec(module_class=RandomRLModule, observation_space=env.observation_space,
                            action_space=env.action_space).build()
+        # The generator the random baseline actually draws from - torch's is
+        # never touched by it.
+        rnd.action_space.seed(action_seed)
         obs, _ = env.reset(seed=4)
         unmatched = 0
         while True:
+            if on_step is not None:
+                on_step(env, obs)
             o = torch.as_tensor(np.stack([obs[a] for a in env.agents]), dtype=torch.float32)
             acts = rnd._forward({Columns.OBS: o})[Columns.ACTIONS]
             actions = {a: {k: (np.asarray(v[i]) if k in ("size_mean", "size_sigma") else int(v[i]))
@@ -227,8 +256,58 @@ class TestModulesHonourIt:
             obs, _, dones, truncs, infos = env.step(actions)
             unmatched += sum(i["num_unmatched_step"] for i in infos.values())
             if dones["__all__"] or truncs["__all__"]:
-                break
-        assert unmatched == 0
+                return unmatched
+
+    def test_the_mask_is_exact_when_it_is_emitted(self):
+        """Modify and cancel are possible exactly where the agent has an order."""
+        checked = []
+
+        def check(env, obs):
+            for agent in env.agents:
+                trader = env.traders[int(agent.split("_")[1])]
+                mask = obs[agent][-len(MASK_FIELDS):]
+                for side, (modify, cancel) in (("bid", (3, 4)), ("ask", (7, 8))):
+                    resting = bool(trader._own_orders_from_touch(env.LOB, side))
+                    assert mask[modify] == mask[cancel] == float(resting), (env.t_step, agent, side)
+                    checked.append(resting)
+
+        # Seed 0 has two lost races in it, so this covers steps after them.
+        self._play(0, on_step=check)
+        assert any(checked) and not all(checked)
+
+    def test_under_batch_clearing_there_are_no_dead_actions(self):
+        """Nothing fills before a cancel runs, so the mask cannot go stale."""
+        for seed in range(5):
+            assert self._play(seed, step_clearing="batch") == 0, seed
+
+    def test_a_sequential_miss_is_only_a_cancel_that_lost_the_race(self, monkeypatch):
+        """Every miss had an order at the start of the step and none when it ran."""
+        from gym_continuousDoubleAuction.envs.agent.trader import Trader
+
+        at_start, at_exec = {}, []
+
+        def snapshot(env, obs):
+            at_start.clear()
+            for trader in env.traders:
+                for side in ("bid", "ask"):
+                    at_start[trader.ID, side] = len(trader._own_orders_from_touch(env.LOB, side))
+
+        place_order = Trader.place_order
+
+        def spy(self, type, side, size, price, LOB, agents, slot=0):
+            if type in ("modify", "cancel"):
+                at_exec.append((at_start[self.ID, side],
+                                len(self._own_orders_from_touch(LOB, side))))
+            return place_order(self, type, side, size, price, LOB, agents, slot)
+
+        monkeypatch.setattr(Trader, "place_order", spy)
+        misses = sum(self._play(seed, on_step=snapshot) for seed in range(10))
+        assert misses > 0, "no lost race in these seeds - the test is not exercising one"
+        lost = [start for start, now in at_exec if now == 0]
+        # One miss per modify or cancel that found nothing, and each of those
+        # was masked in: the agent had an order resting when it chose.
+        assert len(lost) == misses
+        assert all(start > 0 for start in lost)
 
 
 def test_compare_can_switch_it():
