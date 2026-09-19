@@ -89,6 +89,8 @@ class continuousDoubleAuctionEnv(
             action_mask=self._cfg("action_mask"),
             matching_rule=self._cfg("matching_rule"),
             step_clearing=self._cfg("step_clearing"),
+            liquidation=self._cfg("liquidation"),
+            maintenance_margin=self._cfg("maintenance_margin"),
             mark_price_source=mark_price_source,
             min_size=min_size,
             mkt_max_size=mkt_max_size,
@@ -258,6 +260,7 @@ class continuousDoubleAuctionEnv(
         self.shuffled_actions = None
 
         self.t_step = 0
+        self.liquidations = []
 
         # Establish initial price anchor, from the seeded generator.
         low = self._cfg("initial_price_min")
@@ -321,6 +324,9 @@ class continuousDoubleAuctionEnv(
 
         self.seq_trades, self.seq_order_in_book = self.do_actions(actions) # Begin processing LOB
         self.mark_to_mkt() # mark to market
+        # Close out anyone below maintenance margin, before the observation,
+        # reward and info are built from the accounts (doc/04 section 8).
+        self.liquidations = self.liquidate()
 
 
 

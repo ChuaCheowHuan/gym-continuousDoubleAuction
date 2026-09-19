@@ -89,6 +89,16 @@ class Account(Calculate, Cash_Processor):
         # is built per agent per step. Non-zero means a bound in
         # `observation_bounds` is tighter than the market it is describing.
         self.num_obs_clipped_step = 0
+        # Liquidation this step (doc/04 section 8): whether this trader was
+        # closed out for breaching maintenance margin, how many contracts of
+        # its position the book absorbed and how many ADL transferred, and -
+        # for a trader on the other side - how many contracts ADL took from
+        # it. Kept apart from num_trades_step: none of these is an order the
+        # agent placed, so trade_penalty does not charge them.
+        self.num_liquidations_step = 0
+        self.liquidated_book_qty_step = 0
+        self.liquidated_adl_qty_step = 0
+        self.adl_qty_step = 0
 
         # Written by Reward_Helper.set_reward each step, read by Info_Helper.
         # The reward used to be a single number with its five components
@@ -128,6 +138,10 @@ class Account(Calculate, Cash_Processor):
         self.num_rejected_step = 0
         self.num_unmatched_step = 0
         self.num_obs_clipped_step = 0
+        self.num_liquidations_step = 0
+        self.liquidated_book_qty_step = 0
+        self.liquidated_adl_qty_step = 0
+        self.adl_qty_step = 0
 
         # See __init__ for what these are and why they exist.
         self.drawdown = 0.0

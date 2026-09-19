@@ -6,6 +6,7 @@ from .action_helper import Action_Helper
 from .reward_helper import Reward_Helper
 from .done_helper import Done_Helper
 from .info_helper import Info_Helper
+from .liquidation_helper import Liquidation_Helper
 
 from ..orderbook.orderbook import OrderBook
 from ...config_loader import env_default
@@ -15,7 +16,8 @@ from tabulate import tabulate
 
 logger = get_logger(__name__)
 
-class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info_Helper):
+class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Liquidation_Helper,
+                   Done_Helper, Info_Helper):
     #: Accepted values of the `mark_price_source` config key.
     MARK_PRICE_SOURCES = ("mid", "last")
 
@@ -267,6 +269,10 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Done_Helper, Info
             trader.acc.num_rejected_step = 0
             trader.acc.num_unmatched_step = 0
             trader.acc.num_obs_clipped_step = 0
+            trader.acc.num_liquidations_step = 0
+            trader.acc.liquidated_book_qty_step = 0
+            trader.acc.liquidated_adl_qty_step = 0
+            trader.acc.adl_qty_step = 0
 
         dones, truncateds = self.set_all_done(dones)
 

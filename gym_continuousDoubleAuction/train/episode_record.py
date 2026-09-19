@@ -88,6 +88,13 @@ INFO_COLUMNS = (
     ("num_rejected_step", "int64"),
     ("num_unmatched_step", "int64"),
     ("num_obs_clipped_step", "int64"),
+    # Maintenance-margin close-outs (doc/04 section 8): the liquidated
+    # trader's own row says how its position was closed; `adl_qty_step` is on
+    # the rows of the traders ADL took contracts from.
+    ("num_liquidations_step", "int64"),
+    ("liquidated_book_qty_step", "int64"),
+    ("liquidated_adl_qty_step", "int64"),
+    ("adl_qty_step", "int64"),
     ("is_pass_action", "bool"),
     ("last_price", "float64"),
     ("best_bid", "float64"),

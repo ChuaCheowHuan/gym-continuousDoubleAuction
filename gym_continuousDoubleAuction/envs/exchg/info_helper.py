@@ -96,6 +96,10 @@ class Info_Helper(object):
             # Observation elements clipped to the declared Box bounds this
             # step (doc/15 S4-15). Zero unless a bound is wrong for the market.
             "num_obs_clipped_step": acc.num_obs_clipped_step,
+            "num_liquidations_step": acc.num_liquidations_step,
+            "liquidated_book_qty_step": acc.liquidated_book_qty_step,
+            "liquidated_adl_qty_step": acc.liquidated_adl_qty_step,
+            "adl_qty_step": acc.adl_qty_step,
         })
 
         # Did this agent choose to do nothing this step? The two behaviours a

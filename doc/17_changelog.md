@@ -3265,3 +3265,49 @@ checkpoint's weights can be taken *out*, and the module to take is chosen for yo
   `test_export_checkpoint.py` (7) for a real train → promote → save → export → reload round trip,
   which asserts the exported tensors equal the source policy's rather than a fresh initialisation.
   Suite: **1,144 unit + 163 integration**.
+
+## 56. Maintenance margin, liquidation in the book, and ADL as the backstop
+
+A bankrupt trader used to keep its position: terminated at NAV <= 0 with its resting orders
+pulled, but still short and still marked to market to the end of the episode. In
+`CDA_train.ipynb` one went on to -1.9M from a 1M start, and every contract of that loss was
+collected by the agents on the other side from a counterparty that could not act and whose policy
+was never charged for it ([04](04_accounting.md) §8).
+
+- **Maintenance margin.** At the end of each step, after `mark_to_mkt`, a live trader with
+  `nav <= maintenance_margin * |net_position| * mark` is closed out. Default 0.3, the short-stock
+  maintenance of FINRA Rule 4210. Positions are fully paid, so only shorts breach; an all-in short
+  is closed after a 54% rise rather than run past bankruptcy at 100%.
+- **A, the book.** Resting orders cancelled, then an immediate-or-cancel order for the whole
+  position limited to the bankruptcy price, so the book stage cannot take NAV below zero. Real
+  fills against orders others chose to rest; they print.
+- **B, ADL for the remainder.** At the trigger mark, pro rata to the live opposite positions,
+  whole contracts. Always completes (positions sum to zero) and moves no NAV. Not printed.
+- **After.** Flat; trades on if NAV > 0, terminated flat if not, so a terminated NAV is frozen and
+  exact. Liquidations cascade until nobody is in breach, most distressed first. The reward spans
+  the whole step including the close-out (`prev_nav` is kept across the re-mark), and forced fills
+  are not charged `trade_penalty`.
+- **Observable.** Info and episode-record columns `num_liquidations_step`,
+  `liquidated_book_qty_step`, `liquidated_adl_qty_step`, `adl_qty_step`; training metrics
+  `liquidations` and `liquidation_adl_fraction`. `liquidation: "off"` is the old behaviour for
+  `train.compare --set liquidation=off` (not `"none"`, which `--set` parses as null).
+- **Measured** at the training config (8 agents, 4,096 steps, random play, 12 seeded episodes):
+
+  | | `off` | `market_adl` |
+  |---|---|---|
+  | Bankruptcies | 3 | **0** |
+  | Terminated still holding a position | 3 | 0 |
+  | Liquidations | - | 8 |
+  | Lowest final NAV | -175,468 | **+227,775** |
+  | Episodes whose reported NAVs miss the ledger | 3 | 0 |
+  | Ledger conservation | exact | exact |
+
+- **ADL does most of the closing here: 88% of liquidated contracts.** Not the band - in all 8
+  liquidations the depth inside it was the whole opposite side, and all of it filled. The book is
+  simply small next to the positions: liquidated shorts of 2,587-4,925 contracts against 0-1,328
+  resting on the ask side. That is a property of an 8-agent market under random play; a real venue
+  has outside liquidity and ADL is rare. `liquidation_adl_fraction` is the number to watch as
+  policies learn to quote.
+- **Tests.** `test_liquidation.py` (14): the trigger, the band, book then ADL, a gap past
+  bankruptcy, the reward across the close-out, termination flat, the pro-rata split, `"off"`, the
+  config. Suite: **1,165 unit + 163 integration**.

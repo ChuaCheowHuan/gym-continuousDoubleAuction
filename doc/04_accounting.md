@@ -268,13 +268,15 @@ position. Wealth never moved.
 - **Buying-power check** on the risk-increasing portion only (§3).
 - **Full cash collateral** on both longs and shorts.
 - **High-water mark** tracked per account and taxed by the reward.
+- **Maintenance margin and liquidation** (§8) — a trader whose equity falls to
+  `maintenance_margin` of its position's value is closed out in the book, with ADL for the
+  remainder.
 
 ### Absent
 
 | Gap | Detail |
 |---|---|
 | **No position limit** | Nothing caps `net_position`. Size is bounded only by cash and by the action space's `limit_max_size = 1000` (a full-scale draw is ≈ 500 contracts). |
-| **No margin call / forced liquidation** | An agent can be marked to a negative NAV and simply sits there. |
 | **No per-agent termination on bankruptcy** | **[verified]** — forcing `agent_0.nav = −50` yields `terminateds: {'agent_0': False, …}` while `done_set == {'agent_0'}`. `set_done` records it; `set_all_done` then overwrites every per-agent flag with `False`. The episode only ends when **every** agent is bust. |
 | **No borrow / locate on shorts** | Unlimited short capacity subject only to cash. |
 | **No transaction costs** | No fees, commissions, rebates, borrow cost or funding anywhere in the settlement path. |
@@ -286,3 +288,88 @@ stops trading — but it keeps accruing the per-step drawdown penalty for the re
 be thousands of steps, and any resting orders it left in the book stay live and executable. Its
 episode return is then dominated by a constant tax unrelated to its decisions, which is exactly
 the signal champion promotion reads. Tracked as S2-4.
+
+---
+
+## 8. Maintenance margin and liquidation
+
+`liquidation` and `maintenance_margin` in the env config ([18](18_configuration.md) §3.0.3);
+`envs/exchg/liquidation_helper.py`.
+
+**Why.** Until 2026-09-19 the only risk control on an open position was the solvency gate: at
+`nav <= 0` the trader was terminated and its resting orders pulled, but its **position stayed
+open** and `mark_to_mkt` kept marking it to the end of the episode. A short has no loss ceiling, so
+a bankrupt short went on losing — measured in `CDA_train.ipynb` at −1.9M against a 1M start — and
+every contract of that loss was a gain for the agents on the other side, paid by a counterparty
+that could not act and whose policy was never charged for it. Real venues close a position while
+its collateral still covers the close; this is that.
+
+### 8.1 The trigger
+
+At the end of every step, after `mark_to_mkt`, a live trader is liquidated when
+
+```
+nav <= maintenance_margin * |net_position| * mark
+```
+
+Positions here are fully paid — §3 escrows 100% of an opening order — so a long's equity never
+falls below its value and **only shorts can breach**. An all-in short at entry price `E` has
+`nav = |pos| * (2E - mark)`, so it breaches when the mark reaches `2E / (1 + m)`, a rise of
+`(1 - m) / (1 + m)`: 54% at the default `m = 0.3`, where the solvency gate alone needed 100%. 0.3 is the maintenance US brokers
+apply to short stock (FINRA Rule 4210). `maintenance_margin = 0` liquidates at bankruptcy.
+
+### 8.2 The close-out, in the order a venue runs it
+
+1. **Margin call.** Every resting order of the trader is cancelled; their escrow returns to cash.
+2. **The book (A).** An immediate-or-cancel order for the whole position goes to the book on the
+   closing side, limited to the trader's **bankruptcy price** — the worst price at which its NAV is
+   still ≥ 0, `mark - nav / net_position`, snapped to the tick on the conservative side. The fills
+   are ordinary trades against orders other agents chose to rest, settled by `_process_trades`, and
+   they print. Nothing is left resting. With NAV already ≤ 0 (a gap through bankruptcy in one step)
+   the limit is the mark itself: the book may only improve on it.
+3. **Auto-deleveraging (B).** What the book could not absorb inside that band is transferred **at
+   the trigger mark** to the live traders on the opposite side, pro rata to their positions, whole
+   contracts, largest remainder first. Positions sum to zero, so the opposite side always holds
+   enough; at the mark the breach was measured at, the transfer moves nobody's NAV — it only
+   shortens positions. It is not printed: it is a transfer, not a trade anyone chose.
+
+The trader is then flat. With `nav > 0` it keeps trading on what is left, as a margin-called
+account does. With `nav <= 0` the solvency gate terminates it as before — but flat, so its NAV is
+frozen and exact. The shortfall of a gap stays on the account as a negative balance: there is no
+insurance fund, and none is needed for the ledger, which conserves regardless.
+
+A liquidation can put another trader in breach — its forced order fills others' resting orders and
+moves the mark — so the check repeats, most distressed first, until nobody is: the cascade a short
+squeeze produces. A liquidated trader is flat with nothing resting, so the loop ends within
+`num_of_agents` rounds.
+
+### 8.3 What the rest of the env sees
+
+- **Reward.** The close-out happens before the reward is computed, so its cost is in this step's
+  `nav_term`. The re-mark after each liquidation restores `prev_nav`, so the reward still spans the
+  whole step rather than only the liquidation's slice of it.
+- **`trade_penalty`** does not charge forced fills or ADL legs: `num_trades_step` counts orders the
+  agent placed. `num_trades` (cumulative) does include them.
+- **Info and the episode record.** `num_liquidations_step`, `liquidated_book_qty_step` and
+  `liquidated_adl_qty_step` on the liquidated trader; `adl_qty_step` on each trader ADL took
+  contracts from.
+- **Training metrics.** `liquidations` (per episode) and `liquidation_adl_fraction` — the share of
+  liquidated contracts the book could not absorb. A rising ADL share means forced orders are
+  meeting a book too thin for them.
+- **`liquidation: "off"`** is the behaviour before this section existed, for
+  `train.compare --set liquidation=off`.
+
+### 8.4 Worked example
+
+Four traders with 10,000 each. A is short 90 @ 100 against B's bid; C bids 1 @ 170 and D offers
+50 @ 180, so the mid is 175 (`test_liquidation.py`).
+
+| | |
+|---|---|
+| A's NAV at the mark | 10,000 − 90 × 75 = **3,250** |
+| Maintenance required | 0.3 × 90 × 175 = 4,725 → **breach** (still solvent) |
+| Bankruptcy price | 175 + 3,250 / 90 = 211.1 → **211** |
+| Book | buys D's **50 @ 180**, inside the band; nothing else rests |
+| ADL | the other **40** from B at 175; B goes from long 90 to long 50 |
+| A afterwards | flat, NAV 3,250 − 50 × (180 − 175) = **3,000**; keeps trading |
+| Total NAV | 40,000, exactly |
