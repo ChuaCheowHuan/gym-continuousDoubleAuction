@@ -683,6 +683,15 @@ class TestEffectiveRank:
             table, ["wide", "fine"]
         )
 
+    def test_the_rendering_names_the_threshold_it_was_computed_at(self):
+        """The header always printed the default 99%, so a table computed at
+        another threshold was labelled with a number it was not measured at."""
+        features = {"raw": np.random.default_rng(0).standard_normal((256, 16))}
+        assert "(90% of singular mass)" in rank_module.render(
+            rank_module.rank_table(features, threshold=0.9), ["raw"])
+        assert "(99% of singular mass)" in rank_module.render(
+            rank_module.rank_table(features), ["raw"])
+
     def test_the_rendering_names_the_confounded_metric(self):
         """A reader of this table is exactly who needs warning off the other one."""
         table = rank_module.rank_table(
