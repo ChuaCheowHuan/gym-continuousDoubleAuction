@@ -38,7 +38,7 @@ from gym_continuousDoubleAuction.train.model.cbp import (
     select_and_replace,
     update_utility,
 )
-from gym_continuousDoubleAuction.train.model.cbp_learner import CBPLearnerMixin
+from gym_continuousDoubleAuction.train.model.cbp_learner import CBP_STATE, CBPLearnerMixin
 from gym_continuousDoubleAuction.train.model.encoders import (
     ENCODER_REGISTRY,
     MLP_ENCODER_TYPE,
@@ -676,6 +676,37 @@ class TestNothingToReplace:
             learner._cbp_attach("policy_0")
         assert "no layer" not in caplog.text
         assert len(learner._cbp_layers["policy_0"]) == 4
+
+
+class TestStateHonoursTheComponentFilter:
+    """`get_state` must leave CBP state out when the caller did not ask for it.
+
+    Every training iteration syncs weights with
+    `get_state(components="rl_module")`. The mixin used to add its per-layer
+    utility, mean-activation and age tensors to that too - a device-to-host
+    copy of every hooked layer, then thrown away by the caller.
+    """
+
+    class _Base:
+        from ray.rllib.utils.checkpoints import Checkpointable as _C
+        _check_component = _C._check_component
+
+        def get_state(self, components=None, *, not_components=None, **kwargs):
+            return {}
+
+    class _Learner(CBPLearnerMixin, _Base):
+        def __init__(self):
+            self._cbp_state = {"policy_0": {"layer": CBPLayerState.zeros(2)}}
+
+    def test_a_full_state_carries_it(self):
+        assert CBP_STATE in self._Learner().get_state()
+
+    def test_a_weights_only_state_does_not(self):
+        assert CBP_STATE not in self._Learner().get_state(components="rl_module")
+        assert CBP_STATE not in self._Learner().get_state("rl_module")
+
+    def test_it_can_be_excluded_by_name(self):
+        assert CBP_STATE not in self._Learner().get_state(not_components=CBP_STATE)
 
 
 class TestDDPUnwrapping:

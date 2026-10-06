@@ -355,7 +355,7 @@ class CBPLearnerMixin:
 
     # --- Checkpointing -------------------------------------------------------
 
-    def get_state(self, *args, **kwargs) -> Dict[str, Any]:
+    def get_state(self, components=None, *, not_components=None, **kwargs) -> Dict[str, Any]:
         """The base learner's state, plus CBP's utility, ages and accumulators.
 
         These are *learned* quantities. A resume that dropped them would put
@@ -363,9 +363,13 @@ class CBPLearnerMixin:
         protect all of them and the first eligible sweep afterwards would rank
         by an estimate built from almost no data. On a project whose
         `chkpt_freq` is 2 that is a real and completely silent degradation.
+
+        Filtered by `components` / `not_components` like every other learner
+        component, so a full checkpoint carries it and the per-iteration
+        weight sync (`components="rl_module"`) does not copy it off the device.
         """
-        state = super().get_state(*args, **kwargs)
-        if self._cbp_state:
+        state = super().get_state(components, not_components=not_components, **kwargs)
+        if self._cbp_state and self._check_component(CBP_STATE, components, not_components):
             state[CBP_STATE] = {
                 str(module_id): {
                     name: layer_state.get_state()
