@@ -85,8 +85,9 @@ def parse_overrides(items) -> Dict[str, Any]:
 
     The type comes from the dataclass field's annotation (`int`, `float`,
     `bool`, `str`, or an `Optional[...]` of one), so `--set max_step=64` is an
-    int and `--set action_mask=false` a bool. An unknown field is an error
-    rather than a silently ignored typo.
+    int and `--set action_mask=false` a bool. A list or dict field takes JSON:
+    `--set fcnet_hiddens=[128,128]`. An unknown field is an error rather than a
+    silently ignored typo.
     """
     from gym_continuousDoubleAuction.train.train import TrainConfig
 
@@ -98,9 +99,24 @@ def parse_overrides(items) -> Dict[str, Any]:
         name, raw = item.split("=", 1)
         if name not in fields:
             raise SystemExit(f"--set: TrainConfig has no field {name!r}")
-        annotation = str(fields[name].type).replace("Optional[", "").rstrip("]")
+        annotation = (str(fields[name].type).replace("typing.", "")
+                      .replace("Optional[", "").rstrip("]"))
+        # Before the scalar checks: those match substrings, and "List[int]"
+        # contains "int".
+        container = annotation.split("[", 1)[0].lower()
         if raw.lower() in ("none", "null"):
             out[name] = None
+        elif container in ("list", "tuple", "dict"):
+            want = dict if container == "dict" else list
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise SystemExit(
+                    f"--set {name}: expected a JSON {want.__name__}, got {raw!r} ({exc})"
+                ) from exc
+            if not isinstance(parsed, want):
+                raise SystemExit(f"--set {name}: expected a JSON {want.__name__}, got {raw!r}")
+            out[name] = parsed
         elif "bool" in annotation:
             out[name] = raw.lower() in ("1", "true", "yes", "on")
         elif "int" in annotation:

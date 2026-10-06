@@ -101,3 +101,26 @@ def test_cli_defaults_exist():
                 "log_level"):
         cli_default("cda_compare", key)
     assert len(cli_default("cda_compare", "seeds")) >= 3
+
+
+class TestParseOverrides:
+    """`--set` on a list or dict field. The type was chosen by substring-matching
+    the annotation, so `List[int]` matched "int" and `int("[128,128]")` raised a
+    bare ValueError; `--set adam_betas=...` hit float() the same way."""
+
+    def test_a_list_field_takes_json(self):
+        assert compare.parse_overrides(["fcnet_hiddens=[128,128]"]) == {"fcnet_hiddens": [128, 128]}
+        assert compare.parse_overrides(["adam_betas=[0.99, 0.99]"]) == {"adam_betas": [0.99, 0.99]}
+
+    def test_a_dict_field_takes_json(self):
+        assert compare.parse_overrides(['encoder_specs={"lstm": {"max_seq_len": 8}}']) == {
+            "encoder_specs": {"lstm": {"max_seq_len": 8}}}
+
+    def test_the_wrong_shape_is_refused_by_name(self):
+        for item in ("fcnet_hiddens=128", "fcnet_hiddens=[128,", 'adam_betas={"a": 1}'):
+            with pytest.raises(SystemExit, match="--set"):
+                compare.parse_overrides([item])
+
+    def test_scalars_are_unchanged(self):
+        assert compare.parse_overrides(["max_step=64", "lr=0.001", "action_mask=false"]) == {
+            "max_step": 64, "lr": 0.001, "action_mask": False}
