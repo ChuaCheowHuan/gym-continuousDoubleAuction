@@ -40,7 +40,7 @@ class OrderBook(object):
     MATCHING_RULES = ("fifo", "pro_rata")
 
     def __init__(self, tape_display_length=10, *, matching_rule="fifo"):
-        self.tape = deque(maxlen=None) # Index[0] is most recent trade
+        self.tape = deque(maxlen=None) # appended, so tape[-1] is the most recent trade
         self.bids = OrderTree()
         self.asks = OrderTree()
         self.last_tick = None

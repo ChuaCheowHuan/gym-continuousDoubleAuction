@@ -146,22 +146,6 @@ _FRAME_TRADE_COUNT = 4
 _FRAME_TRADE_DIRECTION = 5
 _FRAME_EXTRAS = 6
 
-#: Order of the per-agent private block `set_private_state` builds, and the
-#: single definition of what it contains. `private_dim` in
-#: tunable_constants.json must equal its length; __init__ checks that, on the
-#: same rule as `book_rows` above.
-#:
-#: This block is why the reward is learnable at all. It is
-#: f(nav, prev_nav, max_nav, ...) and every one of those was unobservable, so
-#: two agents holding opposite positions received the byte-identical vector and
-#: needed opposite actions - which a policy, being a function of its
-#: observation, cannot do (finding S1-2). `drawdown` matters especially: it is
-#: a path functional over the whole episode, so no amount of recurrence could
-#: have recovered it from a stream that never showed it.
-#:
-#: Every entry is normalised to O(1) and bounded, because these sit in the same
-#: vector as the book block and feed the same `tanh` MLP - an unbounded private
-#: field would saturate it exactly as the raw sizes do (S2-2).
 #: The per-agent fields that do not depend on book depth, in order. These are
 #: the nine the private block started with; `private_fields` appends the
 #: depth-dependent own-book block after them.

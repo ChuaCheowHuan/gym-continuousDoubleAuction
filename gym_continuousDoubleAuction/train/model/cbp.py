@@ -709,13 +709,18 @@ def _reset_optimizer_slots(
 # --- Plasticity metrics -----------------------------------------------------
 
 def effective_rank(activations: torch.Tensor, threshold: float = 0.99) -> float:
-    """Stable rank: the fewest singular values carrying `threshold` of the total.
+    """Threshold rank: the fewest singular values carrying `threshold` of the total.
 
-    Nature Methods, and the quantity plotted in Fig. 2d and Extended Data
-    Fig. 4 as one of the three correlates of loss of plasticity. A
-    representation whose units have become redundant has a low effective rank
-    even when none of them is individually dead, which is why the dead-unit
-    fraction alone is not enough.
+    The rank-collapse correlate of loss of plasticity: a representation whose
+    units have become redundant has a low rank even when none of them is
+    individually dead, which is why the dead-unit fraction alone is not enough.
+
+    **Not numerically the paper's figure.** This is the threshold ("srank")
+    form: count singular values until `threshold` of their sum is covered. The
+    effective rank the plasticity literature plots is usually the
+    entropy-based one, exp of the entropy of the normalised singular values.
+    The two move together but sit on different scales, so read this against
+    its own history - and against `width` - not against the papers' curves.
 
     **Read the caller's caveat before reading the number.** The rank of an
     activation matrix depends on the inputs as much as on the network. Here the

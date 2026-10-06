@@ -267,6 +267,10 @@ def pretrain(
             "world_model=False and enable it for the training run."
         )
 
+    # The test fifth is held out deliberately, not wasted. The probe scores a
+    # pretrained encoder "on identical rows with an identical split"
+    # (doc/24 section 6), so these are exactly the episodes its test score is
+    # read on; training on them here would leak them into that score.
     train_mask, validation_mask, _test_mask = probe_module.split_masks(
         corpus.episode_index, len(corpus)
     )
