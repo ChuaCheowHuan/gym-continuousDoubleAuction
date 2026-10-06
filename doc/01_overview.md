@@ -110,8 +110,8 @@ other. The environment is a valid *game*; framing it as a market simulator overr
 | Initial price anchor | `randint(10, 100)` inclusive, per episode, from the seeded `self.np_random` | `reset` in [`continuousDoubleAuction_env.py`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py) |
 | Tick | 1.0 (`Action_Helper.min_tick`, from the `tick_size` config key) | `environment.tick_size`, [`train_config.json`](../config/train_config.json) |
 | Instrument | a single unnamed contract, no expiry, no carry | [`account.py`](../gym_continuousDoubleAuction/envs/account/account.py) |
-| Observation | 216 floats — 4 stacked snapshots × 46 shared book, plus a 32-float per-agent private block (9 account fields, the agent's own resting size at each of the 10 levels per side, its order counts, and the dead-action flag) | `observation_layout`, [`tunable_constants.json`](../config/tunable_constants.json) |
-| Action | `Dict{category:9, size_mean:Box, size_sigma:Box, price:10, price_offset:3}` | `action_space`, [`tunable_constants.json`](../config/tunable_constants.json) |
+| Observation | 233 floats — 4 stacked 48-float grid snapshots of the shared book (including its 6 market scalars), plus a 41-float per-agent private block (9 account fields, the agent's own resting size at each of the 10 levels per side, its 2 order counts, the dead-action flag, and the 9 `can_*` action-mask entries) | `observation_layout`, [`tunable_constants.json`](../config/tunable_constants.json) |
+| Action | `Dict{category:9, order_slot:5, price:10, price_offset:3, size_mean:Box, size_sigma:Box}` | `action_space`, [`tunable_constants.json`](../config/tunable_constants.json) |
 | Termination | only when *every* agent is bankrupt | `set_all_done` in [`done_helper.py`](../gym_continuousDoubleAuction/envs/exchg/done_helper.py) |
 | Truncation | at `max_step` | `set_all_done` in [`done_helper.py`](../gym_continuousDoubleAuction/envs/exchg/done_helper.py) |
 

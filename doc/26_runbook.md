@@ -29,6 +29,41 @@ flowchart LR
     P --> K
 ```
 
+### 26.0.1 Pick a command by goal
+
+Every entry point, by what you want out of it. Each module runs as
+`python -m gym_continuousDoubleAuction.<module>`, and the section named on each command box has the
+full invocation.
+
+```mermaid
+flowchart LR
+    G(("What do you<br/>want to do?"))
+
+    G --> S["See the exchange work,<br/>no learning"]
+    S --> S1["CDA_rand --steps 200 --agents 4<br/>add --render for every step · 26.2"]
+
+    G --> V["Check the install"]
+    V --> V1["pytest gym_continuousDoubleAuction/test<br/>then test/integration · 26.2"]
+
+    G --> T["Train a league"]
+    T --> T1["train.train<br/>--config, --iters, --seed · 26.4"]
+    T --> T2["train.train --restore<br/>or --from-checkpoint · 26.7"]
+    T --> T3["CDA_train.ipynb<br/>Colab or docker · 20, 19"]
+
+    G --> I["Read a finished run"]
+    I --> I1["visualize.run_all<br/>every chart · 26.8"]
+    I --> I2["train.evaluate --checkpoint<br/>roll episodes, no learning · 26.9.1"]
+    I --> I3["train.export --checkpoint<br/>weights out as a torch file · 26.9.2"]
+
+    G --> E["Study encoders<br/>without the reward"]
+    E --> E1["train.probe --encoders<br/>microstructure targets · 26.9"]
+    E --> E2["train.pretrain --out<br/>JEPA on observations alone · 26.9"]
+    E --> E3["train.compare --encoders --seeds<br/>multi-seed protocol, --set FIELD=VALUE · 26.9"]
+```
+
+`CDA_rand` and the notebook live at the package root; everything else is under `train/` or
+`visualize/`.
+
 ---
 
 ## 26.1 Install

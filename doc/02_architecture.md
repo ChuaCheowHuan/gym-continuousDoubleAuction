@@ -7,6 +7,69 @@ For what each layer does in detail, follow the links into
 
 ---
 
+## 2.0 At a glance
+
+One environment step, end to end. Every box is a real function; the labels on the arrows are what
+actually crosses between them. Colour says which package a box lives in.
+
+```mermaid
+flowchart LR
+    subgraph RL["RLlib training stack (train/)"]
+        POL["RLModule per agent<br/>policy_* / champion_*"]
+        LRN["Learner<br/>PPO update (+ optional CBP mixin)"]
+        CB["SelfPlayCallback<br/>league + metrics + record"]
+    end
+
+    subgraph ENV["Environment (envs/)"]
+        ACT["Action_Helper<br/>decode Dict action"]
+        SHUF["rand_exec_seq<br/>random arrival order"]
+        LOB["OrderBook<br/>price-time priority"]
+        TRD["Trader<br/>approve, route, settle"]
+        ACC["Account<br/>cash / position / NAV"]
+        MTM["mark_to_mkt<br/>last tape price"]
+        OBS["State_Helper<br/>snapshot + history"]
+        REW["Reward_Helper<br/>five signed terms"]
+    end
+
+    POL -->|"action Dict"| ACT
+    ACT --> SHUF --> LOB
+    LOB -->|"trades + residue"| TRD
+    TRD --> ACC
+    ACC --> MTM
+    MTM --> OBS
+    MTM --> REW
+    OBS -->|"observation, 233 floats"| POL
+    REW -->|"reward"| POL
+    REW --> CB
+    CB -->|"agent to module mapping"| POL
+    POL --> LRN
+    LRN -->|"weights"| POL
+
+    classDef learn fill:#2E4986,stroke:#1F3366,color:#fff
+    classDef book fill:#0E6F58,stroke:#0A5242,color:#fff
+    classDef ledger fill:#A44029,stroke:#7A2F1E,color:#fff
+    class POL,LRN,CB,ACT,SHUF,OBS,REW learn
+    class LOB book
+    class TRD,ACC,MTM ledger
+```
+
+| Colour | Package |
+|---|---|
+| blue | `envs/exchg/` (action decoding, arrival order, state, reward) and `train/` |
+| green | `envs/orderbook/` — matching |
+| red | `envs/agent/` and `envs/account/` — clearing. `mark_to_mkt` is called from `Exchg_Helper` and computed in `account/calculate.py` |
+
+The observation is `n_hist` 4 × a 48-float grid snapshot + a 41-float private block
+([05](05_observation_space.md) §1). All N agents act on the same observation, the arrival order is
+reshuffled every step, an episode terminates only when every agent is bankrupt and truncates at
+`max_step`, and the callback asserts total NAV equals total initial cash at every episode end.
+
+Full detail: §2.5 for the step lifecycle, §2.9 for the same picture with the distributed boundaries
+drawn in. The top-level [README](../README.md) carries a copy of the diagram above; this one is the
+source of truth, so change both together.
+
+---
+
 ## 2.1 Technology stack
 
 | Layer | Choice | Version | Notes |
@@ -28,7 +91,35 @@ For what each layer does in detail, follow the links into
 
 ## 2.2 Layer map
 
-Four layers, each in its own package:
+Four layers, each in its own package. Each depends only on the ones beneath it: the bottom two are
+a working exchange that would run without any RL at all, and the top two are what turn it into a
+learning problem.
+
+```mermaid
+flowchart BT
+    L1["<b>1 · Matching engine</b><br/>envs/orderbook/<br/>price levels in a SortedDict, FIFO per level, tape with both parties"]
+    L2["<b>2 · Trader + accounting</b><br/>envs/agent/ · envs/account/<br/>order gating, Decimal cash escrow, position, VWAP, NAV, margin"]
+    L3["<b>3 · Environment</b><br/>continuousDoubleAuction_env.py · envs/exchg/<br/>MultiAgentEnv step: action, state, reward, done, info mixins"]
+    L4["<b>4 · Training</b><br/>train/<br/>RLlib PPO, league self-play, encoders, CBP, checkpoints"]
+    X["<b>Cross-cutting</b><br/>config_loader.py · logging_setup.py<br/>every configured value, every log record"]
+
+    L1 --> L2 --> L3 --> L4
+    X -.-> L1
+    X -.-> L2
+    X -.-> L3
+    X -.-> L4
+
+    classDef learn fill:#2E4986,stroke:#1F3366,color:#fff
+    classDef book fill:#0E6F58,stroke:#0A5242,color:#fff
+    classDef ledger fill:#A44029,stroke:#7A2F1E,color:#fff
+    classDef neutral fill:#49515F,stroke:#2F353F,color:#fff
+    class L1 book
+    class L2 ledger
+    class L3,L4 learn
+    class X neutral
+```
+
+Arrows point up the dependency direction: each layer is built on the one below it.
 
 | Layer | Package | Responsibility |
 |---|---|---|

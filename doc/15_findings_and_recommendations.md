@@ -6,6 +6,28 @@ marks a finding confirmed by executing the code; raw output is in
 
 ---
 
+## Status in brief
+
+**Main problems:** The weak points were concentrated in the learning problem formulation rather
+than in the simulator — agents observed no private state, the reward was strictly negative-sum with
+a dominant do-nothing strategy, and the reward scale silently disabled PPO's critic entirely. All
+three are now fixed ([17_changelog.md](17_changelog.md) §29-30). The observation pipeline's own
+defects — the per-frame normalizer, the missing trade-flow features, and a size block two orders of
+magnitude off the price block — are fixed too (§37.4), as are the two action-path defects the
+2026-09-18 review found: a cancel that was cash-checked and so refused exactly when a trader was
+fully committed, and a price grid that was only a grid at `tick_size` 1 (§44). The follow-up pass
+(§45) lifted the freeze on the matching engine, added Hypothesis invariant tests that immediately
+found a timestamp defect and a Decimal rounding residual in NAV conservation, made the linter part
+of the suite, and turned the encoder comparison protocol into one command.
+
+The two gaps this summary used to list as remaining are closed as well. The agent's own resting
+orders are in its private block since 2026-09-18 ([05](05_observation_space.md) §7.7,
+[17](17_changelog.md) §47). The price level index is no longer a non-stationary coordinate: the
+book is a fixed tick-offset grid, and occupancy rows separate an empty level from a quote at the
+reference price ([05](05_observation_space.md) §1.3–1.4, §7.2, §7.4).
+
+---
+
 ## The register at a glance
 
 ```mermaid
