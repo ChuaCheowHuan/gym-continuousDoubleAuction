@@ -63,6 +63,23 @@ class TestResolveModule:
                                       _champion("champion_2", "policy_1", 8, -5.0)]}
         assert export.resolve_module(state, None)[0] == "champion_1"
 
+    def test_a_champion_with_no_recorded_return_is_not_ranked(self):
+        """A restore adopts a champion found in the checkpoint but missing from
+        the sidecar with `return: None`. Ranked, it raised a TypeError comparing
+        None with a float, which the CLI does not catch."""
+        state = {"champion_history": [_champion("champion_1", None, 3, None),
+                                      _champion("champion_2", "policy_1", 8, -5.0)]}
+        assert export.resolve_module(state, None)[0] == "champion_2"
+
+    def test_only_unranked_champions_is_an_error_that_says_so(self):
+        state = {"champion_history": [_champion("champion_1", None, 3, None)]}
+        with pytest.raises(ValueError, match="no recorded return.*--module-id"):
+            export.resolve_module(state, None)
+
+    def test_an_unranked_champion_renders(self):
+        state = {"champion_history": [_champion("champion_1", None, 3, None)]}
+        assert "| champion_1 | None | 3 | n/a |" in export.render(state, ["champion_1"])
+
 
 class TestSidecar:
     def test_a_missing_sidecar_is_empty_not_fatal(self, tmp_path):

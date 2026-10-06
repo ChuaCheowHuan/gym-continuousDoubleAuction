@@ -1263,7 +1263,8 @@ class SelfPlayCallback(RLlibCallback):
         champion_id = oldest['id']
 
         logger.info(
-            "Removing oldest champion %s (from iteration %s, return %.2f)",
+            # %s, not %.2f: a champion adopted on restore has return None.
+            "Removing oldest champion %s (from iteration %s, return %s)",
             champion_id, oldest['iteration'], oldest['return'],
         )
 
