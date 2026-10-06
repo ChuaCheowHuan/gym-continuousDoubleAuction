@@ -52,6 +52,29 @@ class TestTraderCounter:
         self.t.place_order('modify', 'ask', 1, 100, self.book, [self.t])
         assert self.t.acc.num_unmatched_step == 1
 
+    def test_modify_with_nothing_resting_leaves_the_other_side_alone(self):
+        """Self-match prevention used to run before anything checked for a
+        target, so a modify that did nothing still cancelled the trader's own
+        orders on the opposite side - and reported itself as unmatched."""
+        self.t.place_order('limit', 'ask', 1, 100, self.book, [self.t])
+        self.t.place_order('modify', 'bid', 5, 101, self.book, [self.t], slot=1)
+        assert self.t.acc.num_unmatched_step == 1
+        assert len(self.book.asks) == 1, "the ask is untouched"
+        assert self.t.acc.cash_on_hold == Decimal(100)
+
+    def test_modify_with_nothing_resting_is_unmatched_whatever_the_cash(self):
+        """The same do-nothing modify was a rejection when cash was short and
+        unmatched otherwise, mixing the two counters S4-14 keeps apart."""
+        poor = Trader(ID=2, cash=10)
+        poor.place_order('modify', 'bid', 5, 101, self.book, [poor])
+        assert (poor.acc.num_unmatched_step, poor.acc.num_rejected_step) == (1, 0)
+
+    def test_an_account_that_cannot_act_is_still_rejected(self):
+        frozen = Trader(ID=3, cash=1000)
+        frozen.acc.liquidation_steps_left = 2
+        frozen.place_order('modify', 'bid', 5, 101, self.book, [frozen])
+        assert (frozen.acc.num_unmatched_step, frozen.acc.num_rejected_step) == (0, 1)
+
     def test_cancel_on_the_empty_side_counts(self):
         """A cancel is aimed by slot now, not by price (doc/15 S3-24), and the
         only miss left is a side with nothing of the agent's resting on it."""
