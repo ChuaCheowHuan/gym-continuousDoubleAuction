@@ -175,6 +175,7 @@ def split_masks(
     n: int,
     train_fraction: float = TRAIN_FRACTION,
     validation_fraction: float = VALIDATION_FRACTION,
+    purge: int = 0,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Boolean train / validation / test masks over `n` rows.
 
@@ -186,6 +187,12 @@ def split_masks(
     Groups are assigned to splits in order of first appearance, so the split is
     deterministic and the test split is always the *latest* episodes - the same
     direction as the contiguous fallback.
+
+    `purge` is the target horizon. In the contiguous fallback the last `purge`
+    rows before each seam are left out of every split: a target at row t reads
+    row t + horizon, so those rows' targets were built from the next split's
+    observations and the held-out data leaked into the fit. The episode split
+    needs no purge, since no target reads across an episode (`horizon_mask`).
     """
     masks = []
     if groups is not None:
@@ -199,9 +206,12 @@ def split_masks(
 
     if not masks:
         masks = []
-        for part in split_indices(n, train_fraction, validation_fraction):
+        parts = split_indices(n, train_fraction, validation_fraction)
+        for i, part in enumerate(parts):
             mask = np.zeros(n, dtype=bool)
-            mask[part] = True
+            # Not the last split: nothing follows it for a target to read into.
+            stop = part.stop - purge if i < len(parts) - 1 else part.stop
+            mask[part.start:max(part.start, stop)] = True
             masks.append(mask)
 
     return tuple(masks)
@@ -260,6 +270,7 @@ def fit_and_score(
     alphas: Sequence[float] = RIDGE_ALPHAS,
     train_fraction: float = TRAIN_FRACTION,
     validation_fraction: float = VALIDATION_FRACTION,
+    purge: int = 0,
 ) -> Optional[ProbeResult]:
     """Fit a linear readout of `values` from `features` and score it held out.
 
@@ -274,6 +285,8 @@ def fit_and_score(
         alphas: Ridge grid, searched on the validation split.
         train_fraction: Share used to fit.
         validation_fraction: Share used to choose `alpha`.
+        purge: The target's horizon, so the contiguous fallback can leave out
+            rows whose targets read into the next split. See `split_masks`.
 
     Returns:
         A `ProbeResult`, or None when the cell cannot be scored at all - too
@@ -284,7 +297,7 @@ def fit_and_score(
     """
     n = len(values)
     train, validation, test = split_masks(
-        groups, n, train_fraction, validation_fraction
+        groups, n, train_fraction, validation_fraction, purge=purge
     )
     if min(train.sum(), validation.sum(), test.sum()) < 1:
         return None

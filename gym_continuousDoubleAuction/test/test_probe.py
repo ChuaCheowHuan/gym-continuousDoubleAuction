@@ -279,6 +279,26 @@ class TestSplits:
         masks = probe_module.split_masks(corpus.episode_index, len(corpus))
         assert (sum(m.astype(int) for m in masks) <= 1).all()
 
+    def test_the_contiguous_fallback_purges_the_horizon_at_each_seam(self):
+        """A target at row t reads row t + h, so the last h training rows had
+        targets built from validation (and the last h validation rows from
+        test) observations - the held-out data leaked into the fit."""
+        horizon = 5
+        train, validation, test = probe_module.split_masks(None, 200, purge=horizon)
+        plain = probe_module.split_masks(None, 200)
+        seam_train = np.flatnonzero(plain[0]).max()
+        seam_validation = np.flatnonzero(plain[1]).max()
+        assert np.flatnonzero(train).max() + horizon == seam_train
+        assert np.flatnonzero(validation).max() + horizon == seam_validation
+        assert np.array_equal(test, plain[2])
+
+    def test_the_episode_split_needs_no_purge(self, layout):
+        """Targets never cross an episode, so an episode seam leaks nothing."""
+        corpus = synthetic(layout)
+        purged = probe_module.split_masks(corpus.episode_index, len(corpus), purge=5)
+        plain = probe_module.split_masks(corpus.episode_index, len(corpus))
+        assert all(np.array_equal(a, b) for a, b in zip(purged, plain))
+
 
 class TestMetrics:
     def test_r2_of_the_mean_predictor_is_zero(self):
