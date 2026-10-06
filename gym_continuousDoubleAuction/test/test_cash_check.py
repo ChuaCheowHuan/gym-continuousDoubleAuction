@@ -264,6 +264,22 @@ class TestClosingEscrowIsSpendable:
         assert t.acc.num_rejected_step == 1
         assert len(book.bids) == 1
 
+    def test_the_closing_orders_are_the_ones_that_fill_first(self):
+        """Fill priority is best price first, not oldest first. Long 10 with an
+        older ask 10 @ 200 and a newer ask 10 @ 100: the ask at 100 fills first
+        and is the one that closes the position, so its 1,000 of escrow is the
+        closing escrow. Sorting by timestamp alone counted the 2,000 at 200."""
+        book = OrderBook()
+        t = Trader(ID=1, cash=3000)
+        t.acc.net_position = 10
+        t.acc.position_val = Decimal(1000)
+        t.acc.VWAP = Decimal(100)
+        t.acc.entry_vwap = Decimal(100)
+        t.acc.cal_nav()
+        t.place_order('limit', 'ask', 10, 200, book, [t])  # older, deeper
+        t.place_order('limit', 'ask', 10, 100, book, [t])  # newer, at the touch
+        assert t._closing_escrow(book) == Decimal(1000)
+
     def test_flat_trader_has_no_closing_escrow(self):
         book = OrderBook()
         t = Trader(ID=1, cash=1000)

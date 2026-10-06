@@ -244,28 +244,22 @@ class Trader:
 
         Only the portion that actually closes counts: resting quantity beyond
         `|net_position|` would open the opposite position, and its escrow is
-        real margin. Orders are walked oldest first, matching the priority in
-        which they would fill. The order a modify or upsert is about to replace
-        is excluded, because `_order_approved` already counts its release.
+        real margin. Orders are walked in fill priority - best price first,
+        oldest first within a level - which is `_own_orders_from_touch`: the
+        orders that fill first are the ones that close. The order a modify or
+        upsert is about to replace is excluded, because `_order_approved`
+        already counts its release.
         """
         pos = self.acc.net_position
         if pos == 0:
             return Decimal(0)
         side = 'ask' if pos > 0 else 'bid'
-        order_map = self._find_orderTree(LOB, {'side': side})
-        if order_map is None:
-            return Decimal(0)
 
         remaining = abs(pos)
         total = Decimal(0)
-        mine = sorted(
-            (
-                (order_ID, order) for order_ID, order in order_map.items()
-                if order.trade_id == self.ID and order_ID != exclude_order_id
-            ),
-            key=lambda item: item[1].timestamp,
-        )
-        for _order_ID, order in mine:
+        for order_ID, order in self._own_orders_from_touch(LOB, side):
+            if order_ID == exclude_order_id:
+                continue
             if remaining <= 0:
                 break
             covered = min(int(order.quantity), remaining)
