@@ -1012,7 +1012,12 @@ class State_Helper(object):
 
         # The raw frame, which is what `obs_history` stores. Normalisation is
         # deferred to emission so that one midpoint normalises the whole stack
-        # - see `prep_next_state`.
+        # - see `prep_next_state`. float64, like `agg_LOB_raw`: `_stack` snaps
+        # the grid origin from this frame's M, and `reference_price()` snaps
+        # the float64 midpoint. Stored in float32, a midpoint half a tick off
+        # the grid (any one-tick spread) could round to the other side, so the
+        # action's price codes and the own-book cells sat one tick off the
+        # grid the agent saw. The emitted observation is still float32.
         self.agg_LOB_frame = np.concatenate([
             flattened_raw,
             np.array([
@@ -1023,7 +1028,7 @@ class State_Helper(object):
                 float(trade_count),
                 trade_direction,
             ]),
-        ]).astype(np.float32)
+        ]).astype(np.float64)
 
         # The current frame, normalised against its own midpoint. At emission
         # time that is `M_t`, so the newest frame of a stack is identical
