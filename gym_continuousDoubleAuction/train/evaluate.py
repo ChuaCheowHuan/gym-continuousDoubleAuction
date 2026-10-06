@@ -120,6 +120,12 @@ def roll_episode(algo, env, mapping_fn, episode_index: int, seed: Optional[int],
     }
     last_info: Dict[str, dict] = {}
     steps = 0
+    # Per agent, because an agent that terminates leaves the env: it is absent
+    # from every later step's `terminateds`, so reading the last one reported a
+    # mid-episode bankruptcy as "not terminated", and dividing its activity by
+    # the whole episode's length understated every fraction.
+    agent_steps = {agent: 0 for agent in env.possible_agents}
+    terminated = set()
     while True:
         actions = {
             agent: act(modules[assignment[agent]], obs[agent], deterministic,
@@ -128,6 +134,9 @@ def roll_episode(algo, env, mapping_fn, episode_index: int, seed: Optional[int],
         }
         obs, rewards, terminateds, truncateds, infos = env.step(actions)
         steps += 1
+        for agent in actions:
+            agent_steps[agent] += 1
+        terminated.update(a for a, done in terminateds.items() if done and a != "__all__")
         for agent, reward in rewards.items():
             totals[agent]["return"] += float(reward)
         for agent, info in infos.items():
@@ -142,6 +151,7 @@ def roll_episode(algo, env, mapping_fn, episode_index: int, seed: Optional[int],
     for agent in env.possible_agents:
         info = last_info.get(agent, {})
         nav = float(info["NAV"]) if "NAV" in info else None
+        played = agent_steps[agent] or 1
         agents.append({
             "agent": agent,
             "module": assignment[agent],
@@ -149,12 +159,12 @@ def roll_episode(algo, env, mapping_fn, episode_index: int, seed: Optional[int],
             "final_nav": nav,
             "nav_change_frac": (None if nav is None else (nav - float(env.init_cash)) / float(env.init_cash)),
             "num_trades": int(info.get("num_trades", 0) or 0),
-            "pass_fraction": totals[agent]["is_pass_action"] / steps,
-            "rejection_fraction": totals[agent]["num_rejected_step"] / steps,
-            "unmatched_fraction": totals[agent]["num_unmatched_step"] / steps,
+            "pass_fraction": totals[agent]["is_pass_action"] / played,
+            "rejection_fraction": totals[agent]["num_rejected_step"] / played,
+            "unmatched_fraction": totals[agent]["num_unmatched_step"] / played,
             "passive_fill_share": (totals[agent]["num_passive_fills_step"] / totals[agent]["num_trades_step"]
                                    if totals[agent]["num_trades_step"] else None),
-            "terminated": bool(terminateds.get(agent, False)),
+            "terminated": agent in terminated,
         })
     return {"episode": episode_index, "steps": steps, "agents": agents}
 

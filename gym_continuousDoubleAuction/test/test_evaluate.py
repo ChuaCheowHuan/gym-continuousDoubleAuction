@@ -52,3 +52,61 @@ def test_render_has_a_row_per_module():
 def test_cli_defaults_exist():
     for key in ("episodes", "seed", "out", "log_level"):
         cli_default("cda_evaluate", key)
+
+
+class _ScriptedEnv:
+    """Two agents; agent_1 goes bankrupt on step 2 and leaves, agent_0 runs to
+    the truncation at step 4 - the shape the real env gives a mid-episode
+    bankruptcy: the terminated agent is absent from every later step."""
+    possible_agents = ["agent_0", "agent_1"]
+    init_cash = 100
+
+    def reset(self, seed=None):
+        self.t = 0
+        self.agents = list(self.possible_agents)
+        return {a: None for a in self.agents}, {}
+
+    def step(self, actions):
+        self.t += 1
+        acting = list(self.agents)
+        infos = {a: {"NAV": "100", "is_pass_action": 1, "num_rejected_step": 0,
+                     "num_unmatched_step": 0, "num_passive_fills_step": 0,
+                     "num_trades_step": 0, "num_trades": 0} for a in acting}
+        terminateds = {a: False for a in acting}
+        if self.t == 2:
+            terminateds["agent_1"] = True
+            infos["agent_1"]["NAV"] = "0"
+            self.agents = ["agent_0"]
+        terminateds["__all__"] = False
+        truncateds = {"__all__": self.t >= 4}
+        return ({a: None for a in acting}, {a: 0.0 for a in acting},
+                terminateds, truncateds, infos)
+
+
+class TestMidEpisodeBankruptcy:
+    """An agent bankrupted before the last step was reported as not
+    terminated - it is missing from the final `terminateds` - and its activity
+    fractions were divided by the whole episode's length."""
+
+    @staticmethod
+    def _roll(monkeypatch):
+        class _Algo:
+            config = type("C", (), {"normalize_actions": True, "clip_actions": False})()
+
+            def get_module(self, module_id):
+                return None
+
+        monkeypatch.setattr(evaluate, "act", lambda *args, **kwargs: {})
+        record = evaluate.roll_episode(_Algo(), _ScriptedEnv(), lambda agent, ep: "policy_0",
+                                       episode_index=0, seed=0, deterministic=True)
+        return {row["agent"]: row for row in record["agents"]}
+
+    def test_it_is_reported_terminated(self, monkeypatch):
+        rows = self._roll(monkeypatch)
+        assert rows["agent_1"]["terminated"] is True
+        assert rows["agent_0"]["terminated"] is False
+
+    def test_its_fractions_cover_the_steps_it_played(self, monkeypatch):
+        rows = self._roll(monkeypatch)
+        assert rows["agent_1"]["pass_fraction"] == 1.0, "it passed on both of its 2 steps"
+        assert rows["agent_0"]["pass_fraction"] == 1.0
