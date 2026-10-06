@@ -540,6 +540,11 @@ class OrderBook(object):
         
         new_price = order_update['price']
         new_quantity = order_update['quantity']
+        if new_quantity <= 0:
+            raise ValueError(
+                f"modify_order(): order quantity must be > 0, got {new_quantity!r} "
+                f"(order_id {order_id!r})"
+            )
 
         # Scenario 4: Quantity decrease at same price -> Keep priority
         if new_price == original_price and new_quantity <= original_quantity:
