@@ -1469,9 +1469,19 @@ def build_algo(cfg: TrainConfig):
             )
             continue
 
-        _fix_checkpoint_optimizer_betas(algo)
-        _check_restored_config(algo.config, ppo)
-        _reconcile_league_state(algo, path)
+        try:
+            _fix_checkpoint_optimizer_betas(algo)
+            _check_restored_config(algo.config, ppo)
+            _reconcile_league_state(algo, path)
+        except BaseException:
+            # `from_checkpoint` has already started this run's env-runner and
+            # learner actors; dropped without a stop they keep their CPUs, and
+            # the next `train()` in the same Ray session can wait on them.
+            try:
+                algo.stop()
+            except Exception:
+                logger.warning("could not stop the refused restore", exc_info=True)
+            raise
 
         restored_callback = algo_callback(algo)
         if restored_callback is None:
