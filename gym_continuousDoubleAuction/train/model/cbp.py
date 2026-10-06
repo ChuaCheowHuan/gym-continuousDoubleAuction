@@ -226,9 +226,11 @@ def _sequential_layers(seq: nn.Sequential, prefix: str) -> List[ReplaceableLayer
     """Replaceable layers wholly contained in one `nn.Sequential`.
 
     A layer is a `Linear -> (activation) -> Linear` run with nothing but
-    pass-through modules in between. `blocks.feedforward`, `token_embed
-    .token_mlp`, the MoE experts, `jepa.predict` and the stock MLP's hidden
-    layers all have exactly this shape.
+    pass-through modules in between. `blocks.feedforward`, the MoE experts,
+    `jepa.predict` and the stock MLP's hidden layers all have exactly this
+    shape. `token_embed.token_mlp` does not: it is `Linear -> GELU` with no
+    second Linear, so it is never registered - and with nothing else of this
+    shape in it, the `lstm` encoder has no replaceable layer at all.
     """
     layers: List[ReplaceableLayer] = []
     children = list(seq)

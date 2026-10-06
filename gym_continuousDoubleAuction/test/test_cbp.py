@@ -38,6 +38,7 @@ from gym_continuousDoubleAuction.train.model.cbp import (
     select_and_replace,
     update_utility,
 )
+from gym_continuousDoubleAuction.train.model.cbp_learner import CBPLearnerMixin
 from gym_continuousDoubleAuction.train.model.encoders import (
     ENCODER_REGISTRY,
     MLP_ENCODER_TYPE,
@@ -638,6 +639,43 @@ class TestDevicePlacement:
         # `empty_like` inherits device and dtype from the weight; `torch.empty`
         # or `torch.rand` with an explicit shape would not.
         assert "torch.empty_like(weight[index])" in source
+
+
+class TestNothingToReplace:
+    """CBP on a module with no replaceable layer must say so.
+
+    `lstm` is that module: its token MLP is `Linear -> GELU` with no second
+    Linear, and the recurrent cell and heads are not the two-Linear shape, so
+    discovery finds nothing. `_cbp_attach` used to return quietly, and a run
+    with `cbp_enabled` on `lstm` then trained exactly like one with it off -
+    no replacements, no metrics, no message.
+    """
+
+    class _Learner(CBPLearnerMixin):
+        def __init__(self, module):
+            self.module = {"policy_0": module}
+            self._cbp_config = CBPConfig(enabled=True)
+            self._cbp_layers, self._cbp_state, self._cbp_handles = {}, {}, []
+
+        def should_module_be_updated(self, module_id):
+            return True
+
+    def test_lstm_has_no_replaceable_layer(self, spaces):
+        assert find_replaceable_layers(build_module(spaces, encoder_type="lstm")) == []
+
+    def test_a_trained_module_with_nothing_to_replace_warns(self, spaces, caplog):
+        learner = self._Learner(build_module(spaces, encoder_type="lstm"))
+        with caplog.at_level("WARNING"):
+            learner._cbp_attach("policy_0")
+        assert "policy_0" in caplog.text and "no layer" in caplog.text
+        assert learner._cbp_layers == {}
+
+    def test_a_module_with_layers_does_not_warn(self, spaces, caplog):
+        learner = self._Learner(build_module(spaces))
+        with caplog.at_level("WARNING"):
+            learner._cbp_attach("policy_0")
+        assert "no layer" not in caplog.text
+        assert len(learner._cbp_layers["policy_0"]) == 4
 
 
 class TestDDPUnwrapping:

@@ -56,6 +56,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 
+from gym_continuousDoubleAuction.logging_setup import get_logger
 from gym_continuousDoubleAuction.train.model.cbp import (
     CBPConfig,
     CBPLayerState,
@@ -67,6 +68,8 @@ from gym_continuousDoubleAuction.train.model.cbp import (
     select_and_replace,
     update_utility,
 )
+
+logger = get_logger(__name__)
 
 #: Key under which CBP's state rides in the Learner's checkpoint.
 CBP_STATE = "continual_backprop"
@@ -181,6 +184,15 @@ class CBPLearnerMixin:
 
         layers = find_replaceable_layers(module, self._cbp_config.scope)
         if not layers:
+            # Not silent: a run that asked for continual backprop on a network
+            # it cannot touch would otherwise train exactly like one without it,
+            # with no replacements and no metrics to show the difference. The
+            # `lstm` encoder is the case today (doc/25 section 3.4).
+            logger.warning(
+                "continual backprop is on, but %s has no layer it can replace "
+                "(scope %r); it will train as if continual backprop were off.",
+                module_id, self._cbp_config.scope,
+            )
             return
 
         self._cbp_layers[module_id] = layers
