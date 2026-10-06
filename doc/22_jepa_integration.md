@@ -391,6 +391,15 @@ An encoder can now declare its own RLModule and Learner through `@register(modul
 learner_class_path=…)`. Nothing else declares either, so every previously registered encoder
 resolves to exactly the classes it resolved to before — which is what made this additive.
 
+**With Continual Backprop on.** CBP does not take the encoder's Learner slot; it composes over
+whatever `learner_class_for` returned, so `jepa` plus CBP resolves to `CBPCDAJEPALearner` and the
+latent-prediction loss still comes from `CDAJEPALearner` ([25](25_continual_backprop.md) §2.5 has the
+diagram). CBP replaces units only in layers gradient descent maintains, which keeps it off the EMA
+`target_trunk`: discovery finds that trunk, because it mirrors the online one, and `cbp._is_trained`
+drops it. A unit reinitialised there would never be updated back and would break the EMA
+relationship for good. `test_cbp.py::test_frozen_layers_are_skipped` pins this, and
+`integration/test_cbp_wiring.py::test_cbp_on_with_jepa_keeps_the_jepa_learner` pins the composition.
+
 **What the probe says so far.** Scored against `mlp` and `transformer` on the reward-free targets,
 `jepa` is competitive and wins nothing decisively. That is the expected reading rather than a
 disappointment: the probe scores encoders **untrained**, so it is measuring JEPA's *architecture* —

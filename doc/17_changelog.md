@@ -238,6 +238,9 @@ a folder that no longer existed, and every entry in its own document table omitt
 prefix, so all 39 of those links resolved against the repository root and were broken. Both are
 fixed; the table now lists every document, including [18](18_configuration.md), [19](19_docker.md), [20](20_colab.md) and [21](21_logging_review.md).
 
+**Later follow-up.** The index has since moved out of the top-level README into
+[doc/README.md](README.md), which GitHub shows when someone browses the folder; see §58.
+
 ## 10. Test suite: unittest → pytest
 
 The entire test suite (90 unit tests across 13 files, plus the 13-test RLlib integration file)
@@ -3350,3 +3353,47 @@ time so the book can refill; this is that, as a third mode ([04](04_accounting.m
   freeze and the mask, the freeze lifting, equity running out midway, counted once, horizon 1 ==
   market, config. Suite: **1,173 unit**.
 
+
+## 58. The README stops being the documentation index
+
+The top-level `README.md` had grown into a second copy of the documentation's front matter: the
+system diagram, the documentation mindmap, five document tables, eleven reading paths and a status
+paragraph, 228 lines in all. Each now lives in one place under `doc/`, and the README is the
+orientation page it was meant to be.
+
+| Was in the README | Now in |
+|---|---|
+| The "system at a glance" diagram | [02](02_architecture.md) §2.0, the canonical copy, now coloured by package. The README keeps a copy marked as such |
+| The documentation mindmap, the five document tables, the reading paths | [doc/README.md](README.md), new. Links rewritten relative to `doc/`; a row added for [README_v1.md](README_v1.md) |
+| The "Main problems" status paragraph | [15](15_findings_and_recommendations.md) "Status in brief" |
+| Summary, v1 pointer, acknowledgements, disclaimer, citation | still the README, verbatim |
+
+The README gained a quick start, with its three commands copied from [26](26_runbook.md) §26.2 and
+§26.4.
+
+**New diagrams**, all Mermaid and all coloured with one palette, so a colour means the same package
+everywhere: blue `envs/exchg/` and `train/`, green `envs/orderbook/`, red `envs/agent/` and
+`envs/account/`.
+
+- [02](02_architecture.md) §2.2: the four layers as a dependency stack, with `config_loader` and
+  `logging_setup` cutting across them.
+- [25](25_continual_backprop.md) §2.5: how the one Learner class is assembled. The encoder picks
+  the base, then Continual Backprop and tuned Adam compose over it as mixins. A table of the
+  resolved class for every encoder follows it, and [22](22_jepa_integration.md) §4.2 now links
+  there and states the EMA `target_trunk` exclusion, which it had not mentioned.
+- [26](26_runbook.md) §26.0.1: every entry point by the goal it serves, each pointing at the section
+  with its full invocation.
+- [18](18_configuration.md) §8.3: how `train/runtime.py` resolves the platform and the hardware set,
+  including the deliberate fallback from `CDA_USE_GPU=true` to the cpu set without CUDA.
+
+**Stale facts corrected where the text moved:**
+
+- The status paragraph said "the agent's own resting orders are still invisible to it, and the
+  price level index is still a non-stationary coordinate". Both were closed on 2026-09-18, by §47
+  and by the tick-offset grid ([05](05_observation_space.md) §7.4, §7.7). It now says so.
+- [01](01_overview.md) §1.4 still gave the observation as 216 floats with a 32-float private block,
+  and the action Dict without `order_slot`. It is 233 = 4 × 48 + 41, the private block having
+  gained the nine `can_*` action-mask entries (§53), and the Dict has six heads.
+
+Other current-tense mentions of 216 floats or a 32-float private block remain, in 05, 09, 10, 12,
+15, 18 and 21. This pass only moved text, so it did not touch them.

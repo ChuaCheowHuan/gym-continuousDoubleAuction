@@ -324,6 +324,41 @@ the MoE term, the JEPA term and CBP all survive together, and every existing enc
 exactly what it resolves to today when CBP is off. This is the same isolation property
 `jepa` was held to, obtained a different way because the mechanism is a different *kind* of thing.
 
+As shipped, in `_learner_class` ([`train/train.py`](../gym_continuousDoubleAuction/train/train.py))
+and `with_continual_backprop`
+([`cbp_learner.py`](../gym_continuousDoubleAuction/train/model/cbp_learner.py)):
+
+```mermaid
+flowchart LR
+    ET["encoder_type"] --> LCF["learner_class_for<br/>one Learner slot, chosen by the encoder"]
+    LCF -->|"mlp, transformer,<br/>lstm, moe_transformer"| B1["CDAPPOTorchLearner<br/>+ MoE load-balancing term"]
+    LCF -->|"jepa"| B2["CDAJEPALearner<br/>+ latent-prediction term"]
+    B1 --> Q{"cbp_enabled or<br/>cbp_metrics_only?"}
+    B2 --> Q
+    Q -->|"yes"| W["with_continual_backprop<br/>CBPLearnerMixin (+ TunedAdamMixin if the<br/>optimizer group is non-default) + base"]
+    Q -->|"no"| T{"adam_betas or adam_weight_decay<br/>non-default?"}
+    T -->|"yes"| TA["with_tuned_adam<br/>TunedAdamMixin + base"]
+    T -.->|"no: the base class itself"| OUT["Learner RLlib builds"]
+    W --> OUT
+    TA --> OUT
+
+    classDef learn fill:#2E4986,stroke:#1F3366,color:#fff
+    classDef ledger fill:#A44029,stroke:#7A2F1E,color:#fff
+    class ET,LCF,B1,B2,OUT learn
+    class W,TA ledger
+```
+
+| `encoder_type` | Base Learner, chosen by the encoder | With CBP on |
+|---|---|---|
+| `mlp`, `transformer`, `lstm` | `CDAPPOTorchLearner` | `CBPCDAPPOTorchLearner` |
+| `moe_transformer` | `CDAPPOTorchLearner`, whose load-balancing term only this encoder emits | `CBPCDAPPOTorchLearner` |
+| `jepa` | `CDAJEPALearner`, adding the latent-prediction term | `CBPCDAJEPALearner` |
+
+The mixin sits ahead of the base in the MRO, so `apply_gradients`, `get_state` and
+`configure_optimizers_for_module` resolve to it while `compute_loss_for_module` still resolves to
+the base. That is what keeps the MoE and JEPA loss terms. `TunedAdamMixin` composes the same way,
+on its own or alongside CBP (§5.6 of [18](18_configuration.md)).
+
 **Which hook it composes onto is settled in §3.1, not here, and the answer is not the one this
 section originally gave.** The first draft argued for `after_gradient_based_update` — confirmed
 against the installed RLlib (2.56.1) to run **once** per `update()`, after the whole minibatch and

@@ -884,6 +884,41 @@ Note the asymmetry, which is intentional: `CDA_USE_GPU=true` does **not** force 
 machine without CUDA. It falls back to the cpu set and says so, because the alternative is RLlib
 placing a learner on a device that is not there.
 
+The two choices are resolved independently by `resolve()` in
+[`train/runtime.py`](../gym_continuousDoubleAuction/train/runtime.py) and then overlaid onto the
+`TrainConfig`:
+
+```mermaid
+flowchart TB
+    subgraph P["Platform: where the files are"]
+        PA{"platform argument?"} -->|"auto"| PE{"$CDA_PLATFORM set?"}
+        PE -->|"no"| PC{"in Colab?"}
+        PC -->|"no"| PD{"/.dockerenv and the docker<br/>repo_path both exist?"}
+        PA -->|"named"| PN["that platform"]
+        PE -->|"yes"| PN
+        PC -->|"yes"| COLAB["colab"]
+        PD -->|"yes"| DOCKER["docker"]
+        PD -->|"no"| LOCAL["local<br/>relocates nothing"]
+    end
+
+    subgraph H["Hardware: which parameter set"]
+        HA{"use_gpu argument,<br/>else $CDA_USE_GPU"} -->|"false"| CPU["cpu set"]
+        HA -->|"true or auto"| HC{"torch.cuda.is_available()?"}
+        HC -->|"yes"| GPU["gpu set"]
+        HC -->|"no, and auto"| CPU
+        HC -->|"no, but true was asked for"| WARN["cpu set + WARNING<br/>never a learner on a missing device"]
+    end
+
+    PN --> R["Runtime"]
+    COLAB --> R
+    DOCKER --> R
+    LOCAL --> R
+    CPU --> R
+    GPU --> R
+    WARN --> R
+    R --> APPLY["apply(): dataclasses.replace<br/>hardware and path fields only"]
+```
+
 #### The `lstm` encoder and its two time axes
 
 `lstm` is the *structured* recurrent encoder, not RLlib's `use_lstm` shortcut. The
