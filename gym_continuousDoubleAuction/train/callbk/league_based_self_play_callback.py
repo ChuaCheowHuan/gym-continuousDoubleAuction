@@ -838,7 +838,11 @@ class SelfPlayCallback(RLlibCallback):
             metrics_logger.log_value(
                 NAV_VIOLATIONS_METRIC, 0.0 if conserved else 1.0, reduce="sum",
             )
-            self._log_episode_account(last_info, metrics_logger)
+            # Each agent's own last info, not the last env step's: an agent
+            # bankrupted earlier is not part of that step, and leaving it out
+            # hid exactly the loss `episode_nav_min` exists to show.
+            self._log_episode_account(
+                episode.get_infos(-1, env_steps=False), metrics_logger)
 
         report = "\n".join(
             [f"Episode {episode.id_} NAV verification"]

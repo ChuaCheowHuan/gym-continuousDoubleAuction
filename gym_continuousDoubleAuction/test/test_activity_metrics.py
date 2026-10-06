@@ -37,7 +37,7 @@ class MockEpisode:
         self.id_ = episode_id
         self._infos = infos or {}
 
-    def get_infos(self, index):
+    def get_infos(self, index, **kwargs):
         return self._infos if index == -1 else {}
 
     # on_episode_step reads these only when the episode record is on;

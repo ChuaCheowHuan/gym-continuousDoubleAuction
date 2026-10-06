@@ -54,7 +54,7 @@ class MockEpisode:
         self.id_ = id
         self.last_info = last_info
 
-    def get_infos(self, index):
+    def get_infos(self, index, **kwargs):
         if index == -1:
             return self.last_info
         return {}
@@ -552,3 +552,38 @@ class TestDriverCheck:
         """RLlib nests metrics differently across versions. A shape this cannot
         parse must degrade to "nothing seen", not stop a healthy run."""
         assert nav_violations({ENV_RUNNER_RESULTS: {NAV_VIOLATIONS_METRIC: {}}}) == 0.0
+
+
+def test_episode_account_metrics_include_an_agent_terminated_midway():
+    """Through a real MultiAgentEpisode. `get_infos(-1)` is the last *env*
+    step, which an agent bankrupted earlier is not part of, so it was missing
+    from `episode_nav_min` - exactly the extreme loss that metric exists to
+    show. Each agent's own last info (`env_steps=False`) still has it."""
+    from ray.rllib.env.multi_agent_episode import MultiAgentEpisode
+    from ray.rllib.utils.metrics.metrics_logger import MetricsLogger
+
+    episode = MultiAgentEpisode(agent_module_ids={"agent_0": "policy_0", "agent_1": "policy_0"})
+    episode.add_env_reset(observations={"agent_0": 0, "agent_1": 0},
+                          infos={"agent_0": {"NAV": "100"}, "agent_1": {"NAV": "100"}})
+    episode.add_env_step(observations={"agent_0": 1, "agent_1": 1},
+                         actions={"agent_0": 0, "agent_1": 0},
+                         rewards={"agent_0": 0.0, "agent_1": 0.0},
+                         infos={"agent_0": {"NAV": "110"}, "agent_1": {"NAV": "0"}},
+                         terminateds={"agent_1": True, "__all__": False},
+                         truncateds={"__all__": False})
+    episode.add_env_step(observations={"agent_0": 2}, actions={"agent_0": 0},
+                         rewards={"agent_0": 0.0}, infos={"agent_0": {"NAV": "200"}},
+                         terminateds={"__all__": False},
+                         truncateds={"agent_0": True, "__all__": True})
+
+    runner = MagicMock()
+    runner.config.env_config = {"init_cash": 100, "num_of_agents": 2}
+    metrics = MetricsLogger(root=True)
+    SelfPlayCallback(num_trainable_policies=1, num_random_policies=1,
+                     episode_data_dir=None).on_episode_end(
+        episode=episode, env_runner=runner, metrics_logger=metrics,
+        env=MockEnv(100, 2), env_index=0, rl_module=None,
+    )
+
+    assert metrics.peek("episode_nav_min") == 0.0
+    assert metrics.peek("episode_nav_max") == 200.0
