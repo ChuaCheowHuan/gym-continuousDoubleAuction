@@ -27,6 +27,32 @@ def _write(tmp_path, payload):
     return str(path)
 
 
+class TestDefaultsAreNotShared:
+    """A mutable default must belong to the config that holds it.
+
+    `config_loader.load` handed out the lru_cache's own objects, so every
+    `TrainConfig` list or dict default was the cached one: appending to one
+    config's `fcnet_hiddens` (or editing an `encoder_specs` block in a notebook)
+    changed every later `TrainConfig()` and `group()` call until `reload()` -
+    the shared-mutable-default bug `default_factory` exists to prevent.
+    """
+
+    def test_mutating_one_configs_list_leaves_the_next_alone(self):
+        from gym_continuousDoubleAuction.config_loader import group
+
+        first = TrainConfig()
+        expected = list(first.fcnet_hiddens)
+        first.fcnet_hiddens.append(64)
+        first.encoder_specs.setdefault("transformer", {})["d_model"] = -1
+
+        assert TrainConfig().fcnet_hiddens == expected
+        assert TrainConfig().encoder_specs.get("transformer", {}).get("d_model") != -1
+        assert group("train_config.json", "ppo")["fcnet_hiddens"] == expected
+
+    def test_two_configs_do_not_share_a_list(self):
+        assert TrainConfig().fcnet_hiddens is not TrainConfig().fcnet_hiddens
+
+
 class TestFromJson:
 
     def test_repo_config_loads(self):

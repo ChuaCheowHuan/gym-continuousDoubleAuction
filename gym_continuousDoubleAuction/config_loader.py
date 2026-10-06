@@ -31,6 +31,7 @@ the rest.
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
 from functools import lru_cache
@@ -100,8 +101,14 @@ def _load_from(directory: str, filename: str) -> Dict[str, Any]:
 
 
 def load(filename: str) -> Dict[str, Any]:
-    """Whole config file as a dict, documentation keys removed."""
-    return _load_from(str(config_dir()), filename)
+    """Whole config file as a dict, documentation keys removed.
+
+    A deep copy of the cached parse, so no caller can change what the next one
+    reads. Handing out the cache itself made every `TrainConfig` list or dict
+    default the same object: appending to one config's `fcnet_hiddens` changed
+    every later `TrainConfig()` and `group()` call until `reload()`.
+    """
+    return copy.deepcopy(_load_from(str(config_dir()), filename))
 
 
 def group(filename: str, group_name: str) -> Dict[str, Any]:
