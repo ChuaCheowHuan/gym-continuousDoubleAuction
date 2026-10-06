@@ -67,5 +67,5 @@ tensorboardX==2.6.5
 torch==2.13.0
 typing-inspection==0.4.3
 typing_extensions==4.16.0
-urllib3==2.7.0
+urllib3==2.8.0
 wrapt==2.3.0
