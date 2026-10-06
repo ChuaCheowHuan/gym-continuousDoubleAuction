@@ -207,16 +207,25 @@ class TestLeagueMetrics:
 
         assert self._emitted(metrics, "iterations_since_champion") is None
 
-    def test_a_promotion_is_counted(self, callback, monkeypatch):
-        """Counted from the champion count either side of the trigger, not from
-        the branch that decided to try: a snapshot that raised and rolled itself
-        back has not promoted anything, and `_create_champion_snapshot_from_policy`
-        swallows its own exceptions."""
+    @staticmethod
+    def _promoter(callback):
+        """What a successful `_create_champion_snapshot_from_policy` leaves."""
         def _promote(algorithm, pid, return_value, iteration):
+            callback.champion_id_counter += 1
+            callback.champion_history.append(
+                {"id": f"champion_{callback.champion_id_counter}", "source_policy": pid,
+                 "iteration": iteration, "return": return_value}
+            )
             callback.champion_count += 1
+        return _promote
 
+    def test_a_promotion_is_counted(self, callback, monkeypatch):
+        """Counted from what the league holds either side of the trigger, not
+        from the branch that decided to try: a snapshot that raised and rolled
+        itself back has not promoted anything, and
+        `_create_champion_snapshot_from_policy` swallows its own exceptions."""
         monkeypatch.setattr(
-            callback, "_create_champion_snapshot_from_policy", _promote,
+            callback, "_create_champion_snapshot_from_policy", self._promoter(callback),
         )
         metrics = self._metrics()
         callback.on_train_result(
@@ -225,6 +234,25 @@ class TestLeagueMetrics:
         )
 
         assert self._emitted(metrics, "champions_promoted").args[1] == 1.0
+
+    def test_a_promotion_into_a_full_league_is_counted(self, monkeypatch):
+        """A full league evicts its oldest champion before the new one is made,
+        so the champion count is the same either side: counting its change read
+        0 for every promotion once the league had filled up."""
+        cb = SelfPlayCallback(num_trainable_policies=2, num_random_policies=6,
+                              min_iterations_between_champions=0, max_champions=1)
+        cb.champion_id_counter = 1
+        cb.champion_history.append({"id": "champion_1", "source_policy": "policy_0",
+                                    "iteration": 0, "return": 1.0})
+        cb.champion_count = 1
+        monkeypatch.setattr(cb, "_create_champion_snapshot_from_policy", self._promoter(cb))
+        metrics = self._metrics()
+        result = _result({"policy_0": 10.0, "policy_1": 0.0, "policy_5": 0.0}, iteration=3)
+        cb.on_train_result(algorithm=object(), metrics_logger=metrics, result=result)
+
+        assert [c["id"] for c in cb.champion_history] == ["champion_2"]
+        assert self._emitted(metrics, "champions_promoted").args[1] == 1.0
+        assert result["league"]["promoted"] == 1
 
     def test_a_failed_snapshot_is_not_counted_as_a_promotion(self, callback, snapshots):
         """`snapshots` records the attempt without changing the count - which is

@@ -969,7 +969,12 @@ class SelfPlayCallback(RLlibCallback):
         # threshold is what is holding the league still. None before the first
         # champion, which is a different state from "0 iterations ago" - so no
         # metric is emitted rather than a misleading zero.
-        promoted_before = self.champion_count
+        # Promotions are champions present after the trigger that were not there
+        # before. Not the change in `champion_count`: a full league evicts its
+        # oldest champion first, so the count is the same either side and a
+        # promotion into a full league read as none. A snapshot that raised and
+        # rolled back adds no id, so it is still not counted.
+        champions_before = {c["id"] for c in self.champion_history}
 
         # Check relative performance trigger
         if best_candidate and best_return > threshold:
@@ -980,13 +985,14 @@ class SelfPlayCallback(RLlibCallback):
                  # Pass policy ID directly
                 self._create_champion_snapshot_from_policy(
                     algorithm, best_candidate, best_return, iteration)
-        
+        promoted = len({c["id"] for c in self.champion_history} - champions_before)
+
         league_state = {
             "size": self.num_trainable + self.num_random + self.champion_count,
             "mean_return": float(league_mean),
             "std_return": float(league_std),
             "threshold": float(threshold),
-            "promoted": max(0, self.champion_count - promoted_before),
+            "promoted": promoted,
             "available_modules": len(self.available_modules),
             "idle_modules": len(idle_modules),
             "champions": [c["id"] for c in self.champion_history],
@@ -1029,13 +1035,13 @@ class SelfPlayCallback(RLlibCallback):
             metrics_logger.log_value("league_std_return", league_std, window=10)
 
             # Promotion as a metric rather than only a log banner (doc/11 §2.5,
-            # §4 item 1). Counted from the champion count either side of the
-            # trigger rather than from the branch above, so a snapshot that
+            # §4 item 1). Counted from the league's champions either side of
+            # the trigger rather than from the branch above, so a snapshot that
             # raised and rolled itself back is correctly reported as *not*
             # promoted.
             metrics_logger.log_value(
                 "champions_promoted",
-                float(max(0, self.champion_count - promoted_before)),
+                float(promoted),
                 reduce="sum",
             )
             metrics_logger.log_value(
