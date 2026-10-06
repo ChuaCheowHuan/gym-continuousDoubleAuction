@@ -38,6 +38,8 @@ counterparty that could not act and whose policy was never charged for them.
 """
 from __future__ import annotations
 
+import math
+import numbers
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from typing import Dict, List
 
@@ -46,6 +48,11 @@ from ...config_loader import env_default
 from ...logging_setup import get_logger
 
 logger = get_logger(__name__)
+
+
+def _is_finite_number(value) -> bool:
+    return (isinstance(value, numbers.Real) and not isinstance(value, bool)
+            and math.isfinite(value))
 
 
 class Liquidation_Helper(object):
@@ -76,12 +83,16 @@ class Liquidation_Helper(object):
             raise ValueError(
                 f"liquidation must be one of {self.LIQUIDATION_MODES}; got {liquidation!r}."
             )
-        margin = Decimal(str(maintenance_margin))
-        if not Decimal(0) <= margin < Decimal(1):
+        # A bool is an int to Python, and None is what `train.compare --set
+        # key=null` produces; both, and NaN, are refused here by name rather
+        # than surfacing as a TypeError or a decimal.InvalidOperation.
+        if not _is_finite_number(maintenance_margin) or not 0 <= maintenance_margin < 1:
             raise ValueError(
                 f"maintenance_margin must be in [0, 1); got {maintenance_margin!r}."
             )
-        if int(liquidation_horizon) != liquidation_horizon or liquidation_horizon < 1:
+        margin = Decimal(str(maintenance_margin))
+        if (not _is_finite_number(liquidation_horizon)
+                or int(liquidation_horizon) != liquidation_horizon or liquidation_horizon < 1):
             raise ValueError(
                 f"liquidation_horizon must be a whole number of steps >= 1; got "
                 f"{liquidation_horizon!r}."
