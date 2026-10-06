@@ -124,3 +124,21 @@ class TestParseOverrides:
     def test_scalars_are_unchanged(self):
         assert compare.parse_overrides(["max_step=64", "lr=0.001", "action_mask=false"]) == {
             "max_step": 64, "lr": 0.001, "action_mask": False}
+
+
+class TestFinalCheckpoint:
+    """The checkpoint a run is scored by is the one *it* wrote last.
+
+    `run_one` took the highest-numbered save in the directory. Re-running a
+    sweep into the same `--out` with fewer iterations left the earlier sweep's
+    higher-numbered saves there, so the probe scored the previous sweep's
+    weights against this sweep's metrics.
+    """
+
+    def test_it_is_the_save_at_this_runs_final_iteration(self):
+        saves = [(2, "chkpt/iter_00002"), (4, "chkpt/iter_00004"), (16, "chkpt/iter_00016")]
+        assert compare._final_checkpoint(saves, 4) == "chkpt/iter_00004"
+
+    def test_no_save_at_that_iteration_is_none(self):
+        assert compare._final_checkpoint([(16, "chkpt/iter_00016")], 4) is None
+        assert compare._final_checkpoint([], 4) is None

@@ -194,11 +194,24 @@ def run_one(base_cfg, encoder: str, seed: int, out_dir: str, iters: int) -> Dict
             "obs_clip_fraction": _as_float(env_runners.get("obs_clip_fraction")),
             "parameters": _parameter_count(algo, trainable[0]),
         }
-        checkpoints = list_checkpoints(cfg.checkpoint_dir)
-        row["checkpoint"] = checkpoints[-1][1] if checkpoints else None
+        row["checkpoint"] = _final_checkpoint(
+            list_checkpoints(cfg.checkpoint_dir), row["iterations"])
     finally:
         algo.stop()
     return row
+
+
+def _final_checkpoint(checkpoints, iteration: int) -> Optional[str]:
+    """The save this run wrote at its final iteration, or None.
+
+    Not the highest-numbered save in the directory: a sweep re-run into the
+    same `--out` with fewer iterations leaves the earlier sweep's later saves
+    behind, and those are another run's weights. A save at the same iteration
+    is overwritten by this run (`save_checkpoint` replaces it), so matching the
+    iteration is enough.
+    """
+    mine = [path for it, path in checkpoints if it == iteration]
+    return mine[-1] if mine else None
 
 
 def _parameter_count(algo, module_id: str) -> Optional[int]:
