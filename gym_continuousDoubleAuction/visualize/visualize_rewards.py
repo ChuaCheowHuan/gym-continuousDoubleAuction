@@ -7,12 +7,27 @@ from gym_continuousDoubleAuction.config_loader import constant
 from gym_continuousDoubleAuction.train.episode_record import REWARD_TERMS
 from gym_continuousDoubleAuction.visualize.episode_data import load_episode
 
-#: The categorical palette's first five slots, in a fixed order that never
-#: changes with the data - each reward term keeps the same color across every
-#: episode and every run, which is what makes the legend readable at a glance.
-#: Public (not `_`-prefixed) so `visualize_training.py` can plot the same
-#: terms, aggregated over training, in matching colors.
-TERM_COLORS = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4")
+#: One color per reward term, keyed by name, so each term keeps the same color
+#: across every episode and every run, which is what makes the legend readable
+#: at a glance. Public (not `_`-prefixed) so `visualize_training.py` can plot
+#: the same terms, aggregated over training, in matching colors.
+#:
+#: Keyed rather than a tuple zipped against `REWARD_TERMS`: the tuple had five
+#: entries when a sixth term was added, and `zip` silently dropped it from every
+#: chart. The check below makes a term without a color an import-time error.
+TERM_COLORS = {
+    "nav_term": "#2a78d6",
+    "order_penalty": "#eb6834",
+    "trade_penalty": "#1baf7a",
+    "drawdown_penalty": "#eda100",
+    "passive_bonus": "#e87ba4",
+    "dead_action_penalty": "#7a5af8",
+}
+if set(TERM_COLORS) != set(REWARD_TERMS):
+    raise RuntimeError(
+        f"TERM_COLORS names {sorted(TERM_COLORS)} but the reward has terms "
+        f"{sorted(REWARD_TERMS)}; give every term a color."
+    )
 
 
 def visualize_rewards(run_dir=None, episode_id=None):
@@ -55,19 +70,20 @@ def visualize_rewards(run_dir=None, episode_id=None):
 
 def visualize_reward_decomposition(run_dir=None, episode_id=None, agent_id=None):
     """
-    Plots one agent's cumulative reward, split into its five signed terms, over
-    one episode. The terms (`reward_helper.Reward_Helper.set_reward`) sum to
-    the reward by construction, so this is a decomposition, not an estimate.
+    Plots one agent's cumulative reward, split into its six signed terms
+    (`REWARD_TERMS`), over one episode. The terms
+    (`reward_helper.Reward_Helper.set_reward`) sum to the reward by
+    construction, so this is a decomposition, not an estimate.
 
     A stacked-area chart would misrepresent this: `nav_term` can be either
-    sign, `order_penalty`/`trade_penalty`/`drawdown_penalty` are always <= 0,
-    `passive_bonus` is always >= 0, and stacking assumes same-signed parts of
-    a whole. Cumulative lines per term, against the actual total as a
+    sign, `order_penalty`/`trade_penalty`/`drawdown_penalty`/
+    `dead_action_penalty` are always <= 0, `passive_bonus` is always >= 0, and
+    stacking assumes same-signed parts of a whole. Cumulative lines per term, against the actual total as a
     reference, stay honest about sign and are a direct visual check that the
     terms really do add up to the reward recorded for this agent.
 
     agent_id defaults to `visualize_paths.default_agent_id`, matching
-    `visualize_orderbook.py`: decomposing every agent's five terms in one
+    `visualize_orderbook.py`: decomposing every agent's terms in one
     panel would be unreadable, so this is a single-agent, one-episode view.
 
     run_dir/episode_id default to the most recently recorded run/episode; see
@@ -87,9 +103,9 @@ def visualize_reward_decomposition(run_dir=None, episode_id=None, agent_id=None)
 
     plt.figure(figsize=(20, 10))
 
-    for term, color in zip(REWARD_TERMS, TERM_COLORS):
+    for term in REWARD_TERMS:
         values = episode[f"reward_term_{term}"].fillna(0.0).to_numpy()
-        plt.plot(np.cumsum(values), label=term, color=color, linewidth=2.0)
+        plt.plot(np.cumsum(values), label=term, color=TERM_COLORS[term], linewidth=2.0)
 
     total = episode["reward"].fillna(0.0).to_numpy()
     plt.plot(

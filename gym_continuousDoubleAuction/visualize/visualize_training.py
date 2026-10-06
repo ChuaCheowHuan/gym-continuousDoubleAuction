@@ -173,10 +173,10 @@ def _plot_reward_term_means(ax, rows):
     stacked, for the same reason `visualize_reward_decomposition` isn't: the
     terms are mixed-sign, and stacking assumes they aren't.
     """
-    for term, color in zip(REWARD_TERMS, TERM_COLORS):
+    for term in REWARD_TERMS:
         iterations, values = _env_runner_series(rows, f"reward_term_mean_{term}")
         if len(iterations):
-            ax.plot(iterations, values, color=color, linewidth=1.5, label=term)
+            ax.plot(iterations, values, color=TERM_COLORS[term], linewidth=1.5, label=term)
 
     ax.axhline(y=0, color='black', linestyle='-', alpha=0.3)
     ax.set_ylabel('Mean value')
@@ -187,11 +187,11 @@ def _plot_reward_term_means(ax, rows):
 
 def _plot_reward_term_shares(ax, rows):
     """Each term's share of the reward's variance, stacked. Unlike the means
-    above, a stack is honest here: `_log_reward_terms` normalises the five
+    above, a stack is honest here: `_log_reward_terms` normalises the terms'
     variances to sum to 1, so this genuinely is a part-to-whole quantity, not
     a signed decomposition forced into looking like one.
 
-    Only iterations where all five terms reported a share are plotted - they
+    Only iterations where every term reported a share are plotted - they
     are logged together in one call (`_log_reward_terms`), so this should
     never drop a real iteration, but a stack over mismatched x-values would
     silently misalign the terms if it ever did.
@@ -204,7 +204,8 @@ def _plot_reward_term_shares(ax, rows):
 
     if common_iterations:
         values = [[per_term[term][it] for it in common_iterations] for term in REWARD_TERMS]
-        ax.stackplot(common_iterations, values, colors=TERM_COLORS, labels=REWARD_TERMS, alpha=0.85)
+        ax.stackplot(common_iterations, values, colors=[TERM_COLORS[t] for t in REWARD_TERMS],
+                     labels=REWARD_TERMS, alpha=0.85)
 
     ax.set_ylim(0, 1)
     ax.set_ylabel('Variance share')
