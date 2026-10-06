@@ -820,15 +820,16 @@ class SelfPlayCallback(RLlibCallback):
         conserved = abs(error) <= self.nav_tolerance
 
         # The metric goes out whether or not the invariant held, so a run has a
-        # series to look at rather than only the moment it broke. window=1
-        # keeps it per-iteration rather than smoothed - an error that appears
-        # in one episode out of many must not be averaged away.
+        # series to look at rather than only the moment it broke. Reduced by
+        # max, per iteration: an error that appears in one episode out of many
+        # must not be averaged away - or overwritten, which is what `window=1`
+        # did, keeping only the last episode's value.
         if metrics_logger:
             # float() only at the boundary: the metrics stack reduces with
             # NumPy and will not take a Decimal. The check above has already
             # been decided exactly by this point.
             metrics_logger.log_value(
-                "nav_conservation_error", float(abs(error)), window=1
+                "nav_conservation_error", float(abs(error)), reduce="max"
             )
             # Emitted every episode, including the conserved ones, so the key is
             # always present in the result and the driver's check reads a count

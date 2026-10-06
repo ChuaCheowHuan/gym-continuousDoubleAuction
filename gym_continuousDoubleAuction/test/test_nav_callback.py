@@ -215,6 +215,21 @@ class TestNAVCallback:
         assert _emitted(metrics, NAV_VIOLATIONS_METRIC).args[1] == 1.0
         assert _emitted(metrics, "nav_conservation_error").args[1] == pytest.approx(0.25)
 
+    def test_one_bad_episode_is_not_hidden_by_later_good_ones(self):
+        """Through a real MetricsLogger, not a mock. The error was logged with
+        `window=1`, which reduces to the *last* episode's value: one broken
+        episode followed by conserved ones read 0.0 for the iteration, the
+        opposite of what the comment beside it promised."""
+        from ray.rllib.utils.metrics.metrics_logger import MetricsLogger
+
+        callback = self._callback()
+        metrics = MetricsLogger(root=True)
+        self._end_episode(callback, "ep_bad", self.init_cash - 125, metrics)
+        self._end_episode(callback, "ep_ok_1", self.init_cash, metrics)
+        self._end_episode(callback, "ep_ok_2", self.init_cash, metrics)
+
+        assert metrics.peek("nav_conservation_error") == pytest.approx(500.0)
+
     def test_conservation_error_is_exactly_zero_not_merely_close(self):
         """Decimal end to end means the expected error is 0, so a tolerance of
         0 is a usable setting rather than an impossible one."""
