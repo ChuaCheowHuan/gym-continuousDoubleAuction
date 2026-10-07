@@ -16,6 +16,7 @@ What these pin, in the order the algorithm runs:
   * The accumulator is a fractional counter, which is the detail that decides
     whether anything is ever replaced at a realistic replacement rate.
 """
+import logging
 import math
 
 import pytest
@@ -665,14 +666,14 @@ class TestNothingToReplace:
 
     def test_a_trained_module_with_nothing_to_replace_warns(self, spaces, caplog):
         learner = self._Learner(build_module(spaces, encoder_type="lstm"))
-        with caplog.at_level("WARNING"):
+        with caplog.at_level(logging.WARNING, logger="gym_continuousDoubleAuction"):
             learner._cbp_attach("policy_0")
         assert "policy_0" in caplog.text and "no layer" in caplog.text
         assert learner._cbp_layers == {}
 
     def test_a_module_with_layers_does_not_warn(self, spaces, caplog):
         learner = self._Learner(build_module(spaces))
-        with caplog.at_level("WARNING"):
+        with caplog.at_level(logging.WARNING, logger="gym_continuousDoubleAuction"):
             learner._cbp_attach("policy_0")
         assert "no layer" not in caplog.text
         assert len(learner._cbp_layers["policy_0"]) == 4
