@@ -4,6 +4,12 @@ Severity-ranked across all three perspectives and both source documentation sets
 marks a finding confirmed by executing the code; raw output is in
 [16_verification_log.md](16_verification_log.md).
 
+Every finding below is also a GitHub issue, linked from its entry: resolved ones are
+closed with how they were resolved, and the open ones are the
+[open issues](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues?q=is%3Aissue+is%3Aopen).
+Severity is a label (`S1-blocking` … `S4-minor`); the review's open decisions carry
+`needs-decision`.
+
 ---
 
 ## Status in brief
@@ -105,6 +111,8 @@ mindmap
       S4-18 duplicate CODEOWNER files
       S4-19 layout version in checkpoints — fixed
       S4-20 to S4-28 the 2026-10-07 review — fixed
+    Open decisions
+      R-1 to R-19 from the 2026-10-07 review
 ```
 
 ---
@@ -123,6 +131,8 @@ mindmap
 ## S1 — Blocking
 
 ### S1-1 · PPO's critic receives zero gradient **[verified, fixed]**
+
+_Tracked in [#91](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/91)._
 
 `vf_clip_param` defaults to 10.0 and is never overridden, while value targets are NAV sums in the
 10⁴–10⁷ range. `torch.clamp(vf_loss, 0, 10.0)` is flat there, so `∂L_vf/∂θ = 0` for every sample.
@@ -147,6 +157,8 @@ guard. The same change also closed S2-3 and made S2-1's fix expressible.
 [07 §2.1](07_reward_function.md)
 
 ### S1-2 · Observation contains no private state **[verified, fixed]**
+
+_Tracked in [#92](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/92)._
 
 Every agent received the byte-identical 168-float public book vector (`distinct obs vectors
 across agents: 1`). Absent: `net_position`, `VWAP`, `nav`, `max_nav`, `cash`, own resting orders,
@@ -189,6 +201,8 @@ but not which orders that cash is committed to.
 
 ### S1-3 · Doing nothing is a dominant strategy **[verified, fixed]**
 
+_Tracked in [#93](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/93)._
+
 | Policy | Total return, 4 agents × 300 steps |
 |---|---|
 | All agents `category=0` (pass) | **0.0 exactly** |
@@ -217,6 +231,8 @@ any edge. Measured over 1,000 steps, `nav_term` sums to **exactly 0.000000** acr
 
 ### S1-4 · The default standalone env could not trade **[verified, fixed]**
 
+_Tracked in [#94](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/94)._
+
 `config/env_defaults.json` shipped `init_cash: 0`. `Trader._order_approved` refuses on
 `nav <= 0` before it inspects anything else, so every trader in a bare env started bankrupt: no
 order was ever placed on any side, `Done_Helper.set_done` put all five agents in `done_set` on
@@ -243,6 +259,8 @@ checked-in file deliberately — a fixture supplying its own cash would reproduc
 spot the smoke run had.
 
 ### S1-5 · The cash check is bypassable; position is not bounded by capital **[verified, fixed]**
+
+_Tracked in [#95](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/95)._
 
 `Trader._order_approved` waived the cash check for the portion of an order that reduces the
 *current* net position, and nothing netted an order against the trader's **other resting orders**.
@@ -289,6 +307,8 @@ pins the cases. The same measurement after the fix: 3,241 and 340 refusals respe
 
 ### S2-1 · Drawdown is penalised as a level, not an increment **[verified, fixed]**
 
+_Tracked in [#96](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/96)._
+
 `max_nav` is monotone within an episode, so a drawdown is re-charged **every step** until NAV
 exceeds the old peak. Measured over 300 steps × 4 random agents: drawdown = **−416,473**, roughly
 **2.4×** the entire NAV term (−174,502). At `max_step=4096` a 1,000-unit early drawdown costs
@@ -308,6 +328,8 @@ is free, ending in drawdown is still penalised, and the term cannot be farmed.
 [07 §4.1](07_reward_function.md)
 
 ### S2-2 · Unnormalised observation scales saturate the `tanh` MLP **[verified, fixed]**
+
+_Tracked in [#97](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/97)._
 
 | Feature block | Range (one 300-step rollout) |
 |---|---|
@@ -336,6 +358,8 @@ rather than the formulas, which stay pinned where they were.
 
 ### S2-3 · Transaction-cost proxies are ~10⁵× too small **[verified, fixed — real fees still open]**
 
+_Tracked in [#98](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/98)._
+
 `order_penalty=0.1`, `trade_penalty=0.05`, `passive_bonus=0.1` against per-step NAV moves of
 −10,949 … +6,126. Three of the reward's five stated objectives — "reducing number of trades",
 "selective order placement", "capturing spread" — therefore have no effect. There are no real
@@ -357,6 +381,8 @@ is a simulator change, not a reward change, and it is unaffected by this fix.
 [07 §4.2](07_reward_function.md)
 
 ### S2-4 · Bankrupt agents are never terminated **[verified, fixed]**
+
+_Tracked in [#99](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/99)._
 
 Forcing `agent_0.nav = −50`:
 
@@ -384,6 +410,8 @@ carries each agent's last reported NAV forward, and a test pins that a *genuine*
 caught when an agent terminated.
 
 ### S2-5 · Self-matching enables mark manipulation **[verified, fixed]**
+
+_Tracked in [#100](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/100)._
 
 An agent can cross its own resting order (`same ID both sides: True`). The accounting handles it
 consistently, so NAV stays conserved — but `mark_to_mkt` uses the **last tape print** as the mark
@@ -414,6 +442,8 @@ behaviour.
 
 ### S2-6 · Every frame in the observation stack has a different normalizer **[verified, fixed]**
 
+_Tracked in [#101](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/101)._
+
 `set_agg_LOB` computes `M` from the book at that moment; `prep_next_state` appends the
 already-normalized frame to the deque. Frames *t−3 … t* each carry their own `M_{t−3} … M_t`, so
 **they cannot be differenced meaningfully** — which is the entire purpose of stacking them. A
@@ -431,6 +461,8 @@ smeared through every price in the book.
 → [05 §7.1](05_observation_space.md#71-each-frame-in-the-stack-is-normalized-by-a-different-denominator--fixed)
 
 ### S2-7 · No trade-flow information — the tape loop is dead code **[verified, fixed]**
+
+_Tracked in [#102](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/102)._
 
 `set_agg_LOB` iterates the tape, uses nothing, and increments a discarded counter. The body is a
 commented-out `write` copy-pasted from `OrderBook.__str__`. The observation therefore contains
@@ -455,6 +487,8 @@ trade flow.
 
 ### S2-8 · No logging framework; the callback prints 42 diagnostics per episode — **fixed**
 
+_Tracked in [#103](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/103)._
+
 *Was:* zero `import logging`; ~86 `print()` calls in `envs/` + `train/`; every remote worker
 printing independently with no level filter, no attribution and no off switch; the
 NAV-conservation check — a **hard ledger invariant** — printing `FAILED` rather than raising.
@@ -468,6 +502,8 @@ Still open, tracked in [11 §4](11_logging_and_observability.md#4-recommended-ad
 three custom values reach TensorBoard, and no per-iteration history is written to disk.
 
 ### S2-9 · The JEPA anti-collapse hinge contributes zero gradient **[verified, fixed]**
+
+_Tracked in [#104](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/104)._
 
 `_jepa_loss` derived `std`, the off-diagonal covariance and
 `variance_penalty = relu(VARIANCE_TARGET − std)` from `target`, which is built inside
@@ -496,6 +532,8 @@ the coefficient in front of it.
 
 ### S2-10 · The `lstm` encoder is invariant to the order of the grid it exists to preserve **[verified, fixed]**
 
+_Tracked in [#105](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/105)._
+
 `TokenEmbedConfig` — the tokenizer that is the entire difference between this project's LSTM and
 RLlib's stock `use_lstm=True` — was `tokenize → Linear → LayerNorm → mean`. A mean of per-token
 linear projections is a linear function of the token *sum*, hence permutation-invariant on both
@@ -520,6 +558,8 @@ exists to ask.
 
 ### S2-11 · `VWAP` goes negative on a partial close, and the observation then reports "flat" **[verified, fixed]**
 
+_Tracked in [#106](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/106)._
+
 `Account._size_decrease` rolls realised P&L into the remaining lot's basis. The roll is load-bearing
 and must stay — on the short side `position_val` is `2·raw_val − mkt_val`, so removing it moves NAV
 — but it leaves `VWAP` free to go negative: long 2 @ 100, sell 1 @ 250 gives **−50**.
@@ -536,6 +576,8 @@ own previous value so an earlier partial close cannot leak into it. The observat
 0.0% of open positions report a non-positive basis, and the worked case reports `vwap_vs_mid` 0.6.
 
 ### S2-12 · `gymnasium.make(...)` raises **[verified, fixed]**
+
+_Tracked in [#107](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/107)._
 
 `setup.py`'s own docstring documents it. Run from a clean directory:
 
@@ -558,6 +600,8 @@ finding. That flag is set only after fixing the spaces; doing it first would hav
 
 
 ### S2-13 · A cancel was cash-checked like a new order, so an over-committed trader could not cancel **[verified, fixed]**
+
+_Tracked in [#108](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/108)._
 
 `Trader._order_approved` ran the same check for every order type: compute the "opening" size,
 multiply by the price, compare against `cash`. For a `cancel` that is meaningless — a cancel
@@ -596,6 +640,8 @@ each case, including that a bankrupt trader still cannot act.
 
 ### S2-14 · A market order is cash-checked at the touch but pays every level it sweeps **[verified, open]**
 
+_Tracked in [#109](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/109)._
+
 `Trader._order_approved` prices a market order's opening size at the best opposite price. A sweep
 pays deeper levels too, so the check passes an order the trader cannot afford. With cash 1,000, a
 market buy of 10 against asks of 1 @ 100 and 9 @ 200 is approved and leaves cash at **−900**
@@ -609,6 +655,8 @@ are approved and so the game the policy plays, which is a decision rather than a
 
 ### S3-1 · Half the `size_mean` action range is a no-op **[verified]**
 
+_Tracked in [#110](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/110)._
+
 `_set_size` applies `abs()` to the Gaussian sample, so `mean=+0.5` and `mean=−0.5` produce
 identical sizes under the same seed. `size_mean` is declared on `Box(-1, 1)`; the optimum is
 bimodal at `±m`, which a unimodal Gaussian head resolves by drifting toward 0 — i.e. minimum
@@ -617,6 +665,8 @@ size. The gradient kink sits exactly where the policy initializes.
 
 ### S3-2 · The `size_sigma` head is inert **[verified]**
 
+_Tracked in [#111](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/111)._
+
 `sigma ∈ [0,1]` is used as an *absolute* standard deviation while means are 49.5·|m| or 499.5·|m|.
 Across its full range the size varies by ±1 contract on a base of 250. The policy pays entropy
 cost for a control that does nothing.
@@ -624,12 +674,16 @@ cost for a control that does nothing.
 
 ### S3-3 · Size is sampled by the environment, outside the policy's log-prob
 
+_Tracked in [#112](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/112)._
+
 The policy emits distribution parameters and the env draws the sample, so the realised size is
 not part of the action whose log-probability PPO uses in the importance ratio — and the agent
 never observes the realisation. Irreducible advantage variance.
 **Fix:** emit size directly as a `Box` action.
 
 ### S3-4 · The order book's `tick_size` is inert **[verified, fixed]**
+
+_Tracked in [#113](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/113)._
 
 `tick_size` used to exist as two independent values: a hardcoded `min_tick = 1` in
 `Action_Helper` that actually drove prices, and an `OrderBook` argument that was stored and never
@@ -676,6 +730,8 @@ still ships the wide one.
 
 ### S3-5 · Seeding is entirely non-functional **[verified, fixed]**
 
+_Tracked in [#114](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/114)._
+
 `reset(seed=...)` forwarded to `MultiAgentEnv.reset`, which seeds `self._np_random` — which
 nothing read. All three of the env's random draws went to the global `np.random` instead: the
 initial price anchor in `reset`, order sizes in `Action_Helper._set_size`, and the queueing order
@@ -710,6 +766,8 @@ episode is unchanged, which fails against the old code in the direction that hid
 
 ### S3-6 · `install_requires` does not match the imports **[verified, fixed]**
 
+_Tracked in [#115](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/115)._
+
 `envs/` imports `ray`, `sklearn.utils`, and `six`, none of which were in `install_requires`.
 `pip install gym_continuousDoubleAuction` without extras fails on first import. CI never catches
 it because it always installs the full `requirements.txt`.
@@ -737,6 +795,8 @@ fixing this one — see S3-18.
 
 ### S3-18 · The config tree was not in the built distribution **[verified, fixed]**
 
+_Tracked in [#116](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/116)._
+
 `setup.py` declared neither `package_data` nor `include_package_data`, and `config/` sits at the
 repo root rather than inside the package — so a wheel built from this tree carried **zero** JSON
 config files. `config_loader.config_dir()` searches `<pkg>/../config` and `<pkg>/config`; in
@@ -755,6 +815,8 @@ is git-ignored and never preferred in-tree (the repo root is checked first). `MA
 the root tree into an sdist so the staging has something to read there too.
 
 ### S3-19 · Every episode ran one step longer than `max_step` **[verified, fixed]**
+
+_Tracked in [#117](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/117)._
 
 `Done_Helper.set_all_done` compared `self.t_step > self.max_step - 1`, but `step()` increments
 `t_step` *after* `set_step_outputs` has computed the flags. The condition first held at
@@ -776,6 +838,8 @@ wrong. `test_env_lifecycle.py::TestEpisodeLength` pins the count at several hori
 that truncation is reported *on* the final step rather than after it.
 
 ### S3-20 · The escrow-delta path for order modification was dead **[verified, fixed]**
+
+_Tracked in [#118](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/118)._
 
 `Cash_Processor.modify_cash_transfer` computed `diff = order_val - qoute_val` and moved `diff`
 between `cash` and `cash_on_hold` — a modify treated as a pure escrow adjustment. Nothing called
@@ -810,6 +874,8 @@ seventh test now asserts the helper stays gone.
 
 ### S3-7 · `sys.exit()` used for error handling in the matching engine **[fixed]**
 
+_Tracked in [#119](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/119)._
+
 Six live occurrences in `orderbook.py`. `SystemExit` derives from `BaseException`, so inside a
 Ray actor it kills the worker rather than surfacing a traceback. Currently unreachable, but one
 action-space change away.
@@ -821,6 +887,8 @@ TestMalformedInputRaisesInsteadOfExiting` pins each path and asserts that nothin
 `SystemExit`. `import sys` is gone from the module.
 
 ### S3-8 · `build_algo` returns a detached callback on the restore path **[fixed]**
+
+_Tracked in [#120](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/120)._
 
 League state *does* survive checkpointing (cloudpickle preserves the callback closure — restored
 modules, history and mapping all verified correct). But `build_algo` returned the **fresh, empty**
@@ -837,6 +905,8 @@ restarting at zero, and champion metadata existing only inside the cloudpickled 
 → [14 §5.9.1](14_perspective_ai_engineer.md#591-checkpointrestore-what-actually-happens)
 
 ### S3-9 · No risk-adjusted performance metrics
+
+_Tracked in [#121](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/121)._
 
 NAV, trade count and reward are recorded. Absent: Sharpe/Sortino, max drawdown *as a reported
 metric*, hit rate, turnover, inventory statistics, maker/taker ratio, realised-vs-unrealised P&L
@@ -855,11 +925,15 @@ consumers of `info["NAV"]`, are untouched.
 
 ### S3-10 · A trader can hold only one resting order per price level **[verified]**
 
+_Tracked in [#122](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/122)._
+
 A second limit at the same price *replaces* the first (level volume 7, not 12) —
 `_place_limit_order` upserts via `_get_order_ID`. Layering, iceberg and multi-clip quoting are
 not expressible. Different price levels are unaffected.
 
 ### S3-11 · No entropy bonus, and champion promotion cannot detect passivity **[verified]**
+
+_Tracked in [#123](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/123)._
 
 `entropy_coeff = 0.0` (RLlib default). If the learners collapse to "always pass" (S1-3), they
 still clear the promotion threshold — 0 beats a negative league mean — so the league fills with
@@ -871,11 +945,15 @@ promote a champion whose trade count is ~0.
 
 ### S3-12 · The league ranks a signal that is not comparable across roles
 
+_Tracked in [#124](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/124)._
+
 The four shaping terms are not zero-sum, so returns depend on the role a module played that
 episode. The promotion threshold is a pooled `mean + k·std` over *all* modules including the
 frozen random baselines. A policy can clear it by trading *less*, not *better*.
 
 ### S3-13 · γ=0.99 against 4,096-step episodes **[verified]**
+
+_Tracked in [#125](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/125)._
 
 Effective horizon ~100 steps = 2.5% of an episode. Strategies with payoff horizons longer than
 that (inventory accumulation, sustained market making) are invisible to the return. Only 4
@@ -884,6 +962,8 @@ episodes per training iteration also means very few samples of the episode-level
 advantages pure Monte-Carlo.
 
 ### S3-14 · Zero means three different things in the observation **[verified, fixed]**
+
+_Tracked in [#126](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/126)._
 
 `0.0` was the sentinel for "level absent", the exact value of a price *at* the midpoint, and — on
 a one-sided book, where `M` fell back to that side's L1 price — the value of the best quote
@@ -914,6 +994,8 @@ numbers that row has had against it.
 
 ### S3-15 · Level index is a non-stationary coordinate **[verified, fixed]**
 
+_Tracked in [#127](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/127)._
+
 Slot *k* meant "the *k*-th occupied price", not a fixed distance from mid, and the action space
 selected by the same unstable index. A learned association such as "level 3 is a good place to
 quote" had no fixed meaning across steps.
@@ -938,6 +1020,8 @@ kept as `book_mode: "levels"` for comparison, the mode travels in the layout sta
 
 ### S3-16 · One undrawn opponent kills champion promotion for the rest of the run **[verified, fixed]**
 
+_Tracked in [#128](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/128)._
+
 `on_train_result` filtered `None` from `module_episode_returns_mean` but not `NaN`, which is what
 RLlib reports for a module the mapping fn did not draw that iteration. One NaN makes the league
 mean, std and threshold NaN, and `best_return > threshold` is False against NaN, so no champion
@@ -952,6 +1036,8 @@ iteration after that and no other symptom.
 `test_champion_trigger.py`.
 
 ### S3-17 · Retention deleted each fresh checkpoint in a dirty directory **[verified, fixed]**
+
+_Tracked in [#129](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/129)._
 
 `_prune_checkpoints` ranked by iteration number. A run starting from scratch in a directory that
 still held an earlier run's `iter_00012/14/16` therefore saw its own `iter_00002` as the oldest of
@@ -970,6 +1056,8 @@ Pinned by `TestRetention` and `TestForeignCheckpoints` in `test_checkpointing.py
 
 ### S3-21 · `visualize/` is in no built distribution **[verified, fixed]**
 
+_Tracked in [#130](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/130)._
+
 It had no `__init__.py`, so `setuptools.find_packages()` omitted it and a built wheel carried none of
 it — while [01](01_overview.md) documents `python -m gym_continuousDoubleAuction.visualize.run_all`
 as an entry point. It worked in-tree and under an editable install, which is why nothing noticed,
@@ -983,6 +1071,8 @@ coupling is now stated in `visualize/__init__`, since `pip install gym_continuou
 installs these modules but cannot run them.
 
 ### S3-22 · The encoder fingerprint does not identify the encoder **[verified, fixed]**
+
+_Tracked in [#131](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/131)._
 
 `encoder_fingerprint` hashed the spec *as written* rather than merged against the encoder's
 registered defaults. Wrong in both directions, and the two failures are opposites:
@@ -1013,6 +1103,8 @@ into a training run by a `strict` load, silently.
 
 
 ### S3-23 · NAV conservation is exact only to Decimal context rounding **[verified, fixed]**
+
+_Tracked in [#132](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/132)._
 
 [16](16_verification_log.md) §16.10 established that conservation is "exact under Decimal" and
 the config note for `nav_tolerance` says the expected error is 0. The Hypothesis suite found
@@ -1046,6 +1138,8 @@ suite asserts conservation with `==` again ([16](16_verification_log.md) §16.19
 
 
 ### S3-24 · `modify` and `cancel` cannot be aimed, so they are mostly dead actions **[verified, fixed]**
+
+_Tracked in [#133](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/133)._
 
 Two of the eight order categories are order management, and an agent cannot use either on
 purpose. Measured under uniformly random play, 5 seeds × 400 steps × 6 agents
@@ -1158,6 +1252,8 @@ it mattered.
 
 ### S3-25 · Within a step, the shuffle decided who traded and at what price **[verified, fixed - as an option]**
 
+_Tracked in [#134](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/134)._
+
 All agents act at the same instant, but the engine matched the step's orders one by one in a
 random order, so a crossing pair traded at whichever price arrived first and the first arrival had
 first claim on resting liquidity. Measured under random play ([16](16_verification_log.md)
@@ -1181,6 +1277,8 @@ but by the S4-15 clip counter on `cash_on_hold`; `Trader.settle_batch` re-bases 
 
 ### S3-26 · A `modify` with nothing to modify cancelled the trader's other quotes **[verified, fixed]**
 
+_Tracked in [#135](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/135)._
+
 `place_order` ran the cash check and self-match prevention before asking whether a `modify` had a
 resting order to act on. So a `modify` that changed nothing still cancelled the trader's own
 opposite-side orders, and it was counted as *rejected* or *unmatched* depending on whether cash
@@ -1189,6 +1287,8 @@ all (NAV ≤ 0, or frozen mid-liquidation) is still refused, through `Trader._ca
 `_order_approved` shares. `test_unmatched_actions.py`.
 
 ### S3-27 · Closing escrow was counted in time order, not fill order **[verified, fixed]**
+
+_Tracked in [#136](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/136)._
 
 `_closing_escrow` (S1-5) credits the escrow of the orders that would close a position as
 spendable. It promised to walk them in fill priority but sorted by timestamp, while the book fills
@@ -1199,6 +1299,8 @@ the own-book observation already use. `test_cash_check.py`.
 
 ### S3-28 · At a non-integer tick the observation and the action could use grids one tick apart **[verified, fixed]**
 
+_Tracked in [#137](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/137)._
+
 The stored frame was float32, and the observation snapped its grid origin from that frame's
 midpoint, while `reference_price()`, which `_set_price` and the own-book block quote from, snapped
 the float64 one. A one-tick spread puts the midpoint exactly half a tick off the grid, where the
@@ -1208,6 +1310,8 @@ the agent's own-book cells sat one tick off the grid it was shown. The frame is 
 emitted observation is still float32. `test_tick_grid.py`.
 
 ### S3-29 · Three training metrics read wrong at the moments they matter **[verified, fixed]**
+
+_Tracked in [#138](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/138)._
 
 - `league.promoted` and `champions_promoted` were the change in champion count across the
   trigger. A full league evicts before it promotes, so every promotion after it filled read 0.
@@ -1223,6 +1327,8 @@ and `MultiAgentEpisode`).
 
 ### S3-30 · `train.evaluate` did not see a mid-episode bankruptcy **[verified, fixed]**
 
+_Tracked in [#139](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/139)._
+
 It read `terminated` from the last step, which a terminated agent has left, so a bankruptcy before
 the end read as none, and that agent's activity fractions were divided by the whole episode's
 length. Termination is recorded when it happens, and each agent's fractions use the steps it
@@ -1230,12 +1336,16 @@ played. `test_evaluate.py`.
 
 ### S3-31 · The probe's contiguous split leaked targets across its seams **[verified, fixed]**
 
+_Tracked in [#140](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/140)._
+
 Below three episodes the probe splits on contiguous rows. A target at row *t* reads row *t + h*, so
 the last *h* training rows were labelled from validation observations and the last *h* validation
 rows from test ones. `split_masks` takes the horizon as `purge` and leaves those rows out. The
 episode split, the usual one, needed no change. `test_probe.py`.
 
 ### S3-32 · Continual Backprop: a silent no-op on `lstm`, and its state in every weight sync **[verified, half fixed]**
+
+_Tracked in [#141](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/141)._
 
 Layer discovery finds 0 replaceable layers in `lstm` (4 in `mlp` and `transformer`, 16 in
 `moe_transformer`, 6 in `jepa`), so `cbp_enabled` on `lstm` trained exactly like CBP off, with no
@@ -1246,6 +1356,8 @@ the device and threw them away. It now honours the component filter; a full chec
 carries them. `test_cbp.py`.
 
 ### S3-33 · The reward charts dropped `dead_action_penalty` **[verified, fixed]**
+
+_Tracked in [#142](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/142)._
 
 `TERM_COLORS` had five colours and was zipped against six `REWARD_TERMS`, so the decomposition and
 the training means left the sixth term out, and the plotted terms no longer summed to the total
@@ -1259,34 +1371,66 @@ colour. Colours are keyed by term name, and a term without one fails at import.
 
 | ID | Finding |
 |---|---|
-| S4-1 | **Fixed.** The `g_store` trio (~270 LOC) was deleted earlier; `train/helper/helper.py` (33 LOC, imported by nothing) is deleted too (2026-09-18). Its order-imbalance idea reached the observation by another route: S2-7's `signed_volume` |
-| S4-2 | **Fixed.** `envs/agent/random_agent.py` is deleted and `Trader` no longer inherits from it; `RandomRLModule` is the one random policy (2026-09-18) |
-| S4-3 | **Fixed.** Every dead method listed is deleted: `OrderBook.__str__0`, `Order.__str__0`, `OrderList.to_str`, the shadowed `Order.next_order`/`prev_order`, `State_Helper.state_diff`, `Action_Helper._set_side/_set_type/_higher/_lower`. The unread `max_price` parameter of `_set_price` was removed earlier |
-| S4-4 | **Fixed.** All ~200 LOC of commented-out code are gone: the old `modify_order` and `get_volume_at_price` in `orderbook.py`, the old `step` and space getters in `continuousDoubleAuction_env.py`, the old `Tuple` `act_space` in `action_helper.py` |
-| S4-5 | **Fixed.** `test_accounting.py::test_insufficient_funds` asserts the refusal, the untouched ledger and the approved affordable half; it was an empty `pass` under a 15-line comment |
-| S4-6 | **Mostly fixed.** pyflakes is enforced by `test_lint.py` (zero findings). `pyproject.toml` now carries a `ruff` configuration selecting the same pyflakes rule family, so `ruff check .` locally and CI agree; a `pytest` block; and `coverage` tables scoping `pytest --cov` to the package (`pytest-cov` is in the `dev` extra). Measured on the unit suite: **79.1%** line-and-branch, with the two CLI `__main__` modules, `cbp_learner`, `CDA_rand` and `evaluate` the least covered ([10](10_testing.md) §7). Type hints are on the public API of every module in `envs/` (`Trader`, `Account`, `Calculate`, `Cash_Processor`, the five helper mixins). Deliberately not done: a formatter pass over 18,000 lines, which is one commit of pure churn to be made on purpose, and a coverage threshold, which at 79% would ratchet the wrong things first (the CLI mains) |
-| S4-7 | **Fixed.** `is_render` defaults to `false` in `env_defaults.json` (`CDA_rand --render` and a DEBUG `cda_log_level` are the two ways to ask for it), and `_render` is read-only: the nulling of `model_actions`/`LOB_actions`/`shuffled_actions` and clearing of `seq_trades`/`seq_order_in_book` is gone, so toggling the render cannot change what the next step sees. Every one of those fields is reassigned at the top of `step()` or in `do_actions` anyway |
-| S4-8 | **Fixed.** `docker/ml/dockerfile_ray_torch` `COPY`s `requirements.txt` on its own layer and installs from it (plus jupyterlab and notebook); the hand-maintained copy of the list is gone, and torch stays the CUDA wheel because the file's `torch>=2.13.0,<3` is already satisfied |
-| S4-9 | **Fixed.** The per-step record is Parquet with a declared schema, written off the sampling thread and bounded by `episode_sample_every` / `episode_max_bytes`; the two committed `.pkl` files are deleted. Nothing in the repository writes a pickle |
-| S4-10 | **Partly fixed.** The defensive `getattr` reads are gone: `pass_agents`, `best_bid`/`best_ask`/`spread` and `_snapshot_stale` are initialised where their mixin is constructed, `agg_LOB_raw`, `last_price`, `min_tick` and `model_actions` are read directly, so a missing attribute is now an `AttributeError` at the read rather than a silently wrong default. The mixin architecture itself - five helpers sharing one `self` - stands; unwinding it into composed objects is a redesign of the env, not hygiene |
-| S4-11 | **Fixed, after measuring.** The counter-party lookup is O(1) in the env (trader IDs index the roster; the scan is the fallback for arbitrary lists) - though at 0.2 µs for eight agents it never mattered. The pre-action `set_agg_LOB` was 5.9% of a 1.05 ms step and is now rebuilt only when the book changed since the post-action snapshot - which is exactly when `set_done` pulled a bankrupt trader's orders, tracked by `_snapshot_stale` - or when the render wants its "@ t-1" table. Behaviour is unchanged: the two snapshots were identical in every other case ([16](16_verification_log.md) §16.21) |
-| S4-12 | **Fixed.** `python -m gym_continuousDoubleAuction.train.evaluate --checkpoint <iter_n>` restores a checkpoint, refuses a foreign layout by name, and rolls episodes with its own `policy_mapping_fn` assigning modules - so the random baselines and champions play their parts - taking actions through `forward_inference` the way the env runner does, including the unsquash of the normalised Box heads. Per module it reports return, NAV change, trades and the three activity fractions; `--seed` pins episode seeds so two checkpoints are compared on the same anchors; `--deterministic` takes the mode. [26](26_runbook.md) §26.9.1; `test_evaluate.py` and `integration/test_evaluate_checkpoint.py` |
-| S4-13 | **Fixed.** `test_orderbook_properties.py` (Hypothesis) asserts, for any order sequence: every tree cache equals a walk of its contents, time priority within a level, no locked or crossed book, escrow equals own resting notional, positions net to zero; and under random env play at three ticks, NAV conservation **exactly**, `cash + cash_on_hold >= 0`, and every price on the grid. Its first run found two things the example suite had not: S3-23, and a size-reducing modify that bumped a resting order's timestamp while keeping its queue position |
-| S4-14 | **Fixed.** Refused orders increment `num_rejected_step`; `is_pass_action` separates a deliberate pass; and a `modify` / `cancel` that names no resting order increments `num_unmatched_step`, which reaches `info`, the episode record and the `unmatched_action_fraction` metric. The three fractions together bound how much of an episode's activity changed nothing in the book. Whether a dead action should be *penalised* is a reward-design question and is left as such. **Since 2026-09-18 the impossible half is masked** ([06](06_action_space.md) §7): the observation says which categories are possible and the modules refuse the rest, taking the unmatched fraction from 29.6% to 0.2% under random play; the rejection fraction at a thin-cash config barely moves (33.9% → 33.2%), because those refusals are size-driven and a category mask cannot reach the size head - a measured pointer at S3-1 to S3-3 |
-| S4-15 | **Fixed, after measuring.** The Box has finite bounds from `observation_bounds` in `tunable_constants.json`, one `[low, high]` per feature family: exact where the range is an identity (`(M − P)/M < 1`, tanh, the `[0, 1]` fields), otherwise measured over 20 episodes × 400 steps of random play at the shipped config and 20 at a stress config, with at least 4× headroom ([05](05_observation_space.md) §1.2, [16](16_verification_log.md) §16.22). `set_next_state` clips to them and counts what it clipped: `num_obs_clipped_step` in `info` and the record, `obs_clip_fraction` in the metrics and `train.compare`. The counter is the answer to "a wrong bound is a silent clip" - it found one on the first smoke test (older frames' price rows go negative against the newest midpoint; the `[0, 1]` bid bound clipped 192 elements in 50 steps) and reads 0 over the 112,000 agent-steps measured with the shipped bounds. Layout version 3 with S4-17 |
-| S4-16 | **Fixed.** `test_shared_history_multi_agent_uniformity` encoded S1-2 as a requirement. It is replaced by a pair that splits the claim: the book prefix must still be shared between agents, the private tail must not be |
-| S4-17 | **Fixed, after measuring.** Ask prices and sizes are positive in the raw snapshot, the normalised frame, the own-book block and the L1 read; `_set_price`, the probe's `depth_imbalance` and the order-book visualizer read them so. `OBSERVATION_LAYOUT_VERSION` is 3 and a version-2 checkpoint is refused by name (S4-19) - same width, different meaning, which a shape check would never catch. `train.compare` at the S3-24 protocol (mlp and transformer, three seeds, 8 iterations) before and after: [16](16_verification_log.md) §16.22 |
-| S4-18 | **Fixed** (earlier than this row admitted: the tree has carried only `CODEOWNERS` for several passes; the row was stale) |
-| S4-19 | **Fixed.** `envs/layout_version.py` writes the observation and action layout versions, the private-field list and the action-key list into every checkpoint's `league_state.json`; `train.build_algo` compares before restoring and refuses a mismatch naming what differs. A pre-stamp sidecar is layout 1 by definition |
-| S4-20 | **Fixed.** `OrderBook.modify_order` accepted quantity 0 and left a zero-size order resting, which a later sweep would print as a zero-size trade. It raises `ValueError` as `process_order` already did |
-| S4-21 | **Fixed.** `liquidation_horizon: null` raised a bare `TypeError`, `true` was taken as a horizon of 1, and `maintenance_margin: NaN` raised `decimal.InvalidOperation`. Each is now the same `ValueError` naming the key as any other out-of-range value |
-| S4-22 | **Fixed.** A champion adopted on restore has no recorded return, and `train.export` then raised ranking `None` against floats (`--list` and the eviction log line too). Unranked champions are skipped, printed as `n/a`, and an all-unranked league is an error naming `--module-id` |
-| S4-23 | **Fixed.** `train.compare` probed the newest save in a run's directory, which a re-run with fewer iterations left from the previous sweep; it takes the save at this run's final iteration. `--set` could not parse a list or dict field (`fcnet_hiddens=[128,128]` raised from `int()`); container fields are parsed as JSON |
-| S4-24 | **Fixed.** `config_loader.load` returned the cache's own objects, so appending to one `TrainConfig`'s list default changed every later one. It returns a deep copy |
-| S4-25 | **Fixed.** When the episode recorder's live-episode cap evicted an episode still in flight, its later steps started a fresh buffer that `finish_episode` marked `episode_complete`. Evicted ids are remembered and their tail is dropped. The cap stays at 8 |
-| S4-26 | **Fixed.** A restore refused by `build_algo`'s post-restore checks dropped the algorithm without `stop()`, so its actors kept their CPUs. It is stopped before the error propagates |
-| S4-27 | **Fixed.** With `ray_log_encoding` set, package logs stopped propagating to root even when Ray applied no `LoggingConfig`, so nothing printed them. Propagation is restored on those paths |
-| S4-28 | **Fixed.** Text that described the code wrongly: `visualize.run_all --help` printed no description; the probe's rank table always claimed the default threshold; the tape comment named the wrong end; a duplicated comment block in `state_helper`; `effective_rank` called itself the papers' rank (it is a threshold rank, [23](23_probe_harness.md) §8); the pretrain docstring's probe command could not find the module; nine comments pointed the action mask at [06](06_action_space.md) §6 rather than §7 |
+| S4-1 ([#143](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/143)) | **Fixed.** The `g_store` trio (~270 LOC) was deleted earlier; `train/helper/helper.py` (33 LOC, imported by nothing) is deleted too (2026-09-18). Its order-imbalance idea reached the observation by another route: S2-7's `signed_volume` |
+| S4-2 ([#144](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/144)) | **Fixed.** `envs/agent/random_agent.py` is deleted and `Trader` no longer inherits from it; `RandomRLModule` is the one random policy (2026-09-18) |
+| S4-3 ([#145](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/145)) | **Fixed.** Every dead method listed is deleted: `OrderBook.__str__0`, `Order.__str__0`, `OrderList.to_str`, the shadowed `Order.next_order`/`prev_order`, `State_Helper.state_diff`, `Action_Helper._set_side/_set_type/_higher/_lower`. The unread `max_price` parameter of `_set_price` was removed earlier |
+| S4-4 ([#146](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/146)) | **Fixed.** All ~200 LOC of commented-out code are gone: the old `modify_order` and `get_volume_at_price` in `orderbook.py`, the old `step` and space getters in `continuousDoubleAuction_env.py`, the old `Tuple` `act_space` in `action_helper.py` |
+| S4-5 ([#147](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/147)) | **Fixed.** `test_accounting.py::test_insufficient_funds` asserts the refusal, the untouched ledger and the approved affordable half; it was an empty `pass` under a 15-line comment |
+| S4-6 ([#148](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/148)) | **Mostly fixed.** pyflakes is enforced by `test_lint.py` (zero findings). `pyproject.toml` now carries a `ruff` configuration selecting the same pyflakes rule family, so `ruff check .` locally and CI agree; a `pytest` block; and `coverage` tables scoping `pytest --cov` to the package (`pytest-cov` is in the `dev` extra). Measured on the unit suite: **79.1%** line-and-branch, with the two CLI `__main__` modules, `cbp_learner`, `CDA_rand` and `evaluate` the least covered ([10](10_testing.md) §7). Type hints are on the public API of every module in `envs/` (`Trader`, `Account`, `Calculate`, `Cash_Processor`, the five helper mixins). Deliberately not done: a formatter pass over 18,000 lines, which is one commit of pure churn to be made on purpose, and a coverage threshold, which at 79% would ratchet the wrong things first (the CLI mains) |
+| S4-7 ([#149](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/149)) | **Fixed.** `is_render` defaults to `false` in `env_defaults.json` (`CDA_rand --render` and a DEBUG `cda_log_level` are the two ways to ask for it), and `_render` is read-only: the nulling of `model_actions`/`LOB_actions`/`shuffled_actions` and clearing of `seq_trades`/`seq_order_in_book` is gone, so toggling the render cannot change what the next step sees. Every one of those fields is reassigned at the top of `step()` or in `do_actions` anyway |
+| S4-8 ([#150](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/150)) | **Fixed.** `docker/ml/dockerfile_ray_torch` `COPY`s `requirements.txt` on its own layer and installs from it (plus jupyterlab and notebook); the hand-maintained copy of the list is gone, and torch stays the CUDA wheel because the file's `torch>=2.13.0,<3` is already satisfied |
+| S4-9 ([#151](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/151)) | **Fixed.** The per-step record is Parquet with a declared schema, written off the sampling thread and bounded by `episode_sample_every` / `episode_max_bytes`; the two committed `.pkl` files are deleted. Nothing in the repository writes a pickle |
+| S4-10 ([#152](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/152)) | **Partly fixed.** The defensive `getattr` reads are gone: `pass_agents`, `best_bid`/`best_ask`/`spread` and `_snapshot_stale` are initialised where their mixin is constructed, `agg_LOB_raw`, `last_price`, `min_tick` and `model_actions` are read directly, so a missing attribute is now an `AttributeError` at the read rather than a silently wrong default. The mixin architecture itself - five helpers sharing one `self` - stands; unwinding it into composed objects is a redesign of the env, not hygiene |
+| S4-11 ([#153](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/153)) | **Fixed, after measuring.** The counter-party lookup is O(1) in the env (trader IDs index the roster; the scan is the fallback for arbitrary lists) - though at 0.2 µs for eight agents it never mattered. The pre-action `set_agg_LOB` was 5.9% of a 1.05 ms step and is now rebuilt only when the book changed since the post-action snapshot - which is exactly when `set_done` pulled a bankrupt trader's orders, tracked by `_snapshot_stale` - or when the render wants its "@ t-1" table. Behaviour is unchanged: the two snapshots were identical in every other case ([16](16_verification_log.md) §16.21) |
+| S4-12 ([#154](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/154)) | **Fixed.** `python -m gym_continuousDoubleAuction.train.evaluate --checkpoint <iter_n>` restores a checkpoint, refuses a foreign layout by name, and rolls episodes with its own `policy_mapping_fn` assigning modules - so the random baselines and champions play their parts - taking actions through `forward_inference` the way the env runner does, including the unsquash of the normalised Box heads. Per module it reports return, NAV change, trades and the three activity fractions; `--seed` pins episode seeds so two checkpoints are compared on the same anchors; `--deterministic` takes the mode. [26](26_runbook.md) §26.9.1; `test_evaluate.py` and `integration/test_evaluate_checkpoint.py` |
+| S4-13 ([#155](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/155)) | **Fixed.** `test_orderbook_properties.py` (Hypothesis) asserts, for any order sequence: every tree cache equals a walk of its contents, time priority within a level, no locked or crossed book, escrow equals own resting notional, positions net to zero; and under random env play at three ticks, NAV conservation **exactly**, `cash + cash_on_hold >= 0`, and every price on the grid. Its first run found two things the example suite had not: S3-23, and a size-reducing modify that bumped a resting order's timestamp while keeping its queue position |
+| S4-14 ([#156](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/156)) | **Fixed.** Refused orders increment `num_rejected_step`; `is_pass_action` separates a deliberate pass; and a `modify` / `cancel` that names no resting order increments `num_unmatched_step`, which reaches `info`, the episode record and the `unmatched_action_fraction` metric. The three fractions together bound how much of an episode's activity changed nothing in the book. Whether a dead action should be *penalised* is a reward-design question and is left as such. **Since 2026-09-18 the impossible half is masked** ([06](06_action_space.md) §7): the observation says which categories are possible and the modules refuse the rest, taking the unmatched fraction from 29.6% to 0.2% under random play; the rejection fraction at a thin-cash config barely moves (33.9% → 33.2%), because those refusals are size-driven and a category mask cannot reach the size head - a measured pointer at S3-1 to S3-3 |
+| S4-15 ([#157](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/157)) | **Fixed, after measuring.** The Box has finite bounds from `observation_bounds` in `tunable_constants.json`, one `[low, high]` per feature family: exact where the range is an identity (`(M − P)/M < 1`, tanh, the `[0, 1]` fields), otherwise measured over 20 episodes × 400 steps of random play at the shipped config and 20 at a stress config, with at least 4× headroom ([05](05_observation_space.md) §1.2, [16](16_verification_log.md) §16.22). `set_next_state` clips to them and counts what it clipped: `num_obs_clipped_step` in `info` and the record, `obs_clip_fraction` in the metrics and `train.compare`. The counter is the answer to "a wrong bound is a silent clip" - it found one on the first smoke test (older frames' price rows go negative against the newest midpoint; the `[0, 1]` bid bound clipped 192 elements in 50 steps) and reads 0 over the 112,000 agent-steps measured with the shipped bounds. Layout version 3 with S4-17 |
+| S4-16 ([#158](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/158)) | **Fixed.** `test_shared_history_multi_agent_uniformity` encoded S1-2 as a requirement. It is replaced by a pair that splits the claim: the book prefix must still be shared between agents, the private tail must not be |
+| S4-17 ([#159](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/159)) | **Fixed, after measuring.** Ask prices and sizes are positive in the raw snapshot, the normalised frame, the own-book block and the L1 read; `_set_price`, the probe's `depth_imbalance` and the order-book visualizer read them so. `OBSERVATION_LAYOUT_VERSION` is 3 and a version-2 checkpoint is refused by name (S4-19) - same width, different meaning, which a shape check would never catch. `train.compare` at the S3-24 protocol (mlp and transformer, three seeds, 8 iterations) before and after: [16](16_verification_log.md) §16.22 |
+| S4-18 ([#160](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/160)) | **Fixed** (earlier than this row admitted: the tree has carried only `CODEOWNERS` for several passes; the row was stale) |
+| S4-19 ([#161](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/161)) | **Fixed.** `envs/layout_version.py` writes the observation and action layout versions, the private-field list and the action-key list into every checkpoint's `league_state.json`; `train.build_algo` compares before restoring and refuses a mismatch naming what differs. A pre-stamp sidecar is layout 1 by definition |
+| S4-20 ([#162](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/162)) | **Fixed.** `OrderBook.modify_order` accepted quantity 0 and left a zero-size order resting, which a later sweep would print as a zero-size trade. It raises `ValueError` as `process_order` already did |
+| S4-21 ([#163](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/163)) | **Fixed.** `liquidation_horizon: null` raised a bare `TypeError`, `true` was taken as a horizon of 1, and `maintenance_margin: NaN` raised `decimal.InvalidOperation`. Each is now the same `ValueError` naming the key as any other out-of-range value |
+| S4-22 ([#164](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/164)) | **Fixed.** A champion adopted on restore has no recorded return, and `train.export` then raised ranking `None` against floats (`--list` and the eviction log line too). Unranked champions are skipped, printed as `n/a`, and an all-unranked league is an error naming `--module-id` |
+| S4-23 ([#165](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/165)) | **Fixed.** `train.compare` probed the newest save in a run's directory, which a re-run with fewer iterations left from the previous sweep; it takes the save at this run's final iteration. `--set` could not parse a list or dict field (`fcnet_hiddens=[128,128]` raised from `int()`); container fields are parsed as JSON |
+| S4-24 ([#166](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/166)) | **Fixed.** `config_loader.load` returned the cache's own objects, so appending to one `TrainConfig`'s list default changed every later one. It returns a deep copy |
+| S4-25 ([#167](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/167)) | **Fixed.** When the episode recorder's live-episode cap evicted an episode still in flight, its later steps started a fresh buffer that `finish_episode` marked `episode_complete`. Evicted ids are remembered and their tail is dropped. The cap stays at 8 |
+| S4-26 ([#168](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/168)) | **Fixed.** A restore refused by `build_algo`'s post-restore checks dropped the algorithm without `stop()`, so its actors kept their CPUs. It is stopped before the error propagates |
+| S4-27 ([#169](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/169)) | **Fixed.** With `ray_log_encoding` set, package logs stopped propagating to root even when Ray applied no `LoggingConfig`, so nothing printed them. Propagation is restored on those paths |
+| S4-28 ([#170](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/170)) | **Fixed.** Text that described the code wrongly: `visualize.run_all --help` printed no description; the probe's rank table always claimed the default threshold; the tape comment named the wrong end; a duplicated comment block in `state_helper`; `effective_rank` called itself the papers' rank (it is a threshold rank, [23](23_probe_harness.md) §8); the pretrain docstring's probe command could not find the module; nine comments pointed the action mask at [06](06_action_space.md) §6 rather than §7 |
+
+---
+
+## Open decisions from the 2026-10-07 review
+
+Findings from the 2026-10-07 review that were not fixed there, because each changes the game the
+policy plays, the distributed or checkpoint design, or a research method, and so needs a decision
+first. **[verified]** marks the ones reproduced in that pass; the rest are a reviewer's reading of
+the code, recorded so they are not lost, and need reproducing before anything is changed. S2-14 and
+S3-32's open half came from the same pass and are filed above.
+
+| ID | Finding |
+|---|---|
+| R-1 ([#171](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/171)) | In batch clearing, a trade whose two sides both arrived in the batch always records the buyer as initiator, which would bias `signed_volume` and `trade_direction`. Who "initiates" inside a call auction is a design choice |
+| R-2 ([#172](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/172)) | With `liquidation: "off"`, a bankrupt trader's orders are cancelled inside `set_step_outputs`, so the observations and the action masks of one step may be built from two different books |
+| R-3 ([#173](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/173)) | With no margin cushion (`maintenance_margin: 0`, or NAV run out), the bankruptcy band never reaches the opposite touch at a mid mark, so the whole forced close may go to ADL |
+| R-4 ([#174](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/174)) | Intermediate re-marks during a liquidation cascade may ratchet `max_nav`, charging drawdown against a peak never seen at a step boundary. Touches the reward |
+| R-5 ([#175](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/175)) | The checkpoint layout stamp (S4-19) does not record `n_hist` or `max_own_orders`. `n_hist` is already a structural restore key, so only `max_own_orders` may be uncovered |
+| R-6 ([#176](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/176)) | A champion snapshot that fails and is rolled back may stay in remote env runners' policy-mapping function |
+| R-7 ([#177](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/177)) | The league repair made on restore is not pushed to remote env runners |
+| R-8 ([#178](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/178)) | A full league evicts its oldest champion before taking a snapshot that can fail, so a failure shrinks the league. [08](08_self_play_league.md) documents the ordering as load-bearing, so a change must keep its constraints |
+| R-9 ([#179](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/179)) | Concurrent runs share one checkpoint tree and can overwrite each other's saves. Sharing is documented as deliberate |
+| R-10 ([#180](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/180)) | **[verified]** The episode recorder's live-episode cap is 8 and the callback never sets it, so a runner with more concurrent sampled episodes drops the extra ones (S4-25 stopped them being written as fragments). Tying the cap to `num_envs_per_env_runner` is the open half |
+| R-11 ([#181](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/181)) | The Parquet record's `obs` column is the observation after the step, paired with that step's action, and the probe corpus reads it. Changes what the record means and what the probe scores |
+| R-12 ([#182](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/182)) | Continual Backprop under `num_learners > 1`: each DDP rank may pick a different unit to replace, so the replicas' parameters diverge |
+| R-13 ([#183](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/183)) | Continual Backprop zeroes a replaced unit's outgoing weights without moving its mean contribution into the next layer's bias, so the output jumps; a saturated tanh unit scores low under `overall` utility and goes first |
+| R-14 ([#184](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/184)) | The CBP activation hook keeps only the last forward call's statistics: MoE experts run once per top-k slot, and JEPA runs the trunk a second time on the masked context |
+| R-15 ([#185](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/185)) | With `vf_share_layers: true`, JEPA's `compute_values` pass may run the auxiliary objective and an extra EMA step |
+| R-16 ([#186](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/186)) | The JEPA world model's action embedding omits the `order_slot` head |
+| R-17 ([#187](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/187)) | **[verified]** `build_encoder_config` calls `ObsLayout.from_obs_space` without the run's `book_mode`, so some widths are ambiguous (grid at `n_hist` 11 has the width of levels at 8); `train.probe` likewise builds encoders from the default env config rather than the corpus's layout. The fix threads `book_mode` through four files |
+| R-18 ([#188](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/188)) | **[verified]** Probe targets shift by rows, not by steps, so under `--per-agent` (or any gap in the rows) a target reads the wrong future row. A correct fix needs a stream id separate from the episode id, or the episode split leaks across agents |
+| R-19 ([#189](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/189)) | The rollout and Parquet probe corpora switch agent mid-episode |
 
 ---
 
@@ -1296,21 +1440,21 @@ Recorded so nobody re-files them. Each was a real defect at the time.
 
 | Was | Now |
 |---|---|
-| `custom_model: "model_disc"` never registered | `ModelCatalog` is not read on the new stack; the indirection was removed. Trainable modules use the default PPO module via `DefaultModelConfig` |
-| Training code straddled two RLlib API stacks | Entirely new-API-stack. `PolicySpec` wiring replaced by `MultiRLModuleSpec`; the broken `CustomRLModule` (which read `config.action_space.n` against a `Dict` space) and dead old-stack modules deleted |
-| Champion trigger read `policy_reward_mean` / `custom_metrics` | Reads `module_episode_returns_mean`, already keyed by real `ModuleID` |
-| The printed policy map used different logic than the real mapping | `on_episode_start` calls `env_runner.config.policy_mapping_fn` — the authoritative one |
-| Champion snapshots never reached the EnvRunners | Force-pushed with a `WEIGHTS_SEQ_NO`-free `set_state`, with the reasoning in a comment |
-| Matchmaking seeded from salted `hash()` | Seeds from `zlib.crc32` — reproducible across processes |
-| Evicted champions leaked memory | `Algorithm.remove_module` is called |
-| Per-episode pickles were unconditional | Replaced by a bounded Parquet record on a background thread; `episode_data_dir=None` / `--no-episode-data` now disables the accumulation as well as the write (S4-9) |
-| `episode_data/` was untracked noise | In `.gitignore`, both paths, with an explanatory comment |
-| **No CI** — dead `.travis.yml` | GitHub Actions on Python 3.12: a `test` job (unit → random smoke run → RLlib integration) and a `packaging` job that builds the wheel and uses it from a clean venv outside the checkout |
-| `setup.py` broken for non-editable installs | ~~`find_packages()`, real `install_requires` and extras, `__init__.py` files added~~ **Premature.** That pass fixed package discovery and left two defects that still made every non-editable install fail: `install_requires` did not name `ray[rllib]`, `scikit-learn` or `six` (S3-6), and no config JSON was in the distribution at all (S3-18). Both are fixed now, and a wheel built from this tree has been installed into a clean environment and used to construct an env |
-| `observation_space`/`action_space` were plain dicts | `observation_spaces`/`action_spaces` (plural, new stack) plus per-agent getters; agent ordering stable across processes |
-| Trainable network was an 8-unit bottleneck | `fcnet_hiddens=[256,256]`, `tanh`, `vf_share_layers=False` |
-| `test_modify_order_price_change` was `@unittest.expectedFailure` | A normal passing test; the no-crossed-book invariant holds on every modification path |
-| `CDA_env_rand.py` used positional constructor args | Takes a config dict, keys actions by agent ID, samples from the env's own action space, and runs in CI |
+| `custom_model: "model_disc"` never registered ([#190](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/190)) | `ModelCatalog` is not read on the new stack; the indirection was removed. Trainable modules use the default PPO module via `DefaultModelConfig` |
+| Training code straddled two RLlib API stacks ([#191](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/191)) | Entirely new-API-stack. `PolicySpec` wiring replaced by `MultiRLModuleSpec`; the broken `CustomRLModule` (which read `config.action_space.n` against a `Dict` space) and dead old-stack modules deleted |
+| Champion trigger read `policy_reward_mean` / `custom_metrics` ([#192](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/192)) | Reads `module_episode_returns_mean`, already keyed by real `ModuleID` |
+| The printed policy map used different logic than the real mapping ([#193](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/193)) | `on_episode_start` calls `env_runner.config.policy_mapping_fn` — the authoritative one |
+| Champion snapshots never reached the EnvRunners ([#194](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/194)) | Force-pushed with a `WEIGHTS_SEQ_NO`-free `set_state`, with the reasoning in a comment |
+| Matchmaking seeded from salted `hash()` ([#195](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/195)) | Seeds from `zlib.crc32` — reproducible across processes |
+| Evicted champions leaked memory ([#196](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/196)) | `Algorithm.remove_module` is called |
+| Per-episode pickles were unconditional ([#197](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/197)) | Replaced by a bounded Parquet record on a background thread; `episode_data_dir=None` / `--no-episode-data` now disables the accumulation as well as the write (S4-9) |
+| `episode_data/` was untracked noise ([#198](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/198)) | In `.gitignore`, both paths, with an explanatory comment |
+| **No CI** — dead `.travis.yml` ([#199](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/199)) | GitHub Actions on Python 3.12: a `test` job (unit → random smoke run → RLlib integration) and a `packaging` job that builds the wheel and uses it from a clean venv outside the checkout |
+| `setup.py` broken for non-editable installs ([#200](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/200)) | ~~`find_packages()`, real `install_requires` and extras, `__init__.py` files added~~ **Premature.** That pass fixed package discovery and left two defects that still made every non-editable install fail: `install_requires` did not name `ray[rllib]`, `scikit-learn` or `six` (S3-6), and no config JSON was in the distribution at all (S3-18). Both are fixed now, and a wheel built from this tree has been installed into a clean environment and used to construct an env |
+| `observation_space`/`action_space` were plain dicts ([#201](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/201)) | `observation_spaces`/`action_spaces` (plural, new stack) plus per-agent getters; agent ordering stable across processes |
+| Trainable network was an 8-unit bottleneck ([#202](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/202)) | `fcnet_hiddens=[256,256]`, `tanh`, `vf_share_layers=False` |
+| `test_modify_order_price_change` was `@unittest.expectedFailure` ([#203](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/203)) | A normal passing test; the no-crossed-book invariant holds on every modification path |
+| `CDA_env_rand.py` used positional constructor args ([#204](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/204)) | Takes a config dict, keys actions by agent ID, samples from the env's own action space, and runs in CI |
 
 ---
 

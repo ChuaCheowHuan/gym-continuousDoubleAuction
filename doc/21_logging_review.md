@@ -58,6 +58,8 @@ None of channels 2–5 has any of that.
 
 ### 2.1 `strict_nav_check` does not stop a distributed run — it restarts a worker
 
+_Tracked in [#212](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/212)._
+
 This is the most serious finding, because the feature's stated purpose is to stop a corrupt run
 loudly, and at the repository's own GPU profile (`num_env_runners=2`) it does not.
 
@@ -89,6 +91,8 @@ assertion does stop the run. That is why this has never been observed.
 
 ### 2.2 The per-step store accumulates even when episode data is disabled
 
+_Tracked in [#213](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/213)._
+
 `on_episode_step` appended to `self.store[episode.id_]` unconditionally; only the *write* in
 `on_episode_end` was guarded by `episode_data_dir is not None`. So `--no-episode-data` / `episode_data_dir: null` removes the I/O and keeps the
 memory.
@@ -104,6 +108,8 @@ observation makes that a floor rather than an estimate. `runtime_profiles.json` 
 been corrected.
 
 ### 2.3 `episode_data_dir` is the one output path that is not made absolute or exported
+
+_Tracked in [#214](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/214)._
 
 Compare the two paths a worker writes:
 
@@ -124,6 +130,8 @@ It is also not run-scoped, so two concurrent runs write into one directory. Coll
 
 ### 2.4 Writing the pickle is synchronous, on the sampling hot path
 
+_Tracked in [#215](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/215)._
+
 `pickle.dump` of ~34 MB happens inside `on_episode_end`, in the env runner, between sampling steps.
 On the Colab/GPU profile that is 4 episodes × 2 runners per iteration — ~136 MB of blocking,
 uninstrumented I/O per iteration, against a `sample_timeout_s` budget the config file already warns
@@ -138,6 +146,8 @@ one raises into `on_episode_end`, and by §2.1 that means a killed and restarted
 
 ### 2.5 Log files proliferate with worker restarts, and rotation is per file
 
+_Tracked in [#216](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/216)._
+
 The per-process naming that makes concurrent writes safe also means the *set* of files is unbounded:
 every restarted env runner (§2.1 makes restarts a normal event, not an exceptional one) opens a new
 `run.<pid>.<worker>.log`. `file_backup_count` bounds each file at 6 × 10 MB; it does not bound the
@@ -148,6 +158,8 @@ begins — is worse here, because a worker's file is where the NAV tables live.
 
 ### 2.6 What the learner processes get
 
+_Tracked in [#217](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/217)._
+
 `_broadcast_iteration` targets `algo.env_runner_group` only. At `num_learners > 0` the learner
 actors are separate processes that: receive `$CDA_LOG_LEVEL` / `$CDA_LOG_DIR` through the
 `runtime_env` (so they do write a `run.<pid>.<worker>.log`), but never receive an iteration, so
@@ -156,6 +168,8 @@ impact is cosmetic — but the repository's own GPU profile sets `num_learners=0
 path is untested rather than fine.
 
 ### 2.7 The `runtime_env` covers workers, not the cluster's own logging
+
+_Tracked in [#218](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/218)._
 
 `merge_runtime_env()` correctly closes the `ray.init(address=...)` gap for env vars. Two residual
 cases:
@@ -190,6 +204,8 @@ stated. All of this has tests (`TestConcurrentConfiguration`, `TestSeparateProce
 
 ### 3.2 In-flight episodes leak from `store` and `_activity`
 
+_Tracked in [#219](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/219)._
+
 Both dicts are keyed by episode id and pruned only in `on_episode_end`. An episode that is discarded
 without ending never gets pruned. That happens whenever the runner force-resets:
 `MultiAgentEnvRunner._sample` calls `_reset_envs_and_episodes()` when `force_reset or num_episodes
@@ -204,6 +220,8 @@ for the life of the worker.
 
 ### 3.3 The iteration tag is only as fresh as the last broadcast
 
+_Tracked in [#220](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/220)._
+
 `_broadcast_iteration` is best-effort with a 10 s timeout and `healthy_only=True`. A runner that is
 restarting, unhealthy, or slow at that moment is skipped silently (correctly — it must not stop
 training), and its lines carry the *previous* iteration, not `-`, because the global is still set
@@ -212,6 +230,8 @@ safe with respect to sampling: PPO's `synchronous_parallel_sample` blocks, so th
 land mid-episode.
 
 ### 3.4 Duplicate narrative on the console
+
+_Tracked in [#221](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/221)._
 
 The package logger's `propagate` is deliberately left on, and Ray forwards worker stdout to the
 driver console (`log_to_driver` defaults True). So a worker's NAV table appears once in that
@@ -358,25 +378,25 @@ than out of building it, which is the argument for doing that pass at all — an
 out of cross-checking channels against each other and against the *other* entry point, which no
 single-channel reading would have caught.
 
-**A 30-second hang at process exit.** The recorder's first design stopped its writer thread with a
+**A 30-second hang at process exit.** ([#222](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/222)) The recorder's first design stopped its writer thread with a
 sentinel value on the queue. `close()` is called at exit, and the one moment it is called under load
 is the one moment the queue is full — so the `put` failed, the thread never learned to stop, and the
 join sat out its whole timeout. Two tests took exactly 30.00s, which is what made it visible. It is
 a `threading.Event` now, with the writer polling; the same two tests take 8s total.
 
-**The `on_train_result` metrics are one iteration late.** The hook is handed a `result` that has
+**The `on_train_result` metrics are one iteration late.** ([#223](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/223)) The hook is handed a `result` that has
 already been compiled, so `champions_promoted` reads `1.0` in the row *after* the promotion. This
 has always been true of `league_size` and the return statistics — the new champion metrics simply
 make it visible against a known event. Documented rather than corrected: the lag is uniform, and one
 documented offset is better than a correction that has to be undone if RLlib changes the order.
 
-**Live state should not be pickled at all.** The callback is cloudpickled into every env runner and
+**Live state should not be pickled at all.** ([#224](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/224)) The callback is cloudpickled into every env runner and
 every checkpoint, and it was carrying its in-flight episode tallies along. The unpickling side is a
 different process; a tally for an episode it never ran is not bookkeeping it should continue.
 `__getstate__` now ships the configuration and nothing else — which is also what makes the
 recorder's thread and queue safe to own.
 
-**`maker_fill_ratio` was a tautology.** The first version divided the episode's passive fills by its
+**`maker_fill_ratio` was a tautology.** ([#225](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/225)) The first version divided the episode's passive fills by its
 trades, aggregated across all agents. In a closed double auction that is exactly `0.5` in every
 episode whatever anyone did: `process_acc` runs once per side of every trade, both sides increment
 `num_trades_step`, and only the passive side increments `num_passive_fills_step`. A real

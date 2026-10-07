@@ -3461,3 +3461,22 @@ This log and [16](16_verification_log.md) are history and were left as they are.
 
 The config tables in [18](18_configuration.md) were checked value by value against the JSON and
 agreed already.
+
+
+## 60. The findings register is mirrored in the GitHub tracker (2026-10-07)
+
+Every documented issue is now a GitHub issue, #91–#225, so the tracker and the docs say the same
+thing and an open item can be assigned, discussed and closed by a commit.
+
+- **What was filed:** the 80 S1–S4 findings and the 15 "Resolved since the older documentation
+  set" rows of [15](15_findings_and_recommendations.md); its new section of open decisions from the
+  2026-10-07 review, R-1 to R-19, which had been only in that review's conversation; the open test
+  gaps of [10](10_testing.md) §8; and the logging findings of [21](21_logging_review.md) §2, §3 and
+  §7. §3.1 of 21 is a statement of what is safe, not an issue, and was not filed.
+- **State:** 91 closed as completed, each with a comment quoting how the docs record the
+  resolution (and, for the 2026-10-07 fixes, the commit merged in #90); 44 open. A partly fixed
+  finding (S2-3, S3-9, S3-32, S4-6, S4-10, and 21 §2.7) stays open for its remaining half.
+- **Labels:** `S1-blocking`, `S2-major`, `S3-moderate`, `S4-minor`, `legacy`, `test-gap`,
+  `logging` and `needs-decision`; the R items not yet reproduced also carry `question`.
+- **Back-links:** each entry in 15, 10 §8 and 21 links its issue. In 15 the link sits on a line
+  under the heading rather than in it, so every existing `#anchor` into the register still resolves.
