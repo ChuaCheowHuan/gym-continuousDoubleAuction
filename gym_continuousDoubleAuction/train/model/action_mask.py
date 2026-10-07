@@ -1,6 +1,6 @@
 """Apply the observation's action mask to the policy's category logits.
 
-doc/06 section 6. The env writes, into the last `category_n` entries of each
+doc/06 section 7. The env writes, into the last `category_n` entries of each
 agent's private block, which of the action categories that agent can take on
 the coming step (`Action_Helper.action_mask_for`): a modify or cancel needs a
 resting order on that side, a market or limit order needs to pass the cash

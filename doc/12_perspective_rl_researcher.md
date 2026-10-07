@@ -47,8 +47,8 @@ reasonable prioritised-fictitious-play approximation.
 
 ## 2. The observation contains no private state — **fixed**
 
-> **Status.** S1-2 is closed. Every agent now receives a 9-float private tail
-> (`State_Helper.PRIVATE_FIELDS`) after the shared book, so the observation is 216 floats and no
+> **Status.** S1-2 is closed. Every agent now receives a private tail (`State_Helper.private_fields`;
+> 9 floats when S1-2 closed, 41 now) after the shared book, so the observation is 233 floats and no
 > two agents' vectors are identical. See [17_changelog.md](17_changelog.md) §30 and
 > [05_observation_space.md](05_observation_space.md) §1. **Own resting orders are still absent** —
 > the analysis below is kept because it is the argument for why this mattered, and because the

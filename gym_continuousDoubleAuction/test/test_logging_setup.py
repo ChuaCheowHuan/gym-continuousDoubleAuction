@@ -970,7 +970,9 @@ class TestRayLoggingConfig:
         from gym_continuousDoubleAuction.train.train import ray_logging_config
 
         monkeypatch.delattr(ray, "LoggingConfig", raising=False)
+        root = self._propagation_turned_off(monkeypatch)
         assert ray_logging_config(self._cfg(ray_log_encoding="TEXT")) is None
+        assert root.propagate is True, "nothing replaces root's handlers, so propagate again"
 
     def test_a_rejected_argument_degrades(self, monkeypatch):
         import ray
@@ -981,7 +983,19 @@ class TestRayLoggingConfig:
             raise TypeError("unexpected keyword argument 'encoding'")
 
         monkeypatch.setattr(ray, "LoggingConfig", _explode, raising=False)
+        root = self._propagation_turned_off(monkeypatch)
         assert ray_logging_config(self._cfg(ray_log_encoding="TEXT")) is None
+        assert root.propagate is True
+
+    @staticmethod
+    def _propagation_turned_off(monkeypatch):
+        """What `configure_run_logging` does whenever `ray_log_encoding` is set,
+        expecting Ray to configure root. When no LoggingConfig results, records
+        stopped reaching root - pytest's caplog, a later basicConfig handler -
+        and nothing took its place."""
+        root = logging.getLogger(logging_setup.ROOT_NAME)
+        monkeypatch.setattr(root, "propagate", False)
+        return root
 
     def test_the_config_default_is_a_usable_encoding(self):
         from gym_continuousDoubleAuction.train.train import ray_logging_config

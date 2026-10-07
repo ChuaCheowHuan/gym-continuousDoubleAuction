@@ -105,6 +105,9 @@ class RankRow:
     rank: int
     width: int
     rows: int
+    #: The share of singular mass `rank` was counted to, so the report can say
+    #: which threshold it is showing rather than assume the default.
+    threshold: float = DEFAULT_THRESHOLD
 
     @property
     def fraction(self) -> float:
@@ -128,6 +131,7 @@ def rank_table(
             rank=effective_rank(matrix, threshold),
             width=int(matrix.shape[-1]) if matrix.ndim >= 2 else 0,
             rows=int(matrix.shape[0]),
+            threshold=threshold,
         )
         for name, matrix in features.items()
     }
@@ -147,9 +151,10 @@ def render(table: Mapping[str, RankRow], feature_names: Sequence[str]) -> str:
     # Against the header too, not just the names: "feature set" is wider
     # than a short encoder name and the columns skew if it overflows.
     width = max(len("feature set"), *(len(n) for n in feature_names)) + 2
+    threshold = next(iter(table.values())).threshold
     lines = [
         "Effective rank of each feature set, on this corpus "
-        f"({DEFAULT_THRESHOLD:.0%} of singular mass)",
+        f"({threshold:.0%} of singular mass)",
         f"{'feature set':<{width}}{'rank':>7}{'width':>8}{'used':>8}",
     ]
     flagged = False

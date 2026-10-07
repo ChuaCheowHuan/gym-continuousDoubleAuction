@@ -477,14 +477,18 @@ tiers:
 |---|---|---|
 | Stock MLP `fcnet_hiddens` (`mlp`, the default) | Hidden unit between two `nn.Linear`s | **Clean.** The canonical case |
 | `blocks.feedforward` — `Linear(d_model, ff_dim) → GELU → Linear(ff_dim, d_model)` | The `ff_dim` hidden unit | **Clean.** Incoming and outgoing are both explicit |
-| `token_embed.token_mlp`, `moe.py` expert FFNs, `jepa.predict` | Same two-Linear shape | **Clean** |
+| `moe.py` expert FFNs, `jepa.predict` | Same two-Linear shape | **Clean** |
+| `token_embed.token_mlp` | `Linear → GELU` with no second `Linear` | **Not covered.** No outgoing layer to zero, so CBP skips it |
 | Attention projections (`q`, `k`, `v`, `out`) | A head dimension | **Messy.** Outgoing is entangled with the head structure |
 | Anything immediately followed by `LayerNorm` | — | **Care needed.** LayerNorm re-centres and re-scales, so a zeroed outgoing weight is function-preserving for that unit's *contribution*, but the normalisation statistics shift |
 | `nn.Embedding` (`time_embedding`, `level_embedding`) | — | **Out of scope.** No "incoming weights" in the relevant sense |
 
 The sound scope for a first implementation is therefore **feed-forward hidden units only** — the
 first three rows. That covers the default MLP entirely, and covers the FFN half of every
-transformer block, which is where most of the parameters live anyway. Attention is explicitly
+transformer block, which is where most of the parameters live anyway. It covers nothing in `lstm`:
+that encoder's tokenizer is `token_mlp` and its core is an `nn.LSTM`, so CBP finds 0 replaceable
+layers there (against 4 for `mlp` and `transformer`, 16 for `moe_transformer` and 6 for `jepa`),
+and the Learner logs a warning at build rather than running a no-op. Attention is explicitly
 excluded and should be documented as excluded, not silently skipped.
 
 Two further traps this codebase has already been bitten by, in a different guise:
@@ -631,7 +635,7 @@ paper's claim for CBP is precisely that it is the only method keeping all three 
 |---|---|---|
 | `cbp_dead_unit_frac` | Fraction of units whose mean \|activation\| is below `cbp_dead_unit_threshold` | Nature Fig. 2d, ED Fig. 4 |
 | `cbp_mean_weight_magnitude` | Mean \|w\| of incoming weights | Nature ED Fig. 4 |
-| `cbp_batch_effective_rank` | Stable rank of the **training minibatch's** activations. Confounded by the policy's own input distribution — §3.8; `train/probe/rank.py` is the comparable version | Nature Methods |
+| `cbp_batch_effective_rank` | Threshold rank (99% of singular mass, not the papers' entropy-based rank) of the **training minibatch's** activations. Confounded by the policy's own input distribution — §3.8; `train/probe/rank.py` is the comparable version | Nature Methods |
 | `cbp_saturated_unit_frac` | Fraction with mean \|activation\| > 0.9 — the tanh failure | arXiv App. G |
 | `cbp_utility_min` / `_median` | The CBP utility spread: how unequally capacity is used | arXiv eqs. 5–7 |
 | `cbp_mature_unit_frac` | Fraction old enough to be replaceable | §3.6 |

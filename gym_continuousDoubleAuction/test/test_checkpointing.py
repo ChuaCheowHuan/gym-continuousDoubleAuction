@@ -70,6 +70,10 @@ class FakeAlgo:
         self.iteration = start_iteration
         self.callbacks = [callback] if callback else []
         self.saved = []
+        self.stopped = False
+
+    def stop(self):
+        self.stopped = True
 
     def train(self):
         self.iteration += 1
@@ -560,6 +564,31 @@ class TestRestoreSelection:
         train_mod.build_algo(dataclasses_replace(cfg, is_restore=True))
 
         assert loaded[-1].endswith(f"{CHECKPOINT_PREFIX}00003")
+
+    def test_a_restore_its_checks_refuse_stops_the_restored_algorithm(self, restorable, monkeypatch):
+        """`Algorithm.from_checkpoint` has already started the restored run's
+        env-runner and learner actors when the structural check refuses it. The
+        algorithm used to be dropped without `stop()`, so in a notebook those
+        actors kept their CPUs and the next `train()` could wait on them forever."""
+        cfg = restorable.cfg
+        save_checkpoint(FakeAlgo(), cfg, 1)
+        restorable.configure()
+        made = []
+        load = train_mod.Algorithm.from_checkpoint
+
+        def tracking(path):
+            made.append(load(path))
+            return made[-1]
+
+        def refuse(*args, **kwargs):
+            raise ValueError("n_hist changed")
+
+        monkeypatch.setattr(train_mod, "Algorithm", SimpleNamespace(from_checkpoint=tracking))
+        monkeypatch.setattr(train_mod, "_check_restored_config", refuse)
+
+        with pytest.raises(ValueError, match="n_hist"):
+            train_mod.build_algo(dataclasses_replace(cfg, is_restore=True))
+        assert made and made[-1].stopped
 
     def test_falls_back_when_the_newest_is_unreadable(self, restorable):
         """A save interrupted mid-write must not cost the whole run."""

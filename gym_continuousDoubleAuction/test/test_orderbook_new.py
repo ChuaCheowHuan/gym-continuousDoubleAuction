@@ -251,6 +251,18 @@ class TestMalformedInputRaisesInsteadOfExiting:
         with pytest.raises(ValueError, match="modify_order"):
             self.ob.modify_order(1, {'side': 'buy', 'price': 100, 'quantity': 1})
 
+    @pytest.mark.parametrize("quantity", [0, -2])
+    def test_modify_to_a_non_positive_quantity(self, quantity):
+        """Same price, smaller size is the keep-priority path, which used to
+        leave a zero-size order resting; process_order refuses the same size."""
+        _, resting = self.ob.process_order(
+            {'type': 'limit', 'side': 'bid', 'quantity': 5, 'price': 100,
+             'trade_id': 1}, False, False)
+        with pytest.raises(ValueError, match="modify_order.*quantity must be > 0"):
+            self.ob.modify_order(resting['order_id'],
+                                 {'side': 'bid', 'price': 100, 'quantity': quantity})
+        assert self.ob.bids.get_order(resting['order_id']).quantity == 5
+
     def test_nothing_raises_system_exit(self):
         """The class of the failure is what changed; pin it directly."""
         for bad in (

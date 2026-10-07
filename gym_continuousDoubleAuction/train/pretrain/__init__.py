@@ -42,7 +42,11 @@ untrained - which is exactly the comparison the probe harness already renders
 side by side:
 
     python -m gym_continuousDoubleAuction.train.probe --encoders jepa \\
-        --checkpoint <out_dir> --module-id pretrained
+        --pretrained <out_dir> --pretrained-encoder jepa
+
+(`--pretrained`, not `--checkpoint`: pretraining saves the module itself under
+`<out_dir>/rl_module/`, not an RLlib Algorithm checkpoint, so `--checkpoint`
+finds no module in it.)
 
 What to watch
 -------------

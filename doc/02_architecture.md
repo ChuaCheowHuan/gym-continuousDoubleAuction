@@ -28,7 +28,7 @@ flowchart LR
         ACC["Account<br/>cash / position / NAV"]
         MTM["mark_to_mkt<br/>last tape price"]
         OBS["State_Helper<br/>snapshot + history"]
-        REW["Reward_Helper<br/>five signed terms"]
+        REW["Reward_Helper<br/>six signed terms"]
     end
 
     POL -->|"action Dict"| ACT
@@ -156,7 +156,9 @@ gym_continuousDoubleAuction/
 │   │   ├── action_helper.py               action space + action decoding + pricing
 │   │   ├── reward_helper.py               reward function
 │   │   ├── done_helper.py                 termination / truncation
-│   │   └── info_helper.py                 per-agent info dict
+│   │   ├── info_helper.py                 per-agent info dict
+│   │   └── liquidation_helper.py          margin breach, forced close, auto-deleveraging
+│   ├── layout_version.py                observation + action layout versions, stamped beside checkpoints
 │   ├── orderbook/                       matching engine
 │   │   ├── orderbook.py                   OrderBook: process / cancel / modify + tape
 │   │   ├── ordertree.py                   price → OrderList SortedDict, per side
@@ -168,25 +170,30 @@ gym_continuousDoubleAuction/
 │   │   ├── cash_processor.py              cash ↔ cash_on_hold transfers
 │   │   └── calculate.py                   NAV, P&L, mark-to-market
 │   └── agent/
-│       ├── trader.py                      order lifecycle + trade settlement
+│       └── trader.py                      order lifecycle + trade settlement
 ├── train/
 │   ├── train.py                        TrainConfig, build_algo, checkpointing, progress.jsonl, CLI
 │   ├── runtime.py                      platform + hardware profile resolution (Colab / docker)
 │   ├── episode_record.py               EpisodeRecorder: the Parquet per-step record
 │   ├── policy/policy_handler.py        MultiRLModuleSpec, module ID conventions
 │   ├── model/model_handler.py          RandomRLModule + DefaultModelConfig + CDACatalog
+│   ├── model/action_mask.py            reads the mask out of the private block (doc/06 §7)
 │   ├── model/encoders/                 selectable observation encoders for the trainable modules
+│   ├── model/jepa_learner.py           JEPA module + learner (doc/22 4.2)
+│   ├── model/moe_learner.py            CDAPPOTorchRLModule (masking) + CDAPPOTorchLearner (MoE aux loss)
+│   ├── model/cbp.py, cbp_learner.py    Continual Backprop and its Learner mixin (doc/25)
 │   ├── probe/                          reward-free encoder scoring (doc/23)
 │   ├── pretrain/                       offline JEPA pretraining (doc/24)
-│   ├── model/jepa_learner.py           JEPA module + learner (doc/22 4.2)
 │   ├── callbk/…_self_play_callback.py  league: champions, matchmaking, metrics, the record
 │   ├── evaluate.py                     roll episodes with a checkpoint's policies (S4-12)
 │   ├── export.py                       one module's weights out of a checkpoint (doc/26 26.9.2)
+│   └── compare.py                      seeded encoder sweep, each run scored by the probe
 ├── visualize/                          offline charts from the episode Parquet + progress.jsonl
 │   ├── run_all.py                        regenerates every chart
 │   ├── episode_data.py                   loads the newest run's Parquet record
+│   ├── inspect_latest_episode*.py        print the newest episode as a table or JSON
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               1,144 unit tests
+└── test/                               1,214 unit tests
     └── integration/                    163 tests that build real Algorithms
 ```
 

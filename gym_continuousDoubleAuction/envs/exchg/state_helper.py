@@ -146,22 +146,6 @@ _FRAME_TRADE_COUNT = 4
 _FRAME_TRADE_DIRECTION = 5
 _FRAME_EXTRAS = 6
 
-#: Order of the per-agent private block `set_private_state` builds, and the
-#: single definition of what it contains. `private_dim` in
-#: tunable_constants.json must equal its length; __init__ checks that, on the
-#: same rule as `book_rows` above.
-#:
-#: This block is why the reward is learnable at all. It is
-#: f(nav, prev_nav, max_nav, ...) and every one of those was unobservable, so
-#: two agents holding opposite positions received the byte-identical vector and
-#: needed opposite actions - which a policy, being a function of its
-#: observation, cannot do (finding S1-2). `drawdown` matters especially: it is
-#: a path functional over the whole episode, so no amount of recurrence could
-#: have recovered it from a stream that never showed it.
-#:
-#: Every entry is normalised to O(1) and bounded, because these sit in the same
-#: vector as the book block and feed the same `tanh` MLP - an unbounded private
-#: field would saturate it exactly as the raw sizes do (S2-2).
 #: The per-agent fields that do not depend on book depth, in order. These are
 #: the nine the private block started with; `private_fields` appends the
 #: depth-dependent own-book block after them.
@@ -199,7 +183,7 @@ FEEDBACK_FIELDS = (
     "unmatched_last_step",  # 1.0 if the agent's last modify/cancel named no order
 )
 
-#: The action mask (doc/06 section 6): one entry per action category, in the
+#: The action mask (doc/06 section 7): one entry per action category, in the
 #: category's order (`Action_Helper._CATEGORY_MAP`), 1.0 where the category is
 #: possible for this agent on the coming step. "Possible" is exact, not
 #: advisory: a modify or cancel needs a resting order on that side, a market
@@ -1012,7 +996,12 @@ class State_Helper(object):
 
         # The raw frame, which is what `obs_history` stores. Normalisation is
         # deferred to emission so that one midpoint normalises the whole stack
-        # - see `prep_next_state`.
+        # - see `prep_next_state`. float64, like `agg_LOB_raw`: `_stack` snaps
+        # the grid origin from this frame's M, and `reference_price()` snaps
+        # the float64 midpoint. Stored in float32, a midpoint half a tick off
+        # the grid (any one-tick spread) could round to the other side, so the
+        # action's price codes and the own-book cells sat one tick off the
+        # grid the agent saw. The emitted observation is still float32.
         self.agg_LOB_frame = np.concatenate([
             flattened_raw,
             np.array([
@@ -1023,7 +1012,7 @@ class State_Helper(object):
                 float(trade_count),
                 trade_direction,
             ]),
-        ]).astype(np.float32)
+        ]).astype(np.float64)
 
         # The current frame, normalised against its own midpoint. At emission
         # time that is `M_t`, so the newest frame of a stack is identical

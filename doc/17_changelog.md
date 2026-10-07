@@ -3397,3 +3397,67 @@ everywhere: blue `envs/exchg/` and `train/`, green `envs/orderbook/`, red `envs/
 
 Other current-tense mentions of 216 floats or a 32-float private block remain, in 05, 09, 10, 12,
 15, 18 and 21. This pass only moved text, so it did not touch them.
+
+
+## 59. A whole-codebase review, and the docs brought back in line with the code (2026-10-07)
+
+A review of every package — `envs/`, `train/`, `visualize/` and the CLIs — in five slices. 83 raw
+findings; each was reproduced before anything was changed, and several did not survive. The ones
+that were local and testable are fixed below, one commit each, each with a regression test that
+fails on the code before it ([16](16_verification_log.md) §16.27: 39 of 525 tests in the changed
+files). Larger ones, which change the game the policy plays or need a design decision, are left
+open and written down.
+
+**Fixed, in the simulator**
+
+- A `modify` with nothing to act on no longer cancels the trader's opposite quotes, and is an
+  unmatched miss whatever the cash (S3-26).
+- Closing escrow is counted in fill order, not time order (S3-27).
+- The observation's grid origin and the action's agree at every tick: the stored frame is float64
+  (S3-28). Tick 1 was never affected.
+- `OrderBook.modify_order` refuses a non-positive quantity (S4-20); liquidation settings refuse
+  `null`, booleans and NaN by name (S4-21).
+
+**Fixed, in training and its tools**
+
+- `league.promoted` counts promotions into a full league; `nav_conservation_error` reports an
+  iteration's worst episode; the episode account metrics include agents terminated midway (S3-29).
+- `train.evaluate` reports a mid-episode bankruptcy, with that agent's fractions over the steps it
+  played (S3-30).
+- Continual Backprop warns when a module has nothing to replace (it is a no-op on `lstm`), and its
+  state stays out of the per-iteration weight sync (S3-32).
+- `train.export` handles a champion adopted with no recorded return (S4-22); `train.compare`
+  probes its own run's final save and takes list and dict `--set` values as JSON (S4-23);
+  `config_loader` hands each reader its own copy (S4-24); the episode recorder never writes a
+  fragment marked complete (S4-25); a refused restore stops its algorithm (S4-26); log propagation
+  is restored when Ray applies no `LoggingConfig` (S4-27).
+- The probe's contiguous split purges the target horizon at its seams (S3-31), and its rank table
+  names the threshold it used; the reward charts draw `dead_action_penalty` (S3-33).
+- Comments and docstrings that described the code wrongly, including nine that pointed the action
+  mask at [06](06_action_space.md) §6 instead of §7 (S4-28).
+
+**Open, recorded:** S2-14, a market order's cash check prices only the touch. Covering the LSTM
+in Continual Backprop (S3-32's other half) is open too.
+
+**The docs, synced to the code.** Every present-tense fact was compared with what the code
+computes, with a script rather than by eye: test counts, observation widths, the private block,
+the action heads, the reward terms, the config keys and values, the package tree, the entry points.
+This log and [16](16_verification_log.md) are history and were left as they are.
+
+| Was | Now | Where |
+|---|---|---|
+| 1,144 unit + 163 integration; `1023 passed`; 112, 153, 156 and 165 integration | **1,214 + 163 = 1,377** | [01](01_overview.md), [02](02_architecture.md), [10](10_testing.md) (header, mindmap, per-file inventory, §6.4.4), [14](14_perspective_ai_engineer.md), [15](15_findings_and_recommendations.md), [26](26_runbook.md) §26.2, re-run |
+| a 216-float observation, a 32-float private block | **233 = 4 × 48 + 41** in `grid`, 305 in `levels` | [05](05_observation_space.md), [09](09_distributed_training.md), [10](10_testing.md), [12](12_perspective_rl_researcher.md), [15](15_findings_and_recommendations.md), [18](18_configuration.md), [21](21_logging_review.md) |
+| `private_dim` 32 = 9 + 2k + 2 + 1 | **41**, with the nine action-mask entries | [05](05_observation_space.md) §1, [18](18_configuration.md) |
+| five reward terms | **six**, `dead_action_penalty` included | the system diagram ([README](../README.md), [02](02_architecture.md)), [doc/README](README.md), [11](11_logging_and_observability.md) |
+| 44 tokens of 6 channels; `level` is `k_rows + 1` tokens | **88 × 6** in `grid` (22 per snapshot), 44 × 8 in `levels` | [18](18_configuration.md) §5.4, [22](22_jepa_integration.md) |
+| the package tree without `liquidation_helper`, `layout_version`, `compare`, `action_mask`, `cbp`, `cbp_learner`, `moe_learner`, the inspect scripts | all listed | [02](02_architecture.md) §2.3 |
+| five CLIs missing from the entry points | `evaluate`, `export`, `probe`, `pretrain`, `compare` | [01](01_overview.md) §1.6 |
+| "stable rank as the Nature paper defines it" | a threshold rank, not on the papers' scale | [23](23_probe_harness.md) §8, [25](25_continual_backprop.md) |
+| `token_embed.token_mlp` covered by CBP | not covered; `lstm` has 0 replaceable layers | [25](25_continual_backprop.md) §3.4 |
+| seven `#anchor` links in 15 that resolved nowhere | each points at its heading | [15](15_findings_and_recommendations.md) |
+| done steps in 15's suggested sequencing shown as to-do | struck through | [15](15_findings_and_recommendations.md) |
+| `cbp_enabled` off "means the learner class is the encoder's, unchanged" | unchanged only when `cbp_metrics_only` is off and Adam is at its defaults | [18](18_configuration.md) §5.6 |
+
+The config tables in [18](18_configuration.md) were checked value by value against the JSON and
+agreed already.

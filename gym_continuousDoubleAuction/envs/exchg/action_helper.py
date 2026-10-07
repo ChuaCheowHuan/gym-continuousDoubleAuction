@@ -313,7 +313,7 @@ class Action_Helper():
         """Which of the `category_n` action categories `trader` can take now.
 
         One float per category in `_CATEGORY_MAP` order, 1.0 where the action
-        is possible (doc/06 section 6). Two impossibilities, both exact:
+        is possible (doc/06 section 7). Two impossibilities, both exact:
 
         * `modify` / `cancel` on a side with none of this trader's orders
           resting - the "unmatched" dead action, which `num_unmatched_step`

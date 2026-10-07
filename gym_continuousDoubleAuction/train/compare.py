@@ -85,8 +85,9 @@ def parse_overrides(items) -> Dict[str, Any]:
 
     The type comes from the dataclass field's annotation (`int`, `float`,
     `bool`, `str`, or an `Optional[...]` of one), so `--set max_step=64` is an
-    int and `--set action_mask=false` a bool. An unknown field is an error
-    rather than a silently ignored typo.
+    int and `--set action_mask=false` a bool. A list or dict field takes JSON:
+    `--set fcnet_hiddens=[128,128]`. An unknown field is an error rather than a
+    silently ignored typo.
     """
     from gym_continuousDoubleAuction.train.train import TrainConfig
 
@@ -98,9 +99,24 @@ def parse_overrides(items) -> Dict[str, Any]:
         name, raw = item.split("=", 1)
         if name not in fields:
             raise SystemExit(f"--set: TrainConfig has no field {name!r}")
-        annotation = str(fields[name].type).replace("Optional[", "").rstrip("]")
+        annotation = (str(fields[name].type).replace("typing.", "")
+                      .replace("Optional[", "").rstrip("]"))
+        # Before the scalar checks: those match substrings, and "List[int]"
+        # contains "int".
+        container = annotation.split("[", 1)[0].lower()
         if raw.lower() in ("none", "null"):
             out[name] = None
+        elif container in ("list", "tuple", "dict"):
+            want = dict if container == "dict" else list
+            try:
+                parsed = json.loads(raw)
+            except json.JSONDecodeError as exc:
+                raise SystemExit(
+                    f"--set {name}: expected a JSON {want.__name__}, got {raw!r} ({exc})"
+                ) from exc
+            if not isinstance(parsed, want):
+                raise SystemExit(f"--set {name}: expected a JSON {want.__name__}, got {raw!r}")
+            out[name] = parsed
         elif "bool" in annotation:
             out[name] = raw.lower() in ("1", "true", "yes", "on")
         elif "int" in annotation:
@@ -178,11 +194,24 @@ def run_one(base_cfg, encoder: str, seed: int, out_dir: str, iters: int) -> Dict
             "obs_clip_fraction": _as_float(env_runners.get("obs_clip_fraction")),
             "parameters": _parameter_count(algo, trainable[0]),
         }
-        checkpoints = list_checkpoints(cfg.checkpoint_dir)
-        row["checkpoint"] = checkpoints[-1][1] if checkpoints else None
+        row["checkpoint"] = _final_checkpoint(
+            list_checkpoints(cfg.checkpoint_dir), row["iterations"])
     finally:
         algo.stop()
     return row
+
+
+def _final_checkpoint(checkpoints, iteration: int) -> Optional[str]:
+    """The save this run wrote at its final iteration, or None.
+
+    Not the highest-numbered save in the directory: a sweep re-run into the
+    same `--out` with fewer iterations leaves the earlier sweep's later saves
+    behind, and those are another run's weights. A save at the same iteration
+    is overwritten by this run (`save_checkpoint` replaces it), so matching the
+    iteration is enough.
+    """
+    mine = [path for it, path in checkpoints if it == iteration]
+    return mine[-1] if mine else None
 
 
 def _parameter_count(algo, module_id: str) -> Optional[int]:

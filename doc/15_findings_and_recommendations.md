@@ -42,7 +42,7 @@ mindmap
       S1-4 bare env could not trade — fixed
       S1-5 cash check bypassable — fixed
         closing-side escrow now spendable — fixed
-    S2 Major — all fixed
+    S2 Major — all fixed but S2-14
       S2-1 drawdown charged as a level — fixed
       S2-2 observation scales saturate tanh — fixed
       S2-3 cost proxies 10^5 too small — fixed
@@ -57,6 +57,7 @@ mindmap
       S2-11 VWAP negative, obs reported flat — fixed
       S2-12 gymnasium.make raised — fixed
       S2-13 cancel was cash-checked — fixed
+      S2-14 market sweep cash-checked at the touch — open
     S3 Moderate
       action space
         S3-1 half of size_mean is a no-op
@@ -72,12 +73,21 @@ mindmap
         S3-15 level index non-stationary — fixed
         S3-25 the shuffle decided who traded — fixed as an option
         S3-20 dead escrow path — fixed
+        S3-26 modify with no target cancelled quotes — fixed
+        S3-27 closing escrow in time order — fixed
+        S3-28 two grid origins at a fractional tick — fixed
       training and league
         S3-8 detached callback — fixed
         S3-11 promotion cannot detect passivity
         S3-12 returns not comparable across roles
         S3-16 idle opponent killed promotion — fixed
         S3-17 retention deleted fresh checkpoints — fixed
+        S3-29 three metrics read wrong — fixed
+        S3-30 evaluate missed bankruptcies — fixed
+        S3-32 CBP silent on lstm — half fixed
+      tooling
+        S3-31 probe split leaked targets — fixed
+        S3-33 charts dropped a reward term — fixed
       packaging
         S3-6 install_requires — fixed
         S3-18 config not in the wheel — fixed
@@ -94,6 +104,7 @@ mindmap
       S4-17 ask sign convention — fixed
       S4-18 duplicate CODEOWNER files
       S4-19 layout version in checkpoints — fixed
+      S4-20 to S4-28 the 2026-10-07 review — fixed
 ```
 
 ---
@@ -132,7 +143,7 @@ that could drift from it. Value targets are O(1), the clamp no longer binds, and
 `vf_explained_var` assertion in `integration/test_progress_and_vf.py` — which was a *strict xfail*
 pinning this finding — XPASSed on the first real run after the change and is now a live regression
 guard. The same change also closed S2-3 and made S2-1's fix expressible.
-→ [12 §4](12_perspective_rl_researcher.md#4-the-critic-cannot-learn--vf_clip_param-saturation),
+→ [12 §4](12_perspective_rl_researcher.md#4-the-critic-cannot-learn--vf_clip_param-saturation--fixed),
 [07 §2.1](07_reward_function.md)
 
 ### S1-2 · Observation contains no private state **[verified, fixed]**
@@ -173,7 +184,7 @@ Three consequences worth knowing:
 **Still open:** own resting orders and agent identity are not in the block. Resting orders are the
 larger gap — `modify` and `cancel` remain partly blind, since an agent can see its escrowed cash
 but not which orders that cash is committed to.
-→ [12 §2](12_perspective_rl_researcher.md#2-the-observation-contains-no-private-state),
+→ [12 §2](12_perspective_rl_researcher.md#2-the-observation-contains-no-private-state--fixed),
 [05 §1.0](05_observation_space.md)
 
 ### S1-3 · Doing nothing is a dominant strategy **[verified, fixed]**
@@ -201,7 +212,7 @@ Passing still scores exactly zero, which is correct rather than residual: in a z
 reward can make trading positive-sum *on average*. What changed is that the friction is now ~0.5%
 of a typical NAV move instead of dominating it, so trading is no longer dominated for an agent with
 any edge. Measured over 1,000 steps, `nav_term` sums to **exactly 0.000000** across agents.
-→ [12 §3.3](12_perspective_rl_researcher.md#33-doing-nothing-is-a-dominant-strategy),
+→ [12 §3.3](12_perspective_rl_researcher.md#33-doing-nothing-is-a-dominant-strategy--fixed),
 [07 §4.3](07_reward_function.md)
 
 ### S1-4 · The default standalone env could not trade **[verified, fixed]**
@@ -293,7 +304,7 @@ which would have left S1-3 half-open while looking like a fix for this. What shi
 **signed** change, `(current_drawdown - previous_drawdown) / init_nav`, whose per-step charges
 telescope to `-drawdown_penalty × final_drawdown` over an episode regardless of path. A round trip
 is free, ending in drawdown is still penalised, and the term cannot be farmed.
-→ [12 §3.4](12_perspective_rl_researcher.md#34-the-drawdown-term-is-a-level-not-a-delta),
+→ [12 §3.4](12_perspective_rl_researcher.md#34-the-drawdown-term-is-a-level-not-a-delta--fixed-but-not-by-the-patch-below),
 [07 §4.1](07_reward_function.md)
 
 ### S2-2 · Unnormalised observation scales saturate the `tanh` MLP **[verified, fixed]**
@@ -321,7 +332,7 @@ Re-measured: the size/price standard-deviation ratio falls from **220× to 3.7×
 lands inside ±1.2, and inventory exceeds its scale on **0.0%** of agent-steps against 13.2%.
 `test_obs_feature_scales.py` asserts the *property* — that the blocks are comparable and bounded —
 rather than the formulas, which stay pinned where they were.
-→ [05 §7.5](05_observation_space.md#75-feature-scales-differ-by-one-to-two-orders-of-magnitude-after-normalization)
+→ [05 §7.5](05_observation_space.md#75-feature-scales-differ-by-one-to-two-orders-of-magnitude-after-normalization--fixed)
 
 ### S2-3 · Transaction-cost proxies are ~10⁵× too small **[verified, fixed — real fees still open]**
 
@@ -417,7 +428,7 @@ stack once, by `M_t`. Concretely: a bid resting at 90 while the midpoint moved 1
 0.0625 in both, `log_mid` still differs across them (0.0 → −0.0408) because each frame keeps its own
 midpoint, and a new `mid_return` scalar records the move as −0.04. Nothing is lost; it is no longer
 smeared through every price in the book.
-→ [05 §7.1](05_observation_space.md#71-each-frame-in-the-stack-is-normalized-by-a-different-denominator)
+→ [05 §7.1](05_observation_space.md#71-each-frame-in-the-stack-is-normalized-by-a-different-denominator--fixed)
 
 ### S2-7 · No trade-flow information — the tape loop is dead code **[verified, fixed]**
 
@@ -440,7 +451,7 @@ observation is 193 floats rather than 177, so no earlier checkpoint loads.
 The flow cursor advances only in `prep_next_state`, never in `set_agg_LOB`, because the latter runs
 twice per step and only one call commits a frame — a display-only snapshot must not eat the step's
 trade flow.
-→ [05 §7.3](05_observation_space.md#73-the-tape-loop-is-dead-code--there-is-no-trade-flow-information-at-all)
+→ [05 §7.3](05_observation_space.md#73-the-tape-loop-is-dead-code--there-is-no-trade-flow-information-at-all--fixed)
 
 ### S2-8 · No logging framework; the callback prints 42 diagnostics per episode — **fixed**
 
@@ -582,6 +593,15 @@ always pass and only a genuine increase in notional beyond `cash + released` is 
 `_resting_exposure` (S1-5) supplies the released amount. Seven tests in `test_cash_check.py` pin
 each case, including that a bankrupt trader still cannot act.
 
+
+### S2-14 · A market order is cash-checked at the touch but pays every level it sweeps **[verified, open]**
+
+`Trader._order_approved` prices a market order's opening size at the best opposite price. A sweep
+pays deeper levels too, so the check passes an order the trader cannot afford. With cash 1,000, a
+market buy of 10 against asks of 1 @ 100 and 9 @ 200 is approved and leaves cash at **−900**
+([16](16_verification_log.md) §16.27). Batch clearing checks the same way. Not fixed in the
+2026-10-07 pass: pricing the sweep, or capping the fill at what cash covers, changes which orders
+are approved and so the game the policy plays, which is a decision rather than a bug fix.
 
 ---
 
@@ -1111,8 +1131,8 @@ it mattered.
 **Done (2026-09-18, all four phases; [17](17_changelog.md) §47, [16](16_verification_log.md) §16.20).**
 
 - *Phase 1.* `State_Helper.private_fields(k_rows)` is `[9 base | own bid sizes (k) | own ask
-  sizes (k) | own counts (2) | unmatched_last_step]`, 32 at `k_rows` 10; the observation is 216
-  floats. `own_book` reads the live book after the step's orders, so level k of the own book is
+  sizes (k) | own counts (2) | unmatched_last_step]`, 32 at `k_rows` 10 when this phase landed; the
+  nine action-mask entries since appended make it 41, and the observation 233 floats. `own_book` reads the live book after the step's orders, so level k of the own book is
   level k of the newest snapshot, and `tokenize` writes the two own sizes into channels 4 and 5 of
   the newest snapshot's level tokens - the channels the scalars' width had left as zero padding -
   so the transformer, LSTM, MoE and JEPA encoders see them per level at no extra width.
@@ -1159,6 +1179,82 @@ but by the S4-15 clip counter on `cash_on_hold`; `Trader.settle_batch` re-bases 
 
 ---
 
+### S3-26 · A `modify` with nothing to modify cancelled the trader's other quotes **[verified, fixed]**
+
+`place_order` ran the cash check and self-match prevention before asking whether a `modify` had a
+resting order to act on. So a `modify` that changed nothing still cancelled the trader's own
+opposite-side orders, and it was counted as *rejected* or *unmatched* depending on whether cash
+happened to be short. It is now settled first, as an unmatched miss. A trader that cannot act at
+all (NAV ≤ 0, or frozen mid-liquidation) is still refused, through `Trader._can_act()`, which
+`_order_approved` shares. `test_unmatched_actions.py`.
+
+### S3-27 · Closing escrow was counted in time order, not fill order **[verified, fixed]**
+
+`_closing_escrow` (S1-5) credits the escrow of the orders that would close a position as
+spendable. It promised to walk them in fill priority but sorted by timestamp, while the book fills
+best price first. A long 10 with an older ask at 200 and a newer ask at 100 was credited 2,000
+instead of the 1,000 that actually closes it, so opening orders passed a check they should have
+failed. It now walks `_own_orders_from_touch`, the one definition of fill priority the slots and
+the own-book observation already use. `test_cash_check.py`.
+
+### S3-28 · At a non-integer tick the observation and the action could use grids one tick apart **[verified, fixed]**
+
+The stored frame was float32, and the observation snapped its grid origin from that frame's
+midpoint, while `reference_price()`, which `_set_price` and the own-book block quote from, snapped
+the float64 one. A one-tick spread puts the midpoint exactly half a tick off the grid, where the
+two roundings can disagree: 40 to 120 of every 200 one-tick books at ticks 0.3, 0.1, 0.05 and
+0.01, none at the shipped tick of 1 ([16](16_verification_log.md) §16.27). Then a price code and
+the agent's own-book cells sat one tick off the grid it was shown. The frame is float64 now; the
+emitted observation is still float32. `test_tick_grid.py`.
+
+### S3-29 · Three training metrics read wrong at the moments they matter **[verified, fixed]**
+
+- `league.promoted` and `champions_promoted` were the change in champion count across the
+  trigger. A full league evicts before it promotes, so every promotion after it filled read 0.
+  They now count the new champion ids.
+- `nav_conservation_error` was logged with `window=1`, the last episode's value, so an episode
+  that destroyed 500 of NAV followed by a conserved one read 0.0. It is reduced by max.
+- The episode account metrics (`episode_nav_min`/`_mean`/`_max`, drawdown, inventory, trades)
+  read the last env step's infos, which an agent terminated earlier is not part of, so they left
+  out the agents with the extreme outcomes. They read each agent's own last info.
+
+`test_champion_trigger.py`, `test_nav_callback.py` (the last two against a real `MetricsLogger`
+and `MultiAgentEpisode`).
+
+### S3-30 · `train.evaluate` did not see a mid-episode bankruptcy **[verified, fixed]**
+
+It read `terminated` from the last step, which a terminated agent has left, so a bankruptcy before
+the end read as none, and that agent's activity fractions were divided by the whole episode's
+length. Termination is recorded when it happens, and each agent's fractions use the steps it
+played. `test_evaluate.py`.
+
+### S3-31 · The probe's contiguous split leaked targets across its seams **[verified, fixed]**
+
+Below three episodes the probe splits on contiguous rows. A target at row *t* reads row *t + h*, so
+the last *h* training rows were labelled from validation observations and the last *h* validation
+rows from test ones. `split_masks` takes the horizon as `purge` and leaves those rows out. The
+episode split, the usual one, needed no change. `test_probe.py`.
+
+### S3-32 · Continual Backprop: a silent no-op on `lstm`, and its state in every weight sync **[verified, half fixed]**
+
+Layer discovery finds 0 replaceable layers in `lstm` (4 in `mlp` and `transformer`, 16 in
+`moe_transformer`, 6 in `jepa`), so `cbp_enabled` on `lstm` trained exactly like CBP off, with no
+message. It now logs a WARNING naming the module; making CBP cover a recurrent core is open
+([25](25_continual_backprop.md) §3.4). Separately, `CBPLearnerMixin.get_state` added its per-layer
+tensors whatever components were asked for, so each iteration's weights-only sync copied them off
+the device and threw them away. It now honours the component filter; a full checkpoint still
+carries them. `test_cbp.py`.
+
+### S3-33 · The reward charts dropped `dead_action_penalty` **[verified, fixed]**
+
+`TERM_COLORS` had five colours and was zipped against six `REWARD_TERMS`, so the decomposition and
+the training means left the sixth term out, and the plotted terms no longer summed to the total
+beside them, which reads as an accounting break. The variance-share stack drew it in `nav_term`'s
+colour. Colours are keyed by term name, and a term without one fails at import.
+`test_visualize_reward_terms.py`.
+
+---
+
 ## S4 — Minor
 
 | ID | Finding |
@@ -1182,6 +1278,15 @@ but by the S4-15 clip counter on `cash_on_hold`; `Trader.settle_batch` re-bases 
 | S4-17 | **Fixed, after measuring.** Ask prices and sizes are positive in the raw snapshot, the normalised frame, the own-book block and the L1 read; `_set_price`, the probe's `depth_imbalance` and the order-book visualizer read them so. `OBSERVATION_LAYOUT_VERSION` is 3 and a version-2 checkpoint is refused by name (S4-19) - same width, different meaning, which a shape check would never catch. `train.compare` at the S3-24 protocol (mlp and transformer, three seeds, 8 iterations) before and after: [16](16_verification_log.md) §16.22 |
 | S4-18 | **Fixed** (earlier than this row admitted: the tree has carried only `CODEOWNERS` for several passes; the row was stale) |
 | S4-19 | **Fixed.** `envs/layout_version.py` writes the observation and action layout versions, the private-field list and the action-key list into every checkpoint's `league_state.json`; `train.build_algo` compares before restoring and refuses a mismatch naming what differs. A pre-stamp sidecar is layout 1 by definition |
+| S4-20 | **Fixed.** `OrderBook.modify_order` accepted quantity 0 and left a zero-size order resting, which a later sweep would print as a zero-size trade. It raises `ValueError` as `process_order` already did |
+| S4-21 | **Fixed.** `liquidation_horizon: null` raised a bare `TypeError`, `true` was taken as a horizon of 1, and `maintenance_margin: NaN` raised `decimal.InvalidOperation`. Each is now the same `ValueError` naming the key as any other out-of-range value |
+| S4-22 | **Fixed.** A champion adopted on restore has no recorded return, and `train.export` then raised ranking `None` against floats (`--list` and the eviction log line too). Unranked champions are skipped, printed as `n/a`, and an all-unranked league is an error naming `--module-id` |
+| S4-23 | **Fixed.** `train.compare` probed the newest save in a run's directory, which a re-run with fewer iterations left from the previous sweep; it takes the save at this run's final iteration. `--set` could not parse a list or dict field (`fcnet_hiddens=[128,128]` raised from `int()`); container fields are parsed as JSON |
+| S4-24 | **Fixed.** `config_loader.load` returned the cache's own objects, so appending to one `TrainConfig`'s list default changed every later one. It returns a deep copy |
+| S4-25 | **Fixed.** When the episode recorder's live-episode cap evicted an episode still in flight, its later steps started a fresh buffer that `finish_episode` marked `episode_complete`. Evicted ids are remembered and their tail is dropped. The cap stays at 8 |
+| S4-26 | **Fixed.** A restore refused by `build_algo`'s post-restore checks dropped the algorithm without `stop()`, so its actors kept their CPUs. It is stopped before the error propagates |
+| S4-27 | **Fixed.** With `ray_log_encoding` set, package logs stopped propagating to root even when Ray applied no `LoggingConfig`, so nothing printed them. Propagation is restored on those paths |
+| S4-28 | **Fixed.** Text that described the code wrongly: `visualize.run_all --help` printed no description; the probe's rank table always claimed the default threshold; the tape comment named the wrong end; a duplicated comment block in `state_helper`; `effective_rank` called itself the papers' rank (it is a threshold rank, [23](23_probe_harness.md) §8); the pretrain docstring's probe command could not find the module; nine comments pointed the action mask at [06](06_action_space.md) §6 rather than §7 |
 
 ---
 
@@ -1245,7 +1350,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **1,144 unit tests pass** (plus 163 integration), covering every position-flip path, cash-check edge case, modify-order
+- **1,214 unit tests pass** (plus 163 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 
@@ -1265,26 +1370,30 @@ Roughly two to three weeks of work, ordered so each step unblocks the next.
 3. ~~Make the drawdown penalty an increment~~ — **done**, as a *signed* change. The clipped
    `max(0, Δ)` form recommended in [12 §3.4](12_perspective_rl_researcher.md) is an asymmetric
    loss multiplier in disguise and was deliberately not shipped; see [07 §2.1](07_reward_function.md)
-4. Normalise observation feature scales (S2-2)
+4. ~~Normalise observation feature scales (S2-2)~~ — **done**
 
 **Phase 2 — make the problem well-posed (≈3–4 days)**
 5. ~~Add the private-state observation block (S1-2); delete the uniformity test~~ — **done**,
-   9 floats per agent. Own resting orders are the remaining gap
-6. Terminate and flatten bankrupt agents (S2-4)
+   9 floats per agent then; the agent's own resting orders and the action mask have since joined
+   it (41 floats, S3-24)
+6. ~~Terminate and flatten bankrupt agents (S2-4)~~ — **done**
 7. `size_mean → Box(0,1)`; scale or drop `size_sigma` (S3-1, S3-2)
 8. Positive decaying `entropy_coeff`; raise `std_dev_multiplier`; refuse zero-trade champions (S3-11)
 9. ~~One `np.random.Generator` threaded through the env (S3-5)~~ — **done**. All three draws read
    `self.np_random`; `test_seeding.py` pins it, and `scikit-learn` left with the fix
 
 **Phase 3 — fix the observation pipeline (≈3 days)**
-10. Normalize the whole stack by the current `M_t`; expose `M_t / M_{t−1} − 1` (S2-6)
-11. Finish the tape loop into trade-flow features; wire in `helper.py`'s order imbalance (S2-7)
+10. ~~Normalize the whole stack by the current `M_t`; expose `M_t / M_{t−1} − 1` (S2-6)~~ — **done**
+11. ~~Finish the tape loop into trade-flow features; wire in `helper.py`'s order imbalance (S2-7)~~ —
+    **done**; the imbalance arrived as `signed_volume` (S4-1)
 12. ~~Occupancy mask (S3-14); the fixed tick-offset grid (S3-15)~~ — **both done**; the grid is
     the default layout and the level view is kept for comparison
 
 **Phase 4 — market realism (≈3 days)**
 13. Maker/taker fees in bps inside settlement (S2-3)
-14. Self-match prevention; mark to mid (S2-5)
+13a. Price a market order's whole sweep in the cash check, or cap its fill at what cash covers
+    (S2-14)
+14. ~~Self-match prevention; mark to mid (S2-5)~~ — **done**
 15. ~~Per-episode desk metrics through `metrics_logger` (S3-9)~~ — **partly done**: NAV spread,
     drawdown, inventory, trade count and maker ratio are metrics ([11 §1.2](11_logging_and_observability.md)).
     Sharpe and max-drawdown-over-the-episode still need the NAV trajectory, which the per-step
@@ -1297,6 +1406,7 @@ Roughly two to three weeks of work, ordered so each step unblocks the next.
 17. ~~Fix `install_requires`; drop `sklearn` and the unused `import ray` (S3-6)~~ — **done**, with
     a `packaging` CI job so an installed copy is exercised rather than assumed. `six` is declared
     rather than dropped, because it is imported from the off-limits `envs/orderbook/`
-18. `sys.exit` → `raise ValueError` (S3-7)
+18. ~~`sys.exit` → `raise ValueError` (S3-7)~~ — **done**
 19. Delete dead code (S4-1..4) — the `g_store` trio (S4-1) and the `build_algo` restore path (S3-8) are done
-20. Add `ruff` / `black` / `pre-commit` / `pytest-cov`
+20. Add `ruff` / `black` / `pre-commit` / `pytest-cov` — `ruff` and `pytest-cov` are configured
+    (S4-6); a formatter and `pre-commit` are not

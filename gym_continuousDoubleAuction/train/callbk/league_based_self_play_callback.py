@@ -820,15 +820,16 @@ class SelfPlayCallback(RLlibCallback):
         conserved = abs(error) <= self.nav_tolerance
 
         # The metric goes out whether or not the invariant held, so a run has a
-        # series to look at rather than only the moment it broke. window=1
-        # keeps it per-iteration rather than smoothed - an error that appears
-        # in one episode out of many must not be averaged away.
+        # series to look at rather than only the moment it broke. Reduced by
+        # max, per iteration: an error that appears in one episode out of many
+        # must not be averaged away - or overwritten, which is what `window=1`
+        # did, keeping only the last episode's value.
         if metrics_logger:
             # float() only at the boundary: the metrics stack reduces with
             # NumPy and will not take a Decimal. The check above has already
             # been decided exactly by this point.
             metrics_logger.log_value(
-                "nav_conservation_error", float(abs(error)), window=1
+                "nav_conservation_error", float(abs(error)), reduce="max"
             )
             # Emitted every episode, including the conserved ones, so the key is
             # always present in the result and the driver's check reads a count
@@ -837,7 +838,11 @@ class SelfPlayCallback(RLlibCallback):
             metrics_logger.log_value(
                 NAV_VIOLATIONS_METRIC, 0.0 if conserved else 1.0, reduce="sum",
             )
-            self._log_episode_account(last_info, metrics_logger)
+            # Each agent's own last info, not the last env step's: an agent
+            # bankrupted earlier is not part of that step, and leaving it out
+            # hid exactly the loss `episode_nav_min` exists to show.
+            self._log_episode_account(
+                episode.get_infos(-1, env_steps=False), metrics_logger)
 
         report = "\n".join(
             [f"Episode {episode.id_} NAV verification"]
@@ -969,7 +974,12 @@ class SelfPlayCallback(RLlibCallback):
         # threshold is what is holding the league still. None before the first
         # champion, which is a different state from "0 iterations ago" - so no
         # metric is emitted rather than a misleading zero.
-        promoted_before = self.champion_count
+        # Promotions are champions present after the trigger that were not there
+        # before. Not the change in `champion_count`: a full league evicts its
+        # oldest champion first, so the count is the same either side and a
+        # promotion into a full league read as none. A snapshot that raised and
+        # rolled back adds no id, so it is still not counted.
+        champions_before = {c["id"] for c in self.champion_history}
 
         # Check relative performance trigger
         if best_candidate and best_return > threshold:
@@ -980,13 +990,14 @@ class SelfPlayCallback(RLlibCallback):
                  # Pass policy ID directly
                 self._create_champion_snapshot_from_policy(
                     algorithm, best_candidate, best_return, iteration)
-        
+        promoted = len({c["id"] for c in self.champion_history} - champions_before)
+
         league_state = {
             "size": self.num_trainable + self.num_random + self.champion_count,
             "mean_return": float(league_mean),
             "std_return": float(league_std),
             "threshold": float(threshold),
-            "promoted": max(0, self.champion_count - promoted_before),
+            "promoted": promoted,
             "available_modules": len(self.available_modules),
             "idle_modules": len(idle_modules),
             "champions": [c["id"] for c in self.champion_history],
@@ -1029,13 +1040,13 @@ class SelfPlayCallback(RLlibCallback):
             metrics_logger.log_value("league_std_return", league_std, window=10)
 
             # Promotion as a metric rather than only a log banner (doc/11 §2.5,
-            # §4 item 1). Counted from the champion count either side of the
-            # trigger rather than from the branch above, so a snapshot that
+            # §4 item 1). Counted from the league's champions either side of
+            # the trigger rather than from the branch above, so a snapshot that
             # raised and rolled itself back is correctly reported as *not*
             # promoted.
             metrics_logger.log_value(
                 "champions_promoted",
-                float(max(0, self.champion_count - promoted_before)),
+                float(promoted),
                 reduce="sum",
             )
             metrics_logger.log_value(
@@ -1257,7 +1268,8 @@ class SelfPlayCallback(RLlibCallback):
         champion_id = oldest['id']
 
         logger.info(
-            "Removing oldest champion %s (from iteration %s, return %.2f)",
+            # %s, not %.2f: a champion adopted on restore has return None.
+            "Removing oldest champion %s (from iteration %s, return %s)",
             champion_id, oldest['iteration'], oldest['return'],
         )
 

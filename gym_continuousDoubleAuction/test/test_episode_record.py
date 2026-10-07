@@ -337,6 +337,23 @@ class TestBounds:
         assert "ep_0" not in recorder._live
         recorder.close()
 
+    def test_an_evicted_episode_that_was_still_running_is_not_written_as_whole(self, tmp_path):
+        """Eviction also catches an episode that is merely one of many in
+        flight. Its next step used to start a fresh buffer partway through, and
+        `finish_episode` then labelled that fragment `episode_complete=True`, so
+        per-episode aggregates silently missed the episode's start."""
+        recorder = EpisodeRecorder(str(tmp_path), max_live_episodes=1)
+        a, b = FakeEpisode("ep_a"), FakeEpisode("ep_b")
+        recorder.record_step(a, 0)
+        recorder.record_step(b, 0)   # evicts ep_a, still running
+        recorder.record_step(a, 1)
+        recorder.finish_episode("ep_a")
+        recorder.finish_episode("ep_b")
+
+        written = {row["episode_id"] for row in recorder._pending}
+        assert written == {"ep_b"}
+        recorder.close()
+
 
 class TestItCannotBreakTheRun:
 

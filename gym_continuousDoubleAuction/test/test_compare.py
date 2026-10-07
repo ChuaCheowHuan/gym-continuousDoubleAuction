@@ -101,3 +101,44 @@ def test_cli_defaults_exist():
                 "log_level"):
         cli_default("cda_compare", key)
     assert len(cli_default("cda_compare", "seeds")) >= 3
+
+
+class TestParseOverrides:
+    """`--set` on a list or dict field. The type was chosen by substring-matching
+    the annotation, so `List[int]` matched "int" and `int("[128,128]")` raised a
+    bare ValueError; `--set adam_betas=...` hit float() the same way."""
+
+    def test_a_list_field_takes_json(self):
+        assert compare.parse_overrides(["fcnet_hiddens=[128,128]"]) == {"fcnet_hiddens": [128, 128]}
+        assert compare.parse_overrides(["adam_betas=[0.99, 0.99]"]) == {"adam_betas": [0.99, 0.99]}
+
+    def test_a_dict_field_takes_json(self):
+        assert compare.parse_overrides(['encoder_specs={"lstm": {"max_seq_len": 8}}']) == {
+            "encoder_specs": {"lstm": {"max_seq_len": 8}}}
+
+    def test_the_wrong_shape_is_refused_by_name(self):
+        for item in ("fcnet_hiddens=128", "fcnet_hiddens=[128,", 'adam_betas={"a": 1}'):
+            with pytest.raises(SystemExit, match="--set"):
+                compare.parse_overrides([item])
+
+    def test_scalars_are_unchanged(self):
+        assert compare.parse_overrides(["max_step=64", "lr=0.001", "action_mask=false"]) == {
+            "max_step": 64, "lr": 0.001, "action_mask": False}
+
+
+class TestFinalCheckpoint:
+    """The checkpoint a run is scored by is the one *it* wrote last.
+
+    `run_one` took the highest-numbered save in the directory. Re-running a
+    sweep into the same `--out` with fewer iterations left the earlier sweep's
+    higher-numbered saves there, so the probe scored the previous sweep's
+    weights against this sweep's metrics.
+    """
+
+    def test_it_is_the_save_at_this_runs_final_iteration(self):
+        saves = [(2, "chkpt/iter_00002"), (4, "chkpt/iter_00004"), (16, "chkpt/iter_00016")]
+        assert compare._final_checkpoint(saves, 4) == "chkpt/iter_00004"
+
+    def test_no_save_at_that_iteration_is_none(self):
+        assert compare._final_checkpoint([(16, "chkpt/iter_00016")], 4) is None
+        assert compare._final_checkpoint([], 4) is None

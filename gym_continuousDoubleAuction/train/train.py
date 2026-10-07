@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import logging
 import math
 import os
 import shutil
@@ -49,6 +50,7 @@ from gym_continuousDoubleAuction.envs.layout_version import (
 from gym_continuousDoubleAuction.logging_setup import configure as configure_logging
 from gym_continuousDoubleAuction.logging_setup import get_logger
 from gym_continuousDoubleAuction.logging_setup import (
+    ROOT_NAME,
     log_file_path,
     merge_runtime_env,
     set_iteration,
@@ -172,7 +174,7 @@ class TrainConfig:
     # k_rows best occupied prices). A layout choice, recorded in the stamp.
     book_mode: str = _default("book_mode")
     # The observation's action mask says what each agent can do this step and
-    # the modules refuse the rest; False emits all ones (doc/06 section 6).
+    # the modules refuse the rest; False emits all ones (doc/06 section 7).
     action_mask: bool = _default("action_mask")
     # The matching regime (doc/06 section 8): how a price level is shared out
     # ("fifo" / "pro_rata") and whether a step's crossing orders clear on
@@ -1469,9 +1471,19 @@ def build_algo(cfg: TrainConfig):
             )
             continue
 
-        _fix_checkpoint_optimizer_betas(algo)
-        _check_restored_config(algo.config, ppo)
-        _reconcile_league_state(algo, path)
+        try:
+            _fix_checkpoint_optimizer_betas(algo)
+            _check_restored_config(algo.config, ppo)
+            _reconcile_league_state(algo, path)
+        except BaseException:
+            # `from_checkpoint` has already started this run's env-runner and
+            # learner actors; dropped without a stop they keep their CPUs, and
+            # the next `train()` in the same Ray session can wait on them.
+            try:
+                algo.stop()
+            except Exception:
+                logger.warning("could not stop the refused restore", exc_info=True)
+            raise
 
         restored_callback = algo_callback(algo)
         if restored_callback is None:
@@ -2053,13 +2065,18 @@ def ray_logging_config(cfg: TrainConfig):
 
     Feature-detected rather than assumed. `ray.LoggingConfig` is a young API;
     a Ray without it, or one that rejects an argument, must cost this run its
-    log formatting and nothing else.
+    log formatting and nothing else - which includes undoing what
+    `configure_run_logging` did in expectation of one: it turned propagation
+    to root off because Ray was going to configure root. With no LoggingConfig
+    nothing does, so propagation is turned back on (its default) rather than
+    leaving package records unable to reach a root handler at all.
     """
     if not cfg.ray_log_encoding:
         return None
     factory = getattr(ray, "LoggingConfig", None)
     if factory is None:
         logger.debug("this Ray has no LoggingConfig; leaving its logging alone")
+        logging.getLogger(ROOT_NAME).propagate = True
         return None
     try:
         return factory(
@@ -2071,6 +2088,7 @@ def ray_logging_config(cfg: TrainConfig):
             "continuing with Ray's default logging",
             cfg.ray_log_encoding, cfg.log_level, exc_info=True,
         )
+        logging.getLogger(ROOT_NAME).propagate = True
         return None
 
 

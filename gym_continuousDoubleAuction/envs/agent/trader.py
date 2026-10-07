@@ -77,6 +77,17 @@ class Trader:
             #print('side == None')
             return trades, order_in_book
 
+        # A modify with nothing to modify is a miss, settled before the cash
+        # check and before self-match prevention: the cash check would call it
+        # a rejection whenever cash happened to be short, and self-match
+        # prevention would cancel the trader's opposite-side orders for an
+        # action that then did nothing. An account that cannot act at all is
+        # still refused below, as every other order from it is.
+        if (type == 'modify' and self._can_act()
+                and self._replaced_order_id(LOB, type, side, price, slot) is None):
+            self.acc.num_unmatched_step += 1
+            return trades, order_in_book
+
         # normal execution
         if self._order_approved(side, size, price, LOB, type, slot=slot):
             # Before the order can reach the matcher. Every regulated venue
@@ -233,28 +244,22 @@ class Trader:
 
         Only the portion that actually closes counts: resting quantity beyond
         `|net_position|` would open the opposite position, and its escrow is
-        real margin. Orders are walked oldest first, matching the priority in
-        which they would fill. The order a modify or upsert is about to replace
-        is excluded, because `_order_approved` already counts its release.
+        real margin. Orders are walked in fill priority - best price first,
+        oldest first within a level - which is `_own_orders_from_touch`: the
+        orders that fill first are the ones that close. The order a modify or
+        upsert is about to replace is excluded, because `_order_approved`
+        already counts its release.
         """
         pos = self.acc.net_position
         if pos == 0:
             return Decimal(0)
         side = 'ask' if pos > 0 else 'bid'
-        order_map = self._find_orderTree(LOB, {'side': side})
-        if order_map is None:
-            return Decimal(0)
 
         remaining = abs(pos)
         total = Decimal(0)
-        mine = sorted(
-            (
-                (order_ID, order) for order_ID, order in order_map.items()
-                if order.trade_id == self.ID and order_ID != exclude_order_id
-            ),
-            key=lambda item: item[1].timestamp,
-        )
-        for _order_ID, order in mine:
+        for order_ID, order in self._own_orders_from_touch(LOB, side):
+            if order_ID == exclude_order_id:
+                continue
             if remaining <= 0:
                 break
             covered = min(int(order.quantity), remaining)
@@ -290,6 +295,16 @@ class Trader:
         """The order id this quote would replace, or None. See `_replaced_order`."""
         return self._replaced_order(LOB, type, side, price, slot)[0]
 
+    def _can_act(self) -> bool:
+        """Whether this account may place any order at all.
+
+        Not at NAV <= 0, and not while it is being liquidated gradually: that
+        account is frozen until the close-out is done (doc/04 section 8.5). It
+        has nothing resting - the margin call pulled it - and the liquidation
+        engine, not the agent, decides what it trades.
+        """
+        return self.acc.nav > 0 and self.acc.liquidation_steps_left == 0
+
     def _order_approved(self, side: str, size: int, price: float, LOB,
                         type: Optional[str] = None, slot: int = 0) -> bool:
         """
@@ -304,16 +319,10 @@ class Trader:
 
         Return: boolean.
         """
-        if self.acc.nav <= 0:
-            return False
-
-        # An account being liquidated gradually is frozen until the close-out
-        # is done (doc/04 section 8.5): it has nothing resting - the margin
-        # call pulled it - and the liquidation engine, not the agent, decides
-        # what it trades. Before the cancel exemption below on purpose, so the
-        # action mask, which asks this same function, marks every category
-        # but pass impossible and the freeze is visible to the policy.
-        if self.acc.liquidation_steps_left > 0:
+        # Before the cancel exemption below on purpose, so the action mask,
+        # which asks this same function, marks every category but pass
+        # impossible for an account that cannot act.
+        if not self._can_act():
             return False
 
         # A cancel places nothing. It withdraws a resting order and returns its

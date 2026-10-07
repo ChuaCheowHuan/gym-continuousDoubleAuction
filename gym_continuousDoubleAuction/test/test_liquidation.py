@@ -324,9 +324,16 @@ class TestGradual:
         assert _total_nav(env) == TOTAL
 
     def test_horizon_must_be_a_positive_whole_number(self):
-        for bad in (0, 2.5):
+        # None is what `train.compare --set liquidation_horizon=null` produces,
+        # and a bool is an int to Python; both must be refused by name.
+        for bad in (0, 2.5, None, True, "3"):
             with pytest.raises(ValueError, match="liquidation_horizon"):
                 _env(liquidation="gradual_adl", liquidation_horizon=bad)
+
+    def test_margin_must_be_a_number_in_range(self):
+        for bad in (float("nan"), None, "abc", -0.1):
+            with pytest.raises(ValueError, match="maintenance_margin"):
+                _env(maintenance_margin=bad)
 
     def test_train_config_forwards_the_horizon(self):
         from gym_continuousDoubleAuction.train.compare import parse_overrides

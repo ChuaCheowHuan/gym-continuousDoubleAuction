@@ -53,7 +53,7 @@ def run_all(
 
 
 if __name__ == "__main__":
-    p = argparse.ArgumentParser(description=__doc__.split("\n")[1])
+    p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument(
         "--run-dir", default=None,
         help="episode Parquet run directory; defaults to the most recently written run",

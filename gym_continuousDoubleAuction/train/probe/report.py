@@ -119,7 +119,8 @@ def run(
             y = values[valid]
             groups = corpus.episode_index[valid]
             results = {
-                name: fit_and_score(matrix[valid], y, target.kind, groups=groups)
+                name: fit_and_score(matrix[valid], y, target.kind, groups=groups,
+                                    purge=horizon)
                 for name, matrix in features.items()
             }
             if all(result is None for result in results.values()):

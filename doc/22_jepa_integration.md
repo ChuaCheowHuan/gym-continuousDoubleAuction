@@ -245,7 +245,7 @@ what it says.
 
 ### 3.4 The scale is small, and JEPA's evidence is at scale
 
-44 tokens of 6 channels; encoders of 225k–1.4M parameters ([18](18_configuration.md) §5.5). The
+88 tokens of 6 channels; encoders of 225k–1.4M parameters ([18](18_configuration.md) §5.5). The
 JEPA results that made the architecture interesting are at internet scale — V-JEPA 2 on over a
 million hours of video. The nearest published analogues in this domain are small on purpose:
 Fin-JEPA is a 367K-parameter PriceEncoder plus causal-transformer predictor over daily equity
@@ -313,8 +313,8 @@ head, and let PPO and the JEPA objective share one trunk.
 ```mermaid
 flowchart TD
     OBS["observation, 233 floats"] --> SPLIT["split_private"]
-    SPLIT -->|"184 book"| TOK["tokenize (both)<br/>44 tokens x 6"]
-    SPLIT -->|"9 private"| PTOK["PrivateToken<br/>1 token"]
+    SPLIT -->|"192 book"| TOK["tokenize (both)<br/>88 tokens x 6"]
+    SPLIT -->|"41 private"| PTOK["PrivateToken<br/>1 token"]
     TOK --> MASK{"training?"}
     MASK -->|"yes"| CTX["mask a block<br/>context tokens only"]
     MASK -->|"no"| FULL["all tokens"]
@@ -530,7 +530,7 @@ say plainly that you did not.
 - Nothing about S1-1, S1-3, S2-1 or S2-3. The reward stays negative-sum and the critic stays flat.
 - Nothing about S1-2. A world model over a shared public observation cannot represent private
   state, so `modify` and `cancel` stay blind.
-- No large effect should be expected at 44 tokens and ~10⁵–10⁶ parameters. The comparable
+- No large effect should be expected at 88 tokens and ~10⁵–10⁶ parameters. The comparable
   published result on financial series is a ~10% improvement over an identity baseline from a
   367K-parameter model.
 

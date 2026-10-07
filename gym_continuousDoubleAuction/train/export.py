@@ -96,9 +96,13 @@ def best_champion(state: Dict[str, Any]) -> Optional[dict]:
     the earliest promotion, which `max` gives for free and which is the more
     conservative of the two - a later champion at the same return is a later
     snapshot of a league that had already moved.
+
+    Champions with no recorded return are not ranked: a restore adopts a
+    champion found in the checkpoint but missing from the sidecar with
+    `return: None`, and there is nothing to rank it by.
     """
-    history = state.get("champion_history") or []
-    return max(history, key=lambda c: c["return"]) if history else None
+    ranked = [c for c in state.get("champion_history") or [] if c.get("return") is not None]
+    return max(ranked, key=lambda c: c["return"]) if ranked else None
 
 
 def resolve_module(state: Dict[str, Any],
@@ -116,6 +120,12 @@ def resolve_module(state: Dict[str, Any],
         return module_id, record
 
     champion = best_champion(state)
+    if champion is None and state.get("champion_history"):
+        raise ValueError(
+            "this checkpoint's champions have no recorded return - they were "
+            "adopted on a restore - so none can be picked as the winner. Name "
+            "one with --module-id, or pass --list to see what the checkpoint holds."
+        )
     if champion is None:
         raise ValueError(
             "this checkpoint's league promoted no champion, so there is no "
@@ -194,9 +204,10 @@ def render(state: Dict[str, Any], modules: List[str]) -> str:
     lines.append("| champion | from | iteration | return | best |")
     lines.append("|---|---|---|---|---|")
     for champion in history:
+        ret = champion.get("return")
         lines.append(
             f"| {champion['id']} | {champion['source_policy']} | "
-            f"{champion['iteration']} | {champion['return']:.6g} | "
+            f"{champion['iteration']} | {'n/a' if ret is None else format(ret, '.6g')} | "
             f"{'yes' if champion is best else ''} |"
         )
     lines.append("")

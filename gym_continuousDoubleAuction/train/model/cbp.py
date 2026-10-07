@@ -226,9 +226,11 @@ def _sequential_layers(seq: nn.Sequential, prefix: str) -> List[ReplaceableLayer
     """Replaceable layers wholly contained in one `nn.Sequential`.
 
     A layer is a `Linear -> (activation) -> Linear` run with nothing but
-    pass-through modules in between. `blocks.feedforward`, `token_embed
-    .token_mlp`, the MoE experts, `jepa.predict` and the stock MLP's hidden
-    layers all have exactly this shape.
+    pass-through modules in between. `blocks.feedforward`, the MoE experts,
+    `jepa.predict` and the stock MLP's hidden layers all have exactly this
+    shape. `token_embed.token_mlp` does not: it is `Linear -> GELU` with no
+    second Linear, so it is never registered - and with nothing else of this
+    shape in it, the `lstm` encoder has no replaceable layer at all.
     """
     layers: List[ReplaceableLayer] = []
     children = list(seq)
@@ -707,13 +709,18 @@ def _reset_optimizer_slots(
 # --- Plasticity metrics -----------------------------------------------------
 
 def effective_rank(activations: torch.Tensor, threshold: float = 0.99) -> float:
-    """Stable rank: the fewest singular values carrying `threshold` of the total.
+    """Threshold rank: the fewest singular values carrying `threshold` of the total.
 
-    Nature Methods, and the quantity plotted in Fig. 2d and Extended Data
-    Fig. 4 as one of the three correlates of loss of plasticity. A
-    representation whose units have become redundant has a low effective rank
-    even when none of them is individually dead, which is why the dead-unit
-    fraction alone is not enough.
+    The rank-collapse correlate of loss of plasticity: a representation whose
+    units have become redundant has a low rank even when none of them is
+    individually dead, which is why the dead-unit fraction alone is not enough.
+
+    **Not numerically the paper's figure.** This is the threshold ("srank")
+    form: count singular values until `threshold` of their sum is covered. The
+    effective rank the plasticity literature plots is usually the
+    entropy-based one, exp of the entropy of the normalised singular values.
+    The two move together but sit on different scales, so read this against
+    its own history - and against `width` - not against the papers' curves.
 
     **Read the caller's caveat before reading the number.** The rank of an
     activation matrix depends on the inputs as much as on the network. Here the

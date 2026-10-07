@@ -268,6 +268,12 @@ class EpisodeRecorder:
 
         # Insertion-ordered, which is what makes "evict the oldest" meaningful.
         self._live: "Dict[str, List[dict]]" = {}
+        # Ids evicted from `_live`, as an insertion-ordered set. An evicted
+        # episode may still be running; without this its next step would
+        # start a fresh buffer partway through, and `finish_episode` would then
+        # write that fragment marked complete. Bounded like `_live`, since a
+        # force-reset episode never comes back to clear its entry.
+        self._evicted: "Dict[str, None]" = {}
         self._pending: List[dict] = []
         self._tag = worker_file_tag()
         self._seq = 0
@@ -308,7 +314,7 @@ class EpisodeRecorder:
     def record_step(self, episode, step_index: int) -> None:
         """Turn one env step into one row per agent and buffer them."""
         episode_id = str(episode.id_)
-        if not self.wants(episode_id):
+        if not self.wants(episode_id) or episode_id in self._evicted:
             return
 
         infos = episode.get_infos(-1) or {}
@@ -345,6 +351,8 @@ class EpisodeRecorder:
 
     def finish_episode(self, episode_id) -> None:
         """Hand a finished episode's rows to the writer."""
+        if self._evicted.pop(str(episode_id), False) is None:
+            return  # evicted while running: what is left is not the episode
         rows = self._live.pop(str(episode_id), None)
         if not rows:
             return
@@ -437,6 +445,9 @@ class EpisodeRecorder:
         while len(self._live) >= self.max_live_episodes:
             episode_id, rows = next(iter(self._live.items()))
             del self._live[episode_id]
+            self._evicted[episode_id] = None
+            while len(self._evicted) > 16 * self.max_live_episodes:
+                del self._evicted[next(iter(self._evicted))]
             logger.debug(
                 "episode record: dropped %s buffered rows for episode %s, which "
                 "never ended (%s episodes open, limit %s)",

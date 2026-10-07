@@ -1655,3 +1655,73 @@ Reading it:
   layout.
 
 **Supports:** §06 8; §15 S3-25; §18 3.0.2; §10 (`test_matching_regimes.py`, `test_clearing_env.py`).
+
+---
+
+## 16.27 The 2026-10-07 review: each fix's regression test against the code before it
+
+Protocol: `origin/master` at `af4b4ae` checked out beside the branch, the branch's versions of the
+20 changed test files copied into it, and those files run there. **39 of their 525 tests fail on
+the code before the fixes, and all 525 pass after.** The tests that only had a comment edited
+(`test_action_mask.py`, `test_own_book_obs.py`) pass on both. One failing line per finding, as
+pytest printed it on the old code:
+
+```
+test_cash_check.py:281      AssertionError: assert Decimal('2000') == Decimal('1000')        # S3-27
+test_unmatched_actions.py:62 AssertionError: the ask is untouched  assert 0 == 1             # S3-26
+test_tick_grid.py:110       assert [(190.4, 190...., 193.0), ...] == []                       # S3-28
+test_champion_trigger.py:254 assert 0.0 == 1.0                                                # S3-29
+test_nav_callback.py:231    assert 0.0 == 500.0 ± 5.0e-04                                     # S3-29
+test_evaluate.py:106        assert False is True                                              # S3-30
+test_probe.py:287           TypeError: split_masks() got an unexpected keyword argument 'purge' # S3-31
+export.py:101               TypeError: '>' not supported between instances of 'float' and 'NoneType' # S4-22
+test_config_loading.py:48   assert [256, 256, 64] == [256, 256]                               # S4-24
+compare.py:107              ValueError: invalid literal for int() with base 10: '[128,128]'   # S4-23
+```
+
+**The grid origin (S3-28).** For each tick, 200 one-tick books (bid at `lo × tick`, ask one tick
+above, `lo` from 1,900 to 2,099), comparing the origin the observation snapped from its stored
+frame with `reference_price()`, the origin `_set_price` and the own-book block use:
+
+```
+before                                                   after
+tick 1:    0 of 200 one-tick books disagree              tick 1:    0 of 200
+tick 0.3: 80 of 200   first (570.9, 571.2, 570.9, 571.2) tick 0.3:  0 of 200
+tick 0.1: 40 of 200   first (190.4, 190.5, 190.4, 190.5) tick 0.1:  0 of 200
+tick 0.05: 40 of 200  first (95.2, 95.25, 95.2, 95.25)   tick 0.05: 0 of 200
+tick 0.01: 120 of 200 first (19.0, 19.01, 19.0, 19.01)   tick 0.01: 0 of 200
+```
+
+Each tuple is `(bid, ask, observation origin, action origin)`. The shipped tick of 1 was never
+affected.
+
+**The trader, directly** (two `Trader`s on a bare `OrderBook`):
+
+```
+                                              before            after
+closing escrow, long 10, asks 10@200 (older)  2000              1000         # S3-27
+  and 10@100 (newer, fills first)
+modify with nothing resting, own ask at 100   asks 1 -> 0       asks 1 -> 1  # S3-26
+modify with nothing resting, cash 10          unmatched 0       unmatched 1
+                                              rejected 1        rejected 0
+OrderBook.modify_order(quantity=0)            a 0-lot order     ValueError   # S4-20
+                                              left resting
+market buy 10 for cash 1,000 against          approved True     approved True # S2-14, open
+  asks 1@100, 9@200                           cash -900         cash -900
+```
+
+**Continual Backprop layer discovery (S3-32)**, `find_replaceable_layers` on each encoder's module
+at the shipped config:
+
+```
+mlp 4
+transformer 4
+lstm 0
+moe_transformer 16
+jepa 6
+```
+
+**Suite after the fixes:** `1214 passed` unit, `163 passed` integration, and `CDA_rand --steps 200
+--agents 4` prints `completed 200 steps with 4 random agents.`
+
+**Supports:** §15 S2-14, S3-26 to S3-33, S4-20 to S4-28; §17 §59.

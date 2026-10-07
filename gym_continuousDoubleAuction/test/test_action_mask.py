@@ -1,6 +1,6 @@
 """The action mask: what is impossible is never chosen; what is unwise is learnt.
 
-doc/06 section 6. The env writes nine floats into each agent's private block -
+doc/06 section 7. The env writes nine floats into each agent's private block -
 one per action category, 1.0 where the category is possible on the coming
 step - and the modules honour them: the PPO module adds a large negative
 number to a masked category's logit, the random baseline redraws a masked

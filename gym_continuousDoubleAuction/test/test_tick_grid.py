@@ -87,6 +87,28 @@ class TestSetPriceIsOnTheGrid:
         best = float(env.LOB.get_best_bid())
         assert env.agg_LOB_raw[0] == best
 
+    @pytest.mark.parametrize("tick", [0.1, 0.05, 0.01, 0.3])
+    def test_the_observation_grid_and_the_action_share_one_origin(self, tick):
+        """`_stack` snapped its grid origin from the frame's midpoint, which was
+        stored in float32, while `reference_price()` - what `_set_price` and
+        the own-book block quote from - snaps the float64 one. A one-tick
+        spread puts the midpoint exactly half a tick off the grid, where the
+        two roundings could disagree: at tick 0.1, bid 199.9 / ask 200.0 gave
+        an observation origin of 199.9 and an action origin of 200.0."""
+        from gym_continuousDoubleAuction.envs.exchg.state_helper import _FRAME_M
+        disagree = []
+        for lo in range(1900, 2100):
+            env = _env(tick)
+            bid = round(lo * tick, 10)
+            ask = round(bid + tick, 10)
+            env.traders[0].place_order("limit", "bid", 1, bid, env.LOB, env.traders)
+            env.traders[1].place_order("limit", "ask", 1, ask, env.LOB, env.traders)
+            env.prep_next_state()
+            observed = env._snap_to_tick(float(env.agg_LOB_frame[env.book_dim + _FRAME_M]))
+            if observed != env.reference_price():
+                disagree.append((bid, ask, observed, env.reference_price()))
+        assert disagree == []
+
 
 class TestFractionalTickBookStaysConsistent:
 

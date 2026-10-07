@@ -31,7 +31,7 @@ flowchart LR
         ACC["Account<br/>cash / position / NAV"]
         MTM["mark_to_mkt<br/>last tape price"]
         OBS["State_Helper<br/>snapshot + history"]
-        REW["Reward_Helper<br/>five signed terms"]
+        REW["Reward_Helper<br/>six signed terms"]
     end
 
     POL -->|"action Dict"| ACT
