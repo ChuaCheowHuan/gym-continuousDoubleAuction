@@ -60,7 +60,7 @@ mindmap
 | 4 | [04_accounting.md](04_accounting.md) | Cash escrow, order approval, position transitions including atomic flips, mark-to-market, NAV conservation |
 | 5 | [05_observation_space.md](05_observation_space.md) | The 48-float grid snapshot (and the 66-float level view): the fixed tick-offset grid shared with the action, `√(V/limit_max_size)` sizing, the six market scalars, temporal stacking, the raw/normalized split, measured bounds and feature scales |
 | 6 | [06_action_space.md](06_action_space.md) | The `Dict` action space, ghost-level price anchoring, the two degenerate size dimensions, the legacy `Tuple` design it replaced |
-| 7 | [07_reward_function.md](07_reward_function.md) | The five-term formula, its account plumbing, the measured decomposition, a coefficient tuning guide |
+| 7 | [07_reward_function.md](07_reward_function.md) | The six-term formula (five shaping terms, and a sixth shipped at zero for dead order-management actions), its account plumbing, the measured decomposition, a coefficient tuning guide |
 
 ### Training
 

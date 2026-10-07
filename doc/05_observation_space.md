@@ -75,7 +75,7 @@ Widths are defined once, in
 "k_rows": 10,      // book depth, price levels per side
 "book_rows": 4,    // bid_price, bid_size, ask_price, ask_size
 "extra_dim": 6,    // the market scalars; State_Helper.EXTRA_FIELDS names them
-"private_dim": 32  // the per-agent block; State_Helper.private_fields(k_rows) names them
+"private_dim": 41  // the per-agent block; State_Helper.private_fields(k_rows) names them
 ```
 
 ### 1.0 Why there is a private block at all
@@ -618,7 +618,7 @@ before the private block and the four new scalars existed, so the shape is the b
 its old width; the round trip itself is unaffected:
 
 ```
-OBS SHAPE          = (168,)   <- book only, extra_dim 2; the observation is 216 floats now
+OBS SHAPE          = (168,)   <- book only, extra_dim 2; the observation is 233 floats now
 best bid/ask raw   = 67.0 / 76.0
 exp(log_mid)       = 71.500015     ← matches (67 + 76) / 2 = 71.5
 expm1(log1p_spread)= 9.0           ← matches 76 - 67 = 9 ticks

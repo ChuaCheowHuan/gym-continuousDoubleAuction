@@ -199,11 +199,16 @@ remaining high-impact issues are.
 | `python -m gym_continuousDoubleAuction.train.train --iters 4 --agents 4` | League self-play PPO training |
 | `python -m gym_continuousDoubleAuction.train.train --help` | Full CLI |
 | `python gym_continuousDoubleAuction/CDA_rand.py` | Random-agent smoke run, no learning (CI stage 2) |
-| `python -m pytest gym_continuousDoubleAuction/test -q` | 1,307 tests (1,144 unit + 163 integration) |
-| `python -m pytest gym_continuousDoubleAuction/test/integration -q` | 112 integration tests that build real `Algorithm`s |
+| `python -m pytest gym_continuousDoubleAuction/test -q` | 1,377 tests (1,214 unit + 163 integration) |
+| `python -m pytest gym_continuousDoubleAuction/test/integration -q` | 163 integration tests that build real `Algorithm`s |
 | `python -m gym_continuousDoubleAuction.CDA_rand --help` | Flags for the smoke run; defaults in `config/cli_defaults.json` |
 | `CDA_train.ipynb` | Notebook driver; imports `TrainConfig` / `train` from `train.py`. Runs unchanged on [Colab](20_colab.md) and in the [docker image](19_docker.md) — set `PLATFORM` / `USE_GPU` in its first cell, everything else comes from `config/runtime_profiles.json` |
 | `python -m gym_continuousDoubleAuction.visualize.run_all` | Regenerates every chart in `visualize/` from the latest episode Parquet record and `progress.jsonl` |
+| `python -m gym_continuousDoubleAuction.train.evaluate --checkpoint <dir>` | Roll episodes with a checkpoint's policies and report what they do ([26](26_runbook.md)) |
+| `python -m gym_continuousDoubleAuction.train.export --checkpoint <dir>` | Export one module's weights from a checkpoint; `--list` shows the league ([26](26_runbook.md) §26.9.2) |
+| `python -m gym_continuousDoubleAuction.train.probe` | Score encoders on microstructure targets without the reward ([23](23_probe_harness.md)) |
+| `python -m gym_continuousDoubleAuction.train.pretrain` | Pretrain a JEPA encoder on observations alone ([24](24_pretraining.md)) |
+| `python -m gym_continuousDoubleAuction.train.compare --encoders mlp transformer --seeds 0 1 2` | Seeded encoder sweep, each run scored by the probe ([18](18_configuration.md) §5.5) |
 
 Installation:
 

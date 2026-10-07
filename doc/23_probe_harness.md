@@ -289,8 +289,9 @@ raw               98     193     51% *
 mlp              112     256     44% *
 ```
 
-Stable rank as the Nature paper's Methods defines it: the fewest singular values carrying 99% of
-the total mass. Read it against `width` — absolute values are not comparable between a 233-float
+A threshold rank: the fewest singular values carrying 99% of the total mass. It is not the
+entropy-based effective rank the plasticity papers usually plot; the two move together but sit on
+different scales, so compare this number with its own history and not with the papers' curves. Read it against `width` — absolute values are not comparable between a 233-float
 observation and a 256-unit latent. The `*` marks a set whose rank is bounded by the corpus rather
 than by the encoder (rank cannot exceed `min(rows, width)`), which is a warning that the number
 describes the corpus and not the thing you wanted to compare.

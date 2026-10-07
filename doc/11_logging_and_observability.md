@@ -778,16 +778,16 @@ further instrumentation. A field would only add a division-by-zero convention to
 
 ### 2.4 Reward decomposition
 
-**Done.** All five terms — `nav_term`, order penalty, trade penalty, drawdown penalty, passive
-bonus — are in `info["reward_terms"]` as signed contributions that sum exactly to `reward`
+**Done.** All six terms — `nav_term`, order penalty, trade penalty, drawdown penalty, passive
+bonus, dead-action penalty — are in `info["reward_terms"]` as signed contributions that sum exactly to `reward`
 (§1.7). The variance split in [07_reward_function.md](07_reward_function.md) §6.4 is measurable
 from the per-step record without further instrumentation, as is over- or under-trading,
 risk-aversion learning and market-making uptake.
 
 The aggregation is **done too**. `reward_term_mean_<term>` and `reward_term_var_share_<term>` are
 emitted per episode (§1.2), computed from running sums rather than a retained series - an episode is
-`max_step` × `num_agents` agent-steps, and keeping all of them to produce five numbers is the memory
-cost §1.1 is about. The shares are normalised across the five terms, so a term that is large but
+`max_step` × `num_agents` agent-steps, and keeping all of them to produce six numbers is the memory
+cost §1.1 is about. The shares are normalised across the six terms, so a term that is large but
 *constant* correctly reports no share: what the split answers is which term is driving the signal,
 not which is biggest.
 
