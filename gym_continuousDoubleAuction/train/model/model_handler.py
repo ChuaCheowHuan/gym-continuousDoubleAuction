@@ -98,7 +98,7 @@ class RandomRLModule(RLModule):
         obs_batch_size = len(obs)
         samples = [self.action_space.sample() for _ in range(obs_batch_size)]
 
-        # Honour the observation's action mask (doc/06 section 6): a category
+        # Honour the observation's action mask (doc/06 section 7): a category
         # the env says is impossible is redrawn uniformly among the possible
         # ones, so the baseline is "random among what can be done" rather than
         # "random including the dead actions". With the mask off the env

@@ -174,7 +174,7 @@ class TrainConfig:
     # k_rows best occupied prices). A layout choice, recorded in the stamp.
     book_mode: str = _default("book_mode")
     # The observation's action mask says what each agent can do this step and
-    # the modules refuse the rest; False emits all ones (doc/06 section 6).
+    # the modules refuse the rest; False emits all ones (doc/06 section 7).
     action_mask: bool = _default("action_mask")
     # The matching regime (doc/06 section 8): how a price level is shared out
     # ("fifo" / "pro_rata") and whether a step's crossing orders clear on

@@ -63,7 +63,7 @@ class TestLayout:
         assert fields[9:9 + k] == own_book_fields(k)[:k]
         assert fields[9 + k:9 + 2 * k] == own_book_fields(k)[k:]
         assert fields[9 + 2 * k:9 + 2 * k + 3] == ("own_bid_count", "own_ask_count", "unmatched_last_step")
-        assert fields[-9:] == MASK_FIELDS  # the action mask closes the block (doc/06 section 6)
+        assert fields[-9:] == MASK_FIELDS  # the action mask closes the block (doc/06 section 7)
         assert len(fields) == 41 == len(PRIVATE_FIELDS)
         assert OWN_BOOK_OFFSET == 9
         assert fields[OWN_BOOK_OFFSET] == "own_bid_size_0"

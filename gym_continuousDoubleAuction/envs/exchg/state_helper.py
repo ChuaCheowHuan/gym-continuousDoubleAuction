@@ -183,7 +183,7 @@ FEEDBACK_FIELDS = (
     "unmatched_last_step",  # 1.0 if the agent's last modify/cancel named no order
 )
 
-#: The action mask (doc/06 section 6): one entry per action category, in the
+#: The action mask (doc/06 section 7): one entry per action category, in the
 #: category's order (`Action_Helper._CATEGORY_MAP`), 1.0 where the category is
 #: possible for this agent on the coming step. "Possible" is exact, not
 #: advisory: a modify or cancel needs a resting order on that side, a market
