@@ -105,6 +105,8 @@ mindmap
       S4-18 duplicate CODEOWNER files
       S4-19 layout version in checkpoints — fixed
       S4-20 to S4-28 the 2026-10-07 review — fixed
+    Open decisions
+      R-1 to R-19 from the 2026-10-07 review
 ```
 
 ---
@@ -1287,6 +1289,38 @@ colour. Colours are keyed by term name, and a term without one fails at import.
 | S4-26 | **Fixed.** A restore refused by `build_algo`'s post-restore checks dropped the algorithm without `stop()`, so its actors kept their CPUs. It is stopped before the error propagates |
 | S4-27 | **Fixed.** With `ray_log_encoding` set, package logs stopped propagating to root even when Ray applied no `LoggingConfig`, so nothing printed them. Propagation is restored on those paths |
 | S4-28 | **Fixed.** Text that described the code wrongly: `visualize.run_all --help` printed no description; the probe's rank table always claimed the default threshold; the tape comment named the wrong end; a duplicated comment block in `state_helper`; `effective_rank` called itself the papers' rank (it is a threshold rank, [23](23_probe_harness.md) §8); the pretrain docstring's probe command could not find the module; nine comments pointed the action mask at [06](06_action_space.md) §6 rather than §7 |
+
+---
+
+## Open decisions from the 2026-10-07 review
+
+Findings from the 2026-10-07 review that were not fixed there, because each changes the game the
+policy plays, the distributed or checkpoint design, or a research method, and so needs a decision
+first. **[verified]** marks the ones reproduced in that pass; the rest are a reviewer's reading of
+the code, recorded so they are not lost, and need reproducing before anything is changed. S2-14 and
+S3-32's open half came from the same pass and are filed above.
+
+| ID | Finding |
+|---|---|
+| R-1 | In batch clearing, a trade whose two sides both arrived in the batch always records the buyer as initiator, which would bias `signed_volume` and `trade_direction`. Who "initiates" inside a call auction is a design choice |
+| R-2 | With `liquidation: "off"`, a bankrupt trader's orders are cancelled inside `set_step_outputs`, so the observations and the action masks of one step may be built from two different books |
+| R-3 | With no margin cushion (`maintenance_margin: 0`, or NAV run out), the bankruptcy band never reaches the opposite touch at a mid mark, so the whole forced close may go to ADL |
+| R-4 | Intermediate re-marks during a liquidation cascade may ratchet `max_nav`, charging drawdown against a peak never seen at a step boundary. Touches the reward |
+| R-5 | The checkpoint layout stamp (S4-19) does not record `n_hist` or `max_own_orders`. `n_hist` is already a structural restore key, so only `max_own_orders` may be uncovered |
+| R-6 | A champion snapshot that fails and is rolled back may stay in remote env runners' policy-mapping function |
+| R-7 | The league repair made on restore is not pushed to remote env runners |
+| R-8 | A full league evicts its oldest champion before taking a snapshot that can fail, so a failure shrinks the league. [08](08_self_play_league.md) documents the ordering as load-bearing, so a change must keep its constraints |
+| R-9 | Concurrent runs share one checkpoint tree and can overwrite each other's saves. Sharing is documented as deliberate |
+| R-10 | **[verified]** The episode recorder's live-episode cap is 8 and the callback never sets it, so a runner with more concurrent sampled episodes drops the extra ones (S4-25 stopped them being written as fragments). Tying the cap to `num_envs_per_env_runner` is the open half |
+| R-11 | The Parquet record's `obs` column is the observation after the step, paired with that step's action, and the probe corpus reads it. Changes what the record means and what the probe scores |
+| R-12 | Continual Backprop under `num_learners > 1`: each DDP rank may pick a different unit to replace, so the replicas' parameters diverge |
+| R-13 | Continual Backprop zeroes a replaced unit's outgoing weights without moving its mean contribution into the next layer's bias, so the output jumps; a saturated tanh unit scores low under `overall` utility and goes first |
+| R-14 | The CBP activation hook keeps only the last forward call's statistics: MoE experts run once per top-k slot, and JEPA runs the trunk a second time on the masked context |
+| R-15 | With `vf_share_layers: true`, JEPA's `compute_values` pass may run the auxiliary objective and an extra EMA step |
+| R-16 | The JEPA world model's action embedding omits the `order_slot` head |
+| R-17 | **[verified]** `build_encoder_config` calls `ObsLayout.from_obs_space` without the run's `book_mode`, so some widths are ambiguous (grid at `n_hist` 11 has the width of levels at 8); `train.probe` likewise builds encoders from the default env config rather than the corpus's layout. The fix threads `book_mode` through four files |
+| R-18 | **[verified]** Probe targets shift by rows, not by steps, so under `--per-agent` (or any gap in the rows) a target reads the wrong future row. A correct fix needs a stream id separate from the episode id, or the episode split leaks across agents |
+| R-19 | The rollout and Parquet probe corpora switch agent mid-episode |
 
 ---
 
