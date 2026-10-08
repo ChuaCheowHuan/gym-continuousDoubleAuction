@@ -282,6 +282,28 @@ class Trader:
             cost = lots * Decimal(str(price))
         return max(Decimal(0), cost - 2 * self.acc.cost_basis)
 
+    def _resting_cover_loss(self, LOB, exclude_order_id: Optional[int] = None) -> Decimal:
+        """The loss this trader's resting bids will realise if they cover its short.
+
+        A resting bid that can take an under-water short flat reserved its loss
+        when it was placed, but the reserve is not escrowed: it sits in cash
+        until the bid fills, and a later order could spend it (the same shape as
+        `_resting_maker_fees`). Bounded by the highest limit among the resting
+        bids, since a bid never fills above its limit. Zero unless the bids
+        together are large enough to flatten the short; the order a quote
+        replaces is excluded.
+        """
+        position = self.acc.net_position
+        if position >= 0:
+            return Decimal(0)
+        lots = -position
+        bids = [o for order_ID, o in self._own_orders_from_touch(LOB, 'bid')
+                if exclude_order_id is None or order_ID != exclude_order_id]
+        if sum(int(o.quantity) for o in bids) < lots:
+            return Decimal(0)
+        worst = max(o.price for o in bids)
+        return max(Decimal(0), lots * worst - 2 * self.acc.cost_basis)
+
     def _sweep_cost(self, LOB, side: str, size: int, skip: int) -> Tuple[Decimal, int]:
         """What a market order of `size` pays for the contracts after the first `skip`.
 
@@ -340,11 +362,13 @@ class Trader:
         if opening <= 0 and loss == 0:
             return True
         if resting_limit is None:
-            need = opening * price + loss
+            need = opening * price
         else:
             need = opening * max(price - Decimal(str(resting_limit)), Decimal(0))
-        need += need * self.acc.max_fee_rate
-        need += self._resting_maker_fees(LOB)
+        need += need * self.acc.max_fee_rate      # a fee is charged on a notional, not on a loss
+        need += loss + self._resting_maker_fees(LOB)
+        if opening > 0:
+            need += self._resting_cover_loss(LOB, exclude_order_id=resting_order_id)
         funds = self.acc.cash + self._closing_escrow(LOB, exclude_order_id=resting_order_id)
         return funds >= need
 
@@ -524,8 +548,11 @@ class Trader:
         # ... and the fees the resting orders already owe, which are in cash
         # too (`_resting_maker_fees`).
         order_val += self._resting_maker_fees(LOB, exclude_order_id=replaced_id)
-        # ... and the loss a cover realises, which is paid out of cash.
+        # ... and the loss a cover realises, which is paid out of cash: this
+        # order's own, and the standing one of resting bids that will cover.
         order_val += loss
+        if opening_size > 0:
+            order_val += self._resting_cover_loss(LOB, exclude_order_id=replaced_id)
 
         # `released` is the escrow the replaced order gives back on the same
         # call, so it is as spendable as cash for this quote. Without it a
