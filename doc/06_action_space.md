@@ -459,8 +459,11 @@ together against the resting book at **one uniform price** (`OrderBook.clear_bat
   posted at can all cost more at it. Once the price is chosen the engine asks the env
   (`Trader.can_pay_at_clearing`) whether each order that would trade can pay for the fill there. An
   order that cannot sits out and the auction runs again without it, until everyone left can pay: a
-  market order that sat out lapses and is counted as rejected, a limit order rests at its own limit,
-  a resting ask just stays where it is. The question is put for the order's full size, so it can
+  queued order that sat out lapses, market or limit, and is counted as rejected (resting a limit at
+  its own price would put it beside the orders it could not afford to trade with, a bid above a
+  resting ask, and a crossed book is not one the next batch can clear); a resting ask just stays
+  where it is. A leftover limit order that would now cross what rests, because its counterparty sat
+  out, lapses too, uncounted. The question is put for the order's full size, so it can
   turn away an order that would have fit after rationing, never admit one that does not. Measured
   under random play with fees off, the unfixed engine left 22 of 12,000 agent-steps with
   `cash + cash_on_hold` below zero (worst −82);

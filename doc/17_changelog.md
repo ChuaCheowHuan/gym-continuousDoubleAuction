@@ -3538,8 +3538,10 @@ fill at was known.
   the fill at that price (`Trader.can_pay_at_clearing`: a market order, a limit sell opening a short,
   and a resting ask that fills above its limit can all cost more). Those who cannot sit out and the
   auction runs again, until everyone left can pay. A market order that sits out lapses and counts as
-  rejected, a limit order rests at its limit, a resting ask stays put.
-  `Exchg_Helper._clear_batch_and_settle` carries it.
+  rejected, as does a limit order (resting it at its limit would put it beside the orders it could
+  not afford to trade with and cross the book; found in review, with the next batch's pairing raising
+  on a crossed book), a resting ask stays put, and a leftover limit that would now cross what rests
+  lapses uncounted. `Exchg_Helper._clear_batch_and_settle` carries it.
 - **Effect.** 11 and 29 overdrawn agent-steps of 51,200 under batch (fees off and at 100 bps; worst
   −278 and −328) become 0 ([16](16_verification_log.md) §16.28). Both changes alter which orders are
   approved, so they alter the game a policy plays under batch clearing and with market orders that
@@ -3547,4 +3549,4 @@ fill at was known.
 - **Found and not fixed (S2-15, #228).** Closing a position that is under water realises its loss into
   cash, and the cash check does not reserve for it, so `cash + cash_on_hold` can still go below zero
   with NAV unchanged. Reserving for it changes which closing orders are approved, which is a decision.
-- **Tests.** `test_overdraw.py`, 18 (unit 1,269 -> 1,287; suite 1,450).
+- **Tests.** `test_overdraw.py`, 20 (unit 1,269 -> 1,289; suite 1,452).

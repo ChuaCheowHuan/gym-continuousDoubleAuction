@@ -667,8 +667,9 @@ worst −82 ([16](16_verification_log.md) §16.28).
 - *Batch:* once `clear_batch` has chosen its price it asks the env
   (`Trader.can_pay_at_clearing`) whether each order that would trade can pay for the fill there. An
   order that cannot sits out and the auction runs again without it, until everyone left can pay. A
-  market order that sat out lapses and counts as rejected, a limit order rests at its limit, a resting
-  ask simply stays. The question is put for the order's full size, so it can turn away an order that
+  queued order that sat out lapses, market or limit, and counts as rejected (resting a limit at its own
+  price would put it beside the orders it could not afford to trade with, and cross the book); a
+  resting ask simply stays, and a leftover limit that would now cross what rests lapses uncounted. The question is put for the order's full size, so it can turn away an order that
   would have fit after rationing and never admit one that does not
   ([06](06_action_space.md) §8.2).
 
@@ -1539,7 +1540,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **1,287 unit tests pass** (plus 163 integration), covering every position-flip path, cash-check edge case, modify-order
+- **1,289 unit tests pass** (plus 163 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 
