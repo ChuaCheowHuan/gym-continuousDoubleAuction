@@ -227,7 +227,78 @@ class OrderBook(object):
         return {'price': price, 'quantity': quantity,
                 'init_party': init, 'counter_party': counter}
 
-    def clear_batch(self, reference_price=None, verbose=False):
+    def _auction(self, buys, sells, limit_of, sit_out, reference_price):
+        """The clearing price: `(key, price, executable volume)`, or None.
+
+        Maximises executable volume, then minimises the leftover imbalance,
+        then lies closest to `reference_price`. Candidate prices are every
+        limit on the book and in the batch, and the reference price, so that
+        when a whole interval of prices clears the same volume (a bid at 102
+        against an ask at 98) the auction settles at the reference inside it
+        rather than at one of its ends. Resting orders in `sit_out` take no
+        part (their owner could not pay at an earlier price).
+        """
+        candidates = set(self.bids.prices) | set(self.asks.prices)
+        candidates |= {limit_of(q) for q in buys + sells if q['type'] == 'limit'}
+        candidates.discard(None)
+        if reference_price is not None:
+            candidates.add(Decimal(str(reference_price)))
+        if not candidates:
+            return None
+
+        def demand(p):
+            total = sum((Decimal(o.quantity) for price, ol in self.bids.price_map.items()
+                         if price >= p for o in ol if o.order_id not in sit_out), Decimal(0))
+            total += sum((Decimal(q['quantity']) for q in buys
+                          if limit_of(q) is None or limit_of(q) >= p), Decimal(0))
+            return total
+
+        def supply(p):
+            total = sum((Decimal(o.quantity) for price, ol in self.asks.price_map.items()
+                         if price <= p for o in ol if o.order_id not in sit_out), Decimal(0))
+            total += sum((Decimal(q['quantity']) for q in sells
+                          if limit_of(q) is None or limit_of(q) <= p), Decimal(0))
+            return total
+
+        ref = Decimal(str(reference_price)) if reference_price is not None else None
+        best = None
+        for p in sorted(candidates):
+            d, s = demand(p), supply(p)
+            executable = min(d, s)
+            key = (-executable, abs(d - s), abs(p - ref) if ref is not None else Decimal(0), p)
+            if best is None or key < best[0]:
+                best = (key, p, executable)
+        return best
+
+    def _unaffordable(self, buys, sells, limit_of, sit_out, p_star, affordable):
+        """The orders that would trade at `p_star` whose owners cannot pay for it.
+
+        Returns `(queued orders, resting order ids)`. Asked of the full
+        quantity: a marginal order may fill less, so this can turn away an
+        order that would have fit, never admit one that does not.
+        """
+        out_new = []
+        for q in buys:
+            lim = limit_of(q)
+            if (lim is None or lim >= p_star) and not affordable(
+                    q['trade_id'], 'bid', Decimal(q['quantity']), p_star, None, None):
+                out_new.append(q)
+        for q in sells:
+            lim = limit_of(q)
+            if (lim is None or lim <= p_star) and not affordable(
+                    q['trade_id'], 'ask', Decimal(q['quantity']), p_star, None, None):
+                out_new.append(q)
+        out_resting = set()
+        for price, ol in self.asks.price_map.items():       # a resting bid never pays more than its limit
+            if price > p_star:
+                break
+            for o in ol:
+                if o.order_id not in sit_out and not affordable(
+                        o.trade_id, 'ask', o.quantity, p_star, o.price, o.order_id):
+                    out_resting.add(o.order_id)
+        return out_new, out_resting
+
+    def clear_batch(self, reference_price=None, verbose=False, affordable=None):
         """Clear the queued orders against the book at one uniform price.
 
         A call auction over the step's arrivals plus the resting book: the
@@ -246,8 +317,21 @@ class OrderBook(object):
         when both arrived in the batch (then `counter_party['resting']` is
         False, and the caller settles that party without an escrow release).
         Every record is on the tape.
+
+        `affordable(trade_id, side, quantity, price, resting_limit, order_id)`
+        is asked, once a clearing price is chosen, of every order that would
+        trade at it: can its owner pay for the fill at that price? The checks
+        made when an order was queued cannot know the price, and a market
+        order, a limit sell opening a short and a resting ask filled above its
+        limit can all cost more at it. An order that answers no sits out and the
+        auction runs again without it, until everyone left can pay. A queued
+        order that sits out rests at its limit if it has one and lapses if it is
+        a market order; a resting order simply stays where it is. The market
+        orders that lapsed this way are left in `self.batch_unaffordable` for
+        the caller to count.
         """
         self.batching = False
+        self.batch_unaffordable = []
         pending, self.pending = self.pending, []
         results = {id(q): (q['trade_id'], [], None) for q in pending}
         order = [id(q) for q in pending]
@@ -257,46 +341,25 @@ class OrderBook(object):
         def limit_of(q):
             return None if q['type'] == 'market' else Decimal(str(q['price']))
 
-        buys = [q for q in pending if q['side'] == 'bid']
-        sells = [q for q in pending if q['side'] == 'ask']
-
-        # Candidate prices: every limit on the book and in the batch, and the
-        # reference price - so that when a whole interval of prices clears the
-        # same volume (a bid at 102 against an ask at 98) the auction settles
-        # at the reference inside it rather than at one of its ends.
-        candidates = set(self.bids.prices) | set(self.asks.prices)
-        candidates |= {limit_of(q) for q in pending if q['type'] == 'limit'}
-        candidates.discard(None)
-        if reference_price is not None:
-            candidates.add(Decimal(str(reference_price)))
-        if not candidates:
-            return self._rest_all(pending, results, order)
-
-        def demand(p):
-            total = sum((Decimal(o.quantity) for price, ol in self.bids.price_map.items()
-                         if price >= p for o in ol), Decimal(0))
-            total += sum((Decimal(q['quantity']) for q in buys
-                          if limit_of(q) is None or limit_of(q) >= p), Decimal(0))
-            return total
-
-        def supply(p):
-            total = sum((Decimal(o.quantity) for price, ol in self.asks.price_map.items()
-                         if price <= p for o in ol), Decimal(0))
-            total += sum((Decimal(q['quantity']) for q in sells
-                          if limit_of(q) is None or limit_of(q) <= p), Decimal(0))
-            return total
-
-        ref = Decimal(str(reference_price)) if reference_price is not None else None
-        best = None
-        for p in sorted(candidates):
-            d, s = demand(p), supply(p)
-            executable = min(d, s)
-            key = (-executable, abs(d - s), abs(p - ref) if ref is not None else Decimal(0), p)
-            if best is None or key < best[0]:
-                best = (key, p, executable)
-        _, p_star, volume = best
-        if volume <= 0:
-            return self._rest_all(pending, results, order)
+        dropped, sit_out = set(), set()     # queued ids / resting order ids that sit out
+        while True:
+            live = [q for q in pending if id(q) not in dropped]
+            buys = [q for q in live if q['side'] == 'bid']
+            sells = [q for q in live if q['side'] == 'ask']
+            best = self._auction(buys, sells, limit_of, sit_out, reference_price)
+            if best is None or best[2] <= 0:
+                return self._rest_all(pending, results, order)
+            _, p_star, volume = best
+            if affordable is None:
+                break
+            out_new, out_resting = self._unaffordable(buys, sells, limit_of, sit_out, p_star, affordable)
+            if not out_new and not out_resting:
+                break
+            for q in out_new:
+                dropped.add(id(q))
+                if q['type'] == 'market':
+                    self.batch_unaffordable.append(q)
+            sit_out |= out_resting
 
         # Priority on each side: strictly better limits and market orders
         # first (most aggressive price first, then time), then the marginal
@@ -310,7 +373,8 @@ class OrderBook(object):
                 bucket = strict if better else marginal if price == p_star else None
                 if bucket is not None:
                     for o in ol:
-                        bucket.append((o, True))
+                        if o.order_id not in sit_out:
+                            bucket.append((o, True))
             for q in batch:
                 lim = limit_of(q)
                 if lim is None or (lim > p_star if is_buy else lim < p_star):
