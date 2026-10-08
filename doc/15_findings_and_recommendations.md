@@ -701,8 +701,9 @@ and at 100 bps; worst −293 and −340), and none under batch ([16](16_verifica
 by the sweep for a market order, or at the clearing price under batch) on top of whatever it opens.
 A partial cover, a short not past its collateral and any sell reserve nothing. The consequence is
 the one the check is for: a trader whose short is under water by more than its free cash can no longer
-flatten it with an order (it takes a liquidation, `liquidation`, to remove it). The alternative, a
-liquidity margin call, was not built. `test_overdraw.py`.
+flatten it with an order (it takes a liquidation, `liquidation`, to remove it). A resting bid that
+would cover the short holds the same reserve against later orders (`_resting_cover_loss`), since it is
+not escrowed. The alternative, a liquidity margin call, was not built. `test_overdraw.py`.
 
 ---
 
@@ -1549,7 +1550,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **1,297 unit tests pass** (plus 163 integration), covering every position-flip path, cash-check edge case, modify-order
+- **1,301 unit tests pass** (plus 163 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 

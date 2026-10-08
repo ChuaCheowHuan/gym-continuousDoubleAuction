@@ -3572,4 +3572,11 @@ unchanged, and the shortfall could surface steps later when a resting bid filled
 - **Effect.** 32 and 61 overdrawn agent-steps of 51,200 under sequential clearing (fees off and at 100 bps;
   worst -293 and -340) become 0, with batch at 0 on both sides ([16](16_verification_log.md) §16.29).
   The stress test no longer leaves traders that have been under water out.
-- **Tests.** `test_overdraw.py`, 28 (unit 1,214 -> 1,297; suite 1,460).
+- **Review fixes** (PR #229). A resting bid that would cover the short reserved its loss when placed,
+  but the reserve is not escrowed, so a later opening order could spend it and the fill then went
+  below zero; the loss is now a standing liability across orders (`_resting_cover_loss`), like the
+  resting maker fee. The clearing-time check multiplied the loss by the fee rate and the queue-time
+  check did not; a fee is charged on a notional, not on a loss, so neither does. Splitting a cover
+  was checked and does not escape the reserve: the total realised is the same, and the last piece is
+  checked against the basis the first left.
+- **Tests.** `test_overdraw.py`, 32 (unit 1,214 -> 1,301; suite 1,464).
