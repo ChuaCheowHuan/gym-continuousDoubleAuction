@@ -415,7 +415,10 @@ notional (`price × quantity`). Both ship at **0**, so nothing changes until a r
 - **Who pays.** The record's `init_party`, the aggressing order, is the taker and pays
   `taker_fee_bps`. Its `counter_party`, the resting order, is the maker and pays `maker_fee_bps`.
   Under `step_clearing: "batch"` a counter party that arrived in the same batch is booked as an
-  `init_party` but is still the maker. A negative maker rate is a rebate.
+  `init_party` but is still the maker. A negative maker rate is a rebate. A batch has no real
+  aggressor, so which of two same-batch orders pays the taker rate follows the record's initiator,
+  the buyer ([15](15_findings_and_recommendations.md) R-1): with unequal rates the choice is
+  arbitrary, and equal rates (or `step_clearing: "sequential"`) avoid it.
 - **How.** `Account.process_acc` takes the fee out of `cash` as the last step of booking a fill, so
   it flows through NAV, the reward's `nav_term` and the drawdown like any other loss. The fee is
   `(trade_val × bps).scaleb(-4)`, a shift of the decimal point, so it is exact and the ledger still
@@ -427,12 +430,16 @@ notional (`price × quantity`). Both ship at **0**, so nothing changes until a r
 - **What pays nothing.** A self-trade (a market order meeting the trader's own resting order never
   reaches `process_acc`), and ADL, a transfer at the mark that the exchange imposes
   (`fee_role='none'`). The forced close in the book is an ordinary fill and pays.
-- **Cash check.** §3's check reserves the largest fee on top of an order's notional, so an order
-  that would leave `cash` negative after its fee is refused. With fees at 0 it is the check as
-  before.
+- **Cash check.** §3's check reserves the largest fee on top of an order's notional, and also the
+  maker fee every resting order of the trader's will owe if it fills (`Trader._resting_maker_fees`),
+  because a resting order escrows its notional but not its fee, so that fee sits in cash until the
+  fill. Without the second term a later order could spend it and the fee would be charged below
+  zero. The order a quote replaces is not counted twice, and a rebate owes nothing. With fees at 0
+  it is the check as before.
 - **Limits on the rates.** `taker_fee_bps >= 0`, and the pair must sum to `>= 0`: a rebate larger
-  than the taker fee would let two agents trading with each other mint money. Anything else is a
-  `ValueError` naming the key.
+  than the taker fee would let two agents trading with each other mint money. Each rate is within
+  ±1,000 bps (`MAX_FEE_BPS`), a tenth of the notional, which catches a percentage typed as basis
+  points. Anything else is a `ValueError` naming the key.
 
 The proxies in the reward ([07](07_reward_function.md)) are separate and stay: they price the
 *act* of trading in reward units whatever the fee, and the fee prices it in the ledger. Turning fees

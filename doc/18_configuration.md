@@ -241,8 +241,8 @@ written before they existed restores with the env defaults, i.e. with liquidatio
 
 | Key | Default | Meaning |
 |---|---|---|
-| `taker_fee_bps` | `0` | Fee the aggressing order pays, in basis points of a fill's notional. Must be >= 0 |
-| `maker_fee_bps` | `0` | Fee the resting order pays; negative is a rebate. The pair must sum to >= 0 |
+| `taker_fee_bps` | `0` | Fee the aggressing order pays, in basis points of a fill's notional. In `[0, 1000]` |
+| `maker_fee_bps` | `0` | Fee the resting order pays; negative is a rebate. In `[-1000, 1000]`, and the pair must sum to >= 0 |
 
 Taken out of the trader's cash at the fill and collected by the exchange: `sum(NAV) + env.fees_collected`
 equals the starting cash ([04](04_accounting.md) §9). Both ship at 0, so a fresh run is unchanged;

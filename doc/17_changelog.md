@@ -3504,5 +3504,12 @@ a cost the ledger sees. It is now there, and **off**.
   cash below zero.
 - **Unchanged by default.** At 0 every existing test passes untouched; the layout versions and
   checkpoints are not affected, since neither the observation nor the action changes.
-- **Tests.** `test_fees.py`, 25 (unit 1,214 -> 1,239; suite 1,402). Borrow cost and funding remain
+- **Review fixes** (PR #227). A resting order escrows its notional but not its maker fee, so a later
+  order could spend that cash and a fill then charged it below zero (cash -0.90 in the reproduction);
+  the cash check now also counts the maker fee every resting order owes
+  (`Trader._resting_maker_fees`). Rates are capped at 1,000 bps. Where the callback cannot read the
+  accounts and fees are on, the NAV check is skipped with a warning instead of reporting the fees as
+  a violation. In batch mode the same-batch taker is the record's initiator, which is arbitrary
+  under unequal rates (R-1); that is documented rather than changed.
+- **Tests.** `test_fees.py`, 35 (unit 1,214 -> 1,249; suite 1,412). Borrow cost and funding remain
   absent.
