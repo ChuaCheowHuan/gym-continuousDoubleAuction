@@ -352,3 +352,46 @@ class TestClosingALosingShortNeedsTheCashForTheLoss:
         _clear(env, [(short, "market", "bid", 10, -1.0)], reference=40)
         assert short.acc.net_position == -10 and short.acc.num_rejected_step == 1
         assert _whole(env) and _uncrossed(env)
+
+
+class TestTheLossReserveHoldsAcrossOrders:
+    """The reserve must outlive the order that made it, as the maker fee's does."""
+
+    def test_a_resting_cover_keeps_its_loss_from_a_later_order(self):
+        """A bid that will cover an under-water short owes the loss when it fills."""
+        lob, t = _underwater_short(cash_after=100)          # position_val -100
+        t[0].place_order("limit", "bid", 10, 29, lob, t)    # rests under the asks at 30
+        assert t[0].acc.net_position == -10 and lob.bids.volume == 10
+        # Covering at 29 realises 290 - 200 = 90. 100 of free cash is left, and a
+        # 1-lot opening ask at 30 takes 30 of it, leaving 70: not enough for 90.
+        assert not t[0]._order_approved("ask", 1, 30, lob, "limit")
+        # 10 would leave 90, exactly the loss.
+        assert t[0]._order_approved("ask", 1, 10, lob, "limit")
+
+    def test_the_resting_cover_then_fills_without_overdrawing(self):
+        lob, t = _underwater_short(cash_after=100)
+        t[0].place_order("limit", "bid", 10, 29, lob, t)
+        t[2].place_order("market", "ask", 10, -1.0, lob, t)  # hits the bid
+        assert t[0].acc.net_position == 0
+        assert t[0].acc.cash + t[0].acc.cash_on_hold >= 0
+
+    def test_a_cover_in_two_pieces_realises_the_same_loss_as_one(self):
+        """The check on the last piece uses the basis the first piece left, so
+        splitting a cover neither hides the loss nor charges it twice."""
+        lob, t = _underwater_short(cash_after=100)
+        t[0].place_order("market", "bid", 6, -1.0, lob, t)
+        assert t[0].acc.net_position == -4
+        assert t[0]._order_approved("bid", 4, -1.0, lob, "market")
+        t[0].place_order("market", "bid", 4, -1.0, lob, t)
+        assert t[0].acc.net_position == 0
+        assert t[0].acc.cash + t[0].acc.cash_on_hold >= 0
+
+    def test_the_queue_time_and_clearing_time_checks_agree_at_the_boundary(self):
+        """With fees on, the loss is not a notional: neither check charges a fee on it."""
+        lob, t = _underwater_short(cash_after=100)
+        for tr in t:
+            tr.acc.maker_fee_bps = Decimal(10)
+            tr.acc.taker_fee_bps = Decimal(10)
+        queued = t[0]._order_approved("bid", 10, -1.0, lob, "market")
+        cleared = t[0].can_pay_at_clearing(lob, "bid", 10, 30)
+        assert queued == cleared == True
