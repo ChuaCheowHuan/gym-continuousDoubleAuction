@@ -327,3 +327,68 @@ class TestWhenTheFeesCannotBeRead:
         from gym_continuousDoubleAuction.test.test_nav_callback import MockEnv
         cfg = {"init_cash": 1_000_000, "num_of_agents": 4}
         assert self._end(cfg, MockEnv(1_000_000, 4)) == 1.0
+
+
+class TestTheAccountRefusesBadRatesItself:
+    """The env validates, but `Account` and `Trader` are built directly too."""
+
+    @pytest.mark.parametrize("kw", [
+        {"taker_fee_bps": -5},
+        {"maker_fee_bps": -6, "taker_fee_bps": 5},
+        {"taker_fee_bps": float("nan")},
+        {"maker_fee_bps": float("inf")},
+        {"taker_fee_bps": None},
+        {"taker_fee_bps": True},
+        {"taker_fee_bps": 1001},
+    ])
+    def test_an_account_refuses_them(self, kw):
+        with pytest.raises(ValueError, match="fee_bps"):
+            Account(0, 1000, **kw)
+
+    def test_a_trader_refuses_them(self):
+        with pytest.raises(ValueError, match="taker_fee_bps"):
+            Trader(0, 1000, taker_fee_bps=-1)
+
+
+class TestAnUncheckedEpisodeIsNotACleanOne:
+    def _run(self, env_config):
+        from gym_continuousDoubleAuction.test.test_nav_callback import (
+            MockEnv, MockEpisode, _emitted,
+        )
+        runner = MagicMock()
+        runner.config.env_config = env_config
+        cb = SelfPlayCallback(num_trainable_policies=2, num_random_policies=2,
+                              episode_data_dir=None)
+        metrics = MagicMock()
+        info = {f"agent_{i}": {"NAV": "999999"} for i in range(4)}
+        cb.on_episode_end(episode=MockEpisode("ep", info), env_runner=runner,
+                          metrics_logger=metrics, env=MockEnv(1_000_000, 4),
+                          env_index=0, rl_module=None)
+        return metrics, _emitted
+
+    def test_the_skip_says_so_in_its_own_metric(self):
+        from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
+            NAV_UNCHECKED_METRIC,
+        )
+        metrics, emitted = self._run({"init_cash": 1_000_000, "num_of_agents": 4, "taker_fee_bps": 5})
+        assert emitted(metrics, NAV_UNCHECKED_METRIC).args[1] == 1.0
+
+    def test_a_checked_episode_reports_none_unchecked(self):
+        from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
+            NAV_UNCHECKED_METRIC,
+        )
+        metrics, emitted = self._run({"init_cash": 1_000_000, "num_of_agents": 4})
+        found = emitted(metrics, NAV_UNCHECKED_METRIC)
+        assert found is None or found.args[1] == 0.0
+
+    @pytest.mark.parametrize("rate", [5, 5.0, Decimal("5"), "5", Decimal("0.5")])
+    def test_any_numeric_spelling_of_a_rate_counts_as_fees_on(self, rate):
+        runner = MagicMock()
+        runner.config.env_config = {"taker_fee_bps": rate}
+        assert SelfPlayCallback._fees_configured(runner, MagicMock(spec=[]))
+
+    @pytest.mark.parametrize("rate", [0, 0.0, Decimal("0"), "0", None])
+    def test_a_zero_or_missing_rate_is_fees_off(self, rate):
+        runner = MagicMock()
+        runner.config.env_config = {"taker_fee_bps": rate}
+        assert not SelfPlayCallback._fees_configured(runner, MagicMock(spec=[]))
