@@ -3520,3 +3520,31 @@ a cost the ledger sees. It is now there, and **off**.
   batch clearing is S2-14's market-sweep gap and occurs with fees off (22 of 12,000 agent-steps).
 - **Tests.** `test_fees.py`, 55 (unit 1,214 -> 1,269; suite 1,432). Borrow cost and funding remain
   absent.
+
+
+## 62. Orders that cannot be paid for no longer fill (S2-14)
+
+A fill could take cash below zero because the cash check priced an order before the price it would
+fill at was known.
+
+- **Sequential: the sweep is priced level by level.** A market order was checked at `opening size ×
+  the touch`, and a sweep pays every level it takes. `Trader._sweep_cost` walks the opposite book,
+  charging the contracts that open at the level they reach, with the closing contracts free and the
+  trader's own resting orders skipped (self-match prevention cancels them first). The documented case
+  (cash 1,000, buy 10 against 1 @ 100 and 9 @ 200, which left cash at −900) is refused.
+- **Batch: re-clear without the orders that cannot pay.** The check runs when an order is queued and
+  a batch fills at one price known only afterwards. `OrderBook.clear_batch` now takes an `affordable`
+  hook; once a price is chosen it asks, for every order that would trade, whether its owner can pay for
+  the fill at that price (`Trader.can_pay_at_clearing`: a market order, a limit sell opening a short,
+  and a resting ask that fills above its limit can all cost more). Those who cannot sit out and the
+  auction runs again, until everyone left can pay. A market order that sits out lapses and counts as
+  rejected, a limit order rests at its limit, a resting ask stays put.
+  `Exchg_Helper._clear_batch_and_settle` carries it.
+- **Effect.** 11 and 29 overdrawn agent-steps of 51,200 under batch (fees off and at 100 bps; worst
+  −278 and −328) become 0 ([16](16_verification_log.md) §16.28). Both changes alter which orders are
+  approved, so they alter the game a policy plays under batch clearing and with market orders that
+  sweep; sequential runs with orders that do not sweep deeper than cash covers are unaffected.
+- **Found and not fixed (S2-15, #228).** Closing a position that is under water realises its loss into
+  cash, and the cash check does not reserve for it, so `cash + cash_on_hold` can still go below zero
+  with NAV unchanged. Reserving for it changes which closing orders are approved, which is a decision.
+- **Tests.** `test_overdraw.py`, 18 (unit 1,269 -> 1,287; suite 1,450).

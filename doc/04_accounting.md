@@ -142,12 +142,18 @@ new quote is processed.
    cash escrowed was refused the cancel that would have freed it
    ([15](15_findings_and_recommendations.md) S2-13). Only the `nav > 0` gate applies to it.
 
-For market orders (`price == -1.0`) the estimate is the best price on the **opposite** side,
-falling back to the last tape price, falling back to 1:
+A market order (`price == -1.0`) pays every level it sweeps, so it is priced level by level
+(`Trader._sweep_cost`): the contracts that only close a position are free, and the ones that open
+risk are charged at the price of the level they reach, walking the opposite side from the touch. The
+trader's own resting orders on that side are skipped, since self-match prevention cancels them
+before the order meets the book. A thin book costs only what it can fill (the rest lapses), and an
+empty one falls back to the last tape price, then to 1. It used to be `opening_size × best price`:
+cash 1,000, a market buy of 10 against 1 @ 100 and 9 @ 200 was approved and left cash at −900
+([15](15_findings_and_recommendations.md) S2-14, `test_overdraw.py`).
 
-```python
-est_price = LOB.get_best_ask() or (LOB.tape[-1]['price'] if LOB.tape else 1)   # for a bid
-```
+Under `step_clearing: "batch"` the price is not known when the order is queued, so the check there
+is only a first filter; the clearing price is checked again after it is chosen
+([06](06_action_space.md) §8.2).
 
 `test_cash_check.py::test_position_flip_insufficient_cash` covers the hard case — long 10, sell
 20, and only the 10-lot short leg needs cash.

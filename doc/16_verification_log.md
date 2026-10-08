@@ -1725,3 +1725,45 @@ jepa 6
 --agents 4` prints `completed 200 steps with 4 random agents.`
 
 **Supports:** §15 S2-14, S3-26 to S3-33, S4-20 to S4-28; §17 §59.
+
+---
+
+## 16.28 S2-14: the sweep priced in full, and a batch re-cleared (2026-10-08)
+
+Protocol: 160 seeded episodes of 80 steps, 4 agents at `init_cash` 3,000, prices 20 to 60,
+`liquidation: off`, action spaces seeded per episode so a run is repeatable; 51,200 agent-steps per
+row. An agent-step is *overdrawn* if `cash + cash_on_hold < 0` for a trader that has never held an
+unrealised loss in the episode (a trader under water realises the loss into cash when it closes, which
+is S2-15 and not counted). `scan160.py`, run on the source before and after the change:
+
+```
+                       overdrawn agent-steps   seeds hit   worst
+before  sequential fee   0         0               0/160      0.00
+        sequential fee 100         0               0/160      0.00
+        batch      fee   0        11               3/160   -278.00
+        batch      fee 100        29               3/160   -327.58
+after   sequential fee   0         0               0/160      0.00
+        sequential fee 100         0               0/160      0.00
+        batch      fee   0         0               0/160      0.00
+        batch      fee 100         0               0/160      0.00
+```
+
+Sequential shows nothing under this definition on either side, because the random agents rarely sweep
+past the touch with their cash nearly spent; its gap is the documented case, pinned by
+`test_overdraw.py` (cash 1,000, buy 10 against 1 @ 100 and 9 @ 200: before, approved, cash −900;
+after, refused). The earlier count of 22 in 12,000 agent-steps (§16.27's follow-up, plain
+`cash + cash_on_hold < 0`) included traders under water; this table excludes them.
+
+One batch event, as the unfixed engine produced it: a trader with 920 cash queues a market buy of 9
+against resting asks of 5 @ 100 and 5 @ 110. The check passes (9 @ 100 is 900). The auction maximises
+volume at 110, so the order costs 990 and cash would end at −70. Now the clearing price is chosen,
+the order is found unaffordable at it, the auction runs again without it (no trade; the asks are
+untouched), and the order is counted as rejected.
+
+**What a seed shows that the count does not.** Seed 114 under sequential clearing: `agent_0` short 1
+lot with `position_val` −574 and cash 3,270 places a crossing limit bid of 91 @ 35 that the check
+approves (the 90 opening contracts cost 3,150). The fill covers the short, realising the −574 into
+cash, and opens a long: cash −433, NAV 2,696 unchanged. Five steps later a resting part of that bid
+fills and `cash + cash_on_hold` goes from 652 to −83. No sweep is involved; this is S2-15.
+
+**Supports:** §15 S2-14, S2-15; §04 §3; §06 §8.2; §10 §2.7; §17 §62.
