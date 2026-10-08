@@ -108,15 +108,36 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Liquidation_Helpe
         self.LOB.begin_batch()
         seq_trades, seq_order_in_book = super().do_actions(actions)
         # The reference is the pre-batch book's, the same one the agents saw.
-        results = {tid: (trades, oib)
-                   for tid, trades, oib in self.LOB.clear_batch(reference_price=self.reference_price())}
-        for tid, (trades, oib) in results.items():
-            self.traders[tid].settle_batch(trades, oib, self.traders)
+        results = self._clear_batch_and_settle(self.reference_price())
         for i, action in enumerate(actions):
             tid = int(action["ID"].split("_")[1])
             if tid in results:
                 seq_trades[i], seq_order_in_book[i] = results[tid]
         return seq_trades, seq_order_in_book
+
+    def _clear_batch_and_settle(self, reference_price):
+        """Clear the queued batch at one price and settle each trader's result.
+
+        Returns `{trade_id: (trades, order_in_book)}`. The auction asks
+        `_batch_affordable` whether each order's owner can pay for the fill at
+        the price it settles at, so no fill overdraws cash (doc/15 S2-14); a
+        market order turned away that way is a rejection, like any order the
+        cash check refuses.
+        """
+        cleared = self.LOB.clear_batch(reference_price=reference_price,
+                                       affordable=self._batch_affordable)
+        for q in self.LOB.batch_unaffordable:
+            self.traders[q['trade_id']].acc.num_rejected_step += 1
+        results = {tid: (trades, oib) for tid, trades, oib in cleared}
+        for tid, (trades, oib) in results.items():
+            self.traders[tid].settle_batch(trades, oib, self.traders)
+        return results
+
+    def _batch_affordable(self, trade_id, side, quantity, price, resting_limit, order_id):
+        """Whether `trade_id` can pay for a batch fill of `quantity` at `price`."""
+        return self.traders[trade_id].can_pay_at_clearing(
+            self.LOB, side, int(quantity), price,
+            resting_limit=resting_limit, resting_order_id=order_id)
 
     def reset_traders_acc(self):
         """

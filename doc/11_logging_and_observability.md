@@ -155,6 +155,7 @@ in the repository writes a pickle any more.
 | `unmatched_action_fraction` | Share of agent-steps where a `modify` / `cancel` named no resting order (S4-14) | 10 | `on_episode_end` |
 | `obs_clip_fraction` | Share of agent-steps whose observation had at least one element clipped to the declared Box bounds (S4-15); 0 unless a bound is wrong for the market | 10 | `on_episode_end` |
 | `nav_conservation_violations` | Episodes that failed the check | `reduce="sum"` | `on_episode_end` |
+| `nav_conservation_unchecked` | Episodes the check could not run on: exchange fees are on and the finished env's accounts were unreadable. A skip, not a pass; absent when every episode was checked | `reduce="sum"` | `on_episode_end` |
 | `reward_term_mean_<term>` × 5 | Mean of each signed reward contribution | 10 | `on_episode_end` |
 | `reward_term_var_share_<term>` × 5 | That term's share of the reward's variance | 10 | `on_episode_end` |
 | `episode_nav_mean` / `_min` / `_max` | Per-agent NAV at episode end | 10 | `on_episode_end` |

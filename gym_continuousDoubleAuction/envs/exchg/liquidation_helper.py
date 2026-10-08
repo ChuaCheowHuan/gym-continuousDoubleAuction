@@ -363,6 +363,7 @@ class Liquidation_Helper(object):
                     {'price': mark, 'quantity': qty,
                      'init_party': {'ID': party.ID, 'side': side}},
                     'init_party',
+                    fee_role='none',    # a transfer at the mark, not an exchange fill
                 )
                 party.acc.num_trades_step = steps
             other.acc.adl_qty_step += qty

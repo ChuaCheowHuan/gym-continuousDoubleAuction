@@ -3480,3 +3480,73 @@ thing and an open item can be assigned, discussed and closed by a commit.
   `logging` and `needs-decision`; the R items not yet reproduced also carry `question`.
 - **Back-links:** each entry in 15, 10 §8 and 21 links its issue. In 15 the link sits on a line
   under the heading rather than in it, so every existing `#anchor` into the register still resolves.
+
+
+## 61. Exchange fees (S2-3, second half; issue #98)
+
+The reward's cost proxies were fixed earlier (S2-3's first half). What stayed open was a real fee,
+charged against NAV rather than the reward, so market making has revenue and crossing the spread has
+a cost the ledger sees. It is now there, and **off**.
+
+- **Config.** `maker_fee_bps` and `taker_fee_bps`, in `env_defaults.json` and `train_config.json`,
+  both 0, on `TrainConfig` and `train.compare --set`. Basis points of a fill's notional; the taker is
+  the aggressing order, the maker the resting one, and a negative maker rate is a rebate.
+  `taker_fee_bps >= 0` and the pair must sum to `>= 0`, or two agents trading with each other would
+  mint money ([04](04_accounting.md) §9, [18](18_configuration.md) §3.0.4).
+- **Settlement.** `Account.process_acc` takes the fee out of cash after booking the fill, exactly
+  (a decimal shift, no quotient). A batch counter party that arrived in the same batch is still the
+  maker; a self-trade and ADL pay nothing (`fee_role`).
+- **The exchange.** Each account keeps `fees_paid`; `env.fees_collected` is their sum, and
+  `sum(NAV) + fees_collected == starting cash` holds exactly. The callback's episode-end check adds
+  the fees to its sum and its report prints them. Where it cannot read the env's accounts (the carry
+  fallback) it assumes none, which is exact at the shipped rates.
+- **Cash check.** An order reserves the largest fee on top of its notional, so a fill cannot take
+  cash below zero.
+- **Unchanged by default.** At 0 every existing test passes untouched; the layout versions and
+  checkpoints are not affected, since neither the observation nor the action changes.
+- **Review fixes** (PR #227). A resting order escrows its notional but not its maker fee, so a later
+  order could spend that cash and a fill then charged it below zero (cash -0.90 in the reproduction);
+  the cash check now also counts the maker fee every resting order owes
+  (`Trader._resting_maker_fees`). Rates are capped at 1,000 bps. Where the callback cannot read the
+  accounts and fees are on, the NAV check is skipped with a warning instead of reporting the fees as
+  a violation. In batch mode the same-batch taker is the record's initiator, which is arbitrary
+  under unequal rates (R-1); that is documented rather than changed.
+- **Second review** (PR #227). `Account` validates the rates itself (`validate_fee_rates`, `MAX_FEE_BPS`)
+  instead of only the env, so a caller building accounts directly cannot pass NaN or a negative taker
+  rate. An episode the NAV check skipped is counted in its own metric, `nav_conservation_unchecked`,
+  rather than passing as clean, and the "fees are on" test accepts any numeric spelling of a rate.
+  Two review findings did not reproduce: a closing-only or flipping order drawing cash below zero
+  (sequential clearing: 0 negative agent-steps of 2,000, fees on or off). The negative cash seen in
+  batch clearing is S2-14's market-sweep gap and occurs with fees off (22 of 12,000 agent-steps).
+- **Tests.** `test_fees.py`, 55 (unit 1,214 -> 1,269; suite 1,432). Borrow cost and funding remain
+  absent.
+
+
+## 62. Orders that cannot be paid for no longer fill (S2-14)
+
+A fill could take cash below zero because the cash check priced an order before the price it would
+fill at was known.
+
+- **Sequential: the sweep is priced level by level.** A market order was checked at `opening size ×
+  the touch`, and a sweep pays every level it takes. `Trader._sweep_cost` walks the opposite book,
+  charging the contracts that open at the level they reach, with the closing contracts free and the
+  trader's own resting orders skipped (self-match prevention cancels them first). The documented case
+  (cash 1,000, buy 10 against 1 @ 100 and 9 @ 200, which left cash at −900) is refused.
+- **Batch: re-clear without the orders that cannot pay.** The check runs when an order is queued and
+  a batch fills at one price known only afterwards. `OrderBook.clear_batch` now takes an `affordable`
+  hook; once a price is chosen it asks, for every order that would trade, whether its owner can pay for
+  the fill at that price (`Trader.can_pay_at_clearing`: a market order, a limit sell opening a short,
+  and a resting ask that fills above its limit can all cost more). Those who cannot sit out and the
+  auction runs again, until everyone left can pay. A market order that sits out lapses and counts as
+  rejected, as does a limit order (resting it at its limit would put it beside the orders it could
+  not afford to trade with and cross the book; found in review, with the next batch's pairing raising
+  on a crossed book), a resting ask stays put, and a leftover limit that would now cross what rests
+  lapses uncounted. `Exchg_Helper._clear_batch_and_settle` carries it.
+- **Effect.** 11 and 29 overdrawn agent-steps of 51,200 under batch (fees off and at 100 bps; worst
+  −278 and −328) become 0 ([16](16_verification_log.md) §16.28). Both changes alter which orders are
+  approved, so they alter the game a policy plays under batch clearing and with market orders that
+  sweep; sequential runs with orders that do not sweep deeper than cash covers are unaffected.
+- **Found and not fixed (S2-15, #228).** Closing a position that is under water realises its loss into
+  cash, and the cash check does not reserve for it, so `cash + cash_on_hold` can still go below zero
+  with NAV unchanged. Reserving for it changes which closing orders are approved, which is a decision.
+- **Tests.** `test_overdraw.py`, 20 (unit 1,269 -> 1,289; suite 1,452).

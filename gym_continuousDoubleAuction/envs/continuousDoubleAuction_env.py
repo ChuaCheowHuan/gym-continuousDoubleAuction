@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import logging
 
 import numpy as np
@@ -8,6 +10,7 @@ from ray.rllib.env.multi_agent_env import MultiAgentEnv
 
 from .exchg.exchg_helper import Exchg_Helper
 from .agent.trader import Trader
+from .account.account import validate_fee_rates
 from ..config_loader import env_default
 from ..logging_setup import get_logger
 
@@ -33,6 +36,12 @@ class continuousDoubleAuctionEnv(
         # and a bare env picks up the standalone defaults from the JSON.
         self.num_of_agents = self._cfg("num_of_agents")
         init_cash = self._cfg("init_cash")
+        # Exchange fees in basis points of a fill's notional (doc/15 S2-3).
+        # Validated here so a bad schedule fails at construction, before the
+        # book is built; `Account` validates again for callers that skip the env.
+        self.maker_fee_bps = self._cfg("maker_fee_bps")
+        self.taker_fee_bps = self._cfg("taker_fee_bps")
+        validate_fee_rates(self.maker_fee_bps, self.taker_fee_bps)
         tick_size = self._cfg("tick_size")
         mark_price_source = self._cfg("mark_price_source")
         tape_display_length = self._cfg("tape_display_length")
@@ -122,7 +131,8 @@ class continuousDoubleAuctionEnv(
         self.is_render = is_render
 
         # list of agents or traders
-        self.traders = [Trader(ID, init_cash) for ID in range(0, self.num_of_agents)]
+        self.traders = [Trader(ID, init_cash, self.maker_fee_bps, self.taker_fee_bps)
+                        for ID in range(0, self.num_of_agents)]
 
         # Agent IDs. `agents` / `possible_agents` are built from a sorted list
         # rather than from the set, because iteration order of a set of strings
@@ -213,7 +223,17 @@ class continuousDoubleAuctionEnv(
     def get_observation_space(self, agent_id):
         """Observation space for a single agent (not the per-agent dict)."""
         return self.observation_spaces[agent_id]
-        
+
+    @property
+    def fees_collected(self):
+        """The exchange's ledger: every fee the traders have paid this episode.
+
+        Money is conserved with it counted: `sum(NAV) + fees_collected` equals
+        the starting cash. A rebate makes an account's share negative, so the
+        total can be smaller than the fees any one trader paid.
+        """
+        return sum((t.acc.fees_paid for t in self.traders), Decimal(0))
+
     # Updated reset method to return proper format for new API
     def reset(self, *, seed=None, options=None):
         # Call parent reset if it exists.

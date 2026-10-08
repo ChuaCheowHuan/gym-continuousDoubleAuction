@@ -48,11 +48,11 @@ mindmap
       S1-4 bare env could not trade — fixed
       S1-5 cash check bypassable — fixed
         closing-side escrow now spendable — fixed
-    S2 Major — all fixed but S2-14
+    S2 Major — all fixed but S2-15
       S2-1 drawdown charged as a level — fixed
       S2-2 observation scales saturate tanh — fixed
       S2-3 cost proxies 10^5 too small — fixed
-        real maker/taker fees still open
+        real maker/taker fees — fixed, opt-in
       S2-4 bankrupt agents never terminated — fixed
       S2-5 self-matching enables mark manipulation — fixed
       S2-6 per-frame normalizer — fixed
@@ -63,7 +63,8 @@ mindmap
       S2-11 VWAP negative, obs reported flat — fixed
       S2-12 gymnasium.make raised — fixed
       S2-13 cancel was cash-checked — fixed
-      S2-14 market sweep cash-checked at the touch — open
+      S2-14 market sweep cash-checked at the touch — fixed
+      S2-15 closing a losing position needs no cash — open
     S3 Moderate
       action space
         S3-1 half of size_mean is a no-op
@@ -356,7 +357,7 @@ lands inside ±1.2, and inventory exceeds its scale on **0.0%** of agent-steps a
 rather than the formulas, which stay pinned where they were.
 → [05 §7.5](05_observation_space.md#75-feature-scales-differ-by-one-to-two-orders-of-magnitude-after-normalization--fixed)
 
-### S2-3 · Transaction-cost proxies are ~10⁵× too small **[verified, fixed — real fees still open]**
+### S2-3 · Transaction-cost proxies are ~10⁵× too small **[verified, fixed]**
 
 _Tracked in [#98](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/98)._
 
@@ -373,11 +374,16 @@ move NAV at all and one that does moves it by a median 1.9e-03 of starting capit
 penalties sit at 0.5–1% of that. `passive_bonus` is set equal to `trade_penalty`, making a passive
 fill net-free while an aggressive one costs 0.2 bps, which expresses "capture spread" as a price.
 
-**Still open:** these remain *proxies charged against the reward*, not fees charged against NAV.
-Real maker/taker fees in basis points of notional, applied inside settlement so they flow through
-the ledger, would also require relaxing the NAV-conservation assertion to account for them. That
-is a simulator change, not a reward change, and it is unaffected by this fix.
-→ [13 §4](13_perspective_financial_trader.md#4-there-are-no-transaction-costs),
+**Real fees, fixed.** `maker_fee_bps` and `taker_fee_bps` charge each fill a fee in basis points of
+its notional, taken out of cash inside `Account.process_acc` so it flows through the ledger. The
+taker (the aggressing order) pays the taker rate, the maker the maker rate (negative is a rebate);
+a self-trade and ADL pay nothing. Each account keeps `fees_paid` and the exchange's ledger is their
+sum, so conservation is `sum(NAV) + fees == starting cash`, still exact, and the callback's check
+counts the fees. The cash check reserves the largest fee so a fill cannot overdraw. Both rates ship
+at 0, so nothing changes for a run that does not set them; turning them on changes the game
+([04](04_accounting.md) §9, [18](18_configuration.md) §3.0.4, `test_fees.py`). Borrow cost and
+funding remain absent.
+→ [13 §4](13_perspective_financial_trader.md#4-there-are-no-transaction-costs--fixed-opt-in),
 [07 §4.2](07_reward_function.md)
 
 ### S2-4 · Bankrupt agents are never terminated **[verified, fixed]**
@@ -638,16 +644,56 @@ always pass and only a genuine increase in notional beyond `cash + released` is 
 each case, including that a bankrupt trader still cannot act.
 
 
-### S2-14 · A market order is cash-checked at the touch but pays every level it sweeps **[verified, open]**
+### S2-14 · A market order is cash-checked at the touch but pays every level it sweeps **[verified, fixed]**
 
 _Tracked in [#109](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/109)._
 
-`Trader._order_approved` prices a market order's opening size at the best opposite price. A sweep
-pays deeper levels too, so the check passes an order the trader cannot afford. With cash 1,000, a
-market buy of 10 against asks of 1 @ 100 and 9 @ 200 is approved and leaves cash at **−900**
-([16](16_verification_log.md) §16.27). Batch clearing checks the same way. Not fixed in the
-2026-10-07 pass: pricing the sweep, or capping the fill at what cash covers, changes which orders
-are approved and so the game the policy plays, which is a decision rather than a bug fix.
+`Trader._order_approved` priced a market order's opening size at the best opposite price. A sweep
+pays deeper levels too, so the check passed an order the trader could not afford. With cash 1,000, a
+market buy of 10 against asks of 1 @ 100 and 9 @ 200 was approved and left cash at **−900**
+([16](16_verification_log.md) §16.27). Batch clearing was wider still: the check runs when an order is
+queued and the price is only known at clearing, one uniform price that can sit above the price the
+order was checked at, for a market order, for a limit sell opening a short (a short pays its notional
+in cash, at the clearing price rather than at its limit) and for a resting ask that fills above the
+limit its escrow was posted at. Measured under random play with fees off, 4 agents at 3,000 cash,
+`liquidation: off`: 22 of 12,000 agent-steps under batch ended with `cash + cash_on_hold` below zero,
+worst −82 ([16](16_verification_log.md) §16.28).
+
+**Fixed.** Two parts, both opening-risk only, since closing needs no cash for the closing contracts.
+
+- *Sequential:* the order is priced by walking the opposite book (`Trader._sweep_cost`), charging the
+  contracts that open at the level they reach. The trader's own resting orders are skipped, because
+  self-match prevention cancels them first; a thin book costs what it can fill.
+- *Batch:* once `clear_batch` has chosen its price it asks the env
+  (`Trader.can_pay_at_clearing`) whether each order that would trade can pay for the fill there. An
+  order that cannot sits out and the auction runs again without it, until everyone left can pay. A
+  queued order that sat out lapses, market or limit, and counts as rejected (resting a limit at its own
+  price would put it beside the orders it could not afford to trade with, and cross the book); a
+  resting ask simply stays, and a leftover limit that would now cross what rests lapses uncounted. The question is put for the order's full size, so it can turn away an order that
+  would have fit after rationing and never admit one that does not
+  ([06](06_action_space.md) §8.2).
+
+Both change which orders are approved, so they change the game the policy plays; they are what the
+cash check was always meant to do. `test_overdraw.py`.
+
+### S2-15 · Closing a losing position realises the loss into cash without a cash check **[verified, open]**
+
+_Tracked in [#228](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/228)._
+
+Found while fixing S2-14. `Trader._order_approved` returns `True` at once for an order that only
+closes, and charges a flip only for its opening part, but closing a position that is under water
+realises its loss into cash (NAV is unchanged; the loss moves from `position_val` to `cash`). So a
+trader with little cash can cover a losing position and end with `cash + cash_on_hold` below zero, and
+the shortfall can surface steps later when a resting bid fills. Reproduced under random play (seed
+114): short 1 lot with `position_val` −574 and cash 3,270; a crossing limit bid of 91 @ 35 is approved
+(its 90 opening contracts cost 3,150), covers the short at 34 and opens a long, and `cash` goes to −433
+with NAV still 2,696; five steps later a fill takes `cash + cash_on_hold` from 652 to −83.
+
+Not fixed: reserving for a realised loss changes which closing orders are approved (a trader under
+water could no longer flatten without cash), which is a decision. The options are a liquidity margin
+call, which `liquidation` does not provide today (it triggers on NAV), or refusing a closing order
+whose realised loss exceeds free cash. `test_overdraw.py` leaves traders that have been under water
+out of its stress test for this reason.
 
 ---
 
@@ -1407,7 +1453,7 @@ colour. Colours are keyed by term name, and a term without one fails at import.
 Findings from the 2026-10-07 review that were not fixed there, because each changes the game the
 policy plays, the distributed or checkpoint design, or a research method, and so needs a decision
 first. **[verified]** marks the ones reproduced in that pass; the rest are a reviewer's reading of
-the code, recorded so they are not lost, and need reproducing before anything is changed. S2-14 and
+the code, recorded so they are not lost, and need reproducing before anything is changed. S2-14 (since fixed) and
 S3-32's open half came from the same pass and are filed above.
 
 | ID | Finding |
@@ -1494,7 +1540,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **1,214 unit tests pass** (plus 163 integration), covering every position-flip path, cash-check edge case, modify-order
+- **1,289 unit tests pass** (plus 163 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 
@@ -1534,9 +1580,10 @@ Roughly two to three weeks of work, ordered so each step unblocks the next.
     the default layout and the level view is kept for comparison
 
 **Phase 4 — market realism (≈3 days)**
-13. Maker/taker fees in bps inside settlement (S2-3)
-13a. Price a market order's whole sweep in the cash check, or cap its fill at what cash covers
-    (S2-14)
+13. ~~Maker/taker fees in bps inside settlement (S2-3)~~ — **done**, opt-in (both rates 0)
+13a. ~~Price a market order's whole sweep in the cash check (S2-14)~~ — **done**, and batch clearing
+    re-clears without the orders its owners cannot pay for. **Open:** reserve cash for the loss a
+    closing order realises (S2-15)
 14. ~~Self-match prevention; mark to mid (S2-5)~~ — **done**
 15. ~~Per-episode desk metrics through `metrics_logger` (S3-9)~~ — **partly done**: NAV spread,
     drawdown, inventory, trade count and maker ratio are metrics ([11 §1.2](11_logging_and_observability.md)).

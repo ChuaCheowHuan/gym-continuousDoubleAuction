@@ -138,7 +138,14 @@ standard and far harder to manipulate.
 
 ---
 
-## 4. There are no transaction costs
+## 4. There are no transaction costs — **fixed, opt-in**
+
+> **Status.** Maker/taker fees in basis points of notional now exist, charged inside settlement and
+> collected by an exchange ledger, so NAV conservation reads `sum(NAV) + fees == starting cash`
+> ([04](04_accounting.md) §9, [18](18_configuration.md) §3.0.4, [15](15_findings_and_recommendations.md)
+> S2-3). They ship at 0; set `taker_fee_bps` and `maker_fee_bps` to use them. Borrow cost and funding
+> are still absent. The analysis below is as it was written.
+
 
 `grep` for fee, commission, rebate, slippage, borrow across the env: nothing. There is no
 maker/taker schedule, no exchange fee, no clearing fee, no borrow cost on shorts, no funding on
