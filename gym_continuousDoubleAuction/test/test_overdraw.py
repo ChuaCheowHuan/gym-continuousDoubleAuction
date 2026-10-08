@@ -120,6 +120,12 @@ def _whole(env):
     return all(t.acc.cash + t.acc.cash_on_hold >= 0 for t in env.traders)
 
 
+def _uncrossed(env):
+    """No resting bid at or above a resting ask: the book a next batch can trust."""
+    bid, ask = env.LOB.get_best_bid(), env.LOB.get_best_ask()
+    return bid is None or ask is None or bid < ask
+
+
 class TestABatchIsReClearedWithoutWhatItsOwnersCannotPay:
 
     def _asks(self, env):
@@ -166,11 +172,13 @@ class TestABatchIsReClearedWithoutWhatItsOwnersCannotPay:
         seller = env.traders[0]
         seller.acc.cash = Decimal(1000)           # 10 @ 100 passes; the auction clears at 108
         _clear(env, [(seller, "limit", "ask", 10, 100)], reference=108)
-        # It could not pay for the short at 108, so it sits out - and rests at its
-        # own limit, where it can: not a rejection, only no trade this step.
-        assert seller.acc.net_position == 0 and seller.acc.num_rejected_step == 0
-        assert env.LOB.asks.volume == 10
-        assert _whole(env)
+        # It could not pay for the short at 108, so it sits out. It must not rest
+        # at 100 under a resting bid at 110, which would cross the book: it lapses,
+        # and counts as rejected like any order the cash check turns away.
+        assert seller.acc.net_position == 0 and seller.acc.num_rejected_step == 1
+        assert env.LOB.asks.volume == 0
+        assert seller.acc.cash == 1000 and seller.acc.cash_on_hold == 0
+        assert _uncrossed(env) and _whole(env)
 
     def test_a_resting_ask_that_cannot_cover_a_better_fill_sits_out(self):
         env = _env()
@@ -182,6 +190,29 @@ class TestABatchIsReClearedWithoutWhatItsOwnersCannotPay:
         assert seller.acc.net_position == 0       # it would owe 80 more than it has
         assert env.LOB.asks.volume == 10          # still resting
         assert _whole(env)
+
+    def test_a_limit_left_over_by_a_sitting_out_ask_does_not_cross_it(self):
+        """The new bid at 105 finds no supply once the ask at 98 sits out, and
+        resting at 105 would sit above that ask."""
+        env = _env()
+        seller, buyer = env.traders[0], env.traders[1]
+        seller.acc.cash = Decimal(1000)
+        seller.place_order("limit", "ask", 10, 98, env.LOB, env.traders)     # escrows 980
+        _clear(env, [(buyer, "limit", "bid", 10, 105)], reference=104)
+        assert seller.acc.net_position == 0 and buyer.acc.net_position == 0
+        assert env.LOB.asks.volume == 10           # the ask stays
+        assert env.LOB.bids.volume == 0            # the bid lapses instead of crossing it
+        assert _uncrossed(env) and _whole(env)
+
+    def test_the_next_batch_can_still_clear_after_an_order_sat_out(self):
+        """A crossed resting book used to raise in the next batch's pairing."""
+        env = _env()
+        seller, buyer = env.traders[0], env.traders[1]
+        seller.acc.cash = Decimal(1000)
+        seller.place_order("limit", "ask", 10, 98, env.LOB, env.traders)
+        _clear(env, [(buyer, "limit", "bid", 10, 105)], reference=104)
+        _clear(env, [(env.traders[2], "limit", "bid", 5, 100)], reference=99)
+        assert _uncrossed(env) and _whole(env)
 
     def test_a_resting_ask_with_the_cash_still_gets_the_better_price(self):
         env = _env()
@@ -241,6 +272,7 @@ class TestNoFillEverOverdrawsCash:
                         overdrawn += 1
                 assert env.fees_collected + sum(t.acc.nav for t in env.traders) \
                     == Decimal(4) * Decimal(env.init_cash)
+                assert _uncrossed(env), f"seed {seed}: the book is crossed"
                 if dones["__all__"] or truncs["__all__"]:
                     break
         assert overdrawn == 0
