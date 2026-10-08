@@ -229,6 +229,27 @@ class Trader:
 
         return total
 
+    def _resting_maker_fees(self, LOB, exclude_order_id: Optional[int] = None) -> Decimal:
+        """The maker fee this trader's resting orders will owe if they all fill.
+
+        A resting order escrows its notional but not its fee, so the fee sits
+        in `cash` until the order fills. Without counting it here a later order
+        could spend that cash, and the fee would then be charged below zero.
+        Zero for a rebate (a negative rate owes nothing) and when fees are off.
+        The order an incoming quote replaces is excluded: its release is
+        already counted by `_order_approved`.
+        """
+        rate = max(self.acc.maker_fee_bps, Decimal(0)).scaleb(-4)
+        if rate == 0:
+            return Decimal(0)
+        owed = Decimal(0)
+        for side in ('bid', 'ask'):
+            for order_ID, order in self._own_orders_from_touch(LOB, side):
+                if exclude_order_id is not None and order_ID == exclude_order_id:
+                    continue
+                owed += order.price * order.quantity * rate
+        return owed
+
     def _closing_escrow(self, LOB, exclude_order_id: Optional[int] = None) -> Decimal:
         """Escrow held against this trader's resting orders that would only
         flatten its position.
@@ -394,6 +415,9 @@ class Trader:
         # reserves the largest one on top of the notional: otherwise a trader
         # with exactly the notional is approved and is then charged below zero.
         order_val += order_val * self.acc.max_fee_rate
+        # ... and the fees the resting orders already owe, which are in cash
+        # too (`_resting_maker_fees`).
+        order_val += self._resting_maker_fees(LOB, exclude_order_id=replaced_id)
 
         # `released` is the escrow the replaced order gives back on the same
         # call, so it is as spendable as cash for this quote. Without it a
