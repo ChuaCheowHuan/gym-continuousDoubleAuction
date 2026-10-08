@@ -1767,3 +1767,35 @@ cash, and opens a long: cash −433, NAV 2,696 unchanged. Five steps later a res
 fills and `cash + cash_on_hold` goes from 652 to −83. No sweep is involved; this is S2-15.
 
 **Supports:** §15 S2-14, S2-15; §04 §3; §06 §8.2; §10 §2.7; §17 §62.
+
+
+## 16.29 S2-15: the loss a cover realises (2026-10-08)
+
+Protocol as §16.28 (160 seeded episodes of 80 steps, 4 agents at 3,000 cash, prices 20 to 60,
+`liquidation: off`; 51,200 agent-steps per row), but an overdrawn agent-step is any with
+`cash + cash_on_hold < 0` for **any** trader, under water or not. `scan160_all.py` on the source before
+and after the reserve:
+
+```
+                       overdrawn agent-steps   seeds hit   worst
+before  sequential fee   0        32               2/160   -293.00
+        sequential fee 100        61               3/160   -339.65
+        batch      fee   0         0               0/160      0.00
+        batch      fee 100         0               0/160      0.00
+after   all four                   0               0/160      0.00
+```
+
+The "before" source is the one with S2-14 fixed, so these are what S2-14 left: every one is a
+trader covering a short that had been squeezed past its collateral. Under batch the same trader
+rarely has a market cover to place, and the auction already re-clears around an order it cannot pay.
+
+The mechanism, from the ledger rather than inferred. For a short of `n` lots at `cost_basis` `B`
+marked at `p`, `position_val = 2B - n p` (seed 114: `B = -270`, `n = 1`, `p = 34` gives -574). A partial
+cover moves `trade_value` into cash and leaves the result in the remaining lots' value; the cover that
+reaches zero moves `position_val` itself, so the cash change is `position_val`, here -574, while a
+flip also pays `new_size x p` for the long it opens. Reserving `max(0, n p - 2B)` for the covering
+lots, on top of the opening cost, makes the order's own arithmetic add up: with `position_val = -100`
+(a short of 10 bought at 10 and marked at 30) a full cover needs 100 in cash, a flip to 5 long needs
+`100 + 5 x 30 = 250`, a partial cover of 9 needs none, and a short marked at 15 (worth +50) needs none.
+
+**Supports:** §15 S2-15; §04 §3; §10 §2.7; §17 §63.

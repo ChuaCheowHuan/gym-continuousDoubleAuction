@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (1,452 tests: 1,289 unit + 163 integration)
+# everything (1,464 tests: 1,301 unit + 163 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -46,7 +46,7 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `1289 passed` on the unit half, `163 passed` on the integration half. There is no xfail: the one that pinned S1-1 XPASSed when S1-1 was fixed and was deleted (see §6.2.2).
+**[verified]** — `1301 passed` on the unit half, `163 passed` on the integration half. There is no xfail: the one that pinned S1-1 XPASSed when S1-1 was fixed and was deleted (see §6.2.2).
 
 ### File inventory
 
@@ -61,7 +61,7 @@ Counts re-measured with `--collect-only`.
 | `test_orderbook_crossed_book.py` | 1 | Crossed-book invariant |
 | `test_orderbook_volume_sync.py` | 1 | Volume cache synchronization |
 | `test_accounting.py` | 13 | Cash, position, NAV, position flips |
-| `test_overdraw.py` | 20 | A fill never takes cash below zero (S2-14): a market order is priced level by level (the documented -900 case is refused, only the opening part of a flip is charged, own orders are not part of the sweep, a thin book costs what it fills); under batch clearing an order its owner cannot pay for at the clearing price sits out and the auction re-runs (a market buy clearing above its touch price, a limit sell opening a short, a resting ask that cannot cover a better fill), the rest clear at their own price, and random play on seeds that overdrew before never does, with fees off and on |
+| `test_overdraw.py` | 32 | A fill never takes cash below zero (S2-14, S2-15): a market order is priced level by level (the documented -900 case is refused, only the opening part of a flip is charged, own orders are not part of the sweep, a thin book costs what it fills); under batch clearing an order its owner cannot pay for at the clearing price sits out and the auction re-runs (a market buy clearing above its touch price, a limit sell opening a short, a resting ask that cannot cover a better fill), the rest clear at their own price, and random play on seeds that overdrew before never does, with fees off and on |
 | `test_fees.py` | 55 | Exchange fees (04 section 9, S2-3): the taker pays the taker rate and the maker the maker rate, a negative maker rate is a rebate, the fee comes out of NAV exactly, a self-trade and ADL pay nothing, the cash check reserves the fee, bad rates are refused by name, and money is conserved with the exchange's ledger through random play (sequential and batch), a liquidation run, and the callback's episode-end check |
 | `test_cash_check.py` | 20 | Order approval and cash gating; a cancel is never cash-checked, a modify may spend the escrow it releases (S2-13); escrow against a closing order is spendable (S1-5) |
 | `test_unmatched_actions.py` | 15 | A `modify` / `cancel` on a side with nothing resting is counted, per step, in `info` and the record (S4-14); a slot past the count clamps rather than misses |
@@ -116,7 +116,7 @@ Counts re-measured with `--collect-only`.
 | `test_compare.py` | 18 | The encoder comparison driver's aggregation: means and standard deviations across seeds, the separation rule and its three-seed floor, the rendered table and its caveats |
 | `test_export.py` | 20 | `train.export`'s pure half: which module is the winner, the no-champion and foreign-layout messages, and what the written record carries (doc/26 §26.9.2) |
 | `test_lint.py` | 1 | The package is pyflakes-clean; any message fails the suite (S4-6) |
-| **unit total** | **1,289** | |
+| **unit total** | **1,301** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -143,7 +143,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((1,452 tests))
+  root((1,464 tests))
     Simulator
       orderbook 57
         components, matching, invariants
@@ -154,7 +154,8 @@ mindmap
         Hypothesis: any order sequence
       accounting 73
       exchange fees 55
-      no overdraw 20
+      no overdraw 32
+        covering a losing short reserves its loss
         sweeps priced level by level
         batch re-cleared without unaffordable orders
         maker and taker rates, rebates, the exchange ledger
@@ -411,7 +412,7 @@ random actions under a Hypothesis-chosen seed at ticks {1, 0.5, 0.1}: NAV conser
 parsing back to the ledger exactly, finite rewards. Its first run found S3-23 and the modify
 timestamp defect ([16](16_verification_log.md) §16.18).
 
-### 2.7 `test_overdraw.py` (20 tests)
+### 2.7 `test_overdraw.py` (32 tests)
 
 [15](15_findings_and_recommendations.md) S2-14, [04](04_accounting.md) §3, [06](06_action_space.md)
 §8.2. A market order is priced by walking the book: the old documented case (cash 1,000, buy 10
@@ -423,11 +424,15 @@ out and is counted as rejected (and fills when the cash is there), dropping it r
 at their own price, a limit sell opening a short that would clear above its limit lapses as rejected
 rather than resting under a bid, a limit bid left over by a resting ask that sat out lapses instead
 of crossing it (and the next batch still clears), and a resting ask that cannot cover a better fill
-stays put (or gets it, with the cash). Last, random
-play at 3,000 cash on seeds that overdrew before the fix: with fees off and at 100 bps, under both
-clearings, no trader that has not been under water has `cash + cash_on_hold` below zero. A trader
-that has carried an unrealised loss is left out, because closing it realises the loss into cash
-unreserved ([15](15_findings_and_recommendations.md) S2-15).
+stays put (or gets it, with the cash). S2-15 adds the loss a cover realises: a short squeezed past its
+collateral (bought at 10, worth `2 × 100 − 10 × 30 = −100` at 30) cannot be covered, whole or as part
+of a flip, without the cash for that loss on top of what the flip opens; a partial cover, a short not
+past its collateral and a long reserve nothing; and under batch a market cover is checked at the
+clearing price. A resting bid that would cover keeps its loss from later orders, a cover in two pieces
+realises the same loss as one, and the queue-time and clearing-time checks agree at the boundary with
+fees on. Last, random play at 3,000 cash on seeds that overdrew before the fix: with fees off
+and at 100 bps, under both clearings, no trader has `cash + cash_on_hold` below zero and the book is
+never crossed.
 
 ### 2.6 `test_fees.py` (55 tests)
 

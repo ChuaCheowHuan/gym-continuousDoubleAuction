@@ -240,13 +240,12 @@ OVERDREW = {"sequential": [34, 114, 142], "batch": [20, 49, 58, 112, 119]}
 class TestNoFillEverOverdrawsCash:
     """Random play at thin cash, on seeds that overdrew before the fix.
 
-    An overdraw is `cash + cash_on_hold < 0` for a trader that has never held an
-    unrealised loss in the episode. Closing a position that is under water
-    realises the loss into cash while NAV is unchanged, and the cash check does
-    not reserve for it, so liquid cash can fall below zero without any order
-    having been approved at the wrong price - and the shortfall can surface
-    several steps later, when a resting bid fills. That is a separate gap
-    (doc/15 S2-15), not S2-14, so a trader that has been under water is left out.
+    An overdraw is `cash + cash_on_hold < 0` for any trader. Every cause is
+    covered: a sweep priced at the touch, a batch price above the one an order
+    was checked at (S2-14), and the loss a cover realises into cash when a short
+    has been squeezed past its collateral (S2-15, which used to show as a
+    trader that had been under water and was left out of this count). The book
+    must also never be crossed.
     """
 
     @pytest.mark.parametrize("clearing", ["sequential", "batch"])
@@ -261,14 +260,11 @@ class TestNoFillEverOverdrawsCash:
             env.reset(seed=seed)
             for a in env.agents:
                 env.action_spaces[a].seed(seed)
-            underwater = set()
             while True:
                 _, _, dones, truncs, _ = env.step(
                     {a: env.action_spaces[a].sample() for a in env.agents})
                 for t in env.traders:
-                    if t.acc.position_val < 0:
-                        underwater.add(t.ID)
-                    if t.acc.cash + t.acc.cash_on_hold < 0 and t.ID not in underwater:
+                    if t.acc.cash + t.acc.cash_on_hold < 0:
                         overdrawn += 1
                 assert env.fees_collected + sum(t.acc.nav for t in env.traders) \
                     == Decimal(4) * Decimal(env.init_cash)
@@ -276,3 +272,126 @@ class TestNoFillEverOverdrawsCash:
                 if dones["__all__"] or truncs["__all__"]:
                     break
         assert overdrawn == 0
+
+
+def _underwater_short(cash_after, entry=10, squeezed_to=30, lots=10):
+    """A trader short `lots` at `entry` after the price has squeezed to `squeezed_to`.
+
+    The short posted `lots x entry` as collateral, so its position is worth
+    `2 x lots x entry - lots x squeezed_to` - negative once the price passes
+    twice the entry. Covering it settles that value into cash.
+    """
+    lob = OrderBook()
+    t = [Trader(0, 10 ** 6), Trader(1, 10 ** 7), Trader(2, 10 ** 7)]
+    t[1].place_order("limit", "bid", lots, entry, lob, t)
+    t[0].place_order("market", "ask", lots, -1.0, lob, t)            # t0 short at `entry`
+    assert t[0].acc.net_position == -lots
+    t[2].place_order("limit", "ask", 3 * lots, squeezed_to, lob, t)  # liquidity to cover into
+    t[0].acc.mark_to_mkt(t[0].ID, Decimal(squeezed_to))
+    t[0].acc.cash = Decimal(cash_after)
+    return lob, t
+
+
+class TestClosingALosingShortNeedsTheCashForTheLoss:
+    """doc/15 S2-15. Covering a short past its collateral realises a negative
+    `position_val` into cash; the check let the cover through unreserved."""
+
+    def test_the_position_really_is_under_water(self):
+        lob, t = _underwater_short(cash_after=100)
+        assert t[0].acc.position_val == Decimal(-100)
+
+    def test_a_full_cover_without_the_cash_for_the_loss_is_refused(self):
+        lob, t = _underwater_short(cash_after=99)
+        assert not t[0]._order_approved("bid", 10, 30, lob, "limit")
+        assert not t[0]._order_approved("bid", 10, -1.0, lob, "market")
+        t[0].place_order("market", "bid", 10, -1.0, lob, t)
+        assert t[0].acc.net_position == -10 and t[0].acc.num_rejected_step == 1
+
+    def test_the_cash_for_the_loss_is_enough(self):
+        lob, t = _underwater_short(cash_after=100)
+        assert t[0]._order_approved("bid", 10, 30, lob, "limit")
+        t[0].place_order("market", "bid", 10, -1.0, lob, t)
+        assert t[0].acc.net_position == 0
+        assert t[0].acc.cash + t[0].acc.cash_on_hold >= 0
+
+    def test_a_partial_cover_moves_no_loss_and_needs_no_cash(self):
+        """The loss stays in the remaining lots' value until the position is flat."""
+        lob, t = _underwater_short(cash_after=0)
+        assert t[0]._order_approved("bid", 9, -1.0, lob, "market")
+
+    def test_a_flip_needs_the_loss_and_the_new_position(self):
+        lob, t = _underwater_short(cash_after=249)
+        assert not t[0]._order_approved("bid", 15, -1.0, lob, "market")   # 100 + 5 x 30 = 250
+        t[0].acc.cash = Decimal(250)
+        assert t[0]._order_approved("bid", 15, -1.0, lob, "market")
+
+    def test_a_short_not_past_its_collateral_costs_nothing_to_cover(self):
+        lob, t = _underwater_short(cash_after=0, squeezed_to=15)      # worth 2 x 100 - 150 = 50 > 0
+        assert t[0]._order_approved("bid", 10, -1.0, lob, "market")
+
+    def test_a_long_never_has_a_loss_to_reserve(self):
+        lob = OrderBook()
+        t = [Trader(0, 10 ** 6), Trader(1, 10 ** 7)]
+        t[1].place_order("limit", "ask", 10, 100, lob, t)
+        t[0].place_order("market", "bid", 10, -1.0, lob, t)
+        t[1].place_order("limit", "bid", 10, 1, lob, t)               # price collapses
+        t[0].acc.mark_to_mkt(t[0].ID, Decimal(1))
+        t[0].acc.cash = Decimal(0)
+        assert t[0]._order_approved("ask", 10, -1.0, lob, "market")
+
+    def test_a_batch_cover_that_clears_above_its_price_sits_out(self):
+        """A market cover is checked at the clearing price, where the loss is larger."""
+        env = _env()
+        short = env.traders[0]
+        env.traders[1].place_order("limit", "bid", 10, 10, env.LOB, env.traders)
+        short.place_order("market", "ask", 10, -1.0, env.LOB, env.traders)
+        env.traders[2].place_order("limit", "ask", 5, 29, env.LOB, env.traders)
+        env.traders[2].place_order("limit", "ask", 5, 40, env.LOB, env.traders)
+        short.acc.mark_to_mkt(short.ID, Decimal(29))
+        short.acc.cash = Decimal(110)       # 10 @ 29 -> loss 90; 5 @ 29 + 5 @ 40 clears at 40 -> 200
+        _clear(env, [(short, "market", "bid", 10, -1.0)], reference=40)
+        assert short.acc.net_position == -10 and short.acc.num_rejected_step == 1
+        assert _whole(env) and _uncrossed(env)
+
+
+class TestTheLossReserveHoldsAcrossOrders:
+    """The reserve must outlive the order that made it, as the maker fee's does."""
+
+    def test_a_resting_cover_keeps_its_loss_from_a_later_order(self):
+        """A bid that will cover an under-water short owes the loss when it fills."""
+        lob, t = _underwater_short(cash_after=100)          # position_val -100
+        t[0].place_order("limit", "bid", 10, 29, lob, t)    # rests under the asks at 30
+        assert t[0].acc.net_position == -10 and lob.bids.volume == 10
+        # Covering at 29 realises 290 - 200 = 90. 100 of free cash is left, and a
+        # 1-lot opening ask at 30 takes 30 of it, leaving 70: not enough for 90.
+        assert not t[0]._order_approved("ask", 1, 30, lob, "limit")
+        # 10 would leave 90, exactly the loss.
+        assert t[0]._order_approved("ask", 1, 10, lob, "limit")
+
+    def test_the_resting_cover_then_fills_without_overdrawing(self):
+        lob, t = _underwater_short(cash_after=100)
+        t[0].place_order("limit", "bid", 10, 29, lob, t)
+        t[2].place_order("market", "ask", 10, -1.0, lob, t)  # hits the bid
+        assert t[0].acc.net_position == 0
+        assert t[0].acc.cash + t[0].acc.cash_on_hold >= 0
+
+    def test_a_cover_in_two_pieces_realises_the_same_loss_as_one(self):
+        """The check on the last piece uses the basis the first piece left, so
+        splitting a cover neither hides the loss nor charges it twice."""
+        lob, t = _underwater_short(cash_after=100)
+        t[0].place_order("market", "bid", 6, -1.0, lob, t)
+        assert t[0].acc.net_position == -4
+        assert t[0]._order_approved("bid", 4, -1.0, lob, "market")
+        t[0].place_order("market", "bid", 4, -1.0, lob, t)
+        assert t[0].acc.net_position == 0
+        assert t[0].acc.cash + t[0].acc.cash_on_hold >= 0
+
+    def test_the_queue_time_and_clearing_time_checks_agree_at_the_boundary(self):
+        """With fees on, the loss is not a notional: neither check charges a fee on it."""
+        lob, t = _underwater_short(cash_after=100)
+        for tr in t:
+            tr.acc.maker_fee_bps = Decimal(10)
+            tr.acc.taker_fee_bps = Decimal(10)
+        queued = t[0]._order_approved("bid", 10, -1.0, lob, "market")
+        cleared = t[0].can_pay_at_clearing(lob, "bid", 10, 30)
+        assert queued == cleared == True

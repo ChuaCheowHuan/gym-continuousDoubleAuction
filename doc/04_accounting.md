@@ -151,6 +151,21 @@ empty one falls back to the last tape price, then to 1. It used to be `opening_s
 cash 1,000, a market buy of 10 against 1 @ 100 and 9 @ 200 was approved and left cash at −900
 ([15](15_findings_and_recommendations.md) S2-14, `test_overdraw.py`).
 
+A buy that takes a **short** flat, or past flat, also reserves the loss it realises
+(`Trader._loss_on_cover`). Cash moves for the closing part of an order only when the position reaches
+zero: a partial close pays the lots' market value and leaves the result in the value of the lots still
+open, and the last lot settles the whole `position_val` into cash. A long's is its market value, but a
+short posted its notional as collateral and is worth `2 × cost_basis − |position| × price`, which is
+negative once the price passes twice the entry. Covering it then takes that much out of cash, so the
+order needs it on top of anything it opens (a flip), and a trader whose short is under water by more
+than its free cash cannot flatten it with an order; `liquidation` is what removes it
+([15](15_findings_and_recommendations.md) S2-15). A resting bid that would cover the short owes that
+loss when it fills, but its reserve is not escrowed, so later opening orders must leave it in cash
+(`Trader._resting_cover_loss`, bounded by the highest resting limit, the same shape as the resting
+maker fee). The loss is not a notional, so no fee is charged on it, at queue time or at clearing.
+Covering in pieces is no way round the reserve: the final piece is checked against the basis the
+earlier ones left, and the total realised is the same as for one order.
+
 Under `step_clearing: "batch"` the price is not known when the order is queued, so the check there
 is only a first filter; the clearing price is checked again after it is chosen
 ([06](06_action_space.md) §8.2).
