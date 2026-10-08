@@ -3480,3 +3480,29 @@ thing and an open item can be assigned, discussed and closed by a commit.
   `logging` and `needs-decision`; the R items not yet reproduced also carry `question`.
 - **Back-links:** each entry in 15, 10 §8 and 21 links its issue. In 15 the link sits on a line
   under the heading rather than in it, so every existing `#anchor` into the register still resolves.
+
+
+## 61. Exchange fees (S2-3, second half; issue #98)
+
+The reward's cost proxies were fixed earlier (S2-3's first half). What stayed open was a real fee,
+charged against NAV rather than the reward, so market making has revenue and crossing the spread has
+a cost the ledger sees. It is now there, and **off**.
+
+- **Config.** `maker_fee_bps` and `taker_fee_bps`, in `env_defaults.json` and `train_config.json`,
+  both 0, on `TrainConfig` and `train.compare --set`. Basis points of a fill's notional; the taker is
+  the aggressing order, the maker the resting one, and a negative maker rate is a rebate.
+  `taker_fee_bps >= 0` and the pair must sum to `>= 0`, or two agents trading with each other would
+  mint money ([04](04_accounting.md) §9, [18](18_configuration.md) §3.0.4).
+- **Settlement.** `Account.process_acc` takes the fee out of cash after booking the fill, exactly
+  (a decimal shift, no quotient). A batch counter party that arrived in the same batch is still the
+  maker; a self-trade and ADL pay nothing (`fee_role`).
+- **The exchange.** Each account keeps `fees_paid`; `env.fees_collected` is their sum, and
+  `sum(NAV) + fees_collected == starting cash` holds exactly. The callback's episode-end check adds
+  the fees to its sum and its report prints them. Where it cannot read the env's accounts (the carry
+  fallback) it assumes none, which is exact at the shipped rates.
+- **Cash check.** An order reserves the largest fee on top of its notional, so a fill cannot take
+  cash below zero.
+- **Unchanged by default.** At 0 every existing test passes untouched; the layout versions and
+  checkpoints are not affected, since neither the observation nor the action changes.
+- **Tests.** `test_fees.py`, 25 (unit 1,214 -> 1,239; suite 1,402). Borrow cost and funding remain
+  absent.

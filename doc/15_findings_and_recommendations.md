@@ -52,7 +52,7 @@ mindmap
       S2-1 drawdown charged as a level — fixed
       S2-2 observation scales saturate tanh — fixed
       S2-3 cost proxies 10^5 too small — fixed
-        real maker/taker fees still open
+        real maker/taker fees — fixed, opt-in
       S2-4 bankrupt agents never terminated — fixed
       S2-5 self-matching enables mark manipulation — fixed
       S2-6 per-frame normalizer — fixed
@@ -356,7 +356,7 @@ lands inside ±1.2, and inventory exceeds its scale on **0.0%** of agent-steps a
 rather than the formulas, which stay pinned where they were.
 → [05 §7.5](05_observation_space.md#75-feature-scales-differ-by-one-to-two-orders-of-magnitude-after-normalization--fixed)
 
-### S2-3 · Transaction-cost proxies are ~10⁵× too small **[verified, fixed — real fees still open]**
+### S2-3 · Transaction-cost proxies are ~10⁵× too small **[verified, fixed]**
 
 _Tracked in [#98](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/98)._
 
@@ -373,11 +373,16 @@ move NAV at all and one that does moves it by a median 1.9e-03 of starting capit
 penalties sit at 0.5–1% of that. `passive_bonus` is set equal to `trade_penalty`, making a passive
 fill net-free while an aggressive one costs 0.2 bps, which expresses "capture spread" as a price.
 
-**Still open:** these remain *proxies charged against the reward*, not fees charged against NAV.
-Real maker/taker fees in basis points of notional, applied inside settlement so they flow through
-the ledger, would also require relaxing the NAV-conservation assertion to account for them. That
-is a simulator change, not a reward change, and it is unaffected by this fix.
-→ [13 §4](13_perspective_financial_trader.md#4-there-are-no-transaction-costs),
+**Real fees, fixed.** `maker_fee_bps` and `taker_fee_bps` charge each fill a fee in basis points of
+its notional, taken out of cash inside `Account.process_acc` so it flows through the ledger. The
+taker (the aggressing order) pays the taker rate, the maker the maker rate (negative is a rebate);
+a self-trade and ADL pay nothing. Each account keeps `fees_paid` and the exchange's ledger is their
+sum, so conservation is `sum(NAV) + fees == starting cash`, still exact, and the callback's check
+counts the fees. The cash check reserves the largest fee so a fill cannot overdraw. Both rates ship
+at 0, so nothing changes for a run that does not set them; turning them on changes the game
+([04](04_accounting.md) §9, [18](18_configuration.md) §3.0.4, `test_fees.py`). Borrow cost and
+funding remain absent.
+→ [13 §4](13_perspective_financial_trader.md#4-there-are-no-transaction-costs--fixed-opt-in),
 [07 §4.2](07_reward_function.md)
 
 ### S2-4 · Bankrupt agents are never terminated **[verified, fixed]**
@@ -1494,7 +1499,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **1,214 unit tests pass** (plus 163 integration), covering every position-flip path, cash-check edge case, modify-order
+- **1,239 unit tests pass** (plus 163 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 
@@ -1534,7 +1539,7 @@ Roughly two to three weeks of work, ordered so each step unblocks the next.
     the default layout and the level view is kept for comparison
 
 **Phase 4 — market realism (≈3 days)**
-13. Maker/taker fees in bps inside settlement (S2-3)
+13. ~~Maker/taker fees in bps inside settlement (S2-3)~~ — **done**, opt-in (both rates 0)
 13a. Price a market order's whole sweep in the cash check, or cap its fill at what cash covers
     (S2-14)
 14. ~~Self-match prevention; mark to mid (S2-5)~~ — **done**

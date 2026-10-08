@@ -279,7 +279,7 @@ position. Wealth never moved.
 | **No position limit** | Nothing caps `net_position`. Size is bounded only by cash and by the action space's `limit_max_size = 1000` (a full-scale draw is ≈ 500 contracts). |
 | **No per-agent termination on bankruptcy** | **[verified]** — forcing `agent_0.nav = −50` yields `terminateds: {'agent_0': False, …}` while `done_set == {'agent_0'}`. `set_done` records it; `set_all_done` then overwrites every per-agent flag with `False`. The episode only ends when **every** agent is bust. |
 | **No borrow / locate on shorts** | Unlimited short capacity subject only to cash. |
-| **No transaction costs** | No fees, commissions, rebates, borrow cost or funding anywhere in the settlement path. |
+| **No borrow cost or funding** | Exchange fees exist (§9) and ship at 0; there is still no borrow cost on shorts and no funding on inventory. |
 | **No intraday risk limits** | No max loss, no max order size relative to NAV, no fat-finger check. |
 | **Drawdown is punished but not constrained** | The reward taxes it; nothing prevents it. |
 
@@ -405,3 +405,36 @@ trader more before it is flat. Measured under random play at the training config
 and 13% at 30, while the liquidated trader's NAV change between trigger and flat goes from -1.9k to
 -40k and -56k.
 
+
+## 9. Exchange fees
+
+Two config keys, `maker_fee_bps` and `taker_fee_bps`, charge each fill a fee in basis points of its
+notional (`price × quantity`). Both ship at **0**, so nothing changes until a run sets them
+([18](18_configuration.md) §3.0.4).
+
+- **Who pays.** The record's `init_party`, the aggressing order, is the taker and pays
+  `taker_fee_bps`. Its `counter_party`, the resting order, is the maker and pays `maker_fee_bps`.
+  Under `step_clearing: "batch"` a counter party that arrived in the same batch is booked as an
+  `init_party` but is still the maker. A negative maker rate is a rebate.
+- **How.** `Account.process_acc` takes the fee out of `cash` as the last step of booking a fill, so
+  it flows through NAV, the reward's `nav_term` and the drawdown like any other loss. The fee is
+  `(trade_val × bps).scaleb(-4)`, a shift of the decimal point, so it is exact and the ledger still
+  balances to the last digit ([15](15_findings_and_recommendations.md) S3-23).
+- **Where it goes.** Each account keeps `fees_paid`, cleared by `reset_acc`. The exchange's ledger
+  is their sum, `env.fees_collected`, and money is conserved with it counted:
+  `sum(NAV) + fees_collected == starting cash`. The episode-end check in the callback adds it to
+  its sum, and its report prints the fees when there are any.
+- **What pays nothing.** A self-trade (a market order meeting the trader's own resting order never
+  reaches `process_acc`), and ADL, a transfer at the mark that the exchange imposes
+  (`fee_role='none'`). The forced close in the book is an ordinary fill and pays.
+- **Cash check.** §3's check reserves the largest fee on top of an order's notional, so an order
+  that would leave `cash` negative after its fee is refused. With fees at 0 it is the check as
+  before.
+- **Limits on the rates.** `taker_fee_bps >= 0`, and the pair must sum to `>= 0`: a rebate larger
+  than the taker fee would let two agents trading with each other mint money. Anything else is a
+  `ValueError` naming the key.
+
+The proxies in the reward ([07](07_reward_function.md)) are separate and stay: they price the
+*act* of trading in reward units whatever the fee, and the fee prices it in the ledger. Turning fees
+on changes the game, so compare with `train.compare --set taker_fee_bps=2 --set maker_fee_bps=-0.5`
+before reading anything into a result.

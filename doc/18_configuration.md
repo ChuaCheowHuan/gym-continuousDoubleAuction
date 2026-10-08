@@ -237,6 +237,18 @@ bankruptcy. Not `"none"` for the off switch: `train.compare --set` reads `none` 
 change the game rather than the layout, so a checkpoint restores across them - and a checkpoint
 written before they existed restores with the env defaults, i.e. with liquidation on.
 
+### 3.0.4 Exchange fees: `maker_fee_bps`, `taker_fee_bps`
+
+| Key | Default | Meaning |
+|---|---|---|
+| `taker_fee_bps` | `0` | Fee the aggressing order pays, in basis points of a fill's notional. Must be >= 0 |
+| `maker_fee_bps` | `0` | Fee the resting order pays; negative is a rebate. The pair must sum to >= 0 |
+
+Taken out of the trader's cash at the fill and collected by the exchange: `sum(NAV) + env.fees_collected`
+equals the starting cash ([04](04_accounting.md) §9). Both ship at 0, so a fresh run is unchanged;
+turning them on changes the game, so compare with `train.compare --set taker_fee_bps=2`. They do not
+change the observation or action layout, so a checkpoint restores across them.
+
 ### 3.1 Order sizing
 
 | Key | Value | Meaning |
