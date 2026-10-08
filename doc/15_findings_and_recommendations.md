@@ -650,7 +650,10 @@ _Tracked in [#109](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/
 `Trader._order_approved` prices a market order's opening size at the best opposite price. A sweep
 pays deeper levels too, so the check passes an order the trader cannot afford. With cash 1,000, a
 market buy of 10 against asks of 1 @ 100 and 9 @ 200 is approved and leaves cash at **−900**
-([16](16_verification_log.md) §16.27). Batch clearing checks the same way. Not fixed in the
+([16](16_verification_log.md) §16.27). Batch clearing checks the same way, and it shows under random play with
+fees off: 22 of 12,000 agent-steps (150 episodes, 4 agents, 3,000 cash, `liquidation: off`) ended with
+`cash + cash_on_hold` below zero, worst −82; the same run with fees on gave 15, worst −144, and
+sequential clearing gave none in 2,000 steps either way (2026-10-08). Not fixed in the
 2026-10-07 pass: pricing the sweep, or capping the fill at what cash covers, changes which orders
 are approved and so the game the policy plays, which is a decision rather than a bug fix.
 
@@ -1499,7 +1502,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **1,249 unit tests pass** (plus 163 integration), covering every position-flip path, cash-check edge case, modify-order
+- **1,269 unit tests pass** (plus 163 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 

@@ -3511,5 +3511,12 @@ a cost the ledger sees. It is now there, and **off**.
   accounts and fees are on, the NAV check is skipped with a warning instead of reporting the fees as
   a violation. In batch mode the same-batch taker is the record's initiator, which is arbitrary
   under unequal rates (R-1); that is documented rather than changed.
-- **Tests.** `test_fees.py`, 35 (unit 1,214 -> 1,249; suite 1,412). Borrow cost and funding remain
+- **Second review** (PR #227). `Account` validates the rates itself (`validate_fee_rates`, `MAX_FEE_BPS`)
+  instead of only the env, so a caller building accounts directly cannot pass NaN or a negative taker
+  rate. An episode the NAV check skipped is counted in its own metric, `nav_conservation_unchecked`,
+  rather than passing as clean, and the "fees are on" test accepts any numeric spelling of a rate.
+  Two review findings did not reproduce: a closing-only or flipping order drawing cash below zero
+  (sequential clearing: 0 negative agent-steps of 2,000, fees on or off). The negative cash seen in
+  batch clearing is S2-14's market-sweep gap and occurs with fees off (22 of 12,000 agent-steps).
+- **Tests.** `test_fees.py`, 55 (unit 1,214 -> 1,269; suite 1,432). Borrow cost and funding remain
   absent.

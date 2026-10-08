@@ -429,17 +429,21 @@ notional (`price × quantity`). Both ship at **0**, so nothing changes until a r
   its sum, and its report prints the fees when there are any.
 - **What pays nothing.** A self-trade (a market order meeting the trader's own resting order never
   reaches `process_acc`), and ADL, a transfer at the mark that the exchange imposes
-  (`fee_role='none'`). The forced close in the book is an ordinary fill and pays.
+  (`fee_role='none'`). The forced close in the book is an ordinary fill and pays, including each slice of a
+  `gradual_adl` close, so a liquidated trader's loss to the bankruptcy price includes the fee.
 - **Cash check.** §3's check reserves the largest fee on top of an order's notional, and also the
   maker fee every resting order of the trader's will owe if it fills (`Trader._resting_maker_fees`),
   because a resting order escrows its notional but not its fee, so that fee sits in cash until the
   fill. Without the second term a later order could spend it and the fee would be charged below
-  zero. The order a quote replaces is not counted twice, and a rebate owes nothing. With fees at 0
+  zero. The check is on the order being placed, so a closing-only order is not charged the reserve:
+  its fill returns proceeds that cover its own fee. The order a quote replaces is not counted twice, and a rebate owes nothing. With fees at 0
   it is the check as before.
 - **Limits on the rates.** `taker_fee_bps >= 0`, and the pair must sum to `>= 0`: a rebate larger
   than the taker fee would let two agents trading with each other mint money. Each rate is within
   ±1,000 bps (`MAX_FEE_BPS`), a tenth of the notional, which catches a percentage typed as basis
-  points. Anything else is a `ValueError` naming the key.
+  points. Anything else is a `ValueError` naming the key, raised by `Account` itself
+  (`validate_fee_rates`) so a caller that builds accounts without the env cannot get a NaN or a
+  money-minting schedule through.
 
 The proxies in the reward ([07](07_reward_function.md)) are separate and stay: they price the
 *act* of trading in reward units whatever the fee, and the fee prices it in the ledger. Turning fees
