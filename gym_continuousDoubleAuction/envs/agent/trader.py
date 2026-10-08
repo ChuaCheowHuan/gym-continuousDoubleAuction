@@ -229,6 +229,94 @@ class Trader:
 
         return total
 
+    def _opening_size(self, LOB, side: str, size: int,
+                      exclude_order_id: Optional[int] = None) -> Tuple[int, int]:
+        """How much of an order of `size` on `side` opens risk, and how much closes.
+
+        Returns `(opening, closable)`. Scenario 1: the order is on the same
+        side as the position (or the trader is flat), so all of it opens.
+        Scenario 2: it is on the opposite side, and `closable` is the position
+        NOT already claimed by this trader's own resting orders on this side,
+        which is the whole point of this branch. Netting against
+        `abs(net_pos)` alone let every resting order net against the *same*
+        lots, so N individually-"closing" orders were each waved through
+        against one position and the cash check could be bypassed entirely by
+        layering them across price levels. Measured before this: a trader long
+        10 with `cash == 0` rested ten 10-lot asks - all approved - and filled
+        into a 90-lot short having never been refused. That is doc/15 S1-5.
+        """
+        net_pos = float(self.acc.net_position)
+        if (side == 'bid' and net_pos >= 0) or (side == 'ask' and net_pos <= 0):
+            return size, 0
+        resting = self._resting_exposure(LOB, side, exclude_order_id=exclude_order_id)
+        closable = max(0, int(abs(net_pos)) - resting)
+        return max(0, size - closable), closable
+
+    def _sweep_cost(self, LOB, side: str, size: int, skip: int) -> Tuple[Decimal, int]:
+        """What a market order of `size` pays for the contracts after the first `skip`.
+
+        The sweep takes the best opposite price first and every level after it
+        until `size` is filled or the book runs out, so the cost of an order is
+        the sum over the levels it reaches, not `size` x the touch. The first
+        `skip` contracts are the ones that only close a position (they return
+        cash rather than spend it), so only the rest are charged. This trader's
+        own resting orders are not part of the sweep: self-match prevention
+        cancels them before the order meets the book.
+
+        Returns `(cost, filled)`: `filled` is how many contracts the book can
+        supply, which is less than `size` on a thin book (the rest lapses).
+        """
+        tree = LOB.asks if side == 'bid' else LOB.bids
+        levels = list(tree.price_map.items())
+        if side == 'ask':
+            levels.reverse()               # best bid first
+        remaining, seen, cost = size, 0, Decimal(0)
+        for price, order_list in levels:
+            available = sum(int(o.quantity) for o in order_list if o.trade_id != self.ID)
+            if available <= 0:
+                continue
+            take = min(remaining, available)
+            cost += max(0, seen + take - max(skip, seen)) * price
+            seen += take
+            remaining -= take
+            if remaining <= 0:
+                break
+        return cost, seen
+
+    def can_pay_at_clearing(self, LOB, side: str, size: int, price,
+                            resting_limit=None, resting_order_id: Optional[int] = None) -> bool:
+        """Whether this trader can pay for a batch fill at the clearing `price`.
+
+        `_order_approved` runs when an order is queued, at a price the order
+        brought with it; a batch fills everything at one price that is only
+        known afterwards, and for the contracts that open risk it can be
+        higher than the price the order was checked at. A market order has no
+        price of its own, a limit sell opening a short pays its notional in
+        cash at the clearing price rather than at its limit, and a resting ask
+        that fills above its limit owes the difference (its escrow was posted
+        at the limit). A bid never pays more than its limit, so a resting bid
+        always passes.
+
+        `resting_limit` / `resting_order_id` say the order is already on the
+        book, with its escrow posted at that limit; otherwise nothing is held
+        for it yet. The test is `_order_approved`'s own, with the clearing
+        price in place of the one it was checked at.
+        """
+        price = Decimal(str(price))
+        if resting_limit is not None and side == 'bid':
+            return True
+        opening, _ = self._opening_size(LOB, side, size, exclude_order_id=resting_order_id)
+        if opening <= 0:
+            return True
+        if resting_limit is None:
+            need = opening * price
+        else:
+            need = opening * max(price - Decimal(str(resting_limit)), Decimal(0))
+        need += need * self.acc.max_fee_rate
+        need += self._resting_maker_fees(LOB)
+        funds = self.acc.cash + self._closing_escrow(LOB, exclude_order_id=resting_order_id)
+        return funds >= need
+
     def _resting_maker_fees(self, LOB, exclude_order_id: Optional[int] = None) -> Decimal:
         """The maker fee this trader's resting orders will owe if they all fill.
 
@@ -374,43 +462,23 @@ class Trader:
         )
 
         # Determine how much of the order is "opening" a new/larger position
-        net_pos = float(self.acc.net_position)
-        
-        # Scenario 1: Order is on the same side as current position (Increasing)
-        if (side == 'bid' and net_pos >= 0) or (side == 'ask' and net_pos <= 0):
-            opening_size = size
-        # Scenario 2: Order is on the opposite side (Decreasing or Flipping)
-        #
-        # `closable` is the position NOT already claimed by this trader's own
-        # resting orders on this side, and it is the whole point of this
-        # branch. Netting against `abs(net_pos)` alone let every resting order
-        # net against the *same* lots, so N individually-"closing" orders were
-        # each waved through against one position and the cash check could be
-        # bypassed entirely by layering them across price levels. Measured
-        # before this: a trader long 10 with `cash == 0` rested ten 10-lot asks
-        # - all approved - and filled into a 90-lot short having never been
-        # refused. That is doc/15 S1-5.
-        else:
-            resting = self._resting_exposure(LOB, side,
-                                             exclude_order_id=replaced_id)
-            closable = max(0, int(abs(net_pos)) - resting)
-            opening_size = max(0, size - closable)
+        opening_size, closable = self._opening_size(LOB, side, size,
+                                                    exclude_order_id=replaced_id)
 
         # If we are only closing/decreasing a position, no cash check is needed
         if opening_size <= 0:
             return True
 
-        # Opening/Increasing portion requires cash check
-        # For market orders, use best available price as estimate
+        # Opening/Increasing portion requires cash check. A market order pays
+        # every level it sweeps, not the touch (doc/15 S2-14): walk the book
+        # for the contracts that open, after the ones that only close.
         if price == -1.0:
-            if side == 'bid':
-                est_price = LOB.get_best_ask() or (LOB.tape[-1]['price'] if LOB.tape else 1)
-            else:
-                est_price = LOB.get_best_bid() or (LOB.tape[-1]['price'] if LOB.tape else 1)
+            order_val, filled = self._sweep_cost(LOB, side, size, skip=size - opening_size)
+            if filled == 0:                 # nothing to sweep: the last print is the estimate
+                est_price = LOB.tape[-1]['price'] if LOB.tape else 1
+                order_val = Decimal(str(opening_size)) * Decimal(str(est_price))
         else:
-            est_price = price
-
-        order_val = Decimal(str(opening_size)) * Decimal(str(est_price))
+            order_val = Decimal(str(opening_size)) * Decimal(str(price))
         # An exchange fee comes out of cash when the order fills, so the check
         # reserves the largest one on top of the notional: otherwise a trader
         # with exactly the notional is approved and is then charged below zero.
