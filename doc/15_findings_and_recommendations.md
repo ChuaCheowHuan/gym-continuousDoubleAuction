@@ -48,7 +48,7 @@ mindmap
       S1-4 bare env could not trade — fixed
       S1-5 cash check bypassable — fixed
         closing-side escrow now spendable — fixed
-    S2 Major — all fixed but S2-15
+    S2 Major — all fixed
       S2-1 drawdown charged as a level — fixed
       S2-2 observation scales saturate tanh — fixed
       S2-3 cost proxies 10^5 too small — fixed
@@ -64,7 +64,7 @@ mindmap
       S2-12 gymnasium.make raised — fixed
       S2-13 cancel was cash-checked — fixed
       S2-14 market sweep cash-checked at the touch — fixed
-      S2-15 closing a losing position needs no cash — open
+      S2-15 closing a losing position needs no cash — fixed
     S3 Moderate
       action space
         S3-1 half of size_mean is a no-op
@@ -676,24 +676,33 @@ worst −82 ([16](16_verification_log.md) §16.28).
 Both change which orders are approved, so they change the game the policy plays; they are what the
 cash check was always meant to do. `test_overdraw.py`.
 
-### S2-15 · Closing a losing position realises the loss into cash without a cash check **[verified, open]**
+### S2-15 · Closing a losing position realises the loss into cash without a cash check **[verified, fixed]**
 
 _Tracked in [#228](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/228)._
 
-Found while fixing S2-14. `Trader._order_approved` returns `True` at once for an order that only
-closes, and charges a flip only for its opening part, but closing a position that is under water
-realises its loss into cash (NAV is unchanged; the loss moves from `position_val` to `cash`). So a
-trader with little cash can cover a losing position and end with `cash + cash_on_hold` below zero, and
-the shortfall can surface steps later when a resting bid fills. Reproduced under random play (seed
-114): short 1 lot with `position_val` −574 and cash 3,270; a crossing limit bid of 91 @ 35 is approved
-(its 90 opening contracts cost 3,150), covers the short at 34 and opens a long, and `cash` goes to −433
-with NAV still 2,696; five steps later a fill takes `cash + cash_on_hold` from 652 to −83.
+Found while fixing S2-14. `Trader._order_approved` returned `True` at once for an order that only
+closes, and charged a flip only for its opening part, but covering a short that is under water
+realises its loss into cash (NAV is unchanged; the loss moves from `position_val` to `cash`). Cash
+moves for the closing part of an order only when the position reaches zero: a partial close pays the
+lots' market value and leaves the result in the value of the lots still open, and the final lot
+settles the whole `position_val` into cash. A long's is its market value, never negative; a short
+posted its notional as collateral and is worth `2 × cost_basis − |position| × price`, which turns
+negative once the price passes twice the entry. So a trader with little cash could cover a losing
+short, or flip out of it, and end with `cash + cash_on_hold` below zero, with the shortfall surfacing
+steps later when a resting bid filled. Reproduced under random play (seed 114): short 1 lot with
+`position_val` −574 and cash 3,270; a crossing limit bid of 91 @ 35 is approved (its 90 opening
+contracts cost 3,150), covers the short at 34 and opens a long, and `cash` goes to −433 with NAV
+still 2,696; five steps later a fill takes `cash + cash_on_hold` from 652 to −83. Counting every
+trader, the unfixed code overdrew 32 and 61 of 51,200 agent-steps under sequential clearing (fees off
+and at 100 bps; worst −293 and −340), and none under batch ([16](16_verification_log.md) §16.29).
 
-Not fixed: reserving for a realised loss changes which closing orders are approved (a trader under
-water could no longer flatten without cash), which is a decision. The options are a liquidity margin
-call, which `liquidation` does not provide today (it triggers on NAV), or refusing a closing order
-whose realised loss exceeds free cash. `test_overdraw.py` leaves traders that have been under water
-out of its stress test for this reason.
+**Fixed.** A buy that takes a short flat or past flat now reserves the loss it realises
+(`Trader._loss_on_cover`: `max(0, cost of the covering lots − 2 × cost_basis)`, priced at the limit,
+by the sweep for a market order, or at the clearing price under batch) on top of whatever it opens.
+A partial cover, a short not past its collateral and any sell reserve nothing. The consequence is
+the one the check is for: a trader whose short is under water by more than its free cash can no longer
+flatten it with an order (it takes a liquidation, `liquidation`, to remove it). The alternative, a
+liquidity margin call, was not built. `test_overdraw.py`.
 
 ---
 
@@ -1540,7 +1549,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **1,289 unit tests pass** (plus 163 integration), covering every position-flip path, cash-check edge case, modify-order
+- **1,297 unit tests pass** (plus 163 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 
@@ -1582,8 +1591,8 @@ Roughly two to three weeks of work, ordered so each step unblocks the next.
 **Phase 4 — market realism (≈3 days)**
 13. ~~Maker/taker fees in bps inside settlement (S2-3)~~ — **done**, opt-in (both rates 0)
 13a. ~~Price a market order's whole sweep in the cash check (S2-14)~~ — **done**, and batch clearing
-    re-clears without the orders its owners cannot pay for. **Open:** reserve cash for the loss a
-    closing order realises (S2-15)
+    re-clears without the orders its owners cannot pay for. The loss a cover realises is reserved too
+    (S2-15)
 14. ~~Self-match prevention; mark to mid (S2-5)~~ — **done**
 15. ~~Per-episode desk metrics through `metrics_logger` (S3-9)~~ — **partly done**: NAV spread,
     drawdown, inventory, trade count and maker ratio are metrics ([11 §1.2](11_logging_and_observability.md)).

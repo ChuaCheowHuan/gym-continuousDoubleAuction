@@ -456,7 +456,8 @@ together against the resting book at **one uniform price** (`OrderBook.clear_bat
 - **no fill overdraws cash.** The cash check ran when an order was queued, and the price is only
   known now: a market order, a limit sell opening a short (a short pays its notional in cash, at the
   clearing price rather than its limit) and a resting ask that fills above the limit its escrow was
-  posted at can all cost more at it. Once the price is chosen the engine asks the env
+  posted at can all cost more at it, and so can the loss a market buy realises by covering a squeezed
+  short ([04](04_accounting.md) §3). Once the price is chosen the engine asks the env
   (`Trader.can_pay_at_clearing`) whether each order that would trade can pay for the fill there. An
   order that cannot sits out and the auction runs again without it, until everyone left can pay: a
   queued order that sat out lapses, market or limit, and is counted as rejected (resting a limit at

@@ -3550,3 +3550,26 @@ fill at was known.
   cash, and the cash check does not reserve for it, so `cash + cash_on_hold` can still go below zero
   with NAV unchanged. Reserving for it changes which closing orders are approved, which is a decision.
 - **Tests.** `test_overdraw.py`, 20 (unit 1,269 -> 1,289; suite 1,452).
+
+
+## 63. Covering a losing short is cash-checked for the loss it realises (S2-15)
+
+Cash moves for the closing part of an order only when the position reaches zero, and then it moves
+by the whole `position_val`. A long's is its market value; a short, which posted its notional as
+collateral, is worth `2 x cost_basis - |position| x price` and goes negative once the price passes
+twice the entry. The cash check returned `True` for an order that only closes and charged a flip only
+for what it opens, so covering a squeezed short could take `cash + cash_on_hold` below zero with NAV
+unchanged, and the shortfall could surface steps later when a resting bid filled.
+
+- **The reserve.** A buy that takes a short flat or past flat adds `max(0, cost of the covering lots - 2 x
+  cost_basis)` to what it must be able to pay (`Trader._loss_on_cover`): at the limit, by the sweep for a
+  market order, and at the clearing price under batch (`can_pay_at_clearing`). A partial cover, a short not
+  past its collateral and any sell reserve nothing.
+- **The consequence, stated.** A trader whose short is under water by more than its free cash can no
+  longer flatten it with an order. This is the cash check doing what it is for; the alternative, a
+  liquidity margin call, was not built, and `liquidation` (which triggers on NAV) is what removes such a
+  trader. Orders that do not cover a squeezed short are not affected.
+- **Effect.** 32 and 61 overdrawn agent-steps of 51,200 under sequential clearing (fees off and at 100 bps;
+  worst -293 and -340) become 0, with batch at 0 on both sides ([16](16_verification_log.md) §16.29).
+  The stress test no longer leaves traders that have been under water out.
+- **Tests.** `test_overdraw.py`, 28 (unit 1,214 -> 1,297; suite 1,460).
