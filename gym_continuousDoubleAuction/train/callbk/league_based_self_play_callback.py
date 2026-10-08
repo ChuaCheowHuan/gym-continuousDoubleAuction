@@ -51,6 +51,12 @@ MODULE_EPISODE_RETURNS_MEAN = "module_episode_returns_mean"
 #: with no window makes it a per-iteration count across every runner.
 NAV_VIOLATIONS_METRIC = "nav_conservation_violations"
 
+#: Episodes whose NAV conservation could not be checked: fees are on and the
+#: finished env's accounts could not be read, so the sum is short by the fees
+#: and any answer would be a guess. Counted apart from violations (a skip is
+#: not a pass) so a run that is never being checked is visible.
+NAV_UNCHECKED_METRIC = "nav_conservation_unchecked"
+
 
 def _new_tally() -> dict:
     """A fresh per-episode tally.
@@ -670,8 +676,12 @@ class SelfPlayCallback(RLlibCallback):
             rates += [config.get("maker_fee_bps", 0), config.get("taker_fee_bps", 0)]
         env_obj = getattr(env, "unwrapped", env)
         rates += [getattr(env_obj, "maker_fee_bps", 0), getattr(env_obj, "taker_fee_bps", 0)]
-        return any(isinstance(r, (int, float)) and not isinstance(r, bool) and r != 0
-                   for r in rates)
+        def on(rate):
+            try:
+                return not isinstance(rate, bool) and Decimal(str(rate)) != 0
+            except Exception:       # None, or anything that is not a number
+                return False
+        return any(on(r) for r in rates)
 
     @staticmethod
     def _ledger_fees(env, env_index, num_agents):
@@ -861,6 +871,7 @@ class SelfPlayCallback(RLlibCallback):
                     "not be read, so NAV conservation was not checked.", episode.id_)
                 if metrics_logger:
                     metrics_logger.log_value(NAV_VIOLATIONS_METRIC, 0.0, reduce="sum")
+                    metrics_logger.log_value(NAV_UNCHECKED_METRIC, 1.0, reduce="sum")
                 return
             fees = Decimal(0)
         error = total_nav + fees - total_initial_cash
