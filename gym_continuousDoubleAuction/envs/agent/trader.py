@@ -40,9 +40,11 @@ def _normalise_trade_sizes(trades):
 
 
 class Trader:
-    def __init__(self, ID: int, cash=env_default("init_cash")) -> None:
+    def __init__(self, ID: int, cash=env_default("init_cash"),
+                 maker_fee_bps=env_default("maker_fee_bps"),
+                 taker_fee_bps=env_default("taker_fee_bps")) -> None:
         self.ID = ID # trader unique ID
-        self.acc = Account(ID, cash)
+        self.acc = Account(ID, cash, maker_fee_bps, taker_fee_bps)
 
     def place_order(self, type: str, side: Optional[str], size: int, price: float,
                     LOB, agents: Sequence["Trader"], slot: int = 0) -> Tuple[List[dict], Any]:
@@ -388,6 +390,10 @@ class Trader:
             est_price = price
 
         order_val = Decimal(str(opening_size)) * Decimal(str(est_price))
+        # An exchange fee comes out of cash when the order fills, so the check
+        # reserves the largest one on top of the notional: otherwise a trader
+        # with exactly the notional is approved and is then charged below zero.
+        order_val += order_val * self.acc.max_fee_rate
 
         # `released` is the escrow the replaced order gives back on the same
         # call, so it is as spendable as cash for this quote. Without it a
@@ -709,7 +715,7 @@ class Trader:
                     if other is not None:
                         view = {'price': trade['price'], 'quantity': trade['quantity'],
                                 'init_party': counter}
-                        other.acc.process_acc(view, 'init_party')
+                        other.acc.process_acc(view, 'init_party', fee_role='maker')
         self.acc.order_in_book_passive_party(order_in_book)
         return 0
 

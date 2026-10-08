@@ -662,6 +662,30 @@ class SelfPlayCallback(RLlibCallback):
             )
 
     @staticmethod
+    def _ledger_fees(env, env_index, num_agents):
+        """The exchange's fee ledger from the finished env's accounts, or None.
+
+        Money is conserved with the fees counted: the traders' NAVs plus what
+        they paid the exchange equal the starting cash. An account with no
+        `fees_paid` (a test double, an env without fees) paid none.
+        """
+        envs = getattr(env, "envs", None)
+        if envs is not None:
+            try:
+                env = envs[env_index]
+            except (IndexError, TypeError):
+                return None
+        env = getattr(env, "unwrapped", env)
+        traders = getattr(env, "traders", None)
+        if not traders or len(traders) != num_agents:
+            return None
+        try:
+            return sum((Decimal(str(getattr(t.acc, "fees_paid", 0))) for t in traders),
+                       Decimal(0))
+        except AttributeError:
+            return None
+
+    @staticmethod
     def _ledger_navs(env, env_index, last_info, num_agents):
         """Every trader's NAV from the finished env's own accounts, or None.
 
@@ -812,7 +836,13 @@ class SelfPlayCallback(RLlibCallback):
                 total_nav += nav
                 per_agent.append(f"  {agent_key} NAV: {nav:,.2f}{note}")
 
-        error = total_nav - total_initial_cash
+        # Fees leave the traders for the exchange, so they are part of the sum.
+        # They are only readable from the env's own accounts; without them
+        # (the carry fallback) none are assumed, which is exact for the
+        # shipped rates of 0.
+        fees = (self._ledger_fees(env, env_index, num_agents) if ledger is not None else None) \
+            or Decimal(0)
+        error = total_nav + fees - total_initial_cash
         # Inclusive: with the comparison exact, "within tolerance" includes the
         # boundary, which is what makes nav_tolerance=0 mean "conservation must
         # be exact" rather than "every episode is a violation". At the default
@@ -849,8 +879,9 @@ class SelfPlayCallback(RLlibCallback):
             + per_agent
             + [
                 f"  Total NAV: {total_nav:,.2f}",
-                f"  Expected total initial cash: {total_initial_cash:,.2f}",
             ]
+            + ([f"  Exchange fees collected: {fees:,.2f}"] if fees else [])
+            + [f"  Expected total initial cash: {total_initial_cash:,.2f}"]
         )
 
         if conserved:

@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import logging
 
 import numpy as np
@@ -8,6 +10,7 @@ from ray.rllib.env.multi_agent_env import MultiAgentEnv
 
 from .exchg.exchg_helper import Exchg_Helper
 from .agent.trader import Trader
+from .exchg.liquidation_helper import _is_finite_number
 from ..config_loader import env_default
 from ..logging_setup import get_logger
 
@@ -33,6 +36,24 @@ class continuousDoubleAuctionEnv(
         # and a bare env picks up the standalone defaults from the JSON.
         self.num_of_agents = self._cfg("num_of_agents")
         init_cash = self._cfg("init_cash")
+        # Exchange fees in basis points of a fill's notional (doc/15 S2-3).
+        # Validated here, where the accounts are built. A negative maker rate
+        # is a rebate; the pair must not pay out more than it takes in, or two
+        # agents trading with each other would mint money.
+        self.maker_fee_bps = self._cfg("maker_fee_bps")
+        self.taker_fee_bps = self._cfg("taker_fee_bps")
+        for key, value in (("maker_fee_bps", self.maker_fee_bps),
+                           ("taker_fee_bps", self.taker_fee_bps)):
+            if not _is_finite_number(value):
+                raise ValueError(f"{key} must be a finite number; got {value!r}.")
+        if self.taker_fee_bps < 0:
+            raise ValueError(f"taker_fee_bps must be >= 0; got {self.taker_fee_bps!r}.")
+        if self.maker_fee_bps + self.taker_fee_bps < 0:
+            raise ValueError(
+                f"maker_fee_bps + taker_fee_bps must be >= 0, or a fill pays out more "
+                f"than it takes in; got {self.maker_fee_bps!r} and {self.taker_fee_bps!r} "
+                f"(maker_fee_bps / taker_fee_bps)."
+            )
         tick_size = self._cfg("tick_size")
         mark_price_source = self._cfg("mark_price_source")
         tape_display_length = self._cfg("tape_display_length")
@@ -122,7 +143,8 @@ class continuousDoubleAuctionEnv(
         self.is_render = is_render
 
         # list of agents or traders
-        self.traders = [Trader(ID, init_cash) for ID in range(0, self.num_of_agents)]
+        self.traders = [Trader(ID, init_cash, self.maker_fee_bps, self.taker_fee_bps)
+                        for ID in range(0, self.num_of_agents)]
 
         # Agent IDs. `agents` / `possible_agents` are built from a sorted list
         # rather than from the set, because iteration order of a set of strings
@@ -215,6 +237,16 @@ class continuousDoubleAuctionEnv(
         return self.observation_spaces[agent_id]
         
     # Updated reset method to return proper format for new API
+    @property
+    def fees_collected(self):
+        """The exchange's ledger: every fee the traders have paid this episode.
+
+        Money is conserved with it counted: `sum(NAV) + fees_collected` equals
+        the starting cash. A rebate makes an account's share negative, so the
+        total can be smaller than the fees any one trader paid.
+        """
+        return sum((t.acc.fees_paid for t in self.traders), Decimal(0))
+
     def reset(self, *, seed=None, options=None):
         # Call parent reset if it exists.
         #

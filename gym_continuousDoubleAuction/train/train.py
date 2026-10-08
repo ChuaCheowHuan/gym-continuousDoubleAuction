@@ -190,6 +190,11 @@ class TrainConfig:
     # "gradual_adl" only: the most steps a close-out may take before ADL
     # takes the remainder.
     liquidation_horizon: int = _default("liquidation_horizon")
+    # Exchange fees in basis points of a fill's notional (doc/04 section 9): the
+    # taker pays taker_fee_bps, the maker maker_fee_bps (negative is a rebate).
+    # Both 0 by default.
+    maker_fee_bps: float = _default("maker_fee_bps")
+    taker_fee_bps: float = _default("taker_fee_bps")
 
     # Bounds of the per-episode price anchor, drawn as randint(min, max) in
     # reset(). These were readable by the env but had no TrainConfig field, so
@@ -546,6 +551,8 @@ class TrainConfig:
             "liquidation": self.liquidation,
             "maintenance_margin": self.maintenance_margin,
             "liquidation_horizon": self.liquidation_horizon,
+            "maker_fee_bps": self.maker_fee_bps,
+            "taker_fee_bps": self.taker_fee_bps,
             "initial_price_min": self.initial_price_min,
             "initial_price_max": self.initial_price_max,
             "min_size": self.min_size,

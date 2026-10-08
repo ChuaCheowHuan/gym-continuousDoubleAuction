@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from .cash_processor import Cash_Processor
 from .calculate import Calculate
@@ -13,9 +13,21 @@ from tabulate import tabulate
 logger = get_logger(__name__)
 
 class Account(Calculate, Cash_Processor):
-    def __init__(self, ID: int, cash=env_default("init_cash")) -> None:
+    def __init__(self, ID: int, cash=env_default("init_cash"),
+                 maker_fee_bps=env_default("maker_fee_bps"),
+                 taker_fee_bps=env_default("taker_fee_bps")) -> None:
         self.ID = ID
         self.cash = Decimal(cash)
+        # Exchange fees, in basis points of a fill's notional (doc/15 S2-3).
+        # Rates belong to the account for its life: `reset_acc` clears what
+        # was paid, not what is charged. A negative maker rate is a rebate.
+        self.maker_fee_bps = Decimal(str(maker_fee_bps))
+        self.taker_fee_bps = Decimal(str(taker_fee_bps))
+        # Cumulative fees this account has paid this episode (negative if it
+        # has net received rebates). The exchange's ledger is the sum of these
+        # over all accounts, which is what keeps money conserved:
+        # sum(nav) + sum(fees_paid) == starting cash.
+        self.fees_paid = Decimal(0)
         # nav is used to calculate P&L & r per t step
         self.cash_on_hold = Decimal(0) # cash deducted for placing order = cash - value of live order in LOB
         self.position_val = Decimal(0) # value of net_position
@@ -125,6 +137,7 @@ class Account(Calculate, Cash_Processor):
         self.init_nav = Decimal(cash) # starting nav @t = 0
         self.nav = Decimal(cash) # nav @t (nav @ end of a single t-step)
         self.prev_nav = Decimal(cash) # nav @t-1
+        self.fees_paid = Decimal(0) # the rates stay; what was paid does not
         # assuming only one ticker (1 type of contract)
         self.net_position = 0 # number of contracts currently holding long (positive) or short (negative)
         self.cost_basis = Decimal(0) # exact sum of trade values; see __init__
@@ -318,7 +331,46 @@ class Account(Calculate, Cash_Processor):
                 self.net_position += trade_quantity
         return 0
 
-    def process_acc(self, trade: Dict[str, Any], party: str) -> int:
+    @property
+    def max_fee_rate(self) -> Decimal:
+        """The largest fee this account can be charged, as a fraction of notional.
+
+        What the cash check reserves on top of an order's notional so that a
+        fill's fee can never take cash below zero. 0 when no fee is positive.
+        """
+        return max(self.maker_fee_bps, self.taker_fee_bps, Decimal(0)).scaleb(-4)
+
+    def _charge_fee(self, trade_val: Decimal, fee_role: str) -> None:
+        """Take the fee for one fill out of cash and record it.
+
+        `scaleb` shifts the decimal point, so the fee is exact and the
+        exchange's ledger balances to the last digit: there is no quotient
+        here to round (doc/15 S3-23).
+        """
+        if fee_role == 'none':
+            return
+        bps = self.taker_fee_bps if fee_role == 'taker' else self.maker_fee_bps
+        if bps == 0:
+            return
+        fee = (trade_val * bps).scaleb(-4)
+        self.cash -= fee
+        self.fees_paid += fee
+
+    def process_acc(self, trade: Dict[str, Any], party: str,
+                    fee_role: Optional[str] = None) -> int:
+        """Book one fill for this account.
+
+        Args:
+            fee_role: Which fee the fill pays: 'taker', 'maker' or 'none'.
+                By default the record's `init_party` is the taker and its
+                `counter_party` the maker. A caller overrides it where the
+                party label does not say: a batch counter party that arrived
+                in the same batch is booked as an `init_party` but is the
+                maker, and auto-deleveraging is a transfer at the mark that
+                pays no fee.
+        """
+        if fee_role is None:
+            fee_role = 'maker' if party == 'counter_party' else 'taker'
         self.num_trades += 1
         self.num_trades_step += 1
         
@@ -334,4 +386,5 @@ class Account(Calculate, Cash_Processor):
         else: # neutral
             self._neutral(trade_val, trade, party)
         self._update_net_position(trade.get(party).get('side'), trade.get('quantity'))
+        self._charge_fee(trade_val, fee_role)
         return 0
