@@ -325,10 +325,16 @@ class OrderBook(object):
         order, a limit sell opening a short and a resting ask filled above its
         limit can all cost more at it. An order that answers no sits out and the
         auction runs again without it, until everyone left can pay. A queued
-        order that sits out rests at its limit if it has one and lapses if it is
-        a market order; a resting order simply stays where it is. The market
+        order that sits out lapses, market or limit: resting a limit at its own
+        price would put it beside the orders it could not afford to trade with
+        (a bid above a resting ask), and a crossed book is not one the next
+        batch can clear. A resting order simply stays where it is. The queued
         orders that lapsed this way are left in `self.batch_unaffordable` for
-        the caller to count.
+        the caller to count as rejected.
+
+        Once anything has sat out, a leftover limit order that would cross what
+        is now resting - the counterparty it was to meet sat out - lapses too,
+        uncounted: nothing is wrong with that order.
         """
         self.batching = False
         self.batch_unaffordable = []
@@ -348,7 +354,7 @@ class OrderBook(object):
             sells = [q for q in live if q['side'] == 'ask']
             best = self._auction(buys, sells, limit_of, sit_out, reference_price)
             if best is None or best[2] <= 0:
-                return self._rest_all(pending, results, order)
+                return self._rest_all(live, results, order, sat_out=bool(dropped or sit_out))
             _, p_star, volume = best
             if affordable is None:
                 break
@@ -357,8 +363,7 @@ class OrderBook(object):
                 break
             for q in out_new:
                 dropped.add(id(q))
-                if q['type'] == 'market':
-                    self.batch_unaffordable.append(q)
+                self.batch_unaffordable.append(q)
             sit_out |= out_resting
 
         # Priority on each side: strictly better limits and market orders
@@ -476,9 +481,11 @@ class OrderBook(object):
                 j += 1
 
         # Leftovers: limit orders rest at their own limit, market orders lapse.
-        for q in pending:
+        for q in live:
             left = Decimal(q['quantity']) - filled_qty.get(id(q), Decimal(0))
             if left > 0 and q['type'] == 'limit':
+                if (dropped or sit_out) and self._would_cross(q):
+                    continue
                 q['quantity'] = left
                 tree = self.bids if q['side'] == 'bid' else self.asks
                 tree.insert_order(q)
@@ -486,10 +493,23 @@ class OrderBook(object):
                 results[id(q)] = (tid, trades, q)
         return [results[k] for k in order]
 
-    def _rest_all(self, pending, results, order):
-        """No cross: every limit order rests, every market order lapses."""
+    def _would_cross(self, q):
+        """Whether resting `q` at its limit would cross an order already resting."""
+        price = Decimal(str(q['price']))
+        if q['side'] == 'bid':
+            return bool(self.asks) and price >= self.asks.min_price()
+        return bool(self.bids) and price <= self.bids.max_price()
+
+    def _rest_all(self, pending, results, order, sat_out=False):
+        """No cross: every limit order rests, every market order lapses.
+
+        With `sat_out`, an order that would now cross what rests (its
+        counterparty sat out) lapses instead.
+        """
         for q in pending:
             if q['type'] == 'limit':
+                if sat_out and self._would_cross(q):
+                    continue
                 tree = self.bids if q['side'] == 'bid' else self.asks
                 tree.insert_order(q)
                 tid, trades, _ = results[id(q)]
