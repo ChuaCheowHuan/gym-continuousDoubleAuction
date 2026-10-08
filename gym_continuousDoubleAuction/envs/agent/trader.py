@@ -252,6 +252,36 @@ class Trader:
         closable = max(0, int(abs(net_pos)) - resting)
         return max(0, size - closable), closable
 
+    def _loss_on_cover(self, LOB, side: str, size: int, price) -> Decimal:
+        """What a buy realises into cash when it takes a short flat or past flat.
+
+        Cash moves for the closing part of an order only when the position
+        reaches zero: a partial close pays the lots' market value and leaves
+        the realised result in the value of the lots still open, but the final
+        lot settles the whole `position_val` into cash. A long's is its
+        market value, never negative. A short posted its notional as collateral
+        and is worth `2 x cost_basis - |position| x price`, which turns negative
+        once the price passes twice the entry - and then covering it takes that
+        much out of cash, cash that an opening order in the same quote (a flip)
+        or a resting bid's escrow was counting on (doc/15 S2-15).
+
+        `price` is the order's limit, -1.0 for a market order (the sweep over
+        the contracts that cover, from the touch), or a clearing price. Zero
+        for anything but a buy that closes the whole short, and zero if a thin
+        book cannot supply the cover, since the position is then not flat.
+        """
+        position = self.acc.net_position
+        if side != 'bid' or position >= 0 or size < -position:
+            return Decimal(0)
+        lots = -position
+        if price == -1.0:
+            cost, filled = self._sweep_cost(LOB, side, lots, skip=0)
+            if filled < lots:
+                return Decimal(0)
+        else:
+            cost = lots * Decimal(str(price))
+        return max(Decimal(0), cost - 2 * self.acc.cost_basis)
+
     def _sweep_cost(self, LOB, side: str, size: int, skip: int) -> Tuple[Decimal, int]:
         """What a market order of `size` pays for the contracts after the first `skip`.
 
@@ -306,10 +336,11 @@ class Trader:
         if resting_limit is not None and side == 'bid':
             return True
         opening, _ = self._opening_size(LOB, side, size, exclude_order_id=resting_order_id)
-        if opening <= 0:
+        loss = self._loss_on_cover(LOB, side, size, price) if resting_limit is None else Decimal(0)
+        if opening <= 0 and loss == 0:
             return True
         if resting_limit is None:
-            need = opening * price
+            need = opening * price + loss
         else:
             need = opening * max(price - Decimal(str(resting_limit)), Decimal(0))
         need += need * self.acc.max_fee_rate
@@ -465,14 +496,21 @@ class Trader:
         opening_size, closable = self._opening_size(LOB, side, size,
                                                     exclude_order_id=replaced_id)
 
-        # If we are only closing/decreasing a position, no cash check is needed
-        if opening_size <= 0:
+        # Covering a short past its collateral realises a loss into cash
+        # (doc/15 S2-15); zero for every other order.
+        loss = self._loss_on_cover(LOB, side, size, price)
+
+        # If we are only closing/decreasing a position, and that costs no cash
+        # either, no cash check is needed
+        if opening_size <= 0 and loss == 0:
             return True
 
         # Opening/Increasing portion requires cash check. A market order pays
         # every level it sweeps, not the touch (doc/15 S2-14): walk the book
         # for the contracts that open, after the ones that only close.
-        if price == -1.0:
+        if opening_size <= 0:
+            order_val = Decimal(0)
+        elif price == -1.0:
             order_val, filled = self._sweep_cost(LOB, side, size, skip=size - opening_size)
             if filled == 0:                 # nothing to sweep: the last print is the estimate
                 est_price = LOB.tape[-1]['price'] if LOB.tape else 1
@@ -486,6 +524,8 @@ class Trader:
         # ... and the fees the resting orders already owe, which are in cash
         # too (`_resting_maker_fees`).
         order_val += self._resting_maker_fees(LOB, exclude_order_id=replaced_id)
+        # ... and the loss a cover realises, which is paid out of cash.
+        order_val += loss
 
         # `released` is the escrow the replaced order gives back on the same
         # call, so it is as spendable as cash for this quote. Without it a
