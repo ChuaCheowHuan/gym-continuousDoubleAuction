@@ -17,6 +17,13 @@ from ..logging_setup import get_logger
 logger = get_logger(__name__)
 
 # The exchange environment
+#: The largest exchange fee, in basis points, the env accepts: a tenth of the
+#: notional. Real venues charge a few; a rate past this is a unit mistake
+#: (a percentage typed as basis points), and every fill would then cost more
+#: than a thousandth of the trade.
+MAX_FEE_BPS = 1000
+
+
 class continuousDoubleAuctionEnv(
     Exchg_Helper, 
     MultiAgentEnv):
@@ -46,6 +53,13 @@ class continuousDoubleAuctionEnv(
                            ("taker_fee_bps", self.taker_fee_bps)):
             if not _is_finite_number(value):
                 raise ValueError(f"{key} must be a finite number; got {value!r}.")
+        for key, value in (("maker_fee_bps", self.maker_fee_bps),
+                           ("taker_fee_bps", self.taker_fee_bps)):
+            if abs(value) > MAX_FEE_BPS:
+                raise ValueError(
+                    f"{key} must be within +/-{MAX_FEE_BPS} (a tenth of the notional); "
+                    f"got {value!r}. Basis points: 10 is 0.1%."
+                )
         if self.taker_fee_bps < 0:
             raise ValueError(f"taker_fee_bps must be >= 0; got {self.taker_fee_bps!r}.")
         if self.maker_fee_bps + self.taker_fee_bps < 0:
@@ -235,8 +249,7 @@ class continuousDoubleAuctionEnv(
     def get_observation_space(self, agent_id):
         """Observation space for a single agent (not the per-agent dict)."""
         return self.observation_spaces[agent_id]
-        
-    # Updated reset method to return proper format for new API
+
     @property
     def fees_collected(self):
         """The exchange's ledger: every fee the traders have paid this episode.
@@ -247,6 +260,7 @@ class continuousDoubleAuctionEnv(
         """
         return sum((t.acc.fees_paid for t in self.traders), Decimal(0))
 
+    # Updated reset method to return proper format for new API
     def reset(self, *, seed=None, options=None):
         # Call parent reset if it exists.
         #
