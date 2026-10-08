@@ -231,3 +231,99 @@ class TestTheEpisodeEndCheck:
 
     def test_a_shortfall_the_fees_do_not_explain_is_still_a_violation(self):
         assert self._end([999_999, 1_000_001, 999_998, 1_000_000], [1, 0, 2, 5]) == 1.0
+
+
+class TestARestingOrderOwesItsMakerFee:
+    """The reserve must hold against *later* orders, not only the one checked.
+
+    A resting bid escrows its notional but not the maker fee it will owe when
+    it fills, so that fee sits in cash, and a second order could spend it.
+    """
+
+    KW = dict(maker_fee_bps=10, taker_fee_bps=10)
+
+    def test_a_second_order_may_not_spend_the_first_orders_fee(self):
+        lob = OrderBook()
+        a, b = Trader(0, 1000, **self.KW), Trader(1, 10 ** 6, **self.KW)
+        a.place_order("limit", "bid", 9, 100, lob, [a, b])
+        # 9 @ 100 rests: 100 free, and 0.9 of it is owed as the maker fee.
+        # 1 @ 99.9 needs 99.9 + 0.0999 and leaves 0.0001 for that 0.9.
+        assert not a._order_approved("bid", 1, 99.9, lob, "limit")
+        # 1 @ 99 needs 99 + 0.099, and the 0.9 is covered: 100 - 0.9 >= 99.099.
+        assert a._order_approved("bid", 1, 99, lob, "limit")
+
+    def test_cash_stays_whole_when_every_resting_order_fills(self):
+        lob = OrderBook()
+        a, b = Trader(0, 1000, **self.KW), Trader(1, 10 ** 6, **self.KW)
+        a.place_order("limit", "bid", 9, 100, lob, [a, b])
+        a.place_order("limit", "bid", 1, 99, lob, [a, b])
+        b.place_order("market", "ask", 10, -1.0, lob, [a, b])
+        assert a.acc.cash + a.acc.cash_on_hold >= 0
+
+    def test_the_order_being_replaced_owes_nothing_to_its_replacement(self):
+        """A re-price releases the old order, so its fee is not counted twice."""
+        lob = OrderBook()
+        a, b = Trader(0, 1000, **self.KW), Trader(1, 10 ** 6, **self.KW)
+        a.place_order("limit", "bid", 9, 100, lob, [a, b])
+        assert a._order_approved("bid", 9, 100, lob, "limit")      # upsert at the same price
+        # A modify of that same order to a lower price is a cancel-and-reprocess.
+        assert a._order_approved("bid", 9, 99, lob, "modify", slot=1)
+
+    def test_a_negative_maker_rate_reserves_nothing(self):
+        lob = OrderBook()
+        a = Trader(0, 1000, maker_fee_bps=-2, taker_fee_bps=5)
+        a.place_order("limit", "bid", 9, 100, lob, [a])
+        assert a._order_approved("bid", 1, 99.9, lob, "limit") == (
+            a.acc.cash >= Decimal("99.9") * Decimal("1.0005"))
+
+    @pytest.mark.parametrize("clearing", ["sequential", "batch"])
+    def test_random_play_never_overdraws_cash(self, clearing):
+        env = _env(maker_fee_bps=20, taker_fee_bps=20, step_clearing=clearing, init_cash=5000)
+        env.reset(seed=5)
+        for _ in range(60):
+            _, _, dones, truncs, _ = env.step(
+                {a: env.action_spaces[a].sample() for a in env.agents})
+            for t in env.traders:
+                assert t.acc.cash + t.acc.cash_on_hold >= 0, t.ID
+            if dones["__all__"] or truncs["__all__"]:
+                break
+
+
+class TestTheRateCap:
+    def test_a_rate_past_the_cap_is_refused_naming_the_key(self):
+        with pytest.raises(ValueError, match="taker_fee_bps"):
+            _env(taker_fee_bps=1001)
+        with pytest.raises(ValueError, match="maker_fee_bps"):
+            _env(maker_fee_bps=1001)
+
+    def test_the_cap_itself_is_allowed(self):
+        env = _env(taker_fee_bps=1000, maker_fee_bps=1000)
+        assert env.taker_fee_bps == 1000
+
+
+class TestWhenTheFeesCannotBeRead:
+    """With fees configured and no accounts to read, the check cannot be exact."""
+
+    def _end(self, env_config, env):
+        from gym_continuousDoubleAuction.test.test_nav_callback import (
+            NAV_VIOLATIONS_METRIC, MockEpisode, _emitted,
+        )
+        runner = MagicMock()
+        runner.config.env_config = env_config
+        cb = SelfPlayCallback(num_trainable_policies=2, num_random_policies=2,
+                              episode_data_dir=None)
+        metrics = MagicMock()
+        info = {f"agent_{i}": {"NAV": "999999"} for i in range(4)}   # short by 1 each
+        cb.on_episode_end(episode=MockEpisode("ep", info), env_runner=runner,
+                          metrics_logger=metrics, env=env, env_index=0, rl_module=None)
+        return _emitted(metrics, NAV_VIOLATIONS_METRIC).args[1]
+
+    def test_a_shortfall_is_not_called_a_violation_when_fees_are_on(self):
+        from gym_continuousDoubleAuction.test.test_nav_callback import MockEnv
+        cfg = {"init_cash": 1_000_000, "num_of_agents": 4, "taker_fee_bps": 5}
+        assert self._end(cfg, MockEnv(1_000_000, 4)) == 0.0
+
+    def test_the_same_shortfall_with_no_fees_still_is(self):
+        from gym_continuousDoubleAuction.test.test_nav_callback import MockEnv
+        cfg = {"init_cash": 1_000_000, "num_of_agents": 4}
+        assert self._end(cfg, MockEnv(1_000_000, 4)) == 1.0
