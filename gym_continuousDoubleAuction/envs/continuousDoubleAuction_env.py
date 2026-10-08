@@ -10,20 +10,13 @@ from ray.rllib.env.multi_agent_env import MultiAgentEnv
 
 from .exchg.exchg_helper import Exchg_Helper
 from .agent.trader import Trader
-from .exchg.liquidation_helper import _is_finite_number
+from .account.account import validate_fee_rates
 from ..config_loader import env_default
 from ..logging_setup import get_logger
 
 logger = get_logger(__name__)
 
 # The exchange environment
-#: The largest exchange fee, in basis points, the env accepts: a tenth of the
-#: notional. Real venues charge a few; a rate past this is a unit mistake
-#: (a percentage typed as basis points), and every fill would then cost more
-#: than a thousandth of the trade.
-MAX_FEE_BPS = 1000
-
-
 class continuousDoubleAuctionEnv(
     Exchg_Helper, 
     MultiAgentEnv):
@@ -44,30 +37,11 @@ class continuousDoubleAuctionEnv(
         self.num_of_agents = self._cfg("num_of_agents")
         init_cash = self._cfg("init_cash")
         # Exchange fees in basis points of a fill's notional (doc/15 S2-3).
-        # Validated here, where the accounts are built. A negative maker rate
-        # is a rebate; the pair must not pay out more than it takes in, or two
-        # agents trading with each other would mint money.
+        # Validated here so a bad schedule fails at construction, before the
+        # book is built; `Account` validates again for callers that skip the env.
         self.maker_fee_bps = self._cfg("maker_fee_bps")
         self.taker_fee_bps = self._cfg("taker_fee_bps")
-        for key, value in (("maker_fee_bps", self.maker_fee_bps),
-                           ("taker_fee_bps", self.taker_fee_bps)):
-            if not _is_finite_number(value):
-                raise ValueError(f"{key} must be a finite number; got {value!r}.")
-        for key, value in (("maker_fee_bps", self.maker_fee_bps),
-                           ("taker_fee_bps", self.taker_fee_bps)):
-            if abs(value) > MAX_FEE_BPS:
-                raise ValueError(
-                    f"{key} must be within +/-{MAX_FEE_BPS} (a tenth of the notional); "
-                    f"got {value!r}. Basis points: 10 is 0.1%."
-                )
-        if self.taker_fee_bps < 0:
-            raise ValueError(f"taker_fee_bps must be >= 0; got {self.taker_fee_bps!r}.")
-        if self.maker_fee_bps + self.taker_fee_bps < 0:
-            raise ValueError(
-                f"maker_fee_bps + taker_fee_bps must be >= 0, or a fill pays out more "
-                f"than it takes in; got {self.maker_fee_bps!r} and {self.taker_fee_bps!r} "
-                f"(maker_fee_bps / taker_fee_bps)."
-            )
+        validate_fee_rates(self.maker_fee_bps, self.taker_fee_bps)
         tick_size = self._cfg("tick_size")
         mark_price_source = self._cfg("mark_price_source")
         tape_display_length = self._cfg("tape_display_length")

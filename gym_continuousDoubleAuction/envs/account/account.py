@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import math
 from decimal import Decimal
+from numbers import Real
 from typing import Any, Dict, Optional
 
 from .cash_processor import Cash_Processor
@@ -12,6 +14,40 @@ from tabulate import tabulate
 
 logger = get_logger(__name__)
 
+#: The largest exchange fee, in basis points, an account accepts: a tenth of
+#: the notional. Real venues charge a few; a rate past this is a unit mistake
+#: (a percentage typed as basis points).
+MAX_FEE_BPS = 1000
+
+
+def validate_fee_rates(maker_fee_bps, taker_fee_bps) -> None:
+    """Refuse a fee schedule that is not a number, is too large, or mints money.
+
+    Lives here, not in the env, because `Account` and `Trader` are built
+    directly as well, and a NaN rate would poison `cash` without an error.
+    The pair must sum to >= 0 and the taker rate must be >= 0: a rebate larger
+    than the taker fee would let two agents trading with each other create
+    money.
+    """
+    for key, value in (("maker_fee_bps", maker_fee_bps), ("taker_fee_bps", taker_fee_bps)):
+        if (not isinstance(value, Real) or isinstance(value, bool)
+                or not math.isfinite(value)):
+            raise ValueError(f"{key} must be a finite number; got {value!r}.")
+        if abs(value) > MAX_FEE_BPS:
+            raise ValueError(
+                f"{key} must be within +/-{MAX_FEE_BPS} (a tenth of the notional); "
+                f"got {value!r}. Basis points: 10 is 0.1%."
+            )
+    if taker_fee_bps < 0:
+        raise ValueError(f"taker_fee_bps must be >= 0; got {taker_fee_bps!r}.")
+    if maker_fee_bps + taker_fee_bps < 0:
+        raise ValueError(
+            f"maker_fee_bps + taker_fee_bps must be >= 0, or a fill pays out more "
+            f"than it takes in; got {maker_fee_bps!r} and {taker_fee_bps!r} "
+            f"(maker_fee_bps / taker_fee_bps)."
+        )
+
+
 class Account(Calculate, Cash_Processor):
     def __init__(self, ID: int, cash=env_default("init_cash"),
                  maker_fee_bps=env_default("maker_fee_bps"),
@@ -21,6 +57,7 @@ class Account(Calculate, Cash_Processor):
         # Exchange fees, in basis points of a fill's notional (doc/15 S2-3).
         # Rates belong to the account for its life: `reset_acc` clears what
         # was paid, not what is charged. A negative maker rate is a rebate.
+        validate_fee_rates(maker_fee_bps, taker_fee_bps)
         self.maker_fee_bps = Decimal(str(maker_fee_bps))
         self.taker_fee_bps = Decimal(str(taker_fee_bps))
         # Cumulative fees this account has paid this episode (negative if it
