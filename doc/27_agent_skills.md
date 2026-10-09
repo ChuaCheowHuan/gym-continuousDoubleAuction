@@ -64,10 +64,12 @@ that went wrong once:
 6. **Do not rest an unverified claim on a review.** Reproduce it first (skill 2).
 7. **Counts move together.** Any new test file changes the unit total, the suite total, the
    line count in [14](14_perspective_ai_engineer.md) and the inventory in [10](10_testing.md).
-8. **GitHub quirks of this environment:** issue links with a `#fragment` over about 150 characters
-   are wrapped in backticks by the proxy (21 issue bodies had to be repaired), so link to files,
-   not anchors, in issue text; the REST API ignores the issue `type`, so set it with the issue
-   tool; GraphQL is blocked.
+8. **GitHub quirks of this environment:** links with a `#fragment` came out of the proxy wrapped in
+   backticks (so they render as code, not links) in 21 of 135 issue bodies. It was not length
+   alone: short fragment links pinned to a commit SHA were wrapped in a test, and links to `master`
+   were wrapped once they were long (the shortest wrapped one was 153 characters; some fragment
+   links up to 221 were not). Link to files, not anchors, in issue text. The REST create call did
+   not set the issue `type`; use the issue tool and read the type back in the UI. GraphQL is blocked.
 
 Build it with the existing `init` skill, then trim to these points.
 
@@ -118,8 +120,8 @@ would make steps 1 and 2 a CI job rather than a skill; do that too.
 **Trigger.** Any claimed bug, from a review, a linter, a bot comment or the agent's own reading,
 before it is fixed or filed.
 
-**Evidence.** Of about 64 raw findings in the last full review, 24 were confirmed (filed as 22 issues
-and 3 comments). Dropped after a
+**Evidence.** Of about 64 raw findings in the last full review, 22 issues were filed (some
+consolidating several findings) and 3 more were added as comments on existing ones. Dropped after a
 reproduction or a careful read: "all agents draw identical actions" (the agents share one space
 object, so seeding it repeatedly is harmless), a `None` sort key that cannot occur because the mark
 is shared, a split cover said to escape the loss reserve (it does not: the total realised is the same).
