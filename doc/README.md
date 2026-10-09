@@ -27,6 +27,7 @@ mindmap
       21 Logging under runners
     Operations
       26 Runbook
+      27 Agent skills
       18 Configuration
       19 Docker
       20 Colab
@@ -85,6 +86,7 @@ mindmap
 | 22 | [22_jepa_integration.md](22_jepa_integration.md) | What JEPA is, why this observation suits it and this reward does not, and four ways it could be used |
 | 23 | [23_probe_harness.md](23_probe_harness.md) | Scoring an encoder on microstructure targets without the reward: how to run it, how to read it, why the probe is linear |
 | 24 | [24_pretraining.md](24_pretraining.md) | Training a JEPA encoder on observations alone before any PPO run, the fingerprint that guards its weights, and why to watch `latent_std` rather than the loss |
+| 27 | [27_agent_skills.md](27_agent_skills.md) | Which agent skills this repository would pay for, from the work that was done by hand in the review passes: what each does, its evidence, the scripts it needs, the mistakes it must not repeat, and the order to build them in |
 | 25 | [25_continual_backprop.md](25_continual_backprop.md) | What Continual Backprop is, why league self-play is the non-stationary regime it targets, why it belongs on the Learner rather than the encoder registry, and why the papers' hyperparameters cannot be copied at this repo's update cadence |
 
 ### Configuration and deployment
