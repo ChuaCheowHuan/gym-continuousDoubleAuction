@@ -11,6 +11,14 @@ manual version cost or got wrong; **Steps** are the procedure; **Ships with** ar
 needs checked into the repo (the helper scripts used in those passes lived in a throwaway scratch
 directory and were rewritten each time); **Guardrails** are the mistakes already made once.
 
+**Where things live.** This proposal stays here, in `doc/`, because it is read and linked like the
+other documents. A skill, once built, goes in `.claude/skills/<name>/SKILL.md`, the project-level
+location Claude Code loads from, and carries its own scripts in `.claude/skills/<name>/scripts/`.
+Only a script that several skills run lives outside them, in a top-level `tools/`: today that is
+the link checker (`cda-doc-sync`, `cda-findings-sync` and `cda-branch-and-pr` all run it). The
+rules in §1 go in a root `CLAUDE.md`, which is loaded every session. When a skill exists, its entry
+below should shrink to a pointer to it.
+
 ---
 
 ## 0. Build order
@@ -94,8 +102,9 @@ documented nowhere ([#249](https://github.com/ChuaCheowHuan/gym-continuousDouble
    `@mermaid-js/mermaid-cli`.
 6. Record the pass as a new section in [17](17_changelog.md), never by editing old ones.
 
-**Ships with.** `tools/facts.py` (step 1, writes JSON), `tools/claims.py` (step 2),
-`tools/check_links.py` (step 5). All three existed during the passes; none was committed.
+**Ships with.** `scripts/facts.py` (step 1, writes JSON) and `scripts/claims.py` (step 2) in the
+skill's own folder, and the shared `tools/check_links.py` (step 5). All three existed during the
+passes; none was committed.
 
 **Guardrails.** A "1,000-unit drawdown" is not a test count: the scanner needs a skip list. Heading
 renames break anchors in other files (`#4-there-are-no-transaction-costs` did): re-run the link
@@ -160,7 +169,7 @@ per episode) and assert, every step:
 Report agent-steps hit, seeds hit and the worst value per row, **before and after** the change
 (stash the source to get "before").
 
-**Ships with.** `tools/scan_ledger.py` (the `scan160_all.py` of the passes), parameterised on the
+**Ships with.** `scripts/scan_ledger.py` (the `scan160_all.py` of the passes), parameterised on the
 config grid, printing the table above.
 
 **Guardrails.** Unseeded `action_space.sample()` makes a failure unrepeatable; seed every space.
@@ -189,7 +198,7 @@ register and the tracker disagree within a week.
 5. Write the `#N` back into the doc as a line under the heading (not in it: that keeps anchors).
 6. Idempotent: match existing titles before creating; record numbers in a state file.
 
-**Ships with.** `tools/findings_to_issues.py` (manifest builder) and a dry-run mode that prints the
+**Ships with.** `scripts/findings_to_issues.py` (manifest builder) and a dry-run mode that prints the
 table of key, state, labels and title before anything is created.
 
 **Guardrails.** No `#fragment` links in issue bodies. At about a second per write the full set (over 300 writes, with comments and closes) took about
@@ -256,7 +265,7 @@ non-test function; the duplicate-block scan; `cProfile` over 300 steps of an 8-a
 clearing mode; read the top of each list; file one issue per cohesive change with the numbers, label
 `refactor`, type Task; **change nothing**.
 
-**Ships with.** `tools/code_metrics.py` and `tools/profile_episode.py`.
+**Ships with.** `scripts/code_metrics.py` and `scripts/profile_episode.py`.
 
 **Guardrails.** Textual duplication was low here; the problems were long functions and mirrored
 bid/ask code, so do not stop at a duplicate scan. A refactor issue states that behaviour must not
@@ -334,8 +343,8 @@ description: Bring README.md and doc/*.md in line with the code after a change t
   the docs, or after adding a test file or a config key. Does not edit doc/16 or doc/17 history.
 ---
 
-1. Run `python tools/facts.py > /tmp/facts.json` (collects tests, widths, terms, keys, flags, tree).
-2. Run `python tools/claims.py /tmp/facts.json` and triage every `file:line claimed -> actual` hit
+1. Run `python scripts/facts.py > /tmp/facts.json` (collects tests, widths, terms, keys, flags, tree).
+2. Run `python scripts/claims.py /tmp/facts.json` and triage every `file:line claimed -> actual` hit
    as current (fix) or historical (leave). Never edit docs 16 and 17 except to append a section.
 3. Recompute the dependent figures in doc 10 (inventory, mindmap), doc 14 (code size), doc 26.
 4. Run `python tools/check_links.py .`; fix every broken link, including anchors after heading edits.
