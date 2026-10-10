@@ -347,7 +347,7 @@ NumPy and will not take a `Decimal`. The comparison that decides the raise is th
   check unable to resolve this very tolerance, passing corrupt ledgers silently. See
   [16 §16.10](16_verification_log.md).
 
-Covered by `test_nav_callback.py` (18 tests) in two halves: the hook reports a violation without
+Covered by `test_nav_callback.py` (25 tests) in two halves: the hook reports a violation without
 raising, counts it, keeps the error exact at an account size `float` cannot resolve, and emits the
 counter on conserved episodes too; the driver raises under the default, warns and continues when
 non-strict, says which file holds the detail, and reads a missing or unparseable metric as "nothing
@@ -430,7 +430,7 @@ Four decisions worth stating, because each could reasonably have gone the other 
   and uses `0.0`; a log does not, and `0.0` there would be indistinguishable from a book whose
   touch is one tick wide — the ambiguity [15 S3-14](15_findings_and_recommendations.md) is about.
 
-Covered by `test_info_dict.py` (18 tests): back-compat of the original three, the terms summing
+Covered by `test_info_dict.py` (24 tests): back-compat of the original three, the terms summing
 exactly, penalties matching coefficient × counter, the counters being read *before*
 `set_step_outputs` zeroes them, `spread` on a one-sided book, and the whole dict surviving
 `json.dumps`.
@@ -533,7 +533,7 @@ on the reasoning that the worker genuinely does not know which iteration its epi
 §1.12 sends it the number instead. The dash remains for a process that legitimately has no
 iteration: the driver before the first one and after the last.
 
-Covered by `test_logging_setup.py` (49 tests): the file appears beside the metrics and mirrors
+Covered by `test_logging_setup.py` (61 tests): the file appears beside the metrics and mirrors
 stdout, rotation bounds it, an unwritable destination warns instead of raising, a worker resolves
 the directory from the environment and writes its own uniquely tagged file, the driver keeps the
 plain name, the iteration tag follows `set_iteration` and defaults to a dash, the timestamp
