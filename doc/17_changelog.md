@@ -3584,10 +3584,10 @@ unchanged, and the shortfall could surface steps later when a resting bid filled
 ## 64. Per-file test counts brought up to date (2026-10-10)
 
 `cda-doc-sync` (`.claude/skills/cda-doc-sync/`) listed 20 lines whose number disagreed with the code.
-Fourteen were history and were left: the 168, 193, 216, 224 and 296-float observation widths, each
+Fifteen were history and were left: the 168, 193, 216, 224 and 296-float observation widths, each
 tied to the layout version or finding it describes, the "five-head" checkpoint note in
 [18](18_configuration.md), and the "90 unit tests" in the superseded audit in
-[14](14_perspective_ai_engineer.md). Six were current-tense per-file counts and were corrected:
+[14](14_perspective_ai_engineer.md). Five were current-tense per-file counts and were corrected:
 `test_probe.py` 45 to 56 ([10](10_testing.md) §6.5.1), `test_nav_callback.py` 18 to 25,
 `test_info_dict.py` 18 to 24 and `test_logging_setup.py` 49 to 61
 ([11](11_logging_and_observability.md)), and `test_tick_grid.py` 14 to 18
