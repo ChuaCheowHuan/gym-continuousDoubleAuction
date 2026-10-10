@@ -772,7 +772,7 @@ step ([16](16_verification_log.md) §16.17).
 Three changes close it, all on the action side: `agg_LOB_raw` is float64 (the emitted observation
 is still cast to float32 at emission); `_set_price` snaps its result to the tick grid in `Decimal`
 before returning it; and `_get_order_ID` compares prices as `Decimal(str(price))`, the same
-conversion the book applies on the way in. `test_tick_grid.py` (14 tests) asserts every level and
+conversion the book applies on the way in. `test_tick_grid.py` (18 tests) asserts every level and
 offset lands on the grid for seven ticks including 0.3 and 0.0001, that re-quoting a level upserts,
 that a cancel at a fractional price finds its order, and that NAV is conserved under random play
 at `tick_size` 0.1.

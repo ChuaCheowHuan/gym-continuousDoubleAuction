@@ -895,7 +895,7 @@ Two files, added with `train/probe/` ([23](23_probe_harness.md)). The harness pr
 people will cite*, so what these pin is not that it runs but the handful of properties that decide
 whether its numbers mean anything.
 
-#### 6.5.1 `test_probe.py` — 45 tests
+#### 6.5.1 `test_probe.py` — 56 tests
 
 Runs on synthetic observations built by hand, not on env rollouts: the arithmetic is the subject,
 and a target checked against the same expression that computes it checks nothing.

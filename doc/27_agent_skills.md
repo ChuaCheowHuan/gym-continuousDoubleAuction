@@ -4,7 +4,7 @@ A proposal, not a specification. Each skill below is a reusable procedure for a 
 Claude Code `SKILL.md`, or the equivalent in another agent harness) that this repository would pay
 for, picked because the work it replaces was done **by hand, more than once**, in the 2026-10-07 and
 2026-10-08 review, fix and documentation passes ([17](17_changelog.md) §59 to §63). Nothing here has
-been built; the first section is the order to build them in.
+been built except where marked **built** in §0; that section is also the order to build them in.
 
 How to read an entry: **Trigger** is when the agent should reach for it; **Evidence** is what the
 manual version cost or got wrong; **Steps** are the procedure; **Ships with** are the scripts it
@@ -25,9 +25,9 @@ below should shrink to a pointer to it.
 
 | # | Skill | Payoff | Effort | Why this position |
 |---|---|---|---|---|
-| 0 | A `CLAUDE.md` (via the existing `init` skill) | high | 1 hour | There is none. §1 lists what belongs in it. Every skill below assumes it exists |
-| 1 | `cda-doc-sync` | high | 1 day | Test counts and observation widths had drifted across more than a dozen files; the cheapest recurring chore to automate |
-| 2 | `cda-verify-finding` | high | half a day | Of about 64 raw findings in the last full review, 24 were confirmed; the rest were false positives, unreachable, or already tracked. A skill that forces the reproduction saves the false fixes |
+| 0 | **Built:** `CLAUDE.md` | high | 1 hour | There is none. §1 lists what belongs in it. Every skill below assumes it exists |
+| 1 | **Built:** `cda-doc-sync` | high | 1 day | Test counts and observation widths had drifted across more than a dozen files; the cheapest recurring chore to automate |
+| 2 | **Built:** `cda-verify-finding` | high | half a day | Of about 64 raw findings in the last full review, 24 were confirmed; the rest were false positives, unreachable, or already tracked. A skill that forces the reproduction saves the false fixes |
 | 3 | `cda-ledger-invariants` | high | 1 day | The only tool that found S2-14, S2-15 and the crossed-book bug; it exists as scripts, not as a procedure |
 | 4 | `cda-findings-sync` | medium | 1 day | Filed 135 issues by script once; the register and the tracker will drift without it |
 | 5 | `cda-add-config-key` | medium | half a day | Adding the fee keys touched 6 places; a checklist skill is enough |
