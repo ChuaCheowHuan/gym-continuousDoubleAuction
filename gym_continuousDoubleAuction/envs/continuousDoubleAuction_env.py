@@ -35,6 +35,10 @@ class continuousDoubleAuctionEnv(
         # supplies all of them from train_config.json via TrainConfig.env_config,
         # and a bare env picks up the standalone defaults from the JSON.
         self.num_of_agents = self._cfg("num_of_agents")
+        if self.num_of_agents < 1:
+            raise ValueError(
+                f"num_of_agents must be at least 1; got {self.num_of_agents!r}."
+            )
         init_cash = self._cfg("init_cash")
         # Exchange fees in basis points of a fill's notional (doc/15 S2-3).
         # Validated here so a bad schedule fails at construction, before the
@@ -66,6 +70,11 @@ class continuousDoubleAuctionEnv(
                 )
             self.time_left_horizon = self.max_step_max
         else:
+            if self.max_step < 1:
+                raise ValueError(
+                    f"episode_length_mode 'fixed' needs max_step >= 1; got "
+                    f"{self.max_step!r}."
+                )
             self.time_left_horizon = self.max_step
         # The horizon of the episode in progress; `reset` sets it.
         self.episode_horizon = self.time_left_horizon

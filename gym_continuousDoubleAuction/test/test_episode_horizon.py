@@ -129,6 +129,18 @@ class TestValidation:
         env = _env(episode_length_mode="fixed", max_step_min=50, max_step_max=5)
         assert env.reset(seed=0)[1]["agent_0"]["episode_horizon"] == 16
 
+    def test_zero_agents(self):
+        with pytest.raises(ValueError, match="num_of_agents"):
+            _env(num_of_agents=0)
+
+    def test_negative_agents(self):
+        with pytest.raises(ValueError, match="num_of_agents"):
+            _env(num_of_agents=-2)
+
+    def test_fixed_max_step_below_one(self):
+        with pytest.raises(ValueError, match="max_step"):
+            _env(episode_length_mode="fixed", max_step=0)
+
 
 class TestTrainConfig:
 
