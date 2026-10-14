@@ -253,7 +253,7 @@ change the observation or action layout, so a checkpoint restores across them.
 
 | Key | Value | Meaning |
 |---|---|---|
-| `min_size` | 1 | Smallest order size. Also the offset added to every sampled size, since 0 is not a valid order |
+| `min_size` | 1 | Smallest order size. Also the offset added to every size, since 0 is not a valid order |
 | `mkt_max_size` | 100 | Upper bound on market order size |
 | `limit_size_multiple` | 10 | Limit orders may be this many times larger than market orders |
 
