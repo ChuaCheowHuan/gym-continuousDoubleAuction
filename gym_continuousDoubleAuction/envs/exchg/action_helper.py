@@ -31,8 +31,9 @@ _CATEGORY_MAP = {
 ACTION_KEYS = ("category", "order_slot", "price", "price_offset", "size_mean", "size_sigma")
 
 #: Bumped whenever the action Dict changes shape or meaning (doc/15 S4-19).
-#: 1 was the five-component Dict; 2 added `order_slot`.
-ACTION_LAYOUT_VERSION = 2
+#: 1 was the five-component Dict; 2 added `order_slot`; 3 narrowed `size_mean`
+#: from [-1, 1] to [0, 1] (doc/15 S3-1), which changes what a trained head means.
+ACTION_LAYOUT_VERSION = 3
 
 
 class Action_Helper():

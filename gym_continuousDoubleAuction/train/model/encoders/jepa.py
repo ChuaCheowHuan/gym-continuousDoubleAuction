@@ -125,9 +125,8 @@ MASK_AXES = ("level", "time", "random")
 #: embedding the wrong thing, since the space is config-derived
 #: (`tunable_constants.json` -> action_space) and could change under it.
 #:
-#: Note S3-1 and S3-2 while reading this: half of `size_mean`'s range is a
-#: no-op and `size_sigma` is inert, so two of the five components carry less
-#: information than their shapes suggest.
+#: Note S3-2 while reading this: `size_sigma` is inert, so it carries less
+#: information than its shape suggests.
 DISCRETE_ACTIONS = ("category", "price", "price_offset")
 BOX_ACTIONS = ("size_mean", "size_sigma")
 
