@@ -74,8 +74,8 @@ class TestSizingKnobs:
         """limit_max_size and the mean multipliers are derived, not configured."""
         env = _env(**CUSTOM)
         assert env.limit_max_size == 40 * 3
-        assert env.mkt_size_mean_mul == (40 - 5) / 2
-        assert env.limit_size_mean_mul == (120 - 5) / 2
+        assert env.mkt_size_mul == (40 - 5) / 2
+        assert env.limit_size_mul == (120 - 5) / 2
 
     def test_tick_size_reaches_the_action_layer(self):
         assert _env(tick_size=0.25).min_tick == 0.25

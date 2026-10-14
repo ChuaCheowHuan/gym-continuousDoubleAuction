@@ -264,12 +264,12 @@ class TestStructuralConstantsComeFromTheFile:
     def test_size_bounds_come_from_the_file(self, config_tree):
         config_tree(
             "tunable_constants.json",
-            lambda raw: raw["action_space"].update(size_mean_low=-2.0,
-                                                   size_mean_high=2.0),
+            lambda raw: raw["action_space"].update(size_low=0.25,
+                                                   size_high=0.75),
         )
         env = continuousDoubleAuctionEnv({"num_of_agents": 2})
-        space = env.action_spaces["agent_0"]["size_mean"]
-        assert (float(space.low[0]), float(space.high[0])) == (-2.0, 2.0)
+        space = env.action_spaces["agent_0"]["size"]
+        assert (float(space.low[0]), float(space.high[0])) == (0.25, 0.75)
 
     def test_module_id_prefixes_come_from_the_file(self, config_tree, monkeypatch):
         """`policy_handler` reads the prefixes once, at import.

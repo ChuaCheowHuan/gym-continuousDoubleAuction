@@ -29,12 +29,11 @@ def _env(**overrides):
 
 def _limit(category, price_code=0, offset=1, mean=0.02):
     return {"category": category, "order_slot": 0, "price": price_code, "price_offset": offset,
-            "size_mean": np.array([mean], dtype=np.float32),
-            "size_sigma": np.zeros(1, dtype=np.float32)}
+            "size": np.array([mean], dtype=np.float32)}
 
 
 _PASS = {"category": 0, "order_slot": 0, "price": 0, "price_offset": 1,
-         "size_mean": np.zeros(1, dtype=np.float32), "size_sigma": np.zeros(1, dtype=np.float32)}
+         "size": np.zeros(1, dtype=np.float32)}
 
 
 class TestConfig:
@@ -156,8 +155,7 @@ class TestBatchThroughTheEnv:
         env.set_agg_LOB()
         # agent_0 re-prices its bid aggressively (modify, slot 1, code 0, aggressive).
         act = {"agent_0": {"category": 3, "order_slot": 1, "price": 0, "price_offset": 2,
-                           "size_mean": np.array([0.01], dtype=np.float32),
-                           "size_sigma": np.zeros(1, dtype=np.float32)},
+                           "size": np.array([0.01], dtype=np.float32)},
                "agent_1": _PASS}
         _, _, _, _, infos = env.step(act)
         assert infos["agent_0"]["num_unmatched_step"] == 0

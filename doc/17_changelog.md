@@ -3610,3 +3610,49 @@ tied to the layout version or finding it describes, the "five-head" checkpoint n
   refusal in `test_layout_version.py`, and the two version pins moved to 3. PR #270's three validation tests were
   not in the counts either; unit 1,301 to 1,309 (+3 from #270, +5 here); suite 1,472.
 - **Not changed.** `size_sigma` (S3-2, #111), which is still inert.
+
+## 66. One `size` head replaces `size_mean` and `size_sigma` (S3-2, S3-3; issues #111, #112)
+
+- **Cause.** The size was two heads, turned into a size by a Gaussian draw inside the env:
+  `rint(abs(N(mul * size_mean, size_sigma)))`. Two defects, both reproduced first. S3-2: `size_sigma` is in
+  [0, 1] and is an absolute standard deviation against means of 25 to 500, so across its whole range the
+  standard deviation of 4,000 limit sizes at `size_mean = 0.5` was 0, 0.37, 0.58 and 1.05 around 250; the head did
+  nothing and cost entropy. S3-3: the realised size was not part of the action whose log-probability PPO scores;
+  one action under eight env seeds gave sizes 251, 251, 251, 253, 250, 250, 252, 251.
+- **Fix.** One head, `size`, `Box(size_low, size_high)` = `Box(0, 1)`: the fraction of the size ceiling. The env turns
+  it into `rint(size * mul) + min_size` and draws nothing. The issues offered "scale it, or delete it" for the sigma
+  and "emit size directly" for the draw; the second makes the first moot, so the sigma is deleted. A value outside
+  the range is clipped, and `Action_Helper` refuses `size_low < 0`. The multipliers are unchanged in value and
+  renamed `mkt_size_mul` and `limit_size_mul`, since no mean is left; the config keys `size_mean_low/high` and
+  `size_sigma_low/high` became `size_low/high`.
+- **Layout version.** `ACTION_LAYOUT_VERSION` 3 to 4, `ACTION_KEYS` loses two keys and gains one, and the policy
+  head is 29 outputs instead of 31 (the one Box head's mean and log-std). A checkpoint with the old heads is
+  refused at restore. **Existing checkpoints must be retrained.**
+- **Random play is unchanged.** 40,000 draws of a uniform policy, old formula against new: market sizes mean 24.81
+  and standard deviation 14.26 against 24.81 and 14.25, limit 250.37 and 143.77 against 250.36 and 143.77, the largest
+  difference in any one size 4. The baseline opponents and the random-play figures in
+  [16](16_verification_log.md) do not move.
+- **Seeded runs differ.** Per-step order sizes no longer consume the env's random stream, so a seeded episode is not
+  the one it was; nothing that holds for every seed changed (the overdraw and conservation stress tests pass).
+- **Tests.** `TestSizeHead` replaces `TestSizeMeanRange` (4 to 8); v2 and v3 refusals in `test_layout_version.py`;
+  the action dicts across the suite lose `size_sigma` and rename `size_mean`; the policy-head widths in `test_cbp.py`
+  are 29. Unit 1,309 to 1,314; suite 1,477.
+- **#113 (S3-4, the `tick_size`) needed nothing.** It was already fixed and closed; `OrderBook(0.0001, 10)` is still a
+  `TypeError` and `test_tick_grid.py` still passes (18 tests).
+
+## 68. CI starts again: the allowed-actions list (issue #272)
+
+- **Symptom.** From 2026-10-14 every run of the `tests` workflow ended in `startup_failure` with no jobs, for pull
+  requests, pushes to `master` and a manual dispatch alike. The workflow file had not changed since 2026-08-18.
+- **Cause.** The run annotation (the API does not return it) said the repository's Actions policy refused
+  `actions/checkout@v4` and `actions/setup-python@v5`: only actions owned by the repository's owner or created by GitHub
+  are allowed, and all must be pinned to a full-length commit SHA. GitHub refuses the workflow before scheduling a job.
+- **Fix.** A repository setting, not a file in the repository. The owner added
+  `actions/checkout@11d5960a326750d5838078e36cf38b85af677262` (v4.4.0) and
+  `actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065` (v5.6.0) to the allowed actions under Settings,
+  Actions, General. Those SHAs are what the `v4` and `v5` tags pointed at, taken with `git ls-remote`.
+- **Verified.** A manual run on `master` after the change (run 99, `e758d8b`) started both jobs and passed: `test` in
+  about five minutes, `packaging` in under one. Runs 96 to 98, before the change, had not started.
+- **The workflow still says `@v4` and `@v5`.** It was not edited, and it ran. If the policy is tightened again, pin the four
+  `uses:` lines in `.github/workflows/tests.yml` to those SHAs. Pushing a workflow file needs the `workflow` scope on the
+  token; the session's token has none.

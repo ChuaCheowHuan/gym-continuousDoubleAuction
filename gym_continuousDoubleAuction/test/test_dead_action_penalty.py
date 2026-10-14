@@ -13,8 +13,8 @@ from gym_continuousDoubleAuction.train.episode_record import REWARD_TERMS
 
 def _act(category, slot=0):
     return {
-        "category": category, "size_mean": np.array([0.0], dtype=np.float32),
-        "size_sigma": np.array([0.0], dtype=np.float32), "price": 0,
+        "category": category, "size": np.array([0.0], dtype=np.float32),
+        "price": 0,
         "price_offset": 1, "order_slot": slot,
     }
 

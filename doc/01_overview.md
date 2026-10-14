@@ -111,7 +111,7 @@ other. The environment is a valid *game*; framing it as a market simulator overr
 | Tick | 1.0 (`Action_Helper.min_tick`, from the `tick_size` config key) | `environment.tick_size`, [`train_config.json`](../config/train_config.json) |
 | Instrument | a single unnamed contract, no expiry, no carry | [`account.py`](../gym_continuousDoubleAuction/envs/account/account.py) |
 | Observation | 233 floats — 4 stacked 48-float grid snapshots of the shared book (including its 6 market scalars), plus a 41-float per-agent private block (9 account fields, the agent's own resting size at each of the 10 levels per side, its 2 order counts, the dead-action flag, and the 9 `can_*` action-mask entries) | `observation_layout`, [`tunable_constants.json`](../config/tunable_constants.json) |
-| Action | `Dict{category:9, order_slot:5, price:10, price_offset:3, size_mean:Box, size_sigma:Box}` | `action_space`, [`tunable_constants.json`](../config/tunable_constants.json) |
+| Action | `Dict{category:9, order_slot:5, price:10, price_offset:3, size:Box}` | `action_space`, [`tunable_constants.json`](../config/tunable_constants.json) |
 | Termination | only when *every* agent is bankrupt | `set_all_done` in [`done_helper.py`](../gym_continuousDoubleAuction/envs/exchg/done_helper.py) |
 | Truncation | at `max_step` | `set_all_done` in [`done_helper.py`](../gym_continuousDoubleAuction/envs/exchg/done_helper.py) |
 
@@ -199,7 +199,7 @@ remaining high-impact issues are.
 | `python -m gym_continuousDoubleAuction.train.train --iters 4 --agents 4` | League self-play PPO training |
 | `python -m gym_continuousDoubleAuction.train.train --help` | Full CLI |
 | `python gym_continuousDoubleAuction/CDA_rand.py` | Random-agent smoke run, no learning (CI stage 2) |
-| `python -m pytest gym_continuousDoubleAuction/test -q` | 1,472 tests (1,309 unit + 163 integration) |
+| `python -m pytest gym_continuousDoubleAuction/test -q` | 1,477 tests (1,314 unit + 163 integration) |
 | `python -m pytest gym_continuousDoubleAuction/test/integration -q` | 163 integration tests that build real `Algorithm`s |
 | `python -m gym_continuousDoubleAuction.CDA_rand --help` | Flags for the smoke run; defaults in `config/cli_defaults.json` |
 | `CDA_train.ipynb` | Notebook driver; imports `TrainConfig` / `train` from `train.py`. Runs unchanged on [Colab](20_colab.md) and in the [docker image](19_docker.md) — set `PLATFORM` / `USE_GPU` in its first cell, everything else comes from `config/runtime_profiles.json` |

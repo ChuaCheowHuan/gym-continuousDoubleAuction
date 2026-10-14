@@ -191,7 +191,7 @@ NAV, so the `on_episode_end` conservation check must be relaxed to
 
 | Gap | Detail |
 |---|---|
-| **No position limit** | Nothing caps `net_position`. Size is bounded only by cash and by `limit_max_size = 1000` in the action space (`limit_size_mean_mul = 499.5`, so a full-scale draw is ≈ 500 contracts). |
+| **No position limit** | Nothing caps `net_position`. Size is bounded only by cash and by `limit_max_size = 1000` in the action space (`limit_size_mul = 499.5`, so a full-scale size is ≈ 500 contracts). |
 | **No margin call / forced liquidation** | An agent can be marked to a negative NAV and simply sits there. |
 | **No per-agent termination on bankruptcy** | **[verified]**: forcing `agent_0.nav = −50` yields `terminateds: {'agent_0': False, …}`. `set_done` records it in `done_set` but `set_all_done` overwrites all flags. The episode only ends when **every** agent is bust. |
 | **No borrow/locate on shorts** | Unlimited short capacity subject only to cash. |

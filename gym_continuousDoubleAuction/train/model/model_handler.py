@@ -74,13 +74,12 @@ class RandomRLModule(RLModule):
     through a learned distribution. For this env's `spaces.Dict` action space
     that means each component is sampled from its own declared range:
     `category` uniform over 9, `price` over 10, `price_offset` over 3,
-    `order_slot` over max_own_orders + 1, `size_mean` ~ U(0, 1),
-    `size_sigma` ~ U(0, 1).
+    `order_slot` over max_own_orders + 1, `size` ~ U(0, 1).
 
     This is the distinction that matters versus a *frozen randomly-initialised*
     PPO network, which is what the old `PolicySpec(RandomPolicy, ...)` wiring
     silently produced: that samples the Box components from a Gaussian
-    (mean ~ 0, sigma ~ 1) and clips, so e.g. `size_sigma` piles up on 0 instead
+    (mean ~ 0, sigma ~ 1) and clips, so e.g. `size` piles up on 0 and on 1 instead
     of being uniform on [0, 1], and the Discrete components carry a fixed
     initialisation bias for the whole run.
 

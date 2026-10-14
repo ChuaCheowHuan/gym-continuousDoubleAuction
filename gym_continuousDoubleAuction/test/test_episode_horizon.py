@@ -27,8 +27,7 @@ def _env(**overrides):
 
 def _pass(env):
     return {agent: {"category": 0, "order_slot": 0, "price": 0, "price_offset": 1,
-                    "size_mean": np.zeros(1, dtype=np.float32),
-                    "size_sigma": np.zeros(1, dtype=np.float32)}
+                    "size": np.zeros(1, dtype=np.float32)}
             for agent in env.agents}
 
 

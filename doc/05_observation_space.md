@@ -895,4 +895,6 @@ list are written into `league_state.json` beside every checkpoint, and `train.bu
 positive asks and finite bounds, 4 the 296-float vector with the occupancy rows and the last-trade
 reference for a one-sided book, 5 the `book_mode` key with the 224-float grid as the default and
 the 296-float `levels` layout kept beside it, 6 the nine-entry action mask at the end of the
-private block (233 and 305 floats).
+private block (233 and 305 floats). Action layouts: 1 the five-component `Dict`, 2 with the `order_slot`
+head, 3 with `size_mean` on `Box(0, 1)` instead of `Box(-1, 1)`, 4 with the one `size` head in place of
+`size_mean` and `size_sigma`.

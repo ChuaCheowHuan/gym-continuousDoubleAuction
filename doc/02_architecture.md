@@ -193,7 +193,7 @@ gym_continuousDoubleAuction/
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   ├── inspect_latest_episode*.py        print the newest episode as a table or JSON
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               1,309 unit tests
+└── test/                               1,314 unit tests
     └── integration/                    163 tests that build real Algorithms
 ```
 
@@ -267,7 +267,7 @@ consume its own keyword arguments — nothing unrecognised may reach `object.__i
 raises `TypeError`. This was the root cause of a real bug: `State_Helper.__init__` forwarding
 `n_hist=4` down the chain aborted `Action_Helper.__init__` mid-body, surfacing as
 `AttributeError: 'continuousDoubleAuctionEnv' object has no attribute 'min_tick'`.
-`test_config_wiring.py` now asserts `mkt_size_mean_mul` is initialised on a built env, which is an
+`test_config_wiring.py` now asserts `mkt_size_mul` is initialised on a built env, which is an
 MRO health check: it exists only if `Action_Helper.__init__` ran to completion.
 
 The trader side uses the same idiom:
@@ -351,12 +351,12 @@ turns the neural-network `Dict` output into an order dict:
 | Field | Meaning |
 |---|---|
 | `category ∈ [0,8]` | `0` = pass; `1-4` = bid {market, limit, modify, cancel}; `5-8` = ask {…} |
-| `size_mean ∈ [0,1]`, `size_sigma ∈ [0,1]` | parameters of a Gaussian the **environment** samples the size from |
+| `size ∈ [0,1]` | the order size as a fraction of the size ceiling; the **policy** samples it, the environment draws nothing |
 | `price ∈ [0,9]` | book depth level 1–10 to quote at |
 | `price_offset ∈ {0,1,2}` | passive (−1 tick) / join / aggressive (+1 tick) |
 
-Size is drawn as `rint(abs(N(mean_mul · size_mean, size_sigma)))`, then `+ min_size` so it is at
-least 1, where `mean_mul` is 49.5 for market orders and 499.5 for limit orders. Price is resolved
+Size is `rint(size · mul)`, then `+ min_size` so it is at least 1, where `mul` is 49.5 for market
+orders and 499.5 for limit orders. Price is resolved
 against the **raw, unnormalised** book (`agg_LOB_raw`), falling back to "ghost" levels stepped off
 `last_price` when the requested depth level is empty. This raw/normalised split is deliberate and
 correct: observations are normalised for the network, actions are priced in absolute currency.

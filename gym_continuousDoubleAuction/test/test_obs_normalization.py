@@ -48,15 +48,14 @@ class TestObsNormalization:
         return env
 
     def _place_limit(self, env, agent_id, category, level, offset,
-                     size_mean=0.5, size_sigma=0.0):
+                     size=0.5):
         """Submit a single limit order action and return the step outputs."""
         action = {
             agent_id: {
                 "category": category,
                 "price": level,
                 "price_offset": offset,
-                "size_mean": np.array([size_mean], dtype=np.float32),
-                "size_sigma": np.array([size_sigma], dtype=np.float32),
+                "size": np.array([size], dtype=np.float32),
             }
         }
         return env.step(action)

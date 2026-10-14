@@ -143,14 +143,14 @@ class TestActionSpace:
         space = env.action_spaces["agent_0"]
         assert tuple(space.spaces) == ACTION_KEYS
         assert space["order_slot"].n == env.max_own_orders + 1 == 5
-        assert ACTION_LAYOUT_VERSION == 3
+        assert ACTION_LAYOUT_VERSION == 4
 
     def test_absent_slot_decodes_as_zero(self):
         env = continuousDoubleAuctionEnv({"num_of_agents": 1, "is_render": False})
         env.reset(seed=0)
         act = env._set_action_mkt_depth("agent_0", {
-            "category": 4, "size_mean": np.array([0.0], dtype=np.float32),
-            "size_sigma": np.array([0.0], dtype=np.float32), "price": 0,
+            "category": 4, "size": np.array([0.0], dtype=np.float32),
+            "price": 0,
             "price_offset": 1,
         })
         assert act["slot"] == 0
@@ -164,8 +164,8 @@ class TestActionSpace:
 
         def act(category, price=0, offset=1, slot=0):
             return {"agent_0": {
-                "category": category, "size_mean": np.array([0.2], dtype=np.float32),
-                "size_sigma": np.array([0.0], dtype=np.float32), "price": price,
+                "category": category, "size": np.array([0.2], dtype=np.float32),
+                "price": price,
                 "price_offset": offset, "order_slot": slot,
             }}
 

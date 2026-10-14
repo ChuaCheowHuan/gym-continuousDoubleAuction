@@ -23,12 +23,12 @@ EPISODES = [
 
 
 def test_unbatch_handles_dicts_tensors_and_discrete():
-    batched = {"category": torch.tensor([4]), "size_mean": torch.tensor([[0.25]]),
+    batched = {"category": torch.tensor([4]), "size": torch.tensor([[0.25]]),
                "order_slot": np.array([2])}
     out = evaluate._unbatch(batched)
     assert out["category"] == 4 and isinstance(out["category"], int)
     assert out["order_slot"] == 2
-    assert out["size_mean"].shape == (1,) and float(out["size_mean"][0]) == 0.25
+    assert out["size"].shape == (1,) and float(out["size"][0]) == 0.25
 
 
 def test_summarise_means_per_module():

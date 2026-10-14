@@ -33,7 +33,7 @@ register is `doc/15_findings_and_recommendations.md`.
 - Mixin chain: `Exchg_Helper -> State_Helper -> Action_Helper -> Reward_Helper`, plus
   `Liquidation_Helper`. Accounts: `cash`, `cash_on_hold`, `position_val`, `cost_basis`.
 - Observation: 233 floats in `grid` mode (4 x 48 + 41), 305 in `levels` mode; the private block is
-  41. Six action heads, six reward terms, five encoders. Skill `cda-doc-sync` recomputes these.
+  41. Five action heads, six reward terms, five encoders. Skill `cda-doc-sync` recomputes these.
 - NAV conservation: `sum(NAV) + env.fees_collected == starting cash`.
 
 ## GitHub in this environment
