@@ -193,3 +193,32 @@ class TestTickGrid:
 
         env = self._env(1)
         assert env.action_spaces['agent_0']['price'].n == K_ROWS
+
+
+class TestSizeMeanRange:
+    """S3-1: `_set_size` takes `abs()` of its sample, so a signed `size_mean`
+    put every size at two means and half the declared range did nothing."""
+
+    @staticmethod
+    def _env():
+        return continuousDoubleAuctionEnv({"num_of_agents": 2, "is_render": False})
+
+    def test_the_range_is_non_negative(self):
+        space = self._env().action_spaces["agent_0"]["size_mean"]
+        assert (float(space.low[0]), float(space.high[0])) == (0.0, 1.0)
+
+    @pytest.mark.parametrize("kind", ["market", "limit"])
+    def test_every_point_of_the_range_is_a_different_size(self, kind):
+        """No two declared means give the same size, so no part of the range is dead."""
+        env = self._env()
+        env.reset(seed=0)
+        space = env.action_spaces["agent_0"]["size_mean"]
+        means = np.linspace(float(space.low[0]), float(space.high[0]), 11)
+        sizes = [env._set_size(kind, env.mkt_size_mean_mul, env.limit_size_mean_mul, m, 0.0)
+                 for m in means]
+        assert sizes == sorted(set(sizes))
+
+    def test_a_sampled_mean_is_never_negative(self):
+        space = self._env().action_spaces["agent_0"]["size_mean"]
+        space.seed(0)
+        assert all(float(space.sample()[0]) >= 0.0 for _ in range(200))

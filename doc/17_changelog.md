@@ -3592,3 +3592,21 @@ tied to the layout version or finding it describes, the "five-head" checkpoint n
 `test_info_dict.py` 18 to 24 and `test_logging_setup.py` 49 to 61
 ([11](11_logging_and_observability.md)), and `test_tick_grid.py` 14 to 18
 ([15](15_findings_and_recommendations.md)). No code changed; the suite is still 1,464 tests.
+
+## 65. `size_mean` is `Box(0, 1)` (S3-1; issue #110)
+
+- **Cause.** `_set_size` takes `abs()` of the Gaussian draw, so `size_mean = +m` and `-m` gave the same size.
+  With the range declared as `Box(-1, 1)` half of it was dead, and the best mean was bimodal at `+-m`, which a
+  unimodal Gaussian head resolves by drifting to 0, the minimum size. Reproduced before the change: with
+  `sigma = 0`, means -1, -0.5, 0, 0.5, 1 gave sizes 50, 25, 0, 25, 50 for market orders and 500, 250, 0, 250, 500
+  for limit orders.
+- **Fix.** `action_space.size_mean_low` is `0.0` in `config/tunable_constants.json` (a note beside it says why);
+  the only Python changes are the version constant below and two comments that named the defect. `abs()` stays, for the tail where a small
+  mean plus `size_sigma` can draw below zero.
+- **Layout version.** `ACTION_LAYOUT_VERSION` 2 to 3. The head still has the same shape, but a trained mean now
+  means something else, so a checkpoint from the signed range is refused at restore instead of loading and acting
+  differently. Existing checkpoints must be retrained.
+- **Tests.** `TestSizeMeanRange` in `test_new_action_space.py` (4, all of which fail on the signed range), a v2
+  refusal in `test_layout_version.py`, and the two version pins moved to 3. PR #270's three validation tests were
+  not in the counts either; unit 1,301 to 1,309 (+3 from #270, +5 here); suite 1,472.
+- **Not changed.** `size_sigma` (S3-2, #111), which is still inert.

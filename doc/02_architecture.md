@@ -193,7 +193,7 @@ gym_continuousDoubleAuction/
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   ├── inspect_latest_episode*.py        print the newest episode as a table or JSON
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               1,301 unit tests
+└── test/                               1,309 unit tests
     └── integration/                    163 tests that build real Algorithms
 ```
 
@@ -351,7 +351,7 @@ turns the neural-network `Dict` output into an order dict:
 | Field | Meaning |
 |---|---|
 | `category ∈ [0,8]` | `0` = pass; `1-4` = bid {market, limit, modify, cancel}; `5-8` = ask {…} |
-| `size_mean ∈ [-1,1]`, `size_sigma ∈ [0,1]` | parameters of a Gaussian the **environment** samples the size from |
+| `size_mean ∈ [0,1]`, `size_sigma ∈ [0,1]` | parameters of a Gaussian the **environment** samples the size from |
 | `price ∈ [0,9]` | book depth level 1–10 to quote at |
 | `price_offset ∈ {0,1,2}` | passive (−1 tick) / join / aggressive (+1 tick) |
 
