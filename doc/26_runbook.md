@@ -98,7 +98,7 @@ import and reads its config tree relative to the repository root
 Three checks, cheapest first. All three are what CI runs ([10](10_testing.md) §7).
 
 ```bash
-# 1. the simulator and the training-side units: ~1 min, 1,309 tests (incl. pyflakes and Hypothesis)
+# 1. the simulator and the training-side units: ~1 min, 1,314 tests (incl. pyflakes and Hypothesis)
 python -m pytest gym_continuousDoubleAuction/test -q \
     --ignore=gym_continuousDoubleAuction/test/integration
 
@@ -109,7 +109,7 @@ python -m gym_continuousDoubleAuction.CDA_rand --steps 200 --agents 4
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 ```
 
-Expected: `1309 passed`, a line reading `completed 200 steps with 4 random agents.`, and
+Expected: `1314 passed`, a line reading `completed 200 steps with 4 random agents.`, and
 `163 passed`. `pytest` is the only runner that works; `python test_x.py` defines classes and exits
 ([10](10_testing.md) §0).
 
@@ -419,8 +419,8 @@ package, because the architecture is rebuilt from the checkpoint's own spec rath
 down a second time. There is still no TorchScript or ONNX export.
 
 To run what you exported, the inference path is `evaluate.act` — `forward_inference`, the module's
-own distribution class, then `unsquash_action`. Skipping that unsquash hands the env a negative
-`size_sigma` on about half the samples. The action mask travels inside the observation and is
+own distribution class, then `unsquash_action`. Skipping that unsquash hands the env a `size`
+outside its range on about half the samples, which it clips to an end of the range. The action mask travels inside the observation and is
 applied inside the module, so nothing extra is needed for it.
 
 ---

@@ -422,8 +422,8 @@ describes.
   `AddNextObservationsFromEpisodesToTrainBatch`; it is attached via
   `config.learners(learner_connector=…)`. **[verified present in the pinned Ray]**
 - An action embedding for the `Dict` action space: `category` (9) and `price` (10) and
-  `price_offset` (3) as embeddings, `size_mean` / `size_sigma` as scalars. Note S3-2 —
-  `size_sigma` is inert — so it carries less information than its shape suggests.
+  `price_offset` (3) as embeddings, `size` as a scalar (it was `size_mean` and `size_sigma`
+  before the action layout moved to version 4).
 - Care at episode boundaries: `o_{t+1}` across a `truncated` step is the next episode's reset
   observation and must be masked out of the loss.
 

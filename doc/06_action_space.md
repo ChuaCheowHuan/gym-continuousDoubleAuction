@@ -1,7 +1,7 @@
 # 6. Action Space
 
-The current `Dict` action space, its deterministic price anchoring, the two degenerate
-dimensions, and the legacy `Tuple` design it replaced.
+The current `Dict` action space, its deterministic price anchoring, the two size heads it
+used to have and why they went, and the legacy `Tuple` design it replaced.
 
 Related: [05_observation_space.md](05_observation_space.md) §5 (prices resolve against
 `agg_LOB_raw`), [03_matching_engine.md](03_matching_engine.md) §3.5 (order targeting),
@@ -17,8 +17,7 @@ Each agent's action is a `gymnasium.spaces.Dict`
 | Key | Space | Config key | Description |
 |---|---|---|---|
 | `category` | `Discrete(9)` | `action_space.category_n` | Trade action — side and type combined |
-| `size_mean` | `Box(0.0, 1.0)` | `action_space.size_mean_low` / `_high` | Mean for size sampling |
-| `size_sigma` | `Box(0.0, 1.0)` | `action_space.size_sigma_low` / `_high` | Sigma for size sampling |
+| `size` | `Box(0.0, 1.0)` | `action_space.size_low` / `_high` | Order size as a fraction of the size ceiling (§1.2) |
 | `price` | `Discrete(10)` | `observation_layout.k_rows` | Ticks from the reference price on the passive side (`book_mode: "grid"`, the default); book level index 0–9 in `levels` mode |
 | `price_offset` | `Discrete(3)` | `action_space.price_offset_n` | Stance relative to that level: 0 passive, 1 join, 2 aggressive |
 
@@ -36,12 +35,12 @@ value the decoder cannot honour raises rather than being silently ignored. See
 
 ```mermaid
 flowchart TD
-    NN["RLModule emits a Dict:<br/>category, order_slot, price, price_offset,<br/>size_mean, size_sigma"] --> CAT{"_CATEGORY_MAP[category]"}
+    NN["RLModule emits a Dict:<br/>category, order_slot, price, price_offset,<br/>size"] --> CAT{"_CATEGORY_MAP[category]"}
     CAT -->|"0 -> (None, market)"| PASS["side is None:<br/>dropped by set_actions,<br/>agent recorded in pass_agents"]
     CAT -->|"1-4 -> bid {market, limit, modify, cancel}"| SIZE
     CAT -->|"5-8 -> ask {market, limit, modify, cancel}"| SIZE
 
-    SIZE["_set_size:<br/>rint(abs(N(mean_mul * size_mean, size_sigma)))<br/>drawn from self.np_random"] --> PLUS["+ min_size, cast to int"]
+    SIZE["_set_size:<br/>rint(size * mul), size clipped to its range<br/>no random draw"] --> PLUS["+ min_size, cast to int"]
     PLUS --> TYPE{"type is market?"}
     TYPE -->|"yes"| MKT["price = -1.0<br/>price and price_offset ignored"]
     TYPE -->|"no"| PR["_set_price(min_tick, side, price, price_offset)"]
@@ -61,9 +60,9 @@ flowchart TD
     OUT --> QUEUE["appended to acts, then shuffled by rand_exec_seq"]
 ```
 
-`mean_mul` is 49.5 for market orders and 499.5 for limit orders, so the same `size_mean` means a
-10× larger order on the limit path. Note that the *realised* size is drawn by the **environment**,
-not by the policy distribution — §4.3 is about why that matters.
+`mul` is 49.5 for market orders and 499.5 for limit orders, so the same `size` means a 10× larger
+order on the limit path. The policy samples `size` itself, so the size an order gets is the action
+that PPO scores; the environment draws nothing (§4 is about why that matters).
 
 ### 1.1 `category`
 
@@ -86,15 +85,17 @@ min_size            = 1
 mkt_max_size        = 100
 N                   = 10
 limit_max_size      = mkt_max_size * N          # 1000
-mkt_size_mean_mul   = (mkt_max_size - min_size) / 2      # 49.5
-limit_size_mean_mul = (limit_max_size - min_size) / 2    # 499.5
+mkt_size_mul        = (mkt_max_size - min_size) / 2      # 49.5
+limit_size_mul      = (limit_max_size - min_size) / 2    # 499.5
 ```
 
-The final size is
-`rint(abs(N(mean_mul × size_mean, size_sigma)))`, then `+ min_size` so it is at least 1. A
-full-scale limit draw (`size_mean = 1.0`) is therefore ≈ **500 contracts**, not 5,000.
+The final size is `rint(size × mul)`, then `+ min_size` so it is at least 1. `size` is clipped to
+`[size_low, size_high]` first, so a value outside the range sits at an end of it rather than being
+folded back. A full-scale limit order (`size = 1.0`) is therefore ≈ **500 contracts**, not 1,000:
+the multiplier is half the configured maximum, as it always was.
 
-> Both size dimensions are effectively degenerate — see §4.
+> Until the action layout moved to version 4 the size was two heads, `size_mean` and `size_sigma`,
+> that the environment turned into a size with a random draw. See §4.
 
 ### 1.3 `price_offset`
 
@@ -217,62 +218,64 @@ price", not a fixed distance, so the coordinate system is non-stationary. See
 
 ---
 
-## 4. The two degenerate dimensions
+## 4. The size heads that were degenerate (fixed)
 
-### 4.1 Half the `size_mean` range is a no-op
+Until the action layout moved to version 4 the size was two heads, `size_mean` and `size_sigma`,
+and `_set_size` turned them into a size with
+`rint(abs(N(mean_mul × size_mean, size_sigma)))`, drawn from `self.np_random`. That had three
+defects ([15](15_findings_and_recommendations.md) S3-1 to S3-3). All three are closed by the one
+`size` head of §1.2, which the policy samples itself.
 
-`_set_size`
-([`action_helper.py`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py)):
+### 4.1 Half the `size_mean` range was a no-op (S3-1)
 
-```python
-sample = self.np_random.normal(mean_mul * mean, sigma, 1)
-return int(np.rint(np.abs(sample)).item())
-```
-
-The `abs()` folds the distribution. **[verified]**, same RNG seed:
+The `abs()` folded the distribution. **[verified]**, same RNG seed:
 
 ```
 mean=+0.5 -> [250.0, 250.0, 250.0, 250.0, 250.0]
 mean=-0.5 -> [250.0, 250.0, 250.0, 250.0, 250.0]   identical: True
 ```
 
-Until S3-1 was fixed `size_mean` was declared on `Box(-1, 1)`, so the policy's Gaussian head spent half its range on a
-mirror image. Worse, the optimum is bimodal at `±m`, which fights the unimodal Gaussian policy:
+`size_mean` was declared on `Box(-1, 1)`, so the policy's Gaussian head spent half its range on a
+mirror image. Worse, the optimum was bimodal at `±m`, which fights the unimodal Gaussian policy:
 the head is pushed toward mean 0 by symmetric gradients, and mean 0 means *minimum* size. The
-gradient also has a kink at exactly 0 — the worst possible place for one, since that is where a
+gradient also had a kink at exactly 0 — the worst possible place for one, since that is where a
 Gaussian policy initializes.
 
-**Fixed.** `action_space.size_mean_low` is now `0.0`, so the declared range is `Box(0, 1)` and every mean in it gives a
-different size (`test_new_action_space.py::TestSizeMeanRange`). `abs()` stays: it only matters in the tail now, where
-`size_sigma` pushes a small mean below zero. The action layout version moved from 2 to 3, so a checkpoint trained
-with the signed range is refused at restore ([05](05_observation_space.md) §10) instead of reading its head differently.
+**Fixed first** by declaring the range `Box(0, 1)` (action layout 3), then by the single head
+below. `size` is non-negative, and `TestSizeHead` checks that eleven values across the range give
+eleven different sizes, for market and limit orders alike.
 
-### 4.2 The `size_sigma` head is inert
+### 4.2 The `size_sigma` head was inert (S3-2)
 
-`sigma` is passed straight to `np.random.normal` as an **absolute** standard deviation, while
-means are 49.5·|m| (market) or 499.5·|m| (limit). **[verified]**:
+`sigma` was passed straight to `np.random.normal` as an **absolute** standard deviation, while
+means were 49.5·|m| (market) or 499.5·|m| (limit). **[verified]**, 4,000 limit sizes at
+`size_mean = 0.5`:
 
 ```
-sigma=0.0 -> [250.0, 250.0, 250.0];  sigma=1.0 -> [251.0, 249.0, 250.0]
+sigma=0.0 -> std 0.00 (all 250);  sigma=0.25 -> 0.37;  sigma=0.5 -> 0.58;  sigma=1.0 -> 1.05
 ```
 
-Across `sigma ∈ [0,1]` the size varies by ±1 contract on a base of 250. The head is a null
-control: the policy pays entropy cost forever for a parameter with no effect.
+Across `sigma ∈ [0,1]` the size varied by about ±1 contract on a base of 250. The head was a null
+control: the policy paid entropy cost for a parameter with no effect. **Fixed** by deleting it
+(the issue offered "scale it, or delete it"; with the size sampled by the policy there is nothing
+left for a sigma to control).
 
-**Fix:** scale it (`sigma × mean_mul × k`) or delete it.
+### 4.3 Environment-side sampling broke the log-probability (S3-3)
 
-### 4.3 Environment-side sampling breaks the log-probability
+The policy emitted distribution **parameters** and the environment drew the sample. The realised
+size was therefore not part of the action whose log-probability PPO uses in the importance ratio.
+The policy was credited or blamed for an outcome driven by an unrecorded random draw, and the
+agent never observed the realisation. **[verified]**: one action, eight env seeds, eight draws:
 
-Setting scale aside, the *architecture* of size selection is unusual: the policy emits
-distribution **parameters**, and the environment draws the sample. The realised size is therefore
-not part of the action whose log-probability PPO uses in the importance ratio. The policy is
-credited or blamed for an outcome driven by an unrecorded random draw, and the agent never
-observes the realisation.
+```
+size_mean=0.5, size_sigma=1.0 -> sizes [251, 251, 251, 253, 250, 250, 252, 251]
+```
 
-This shows up as extra advantage variance that no amount of data removes. The standard
-formulation is to have the policy emit the size directly (a `Box` action, with sampling handled
-by the policy distribution, so `log π(a|s)` covers it), letting PPO's own exploration schedule
-control the spread.
+The spread was small here because sigma was small (§4.2), but the structure was wrong: advantage
+variance that no amount of data removes. **Fixed** by having the policy emit the size directly as
+a `Box` action, so `log π(a|s)` covers it and PPO's own exploration schedule controls the spread.
+`Action_Helper._set_size` no longer touches the random generator, and the same action now gives
+the same size under any env seed (`TestSizeHead`).
 
 ### 4.4 Dead helper methods
 

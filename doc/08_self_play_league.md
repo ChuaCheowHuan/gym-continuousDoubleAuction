@@ -56,8 +56,8 @@ Two wiring details are load-bearing and both are guarded by tests:
 
 `RandomRLModule` emits `Columns.ACTIONS` directly from `action_space.sample()`, so it is a *true*
 uniform sampler. The distinction from a frozen random network is material for a `Dict` action
-space: a Gaussian-initialised head draws `Box` components from a clipped Gaussian (so `size_sigma`
-piles up at 0) and carries a fixed bias in the discrete heads for the whole run.
+space: a Gaussian-initialised head draws `Box` components from a clipped Gaussian (so `size` piles
+up on the ends of its range) and carries a fixed bias in the discrete heads for the whole run.
 
 ---
 

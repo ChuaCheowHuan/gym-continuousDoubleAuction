@@ -3610,3 +3610,32 @@ tied to the layout version or finding it describes, the "five-head" checkpoint n
   refusal in `test_layout_version.py`, and the two version pins moved to 3. PR #270's three validation tests were
   not in the counts either; unit 1,301 to 1,309 (+3 from #270, +5 here); suite 1,472.
 - **Not changed.** `size_sigma` (S3-2, #111), which is still inert.
+
+## 66. One `size` head replaces `size_mean` and `size_sigma` (S3-2, S3-3; issues #111, #112)
+
+- **Cause.** The size was two heads, turned into a size by a Gaussian draw inside the env:
+  `rint(abs(N(mul * size_mean, size_sigma)))`. Two defects, both reproduced first. S3-2: `size_sigma` is in
+  [0, 1] and is an absolute standard deviation against means of 25 to 500, so across its whole range the
+  standard deviation of 4,000 limit sizes at `size_mean = 0.5` was 0, 0.37, 0.58 and 1.05 around 250; the head did
+  nothing and cost entropy. S3-3: the realised size was not part of the action whose log-probability PPO scores;
+  one action under eight env seeds gave sizes 251, 251, 251, 253, 250, 250, 252, 251.
+- **Fix.** One head, `size`, `Box(size_low, size_high)` = `Box(0, 1)`: the fraction of the size ceiling. The env turns
+  it into `rint(size * mul) + min_size` and draws nothing. The issues offered "scale it, or delete it" for the sigma
+  and "emit size directly" for the draw; the second makes the first moot, so the sigma is deleted. A value outside
+  the range is clipped, and `Action_Helper` refuses `size_low < 0`. The multipliers are unchanged in value and
+  renamed `mkt_size_mul` and `limit_size_mul`, since no mean is left; the config keys `size_mean_low/high` and
+  `size_sigma_low/high` became `size_low/high`.
+- **Layout version.** `ACTION_LAYOUT_VERSION` 3 to 4, `ACTION_KEYS` loses two keys and gains one, and the policy
+  head is 29 outputs instead of 31 (the one Box head's mean and log-std). A checkpoint with the old heads is
+  refused at restore. **Existing checkpoints must be retrained.**
+- **Random play is unchanged.** 40,000 draws of a uniform policy, old formula against new: market sizes mean 24.81
+  and standard deviation 14.26 against 24.81 and 14.25, limit 250.37 and 143.77 against 250.36 and 143.77, the largest
+  difference in any one size 4. The baseline opponents and the random-play figures in
+  [16](16_verification_log.md) do not move.
+- **Seeded runs differ.** Per-step order sizes no longer consume the env's random stream, so a seeded episode is not
+  the one it was; nothing that holds for every seed changed (the overdraw and conservation stress tests pass).
+- **Tests.** `TestSizeHead` replaces `TestSizeMeanRange` (4 to 8); v2 and v3 refusals in `test_layout_version.py`;
+  the action dicts across the suite lose `size_sigma` and rename `size_mean`; the policy-head widths in `test_cbp.py`
+  are 29. Unit 1,309 to 1,314; suite 1,477.
+- **#113 (S3-4, the `tick_size`) needed nothing.** It was already fixed and closed; `OrderBook(0.0001, 10)` is still a
+  `TypeError` and `test_tick_grid.py` still passes (18 tests).

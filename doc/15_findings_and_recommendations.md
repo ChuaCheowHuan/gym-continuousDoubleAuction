@@ -68,8 +68,8 @@ mindmap
     S3 Moderate
       action space
         S3-1 half of size_mean is a no-op — fixed
-        S3-2 size_sigma is inert
-        S3-3 env-side sampling breaks the log-prob
+        S3-2 size_sigma is inert — fixed
+        S3-3 env-side sampling breaks the log-prob — fixed
       simulator and config
         S3-4 tick_size — fixed; the book takes no tick
         S3-5 seeding — fixed
@@ -719,27 +719,37 @@ bimodal at `±m`, which a unimodal Gaussian head resolves by drifting toward 0 �
 size. The gradient kink sits exactly where the policy initializes.
 
 **Fixed.** `action_space.size_mean_low` is `0.0`, so the space is `Box(0, 1)` and the eleven means from 0 to 1 give eleven
-different sizes, for market and limit orders alike (`test_new_action_space.py::TestSizeMeanRange`, which fails on the
-signed range). `abs()` stays for the tail. `ACTION_LAYOUT_VERSION` is 3, so a checkpoint trained on the signed range
-is refused at restore. Changelog [17](17_changelog.md) §65.
+different sizes, for market and limit orders alike. `ACTION_LAYOUT_VERSION` 3 refused a checkpoint trained on the signed
+range. Changelog [17](17_changelog.md) §65. The head itself was then replaced by the single `size` head of S3-2 and S3-3
+(layout 4, §66).
 
-### S3-2 · The `size_sigma` head is inert **[verified]**
+### S3-2 · The `size_sigma` head is inert **[verified, fixed]**
 
 _Tracked in [#111](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/111)._
 
 `sigma ∈ [0,1]` is used as an *absolute* standard deviation while means are 49.5·|m| or 499.5·|m|.
 Across its full range the size varies by ±1 contract on a base of 250. The policy pays entropy
 cost for a control that does nothing.
-**Fix:** scale it, or delete it.
 
-### S3-3 · Size is sampled by the environment, outside the policy's log-prob
+**Fixed.** Deleted: the size is now one `size` head, `Box(0, 1)`, and there is no sigma. Measured before the change, 4,000
+limit sizes at `size_mean = 0.5` had a standard deviation of 0, 0.37, 0.58 and 1.05 at sigma 0, 0.25, 0.5 and 1.0, on a base
+of 250. `ACTION_LAYOUT_VERSION` is 4, so a checkpoint with the old heads is refused at restore. Changelog
+[17](17_changelog.md) §66.
+
+### S3-3 · Size is sampled by the environment, outside the policy's log-prob **[verified, fixed]**
 
 _Tracked in [#112](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/112)._
 
 The policy emits distribution parameters and the env draws the sample, so the realised size is
 not part of the action whose log-probability PPO uses in the importance ratio — and the agent
 never observes the realisation. Irreducible advantage variance.
-**Fix:** emit size directly as a `Box` action.
+
+**Fixed.** The policy emits `size` directly as a `Box` action and `Action_Helper._set_size` draws nothing, so the size
+an order gets is the action PPO scores. Before the change one action under eight env seeds gave sizes
+251, 251, 251, 253, 250, 250, 252, 251; now it gives one
+(`test_new_action_space.py::TestSizeHead`). The spread was small only because S3-2's sigma was; the structure was the
+defect. Per-step order sizes no longer consume the env's random stream, so a seeded episode is not the one it was before
+the change. Changelog [17](17_changelog.md) §66.
 
 ### S3-4 · The order book's `tick_size` is inert **[verified, fixed]**
 
@@ -1554,7 +1564,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **1,309 unit tests pass** (plus 163 integration), covering every position-flip path, cash-check edge case, modify-order
+- **1,314 unit tests pass** (plus 163 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 
@@ -1581,7 +1591,7 @@ Roughly two to three weeks of work, ordered so each step unblocks the next.
    9 floats per agent then; the agent's own resting orders and the action mask have since joined
    it (41 floats, S3-24)
 6. ~~Terminate and flatten bankrupt agents (S2-4)~~ — **done**
-7. ~~`size_mean → Box(0,1)`~~ — **done** (S3-1); scale or drop `size_sigma` (S3-2)
+7. ~~`size_mean → Box(0,1)`; scale or drop `size_sigma`~~ — **done** (S3-1, S3-2, S3-3): one `size` head
 8. Positive decaying `entropy_coeff`; raise `std_dev_multiplier`; refuse zero-trade champions (S3-11)
 9. ~~One `np.random.Generator` threaded through the env (S3-5)~~ — **done**. All three draws read
    `self.np_random`; `test_seeding.py` pins it, and `scikit-learn` left with the fix

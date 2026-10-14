@@ -40,7 +40,7 @@ reasonable prioritised-fictitious-play approximation.
 - **Frozen baselines are genuinely uniform.** `RandomRLModule._forward` samples the action space
   directly. The docstring's point is correct and non-obvious: a *frozen randomly-initialised* PPO
   network is not the same opponent distribution — it draws `Box` components from a clipped
-  Gaussian (so `size_sigma` piles up at 0) and carries a fixed bias in the discrete heads for the
+  Gaussian (so `size` piles up on the ends of its range) and carries a fixed bias in the discrete heads for the
   whole run.
 
 ---
@@ -332,7 +332,7 @@ is pushed toward mean 0 by symmetric gradients, and mean 0 means *minimum* size.
 also has a kink at exactly 0 — where a Gaussian policy initializes. **Fixed (S3-1):** the space is
 now `Box(0, 1)`.
 
-### 5.2 The `size_sigma` head is inert
+### 5.2 The `size_sigma` head was inert
 
 `sigma` is passed straight to `np.random.normal` as an **absolute** standard deviation, while
 means are 49.5·|m| (market) or 499.5·|m| (limit). **[verified]**:
@@ -342,10 +342,9 @@ sigma=0.0 -> [250.0, 250.0, 250.0];  sigma=1.0 -> [251.0, 249.0, 250.0]
 ```
 
 Across `sigma ∈ [0,1]` the size varies by ±1 contract on a base of 250. The head is a null
-control: the policy pays entropy cost for a parameter with no effect. Either scale it
-(`sigma × mean_mul × k`) or delete it.
+control: the policy paid entropy cost for a parameter with no effect. **Fixed (S3-2):** deleted.
 
-### 5.3 Environment-side sampling breaks the log-probability
+### 5.3 Environment-side sampling broke the log-probability
 
 The policy emits distribution **parameters**, and the environment draws the sample. The realised
 size is therefore not part of the action whose log-probability PPO uses in the importance ratio.
@@ -355,7 +354,7 @@ realisation it never observes.
 This shows up as extra advantage variance that no amount of data removes. The standard
 formulation is to have the policy emit the size directly (a `Box` action, with sampling handled
 by the policy distribution, so `log π(a|s)` covers it), letting PPO's own exploration schedule
-control the spread.
+control the spread. **Fixed (S3-3):** the policy now emits one `size` head directly.
 
 ### 5.4 Action-space geometry is otherwise good
 
@@ -558,7 +557,7 @@ Observations:
 | 2 | ~~Add private state to the observation (§2)~~ — **done**, 9 floats | M | Makes the reward learnable at all. Own resting orders still absent |
 | 3 | ~~Make the drawdown penalty an increment~~ — **done**, as a *signed* change | S | Removes the episode-length-dependent risk tax; see [07 §4.1](07_reward_function.md) on why clipping it would not have |
 | 4 | ~~Re-scale the micro-penalties; express costs in bps~~ — **done** | S | Restores the intended incentives. Real fees charged through NAV remain open (S2-3) |
-| 5 | ~~`size_mean → Box(0,1)`~~ (done, S3-1); scale or drop `size_sigma` | S | Recovers half the action range, removes a null control |
+| 5 | ~~`size_mean → Box(0,1)`; scale or drop `size_sigma`~~ — **done** (S3-1 to S3-3), one `size` head | S | Recovers half the action range, removes a null control |
 | 6 | Normalise observation feature scales | S | Removes `tanh` saturation |
 | 7 | Terminate bankrupt agents individually | S | Stops zombie transitions polluting returns |
 | 8 | `entropy_coeff > 0` with decay; raise `std_dev_multiplier`; refuse champions with ~0 trades | S | Guards against passivity collapse |
