@@ -23,8 +23,7 @@ from gym_continuousDoubleAuction.envs.agent.trader import Trader
 def _act(category, price=0, offset=1):
     return {
         "category": category,
-        "size_mean": np.array([0.5], dtype=np.float32),
-        "size_sigma": np.array([0.0], dtype=np.float32),
+        "size": np.array([0.5], dtype=np.float32),
         "price": price,
         "price_offset": offset,
     }

@@ -50,8 +50,7 @@ def _env(**overrides):
 
 def _pass(env):
     return {agent: {"category": 0, "order_slot": 0, "price": 0, "price_offset": 1,
-                    "size_mean": np.zeros(1, dtype=np.float32),
-                    "size_sigma": np.zeros(1, dtype=np.float32)}
+                    "size": np.zeros(1, dtype=np.float32)}
             for agent in env.agents}
 
 
@@ -251,7 +250,7 @@ class TestMaskedRandomPlay:
                 on_step(env, obs)
             o = torch.as_tensor(np.stack([obs[a] for a in env.agents]), dtype=torch.float32)
             acts = rnd._forward({Columns.OBS: o})[Columns.ACTIONS]
-            actions = {a: {k: (np.asarray(v[i]) if k in ("size_mean", "size_sigma") else int(v[i]))
+            actions = {a: {k: (np.asarray(v[i]) if k == "size" else int(v[i]))
                            for k, v in acts.items()} for i, a in enumerate(env.agents)}
             obs, _, dones, truncs, infos = env.step(actions)
             unmatched += sum(i["num_unmatched_step"] for i in infos.values())

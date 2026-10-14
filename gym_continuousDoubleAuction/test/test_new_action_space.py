@@ -40,8 +40,7 @@ class TestActionSpaceRobust:
                     'category': 2, # Buy Limit
                     'price': level,
                     'price_offset': 1, # Join
-                    'size_mean': np.array([0.0], dtype=np.float32),
-                    'size_sigma': np.array([0.0], dtype=np.float32)
+                    'size': np.array([0.0], dtype=np.float32)
                 }
             }
             self.env.step(action)
@@ -58,8 +57,7 @@ class TestActionSpaceRobust:
                     'category': 6, # Sell Limit
                     'price': level,
                     'price_offset': 1, # Join
-                    'size_mean': np.array([0.0], dtype=np.float32),
-                    'size_sigma': np.array([0.0], dtype=np.float32)
+                    'size': np.array([0.0], dtype=np.float32)
                 }
             }
             self.env.step(action)
@@ -83,7 +81,7 @@ class TestActionSpaceRobust:
             self.env.reset()
             self.env.last_price = anchor # Keep anchor consistent for trial
             action = {'agent_0': {'category': 2, 'price': level, 'price_offset': off_code,
-                                 'size_mean': np.array([0.0]), 'size_sigma': np.array([0.0])}}
+                                 'size': np.array([0.0])}}
             self.env.step(action)
             assert self.env.LOB_actions[0]['price'] == pytest.approx(expected), f"Bid Offset {off_code} failed"
 
@@ -103,7 +101,7 @@ class TestActionSpaceRobust:
             self.env.reset()
             self.env.last_price = anchor # Keep anchor consistent for trial
             action = {'agent_0': {'category': 6, 'price': level, 'price_offset': off_code,
-                                 'size_mean': np.array([0.0]), 'size_sigma': np.array([0.0])}}
+                                 'size': np.array([0.0])}}
             self.env.step(action)
             assert self.env.LOB_actions[0]['price'] == pytest.approx(expected), f"Ask Offset {off_code} failed"
 
@@ -111,7 +109,7 @@ class TestActionSpaceRobust:
         """Verify Buy/Sell Market orders (Cat 1, 5) ignore price fields."""
         for cat in [1, 5]:
             action = {'agent_0': {'category': cat, 'price': 9, 'price_offset': 0,
-                                 'size_mean': np.array([0.0]), 'size_sigma': np.array([0.0])}}
+                                 'size': np.array([0.0])}}
             self.env.step(action)
             assert self.env.LOB_actions[0]['price'] == -1.0
             assert self.env.LOB_actions[0]['type'] == 'market'
@@ -126,12 +124,12 @@ class TestActionSpaceRobust:
         # 1. Place a Sell Limit at 100 (Level 1, Aggressive)
         # Sell(6), Level 1(0), Aggressive(2) -> 101 - 1 = 100
         action = {'agent_0': {'category': 6, 'price': 0, 'price_offset': 2,
-                             'size_mean': np.array([0.0]), 'size_sigma': np.array([0.0])}}
+                             'size': np.array([0.0])}}
         self.env.step(action)
 
         # 2. Place a Buy Market
         action = {'agent_1': {'category': 1, 'price': 0, 'price_offset': 1,
-                             'size_mean': np.array([0.1]), 'size_sigma': np.array([0.0])}}
+                             'size': np.array([0.1])}}
         self.env.step(action)
 
         # Check if trade happened and anchor updated
@@ -143,7 +141,7 @@ class TestActionSpaceRobust:
         """Verify category 0 (Neutral) results in no order submission."""
         self.env.reset()
         action = {'agent_0': {'category': 0, 'price': 0, 'price_offset': 1,
-                             'size_mean': np.array([0.0]), 'size_sigma': np.array([0.0])}}
+                             'size': np.array([0.0])}}
         obs, rewards, term, trunc, info = self.env.step(action)
         # Category 0 results in side=None, which is filtered out before LOB_actions is populated in CDA_env
         assert len(self.env.LOB_actions) == 0, "Neutral action should not produce LOB actions"
@@ -195,30 +193,72 @@ class TestTickGrid:
         assert env.action_spaces['agent_0']['price'].n == K_ROWS
 
 
-class TestSizeMeanRange:
-    """S3-1: `_set_size` takes `abs()` of its sample, so a signed `size_mean`
-    put every size at two means and half the declared range did nothing."""
+class TestSizeHead:
+    """S3-1 to S3-3: one `size` head the policy samples itself.
+
+    `size_mean`/`size_sigma` were turned into a size by a draw inside the env:
+    a signed mean folded by `abs()` (S3-1), a sigma too small to matter (S3-2),
+    and a realised size outside the log-probability PPO scores (S3-3).
+    """
 
     @staticmethod
-    def _env():
-        return continuousDoubleAuctionEnv({"num_of_agents": 2, "is_render": False})
+    def _env(**extra):
+        return continuousDoubleAuctionEnv({"num_of_agents": 2, "is_render": False, **extra})
 
-    def test_the_range_is_non_negative(self):
-        space = self._env().action_spaces["agent_0"]["size_mean"]
-        assert (float(space.low[0]), float(space.high[0])) == (0.0, 1.0)
+    def test_there_is_one_size_head_in_zero_to_one(self):
+        space = self._env().action_spaces["agent_0"]
+        assert "size_mean" not in space.spaces and "size_sigma" not in space.spaces
+        assert (float(space["size"].low[0]), float(space["size"].high[0])) == (0.0, 1.0)
 
     @pytest.mark.parametrize("kind", ["market", "limit"])
     def test_every_point_of_the_range_is_a_different_size(self, kind):
-        """No two declared means give the same size, so no part of the range is dead."""
+        """No two declared sizes give the same contracts, so no part of the range is dead."""
         env = self._env()
         env.reset(seed=0)
-        space = env.action_spaces["agent_0"]["size_mean"]
-        means = np.linspace(float(space.low[0]), float(space.high[0]), 11)
-        sizes = [env._set_size(kind, env.mkt_size_mean_mul, env.limit_size_mean_mul, m, 0.0)
-                 for m in means]
+        space = env.action_spaces["agent_0"]["size"]
+        fractions = np.linspace(float(space.low[0]), float(space.high[0]), 11)
+        sizes = [env._set_size(kind, np.array([f], dtype=np.float32)) for f in fractions]
         assert sizes == sorted(set(sizes))
 
-    def test_a_sampled_mean_is_never_negative(self):
-        space = self._env().action_spaces["agent_0"]["size_mean"]
+    def test_the_same_action_gives_the_same_size_whatever_the_env_seed(self):
+        """S3-3: the realised size is the action, not a draw the env makes."""
+        action = {"category": 2, "order_slot": 0, "price": 3, "price_offset": 1,
+                  "size": np.array([0.5], dtype=np.float32)}
+        sizes = set()
+        for seed in range(8):
+            env = self._env()
+            env.reset(seed=seed)
+            sizes.add(env._set_action_mkt_depth("agent_0", dict(action))["size"])
+        assert len(sizes) == 1
+
+    def test_the_size_is_the_fraction_times_the_multiplier_plus_the_minimum(self):
+        env = self._env()
+        env.reset(seed=0)
+        for category, mul in ((1, env.mkt_size_mul), (2, env.limit_size_mul)):
+            act = env._set_action_mkt_depth("agent_0", {
+                "category": category, "order_slot": 0, "price": 0, "price_offset": 1,
+                "size": np.array([0.4], dtype=np.float32)})
+            assert act["size"] == int(np.rint(0.4 * mul)) + env.min_size
+
+    def test_a_value_outside_the_range_is_clipped_not_folded(self):
+        env = self._env()
+        env.reset(seed=0)
+        low = env._set_size("limit", np.array([0.0], dtype=np.float32))
+        high = env._set_size("limit", np.array([1.0], dtype=np.float32))
+        assert env._set_size("limit", np.array([-0.7], dtype=np.float32)) == low
+        assert env._set_size("limit", np.array([9.0], dtype=np.float32)) == high
+
+    def test_a_sampled_size_is_in_the_range(self):
+        space = self._env().action_spaces["agent_0"]["size"]
         space.seed(0)
-        assert all(float(space.sample()[0]) >= 0.0 for _ in range(200))
+        assert all(0.0 <= float(space.sample()[0]) <= 1.0 for _ in range(200))
+
+    def test_a_negative_lower_bound_is_refused(self):
+        """Config is the only source of the bounds (CLAUDE.md rule 1), so a bad one must fail."""
+        import json
+        from gym_continuousDoubleAuction.envs.exchg.action_helper import Action_Helper
+        helper = Action_Helper.__new__(Action_Helper)
+        helper._act = {**json.load(open("config/tunable_constants.json"))["action_space"],
+                       "size_low": -0.5}
+        with pytest.raises(ValueError, match="size_low"):
+            helper._validate_action_space()

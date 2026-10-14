@@ -44,8 +44,7 @@ def _env(**overrides):
 
 def _pass(env):
     return {agent: {"category": 0, "order_slot": 0, "price": 0, "price_offset": 1,
-                    "size_mean": np.zeros(1, dtype=np.float32),
-                    "size_sigma": np.zeros(1, dtype=np.float32)}
+                    "size": np.zeros(1, dtype=np.float32)}
             for agent in env.agents}
 
 
@@ -208,8 +207,7 @@ class TestSharedCoordinate:
         b.place_order('limit', 'ask', 10, 101.0, env.LOB, env.traders)  # R = 100
         act = _pass(env)
         act["agent_0"] = {"category": 2, "order_slot": 0, "price": 4, "price_offset": 1,
-                          "size_mean": np.array([0.5], dtype=np.float32),
-                          "size_sigma": np.zeros(1, dtype=np.float32)}
+                          "size": np.array([0.5], dtype=np.float32)}
         obs, *_ = env.step(act)
         k = env.k_rows
         grid, _ = _frame(env, obs)

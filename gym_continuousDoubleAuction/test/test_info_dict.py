@@ -376,7 +376,7 @@ class TestSerialisation:
         assert _plain(np.array(3, dtype=np.int32)) == 3
         assert _plain(np.array(1.5, dtype=np.float32)) == pytest.approx(1.5)
 
-        action = {"category": np.array(2), "size_mean": np.array([0.5], np.float32)}
+        action = {"category": np.array(2), "size": np.array([0.5], np.float32)}
         json.dumps(_plain(action))
 
 
