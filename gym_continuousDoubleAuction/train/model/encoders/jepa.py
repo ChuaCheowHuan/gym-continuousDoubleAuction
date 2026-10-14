@@ -124,11 +124,8 @@ MASK_AXES = ("level", "time", "random")
 #: Matches the env's `Dict` action space; a mismatch raises rather than
 #: embedding the wrong thing, since the space is config-derived
 #: (`tunable_constants.json` -> action_space) and could change under it.
-#:
-#: Note S3-2 while reading this: `size_sigma` is inert, so it carries less
-#: information than its shape suggests.
 DISCRETE_ACTIONS = ("category", "price", "price_offset")
-BOX_ACTIONS = ("size_mean", "size_sigma")
+BOX_ACTIONS = ("size",)
 
 #: Floor the variance hinge pushes each latent dimension's standard deviation
 #: above. Not a knob: it is the unit scale that LayerNormed targets already sit

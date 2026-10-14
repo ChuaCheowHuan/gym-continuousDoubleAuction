@@ -28,12 +28,13 @@ _CATEGORY_MAP = {
 #: (it sorts keys), which is the order a flattened action lists its parts.
 #: Named so the layout stamp (envs/layout_version.py) and the record can list
 #: them without instantiating a space.
-ACTION_KEYS = ("category", "order_slot", "price", "price_offset", "size_mean", "size_sigma")
+ACTION_KEYS = ("category", "order_slot", "price", "price_offset", "size")
 
 #: Bumped whenever the action Dict changes shape or meaning (doc/15 S4-19).
 #: 1 was the five-component Dict; 2 added `order_slot`; 3 narrowed `size_mean`
-#: from [-1, 1] to [0, 1] (doc/15 S3-1), which changes what a trained head means.
-ACTION_LAYOUT_VERSION = 3
+#: from [-1, 1] to [0, 1] (doc/15 S3-1); 4 replaced `size_mean` and `size_sigma`
+#: with one `size` head (doc/15 S3-2, S3-3).
+ACTION_LAYOUT_VERSION = 4
 
 
 class Action_Helper():
@@ -64,8 +65,8 @@ class Action_Helper():
         self.mkt_max_size = mkt_max_size
         self.limit_size_multiple = limit_size_multiple
         self.limit_max_size = self.mkt_max_size * self.limit_size_multiple
-        self.mkt_size_mean_mul = (self.mkt_max_size - self.min_size) / 2 # multiplier for mean size of mkt orders
-        self.limit_size_mean_mul = (self.limit_max_size - self.min_size) / 2 # multiplier for mean size of non mkt orders
+        self.mkt_size_mul = (self.mkt_max_size - self.min_size) / 2 # contracts at size 1.0, market orders
+        self.limit_size_mul = (self.limit_max_size - self.min_size) / 2 # contracts at size 1.0, other orders
 
         # Action space shape, from config/tunable_constants.json.
         self._act = constants("action_space")
@@ -107,6 +108,13 @@ class Action_Helper():
                 f"{self._act['max_own_orders']} must be >= 1: it is the number "
                 f"of own resting orders a modify or cancel can be aimed at."
             )
+        if not 0.0 <= self._act["size_low"] < self._act["size_high"]:
+            raise ValueError(
+                f"tunable_constants.json: action_space needs 0 <= size_low < "
+                f"size_high; got {self._act['size_low']} and "
+                f"{self._act['size_high']}. size is a fraction of the size "
+                f"ceiling, so it cannot be negative."
+            )
         price_offset_n = self._act["price_offset_n"]
         if price_offset_n < 1 or price_offset_n % 2 == 0:
             raise ValueError(
@@ -126,8 +134,8 @@ class Action_Helper():
         Each agent has its own action Dict:
             - category: Discrete(category_n) -> 0: None, 1: Buy Mkt, 2: Buy Lmt, 3: Buy Mod, 4: Buy Can,
                                      5: Sell Mkt, 6: Sell Lmt, 7: Sell Mod, 8: Sell Can
-            - size_mean: Box(size_mean_low, size_mean_high)
-            - size_sigma: Box(size_sigma_low, size_sigma_high)
+            - size: Box(size_low, size_high) -> the order size as a fraction of the
+              size ceiling; contracts = rint(size * mul) + min_size
             - price: Discrete(k_rows) -> book levels 1 to k_rows
             - price_offset: Discrete(price_offset_n) -> 0: Passive (-1 tick), 1: Join (0 tick), 2: Aggressive (+1 tick)
             - order_slot: Discrete(max_own_orders + 1) -> which of the agent's OWN
@@ -144,11 +152,8 @@ class Action_Helper():
 
         agent_space = spaces.Dict({
             "category": spaces.Discrete(self._act["category_n"]),
-            "size_mean": spaces.Box(
-                low=self._act["size_mean_low"], high=self._act["size_mean_high"],
-                shape=(1,), dtype=np.float32),
-            "size_sigma": spaces.Box(
-                low=self._act["size_sigma_low"], high=self._act["size_sigma_high"],
+            "size": spaces.Box(
+                low=self._act["size_low"], high=self._act["size_high"],
                 shape=(1,), dtype=np.float32),
             # One code per book level, so this is k_rows - the same depth the
             # observation exposes and the same depth _set_price indexes into.
@@ -275,8 +280,7 @@ class Action_Helper():
         """
 
         category = model_out["category"]
-        size_mean = model_out["size_mean"]
-        size_sigma = model_out["size_sigma"]
+        size_fraction = model_out["size"]
         price_code = model_out.get("price", 0)
         # Default to the neutral 'join' offset, which is the middle code.
         price_offset = model_out.get("price_offset", self._neutral_price_offset())
@@ -293,7 +297,7 @@ class Action_Helper():
         # 5: Sell Mkt, 6: Sell Lmt, 7: Sell Mod, 8: Sell Can
         act["side"], act["type"] = _CATEGORY_MAP[int(category)]
 
-        size = self._set_size(act["type"], self.mkt_size_mean_mul, self.limit_size_mean_mul, size_mean, size_sigma)
+        size = self._set_size(act["type"], size_fraction)
         # int, not float. A size is a count of contracts, so int is the type
         # that can represent it exactly; the previous `* 1.0` coerced to float
         # deliberately ("*1 for float") and that single character is why sizes
@@ -354,35 +358,32 @@ class Action_Helper():
         """The 'join' offset code: the middle of the price_offset codes."""
         return self._act["price_offset_n"] // 2
 
-    def _set_size(self, type, mkt_size_mean_mul, limit_size_mean_mul, mean, sigma):
+    def _set_size(self, type, size_fraction):
         """
         Get size.
 
         Arguments:
             type: 'market', 'limit', 'modify' or 'cancel'
-            mkt_size_mean_mul: Multiplier for mean size of mkt orders.
-            limit_size_mean_mul: Multiplier for mean size of mkt orders.
-            mean: Mean for the size distribution.
-            sigma: Sigma for the size distribution.
+            size_fraction: The policy's `size` head, a fraction of the size
+                ceiling. Values outside [size_low, size_high] are clipped.
 
         Returns:
-            A size sampled from the distribution.
+            A whole number of contracts (0 up to the multiplier); the caller
+            adds `min_size`.
         """
-        # self.np_random, not the global np.random: this is gymnasium's own
-        # per-env Generator, seeded by `reset(seed=...)`. Drawing from the
-        # global stream is what made episodes irreproducible (doc/15 S3-5) -
-        # order size is sampled every step for every agent, so it is the
-        # heaviest consumer of randomness in the env.
-        if type == 'market':
-            sample = self.np_random.normal(mkt_size_mean_mul * mean, sigma, 1)
-        else:
-            sample = self.np_random.normal(limit_size_mean_mul * mean, sigma, 1)
-
-        # return np.asscalar(np.rint(np.abs(sample)))
-        # int(): np.rint already rounds to a whole number, but .item() hands
-        # back a Python float (40.0), and np.int64 is not an int subclass, so
-        # neither is usable as a size without a further conversion.
-        return int(np.rint(np.abs(sample)).item())
+        # No draw here. The policy samples `size` itself, so the size an order
+        # gets is the action PPO scored. Until doc/15 S3-3 the env drew it from
+        # a Gaussian the policy only parameterised, which put the realised size
+        # outside the log-probability in the importance ratio, and S3-2 was the
+        # sigma that did it: <= 1 on sizes of 25 to 500 moved nothing.
+        fraction = float(np.clip(
+            np.asarray(size_fraction, dtype=np.float64).reshape(-1)[0],
+            self._act["size_low"], self._act["size_high"]))
+        mul = self.mkt_size_mul if type == 'market' else self.limit_size_mul
+        # int(): np.rint already rounds to a whole number, but float(...) is a
+        # Python float (40.0), and np.int64 is not an int subclass, so neither
+        # is usable as a size without a further conversion.
+        return int(np.rint(fraction * mul))
 
     def _set_price(self, min_tick: float, side: str, price_code: int,
                    price_offset: Optional[int] = None) -> float:

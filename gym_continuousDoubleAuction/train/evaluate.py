@@ -69,9 +69,9 @@ def act(module, obs: np.ndarray, deterministic: bool, normalize: bool, clip: boo
     A PPO module's Box heads are Gaussians over a *normalised* range when the
     config's `normalize_actions` is on (RLlib's default), and the env runner's
     module-to-env connector unsquashes them into the space's bounds before
-    `env.step`. Skipping that step hands the env a `size_sigma` below zero on
-    roughly half the samples, which `np.random.normal` refuses - so the same
-    unsquash (or clip, under `clip_actions`) is applied here. A module that
+    `env.step`. Skipping that step hands the env a `size` outside [0, 1] on
+    roughly half the samples, which the env clips to an end of the range - so
+    the same unsquash (or clip, under `clip_actions`) is applied here. A module that
     emits `Columns.ACTIONS` directly, the random baselines, already samples
     inside the space.
     """
