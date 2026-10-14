@@ -400,7 +400,7 @@ tighter bound costs before believing a result trained under it.
 | `category_n` | 9 | Side/type codes: none, then bid and ask × {market, limit, modify, cancel} |
 | `price_offset_n` | 3 | Passive / join / aggressive, in ticks |
 | `max_own_orders` | 4 | Cardinality minus one of the `order_slot` head that aims a modify or cancel at one of the agent's own orders; also the normaliser of the two own-order counts in the observation. The measured p90 of resting orders under random play ([06](06_action_space.md) §1.5) |
-| `size_mean_low` / `size_mean_high` | -1.0 / 1.0 | Bounds of the size-mean Box |
+| `size_mean_low` / `size_mean_high` | 0.0 / 1.0 | Bounds of the size-mean Box |
 | `size_sigma_low` / `size_sigma_high` | 0.0 / 1.0 | Bounds of the size-sigma Box |
 
 The price code's cardinality is not here — it is `observation_layout.k_rows`.

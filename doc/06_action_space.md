@@ -17,7 +17,7 @@ Each agent's action is a `gymnasium.spaces.Dict`
 | Key | Space | Config key | Description |
 |---|---|---|---|
 | `category` | `Discrete(9)` | `action_space.category_n` | Trade action — side and type combined |
-| `size_mean` | `Box(-1.0, 1.0)` | `action_space.size_mean_low` / `_high` | Mean for size sampling |
+| `size_mean` | `Box(0.0, 1.0)` | `action_space.size_mean_low` / `_high` | Mean for size sampling |
 | `size_sigma` | `Box(0.0, 1.0)` | `action_space.size_sigma_low` / `_high` | Sigma for size sampling |
 | `price` | `Discrete(10)` | `observation_layout.k_rows` | Ticks from the reference price on the passive side (`book_mode: "grid"`, the default); book level index 0–9 in `levels` mode |
 | `price_offset` | `Discrete(3)` | `action_space.price_offset_n` | Stance relative to that level: 0 passive, 1 join, 2 aggressive |
@@ -236,13 +236,16 @@ mean=+0.5 -> [250.0, 250.0, 250.0, 250.0, 250.0]
 mean=-0.5 -> [250.0, 250.0, 250.0, 250.0, 250.0]   identical: True
 ```
 
-`size_mean` is declared on `Box(-1, 1)`, so the policy's Gaussian head spends half its range on a
+Until S3-1 was fixed `size_mean` was declared on `Box(-1, 1)`, so the policy's Gaussian head spent half its range on a
 mirror image. Worse, the optimum is bimodal at `±m`, which fights the unimodal Gaussian policy:
 the head is pushed toward mean 0 by symmetric gradients, and mean 0 means *minimum* size. The
 gradient also has a kink at exactly 0 — the worst possible place for one, since that is where a
 Gaussian policy initializes.
 
-**Fix:** declare the space as `Box(0, 1)`.
+**Fixed.** `action_space.size_mean_low` is now `0.0`, so the declared range is `Box(0, 1)` and every mean in it gives a
+different size (`test_new_action_space.py::TestSizeMeanRange`). `abs()` stays: it only matters in the tail now, where
+`size_sigma` pushes a small mean below zero. The action layout version moved from 2 to 3, so a checkpoint trained
+with the signed range is refused at restore ([05](05_observation_space.md) §1) instead of reading its head differently.
 
 ### 4.2 The `size_sigma` head is inert
 

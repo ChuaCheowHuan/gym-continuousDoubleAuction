@@ -329,8 +329,8 @@ mean=-0.5 -> [250.0, 250.0, 250.0, 250.0, 250.0]   identical: True
 `size_mean` is declared on `Box(-1, 1)`, so the policy's Gaussian head spends half its range on a
 mirror image. The optimum is bimodal at `±m`, which fights the unimodal Gaussian policy: the head
 is pushed toward mean 0 by symmetric gradients, and mean 0 means *minimum* size. The gradient
-also has a kink at exactly 0 — where a Gaussian policy initializes. Declare the space as
-`Box(0, 1)` instead.
+also has a kink at exactly 0 — where a Gaussian policy initializes. **Fixed (S3-1):** the space is
+now `Box(0, 1)`.
 
 ### 5.2 The `size_sigma` head is inert
 
@@ -558,7 +558,7 @@ Observations:
 | 2 | ~~Add private state to the observation (§2)~~ — **done**, 9 floats | M | Makes the reward learnable at all. Own resting orders still absent |
 | 3 | ~~Make the drawdown penalty an increment~~ — **done**, as a *signed* change | S | Removes the episode-length-dependent risk tax; see [07 §4.1](07_reward_function.md) on why clipping it would not have |
 | 4 | ~~Re-scale the micro-penalties; express costs in bps~~ — **done** | S | Restores the intended incentives. Real fees charged through NAV remain open (S2-3) |
-| 5 | `size_mean → Box(0,1)`; scale or drop `size_sigma` | S | Recovers half the action range, removes a null control |
+| 5 | ~~`size_mean → Box(0,1)`~~ (done, S3-1); scale or drop `size_sigma` | S | Recovers half the action range, removes a null control |
 | 6 | Normalise observation feature scales | S | Removes `tanh` saturation |
 | 7 | Terminate bankrupt agents individually | S | Stops zombie transitions polluting returns |
 | 8 | `entropy_coeff > 0` with decay; raise `std_dev_multiplier`; refuse champions with ~0 trades | S | Guards against passivity collapse |

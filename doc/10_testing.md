@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (1,464 tests: 1,301 unit + 163 integration)
+# everything (1,472 tests: 1,309 unit + 163 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -46,7 +46,7 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `1301 passed` on the unit half, `163 passed` on the integration half. There is no xfail: the one that pinned S1-1 XPASSed when S1-1 was fixed and was deleted (see §6.2.2).
+**[verified]** — `1309 passed` on the unit half, `163 passed` on the integration half. There is no xfail: the one that pinned S1-1 XPASSed when S1-1 was fixed and was deleted (see §6.2.2).
 
 ### File inventory
 
@@ -69,16 +69,16 @@ Counts re-measured with `--collect-only`.
 | `test_observation_bounds.py` | 12 | The Box is finite and laid out as the vector is; identity bounds are exact; a missing or inverted bound fails construction by name; every emitted observation is inside the space; ordinary play clips nothing; an older frame's negative price entry is not clipped; a clip is counted per step in `info` and has a record column (S4-15) |
 | `test_order_slot.py` | 17 | `order_slot`: cancel by slot, cancel-all, modify by slot and by FIFO, clamping, the cash check on the slotted order, the head in the action space, and a random-play hit-rate floor (S3-24 phase 2) |
 | `test_dead_action_penalty.py` | 3 | The sixth reward term: zero by default and bit-for-bit neutral, charged per miss when set, forwarded by `TrainConfig` |
-| `test_layout_version.py` | 9 | The layout stamp: written beside every checkpoint, passes for the current layout, refuses a version, field or `book_mode` mismatch by name (S4-19, S3-15) |
+| `test_layout_version.py` | 10 | The layout stamp: written beside every checkpoint, passes for the current layout, refuses a version, field or `book_mode` mismatch by name (S4-19, S3-15) |
 | `test_evaluate.py` | 6 | `train.evaluate`'s pure half: unbatching a Dict action, per-module means, the rendered table, the CLI defaults (S4-12) |
 | `test_tick_grid.py` | 18 | Every action price sits on the `tick_size` grid; upsert and cancel find their order on a fractional tick (S3-4) |
 | `test_modify_order.py` | 7 | The six modify-order accounting scenarios, plus a guard that the dead escrow helper stays deleted |
-| `test_new_action_space.py` | 10 | Action decoding, ghost pricing, `tick_size` reaching the action layer, price levels matching book depth |
+| `test_new_action_space.py` | 14 | Action decoding, ghost pricing, `tick_size` reaching the action layer, price levels matching book depth |
 | `test_obs_normalization.py` | 12 | Price/volume normalization (both sides positive since S4-17), action unnormalization |
 | `test_observation_history.py` | 6 | Temporal stacking, and the shared-book / private-tail split (S1-2) |
 | `test_obs_market_features.py` | 18 | `log_mid` under every branch of the reference-price chain, `log1p_spread_ticks`, observation shape across `n_hist` |
 | `test_action_mask.py` | 18 | The action mask (06 section 7): its place in the private block and in the logits is derived from the spaces; nothing resting masks modify and cancel, no cash masks opening orders, a position can still be closed, the mask agrees with the cash check under random play; the PPO module penalises masked logits and never samples them, the random baseline redraws, a masked random episode has no unmatched actions; the flag emits all ones |
-| `test_episode_horizon.py` | 14 | Fixed horizons truncate at `max_step` as before; random ones are drawn inside the range, reproduce under a seed, truncate on the draw, and keep `time_left` against the upper bound; validation; batch sizing by the expected length |
+| `test_episode_horizon.py` | 17 | Fixed horizons truncate at `max_step` as before; random ones are drawn inside the range, reproduce under a seed, truncate on the draw, and keep `time_left` against the upper bound; validation; batch sizing by the expected length |
 | `test_grid_book.py` | 14 | The fixed tick-offset grid (S3-15): a quote sits in the cell of its tick offset, the same price lands in the same cell of every frame, out-of-window levels are not shown, price code j is j ticks from the reference whatever rests, own block and tokeniser alignment, `ObsLayout` reads both modes |
 | `test_occupancy_channel.py` | 11 | The two occupancy rows equal `size > 0` on every cell of every step and ride with their frame; an absent level and a quote at the reference price differ; a one-sided book is referenced to the last trade, agreeing with `mark_price`; layout version 4 (S3-14) |
 | `test_reward_logic.py` | 8 | Reward formula components: normalisation by `init_nav`, scale invariance, the signed drawdown telescoping, zero-sum symmetry |
@@ -116,7 +116,7 @@ Counts re-measured with `--collect-only`.
 | `test_compare.py` | 18 | The encoder comparison driver's aggregation: means and standard deviations across seeds, the separation rule and its three-seed floor, the rendered table and its caveats |
 | `test_export.py` | 20 | `train.export`'s pure half: which module is the winner, the no-champion and foreign-layout messages, and what the written record carries (doc/26 §26.9.2) |
 | `test_lint.py` | 1 | The package is pyflakes-clean; any message fails the suite (S4-6) |
-| **unit total** | **1,301** | |
+| **unit total** | **1,309** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -143,7 +143,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((1,464 tests))
+  root((1,472 tests))
     Simulator
       orderbook 57
         components, matching, invariants
@@ -395,8 +395,8 @@ slotted order's release; the head is in the action space with `max_own_orders + 
 absent slot decodes as 0, the env routes it on a fractional tick, and a random-play cancel hit
 rate above 25% (it was 7%). `test_dead_action_penalty.py`: the sixth term exists, is zero and
 bit-for-bit neutral by default, charges per miss when set, and is forwarded by `TrainConfig`.
-`test_layout_version.py`: the stamp, the pass, the refusals by version and by field, and that
-`_write_league_state` writes it.
+`test_layout_version.py`: the stamp, the pass, the refusals by version and by field (including a checkpoint from the
+signed `size_mean` range, action layout v2), and that `_write_league_state` writes it.
 
 ### 2.5 `test_orderbook_properties.py` (4 Hypothesis tests)
 
@@ -476,7 +476,7 @@ each. The scenario table with expected figures is in
 
 ## 3. Action space
 
-### `test_new_action_space.py` (10 tests)
+### `test_new_action_space.py` (14 tests)
 
 | Test | Verifies |
 |---|---|
@@ -488,6 +488,9 @@ each. The scenario table with expected figures is in
 | `test_market_order_mapping` | A market category submitted with a deliberately "dirty" price level 9 and offset 0 still produces `type: 'market'` and `price: -1.0` |
 | `test_trading_updates_anchor` | With `last_price` set to 100, an aggressive sell limit at 100 followed by a market buy updates `env.last_price` to the actual trade price on `LOB.tape` |
 | `test_neutral_action` | `category: 0` leaves `env.LOB_actions` empty — neutral agents are filtered out before any price calculation or matching |
+| `TestSizeMeanRange::test_the_range_is_non_negative` | `size_mean` is declared on `Box(0, 1)` (S3-1) |
+| `TestSizeMeanRange::test_every_point_of_the_range_is_a_different_size` | For market and limit orders, eleven means across the declared range give eleven different sizes, so no part of the range is dead |
+| `TestSizeMeanRange::test_a_sampled_mean_is_never_negative` | 200 samples from the space are all `>= 0` |
 
 Modify and cancel accounting (categories 3, 4, 7, 8) is verified separately in
 `test_modify_order.py`.

@@ -67,7 +67,7 @@ mindmap
       S2-15 closing a losing position needs no cash — fixed
     S3 Moderate
       action space
-        S3-1 half of size_mean is a no-op
+        S3-1 half of size_mean is a no-op — fixed
         S3-2 size_sigma is inert
         S3-3 env-side sampling breaks the log-prob
       simulator and config
@@ -709,7 +709,7 @@ not escrowed. The alternative, a liquidity margin call, was not built. `test_ove
 
 ## S3 — Moderate
 
-### S3-1 · Half the `size_mean` action range is a no-op **[verified]**
+### S3-1 · Half the `size_mean` action range is a no-op **[verified, fixed]**
 
 _Tracked in [#110](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/110)._
 
@@ -717,7 +717,11 @@ _Tracked in [#110](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/
 identical sizes under the same seed. `size_mean` is declared on `Box(-1, 1)`; the optimum is
 bimodal at `±m`, which a unimodal Gaussian head resolves by drifting toward 0 — i.e. minimum
 size. The gradient kink sits exactly where the policy initializes.
-**Fix:** declare `Box(0, 1)`.
+
+**Fixed.** `action_space.size_mean_low` is `0.0`, so the space is `Box(0, 1)` and the eleven means from 0 to 1 give eleven
+different sizes, for market and limit orders alike (`test_new_action_space.py::TestSizeMeanRange`, which fails on the
+signed range). `abs()` stays for the tail. `ACTION_LAYOUT_VERSION` is 3, so a checkpoint trained on the signed range
+is refused at restore. Changelog [17](17_changelog.md) §65.
 
 ### S3-2 · The `size_sigma` head is inert **[verified]**
 
@@ -1550,7 +1554,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **1,301 unit tests pass** (plus 163 integration), covering every position-flip path, cash-check edge case, modify-order
+- **1,309 unit tests pass** (plus 163 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 
@@ -1577,7 +1581,7 @@ Roughly two to three weeks of work, ordered so each step unblocks the next.
    9 floats per agent then; the agent's own resting orders and the action mask have since joined
    it (41 floats, S3-24)
 6. ~~Terminate and flatten bankrupt agents (S2-4)~~ — **done**
-7. `size_mean → Box(0,1)`; scale or drop `size_sigma` (S3-1, S3-2)
+7. ~~`size_mean → Box(0,1)`~~ — **done** (S3-1); scale or drop `size_sigma` (S3-2)
 8. Positive decaying `entropy_coeff`; raise `std_dev_multiplier`; refuse zero-trade champions (S3-11)
 9. ~~One `np.random.Generator` threaded through the env (S3-5)~~ — **done**. All three draws read
    `self.np_random`; `test_seeding.py` pins it, and `scikit-learn` left with the fix
