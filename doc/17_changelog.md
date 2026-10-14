@@ -3639,3 +3639,20 @@ tied to the layout version or finding it describes, the "five-head" checkpoint n
   are 29. Unit 1,309 to 1,314; suite 1,477.
 - **#113 (S3-4, the `tick_size`) needed nothing.** It was already fixed and closed; `OrderBook(0.0001, 10)` is still a
   `TypeError` and `test_tick_grid.py` still passes (18 tests).
+
+## 68. CI starts again: the allowed-actions list (issue #272)
+
+- **Symptom.** From 2026-10-14 every run of the `tests` workflow ended in `startup_failure` with no jobs, for pull
+  requests, pushes to `master` and a manual dispatch alike. The workflow file had not changed since 2026-08-18.
+- **Cause.** The run annotation (the API does not return it) said the repository's Actions policy refused
+  `actions/checkout@v4` and `actions/setup-python@v5`: only actions owned by the repository's owner or created by GitHub
+  are allowed, and all must be pinned to a full-length commit SHA. GitHub refuses the workflow before scheduling a job.
+- **Fix.** A repository setting, not a file in the repository. The owner added
+  `actions/checkout@11d5960a326750d5838078e36cf38b85af677262` (v4.4.0) and
+  `actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065` (v5.6.0) to the allowed actions under Settings,
+  Actions, General. Those SHAs are what the `v4` and `v5` tags pointed at, taken with `git ls-remote`.
+- **Verified.** A manual run on `master` after the change (run 99, `e758d8b`) started both jobs and passed: `test` in
+  about five minutes, `packaging` in under one. Runs 96 to 98, before the change, had not started.
+- **The workflow still says `@v4` and `@v5`.** It was not edited, and it ran. If the policy is tightened again, pin the four
+  `uses:` lines in `.github/workflows/tests.yml` to those SHAs. Pushing a workflow file needs the `workflow` scope on the
+  token; the session's token has none.
