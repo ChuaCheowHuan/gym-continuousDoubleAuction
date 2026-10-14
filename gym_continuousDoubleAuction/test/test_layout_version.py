@@ -19,7 +19,7 @@ from gym_continuousDoubleAuction.envs.exchg.state_helper import BOOK_MODE, PRIVA
 def test_stamp_describes_the_current_layout():
     stamp = layout_stamp()
     assert stamp["observation_version"] == 6
-    assert stamp["action_version"] == 2
+    assert stamp["action_version"] == 3
     assert stamp["book_mode"] == BOOK_MODE
     assert layout_stamp("levels")["book_mode"] == "levels"
     assert stamp["private_fields"] == list(PRIVATE_FIELDS)
@@ -56,7 +56,15 @@ def test_sidecar_without_a_stamp_is_layout_one():
 def test_version_mismatch_names_the_axis():
     stamp = layout_stamp()
     stamp["action_version"] = 1
-    with pytest.raises(ValueError, match="action layout v1 .* v2"):
+    with pytest.raises(ValueError, match="action layout v1 .* v3"):
+        check_layout_stamp({LAYOUT_KEY: stamp}, "/x")
+
+
+def test_a_checkpoint_from_the_signed_size_mean_range_is_refused():
+    """S3-1 narrowed `size_mean` to [0, 1], so a v2 head reads its output differently."""
+    stamp = layout_stamp()
+    stamp["action_version"] = 2
+    with pytest.raises(ValueError, match="action layout v2 .* v3"):
         check_layout_stamp({LAYOUT_KEY: stamp}, "/x")
 
 

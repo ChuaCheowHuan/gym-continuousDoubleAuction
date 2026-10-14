@@ -143,7 +143,7 @@ class TestActionSpace:
         space = env.action_spaces["agent_0"]
         assert tuple(space.spaces) == ACTION_KEYS
         assert space["order_slot"].n == env.max_own_orders + 1 == 5
-        assert ACTION_LAYOUT_VERSION == 2
+        assert ACTION_LAYOUT_VERSION == 3
 
     def test_absent_slot_decodes_as_zero(self):
         env = continuousDoubleAuctionEnv({"num_of_agents": 1, "is_render": False})
