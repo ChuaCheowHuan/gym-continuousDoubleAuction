@@ -3601,7 +3601,7 @@ tied to the layout version or finding it describes, the "five-head" checkpoint n
   `sigma = 0`, means -1, -0.5, 0, 0.5, 1 gave sizes 50, 25, 0, 25, 50 for market orders and 500, 250, 0, 250, 500
   for limit orders.
 - **Fix.** `action_space.size_mean_low` is `0.0` in `config/tunable_constants.json` (a note beside it says why);
-  nothing in Python changed except the comment that named the defect. `abs()` stays, for the tail where a small
+  the only Python changes are the version constant below and two comments that named the defect. `abs()` stays, for the tail where a small
   mean plus `size_sigma` can draw below zero.
 - **Layout version.** `ACTION_LAYOUT_VERSION` 2 to 3. The head still has the same shape, but a trained mean now
   means something else, so a checkpoint from the signed range is refused at restore instead of loading and acting

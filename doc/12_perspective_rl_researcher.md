@@ -326,7 +326,7 @@ mean=+0.5 -> [250.0, 250.0, 250.0, 250.0, 250.0]
 mean=-0.5 -> [250.0, 250.0, 250.0, 250.0, 250.0]   identical: True
 ```
 
-`size_mean` is declared on `Box(-1, 1)`, so the policy's Gaussian head spends half its range on a
+`size_mean` was declared on `Box(-1, 1)`, so the policy's Gaussian head spent half its range on a
 mirror image. The optimum is bimodal at `±m`, which fights the unimodal Gaussian policy: the head
 is pushed toward mean 0 by symmetric gradients, and mean 0 means *minimum* size. The gradient
 also has a kink at exactly 0 — where a Gaussian policy initializes. **Fixed (S3-1):** the space is

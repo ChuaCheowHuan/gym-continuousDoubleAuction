@@ -245,7 +245,7 @@ Gaussian policy initializes.
 **Fixed.** `action_space.size_mean_low` is now `0.0`, so the declared range is `Box(0, 1)` and every mean in it gives a
 different size (`test_new_action_space.py::TestSizeMeanRange`). `abs()` stays: it only matters in the tail now, where
 `size_sigma` pushes a small mean below zero. The action layout version moved from 2 to 3, so a checkpoint trained
-with the signed range is refused at restore ([05](05_observation_space.md) §1) instead of reading its head differently.
+with the signed range is refused at restore ([05](05_observation_space.md) §10) instead of reading its head differently.
 
 ### 4.2 The `size_sigma` head is inert
 
