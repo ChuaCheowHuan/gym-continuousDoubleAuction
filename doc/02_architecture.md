@@ -193,8 +193,8 @@ gym_continuousDoubleAuction/
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   ├── inspect_latest_episode*.py        print the newest episode as a table or JSON
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               1,314 unit tests
-    └── integration/                    163 tests that build real Algorithms
+└── test/                               1,337 unit tests
+    └── integration/                    166 tests that build real Algorithms
 ```
 
 `train/logger/`, `train/plotter/` and `train/storage/` — the legacy Ray-actor telemetry an earlier
@@ -634,8 +634,9 @@ returns a closure that:
 
 `on_train_result` reads `module_episode_returns_mean` — already keyed by real `ModuleID`,
 including `champion_*` — computes `threshold = mean + std_dev_multiplier · std` over the league,
-and snapshots the best trainable module above it, subject to a cooldown and a rolling-window
-eviction. The snapshot procedure has four load-bearing ordering constraints, each with a
+and snapshots the best trainable module above it, subject to a cooldown, a rolling-window
+eviction, and a guard that refuses a candidate trading under `min_champion_trades` times per
+episode (a policy that has collapsed to passing earns 0, which can beat the league). The snapshot procedure has four load-bearing ordering constraints, each with a
 dedicated integration test. Full detail in [08_self_play_league.md](08_self_play_league.md).
 
 ### Distributed execution

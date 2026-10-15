@@ -488,6 +488,29 @@ The same group carries the four knobs on the per-step episode record:
 `num_learners`, the reward coefficients and the sizing knobs have no CLI flag, so the file is the
 only way to set them outside the Python API.
 
+### 5.0 The entropy bonus and the champion guard
+
+Four keys, added for [15](15_findings_and_recommendations.md) S3-11, all with a shipped value that
+differs from what RLlib or the earlier config gave:
+
+| Key | Group | Shipped | Meaning |
+|---|---|---|---|
+| `entropy_coeff` | `ppo` | 0.01 | PPO entropy bonus at the start of the run. RLlib's own default is 0.0 |
+| `entropy_coeff_final` | `ppo` | 0.001 | The value it has fallen to after `entropy_decay_iters` iterations, held there afterwards |
+| `entropy_decay_iters` | `ppo` | 16 | Iterations over which it falls, linearly in env steps (one iteration is `train_batch_size` steps). At least 1 |
+| `std_dev_multiplier` | `league_self_play` | 1.5 | A champion must beat `league_mean + multiplier × league_std`. Was 0.1 |
+| `min_champion_trades` | `league_self_play` | 1.0 | Mean trades per episode, over the iteration, the candidate needs to be promoted. 0 turns the guard off |
+
+`entropy_coeff` and `entropy_coeff_final` both 0 builds the config it always did. They reach RLlib
+as `entropy_coeff=0.01` or as the schedule `[[0, 0.01], [train_batch_size × entropy_decay_iters,
+0.001]]` (`TrainConfig.entropy_setting`), and RLlib reports what it is applying as
+`curr_entropy_coeff` in each trainable module's learner results. 0.01 to 0.001 is the usual PPO range, not a tuned value.
+
+`std_dev_multiplier` has a ceiling that depends on the league: with n modules no module can be more
+than `sqrt(n − 1)` standard deviations above the mean, which is 2.65 at the default 8. A multiplier
+at or above it can never promote anyone, and `SelfPlayCallback` warns at construction when that is so.
+The champion guard and its reasoning are in [08](08_self_play_league.md) §10.
+
 ### 5.1 `sample_timeout_s`, and the run that trains on nothing
 
 In the `rollouts` group, with `--sample-timeout`. It is how long the driver waits for a remote env

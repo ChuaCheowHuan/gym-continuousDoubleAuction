@@ -125,7 +125,8 @@ explicitly, so the config lookup is what a direct instantiation gets.
 |---|---|---|
 | `num_trainable_policies` | `num_trained_agents` = 2 | Trainable policies (agents 0 … k−1) |
 | `num_random_policies` | `num_agents - num_trained_agents` = 6 | Frozen baselines (agents k … n−1) |
-| `std_dev_multiplier` | **0.1** | Threshold multiplier for `mean + N × std` |
+| `std_dev_multiplier` | **1.5** | Threshold multiplier for `mean + N × std` (was 0.1) |
+| `min_champion_trades` | 1.0 | Mean trades per episode, over the iteration, a candidate needs to be promoted; 0 disables the guard |
 | `max_champions` | 8 | Maximum champions in the league (rolling window) |
 | `min_iterations_between_champions` | 2 | Cooldown between snapshots |
 | `original_opponent_weight` | 1.0 | Selection priority for baselines |
@@ -140,13 +141,41 @@ explicitly, so the config lookup is what a direct instantiation gets.
 ### Tuning
 
 **`std_dev_multiplier`** — too low snapshots mediocre policies and bloats the league; too high
-(4.0) rarely finds any. **Recommended 1.5 – 2.5.**
+(4.0) rarely finds any. **Recommended 1.5 – 2.5; shipped 1.5.**
 
-The shipped `TrainConfig` value of **0.1 is far below that range**, and the consequence is
-measurable: **[verified]**, a single `algo.train()` call from a fresh build promoted
-`champion_1` on iteration 1, because with an empty `champion_history` there is no cooldown and
-`mean + 0.1·std` is cleared by the better of two barely-trained modules. At the default
-16-iteration run the pool saturates with near-random snapshots.
+It used to ship as **0.1, far below that range**, and the consequence was measurable:
+**[verified]**, a single `algo.train()` call from a fresh build promoted `champion_1` on iteration
+1, because with an empty `champion_history` there is no cooldown and `mean + 0.1·std` is cleared by
+the better of two barely-trained modules. At the default 16-iteration run the pool saturated with
+near-random snapshots.
+
+There is a ceiling on the other side that the 1.5 – 2.5 range hides: with n modules in the league
+no module can be more than `sqrt(n − 1)` population standard deviations above the mean, so a
+multiplier at or above that **can never promote anyone**. It is 2.65 at the default 8 modules, 1.73
+at 4, 1.41 at 3. `SelfPlayCallback` warns at construction when the multiplier is at or above it. The
+pool only grows after the first champion, so the size at the start is the one that matters.
+
+**`min_champion_trades`** — the multiplier cannot catch a policy that has stopped trading. It earns
+exactly 0, and 0 beats a league of modules that are losing money, so it clears the threshold at any
+multiplier that is reachable. **[verified]**, one league of a do-nothing `policy_0` (return 0.0)
+against modules at −50 to −98:
+
+| `std_dev_multiplier` | guard | `policy_0` promoted |
+|---|---|---|
+| 0.1 | none | yes |
+| 1.5 | none | **yes** |
+| 1.5 | `min_champion_trades` 1.0 | no |
+
+So the two are independent fixes. The env runners log each module's trades per episode
+(`module_trades_per_episode`, a mean over the iteration's episodes, 0 for an agent that never
+traded); the driver reads the candidate's from the compiled result and, if it is under the bar,
+logs a warning, sets `result["league"]["refused_passive"]` to 1 and promotes nothing that iteration.
+A refusal changes nothing else: no cooldown starts and no champion is evicted. If the counts are
+absent from the result the guard says so and promotes on return alone, because a guard that blocked
+on missing data would stop the league growing silently and for good, the way a NaN threshold once did.
+The default of 1.0 is "not dead", not "active": a random module makes about 30 trades in a 64-step
+episode with 4 agents (measured). Only fills against another agent count; an order that would cross
+the agent's own resting order is withdrawn instead of trading, so a self-match cannot satisfy the bar.
 
 > Relative ranking works fine with **negative** returns, which are the norm here. With mean −1000
 > and std 200, the threshold is −600; a policy returning −500 is genuinely exceptional relative to
@@ -367,7 +396,7 @@ The callback's own metrics, the ones about the league:
 
 Plus the per-episode ones this callback emits from `on_episode_end` — NAV conservation, the
 pass/rejection fractions, the reward-term split, the end-of-episode account state, the maker
-ratio. **27 metrics in total**; the full table is in
+ratio and the per-module trade counts the champion guard reads. **28 metrics in total**; the full table is in
 [11_logging_and_observability.md](11_logging_and_observability.md) §1.2, which is the reference
 for what a run surfaces. (An earlier revision of this section said six, which was true before
 that work landed.)
@@ -486,7 +515,9 @@ iteration and asserts every episode-hook metric reaches the driver. See
 | Symptom | Cause | Fix |
 |---|---|---|
 | No champions created | Returns never exceed the threshold | Lower `std_dev_multiplier` or train longer |
-| Champions created every iteration | `std_dev_multiplier` far too low (the shipped 0.1) | Raise it to 1.5–2.5; raise `min_iterations_between_champions` |
+| Champions created every iteration | `std_dev_multiplier` far too low (it shipped as 0.1) | Raise it to 1.5–2.5; raise `min_iterations_between_champions` |
+| No champions, and the log says "not promoting a policy that has stopped trading" | The best trainable cleared the return threshold but traded under `min_champion_trades` per episode: it has collapsed to passing | Look at `pass_action_fraction` and the entropy bonus; this is the guard working |
+| No champions, and a warning said the multiplier "can never be cleared" | `std_dev_multiplier` is at or above `sqrt(n − 1)` for the league size | Lower it, or add modules |
 | All champions from one policy | One policy dominates | Adjust learning rates, or lower the threshold |
 | Champions never appear in episodes | The static `policy_mapping_fn` from `policy_handler.py` is in use | Use `policy_mapping_fn=SelfPlayCallback.get_mapping_fn(callback)` |
 | Champions appear on the driver but not on remote workers | `available_modules` mutated after `add_module` | See §5.2 constraint 2; run `TestLeagueWiringRemoteEnvRunners` |

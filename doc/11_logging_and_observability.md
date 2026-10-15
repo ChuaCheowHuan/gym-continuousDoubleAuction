@@ -163,6 +163,7 @@ in the repository writes a pickle any more.
 | `mean_abs_net_position` | Mean absolute inventory at episode end | 10 | `on_episode_end` |
 | `mean_num_trades` | Mean trades per agent over the episode | 10 | `on_episode_end` |
 | `maker_fill_ratio_max` | The most maker-like agent's share of its own fills | 10 | `on_episode_end` |
+| `module_trades_per_episode` | Each module's trades per episode, nested under the module id; read by the champion guard (doc/15 S3-11) | `reduce="mean"` over the iteration | `on_episode_end` |
 | `league_size` | `num_trainable + num_random + champion_count` | 1 | `on_train_result` |
 | `league_mean_return` | Mean module return across the league | 10 | `on_train_result` |
 | `league_std_return` | Std dev of module returns | 10 | `on_train_result` |
@@ -171,7 +172,7 @@ in the repository writes a pickle any more.
 | `idle_modules` | Modules that played no episode this iteration | 1 | `on_train_result` |
 | `iterations_since_champion` | Iterations since the last snapshot | 1 | `on_train_result` |
 
-**27 metrics**, up from six. What was missing was never capture — it was aggregation: §2.3, §2.4
+**28 metrics**, up from six. What was missing was never capture — it was aggregation: §2.3, §2.4
 and §2.5 all described numbers already sitting in `info` or already computed in the callback and
 then dropped.
 
@@ -198,6 +199,7 @@ metrics channel is kept unchanged for anything reading RLlib's metrics rather th
 (Tune, a Prometheus exporter, `algo.metrics.peek`), and those readers still see the lag.
 
 `result["league"]` carries `size`, `mean_return`, `std_return`, `threshold`, `promoted`,
+`refused_passive` (1 when the champion guard turned a candidate away that iteration),
 `available_modules`, `idle_modules`, `champions` and — once there has been one —
 `iterations_since_champion`.
 
@@ -860,7 +862,7 @@ metrics_logger.log_value(f"reward_term_var_share_{term}", variance / total, wind
 ```
 
 The shape of this document has changed with them. It used to end "capture is now good, aggregation
-is four league-and-NAV metrics"; aggregation is now 27 metrics (§1.2), and what is left is
+is four league-and-NAV metrics"; aggregation is now 28 metrics (§1.2), and what is left is
 genuinely different in kind - things that need a *new computation*, not a reduction of something
 already in hand.
 
