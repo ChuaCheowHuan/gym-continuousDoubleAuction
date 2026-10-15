@@ -15,9 +15,7 @@ The two broadcast to `(B, B)`. With one agent in the batch that is `(1, 1)` and
 looks right; with two agents sharing a module in the same step, which is what
 happens when a league champion is drawn for both opponent slots, every agent's
 `action_logp` becomes a length-2 vector and the module-to-env connector, which
-squeezes the time rank off each item, raises (issue #278). A stateless module
-has no time rank, so an `mlp` league never met it; it returned the wrong shape
-there too, unnoticed, because nothing reads a champion's or a baseline's logp.
+squeezes the time rank off each item, raises (issue #278). A stateless module has no time rank, so an `mlp` league never met it.
 
 `time_rank_safe` returns the same distribution with that one condition fixed: a
 trailing singleton is squeezed only when the value has more dimensions than the
