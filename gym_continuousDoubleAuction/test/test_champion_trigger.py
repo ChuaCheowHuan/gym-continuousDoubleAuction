@@ -24,10 +24,16 @@ from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback im
 
 @pytest.fixture
 def callback():
+    # std_dev_multiplier is pinned low on purpose. These tests are about how the
+    # league statistics are computed, and they hand-build leagues of three or
+    # four modules, where nobody can sit 1.5 standard deviations above the
+    # mean (the ceiling is sqrt(n - 1)). The shipped multiplier is exercised in
+    # test_champion_guard.py.
     cb = SelfPlayCallback(
         num_trainable_policies=2,
         num_random_policies=6,
         min_iterations_between_champions=0,
+        std_dev_multiplier=0.1,
     )
     return cb
 
@@ -240,7 +246,8 @@ class TestLeagueMetrics:
         so the champion count is the same either side: counting its change read
         0 for every promotion once the league had filled up."""
         cb = SelfPlayCallback(num_trainable_policies=2, num_random_policies=6,
-                              min_iterations_between_champions=0, max_champions=1)
+                              min_iterations_between_champions=0, max_champions=1,
+                              std_dev_multiplier=0.1)
         cb.champion_id_counter = 1
         cb.champion_history.append({"id": "champion_1", "source_policy": "policy_0",
                                     "iteration": 0, "return": 1.0})

@@ -34,7 +34,7 @@ def checkpoint(tmp_path_factory):
     """One trained iteration with a champion guaranteed to be in the league.
 
     The iteration may promote one of its own - with the shipped
-    `std_dev_multiplier` of 0.1 it usually does - so one is forced with a
+    `std_dev_multiplier` of 1.5 it sometimes does - so one is forced with a
     return no organic promotion will beat, and that is the module the export is
     expected to choose.
     """
