@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 import logging
+import math
 import numpy as np
 import zlib
 
@@ -56,6 +57,11 @@ NAV_VIOLATIONS_METRIC = "nav_conservation_violations"
 #: and any answer would be a guess. Counted apart from violations (a skip is
 #: not a pass) so a run that is never being checked is visible.
 NAV_UNCHECKED_METRIC = "nav_conservation_unchecked"
+
+#: Per-module mean trades per episode, logged by the env runners at episode end
+#: and read by the driver's champion check (doc/15 S3-11). Nested under the
+#: module id: `result["env_runners"][MODULE_TRADES_METRIC]["policy_0"]`.
+MODULE_TRADES_METRIC = "module_trades_per_episode"
 
 
 def _new_tally() -> dict:
@@ -136,6 +142,7 @@ class SelfPlayCallback(RLlibCallback):
         episode_data_dir=_DISABLED,
         nav_tolerance=None,
         strict_nav_check=None,
+        min_champion_trades=None,
         episode_sample_every=None,
         episode_max_bytes=None,
         episode_rows_per_file=None,
@@ -166,6 +173,11 @@ class SelfPlayCallback(RLlibCallback):
                 `nav_conservation_error` metric is emitted either way, and it is
                 carried on this object only so a restored callback keeps the
                 setting.
+            min_champion_trades: Mean trades per episode, over the iteration, that
+                a trainable policy needs to be promoted. A policy that has
+                collapsed to always-pass earns exactly 0, which beats a league of
+                money-losing modules, so it would otherwise clear the return
+                threshold (doc/15 S3-11). 0 disables the guard.
             episode_sample_every: Record one episode in N. 1 records every one.
             episode_max_bytes: Cap on the episode record each process keeps.
                 0 disables the cap.
@@ -210,6 +222,8 @@ class SelfPlayCallback(RLlibCallback):
             nav_tolerance = league["nav_tolerance"]
         if strict_nav_check is None:
             strict_nav_check = league["strict_nav_check"]
+        if min_champion_trades is None:
+            min_champion_trades = league["min_champion_trades"]
         if episode_sample_every is None:
             episode_sample_every = league["episode_sample_every"]
         if episode_max_bytes is None:
@@ -220,6 +234,7 @@ class SelfPlayCallback(RLlibCallback):
         self.episode_data_dir = episode_data_dir
         self.nav_tolerance = nav_tolerance
         self.strict_nav_check = strict_nav_check
+        self.min_champion_trades = min_champion_trades
         self.episode_sample_every = episode_sample_every
         self.episode_max_bytes = episode_max_bytes
         self.episode_rows_per_file = episode_rows_per_file
@@ -230,6 +245,21 @@ class SelfPlayCallback(RLlibCallback):
         
         # Champion snapshotting configuration
         self.std_dev_multiplier = std_dev_multiplier
+        # With n modules, no module is more than sqrt(n - 1) population standard
+        # deviations above their mean, so a multiplier at or above that can
+        # never be cleared and the league would silently never grow. The pool
+        # only gets bigger after the first champion, so n at the start is the
+        # case that matters.
+        ceiling = math.sqrt(max(num_trainable_policies + num_random_policies - 1, 0))
+        if std_dev_multiplier >= ceiling:
+            logger.warning(
+                "std_dev_multiplier=%g can never be cleared by a league of %d "
+                "modules (the best any module can do is %.2f standard "
+                "deviations above the mean), so no champion will ever be "
+                "promoted. Lower it, or add modules.",
+                std_dev_multiplier, num_trainable_policies + num_random_policies,
+                ceiling,
+            )
         self.max_champions = max_champions
         self.min_iterations_between_champions = min_iterations_between_champions
 
@@ -368,12 +398,40 @@ class SelfPlayCallback(RLlibCallback):
 
         self._log_maker_ratio(tally, metrics_logger)
 
+        self._log_module_trades(episode, tally, metrics_logger)
+
         logger.debug(
             "episode %s activity: %s agent-steps, %.1f%% pass, %.1f%% rejected, "
             "%.1f%% unmatched",
             episode.id_, agent_steps, 100 * pass_fraction,
             100 * rejection_fraction, 100 * unmatched_fraction,
         )
+
+    def _log_module_trades(self, episode, tally, metrics_logger) -> None:
+        """Each module's trades in this episode, for the champion check.
+
+        The check runs on the driver, which sees only the compiled result, so
+        the counts have to travel as a metric. Keyed by module rather than
+        agent because a trainable slot always plays its own module, and the
+        champion check asks about a module. An agent that never traded is
+        logged as 0 rather than left out: absence reads as "not measured", and
+        0 is exactly the measurement the guard is after.
+
+        `reduce="mean"` with no window takes the mean over the episodes of one
+        iteration and starts again, so the number describes the iteration whose
+        policy is being promoted, not a trailing window that spans the last one.
+        """
+        module_for = getattr(episode, "module_for", None)
+        if module_for is None:
+            return
+        for agent_id in set(tally["last_nav"]) | set(tally["per_agent_fills"]):
+            module_id = module_for(agent_id)
+            if module_id is None:
+                continue
+            trades = tally["per_agent_fills"].get(agent_id, {}).get("trades", 0)
+            metrics_logger.log_value(
+                (MODULE_TRADES_METRIC, module_id), float(trades), reduce="mean",
+            )
 
     #: Trades an agent needs before its maker share is worth reporting. Below
     #: this the ratio is quantised to almost nothing - one passive fill out of
@@ -1044,8 +1102,33 @@ class SelfPlayCallback(RLlibCallback):
         # rolled back adds no id, so it is still not counted.
         champions_before = {c["id"] for c in self.champion_history}
 
+        # A policy that has stopped trading earns exactly 0, and 0 beats a league
+        # of modules that are losing money, so it clears the return threshold
+        # (doc/15 S3-11). Refuse it. `None` means the trade counts did not reach
+        # the result; that is reported but does not block, because a guard that
+        # blocks on missing data would stop the league growing, silently and
+        # for good, the way the NaN threshold once did.
+        refused_passive = False
+        if best_candidate and best_return > threshold and self.min_champion_trades > 0:
+            trades = self._candidate_trades(env_runner_results, best_candidate)
+            if trades is None:
+                logger.warning(
+                    "iteration %s: no %r for %s in the result, so the "
+                    "does-it-trade guard could not run; promoting on return "
+                    "alone.", iteration, MODULE_TRADES_METRIC, best_candidate,
+                )
+            elif trades < self.min_champion_trades:
+                refused_passive = True
+                logger.warning(
+                    "iteration %s: %s cleared the return threshold (%.2f > %.2f) "
+                    "but traded %.2f times per episode, under the %g required; "
+                    "not promoting a policy that has stopped trading.",
+                    iteration, best_candidate, best_return, threshold, trades,
+                    self.min_champion_trades,
+                )
+
         # Check relative performance trigger
-        if best_candidate and best_return > threshold:
+        if best_candidate and best_return > threshold and not refused_passive:
             # Also check if it's better than previous champion (optional but good for progress)
             # best_historical = max([c['return'] for c in self.champion_history]) if self.champion_history else -float('inf')
             
@@ -1061,6 +1144,7 @@ class SelfPlayCallback(RLlibCallback):
             "std_return": float(league_std),
             "threshold": float(threshold),
             "promoted": promoted,
+            "refused_passive": int(refused_passive),
             "available_modules": len(self.available_modules),
             "idle_modules": len(idle_modules),
             "champions": [c["id"] for c in self.champion_history],
@@ -1125,6 +1209,17 @@ class SelfPlayCallback(RLlibCallback):
                     window=1,
                 )
     
+    @staticmethod
+    def _candidate_trades(env_runner_results, module_id):
+        """The module's mean trades per episode this iteration, or None if absent."""
+        by_module = env_runner_results.get(MODULE_TRADES_METRIC)
+        if not isinstance(by_module, dict):
+            return None
+        value = _as_float(by_module.get(module_id))
+        if value is None or math.isnan(value):
+            return None
+        return value
+
     def _should_create_champion(self, return_value, iteration, algorithm):
         """
         Decide if we should create a champion snapshot.
