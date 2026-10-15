@@ -323,6 +323,27 @@ class SelfPlayCallback(RLlibCallback):
         state["_activity"] = {}
         return state
 
+    def __setstate__(self, state):
+        """Restore, filling in knobs a callback pickled before they existed lacks.
+
+        A resumed run takes its callback from the checkpoint, not from the
+        config (`Algorithm.from_checkpoint`), so a checkpoint written before the
+        passivity guard (doc/15 S3-11) holds a callback with no
+        `min_champion_trades`, and the first champion check would raise
+        `AttributeError`. It gets the guard off, which is what it had, and the
+        run is told so rather than left to find out. Its `std_dev_multiplier`
+        stays whatever it was pickled with, as it always has.
+        """
+        self.__dict__.update(state)
+        if "min_champion_trades" not in state:
+            self.min_champion_trades = 0.0
+            logger.warning(
+                "this league callback was saved before the champion passivity "
+                "guard existed (doc/15 S3-11), so it runs without one: a policy "
+                "that has stopped trading can still be promoted. Start a fresh "
+                "run to get min_champion_trades."
+            )
+
     def _recorder(self):
         """This process's `EpisodeRecorder`, built on first use, or None.
 

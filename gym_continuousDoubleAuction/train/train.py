@@ -1225,6 +1225,9 @@ def _config_fingerprint(config) -> dict:
 
     for key in (
         "lr",
+        # RLlib's 0.0 in a checkpoint from before the entropy bonus: the
+        # restore keeps it, and without this the run said nothing (S3-11).
+        "entropy_coeff",
         "num_epochs",
         "minibatch_size",
         "train_batch_size_per_learner",
