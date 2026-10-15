@@ -93,13 +93,18 @@ def main(argv=None):
         log_every=args.log_every,
     )
 
-    save(module, args.out, args.encoder, encoder_spec)
     logger.info("pretraining report\n%s\n%s", corpus.describe(), report.summary())
 
-    # A collapsed encoder is not a usable one, and its loss looks excellent
-    # precisely because of the collapse. Fail the command rather than leaving a
-    # good-looking number in the log beside weights nobody should load.
-    return 1 if report.collapsed else 0
+    # A collapsed or diverged encoder is not a usable one, and a collapsed
+    # one's loss looks excellent precisely because of the collapse. Say so,
+    # exit non-zero, and write nothing: weights saved under a valid fingerprint
+    # are what a later `pretrained_path` run would load, whatever this exit
+    # code was. A checkpoint already in `--out` is left as it was.
+    if report.collapsed:
+        logger.error("not saving to %s: the run is unusable (see the report)", args.out)
+        return 1
+    save(module, args.out, args.encoder, encoder_spec)
+    return 0
 
 
 if __name__ == "__main__":
