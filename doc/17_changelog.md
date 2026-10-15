@@ -3736,3 +3736,20 @@ tied to the layout version or finding it describes, the "five-head" checkpoint n
   learning differs now that a baseline's or champion's `logp` is the right shape was not measured; nothing reads it.
 - **Tests.** `test_action_dist.py` (15) and `integration/test_stateful_logp.py` (7); the stateful-module cases fail on the
   previous source. Unit 1,363 to 1,378, integration 172 to 179; suite 1,557.
+
+## 72. Pretraining no longer saves a collapsed or diverged encoder (issue #239)
+
+- **What was open.** Two gaps in `python -m ...train.pretrain`. `main` called `save` before it looked at the report, so a
+  collapsed encoder (`latent_std < 0.1`) was on disk with `encoder.pt`, `rl_module/` and a matching fingerprint, which
+  `verify_fingerprint` accepts and a `pretrained_path` run would load. And `PretrainReport.collapsed` was
+  `latent_std[-1] < 0.1`, which is False for NaN, so a diverged run (or one whose validation batches all returned no stats,
+  leaving `latent_std` NaN) exited 0.
+- **Reproduced first.** On the previous source: a report with a NaN `latent_std` was not `collapsed`, and `main` with a
+  collapsed report exited 1 with the weights and fingerprint already written.
+- **Fix.** `PretrainReport.diverged` is true for no `latent_std` reading or any non-finite loss or `latent_std`;
+  `collapsed` is now "unusable" (diverged, or `latent_std < 0.1`), and the summary says DIVERGED or COLLAPSED accordingly.
+  `main` prints the report, returns 1 and writes nothing when the run is unusable, and saves only otherwise. A checkpoint
+  already in `--out` is left as it was.
+- **Not claimed.** The 0.1 threshold is unchanged and still a literal in code, not a config value. A run that is finite and
+  above it is not thereby shown to be good.
+- **Tests.** Ten in `test_pretrain.py` (26 to 36); eight fail on the previous source. Unit 1,378 to 1,388; suite 1,567.
