@@ -3675,7 +3675,15 @@ tied to the layout version or finding it describes, the "five-head" checkpoint n
   evicts nothing. Missing counts warn and do not block. Without the guard the do-nothing policy is promoted at 0.1 **and
   at 1.5**, so the guard is a separate fix, not a consequence of the multiplier.
 - **Behaviour change.** A default run now has an entropy bonus, promotes fewer champions, and promotes none that
-  stopped trading. Pre-existing checkpoints are unaffected (none of this is in the layout stamp).
-- **Tests.** `test_champion_guard.py` (23) and `integration/test_champion_guard_wiring.py` (3). The five
+  stopped trading. Pre-existing checkpoints still load (none of this is in the layout stamp), but a resume takes its
+  config and its pickled callback from the checkpoint, not from the file, so such a resume keeps the old behaviour.
+  The review of this change found two things about that, both fixed: a callback pickled before the guard had no
+  `min_champion_trades` and raised `AttributeError` at its first champion check (reproduced), so `__setstate__` now
+  gives it 0, guard off, with a warning; and `entropy_coeff` was not in the restore's config comparison, so a resume
+  silently kept the checkpoint's 0.0, so it now is, and the usual "the restore ignores this edit" warning appears. The
+  checkpoint's `std_dev_multiplier` is likewise whatever it was pickled with, as it has always been.
+- **Tests.** `test_champion_guard.py` (26) and `integration/test_champion_guard_wiring.py` (3), one more restore test in
+  `test_checkpointing.py` and one in `test_distributed_observability.py`, which shows the per-module trade counts
+  arrive from a remote env runner. The five
   `test_champion_trigger.py` tests that hand-build leagues of three or four modules now pin `std_dev_multiplier` 0.1,
-  since nothing in such a league can sit 1.5 deviations out. Unit 1,314 to 1,337, integration 163 to 166; suite 1,503.
+  since nothing in such a league can sit 1.5 deviations out. Unit 1,314 to 1,341, integration 163 to 167; suite 1,508.

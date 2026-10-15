@@ -1028,7 +1028,7 @@ the pool saturates with barely-trained snapshots.
   counts do not block (they warn), so the guard cannot stop the league growing by itself.
 
 The shipped values of the entropy bonus are the usual PPO range, not tuned on this env.
-`test_champion_guard.py` (23) and `integration/test_champion_guard_wiring.py` (3, a real run).
+`test_champion_guard.py` (26) and `integration/test_champion_guard_wiring.py` (3, a real run).
 Changelog [17](17_changelog.md) §69. Doc [08](08_self_play_league.md) §10.
 
 ### S3-12 · The league ranks a signal that is not comparable across roles
@@ -1582,7 +1582,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **1,337 unit tests pass** (plus 166 integration), covering every position-flip path, cash-check edge case, modify-order
+- **1,341 unit tests pass** (plus 167 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 

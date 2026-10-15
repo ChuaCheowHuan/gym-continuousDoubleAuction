@@ -175,7 +175,8 @@ absent from the result the guard says so and promotes on return alone, because a
 on missing data would stop the league growing silently and for good, the way a NaN threshold once did.
 The default of 1.0 is "not dead", not "active": a random module makes about 30 trades in a 64-step
 episode with 4 agents (measured). Only fills against another agent count; an order that would cross
-the agent's own resting order is withdrawn instead of trading, so a self-match cannot satisfy the bar.
+the agent's own resting order is withdrawn instead of trading, so a self-match cannot satisfy the bar. A resume takes its callback from the checkpoint, so one saved before the guard runs
+without it (`min_champion_trades` 0) and says so at restore.
 
 > Relative ranking works fine with **negative** returns, which are the norm here. With mean −1000
 > and std 200, the threshold is −600; a policy returning −500 is genuinely exceptional relative to
