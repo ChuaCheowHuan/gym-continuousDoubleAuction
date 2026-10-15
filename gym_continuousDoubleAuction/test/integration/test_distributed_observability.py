@@ -109,6 +109,15 @@ class TestMetricsCrossTheRunnerBoundary:
         assert "pass_action_fraction" in self.env_runners
         assert "order_rejection_fraction" in self.env_runners
 
+    def test_the_per_module_trade_counts_reach_the_driver(self):
+        """What the champion guard reads (S3-11). A remote runner logs them, the
+        driver compiles them; a guard that found nothing here would promote on
+        return alone and say so only in a log line."""
+        reported = self.env_runners.get("module_trades_per_episode")
+        assert isinstance(reported, dict), self.env_runners.keys()
+        for pid in ("policy_0", "policy_1"):
+            assert pid in reported and reported[pid] >= 0.0
+
     def test_the_reward_decomposition_reaches_the_driver(self):
         """doc/11 §2.4: the five terms were captured per step and never
         aggregated, so the variance split doc/07 §6.4 prescribes could only be

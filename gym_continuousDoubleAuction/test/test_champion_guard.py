@@ -149,6 +149,38 @@ class TestThePromotionGuard:
         assert "not promoting" not in caplog.text
 
 
+class TestACallbackSavedBeforeTheGuard:
+    """A resume takes its callback from the checkpoint, not from the config."""
+
+    def _restored(self):
+        cb = _callback(std_dev_multiplier=0.1)
+        state = cb.__getstate__()
+        del state["min_champion_trades"]
+        old = SelfPlayCallback.__new__(SelfPlayCallback)
+        old.__setstate__(state)
+        return old
+
+    def test_it_does_not_crash_at_the_first_champion_check(self, snapshots):
+        old = self._restored()
+        created = snapshots(old)
+        old.on_train_result(algorithm=object(), result=_result(PASSIVE_LEAGUE))
+        assert created == ["policy_0"]
+
+    def test_it_runs_without_the_guard_and_says_so(self, caplog):
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            old = self._restored()
+        assert old.min_champion_trades == 0.0
+        assert "passivity guard" in caplog.text and "fresh run" in caplog.text
+
+    def test_a_current_callback_is_restored_without_a_warning(self, caplog):
+        cb = _callback()
+        fresh = SelfPlayCallback.__new__(SelfPlayCallback)
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            fresh.__setstate__(cb.__getstate__())
+        assert "passivity guard" not in caplog.text
+        assert fresh.min_champion_trades == cb.min_champion_trades
+
+
 class TestTheShippedMultiplier:
 
     def test_it_is_not_the_one_that_promoted_on_the_first_iteration(self):
