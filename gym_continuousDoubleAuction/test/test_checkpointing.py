@@ -359,6 +359,17 @@ class TestRestoredConfigCheck:
         assert "lr" in caplog.text and "0.001" in caplog.text
         assert "env_config.order_penalty" in caplog.text
 
+    def test_a_restore_that_keeps_the_old_entropy_bonus_says_so(self, caplog):
+        """S3-11. A checkpoint from before the bonus holds RLlib's 0.0 and the
+        resume keeps it; the new schedule in the file would otherwise be ignored
+        without a word."""
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            _check_restored_config(
+                self._config(entropy_coeff=0.0),
+                self._config(entropy_coeff=[[0, 0.01], [262144, 0.001]]),
+            )
+        assert "entropy_coeff" in caplog.text and "0.01" in caplog.text
+
     def test_shape_changing_edits_are_fatal(self):
         with pytest.raises(ValueError, match="shape of the problem"):
             _check_restored_config(

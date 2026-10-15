@@ -3656,3 +3656,34 @@ tied to the layout version or finding it describes, the "five-head" checkpoint n
 - **The workflow still says `@v4` and `@v5`.** It was not edited, and it ran. If the policy is tightened again, pin the four
   `uses:` lines in `.github/workflows/tests.yml` to those SHAs. Pushing a workflow file needs the `workflow` scope on the
   token; the session's token has none.
+
+## 69. Entropy bonus, a reachable champion threshold, and a guard against passive champions (S3-11; issue #123)
+
+- **Reproduced first.** The built `PPOConfig` had `entropy_coeff` 0.0; `std_dev_multiplier` was 0.1; and a league whose
+  `policy_0` did nothing (return 0.0) against six modules losing money (−98 to −50) promoted `policy_0` on iteration 1.
+- **Entropy.** `ppo.entropy_coeff` 0.01 falling linearly to `entropy_coeff_final` 0.001 over `entropy_decay_iters` 16
+  iterations, passed to RLlib as the schedule `[[0, 0.01], [train_batch_size × 16, 0.001]]` (or as a constant when the two
+  agree; both 0 is the old behaviour). Checked on a real run: after two iterations of 256 steps each, RLlib reports
+  `curr_entropy_coeff` 0.008875, which is the linear value at 512 of 4,096 steps. The values are the usual PPO range, not
+  tuned on this env.
+- **Multiplier.** 0.1 to 1.5, the bottom of the issue's 1.5 to 2.5. The top of that range is not safe: with n modules no
+  module is more than `sqrt(n − 1)` population standard deviations above the mean (2.65 at the default 8, 1.73 at 4), so
+  a multiplier at or above it never promotes anyone. `SelfPlayCallback` now warns at construction when it is.
+- **Guard.** `league_self_play.min_champion_trades` 1.0. The env runners log each module's trades per episode
+  (`module_trades_per_episode`, `reduce="mean"` over the iteration, 0 for an agent that never traded); the driver refuses a
+  candidate under the bar, logs a warning, and sets `result["league"]["refused_passive"]`. A refusal starts no cooldown and
+  evicts nothing. Missing counts warn and do not block. Without the guard the do-nothing policy is promoted at 0.1 **and
+  at 1.5**, so the guard is a separate fix, not a consequence of the multiplier.
+- **Behaviour change.** A default run now has an entropy bonus, promotes fewer champions, and promotes none that
+  stopped trading. Pre-existing checkpoints still load (none of this is in the layout stamp), but a resume takes its
+  config and its pickled callback from the checkpoint, not from the file, so such a resume keeps the old behaviour.
+  The review of this change found two things about that, both fixed: a callback pickled before the guard had no
+  `min_champion_trades` and raised `AttributeError` at its first champion check (reproduced), so `__setstate__` now
+  gives it 0, guard off, with a warning; and `entropy_coeff` was not in the restore's config comparison, so a resume
+  silently kept the checkpoint's 0.0, so it now is, and the usual "the restore ignores this edit" warning appears. The
+  checkpoint's `std_dev_multiplier` is likewise whatever it was pickled with, as it has always been.
+- **Tests.** `test_champion_guard.py` (26) and `integration/test_champion_guard_wiring.py` (3), one more restore test in
+  `test_checkpointing.py` and one in `test_distributed_observability.py`, which shows the per-module trade counts
+  arrive from a remote env runner. The five
+  `test_champion_trigger.py` tests that hand-build leagues of three or four modules now pin `std_dev_multiplier` 0.1,
+  since nothing in such a league can sit 1.5 deviations out. Unit 1,314 to 1,341, integration 163 to 167; suite 1,508.

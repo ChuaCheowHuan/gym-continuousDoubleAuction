@@ -432,7 +432,8 @@ barely-trained snapshots.
 
 **Recommendation:** set `entropy_coeff` to a small positive value with a decay schedule, raise
 `std_dev_multiplier` into the 1.5–2.5 range, and add a guard that refuses to promote a champion
-whose trade count is ~0.
+whose trade count is ~0. **Done (S3-11):** entropy 0.01 falling to 0.001, the multiplier at 1.5
+(2.5 would never promote at the default league size), and `min_champion_trades`.
 
 ---
 
@@ -560,7 +561,7 @@ Observations:
 | 5 | ~~`size_mean → Box(0,1)`; scale or drop `size_sigma`~~ — **done** (S3-1 to S3-3), one `size` head | S | Recovers half the action range, removes a null control |
 | 6 | Normalise observation feature scales | S | Removes `tanh` saturation |
 | 7 | Terminate bankrupt agents individually | S | Stops zombie transitions polluting returns |
-| 8 | `entropy_coeff > 0` with decay; raise `std_dev_multiplier`; refuse champions with ~0 trades | S | Guards against passivity collapse |
+| 8 | ~~`entropy_coeff > 0` with decay; raise `std_dev_multiplier`; refuse champions with ~0 trades~~ — **done** (S3-11) | S | Guards against passivity collapse |
 | 9 | Normalise the whole obs stack by the current `M_t`; add trade-flow features | M | Makes frame stacking actually informative |
 | 10 | Emit size directly as an action instead of distribution parameters | M | Removes unrecorded env-side stochasticity from the ratio |
 | 11 | ~~Assert `vf_explained_var > 0` in the integration suite~~ — **done** | S | Prevents §4 from silently regressing |

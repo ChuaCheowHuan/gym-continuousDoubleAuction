@@ -85,7 +85,7 @@ mindmap
         S3-28 two grid origins at a fractional tick — fixed
       training and league
         S3-8 detached callback — fixed
-        S3-11 promotion cannot detect passivity
+        S3-11 promotion cannot detect passivity — fixed
         S3-12 returns not comparable across roles
         S3-16 idle opponent killed promotion — fixed
         S3-17 retention deleted fresh checkpoints — fixed
@@ -1001,7 +1001,7 @@ A second limit at the same price *replaces* the first (level volume 7, not 12) �
 `_place_limit_order` upserts via `_get_order_ID`. Layering, iceberg and multi-clip quoting are
 not expressible. Different price levels are unaffected.
 
-### S3-11 · No entropy bonus, and champion promotion cannot detect passivity **[verified]**
+### S3-11 · No entropy bonus, and champion promotion cannot detect passivity **[verified, fixed]**
 
 _Tracked in [#123](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/123)._
 
@@ -1010,8 +1010,26 @@ still clear the promotion threshold — 0 beats a negative league mean — so th
 champion snapshots of the do-nothing policy. Related: with `std_dev_multiplier=0.1` a champion is
 promoted on the very first eligible iteration **[verified]**, so at the default 16-iteration run
 the pool saturates with barely-trained snapshots.
-**Fix:** positive decaying `entropy_coeff`; raise `std_dev_multiplier` to 1.5–2.5; refuse to
-promote a champion whose trade count is ~0.
+
+**Fixed**, all three parts, and the third turned out not to be covered by the second:
+
+- `ppo.entropy_coeff` 0.01 falling to `entropy_coeff_final` 0.001 over `entropy_decay_iters` 16
+  iterations (RLlib's default was 0.0). A real two-iteration run applies 0.008875, which is the
+  linear value at 512 of 4,096 steps (`curr_entropy_coeff` in the learner results).
+- `league_self_play.std_dev_multiplier` 1.5, the bottom of the recommended range. 2.5 is not
+  safe to ship: with n modules nobody can be more than `sqrt(n − 1)` standard deviations above
+  the mean (2.65 at the default 8, 1.73 at 4), so a multiplier at or above that never promotes
+  anyone. `SelfPlayCallback` now warns at construction when that is so.
+- `league_self_play.min_champion_trades` 1.0: a candidate that traded under that many times per
+  episode over the iteration is refused (`result["league"]["refused_passive"]` is 1, a warning is
+  logged, nothing else changes). **Measured:** a do-nothing `policy_0` (return 0.0) against six
+  modules losing money is promoted at multiplier 0.1, **and at 1.5**, and refused only with the
+  guard. The per-module trade counts reach the driver as `module_trades_per_episode`; absent
+  counts do not block (they warn), so the guard cannot stop the league growing by itself.
+
+The shipped values of the entropy bonus are the usual PPO range, not tuned on this env.
+`test_champion_guard.py` (26) and `integration/test_champion_guard_wiring.py` (3, a real run).
+Changelog [17](17_changelog.md) §69. Doc [08](08_self_play_league.md) §10.
 
 ### S3-12 · The league ranks a signal that is not comparable across roles
 
@@ -1564,7 +1582,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **1,314 unit tests pass** (plus 163 integration), covering every position-flip path, cash-check edge case, modify-order
+- **1,341 unit tests pass** (plus 167 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 
@@ -1592,7 +1610,7 @@ Roughly two to three weeks of work, ordered so each step unblocks the next.
    it (41 floats, S3-24)
 6. ~~Terminate and flatten bankrupt agents (S2-4)~~ — **done**
 7. ~~`size_mean → Box(0,1)`; scale or drop `size_sigma`~~ — **done** (S3-1, S3-2, S3-3): one `size` head
-8. Positive decaying `entropy_coeff`; raise `std_dev_multiplier`; refuse zero-trade champions (S3-11)
+8. ~~Positive decaying `entropy_coeff`; raise `std_dev_multiplier`; refuse zero-trade champions (S3-11)~~ — **done**
 9. ~~One `np.random.Generator` threaded through the env (S3-5)~~ — **done**. All three draws read
    `self.np_random`; `test_seeding.py` pins it, and `scikit-learn` left with the fix
 

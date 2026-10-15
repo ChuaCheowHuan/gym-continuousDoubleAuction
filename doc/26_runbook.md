@@ -98,19 +98,19 @@ import and reads its config tree relative to the repository root
 Three checks, cheapest first. All three are what CI runs ([10](10_testing.md) §7).
 
 ```bash
-# 1. the simulator and the training-side units: ~1 min, 1,314 tests (incl. pyflakes and Hypothesis)
+# 1. the simulator and the training-side units: ~1 min, 1,341 tests (incl. pyflakes and Hypothesis)
 python -m pytest gym_continuousDoubleAuction/test -q \
     --ignore=gym_continuousDoubleAuction/test/integration
 
 # 2. a random-agent episode through the whole env, no learning: a few seconds
 python -m gym_continuousDoubleAuction.CDA_rand --steps 200 --agents 4
 
-# 3. RLlib wiring, real Algorithm builds, save/restore, evaluate: ~3 min, 163 tests
+# 3. RLlib wiring, real Algorithm builds, save/restore, evaluate: ~3 min, 167 tests
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 ```
 
-Expected: `1314 passed`, a line reading `completed 200 steps with 4 random agents.`, and
-`163 passed`. `pytest` is the only runner that works; `python test_x.py` defines classes and exits
+Expected: `1341 passed`, a line reading `completed 200 steps with 4 random agents.`, and
+`167 passed`. `pytest` is the only runner that works; `python test_x.py` defines classes and exits
 ([10](10_testing.md) §0).
 
 To see the env work step by step, ask for the render, which writes at DEBUG:
@@ -439,7 +439,7 @@ applied inside the module, so nothing extra is needed for it.
 | `NavConservationError` stops the run | the ledger created or destroyed cash | a bug, not a tuning problem: keep the run directory and the episode Parquet, open an issue with `run.log`'s `NAV conservation VIOLATED` block |
 | `checkpoint is already at iteration N, at or past the target` | `num_iters` is a target and the restore is past it | raise `--iters` or pass `--iters-is-delta` |
 | `already holds N checkpoint(s) from an earlier run` | fresh run into a used `results/chkpt` | harmless now; dangerous with a later `--restore`. Move them or change `--log-base-dir` |
-| `champion_1` never appears, `league.promoted` stays 0 | `std_dev_multiplier` threshold never cleared, or an idle opponent | read `league stats` lines; [08](08_self_play_league.md) §10 |
+| `champion_1` never appears, `league.promoted` stays 0 | `std_dev_multiplier` threshold never cleared, the best trainable traded under `min_champion_trades` (`league.refused_passive` is 1), or an idle opponent | read `league stats` lines; [08](08_self_play_league.md) §10 |
 | every `module_episode_returns_mean` is `-0.0` / tiny | rewards are fractions of starting NAV, so 1e-3 is a real move | expected; compare modules to each other, not to 1 |
 | `--render` prints nothing | render writes at DEBUG | `CDA_rand --render` raises the level itself; elsewhere set `cda_log_level` `DEBUG` |
 | `python test_x.py` does nothing | the suite is pytest-native | `python -m pytest path/to/test_x.py` |

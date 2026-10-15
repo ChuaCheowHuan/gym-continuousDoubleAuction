@@ -254,6 +254,12 @@ class TrainConfig:
     # default is 128, which is larger than the batch of a short-episode test
     # run, so this is exposed rather than left implicit.
     minibatch_size: Optional[int] = _default("minibatch_size")
+    # The PPO entropy bonus, falling linearly from `entropy_coeff` to
+    # `entropy_coeff_final` over `entropy_decay_iters` iterations (doc/15
+    # S3-11). RLlib's own default is 0.0.
+    entropy_coeff: float = _default("entropy_coeff")
+    entropy_coeff_final: float = _default("entropy_coeff_final")
+    entropy_decay_iters: int = _default("entropy_decay_iters")
 
     # --- Optimiser -----------------------------------------------------------
     # Both default to torch's own values, so a run that changes neither builds
@@ -312,6 +318,9 @@ class TrainConfig:
     std_dev_multiplier: float = _default("std_dev_multiplier")
     max_champions: int = _default("max_champions")
     min_iterations_between_champions: int = _default("min_iterations_between_champions")
+    # Mean trades per episode a trainable policy needs over the iteration to be
+    # promoted (doc/15 S3-11). 0 disables the guard.
+    min_champion_trades: float = _default("min_champion_trades")
     original_opponent_weight: float = _default("original_opponent_weight")
     champion_weight: float = _default("champion_weight")
     # null disables the per-step episode record entirely. See episode_data_path
@@ -402,6 +411,37 @@ class TrainConfig:
             self.run_id = generate_run_id()
 
         validate_encoder_type(self.encoder_type)
+
+        if self.entropy_coeff < 0 or self.entropy_coeff_final < 0:
+            raise ValueError(
+                f"entropy_coeff and entropy_coeff_final must be >= 0; got "
+                f"{self.entropy_coeff} and {self.entropy_coeff_final}."
+            )
+        if self.entropy_decay_iters < 1:
+            raise ValueError(
+                f"entropy_decay_iters must be >= 1; got {self.entropy_decay_iters}."
+            )
+        if self.min_champion_trades < 0:
+            raise ValueError(
+                f"min_champion_trades must be >= 0; got {self.min_champion_trades}."
+            )
+
+    @property
+    def entropy_setting(self):
+        """What `PPOConfig.training(entropy_coeff=...)` takes: a float, or a schedule.
+
+        A constant when the start and the end agree, so a run that sets both to
+        0 builds exactly the config it did before. Otherwise RLlib's
+        `[[env_step, value], ...]` form, with the end placed `entropy_decay_iters`
+        iterations in; RLlib holds the last value after that.
+        """
+        if self.entropy_coeff == self.entropy_coeff_final:
+            return float(self.entropy_coeff)
+        return [
+            [0, float(self.entropy_coeff)],
+            [self.train_batch_size * self.entropy_decay_iters,
+             float(self.entropy_coeff_final)],
+        ]
 
     @classmethod
     def from_json(cls, path: str) -> "TrainConfig":
@@ -724,6 +764,7 @@ def build_config(cfg: TrainConfig):
         episode_data_dir=cfg.episode_data_path,
         nav_tolerance=cfg.nav_tolerance,
         strict_nav_check=cfg.strict_nav_check,
+        min_champion_trades=cfg.min_champion_trades,
         episode_sample_every=cfg.episode_sample_every,
         episode_max_bytes=cfg.episode_max_bytes,
         episode_rows_per_file=cfg.episode_rows_per_file,
@@ -769,6 +810,7 @@ def build_config(cfg: TrainConfig):
         .training(
             train_batch_size_per_learner=cfg.train_batch_size,
             num_epochs=cfg.num_epochs,
+            entropy_coeff=cfg.entropy_setting,
             # `lr` last, so an encoder that sets one in its spec block wins over
             # the `ppo` group's. The group's value was tuned for the 2x256 tanh
             # MLP; holding an attention stack to it measures the learning rate
@@ -1183,6 +1225,9 @@ def _config_fingerprint(config) -> dict:
 
     for key in (
         "lr",
+        # RLlib's 0.0 in a checkpoint from before the entropy bonus: the
+        # restore keeps it, and without this the run said nothing (S3-11).
+        "entropy_coeff",
         "num_epochs",
         "minibatch_size",
         "train_batch_size_per_learner",
