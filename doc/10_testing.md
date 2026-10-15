@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (1,508 tests: 1,341 unit + 167 integration)
+# everything (1,535 tests: 1,363 unit + 172 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -25,7 +25,7 @@ python -m pytest gym_continuousDoubleAuction/test -q \
     --ignore=gym_continuousDoubleAuction/test/integration
 
 # RLlib wiring, the real save/restore, the progress log and a real remote
-# runner (167 tests, builds real Algorithms)
+# runner (172 tests, builds real Algorithms)
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 
 # a single file
@@ -46,7 +46,7 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `1341 passed` on the unit half, `167 passed` on the integration half. There is no xfail: the one that pinned S1-1 XPASSed when S1-1 was fixed and was deleted (see §6.2.2).
+**[verified]** — `1363 passed` on the unit half, `172 passed` on the integration half. There is no xfail: the one that pinned S1-1 XPASSed when S1-1 was fixed and was deleted (see §6.2.2).
 
 ### File inventory
 
@@ -113,11 +113,12 @@ Counts re-measured with `--collect-only`.
 | `test_obs_pipeline.py` | 13 | The raw-frame deque and the one-normaliser-per-stack property: a resting order reads the same in every frame (S2-6) |
 | `test_obs_feature_scales.py` | 10 | Every observation block lands on one scale — the size/price ratio and the centred `log_mid` (S2-2) |
 | `test_entry_points.py` | 8 | The two documented entry points work: `gymnasium.make("continuousDoubleAuction-v0")`, and `visualize/` being importable from a wheel |
-| `test_cbp.py` | 54 | Continual Backprop's algorithm core, with no Ray and no `Algorithm` — §6.6.1 |
+| `test_cbp_recurrent.py` | 21 | CBP on an LSTM core: which parameters are a unit, a replacement that leaves the new unit inert and moves the function only by the old unit's contribution, Adam's moments cleared for exactly the reset entries, and discovery on the real encoders under each scope (S3-32) |
+| `test_cbp.py` | 55 | Continual Backprop's algorithm core, with no Ray and no `Algorithm` — §6.6.1 |
 | `test_compare.py` | 18 | The encoder comparison driver's aggregation: means and standard deviations across seeds, the separation rule and its three-seed floor, the rendered table and its caveats |
 | `test_export.py` | 20 | `train.export`'s pure half: which module is the winner, the no-champion and foreign-layout messages, and what the written record carries (doc/26 §26.9.2) |
 | `test_lint.py` | 1 | The package is pyflakes-clean; any message fails the suite (S4-6) |
-| **unit total** | **1,341** | |
+| **unit total** | **1,363** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -126,9 +127,9 @@ Counts re-measured with `--collect-only`.
 | `integration/test_distributed_observability.py` | 11 | A real `num_env_runners=1` iteration: every episode-hook metric arrives on the driver, and the episode record is written by the *worker* into the driver's absolute run-scoped path |
 | `integration/test_encoder_wiring.py` | 48 | Champions inherit the encoder; a restore cannot change it; the recurrent and MoE paths train end to end; a real checkpoint round-trip with a custom encoder |
 | `integration/test_probe_harness.py` | 28 | The probe against the real env: a usable rollout corpus, every registered encoder frozen and read, the LSTM's state reset per episode, a real checkpoint restored with its weights |
-| `integration/test_cbp_wiring.py` | 41 | Continual Backprop inside a real `Algorithm`: composition over the encoder's Learner, a real save and restore, and the restore guard — §6.6.2 |
+| `integration/test_cbp_wiring.py` | 46 | Continual Backprop inside a real `Algorithm`: composition over the encoder's Learner, a real save and restore, and the restore guard — §6.6.2 |
 | `integration/test_champion_guard_wiring.py` | 3 | A real run: every trainable module's trade count reaches the driver, the league state says whether a candidate was refused, and RLlib applies the decaying entropy bonus (S3-11) |
-| **integration total** | **167** | |
+| **integration total** | **172** | |
 
 > **Stale references in older docs.** `test_orderbook.py`, `repro_orderbook_crossed_book.py`,
 > `test_OrderBook.py`, `test_cda_nsp.py` and `test_orderbook_double_delete_order.py` do not exist.
@@ -145,7 +146,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((1,508 tests))
+  root((1,535 tests))
     Simulator
       orderbook 57
         components, matching, invariants
@@ -231,7 +232,7 @@ mindmap
         device and DDP boundaries
       packaging 8
         gymnasium.make, visualize importable
-    Integration 167
+    Integration 172
       league wiring, 3 topologies
       real save and restore
       real progress.jsonl, live vf_explained_var guard
@@ -971,7 +972,7 @@ series and a plotted `0.0` would read as total collapse.
 Two files, and the split is the same one `cbp.py` makes: the algorithm is testable without RLlib,
 the wiring is not. See [25_continual_backprop.md](25_continual_backprop.md).
 
-### 6.6.1 `test_cbp.py` — 54 tests
+### 6.6.1 `test_cbp.py` — 55 tests
 
 No Ray, no `Algorithm`. The formulas are checked against hand-computed values rather than against
 the implementation.
@@ -997,7 +998,7 @@ them.
 outputs and the value head's 1, so a regression that stopped at the encoder boundary fails loudly
 rather than quietly halving the mechanism.
 
-### 6.6.2 `integration/test_cbp_wiring.py` — 41 tests
+### 6.6.2 `integration/test_cbp_wiring.py` — 46 tests
 
 The claims that need a real `Algorithm`, modelled on `TestMoEAuxLossReachesTheOptimiser` and
 `TestOtherEncodersAreUnaffectedByJEPA`.

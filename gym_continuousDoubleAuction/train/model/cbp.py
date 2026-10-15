@@ -65,9 +65,9 @@ import torch.nn as nn
 #:                    is worth more than its contribution alone suggests.
 UTILITY_MEASURES = ("contribution", "mean_corrected", "overall")
 
-#: Where replaceable units are looked for. Only one value today; it is a config
-#: knob rather than a constant so that widening the scope later is a config
-#: change with a name, not a silent behavioural change.
+#: Where replaceable units are looked for. A config knob rather than a constant
+#: so that widening the scope is a config change with a name, not a silent
+#: behavioural change.
 #:
 #: `feedforward` - hidden units of a two-Linear feed-forward block, plus the
 #:                 trunk-to-head join described in `find_replaceable_layers`.
@@ -75,7 +75,12 @@ UTILITY_MEASURES = ("contribution", "mean_corrected", "overall")
 #:                 excluded: a unit there has no single well-defined outgoing
 #:                 weight matrix, and zeroing the outgoing weights is the whole
 #:                 reason a replacement does not disturb the function.
-SCOPES = ("feedforward",)
+#: `recurrent`   - everything in `feedforward`, plus the hidden units of the top
+#:                 layer of an `nn.LSTM` core (doc/15 S3-32, doc/25 section 3.4).
+#:                 The `lstm` encoder has nothing replaceable under
+#:                 `feedforward`, which is why this exists. See `RecurrentLayer`
+#:                 for what a unit is and what is zeroed.
+SCOPES = ("feedforward", "recurrent")
 
 #: When the generate-and-test step fires.
 #:
@@ -219,6 +224,168 @@ class ReplaceableLayer:
         """The module to hang the forward hook on to observe `h`."""
         return self.activation if self.activation is not None else self.incoming
 
+    # The four things the algorithm asks of a layer besides replacing it. They
+    # are methods so that `RecurrentLayer`, whose units are not a row of a
+    # Linear, answers the same questions without the algorithm knowing which
+    # kind it holds.
+
+    @property
+    def device(self) -> torch.device:
+        return self.incoming.weight.device
+
+    @property
+    def trained(self) -> bool:
+        return self.incoming.weight.requires_grad
+
+    def incoming_abs_sum(self) -> torch.Tensor:
+        """`sum_j |w_in[j, i]|` per unit `i`."""
+        return self.incoming.weight.detach().abs().sum(dim=1)
+
+    def outgoing_abs_sum(self) -> torch.Tensor:
+        """`sum_k |w_out[i, k]|` per unit `i`, over every consumer."""
+        return sum(out.weight.detach().abs().sum(dim=0) for out in self.outgoing)
+
+    def mean_weight_magnitude(self) -> float:
+        return float(self.incoming.weight.detach().abs().mean().item())
+
+
+#: Adam's per-element moment buffers, the slots a replacement has to clear.
+_ADAM_SLOTS = ("exp_avg", "exp_avg_sq", "max_exp_avg_sq")
+
+
+@dataclass
+class RecurrentLayer:
+    """The hidden units of the top layer of an `nn.LSTM`, as one replaceable layer.
+
+    A unit `i` is hidden unit `i` of the layer whose output the LSTM returns.
+    PyTorch stacks the four gates, so its parameters are scattered:
+
+      incoming  rows `i, H+i, 2H+i, 3H+i` of `weight_ih` and of `weight_hh`, and
+                the same four entries of `bias_ih` and `bias_hh`. The gates are
+                all *inputs* to the unit, so they are all incoming.
+      outgoing  column `i` of `weight_hh` (every gate of every unit reads
+                `h_i` at the next step) and column `i` of each head Linear that
+                consumes the LSTM's output. Another stacked LSTM layer above
+                this one would be a consumer too; only the top layer is covered,
+                because only its activation is the module's observable output.
+
+    A replacement resamples the incoming entries, sets the biases to 0 and zeroes
+    the outgoing columns, exactly the Linear rule. Zeroing is what makes the new
+    unit inert at that instant: nothing reads `h_i`, so its fresh weights reach
+    no output. The four entries `weight_hh[g*H+i, i]` are in both sets (the unit
+    reading its own previous state); outgoing is applied last, so they end at 0.
+
+    What this does not do, and the Linear case does not need to: the unit's cell
+    state `c_i` is not touched, because it is not a parameter. A replacement
+    mid-training leaves each stored sequence's carried state as computed with the
+    old weights until the sequence is recomputed.
+    """
+
+    name: str
+    lstm: nn.LSTM
+    outgoing: List[nn.Linear]
+    #: Which LSTM layer's parameters carry the units. The top one.
+    layer_index: int = 0
+
+    def __post_init__(self) -> None:
+        if self.lstm.bidirectional or self.lstm.proj_size:
+            raise ValueError(
+                "RecurrentLayer covers a plain unidirectional LSTM: with "
+                "bidirectional or proj_size the output is not the hidden units."
+            )
+
+    @property
+    def num_units(self) -> int:
+        return self.lstm.hidden_size
+
+    @property
+    def hook_target(self) -> nn.Module:
+        return self.lstm
+
+    def _p(self, kind: str) -> torch.Tensor:
+        return getattr(self.lstm, f"{kind}_l{self.layer_index}")
+
+    def _gate_rows(self) -> torch.Tensor:
+        h = self.lstm.hidden_size
+        return torch.arange(4, device=self.device).unsqueeze(1) * h + torch.arange(
+            h, device=self.device
+        ).unsqueeze(0)  # (4, H): [gate, unit] -> row
+
+    @property
+    def device(self) -> torch.device:
+        return self._p("weight_ih").device
+
+    @property
+    def trained(self) -> bool:
+        return self._p("weight_ih").requires_grad
+
+    def incoming_abs_sum(self) -> torch.Tensor:
+        rows = self._gate_rows()
+        total = self._p("weight_ih").detach().abs()[rows].sum(dim=(0, 2))
+        return total + self._p("weight_hh").detach().abs()[rows].sum(dim=(0, 2))
+
+    def outgoing_abs_sum(self) -> torch.Tensor:
+        total = self._p("weight_hh").detach().abs().sum(dim=0)
+        for out in self.outgoing:
+            total = total + out.weight.detach().abs().sum(dim=0)
+        return total
+
+    def mean_weight_magnitude(self) -> float:
+        return float(
+            torch.cat([self._p("weight_ih").detach().abs().flatten(),
+                       self._p("weight_hh").detach().abs().flatten()]).mean().item()
+        )
+
+    def reinitialise(self, index: int, generator: Optional[torch.Generator]) -> None:
+        """Resample the unit's incoming entries and zero its outgoing ones."""
+        h = self.lstm.hidden_size
+        # `nn.LSTM`'s own default: U(-1/sqrt(hidden), 1/sqrt(hidden)) for every
+        # weight, input and recurrent alike.
+        bound = 1.0 / math.sqrt(h)
+        rows = [g * h + index for g in range(4)]
+        with torch.no_grad():
+            for kind in ("weight_ih", "weight_hh"):
+                weight = self._p(kind)
+                for row in rows:
+                    weight[row] = torch.empty_like(weight[row]).uniform_(
+                        -bound, bound, generator=generator
+                    )
+            for kind in ("bias_ih", "bias_hh"):
+                if self.lstm.bias:
+                    self._p(kind)[rows] = 0.0
+            # Outgoing last, so the self-recurrent entries end at 0.
+            self._p("weight_hh")[:, index] = 0.0
+            for out in self.outgoing:
+                out.weight[:, index] = 0.0
+
+    def reset_optimizer_slots(self, optimizer: torch.optim.Optimizer, index: int) -> None:
+        """Zero Adam's moments for every entry `reinitialise` just reset."""
+        h = self.lstm.hidden_size
+        rows = [g * h + index for g in range(4)]
+        targets = [("weight_ih", rows, None), ("weight_hh", rows, None),
+                   ("weight_hh", None, index)]
+        if self.lstm.bias:
+            targets += [("bias_ih", rows, None), ("bias_hh", rows, None)]
+        with torch.no_grad():
+            for kind, row_idx, col_idx in targets:
+                slots = optimizer.state.get(self._p(kind))
+                if not slots:
+                    continue
+                for key in _ADAM_SLOTS:
+                    if key not in slots:
+                        continue
+                    if row_idx is not None:
+                        slots[key][row_idx] = 0.0
+                    else:
+                        slots[key][:, col_idx] = 0.0
+            for out in self.outgoing:
+                slots = optimizer.state.get(out.weight)
+                if not slots:
+                    continue
+                for key in _ADAM_SLOTS:
+                    if key in slots:
+                        slots[key][:, index] = 0.0
+
 
 # --- Layer discovery --------------------------------------------------------
 
@@ -339,6 +506,44 @@ def _trunk_head_layers(module: nn.Module) -> List[ReplaceableLayer]:
     return layers
 
 
+def _recurrent_layers(module: nn.Module) -> List["RecurrentLayer"]:
+    """The LSTM core of each trunk, paired with the heads that read its output.
+
+    The same trunk-to-head pairing as `_trunk_head_layers`: under
+    `vf_share_layers` one `encoder.encoder` feeds both heads, otherwise the
+    actor and critic each have an LSTM and one head. A trunk whose output is
+    not the LSTM's (something after it) or whose heads do not read a vector of
+    its width is skipped rather than guessed at.
+    """
+    encoder = getattr(module, "encoder", None)
+    if encoder is None:
+        return []
+    pi, vf = getattr(module, "pi", None), getattr(module, "vf", None)
+    pairings = (
+        ("encoder", getattr(encoder, "encoder", None), [pi, vf]),
+        ("actor_encoder", getattr(encoder, "actor_encoder", None), [pi]),
+        ("critic_encoder", getattr(encoder, "critic_encoder", None), [vf]),
+    )
+    layers: List[RecurrentLayer] = []
+    for trunk_name, trunk, heads in pairings:
+        lstm = getattr(trunk, "lstm", None) if trunk is not None else None
+        if not isinstance(lstm, nn.LSTM) or lstm.bidirectional or lstm.proj_size:
+            continue
+        consumers = []
+        for head in heads:
+            if head is None:
+                continue
+            first = next((m for m in head.modules() if isinstance(m, nn.Linear)), None)
+            if first is not None and first.in_features == lstm.hidden_size:
+                consumers.append(first)
+        if consumers:
+            layers.append(RecurrentLayer(
+                name=f"encoder.{trunk_name}.lstm", lstm=lstm,
+                outgoing=consumers, layer_index=lstm.num_layers - 1,
+            ))
+    return layers
+
+
 def find_replaceable_layers(
     module: nn.Module, scope: str = "feedforward"
 ) -> List[ReplaceableLayer]:
@@ -383,6 +588,8 @@ def find_replaceable_layers(
         if isinstance(sub, nn.Sequential):
             layers.extend(_sequential_layers(sub, name))
     layers.extend(_trunk_head_layers(module))
+    if scope == "recurrent":
+        layers.extend(_recurrent_layers(module))
 
     # A Linear can be the incoming weight of at most one layer. Nested
     # Sequentials are visited more than once by `named_modules`, so without
@@ -390,7 +597,7 @@ def find_replaceable_layers(
     # twice per step.
     seen, unique = set(), []
     for layer in layers:
-        key = id(layer.incoming)
+        key = id(layer.lstm) if isinstance(layer, RecurrentLayer) else id(layer.incoming)
         if key in seen or not _is_trained(layer):
             continue
         seen.add(key)
@@ -413,7 +620,7 @@ def _is_trained(layer: ReplaceableLayer) -> bool:
     the EMA relationship the whole objective rests on, and would not be undone
     by any subsequent update, because nothing updates it.
     """
-    return layer.incoming.weight.requires_grad
+    return layer.trained
 
 
 # --- Per-layer state --------------------------------------------------------
@@ -497,14 +704,12 @@ def bias_corrected(value: torch.Tensor, age: torch.Tensor, decay: float) -> torc
 
 def _outgoing_abs_sum(layer: ReplaceableLayer) -> torch.Tensor:
     """`sum_k |w_out[i, k]|` per unit `i`, over every consumer."""
-    return sum(
-        out.weight.detach().abs().sum(dim=0) for out in layer.outgoing
-    )
+    return layer.outgoing_abs_sum()
 
 
 def _incoming_abs_sum(layer: ReplaceableLayer) -> torch.Tensor:
     """`sum_j |w_in[j, i]|` per unit `i`."""
-    return layer.incoming.weight.detach().abs().sum(dim=1)
+    return layer.incoming_abs_sum()
 
 
 def update_utility(
@@ -640,6 +845,15 @@ def _reinitialise(
     bounded only by having selected the minimum-utility unit. See doc/16
     section 16.13 for the measured decomposition.
     """
+    if isinstance(layer, RecurrentLayer):
+        layer.reinitialise(index, generator)
+        state.utility[index] = 0.0
+        state.mean_act[index] = 0.0
+        state.age[index] = 0
+        if config.reset_optimizer_state and optimizer is not None:
+            layer.reset_optimizer_slots(optimizer, index)
+        return
+
     with torch.no_grad():
         weight = layer.incoming.weight
         # PyTorch's default `nn.Linear` init, which is what RLlib's MLP leaves
@@ -668,6 +882,7 @@ def _reinitialise(
 def _reset_optimizer_slots(
     optimizer: torch.optim.Optimizer, layer: ReplaceableLayer, index: int
 ) -> None:
+    # (A `RecurrentLayer` clears its own slots; see `_reinitialise`.)
     """Zero Adam's moment estimates for the weights a replacement just reset.
 
     arXiv Algorithm 2: a reinitialised weight that inherits a large second
@@ -782,9 +997,7 @@ def plasticity_metrics(
             (abs_mean < config.dead_unit_threshold).float().mean().item()
         ),
         "saturated_unit_frac": float((abs_mean > 0.9).float().mean().item()),
-        "mean_weight_magnitude": float(
-            layer.incoming.weight.detach().abs().mean().item()
-        ),
+        "mean_weight_magnitude": layer.mean_weight_magnitude(),
         "utility_min": float(corrected_utility.min().item()),
         "utility_median": float(corrected_utility.median().item()),
     }

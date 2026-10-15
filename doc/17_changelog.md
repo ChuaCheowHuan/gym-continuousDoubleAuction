@@ -3687,3 +3687,32 @@ tied to the layout version or finding it describes, the "five-head" checkpoint n
   arrive from a remote env runner. The five
   `test_champion_trigger.py` tests that hand-build leagues of three or four modules now pin `std_dev_multiplier` 0.1,
   since nothing in such a league can sit 1.5 deviations out. Unit 1,314 to 1,341, integration 163 to 167; suite 1,508.
+
+## 70. Continual Backprop covers an LSTM core: `cbp_scope: "recurrent"` (S3-32; issue #141)
+
+- **What was open.** Under the original scope, layer discovery found 0 replaceable layers in the `lstm` encoder (it has no
+  two-Linear block), so `cbp_enabled` there trained exactly like CBP off. The state-sync half of S3-32 and a warning had been
+  fixed in §59; covering a recurrent core was left open.
+- **Fix.** A second scope. `feedforward` is unchanged. `recurrent` adds the hidden units of the top layer of an `nn.LSTM`
+  core as a `RecurrentLayer`. PyTorch stacks the four gates, so a unit `i` is: incoming, rows `i, H+i, 2H+i, 3H+i` of
+  `weight_ih` and `weight_hh` and of both biases; outgoing, column `i` of `weight_hh` and of each head Linear reading the
+  LSTM's output. A replacement resamples the first (biases to 0) and zeroes the second, as for a Linear, with the four
+  self-recurrent entries ending at 0. The utility, the Adam-moment reset, the mean weight magnitude, the device and the
+  trained check were moved onto the layer classes so the algorithm asks every layer the same questions; the forward hook
+  takes the sequence out of the LSTM's `(output, (h, c))`.
+- **Result.** `lstm` finds 2 layers per trainable module (the actor's and the critic's; 1 under `vf_share_layers`) under
+  `recurrent` and 0 under `feedforward`; `mlp`, `transformer` and `moe_transformer` find the same layers under either. In a
+  real PPO update, through RLlib's recurrent connectors, units are replaced and the metrics are logged. The no-layer warning
+  now names `cbp_scope "recurrent"`.
+- **Checked on the output, not only the weights.** After a replacement, resampling the new unit's incoming weights again
+  changes the network's output by nothing, and the output equals the old network with that unit's outgoing weights zeroed.
+  Removing the `weight_hh` column zeroing, or the incoming-row Adam reset, each fails tests.
+- **Not claimed.** That CBP helps a recurrent policy: the papers do not test one, and doc/25 §3.3 (the effect is not
+  detectable at this repo's update count) applies unchanged. Only the top layer of a stacked LSTM is covered; the cell state
+  is not reset; the activation statistics are taken over every row the LSTM processes, padding included, and how much
+  that matters was not measured; `token_mlp` is still not covered. Review found one thing this does not fix: with
+  `encoder_type: "lstm"` a league run fails in sampling at the first iteration after a champion is added, with CBP off as
+  well (#278), so recurrent CBP cannot yet run through a full league.
+- **Tests.** `test_cbp_recurrent.py` (21), five in `integration/test_cbp_wiring.py` (a real LSTM update, replacements,
+  metrics, finite loss, state keyed by layer name and round-tripped), and the device-placement test in `test_cbp.py` now
+  checks the property it was only inspecting the source for. Unit 1,341 to 1,363, integration 167 to 172; suite 1,535.

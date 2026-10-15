@@ -187,10 +187,12 @@ class CBPLearnerMixin:
             # Not silent: a run that asked for continual backprop on a network
             # it cannot touch would otherwise train exactly like one without it,
             # with no replacements and no metrics to show the difference. The
-            # `lstm` encoder is the case today (doc/25 section 3.4).
+            # `lstm` encoder is the case under scope "feedforward" (doc/25
+            # section 3.4); "recurrent" covers its core.
             logger.warning(
                 "continual backprop is on, but %s has no layer it can replace "
-                "(scope %r); it will train as if continual backprop were off.",
+                "(scope %r); it will train as if continual backprop were off. "
+                "An lstm encoder needs cbp_scope \"recurrent\".",
                 module_id, self._cbp_config.scope,
             )
             return
@@ -204,7 +206,7 @@ class CBPLearnerMixin:
         # cannot drift apart.
         self._cbp_state[module_id] = {
             layer.name: CBPLayerState.zeros(
-                layer.num_units, device=layer.incoming.weight.device
+                layer.num_units, device=layer.device
             )
             for layer in layers
         }
@@ -231,6 +233,10 @@ class CBPLearnerMixin:
         key = (module_id, layer.name)
 
         def hook(_module, _inputs, output):
+            # An `nn.LSTM` returns `(sequence, (h_n, c_n))`; the units' activations
+            # are the sequence. A Linear or an activation returns the tensor.
+            if isinstance(output, tuple) and output and torch.is_tensor(output[0]):
+                output = output[0]
             if not torch.is_tensor(output):
                 return
             state = self._cbp_state[module_id][layer.name]

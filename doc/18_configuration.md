@@ -1162,7 +1162,7 @@ optimiser is bit-for-bit the one every existing run and checkpoint was built wit
 | `cbp_maturity_threshold` | `100` | Optimiser steps a fresh unit is protected for |
 | `cbp_utility_decay` | `0.99` | Decay of the utility running average |
 | `cbp_utility` | `"overall"` | `contribution`, `mean_corrected`, or `overall` |
-| `cbp_scope` | `"feedforward"` | Which units are replaceable |
+| `cbp_scope` | `"feedforward"` | Which units are replaceable: `feedforward`, or `recurrent` to add the top layer of an LSTM core (the `lstm` encoder has nothing replaceable under `feedforward`) |
 | `cbp_fire_on` | `"adam_step"` | `adam_step` (the papers' placement) or `iteration` |
 | `cbp_reset_optimizer_state` | `true` | Zero Adam's moments for replaced weights |
 | `cbp_dead_unit_threshold` | `0.01` | Mean \|activation\| below which a unit counts as dead, metric only. Cannot fire on a tanh network, which does not die toward zero |

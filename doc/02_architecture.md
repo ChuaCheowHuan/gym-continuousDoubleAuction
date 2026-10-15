@@ -193,8 +193,8 @@ gym_continuousDoubleAuction/
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   ├── inspect_latest_episode*.py        print the newest episode as a table or JSON
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               1,341 unit tests
-    └── integration/                    167 tests that build real Algorithms
+└── test/                               1,363 unit tests
+    └── integration/                    172 tests that build real Algorithms
 ```
 
 `train/logger/`, `train/plotter/` and `train/storage/` — the legacy Ray-actor telemetry an earlier

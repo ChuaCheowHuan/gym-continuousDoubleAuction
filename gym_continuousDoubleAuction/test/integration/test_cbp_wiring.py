@@ -261,6 +261,78 @@ class TestCBPRunsInsideARealUpdate:
             assert not any(value.requires_grad for value in stats.values())
 
 
+class TestCBPOnTheLSTMCore:
+    """doc/15 S3-32: under scope `recurrent` the lstm encoder is no longer a no-op.
+
+    Before, `cbp_enabled` on `lstm` found no replaceable layer and trained
+    exactly like CBP off. Here the mechanism fires inside a real PPO update on
+    the LSTM's hidden units, through RLlib's recurrent connectors.
+    """
+
+    @classmethod
+    def setup_class(cls):
+        ray.init(ignore_reinit_error=True, include_dashboard=False,
+                 log_to_driver=False, num_cpus=2)
+        cls.cfg = TrainConfig(**TEST_CFG, **FIRING_CFG, encoder_type="lstm",
+                              cbp_scope="recurrent")
+        ppo_config, _cb = build_config(cls.cfg)
+        cls.algo = ppo_config.build_algo()
+        cls.result = cls.algo.train()
+        cls.learner = cls.algo.learner_group._learner
+
+    @classmethod
+    def teardown_class(cls):
+        cls.algo.stop()
+        ray.shutdown()
+
+    def test_each_trainable_module_has_an_actor_and_a_critic_lstm(self):
+        assert set(self.learner._cbp_layers) == {"policy_0", "policy_1"}
+        for layers in self.learner._cbp_layers.values():
+            assert [layer.name for layer in layers] == [
+                "encoder.actor_encoder.lstm", "encoder.critic_encoder.lstm"]
+
+    def test_units_of_the_lstm_were_actually_replaced(self):
+        total = sum(
+            state.replacements
+            for layers in self.learner._cbp_state.values()
+            for state in layers.values()
+        )
+        assert total > 0
+
+    def test_the_metrics_are_logged_for_the_lstm_too(self):
+        metrics = self.result["learners"]["policy_0"]
+        assert metrics["cbp_replacements"] > 0
+        assert 0.0 <= metrics["cbp_dead_unit_frac"] <= 1.0
+
+    def test_training_still_produced_a_finite_loss(self):
+        loss = float(self.result["learners"]["policy_0"]["total_loss"])
+        assert not torch.isnan(torch.tensor(loss))
+
+    def test_the_state_is_keyed_by_the_lstm_layer_names_and_round_trips(self):
+        """So a checkpoint can be restored into a learner that discovers the
+        same layers, and the ages are carried, not reset."""
+        state = self.learner.get_state()
+        for module_id in ("policy_0", "policy_1"):
+            assert set(state[CBP_STATE][module_id]) == {
+                "encoder.actor_encoder.lstm", "encoder.critic_encoder.lstm"}
+
+        ages = {
+            (module_id, name): layer_state.age.clone()
+            for module_id, layers in self.learner._cbp_state.items()
+            for name, layer_state in layers.items()
+        }
+        assert any(int(age.max()) > 0 for age in ages.values())
+        for layers in self.learner._cbp_state.values():
+            for layer_state in layers.values():
+                layer_state.age.fill_(0)
+
+        self.learner.set_state(state)
+
+        for (module_id, name), age in ages.items():
+            torch.testing.assert_close(
+                self.learner._cbp_state[module_id][name].age, age)
+
+
 class TestMetricsOnlyChangesNothing:
     """doc/25 Proposal A: measure without touching the trajectory."""
 

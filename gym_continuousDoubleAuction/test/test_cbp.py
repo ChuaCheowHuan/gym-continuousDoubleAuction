@@ -613,9 +613,22 @@ class TestDevicePlacement:
         from gym_continuousDoubleAuction.train.model import cbp_learner
 
         source = inspect.getsource(cbp_learner.CBPLearnerMixin._cbp_attach)
-        assert "device=layer.incoming.weight.device" in source, (
+        assert "device=layer.device" in source, (
             "CBP state must be allocated on the layer's own device"
         )
+
+    def test_a_layers_device_is_its_weights_device(self):
+        """`layer.device` is what `_cbp_attach` reads, so it must be the weight's,
+        for the Linear layers and for an LSTM's, whose unit is not a Linear row."""
+        from gym_continuousDoubleAuction.train.model.cbp import RecurrentLayer
+
+        linear = ReplaceableLayer(
+            "l", nn.Linear(3, 4, device="meta"), [nn.Linear(4, 2, device="meta")]
+        )
+        recurrent = RecurrentLayer(
+            "r", nn.LSTM(3, 4, device="meta"), [nn.Linear(4, 2, device="meta")]
+        )
+        assert linear.device.type == "meta" and recurrent.device.type == "meta"
 
     def test_the_generator_is_built_on_the_learners_device(self):
         """`uniform_` refuses a generator whose device type differs.
