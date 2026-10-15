@@ -30,6 +30,7 @@ from ray.rllib.algorithms.ppo.torch.default_ppo_torch_rl_module import (
 from ray.rllib.core.columns import Columns
 from ray.rllib.utils.annotations import override
 
+from gym_continuousDoubleAuction.train.model.action_dist import time_rank_safe
 from gym_continuousDoubleAuction.train.model.action_mask import (
     masked_logits,
     slices_for,
@@ -99,6 +100,13 @@ class CDAPPOTorchRLModule(DefaultPPOTorchRLModule):
     """
 
     _mask_slices = None
+
+    @override(DefaultPPOTorchRLModule)
+    def get_inference_action_dist_cls(self):
+        # The exploration and train classes both delegate here. RLlib's
+        # `logp` mis-shapes a stateful module's log-probability when two agents
+        # share it in one step; see `action_dist`.
+        return time_rank_safe(super().get_inference_action_dist_cls())
 
     def _apply_mask(self, batch, out):
         if self._mask_slices is None:

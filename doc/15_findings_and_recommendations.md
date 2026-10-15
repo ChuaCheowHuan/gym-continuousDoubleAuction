@@ -1443,7 +1443,7 @@ gates' rows of `weight_ih` and `weight_hh` as incoming and the unit's column of 
 head as outgoing ([25](25_continual_backprop.md) §3.4). That finds 2 layers per trainable module in
 `lstm` (1 under `vf_share_layers`) and changes nothing for any other encoder; it fires inside a real
 PPO update through RLlib's recurrent connectors. This makes the mechanism possible on `lstm`; it does
-not show that it helps there, and a league run on `lstm` fails at its first champion (#278) whatever CBP does. Separately, `CBPLearnerMixin.get_state` added its per-layer
+not show that it helps there. (A league run on `lstm` used to fail at its first champion whatever CBP did; fixed, #278, changelog [17](17_changelog.md) §71.) Separately, `CBPLearnerMixin.get_state` added its per-layer
 tensors whatever components were asked for, so each iteration's weights-only sync copied them off
 the device and threw them away. It now honours the component filter; a full checkpoint still
 carries them. `test_cbp.py`, `test_cbp_recurrent.py` (21), `integration/test_cbp_wiring.py` (5 more).
@@ -1588,7 +1588,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **1,363 unit tests pass** (plus 172 integration), covering every position-flip path, cash-check edge case, modify-order
+- **1,378 unit tests pass** (plus 179 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 
