@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (1,535 tests: 1,363 unit + 172 integration)
+# everything (1,557 tests: 1,378 unit + 179 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -94,6 +94,7 @@ Counts re-measured with `--collect-only`.
 | `test_config_wiring.py` | 17 | Config keys reaching their consumers; `episode_data_path` absolute and run-scoped |
 | `test_runtime_profiles.py` | 28 | `runtime_profiles.json` → hardware sets, platform paths |
 | `test_checkpointing.py` | 52 | Checkpoint retention, restore selection, league state across a save |
+| `test_action_dist.py` | 15 | A stateful module's log-probability for two agents in one step: RLlib's `(B, B)` result pinned as the bug, the corrected `(B, 1)`, `(B,)` and `(B, T)` shapes, the old squeeze case, the wrapper cached and idempotent (#278) |
 | `test_champion_guard.py` | 26 | The entropy schedule and its validation; the promotion guard (a passive candidate refused, a trading one promoted, the bar inclusive, off at 0, missing counts warn and do not block); the shipped multiplier; the `sqrt(n - 1)` warning; the per-module trade counts (S3-11) |
 | `test_champion_trigger.py` | 20 | League statistics with modules that played no episodes; promotion, pool size, idle count and time-since-champion as metrics |
 | `test_progress_log.py` | 35 | `progress.jsonl` writer, numpy/NaN handling, `vf_explained_var` extraction, per-run directory isolation, the iteration broadcast to env runners |
@@ -128,6 +129,7 @@ Counts re-measured with `--collect-only`.
 | `integration/test_encoder_wiring.py` | 48 | Champions inherit the encoder; a restore cannot change it; the recurrent and MoE paths train end to end; a real checkpoint round-trip with a custom encoder |
 | `integration/test_probe_harness.py` | 28 | The probe against the real env: a usable rollout corpus, every registered encoder frozen and read, the LSTM's state reset per episode, a real checkpoint restored with its weights |
 | `integration/test_cbp_wiring.py` | 46 | Continual Backprop inside a real `Algorithm`: composition over the encoder's Learner, a real save and restore, and the restore guard — §6.6.2 |
+| `integration/test_stateful_logp.py` | 7 | The real `lstm` and `mlp` modules: log-probability shape for 1, 2 and 3 agents, and every distribution getter returns the corrected class (#278) |
 | `integration/test_champion_guard_wiring.py` | 3 | A real run: every trainable module's trade count reaches the driver, the league state says whether a candidate was refused, and RLlib applies the decaying entropy bonus (S3-11) |
 | **integration total** | **172** | |
 
@@ -146,7 +148,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((1,535 tests))
+  root((1,557 tests))
     Simulator
       orderbook 57
         components, matching, invariants

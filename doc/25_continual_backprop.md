@@ -518,9 +518,10 @@ What it does not cover or does not do:
 - **The activation statistics are taken over every row the LSTM processes.** RLlib pads recurrent
   batches to a fixed sequence length and the loss masks the padding; the utility does not. How many
   padded rows enter, and what that does to the ranking, was not measured.
-- **A league run on `lstm` currently fails once a champion exists** (issue #278, found while
-  reviewing this change, and reproducible with CBP off). The mechanism fires in a real PPO update, but a
-  full league run with this encoder cannot get past its first promotion until that is fixed.
+- **A league run on `lstm` used to fail once a champion existed** (issue #278, found while
+  reviewing this change, and reproducible with CBP off). RLlib mis-shaped a stateful module's
+  log-probability when two agents shared it in a step; fixed in `train/model/action_dist.py`
+  (changelog §71), so recurrent CBP now runs through a league.
 - **Nothing here says CBP helps a recurrent policy.** The papers do not test one, and the
   measurement in §3.3 (not detectable at this repo's update count) applies unchanged. This makes the
   mechanism *possible* on `lstm`, which it was not.

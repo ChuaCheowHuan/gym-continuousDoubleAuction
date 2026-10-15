@@ -3716,3 +3716,23 @@ tied to the layout version or finding it describes, the "five-head" checkpoint n
 - **Tests.** `test_cbp_recurrent.py` (21), five in `integration/test_cbp_wiring.py` (a real LSTM update, replacements,
   metrics, finite loss, state keyed by layer name and round-tripped), and the device-placement test in `test_cbp.py` now
   checks the property it was only inspecting the source for. Unit 1,341 to 1,363, integration 167 to 172; suite 1,535.
+
+## 71. A league run on `lstm` no longer fails at its first champion (issue #278)
+
+- **What was open.** With `encoder_type: "lstm"`, sampling raised in the first iteration after a champion was added
+  (found while reviewing §70, reproducible with CBP off). It needed one stateful module serving two agents in the same
+  step, which happens when a champion is drawn for both opponent slots.
+- **Cause.** RLlib's `TorchMultiDistribution.logp` squeezes a trailing 1 off a `Discrete` value. For a stateful module at
+  inference the trailing 1 is the time axis: the value `(B, 1)` became `(B,)` and broadcast against the `(B, 1)` batch shape
+  to `(B, B)`. With one agent that is `(1, 1)` and looks right; with two, each item's `action_logp` had length 2 and the
+  connector's `np.squeeze(axis=0)` raised. A stateless module has no time rank; `mlp` gives `(B,)` for any batch (measured).
+- **Fix.** `train/model/action_dist.py` adds `time_rank_safe`, a cached subclass whose `logp` squeezes only when the value has
+  more dimensions than the distribution's batch shape. `CDAPPOTorchRLModule.get_inference_action_dist_cls` returns it, and
+  the exploration and train getters delegate there, so every trainable module and every champion (built from the same
+  class) gets it. Measured on the real `lstm` module: two agents gave `(2, 2)` before, `(2, 1)` now; one agent `(1, 1)`.
+- **Result.** The reproduction (an `lstm` league with a champion forced in) trains four iterations that previously failed on
+  the first.
+- **Not claimed.** The training path (sequence length 20) was not changed and was not the failing path. Whether any run's
+  learning differs now that a baseline's or champion's `logp` is the right shape was not measured; nothing reads it.
+- **Tests.** `test_action_dist.py` (15) and `integration/test_stateful_logp.py` (7); the stateful-module cases fail on the
+  previous source. Unit 1,363 to 1,378, integration 172 to 179; suite 1,557.
