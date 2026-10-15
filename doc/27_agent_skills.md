@@ -315,7 +315,7 @@ probe's `--per-agent` mode shifts targets by rows, not steps ([#188](https://git
 **Trigger.** Turning on Continual Backprop for a run, or reading its metrics.
 
 **Steps.** Build the module for the chosen encoder and count replaceable layers (mlp 4, transformer
-4, moe_transformer 16, jepa 6, **lstm 0**: CBP does nothing there and only warns, S3-32); confirm
+4, moe_transformer 16, jepa 6, **lstm 0** under `cbp_scope: "feedforward"`, where CBP does nothing and only warns, and 2 under `"recurrent"`, S3-32); confirm
 the cadence caveat in [25](25_continual_backprop.md) (the papers' hyperparameters cannot be copied at
 this repo's update rate); log the three correlates (dead-unit fraction, weight magnitude, rank) and
 read them against a CBP-off run on the same seed.

@@ -91,7 +91,7 @@ mindmap
         S3-17 retention deleted fresh checkpoints — fixed
         S3-29 three metrics read wrong — fixed
         S3-30 evaluate missed bankruptcies — fixed
-        S3-32 CBP silent on lstm — half fixed
+        S3-32 CBP silent on lstm — fixed
       tooling
         S3-31 probe split leaked targets — fixed
         S3-33 charts dropped a reward term — fixed
@@ -1431,17 +1431,23 @@ the last *h* training rows were labelled from validation observations and the la
 rows from test ones. `split_masks` takes the horizon as `purge` and leaves those rows out. The
 episode split, the usual one, needed no change. `test_probe.py`.
 
-### S3-32 · Continual Backprop: a silent no-op on `lstm`, and its state in every weight sync **[verified, half fixed]**
+### S3-32 · Continual Backprop: a silent no-op on `lstm`, and its state in every weight sync **[verified, fixed]**
 
 _Tracked in [#141](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/141)._
 
 Layer discovery finds 0 replaceable layers in `lstm` (4 in `mlp` and `transformer`, 16 in
 `moe_transformer`, 6 in `jepa`), so `cbp_enabled` on `lstm` trained exactly like CBP off, with no
-message. It now logs a WARNING naming the module; making CBP cover a recurrent core is open
-([25](25_continual_backprop.md) §3.4). Separately, `CBPLearnerMixin.get_state` added its per-layer
+message. It now logs a WARNING naming the module and the scope that fixes it, and
+`cbp_scope: "recurrent"` makes CBP cover the LSTM core: the top layer's hidden units, with the four
+gates' rows of `weight_ih` and `weight_hh` as incoming and the unit's column of `weight_hh` and of the
+head as outgoing ([25](25_continual_backprop.md) §3.4). That finds 2 layers per trainable module in
+`lstm` (1 under `vf_share_layers`) and changes nothing for any other encoder; it fires inside a real
+PPO update through RLlib's recurrent connectors. This makes the mechanism possible on `lstm`; it does
+not show that it helps there. Separately, `CBPLearnerMixin.get_state` added its per-layer
 tensors whatever components were asked for, so each iteration's weights-only sync copied them off
 the device and threw them away. It now honours the component filter; a full checkpoint still
-carries them. `test_cbp.py`.
+carries them. `test_cbp.py`, `test_cbp_recurrent.py` (21), `integration/test_cbp_wiring.py` (5 more).
+Changelog [17](17_changelog.md) §70.
 
 ### S3-33 · The reward charts dropped `dead_action_penalty` **[verified, fixed]**
 
@@ -1495,8 +1501,8 @@ colour. Colours are keyed by term name, and a term without one fails at import.
 Findings from the 2026-10-07 review that were not fixed there, because each changes the game the
 policy plays, the distributed or checkpoint design, or a research method, and so needs a decision
 first. **[verified]** marks the ones reproduced in that pass; the rest are a reviewer's reading of
-the code, recorded so they are not lost, and need reproducing before anything is changed. S2-14 (since fixed) and
-S3-32's open half came from the same pass and are filed above.
+the code, recorded so they are not lost, and need reproducing before anything is changed. S2-14 and S3-32 (both
+since fixed) came from the same pass and are filed above.
 
 | ID | Finding |
 |---|---|
@@ -1582,7 +1588,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **1,341 unit tests pass** (plus 167 integration), covering every position-flip path, cash-check edge case, modify-order
+- **1,363 unit tests pass** (plus 172 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 

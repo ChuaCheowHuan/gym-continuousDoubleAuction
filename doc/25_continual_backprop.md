@@ -478,6 +478,7 @@ tiers:
 | Stock MLP `fcnet_hiddens` (`mlp`, the default) | Hidden unit between two `nn.Linear`s | **Clean.** The canonical case |
 | `blocks.feedforward` — `Linear(d_model, ff_dim) → GELU → Linear(ff_dim, d_model)` | The `ff_dim` hidden unit | **Clean.** Incoming and outgoing are both explicit |
 | `moe.py` expert FFNs, `jepa.predict` | Same two-Linear shape | **Clean** |
+| The top layer of an `nn.LSTM` core (`lstm`) | A hidden unit `i`: its four gates' rows of `weight_ih` and `weight_hh` in, its column of `weight_hh` and of the head `Linear`s out | **Covered under `cbp_scope: "recurrent"`**, see below |
 | `token_embed.token_mlp` | `Linear → GELU` with no second `Linear` | **Not covered.** No outgoing layer to zero, so CBP skips it |
 | Attention projections (`q`, `k`, `v`, `out`) | A head dimension | **Messy.** Outgoing is entangled with the head structure |
 | Anything immediately followed by `LayerNorm` | — | **Care needed.** LayerNorm re-centres and re-scales, so a zeroed outgoing weight is function-preserving for that unit's *contribution*, but the normalisation statistics shift |
@@ -485,11 +486,41 @@ tiers:
 
 The sound scope for a first implementation is therefore **feed-forward hidden units only** — the
 first three rows. That covers the default MLP entirely, and covers the FFN half of every
-transformer block, which is where most of the parameters live anyway. It covers nothing in `lstm`:
-that encoder's tokenizer is `token_mlp` and its core is an `nn.LSTM`, so CBP finds 0 replaceable
-layers there (against 4 for `mlp` and `transformer`, 16 for `moe_transformer` and 6 for `jepa`),
-and the Learner logs a warning at build rather than running a no-op. Attention is explicitly
-excluded and should be documented as excluded, not silently skipped.
+transformer block, which is where most of the parameters live anyway. It covers nothing in `lstm`
+under `cbp_scope: "feedforward"`: that encoder's tokenizer is `token_mlp` and its core is an
+`nn.LSTM`, so CBP finds 0 replaceable layers there (against 4 for `mlp` and `transformer`, 16 for
+`moe_transformer` and 6 for `jepa`), and the Learner logs a warning at build, naming the scope that
+fixes it, rather than running a no-op. Attention is explicitly excluded and should be documented as
+excluded, not silently skipped.
+
+**`cbp_scope: "recurrent"` adds the LSTM core** (doc/15 S3-32), and finds 2 layers per trainable
+module in `lstm` (the actor's and the critic's; 1 under `vf_share_layers`) and exactly what
+`feedforward` finds everywhere else. PyTorch stacks an LSTM's four gates, so a unit's parameters are
+scattered, and the split that makes a replacement safe is:
+
+| | Entries |
+|---|---|
+| Incoming (resampled, biases to 0) | rows `i, H+i, 2H+i, 3H+i` of `weight_ih` and `weight_hh`, and the same four of `bias_ih`, `bias_hh` |
+| Outgoing (zeroed) | column `i` of `weight_hh`, and column `i` of each head `Linear` that reads the LSTM's output |
+
+Zeroing is what makes the new unit inert: nothing reads `h_i`, so its fresh weights reach no output.
+That is checked on the network's *output* in `test_cbp_recurrent.py`, not only on the weights, along
+with the stronger statement that a replacement moves the function by exactly the old unit's
+contribution and nothing else. The four entries where a unit reads its own previous state are in both
+sets; outgoing is applied last, so they end at 0. Utility and Adam-slot resets use the same split.
+
+What it does not cover or does not do:
+
+- **Only the top layer** of a stacked LSTM, because only its activation is the module's output. The
+  default is one layer.
+- **The cell state `c_i` is not a parameter and is not reset.** A sequence's stored carried state
+  was computed with the old weights until it is recomputed.
+- **The activation statistics include padded time steps.** RLlib zero-pads sequences, and the LSTM
+  responds to zero input, so those rows enter the per-unit means. The loss masks them; the utility does not.
+- **Nothing here says CBP helps a recurrent policy.** The papers do not test one, and the
+  measurement in §3.3 (not detectable at this repo's update count) applies unchanged. This makes the
+  mechanism *possible* on `lstm`, which it was not.
+- `token_mlp`, the tokenizer feeding the LSTM, is still not covered.
 
 Two further traps this codebase has already been bitten by, in a different guise:
 
