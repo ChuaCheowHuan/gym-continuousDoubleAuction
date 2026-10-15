@@ -3709,7 +3709,10 @@ tied to the layout version or finding it describes, the "five-head" checkpoint n
   Removing the `weight_hh` column zeroing, or the incoming-row Adam reset, each fails tests.
 - **Not claimed.** That CBP helps a recurrent policy: the papers do not test one, and doc/25 §3.3 (the effect is not
   detectable at this repo's update count) applies unchanged. Only the top layer of a stacked LSTM is covered; the cell state
-  is not reset; the activation statistics include RLlib's zero-padded steps; `token_mlp` is still not covered.
+  is not reset; the activation statistics are taken over every row the LSTM processes, padding included, and how much
+  that matters was not measured; `token_mlp` is still not covered. Review found one thing this does not fix: with
+  `encoder_type: "lstm"` a league run fails in sampling at the first iteration after a champion is added, with CBP off as
+  well (#278), so recurrent CBP cannot yet run through a full league.
 - **Tests.** `test_cbp_recurrent.py` (21), five in `integration/test_cbp_wiring.py` (a real LSTM update, replacements,
   metrics, finite loss, state keyed by layer name and round-tripped), and the device-placement test in `test_cbp.py` now
   checks the property it was only inspecting the source for. Unit 1,341 to 1,363, integration 167 to 172; suite 1,535.

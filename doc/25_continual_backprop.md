@@ -515,8 +515,12 @@ What it does not cover or does not do:
   default is one layer.
 - **The cell state `c_i` is not a parameter and is not reset.** A sequence's stored carried state
   was computed with the old weights until it is recomputed.
-- **The activation statistics include padded time steps.** RLlib zero-pads sequences, and the LSTM
-  responds to zero input, so those rows enter the per-unit means. The loss masks them; the utility does not.
+- **The activation statistics are taken over every row the LSTM processes.** RLlib pads recurrent
+  batches to a fixed sequence length and the loss masks the padding; the utility does not. How many
+  padded rows enter, and what that does to the ranking, was not measured.
+- **A league run on `lstm` currently fails once a champion exists** (issue #278, found while
+  reviewing this change, and reproducible with CBP off). The mechanism fires in a real PPO update, but a
+  full league run with this encoder cannot get past its first promotion until that is fixed.
 - **Nothing here says CBP helps a recurrent policy.** The papers do not test one, and the
   measurement in §3.3 (not detectable at this repo's update count) applies unchanged. This makes the
   mechanism *possible* on `lstm`, which it was not.
