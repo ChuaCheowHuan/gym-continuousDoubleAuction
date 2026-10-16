@@ -3945,3 +3945,37 @@ touched: the first is a redesign of the env, the second a deliberate non-action,
   8 agents, not on a training run.
 - **Tests.** `test_s4_docs_and_tooling.py` (17), `test_links.py` (8), `test_s4_hardening.py` (59), `test_pnl_split_and_markouts.py` (39);
   `test_lint.py` 1 to 3. Unit 1,578 to 1,703; suite 1,888.
+
+## 81. The refactoring review's issues (#252 to #259)
+
+Eight issues from the 2026-10-08 refactoring review, taken in turn. A refactor changes no behaviour, so each was checked against the
+previous code as well as the suite.
+
+- **#255, `Account`.** `__init__` keeps the fee rates and calls `reset_acc`; the twelve per-step counters are `STEP_COUNTERS`, zeroed
+  by `Account.clear_step_counters`, and a test holds the list to the `*_step` attributes `reset_acc` creates. `reset_acc`'s `cash`
+  default is now read at call time (it was an import-time `env_default`).
+- **#258, `_plain`.** The array case is one `tolist()` and the dict and list cases test for a plain value before recursing: 127,200
+  calls per 300 steps of 8 agents to 24,000. (#248's fast path had already removed most of the cost per call; this removes the calls.)
+- **#256, the book.** `OrderBook._side` names a side's own and opposite trees and its crossing test, so market, limit, cancel and modify
+  are written once. `Trader.place_order` is guard clauses and a lookup of the placing method (depth 5 to 1); `parse_overrides`
+  loops over `_coerce` (depth 6 to 2). `settle_batch`, `_create_order` and `logging_setup.configure` keep their nesting.
+- **#252, `clear_batch`.** Four methods (`_clear_round`, `_allocate_side`, `_pair_fills`, `_rest_leftovers`) and a `_Clearing` tuple in
+  place of closures over loop variables; `clear_batch` is 24 lines of control flow. Against the previous implementation: 600 random
+  multi-step scenarios (both matching rules, with and without the affordability check) gave identical results, tapes and books.
+- **#257, `EnvSettings`.** The env constructor reads and validates every key through one frozen dataclass; `TrainConfig.env_config` is
+  generated from the same field list and equals the dict it replaces. The mixins keep their keyword signatures, and `Account` and
+  `Liquidation_Helper` still validate their own inputs.
+- **#254, `train/train.py`.** 2,224 lines became `config`, `build`, `checkpoint`, `progress` and `cli`, with `train.py` holding `train()`
+  and re-exporting every name it had, so `from ...train.train import TrainConfig, build_algo, train` and
+  `python -m ...train.train` are unchanged. Log lines keep the logger name they had. Eight test patches now target the module a
+  name is used in. **Not achieved:** importing `TrainConfig` without Ray, which the issue hoped for; `envs/__init__` and the callback
+  module still import it.
+- **#253, the callback: partly.** `callbk/nav_audit.py`, `league_stats.py` and `activity.py` hold the ledger reads and NAV sum, the
+  idle-and-best-candidate arithmetic and the tally helpers, each with its own tests; the class keeps its method names. The champion
+  snapshot, eviction and restore code and the activity logging are still in the class: they are stateful, and moving them changes the
+  pickled layout of a callback that Ray ships to every runner. The file went from 1,803 to 1,599 lines.
+- **#259, the action mask: not changed.** A per-trader cache of the own-order scans, invalidated by a revision counter on the order
+  tree, passed the suite and moved nothing: 1.76 ms/step before, 1.96 after, sequential, 8 agents (the book holds 8.6 orders on
+  average, so the scans the issue describes are short). The approval's cost is its own Decimal arithmetic, not the scans. The change
+  was reverted. A deeper book, as a trained run may build, was not measured.
+- **Tests.** `test_refactors.py` (97). Unit 1,703 to 1,800; suite 1,985.

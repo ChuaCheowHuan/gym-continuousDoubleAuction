@@ -103,7 +103,7 @@ algo = config.build_algo()
 ```
 
 In practice you do not write this by hand —
-[`train.py`](../gym_continuousDoubleAuction/train/train.py) `build_config(cfg)` does it from a
+[`build.py`](../gym_continuousDoubleAuction/train/build.py) `build_config(cfg)` does it from a
 `TrainConfig`.
 
 > The older documentation pointed at a runnable

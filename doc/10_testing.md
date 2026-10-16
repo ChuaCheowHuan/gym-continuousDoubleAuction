@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (1,888 tests: 1,703 unit + 185 integration)
+# everything (1,985 tests: 1,800 unit + 185 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -129,7 +129,8 @@ Counts re-measured with `--collect-only`.
 | `test_s4_docs_and_tooling.py` | 17 | The documentation-and-tooling S4 fixes: the layout-version pointer, the CI command quoted in CLAUDE.md and doc/27, the built skills, stale texts, and every config key and flag being documented (#273, #266, #267, #251, #249) |
 | `test_s4_hardening.py` | 59 | The hardening and speed fixes: call-time account defaults, `settle_batch`'s pre-check, `flat_view`, the `info` fast path and the cached reference price (#247, #248) |
 | `test_pnl_split_and_markouts.py` | 39 | Realised and unrealised P&L against the NAV identity in random play, fill counters, forced fills excluded, mark-outs, and the callback and config wiring (#286) |
-| **unit total** | **1,703** | |
+| `test_refactors.py` | 97 | The refactoring review's issues: `Account` initialised in one place and its step counters listed once, `_plain`'s call count, one order-book routine per operation, `place_order` and `parse_overrides` flat, `clear_batch` as four steps, `EnvSettings` and the generated `env_config`, the `train/` module split with its re-exports and import order, and the NAV audit, league statistics and tally helpers apart from the callback (#252-#258) |
+| **unit total** | **1,800** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -159,7 +160,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((1,888 tests))
+  root((1,985 tests))
     Simulator
       orderbook 57
         components, matching, invariants

@@ -13,7 +13,7 @@ settings distribute), [10_testing.md](10_testing.md) §6
 
 Both are
 [`ray.rllib.algorithms.algorithm_config.AlgorithmConfig`](https://github.com/ray-project/ray/blob/master/rllib/algorithms/algorithm_config.py)
-settings, exposed on this repo's [`TrainConfig`](../gym_continuousDoubleAuction/train/train.py).
+settings, exposed on this repo's [`TrainConfig`](../gym_continuousDoubleAuction/train/config.py).
 They control two independent axes of parallelism:
 
 | Setting | Controls | Default in `TrainConfig` |

@@ -324,7 +324,7 @@ the MoE term, the JEPA term and CBP all survive together, and every existing enc
 exactly what it resolves to today when CBP is off. This is the same isolation property
 `jepa` was held to, obtained a different way because the mechanism is a different *kind* of thing.
 
-As shipped, in `_learner_class` ([`train/train.py`](../gym_continuousDoubleAuction/train/train.py))
+As shipped, in `_learner_class` ([`train/build.py`](../gym_continuousDoubleAuction/train/build.py))
 and `with_continual_backprop`
 ([`cbp_learner.py`](../gym_continuousDoubleAuction/train/model/cbp_learner.py)):
 

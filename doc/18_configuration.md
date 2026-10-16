@@ -164,6 +164,11 @@ symptom at all.
 
 ### 2.1 The one name change across the env boundary
 
+**Adding an env key.** A field in `EnvSettings` (`envs/settings.py`), the key in `env_defaults.json` and in
+`train_config.json`, and a `TrainConfig` field of the same name (or an entry in `TrainConfig._ENV_KEY_FIELDS`).
+The env reads and validates every key once through `EnvSettings.from_config`, and `TrainConfig.env_config` is
+generated from the same field list, so there is no third place to list it (issue #257).
+
 The `environment` group of `train_config.json` is what `TrainConfig.env_config` forwards to the
 env, so the env keys and the run settings live in one file. Two things to know:
 
@@ -453,7 +458,7 @@ with `plot_handler.py` — see [11 §1.4](11_logging_and_observability.md).)
 
 ## 5. Training config
 
-`TrainConfig` ([`train.py`](../gym_continuousDoubleAuction/train/train.py)) is the schema: it names
+`TrainConfig` ([`config.py`](../gym_continuousDoubleAuction/train/config.py)) is the schema: it names
 every knob, gives it a type, and documents what it does. It holds no values — each field's default
 is `_default("key")`, which reads `config/train_config.json` when a `TrainConfig` is instantiated.
 
