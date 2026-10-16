@@ -15,7 +15,7 @@ from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
 
 from gym_continuousDoubleAuction.config_loader import env_default, group
-from gym_continuousDoubleAuction.logging_setup import get_logger
+from gym_continuousDoubleAuction.logging_setup import get_logger, set_iteration
 from gym_continuousDoubleAuction.train.episode_record import (
     EpisodeRecorder,
     REWARD_TERMS,
@@ -833,13 +833,22 @@ class SelfPlayCallback(RLlibCallback):
         it already exists: a runner that has not recorded anything has nothing
         to write and should not build a writer thread to find that out.
         """
-        recorder = self._episode_recorder
-        if recorder is None:
-            return
         try:
-            recorder.flush_finished(wait=SAMPLE_END_DRAIN_S)
-        except Exception:
-            logger.warning("episode record: the end-of-sample flush failed", exc_info=True)
+            recorder = self._episode_recorder
+            if recorder is not None:
+                try:
+                    recorder.flush_finished(wait=SAMPLE_END_DRAIN_S)
+                except Exception:
+                    logger.warning("episode record: the end-of-sample flush failed", exc_info=True)
+        finally:
+            # The iteration tag on a remote runner is only as fresh as the last broadcast,
+            # and a runner the broadcast missed kept the previous iteration, so its lines
+            # carried a plausible number that was wrong (issue #220). Clearing it when
+            # this sample ends makes "not told" read as `-`, which looks wrong. Only a
+            # remote runner: the local one shares the driver's process, and the driver
+            # sets that tag itself for its own lines.
+            if getattr(env_runner, "worker_index", 0):
+                set_iteration(None)
 
     def on_episode_end(
         self,

@@ -5,8 +5,12 @@ import json
 import math
 import os
 from typing import Optional
-from gym_continuousDoubleAuction.logging_setup import get_logger
-from gym_continuousDoubleAuction.logging_setup import set_iteration
+from gym_continuousDoubleAuction.logging_setup import (
+    get_logger,
+    log_dir_env_var,
+    log_file_path,
+    set_iteration,
+)
 from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
     NAV_VIOLATIONS_METRIC,
 )
@@ -95,11 +99,47 @@ def _apply_iteration(iteration: Optional[int]):
     and readable in a traceback; the closure carries only an int.
     """
 
-    def _apply(_env_runner):
+    def _apply(_target):
         set_iteration(iteration)
-        return True
+        # The path of the run log this process writes, "" when it writes none: the same
+        # round trip tells the driver where each process's narrative went (issue #218).
+        return log_file_path() or ""
 
     return _apply
+
+
+#: Run logs the driver has already told the console about, and whether it has warned that a
+#: process could not open one. Per driver process, so a run says each once.
+_seen_runner_logs: set = set()
+_warned_missing_runner_log = False
+
+
+def _report_runner_logs(paths, who: str) -> None:
+    """Say where the env runners' (or learners') run logs are, and warn about any with none.
+
+    A worker echoes only warnings and errors to the console (`worker_console_level`), so the
+    per-episode narrative is in its file, and this is the one place the console learns the
+    path (issue #221). A worker that was told to write a log and could not - the directory
+    must exist and be writable on its node - used to warn on its own stdout, which never
+    reaches `run.log`; here it is a warning in the driver's log (issue #218).
+    """
+    global _warned_missing_runner_log
+    for path in paths:
+        if isinstance(path, str) and path and path not in _seen_runner_logs:
+            _seen_runner_logs.add(path)
+            logger.info("%s log: %s", who, path)
+    expecting = bool(os.environ.get(log_dir_env_var()))
+    missing = [p for p in paths if isinstance(p, str) and not p]
+    if expecting and missing and not _warned_missing_runner_log:
+        _warned_missing_runner_log = True
+        logger.warning(
+            "%s of %s %s processes have no run log: the directory %s may not exist or be writable on "
+            "their node, so their NAV tables reach no file",
+            len(missing),
+            len(paths),
+            who,
+            os.environ.get(log_dir_env_var()),
+        )
 
 
 def _broadcast_iteration(algo, iteration: int) -> None:
@@ -121,6 +161,7 @@ def _broadcast_iteration(algo, iteration: int) -> None:
     because the driver's own runner shares this process and `set_iteration` has
     already tagged it.
     """
+    _broadcast_to_learners(algo, iteration)
     group = getattr(algo, "env_runner_group", None)
     if group is None:
         return
@@ -137,6 +178,8 @@ def _broadcast_iteration(algo, iteration: int) -> None:
             exc_info=True,
         )
         return
+
+    _report_runner_logs(list(acked), "env runner")
 
     # A runner that did not answer within the timeout is skipped silently by
     # `foreach_env_runner` (healthy_only defaults to True), and it keeps
@@ -157,6 +200,48 @@ def _broadcast_iteration(algo, iteration: int) -> None:
             "whatever iteration they were last told",
             iteration,
             len(acked),
+            expected,
+            _BROADCAST_TIMEOUT_S,
+        )
+
+
+def _broadcast_to_learners(algo, iteration: int) -> None:
+    """Tell the remote learner actors which iteration they are updating for (issue #217).
+
+    `foreach_env_runner` never reaches them, so at `num_learners > 0` every line a learner
+    logged read `iter=-` for the whole run. With no remote learners (`num_learners=0`, the
+    GPU profile) the learner is in this process and already tagged. Best-effort, like the
+    env-runner broadcast: a failure costs the tag, never the run.
+    """
+    group = getattr(algo, "learner_group", None)
+    if group is None or getattr(group, "is_local", True):
+        return
+    try:
+        results = group.foreach_learner(
+            _apply_iteration(iteration), timeout_seconds=_BROADCAST_TIMEOUT_S
+        )
+    except Exception:
+        logger.debug(
+            "could not broadcast iteration %s to the learners; their log lines will read iter=-",
+            iteration,
+            exc_info=True,
+        )
+        return
+    try:
+        returned = [r.get() if hasattr(r, "get") else r for r in results]
+    except Exception:
+        returned = list(results)
+    _report_runner_logs(returned, "learner")
+    try:
+        expected = len(group)
+    except Exception:
+        return
+    if len(returned) < expected:
+        logger.warning(
+            "iteration %s reached only %s of %s learners within %ss; the rest keep the "
+            "iteration they were last told",
+            iteration,
+            len(returned),
             expected,
             _BROADCAST_TIMEOUT_S,
         )
