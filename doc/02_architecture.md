@@ -203,7 +203,7 @@ gym_continuousDoubleAuction/
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   ├── inspect_latest_episode*.py        print the newest episode as a table or JSON
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               1,827 unit tests
+└── test/                               1,867 unit tests
     └── integration/                    172 tests that build real Algorithms
 ```
 

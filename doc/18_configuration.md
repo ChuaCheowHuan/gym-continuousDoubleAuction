@@ -437,7 +437,8 @@ one variable configured is read only by a memory monitor that Ray's own test uti
 does nothing in a training run; see [17](17_changelog.md) §77.)
 
 **Logging** (`logging`: `level`, `env_var`, `format`, `datefmt`, `dir_env_var`, `file_name`,
-`file_max_bytes`, `file_backup_count`). The default level, the format string, `datefmt` (the date
+`file_max_bytes`, `file_backup_count`, `file_keep_head`, `file_max_worker_files`,
+`worker_console_level`, `capture_ray_logs`). The default level, the format string, `datefmt` (the date
 format), `env_var` (the environment variable the level travels in, `CDA_LOG_LEVEL`) and `dir_env_var`
 (the one the log directory travels in, `CDA_LOG_DIR`). Read by
 [`logging_setup.py`](../gym_continuousDoubleAuction/logging_setup.py), which applies them once per
@@ -445,6 +446,15 @@ process on the first `get_logger` call — including inside Ray's worker process
 `main()` and would otherwise come up unconfigured. The pid is in the format on purpose: with
 `num_env_runners > 0` several processes log into one stream. See
 [11 §1.3](11_logging_and_observability.md).
+
+The last four keys are about many processes writing logs ([21](21_logging_review.md) §2.5, §2.7, §3.4):
+`file_keep_head` keeps the first `file_max_bytes` of every run log as `<name>.head`, because rotation
+discards the start of a run first; `file_max_worker_files` keeps only the newest N worker logs in a
+directory (each restarted env runner opens a new set), `0` meaning no pruning; `worker_console_level` is
+the lowest level a worker that is writing a file still echoes to stdout, which Ray forwards to the
+driver console (`WARNING` by default, so a NAV table is in the worker's file and not twice; an empty
+string echoes everything as before); `capture_ray_logs` mirrors the run-log file handler onto Ray's own
+logger so RLlib's diagnostics land beside the narrative they explain.
 
 **Visualize defaults** (`visualize_paths`). The paths the `visualize/` scripts read:
 `episode_parquet_dir` (default `episode_data`) with `episode_parquet_fallback` (`../episode_data`,

@@ -156,6 +156,8 @@ number of files. A long run that loses runners repeatedly accumulates 60 MB of q
 The related point doc 11 §3 already makes — rotation discards the *start* of a run, where divergence
 begins — is worse here, because a worker's file is where the NAV tables live.
 
+**Fixed** (issue #216, [17](17_changelog.md) §83). When a worker opens its run log it keeps only the newest `file_max_worker_files` worker logs in the directory (a log with its rotated backups and head counts as one) and removes the rest, so the set is bounded and not only each file. And `file_keep_head` keeps the first `file_max_bytes` of every log as `<name>.head`, copied once at the first rotation and never rotated away, so the start of a run - where divergence begins - survives. Size the pruning above the number of runners plus learners: an idle live runner whose file is older than the newest N would lose its file.
+
 ### 2.6 What the learner processes get
 
 _Tracked in [#217](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/217)._
@@ -166,6 +168,8 @@ actors are separate processes that: receive `$CDA_LOG_LEVEL` / `$CDA_LOG_DIR` th
 every line they emit reads `iter=-` forever. This package logs little from the learner today, so the
 impact is cosmetic — but the repository's own GPU profile sets `num_learners=0`, which means the
 path is untested rather than fine.
+
+**Fixed** (issue #217, [17](17_changelog.md) §83). `_broadcast_iteration` also calls `learner_group.foreach_learner` when the learners are remote actors (`num_learners > 0`); with a local learner it is the driver's process and already tagged. A learner that does not answer within the timeout is a warning, as for env runners. Tested against a fake group; the repository's profiles use `num_learners=0`, so no real remote learner was run.
 
 ### 2.7 The `runtime_env` covers workers, not the cluster's own logging
 
@@ -181,6 +185,8 @@ cases:
 * Nothing captures Ray's *own* logger output into the package's run log, so RLlib's diagnostics —
   "No samples returned from remote workers", the swallowed traceback from §2.1, env-runner restart
   notices — are in a different stream from the narrative they explain.
+
+**Fixed** (issue #218, [17](17_changelog.md) §83). Both residual cases. The same round trip that carries the iteration returns each process's run-log path, so the driver logs a warning into `run.log` when a process was meant to write one and has none (the directory missing or unwritable on its node), and announces each path once. And `capture_ray_logs` attaches the run-log file handler to the Ray loggers records end at (`ray`, `ray.rllib`, and any other that has turned propagation off), de-duplicated per record, so RLlib's diagnostics land in the same file with the same `pid=` and `iter=` fields. Checked on a real two-runner run: a Ray `DeprecationWarning` from `ray._common.deprecation` appeared in the worker's log. The stream handler is not mirrored - Ray prints its own records to the console.
 
 ---
 
@@ -229,6 +235,8 @@ from last time. A stale-but-plausible number is harder to spot than a dash. Appl
 safe with respect to sampling: PPO's `synchronous_parallel_sample` blocks, so the broadcast cannot
 land mid-episode.
 
+**Fixed** (issue #220, [17](17_changelog.md) §83). A remote runner clears the tag in `on_sample_end`, so a runner the next broadcast misses reads `iter=-` rather than the previous iteration; the broadcast that does arrive sets it again before sampling. The local runner (worker index 0) shares the driver's process and is left alone. Lines a remote runner logs between samples now read `-`, which is true: it is not sampling for any iteration then.
+
 ### 3.4 Duplicate narrative on the console
 
 _Tracked in [#221](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/221)._
@@ -238,6 +246,8 @@ driver console (`log_to_driver` defaults True). So a worker's NAV table appears 
 worker's file and again on the driver's console prefixed `(MultiAgentEnvRunner pid=...)`. Harmless,
 but it makes the console misleading as a record of *what the driver knows*, and it is why the
 per-worker files matter more than the console suggests.
+
+**Fixed** (issue #221, [17](17_changelog.md) §83). A worker that is writing its own file echoes only `worker_console_level` (default `WARNING`) and above to stdout, so the NAV table is in its file and not twice; warnings and errors still reach the driver console, and the driver logs each worker's file path once. The driver, and a worker with no file, echo everything. **A change in what a console shows:** the per-episode narrative from remote runners is no longer live on the console; set `worker_console_level` to `INFO` (or empty) to restore it. Verified on a real two-runner run: 0 NAV tables on the console, 6 in each worker's file.
 
 ---
 

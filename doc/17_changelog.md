@@ -3992,3 +3992,16 @@ Both had been left as deliberate non-actions ("a redesign of the env, not hygien
 - **#148, coverage.** The unit suite measures **86.4%** line-and-branch (79.1% when the issue was written; the gain is the tests added since). `fail_under = 84` and `__main__` guards are excluded. It applies where `pytest --cov` is run; CI is not changed (no `workflow` scope), so it is a local gate.
 - **Not claimed.** That composition makes training better (it changes no behaviour); that the 84% floor is the right number (it is two points under what is measured); that `train/` types are clean (they are not checked).
 - **Tests.** `test_composition.py` (24), `test_types.py` (3). Unit 1,800 to 1,827; suite 2,012. Lines of Python 49,399 to 52,193, almost all of it the formatter.
+
+## 83. The five logging issues (#216, #217, #218, #220, #221)
+
+The logging review (doc/21) left five findings about what many processes writing logs do to each other. All five are changes to `logging_setup.py`, the progress broadcast and one callback hook, with four new keys in the `logging` group of `tunable_constants.json`.
+
+- **#216, files.** `prune_worker_logs` runs when a worker opens its log and keeps the newest `file_max_worker_files` (20) worker logs, a log with its backups and head counting as one. `file_keep_head` (on) copies a log to `<name>.head` once, at its first rotation, so the start of a run survives; the existing rotation test now allows that one extra file.
+- **#217, learners.** `_broadcast_iteration` also calls `foreach_learner` when the learners are remote. Tested with a fake group only: no profile of this repository runs remote learners.
+- **#218, the cluster's own logging.** The broadcast's return value is now each process's run-log path. The driver announces each once and warns, once, when a process meant to write a log has none. `capture_ray_logs` (on) attaches the file handler to `ray`, `ray.rllib` and any other Ray logger with propagation off - found the hard way: RLlib's logger does not propagate, so a handler on `ray` alone saw nothing of its records - with a once-per-record filter so a record reaching two carrying loggers is not written twice.
+- **#220, stale tags.** A remote runner clears the iteration in `on_sample_end`; a missed broadcast reads `iter=-`.
+- **#221, duplicate console.** A worker writing a file echoes only `worker_console_level` (`WARNING`) and above. **This changes what a console shows**: remote runners' per-episode NAV tables are no longer live there. `INFO` or an empty string restores it.
+- **Measured.** A real two-runner, three-iteration run: 0 NAV tables on the console, 6 in each worker's file, `iter=` correct on all but the first (pre-broadcast) line, each file path announced by the driver, and a Ray `DeprecationWarning` present in a worker's log.
+- **Not claimed.** That the pruning count (20) is right for any cluster size (it is a count of logs, not of runners), or anything about multi-node behaviour: nothing here ran on more than one node. The warning for a node that cannot write its log is tested through `_report_runner_logs`, not through a real unwritable node.
+- **Tests.** `test_logging_issues.py` (40). Unit 1,827 to 1,867; suite 2,052.
