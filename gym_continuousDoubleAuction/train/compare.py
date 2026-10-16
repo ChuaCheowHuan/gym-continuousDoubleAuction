@@ -419,6 +419,8 @@ def main(argv=None) -> int:
             corpus = corpus_module.from_rollouts(
                 num_episodes=args.probe_episodes, max_step=args.probe_steps,
                 num_agents=base.num_agents, seed=args.probe_seed,
+                # The runs train on this layout; the corpus must be in it too.
+                env_config=base.env_config,
             )
             logger.info("probe corpus: %s", corpus.describe())
 

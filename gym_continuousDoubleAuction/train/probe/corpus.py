@@ -53,7 +53,7 @@ from __future__ import annotations
 import glob
 import os
 from dataclasses import dataclass
-from typing import List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 
@@ -138,6 +138,7 @@ def from_rollouts(
     num_agents: Optional[int] = None,
     init_cash: Optional[int] = None,
     seed: Optional[int] = None,
+    env_config: Optional[Dict[str, Any]] = None,
 ) -> ProbeCorpus:
     """Collect an observation stream by stepping the env with random agents.
 
@@ -161,6 +162,13 @@ def from_rollouts(
         seed: Base seed. Episode `e` uses `seed + e`, so episodes differ in
             their price anchor and action draw while the whole corpus stays
             reproducible. None means unseeded.
+        env_config: The env settings to collect under, normally a training
+            run's `TrainConfig.env_config`. A corpus is only valid input for
+            modules trained on the same observation layout (`book_mode`,
+            `n_hist`, ...), so a caller probing a run must pass that run's
+            config. None leaves every setting to `env_defaults.json`. The
+            explicit arguments above win over the same keys in it. The dict is
+            copied, never modified.
 
     Returns:
         A `ProbeCorpus` of `num_episodes * (max_step + 1)` rows at most - the
@@ -181,14 +189,15 @@ def from_rollouts(
     if num_agents is None:
         num_agents = _cli("num_agents")
 
-    env_config = {
+    run_config = dict(env_config or {})
+    run_config.update({
         "num_of_agents": num_agents,
         "max_step": max_step,
         "is_render": False,
-    }
+    })
     if init_cash is not None:
-        env_config["init_cash"] = init_cash
-    env = continuousDoubleAuctionEnv(env_config)
+        run_config["init_cash"] = init_cash
+    env = continuousDoubleAuctionEnv(run_config)
     layout = ObsLayout.from_obs_space(env.get_observation_space(env.agents[0]))
 
     rows: List[np.ndarray] = []
