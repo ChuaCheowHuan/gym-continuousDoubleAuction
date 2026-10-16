@@ -134,7 +134,7 @@ explicitly, so the config lookup is what a direct instantiation gets.
 | `episode_data_dir` | `"episode_data"` | `"episode_data"` | Root of the Parquet per-step record; `None` disables it *and* the accumulation behind it |
 | `episode_sample_every` | 10 | 10 | Record one episode in N, chosen by `crc32` of the episode id |
 | `episode_max_bytes` | 2 GiB | 2 GiB | Cap on what each writer keeps, oldest deleted first |
-| `episode_rows_per_file` | 65,536 | 65,536 | Rows buffered before a Parquet file is written |
+| `episode_rows_per_file` | 65,536 | 65,536 | Rows buffered before a Parquet file is written (also written at the end of every sample) |
 | `nav_tolerance` | 1e-06 | 1e-06 | Absolute cash tolerance for the episode-end conservation check |
 | `strict_nav_check` | `True` | `True` | Stop the run on a violation — acted on by the driver, not the hook |
 

@@ -3788,3 +3788,29 @@ tied to the layout version or finding it describes, the "five-head" checkpoint n
 - **Not claimed.** The long-side formula is pinned directly: a fully paid long cannot reach the breach in a real run, so it
   has no end-to-end scenario. A trader already at NAV <= 0 keeps the mark (less the fee) as its band, as before.
 - **Tests.** Seven in `test_liquidation.py` (23 to 30); four fail on the previous source. Unit 1,396 to 1,403; suite 1,582.
+
+## 75. The episode record is written at the end of every sample (issue #245)
+
+- **What was open.** `EpisodeRecorder.finish_episode` enqueued a file only once `rows_per_file` (65,536) rows had
+  accumulated, and nothing in the callback flushed at a sample or iteration boundary; the tail relied on
+  `atexit.register(self.close)`. Ray stops env runners with `ray.shutdown()` or an actor kill, which does not reliably run
+  it, so up to `rows_per_file - 1` rows per runner were lost and a short run wrote no Parquet at all. `doc/11` and `doc/21`
+  both said a killed run keeps its episodes.
+- **Reproduced first** (the issue said "not reproduced"). One env runner, the shipped `episode_rows_per_file`, two iterations
+  (eight episodes, about 2,000 rows): **0 Parquet files** after the iterations, and still 0 after `algo.stop()` and
+  `ray.shutdown()`. The existing integration test sets `episode_rows_per_file=1`, which writes a file per episode and so
+  could not show it.
+- **Fix.** `EpisodeRecorder.flush_finished` writes the episodes that have finished, leaves running ones in `_live` (a sample
+  boundary is not an episode boundary, and `flush` would have labelled them `episode_complete=False`), and waits up to
+  `SAMPLE_END_DRAIN_S` (5 s) for the writer so the file exists when the sample returns. `SelfPlayCallback.on_sample_end`
+  calls it, only if a recorder already exists, and a failure there is a warning. Same reproduction: **2 files** after two
+  iterations.
+- **Cost.** About one file per runner per iteration, each holding the episodes that runner finished in it. `rows_per_file`
+  is still the floor within a sample; across samples it no longer is. The byte cap (`episode_max_bytes`) is per file deleted
+  oldest first, so many small files are handled as before.
+- **Not claimed.** Rows of an episode still running when the runner is killed are still lost until it ends; `close` writes
+  them only if `atexit` runs. A runner killed in the middle of a sample loses that sample's unfinished episodes, which is the
+  most a periodic write can promise. The 5-second drain is a constant in the module, as `_CLOSE_ENQUEUE_WAIT_S` is.
+- **Tests.** Four in `test_episode_record.py` for the recorder, three for the callback hook, and two integration tests in
+  `test_distributed_observability.py` at the shipped threshold; six fail on the previous source. Unit 1,403 to 1,410,
+  integration 179 to 181; suite 1,591.

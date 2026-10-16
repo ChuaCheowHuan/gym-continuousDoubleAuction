@@ -171,3 +171,44 @@ class TestMetricsCrossTheRunnerBoundary:
 
         assert pids, "no files to attribute"
         assert str(os.getpid()) not in pids
+
+
+class TestTheTailIsWrittenAtTheEndOfASample:
+    """Issue #245, on a real runner and the shipped `episode_rows_per_file`.
+
+    The class above sets `episode_rows_per_file=1`, which writes a file per
+    episode and so could never show this: at the default 65,536 a short run
+    buffered everything and relied on an `atexit` handler Ray may not run.
+    """
+
+    @classmethod
+    def setup_class(cls):
+        ray.init(ignore_reinit_error=True, include_dashboard=False,
+                 log_to_driver=False, num_cpus=4)
+        cls.tmpdir = tempfile.mkdtemp(prefix="cda_tail_")
+        cls.cfg = TrainConfig(
+            **TEST_CFG,
+            episode_data_dir=os.path.join(cls.tmpdir, "episodes"),
+            episode_sample_every=1,
+            log_base_dir=os.path.join(cls.tmpdir, "results"),
+        )
+        ppo, _ = build_config(cls.cfg)
+        cls.algo = ppo.build_algo()
+        cls.algo.train()
+
+    @classmethod
+    def teardown_class(cls):
+        try:
+            cls.algo.stop()
+        finally:
+            ray.shutdown()
+            shutil.rmtree(cls.tmpdir, ignore_errors=True)
+
+    def test_the_default_threshold_is_in_force(self):
+        assert self.cfg.episode_rows_per_file == 65536
+
+    def test_the_rows_are_on_disk_before_the_run_ends(self):
+        """No `stop`, no `shutdown`, no `atexit`: one iteration has returned."""
+        files = glob.glob(os.path.join(self.cfg.episode_data_path, "**", "*.parquet"),
+                          recursive=True)
+        assert files, "an iteration ended and nothing was written"

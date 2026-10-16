@@ -78,7 +78,12 @@ a killed run keeps what it had finished.
 **Where:** `on_episode_step` hands the step to
 [`train/episode_record.py`](../gym_continuousDoubleAuction/train/episode_record.py);
 `on_episode_end` releases the episode to a background writer thread, which writes
-`<episode_data_dir>/<run_id>/episodes.<pid>.<worker>.<n>.parquet`. **One row per (episode, step,
+`<episode_data_dir>/<run_id>/episodes.<pid>.<worker>.<n>.parquet`. A file is written once
+`episode_rows_per_file` rows have accumulated **and at the end of every sample** (`on_sample_end`),
+so the finished episodes are on disk when an iteration returns. They used to wait for the threshold
+or for an `atexit` handler, which Ray does not reliably run when it stops an env runner: a short run
+wrote nothing (issue #245, changelog §75). The cost is that a run has about one small file per runner
+per iteration; any Parquet reader takes the directory. **One row per (episode, step,
 agent)**, with a declared schema.
 
 | Column group | Columns |

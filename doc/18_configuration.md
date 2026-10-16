@@ -483,7 +483,7 @@ The same group carries the four knobs on the per-step episode record:
 | `episode_data_dir` | `--no-episode-data` | Root of the record; `null` switches it off entirely, buffering included. Resolved to an absolute `<dir>/<run_id>` before it reaches the callback, because the callback is pickled into every env runner |
 | `episode_sample_every` | `--episode-sample-every` | Record one episode in N, chosen by `crc32` of the episode id so every runner picks the same subset |
 | `episode_max_bytes` | `--episode-max-bytes` | Cap on what **each writer** keeps, oldest deleted first; `0` keeps everything |
-| `episode_rows_per_file` | — | Rows buffered before a file is written. A floor, not a size: rows are handed over a whole episode at a time, so no episode is split across two files |
+| `episode_rows_per_file` | — | Rows buffered before a file is written. A floor, not a size: rows are handed over a whole episode at a time, so no episode is split across two files. The buffer is also written at the end of every sample, so a file can hold fewer rows than this |
 
 `num_learners`, the reward coefficients and the sizing knobs have no CLI flag, so the file is the
 only way to set them outside the Python API.

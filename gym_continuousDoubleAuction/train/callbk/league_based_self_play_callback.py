@@ -19,6 +19,7 @@ from gym_continuousDoubleAuction.logging_setup import get_logger
 from gym_continuousDoubleAuction.train.episode_record import (
     EpisodeRecorder,
     REWARD_TERMS,
+    SAMPLE_END_DRAIN_S,
 )
 from gym_continuousDoubleAuction.train.policy.policy_handler import (
     CHAMPION_PREFIX,
@@ -827,6 +828,23 @@ class SelfPlayCallback(RLlibCallback):
             if navs.get(agent_key) != Decimal(str(reported)):
                 return None
         return navs
+
+    def on_sample_end(self, *, env_runner=None, metrics_logger=None, samples=None, **kwargs):
+        """Get the episodes finished so far onto disk.
+
+        Without this the episode record's tail below `episode_rows_per_file` is
+        written only by an `atexit` handler, which Ray does not reliably run
+        when it stops an env runner (issue #245). The recorder is used only if
+        it already exists: a runner that has not recorded anything has nothing
+        to write and should not build a writer thread to find that out.
+        """
+        recorder = self._episode_recorder
+        if recorder is None:
+            return
+        try:
+            recorder.flush_finished(wait=SAMPLE_END_DRAIN_S)
+        except Exception:
+            logger.warning("episode record: the end-of-sample flush failed", exc_info=True)
 
     def on_episode_end(
         self,
