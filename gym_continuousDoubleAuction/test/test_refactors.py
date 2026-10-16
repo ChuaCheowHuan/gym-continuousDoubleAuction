@@ -480,3 +480,130 @@ class TestTrainModuleIsSplit:
         from gym_continuousDoubleAuction.train import build, checkpoint, cli, progress
         for module in (build, checkpoint, cli, progress):
             assert module.logger.name == "gym_continuousDoubleAuction.train.train"
+
+
+class TestCallbackCollaborators:
+    """#253: the NAV audit, the league's return statistics and the tally helpers, apart from the callback."""
+
+    @staticmethod
+    def _env(navs, fees=0):
+        from types import SimpleNamespace
+        traders = [SimpleNamespace(ID=i, acc=SimpleNamespace(nav=Decimal(n), fees_paid=Decimal(fees)))
+                   for i, n in enumerate(navs)]
+        return SimpleNamespace(traders=traders)
+
+    # ---- nav_audit
+    def test_ledger_navs_reads_the_accounts_and_checks_them_against_what_was_reported(self):
+        from gym_continuousDoubleAuction.train.callbk import nav_audit
+        env = self._env(["100", "200"])
+        assert nav_audit.ledger_navs(env, 0, {"agent_0": {"NAV": "100"}}, 2) == {
+            "agent_0": Decimal(100), "agent_1": Decimal(200)}
+        assert nav_audit.ledger_navs(env, 0, {"agent_0": {"NAV": "101"}}, 2) is None
+        assert nav_audit.ledger_navs(env, 0, {}, 3) is None             # wrong number of traders
+        assert nav_audit.ledger_navs(object(), 0, {}, 2) is None        # nothing to read
+
+    def test_ledger_fees_sums_what_the_traders_paid(self):
+        from gym_continuousDoubleAuction.train.callbk import nav_audit
+        assert nav_audit.ledger_fees(self._env(["1", "2"], fees="1.5"), 0, 2) == Decimal(3)
+        assert nav_audit.ledger_fees(object(), 0, 2) is None
+
+    def test_a_vector_env_is_indexed_by_env_index(self):
+        from types import SimpleNamespace
+        from gym_continuousDoubleAuction.train.callbk import nav_audit
+        vector = SimpleNamespace(envs=[self._env(["1", "1"]), self._env(["7", "8"])])
+        assert nav_audit.ledger_navs(vector, 1, {}, 2) == {"agent_0": Decimal(7), "agent_1": Decimal(8)}
+        assert nav_audit.ledger_navs(vector, 5, {}, 2) is None
+
+    def test_fees_configured_looks_at_the_runner_config_and_the_env(self):
+        from types import SimpleNamespace
+        from gym_continuousDoubleAuction.train.callbk import nav_audit
+        runner = SimpleNamespace(config=SimpleNamespace(env_config={"maker_fee_bps": 0, "taker_fee_bps": 3}))
+        assert nav_audit.fees_configured(runner, SimpleNamespace())
+        assert not nav_audit.fees_configured(SimpleNamespace(), SimpleNamespace(maker_fee_bps=0))
+        assert nav_audit.fees_configured(SimpleNamespace(), SimpleNamespace(taker_fee_bps="2"))
+        assert not nav_audit.fees_configured(SimpleNamespace(), SimpleNamespace(taker_fee_bps=True))
+
+    def test_run_parameters_prefer_the_env_over_the_runner_config_over_the_fallbacks(self):
+        from types import SimpleNamespace
+        from gym_continuousDoubleAuction.train.callbk import nav_audit
+        runner = SimpleNamespace(config=SimpleNamespace(env_config={"init_cash": 500, "num_of_agents": 4}))
+        assert nav_audit.run_parameters(object(), object(), 9, 2) == (9, 2)
+        assert nav_audit.run_parameters(runner, object(), 9, 2) == (500, 4)
+        env = SimpleNamespace(unwrapped=SimpleNamespace(init_cash=700, num_of_agents=6))
+        assert nav_audit.run_parameters(runner, env, 9, 2) == (700, 6)
+        bare = SimpleNamespace(init_cash=11)
+        assert nav_audit.run_parameters(object(), bare, 9, 2) == (11, 2)
+
+    def test_sum_navs_uses_the_ledger_then_the_carried_value(self):
+        from gym_continuousDoubleAuction.train.callbk import nav_audit
+        last = {"agent_0": {"NAV": "100"}}
+        carried = {"agent_1": "50"}
+        with_ledger = nav_audit.sum_navs(last, carried, {"agent_0": Decimal(100), "agent_1": Decimal(60)}, 2)
+        assert with_ledger.total == 160 and "marked to the end" in with_ledger.lines[1]
+        without = nav_audit.sum_navs(last, carried, None, 2)
+        assert without.total == 150 and "last reported" in without.lines[1]
+        assert nav_audit.sum_navs(last, {}, None, 2).total == 100       # no value anywhere: left out
+
+    def test_the_report_names_fees_only_when_there_are_some(self):
+        from gym_continuousDoubleAuction.train.callbk import nav_audit
+        nav = nav_audit.NavTotal(Decimal(1000), ["  agent_0 NAV: 1,000.00"])
+        assert "Exchange fees" not in nav_audit.report("e1", nav, Decimal(0), Decimal(1000))
+        text = nav_audit.report("e1", nav, Decimal("2.5"), Decimal(1000))
+        assert "Episode e1 NAV verification" in text and "Exchange fees collected: 2.50" in text
+        assert "Expected total initial cash: 1,000.00" in text
+
+    # ---- league_stats
+    def test_nan_and_none_returns_are_idle_not_valid(self):
+        from gym_continuousDoubleAuction.train.callbk import league_stats
+        out = league_stats.split_returns({"b": float("nan"), "a": None, "c": 1.5, "d": -2.0})
+        assert out.valid == [1.5, -2.0] and out.idle == ["a", "b"]
+
+    def test_the_best_trainable_is_the_highest_usable_return(self):
+        from gym_continuousDoubleAuction.train.callbk import league_stats
+        returns = {"policy_0": 1.0, "policy_1": 3.0, "champion_1": 99.0, "policy_2": float("nan")}
+        assert league_stats.best_trainable(returns, ["policy_0", "policy_1", "policy_2"]) == ("policy_1", 3.0)
+        none = league_stats.best_trainable({"policy_0": float("nan")}, ["policy_0", "policy_9"])
+        assert none.module_id is None and none.value == -float("inf")
+
+    def test_candidate_trades_reads_the_named_metric(self):
+        from gym_continuousDoubleAuction.train.callbk import league_stats
+        results = {"m": {"policy_0": "4.5", "policy_1": float("nan")}}
+        assert league_stats.candidate_trades(results, "policy_0", "m") == 4.5
+        assert league_stats.candidate_trades(results, "policy_1", "m") is None
+        assert league_stats.candidate_trades(results, "policy_0", "other") is None
+
+    # ---- activity
+    def test_a_new_tally_shares_nothing_with_the_last(self):
+        from gym_continuousDoubleAuction.train.callbk.activity import new_tally
+        first, second = new_tally(), new_tally()
+        first["last_nav"]["agent_0"] = "1"
+        first["per_agent_fills"]["agent_0"] = 3
+        first["term_sum"]["order_penalty" if "order_penalty" in first["term_sum"] else next(iter(first["term_sum"]))] = 5.0
+        assert second["last_nav"] == {} and second["per_agent_fills"] == {}
+        assert all(v == 0.0 for v in second["term_sum"].values())
+
+    def test_market_mid_and_as_float(self):
+        from gym_continuousDoubleAuction.train.callbk.activity import as_float, market_mid
+        assert market_mid({"best_bid": 99, "best_ask": 101}) == 100.0
+        assert market_mid({"best_bid": 0, "best_ask": 101, "last_price": 50}) == 50.0
+        assert market_mid({}) is None
+        assert as_float("2.5") == 2.5 and as_float(None) is None and as_float("x") is None
+
+    # ---- the callback delegates
+    def test_the_callback_keeps_its_names_and_delegates(self):
+        from gym_continuousDoubleAuction.train.callbk import league_stats, nav_audit
+        from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
+            SelfPlayCallback)
+        assert SelfPlayCallback._ledger_navs is nav_audit.ledger_navs
+        assert SelfPlayCallback._ledger_fees is nav_audit.ledger_fees
+        assert SelfPlayCallback._fees_configured is nav_audit.fees_configured
+        assert SelfPlayCallback._candidate_trades({"module_trades_per_episode": {"p": 2}}, "p") == 2.0
+        assert league_stats.candidate_trades({}, "p", "m") is None
+
+    def test_the_hooks_no_longer_hold_the_audit_arithmetic(self):
+        from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
+            SelfPlayCallback)
+        end = inspect.getsource(SelfPlayCallback.on_episode_end)
+        train = inspect.getsource(SelfPlayCallback.on_train_result)
+        assert "per_agent = []" not in end and "hasattr(env_runner" not in end
+        assert "np.isnan" not in train and "best_return = -float" not in train
