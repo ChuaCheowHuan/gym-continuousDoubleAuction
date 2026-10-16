@@ -282,6 +282,9 @@ class State_Helper(object):
             env_default("book_mode") if book_mode is None else book_mode
         )
         self.obs_history = deque(maxlen=self.n_hist)
+        # (raw snapshot, last price, reference price) of the last `reference_price()`
+        # call; see there.
+        self._reference_cache = None
 
         # Centre of the `log_mid` feature: the log of the geometric mean of the
         # price-anchor range. `log_mid` restores the absolute price level that
@@ -470,7 +473,17 @@ class State_Helper(object):
         `Action_Helper._set_price` quotes from, which is what makes the action's
         price code and the observation's cells one coordinate.
         """
-        return self._snap_to_tick(self.mid_price())
+        # Every trader's observation and mask in a step asks for this, and it is the
+        # same number for all of them: the snapshot is built once per step. Cached
+        # against the snapshot object itself and the last price (the only other
+        # input, on a one-sided book), so a new snapshot or a new print is a miss.
+        # `agg_LOB_raw` is replaced, never mutated in place (issue #248).
+        cache = self._reference_cache
+        if cache is not None and cache[0] is self.agg_LOB_raw and cache[1] == self.last_price:
+            return cache[2]
+        value = self._snap_to_tick(self.mid_price())
+        self._reference_cache = (self.agg_LOB_raw, self.last_price, value)
+        return value
 
     def _grid_rows(self, book, R_t):
         """The two size rows of the grid layout, from one raw frame's levels.

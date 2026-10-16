@@ -3,6 +3,9 @@ from typing import Any, Dict
 import numpy as np
 
 
+_PASS_THROUGH = frozenset({int, float, str, bool, type(None)})
+
+
 def _plain(value):
     """Convert a numpy scalar or array into something JSON can hold.
 
@@ -17,6 +20,13 @@ def _plain(value):
     hand back the Discrete action components 0-d - which made every recurrent
     encoder fail on the first env step until this branch existed.
     """
+    # The common case first. `set_info` runs this over ~35 fields per agent per step,
+    # nearly all of them plain Python scalars, and each used to pay four isinstance
+    # checks to learn it had nothing to do (14% of a profiled batch episode, issue
+    # #248). `type(...) in` is exact: a numpy scalar, a bool subclass or a str
+    # subclass is not one of these types and takes the full path below.
+    if type(value) in _PASS_THROUGH:
+        return value
     if isinstance(value, np.ndarray):
         if value.ndim == 0:
             return value.item()
