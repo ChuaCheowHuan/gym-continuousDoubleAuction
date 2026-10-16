@@ -49,3 +49,28 @@ def test_package_is_pyflakes_clean():
     assert count == 0, (
         f"pyflakes reported {count} finding(s):\n" + "\n".join(collector.messages)
     )
+
+
+REPO_ROOT = PACKAGE_DIR.parent
+
+
+def test_tools_and_skill_scripts_are_pyflakes_clean():
+    """`tools/` and the skills' scripts are outside the package but run by contributors
+    and agents, and an unused import there failed nothing (issue #268). Skipped where
+    they are absent, as in an installed wheel."""
+    import pytest
+    targets = [str(p) for p in (REPO_ROOT / "tools", REPO_ROOT / ".claude" / "skills") if p.is_dir()]
+    if not targets:
+        pytest.skip("tools/ and .claude/skills are not part of an installed package")
+    collector = _Collect()
+    count = pyflakes_api.checkRecursive(targets, collector)
+    assert count == 0, (
+        f"pyflakes reported {count} finding(s):\n" + "\n".join(collector.messages)
+    )
+
+
+def test_the_lint_reaches_the_directories_it_claims_to():
+    """A target list that silently resolved to nothing would make the test above pass."""
+    assert (REPO_ROOT / "tools" / "check_links.py").is_file() or not (REPO_ROOT / "tools").exists()
+    assert list((REPO_ROOT / ".claude" / "skills").glob("*/scripts/*.py")) or not (
+        REPO_ROOT / ".claude" / "skills").exists()
