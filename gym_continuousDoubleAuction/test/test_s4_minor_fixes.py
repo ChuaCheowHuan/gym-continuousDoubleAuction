@@ -175,3 +175,54 @@ class TestANoneModuleReturnIsHandledEverywhere:
             {"id": "champion_1", "return": float("nan")},
             {"id": "champion_2", "return": 1.0}]}
         assert export.best_champion(state)["id"] == "champion_2"
+
+
+class TestPlatformEnvIsCaseInsensitive:
+    """#237: `CDA_USE_GPU` was parsed case-insensitively and `CDA_PLATFORM` was not."""
+
+    @pytest.mark.parametrize("value", ["auto", "Auto", " AUTO "])
+    def test_auto_in_any_case_means_detect(self, monkeypatch, value):
+        from gym_continuousDoubleAuction.train import runtime
+        monkeypatch.setenv("CDA_PLATFORM", value)
+        monkeypatch.setattr(runtime, "detect_platform", lambda: "local")
+        assert runtime.resolve().platform == "local"
+
+    @pytest.mark.parametrize("value", ["colab", "COLAB", " Colab\n"])
+    def test_a_platform_name_in_any_case_is_found(self, monkeypatch, value):
+        from gym_continuousDoubleAuction.train import runtime
+        monkeypatch.setenv("CDA_PLATFORM", value)
+        assert runtime.resolve().platform == "colab"
+
+    def test_an_empty_value_is_unset(self, monkeypatch):
+        from gym_continuousDoubleAuction.train import runtime
+        monkeypatch.setenv("CDA_PLATFORM", "")
+        monkeypatch.setattr(runtime, "detect_platform", lambda: "local")
+        assert runtime.resolve().platform == "local"
+
+    def test_an_explicit_argument_is_normalised_too(self):
+        from gym_continuousDoubleAuction.train import runtime
+        assert runtime.resolve(platform="Docker").platform == "docker"
+
+    def test_an_unknown_platform_is_still_an_error(self, monkeypatch):
+        from gym_continuousDoubleAuction.train import runtime
+        monkeypatch.setenv("CDA_PLATFORM", "mars")
+        with pytest.raises(KeyError, match="mars"):
+            runtime.resolve()
+
+
+class TestCompareSetRefusesAnUnrecognisedBoolean:
+    """#236: `--set strict_nav_check=ture` was silently False."""
+
+    @pytest.mark.parametrize("raw,expected", [
+        ("true", True), ("True", True), ("1", True), ("yes", True), ("on", True),
+        ("false", False), ("FALSE", False), ("0", False), ("no", False), ("off", False),
+    ])
+    def test_the_recognised_spellings(self, raw, expected):
+        from gym_continuousDoubleAuction.train.compare import parse_overrides
+        assert parse_overrides([f"action_mask={raw}"]) == {"action_mask": expected}
+
+    @pytest.mark.parametrize("raw", ["ture", "enabled", "True1", "", "2"])
+    def test_anything_else_is_refused_naming_the_flag(self, raw):
+        from gym_continuousDoubleAuction.train.compare import parse_overrides
+        with pytest.raises(SystemExit, match="--set action_mask: expected a boolean"):
+            parse_overrides([f"action_mask={raw}"])
