@@ -226,3 +226,54 @@ class TestCompareSetRefusesAnUnrecognisedBoolean:
         from gym_continuousDoubleAuction.train.compare import parse_overrides
         with pytest.raises(SystemExit, match="--set action_mask: expected a boolean"):
             parse_overrides([f"action_mask={raw}"])
+
+
+class TestVisualizeSurvivesBadRecords:
+    """#240: an empty recorded observation, or a truncated `progress.jsonl`
+    line, aborted the plots."""
+
+    def test_an_empty_observation_is_a_gap_not_an_error(self):
+        import numpy as np
+        from gym_continuousDoubleAuction.envs.exchg.state_helper import PRIVATE_DIM, SNAPSHOT_DIM
+        from gym_continuousDoubleAuction.visualize.visualize_orderbook import _book_sizes
+        good = np.ones(SNAPSHOT_DIM + PRIVATE_DIM)
+        bids, asks, skipped = _book_sizes([good, [], good])
+        assert skipped == 1 and len(bids) == len(asks) == 3
+        assert np.isnan(bids[1]) and np.isnan(asks[1])
+        assert not np.isnan(bids[0]) and not np.isnan(asks[2])
+
+    def test_a_malformed_non_empty_observation_still_raises(self):
+        """Only the recorder's own `[]` is forgiven: a wrong-sized vector means
+        the recording and the layout disagree, which the plot must not hide."""
+        from gym_continuousDoubleAuction.visualize.visualize_orderbook import _book_sizes
+        with pytest.raises(ValueError, match="whole number"):
+            _book_sizes([[1.0, 2.0, 3.0]])
+
+    def _progress(self, tmp_path, text):
+        path = tmp_path / "progress.jsonl"
+        path.write_text(text)
+        return str(path)
+
+    def test_a_truncated_last_line_is_skipped_with_a_warning(self, tmp_path):
+        from gym_continuousDoubleAuction.visualize.visualize_training import load_progress
+        path = self._progress(
+            tmp_path, '{"training_iteration": 2}\n{"training_iteration": 1}\n{"training_it')
+        with pytest.warns(UserWarning, match="skipped 1 line"):
+            rows = load_progress(path)
+        assert [r["training_iteration"] for r in rows] == [1, 2]
+
+    def test_a_row_without_an_iteration_is_skipped_not_a_keyerror(self, tmp_path):
+        from gym_continuousDoubleAuction.visualize.visualize_training import load_progress
+        path = self._progress(tmp_path, '{"training_iteration": 1}\n{"other": 1}\n[1, 2]\n')
+        with pytest.warns(UserWarning, match="skipped 2 line"):
+            assert len(load_progress(path)) == 1
+
+    def test_a_clean_file_warns_about_nothing(self, tmp_path, recwarn):
+        from gym_continuousDoubleAuction.visualize.visualize_training import load_progress
+        load_progress(self._progress(tmp_path, '{"training_iteration": 1}\n'))
+        assert not [w for w in recwarn if "skipped" in str(w.message)]
+
+    def test_a_file_with_no_complete_row_is_still_an_error(self, tmp_path):
+        from gym_continuousDoubleAuction.visualize.visualize_training import load_progress
+        with pytest.warns(UserWarning), pytest.raises(ValueError, match="no rows"):
+            load_progress(self._progress(tmp_path, '{"training_it'))
