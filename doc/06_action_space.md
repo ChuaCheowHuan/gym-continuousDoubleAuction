@@ -142,7 +142,7 @@ counts and aim exactly. Clamped, any slot lands whenever the agent has an order 
 resting at all ([16](16_verification_log.md) §16.20). `max_own_orders` is 4, the measured p90 of
 resting orders per agent ([18](18_configuration.md) §4.2).
 
-- **Limit** still matches by price: a limit at a price the agent already rests at is an upsert.
+- **Limit** still matches by price: a limit at a price the agent already rests at is an upsert, unless `allow_multiple_orders_per_level` is true, in which case it is a new order beside the first.
   The match is made in `Decimal`, the type the book stores prices in, and `_set_price` snaps every
   price it emits to the `tick_size` grid before handing it over — so the price an agent names is
   the price level the book has, on any tick, not only on `tick_size` 1

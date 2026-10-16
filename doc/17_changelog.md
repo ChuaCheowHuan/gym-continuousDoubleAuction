@@ -3869,3 +3869,56 @@ These carried `bug` plus another label (`logging`, `question`) and were left out
   test-only), so it may be inert; that was not investigated further. #246: a cap smaller than one file means the record exceeds the
   cap by up to one file per writer, which is the trade for never writing nothing.
 - **Tests.** `test_open_bug_fixes.py` (14); six fail on the previous source. Unit 1,486 to 1,500; suite 1,684.
+
+## 78. S3-moderate: the doc-sync checker (#264) and risk-adjusted metrics (#121)
+
+Two of the five open `S3-moderate` issues. The other three (#122 one resting order per price level, #124 the league ranking signal,
+#125 gamma and lambda) are design decisions rather than defects and are not done here; see the end of this section.
+
+- **#264, `claims.py` checked seven number categories, not what the skill promised.** It now also checks the per-file inventory in
+  `doc/10` (a wrong count, a stale row, a test file with no row), the code size in `doc/14`, and whether every config key and CLI
+  flag in `facts.json` is mentioned in some doc. `facts.py` gains `code` (lines and files of `git ls-files '*.py'`, so a build
+  copy or a virtualenv is not counted). `SKILL.md` says what step 2 now covers.
+- **It found things on its first run.** The code size in `doc/14` was wrong: it had been kept by adding deltas to a figure of
+  unknown origin and read 44,840 lines / 159 files when the repository had 46,352 / 165. It is now the counted value (46,838 /
+  168). The inventory was missing two rows and one count was stale (`test_distributed_observability.py`). And 27 config keys and 12
+  CLI flags are mentioned in no doc (for example `--env-runners`, `--no-probe`, `cda_compare.probe_seed`,
+  `module_id_prefixes.*`, `visualize_paths.*`); those are reported on every run until they are documented, which is the point, and
+  were not documented here.
+- **#121, no risk-adjusted metrics.** `train/performance.py` (`PerformanceTally`) keeps O(1) state per agent from the exact NAV
+  string and net position. The callback logs, per module and meaned over the iteration: `module_sharpe`, `module_sortino`,
+  `module_max_drawdown` (over the path; the existing `mean_agent_drawdown` is the last step's), `module_hit_rate`,
+  `module_position_turnover`, `module_mean_abs_position`, `module_max_abs_position`. Returns are per step, in `Decimal`, not
+  annualised; a metric undefined for an episode is left out rather than logged as 0. Definitions are in the module docstring and
+  `doc/11` §1.
+- **Not done from #121:** the realised-vs-unrealised P&L split (the account has no realised P&L) and adverse-selection mark-outs.
+  Filed as #286. The maker/taker share already existed as `maker_fill_ratio_max`.
+- **Tests.** `test_performance.py` (27, against a hand-worked series, plus a real one-runner iteration in
+  `test_distributed_observability.py` showing the metrics reach the driver) and `test_doc_sync_claims.py` (13, each check driven
+  both ways). Unit 1,500 to 1,540, integration 184 to 185, suite 1,725.
+
+## 79. The three S3-moderate design issues (#122, #124, #125)
+
+These changed behaviour and had more than one reasonable fix, so the choice was put to the owner: raise gamma and set lambda_ (#125),
+an opt-in flag (#122), exclude the baselines behind a default-off key (#124). Only #125 changes a default.
+
+- **#125, gamma and lambda_.** RLlib's 0.99 and 1.0 were not config keys at all. `gamma` and `lambda_` are `ppo` keys now (validated:
+  gamma in (0, 1], lambda_ in [0, 1]), threaded into `PPOConfig.training`, and part of the restore fingerprint, and ship at **0.999 and
+  0.95**: an effective horizon of about 1,000 steps instead of about 100 against a 4,096-step episode, and GAE with its variance
+  reduction. **Not tuned and not shown to improve anything**; results at 0.99 / 1.0 are not comparable with these.
+- **#122, several orders per level.** `allow_multiple_orders_per_level` (env key, `false` default) makes a limit always a new order.
+  One branch in `Trader._get_order_ID`, which `_order_approved` shares through `_replaced_order`, so the cash check charges the
+  second order in full instead of crediting a release that does not happen. Checked with random play in both clearing modes (1,440
+  steps, 306 price levels holding two or more orders of one trader): escrow equal to the value of what rests, every step.
+- **#124, the promotion reference.** The threshold was `mean + k*std` over every module, the frozen baselines included. Measured by
+  construction in the tests, the bias runs both ways: baselines just under the learners lower the bar a candidate clears (1.3
+  promotes at a pooled 1.27, not at 1.39 over the learners and champions), baselines far below raise it past a learner that is clearly
+  ahead (2.0 refused at a pooled 3.33, promoted at 1.86). `promotion_reference: "excluding_baselines"` uses the trainable modules and
+  champions. With n modules nobody is more than sqrt(n - 1) deviations above the mean, which two learners and no champion (n = 2) never
+  clear at 1.5, so while that set is too small the pooled threshold is used, once warned, and `result["league"]["reference"]` says
+  which. A callback saved before the key restores as `pooled`.
+- **Not claimed.** That any of the three makes training better. #122 and #124 are off by default and #125 is the usual choice, not
+  a measured one; a sweep (`train.compare --set gamma=0.99 --set lambda_=1.0` against the defaults) is the way to find out.
+  #124's `excluding_baselines` still compares returns that depend on the role played; it removes the baselines' contribution, not
+  the role dependence of the rest.
+- **Tests.** `test_s3_moderate_fixes.py` (38). Unit 1,540 to 1,578; suite 1,763.

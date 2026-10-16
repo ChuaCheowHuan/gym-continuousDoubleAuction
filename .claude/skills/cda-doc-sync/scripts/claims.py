@@ -3,6 +3,9 @@
 Usage: python claims.py <repo_root> <facts.json>      (facts.json comes from facts.py)
 
 Each hit is `category  file:line  claimed -> actual  | line`. History files are skipped.
+Beyond the number categories it checks the per-file inventory table in doc/10 (a wrong
+count, a stale row, a test file with no row), the code size in doc/14, and whether every
+config key and CLI flag in facts.json is mentioned in some doc at all.
 A hit is a candidate, not a verdict: a historical line ("193 to 216 with the own-book block")
 is left alone, and so is a number that merely sits near a noun (a "1,000-unit drawdown").
 """
@@ -56,4 +59,62 @@ for path in files:
                     hits += 1
                     actual = "/".join(str(x) for x in sorted(ok))
                     print(f"{cat:12s} {os.path.relpath(path, ROOT)}:{n}  {m.group(1)} -> {actual}  | {line.strip()[:120]}")
+
+
+# --- what the numeric categories above cannot see ---------------------------------
+# The per-file inventory table, the code size, and whether a config key or a CLI flag
+# is mentioned anywhere at all. Same rule: a hit is a candidate, not a verdict.
+INVENTORY_ROW = re.compile(r"^\|\s*`(?:integration/)?(test_\w+\.py)`\s*\|\s*(\d+)\s*\|")
+CODE_SIZE = re.compile(r"([\d,]+) lines across (\d+) Python files")
+INVENTORY_DOC = "10_testing.md"
+mentioned_in_inventory = set()
+for path in files:
+    base = os.path.basename(path)
+    for n, line in enumerate(open(path, encoding="utf-8"), 1):
+        m = INVENTORY_ROW.match(line)
+        if m and base == INVENTORY_DOC:
+            name, claimed = m.group(1), int(m.group(2))
+            mentioned_in_inventory.add(name)
+            if name in per_file and per_file[name] != claimed:
+                hits += 1
+                print(f"{'inventory':12s} {os.path.relpath(path, ROOT)}:{n}  {name} {claimed} -> {per_file[name]}")
+            elif name not in per_file:
+                hits += 1
+                print(f"{'inventory':12s} {os.path.relpath(path, ROOT)}:{n}  {name} is listed but no longer collected")
+        m = CODE_SIZE.search(line)
+        if m and "code" in f:
+            lines, count = int(m.group(1).replace(",", "")), int(m.group(2))
+            if (lines, count) != (f["code"]["lines"], f["code"]["files"]):
+                hits += 1
+                print(f"{'code size':12s} {os.path.relpath(path, ROOT)}:{n}  {lines:,} lines / {count} files -> "
+                      f"{f['code']['lines']:,} / {f['code']['files']}  | {line.strip()[:100]}")
+
+for name in sorted(set(per_file) - mentioned_in_inventory):
+    hits += 1
+    print(f"{'inventory':12s} doc/{INVENTORY_DOC}  {name} ({per_file[name]} tests) has no row")
+
+corpus = "\n".join(open(p, encoding="utf-8").read() for p in files)
+
+
+def leaves(tree, prefix=""):
+    for key, value in tree.items():
+        if key.startswith("_"):          # _note, _source: prose, not settings
+            continue
+        if isinstance(value, dict) and value:
+            yield from leaves(value, prefix + key + ".")
+        else:
+            yield prefix + key
+
+
+for config_file, tree in f.get("config", {}).items():
+    for key in leaves(tree):
+        leaf = key.split(".")[-1]
+        if not re.search(r"(?<![\w-])" + re.escape(leaf) + r"(?![\w])", corpus):
+            hits += 1
+            print(f"{'config key':12s} config/{config_file}  {key} is mentioned in no doc")
+for module, flags in f.get("flags", {}).items():
+    for flag in flags:
+        if flag != "--help" and not re.search(re.escape(flag) + r"(?![\w-])", corpus):
+            hits += 1
+            print(f"{'cli flag':12s} {module}  {flag} is mentioned in no doc")
 print(f"{hits} candidate(s)", file=sys.stderr)

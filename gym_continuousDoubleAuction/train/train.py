@@ -57,6 +57,7 @@ from gym_continuousDoubleAuction.logging_setup import (
 )
 from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
     NAV_VIOLATIONS_METRIC,
+    PROMOTION_REFERENCES,
     SelfPlayCallback,
 )
 from gym_continuousDoubleAuction.train.returns import usable_return
@@ -182,6 +183,8 @@ class TrainConfig:
     # arrival or at one uniform price ("sequential" / "batch").
     matching_rule: str = _default("matching_rule")
     step_clearing: str = _default("step_clearing")
+    # Whether a trader may rest several orders at one price (doc/15 S3-10).
+    allow_multiple_orders_per_level: bool = _default("allow_multiple_orders_per_level")
     # What happens when equity runs out (doc/04 section 8): "market_adl"
     # closes a trader out below maintenance_margin - book first, then ADL for
     # the remainder, "gradual_adl" the same spread over up to
@@ -258,6 +261,10 @@ class TrainConfig:
     # The PPO entropy bonus, falling linearly from `entropy_coeff` to
     # `entropy_coeff_final` over `entropy_decay_iters` iterations (doc/15
     # S3-11). RLlib's own default is 0.0.
+    # The discount and the GAE parameter (doc/15 S3-13). RLlib's own defaults are
+    # 0.99 and 1.0.
+    gamma: float = _default("gamma")
+    lambda_: float = _default("lambda_")
     entropy_coeff: float = _default("entropy_coeff")
     entropy_coeff_final: float = _default("entropy_coeff_final")
     entropy_decay_iters: int = _default("entropy_decay_iters")
@@ -322,6 +329,9 @@ class TrainConfig:
     # Mean trades per episode a trainable policy needs over the iteration to be
     # promoted (doc/15 S3-11). 0 disables the guard.
     min_champion_trades: float = _default("min_champion_trades")
+    # Which modules the promotion threshold is computed over (doc/15 S3-12):
+    # "pooled" or "excluding_baselines".
+    promotion_reference: str = _default("promotion_reference")
     original_opponent_weight: float = _default("original_opponent_weight")
     champion_weight: float = _default("champion_weight")
     # null disables the per-step episode record entirely. See episode_data_path
@@ -413,6 +423,10 @@ class TrainConfig:
 
         validate_encoder_type(self.encoder_type)
 
+        if not 0.0 < self.gamma <= 1.0:
+            raise ValueError(f"gamma must be in (0, 1]; got {self.gamma}.")
+        if not 0.0 <= self.lambda_ <= 1.0:
+            raise ValueError(f"lambda_ must be in [0, 1]; got {self.lambda_}.")
         if self.entropy_coeff < 0 or self.entropy_coeff_final < 0:
             raise ValueError(
                 f"entropy_coeff and entropy_coeff_final must be >= 0; got "
@@ -421,6 +435,11 @@ class TrainConfig:
         if self.entropy_decay_iters < 1:
             raise ValueError(
                 f"entropy_decay_iters must be >= 1; got {self.entropy_decay_iters}."
+            )
+        if self.promotion_reference not in PROMOTION_REFERENCES:
+            raise ValueError(
+                f"promotion_reference must be one of {PROMOTION_REFERENCES}; "
+                f"got {self.promotion_reference!r}."
             )
         if self.min_champion_trades < 0:
             raise ValueError(
@@ -589,6 +608,7 @@ class TrainConfig:
             "action_mask": self.action_mask,
             "matching_rule": self.matching_rule,
             "step_clearing": self.step_clearing,
+            "allow_multiple_orders_per_level": self.allow_multiple_orders_per_level,
             "liquidation": self.liquidation,
             "maintenance_margin": self.maintenance_margin,
             "liquidation_horizon": self.liquidation_horizon,
@@ -766,6 +786,7 @@ def build_config(cfg: TrainConfig):
         nav_tolerance=cfg.nav_tolerance,
         strict_nav_check=cfg.strict_nav_check,
         min_champion_trades=cfg.min_champion_trades,
+        promotion_reference=cfg.promotion_reference,
         episode_sample_every=cfg.episode_sample_every,
         episode_max_bytes=cfg.episode_max_bytes,
         episode_rows_per_file=cfg.episode_rows_per_file,
@@ -812,6 +833,8 @@ def build_config(cfg: TrainConfig):
             train_batch_size_per_learner=cfg.train_batch_size,
             num_epochs=cfg.num_epochs,
             entropy_coeff=cfg.entropy_setting,
+            gamma=cfg.gamma,
+            lambda_=cfg.lambda_,
             # `lr` last, so an encoder that sets one in its spec block wins over
             # the `ppo` group's. The group's value was tuned for the 2x256 tanh
             # MLP; holding an attention stack to it measures the learning rate
@@ -1229,6 +1252,11 @@ def _config_fingerprint(config) -> dict:
         # RLlib's 0.0 in a checkpoint from before the entropy bonus: the
         # restore keeps it, and without this the run said nothing (S3-11).
         "entropy_coeff",
+        # A different discount or GAE parameter is a different objective: a
+        # resume of a 0.99/1.0 checkpoint under the new defaults would continue
+        # optimising something else without saying so (S3-13).
+        "gamma",
+        "lambda_",
         "num_epochs",
         "minibatch_size",
         "train_batch_size_per_learner",

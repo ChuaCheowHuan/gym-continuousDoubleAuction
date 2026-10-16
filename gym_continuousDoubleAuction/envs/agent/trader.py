@@ -42,8 +42,12 @@ def _normalise_trade_sizes(trades):
 class Trader:
     def __init__(self, ID: int, cash=env_default("init_cash"),
                  maker_fee_bps=env_default("maker_fee_bps"),
-                 taker_fee_bps=env_default("taker_fee_bps")) -> None:
+                 taker_fee_bps=env_default("taker_fee_bps"),
+                 allow_multiple_orders_per_level=env_default("allow_multiple_orders_per_level")) -> None:
         self.ID = ID # trader unique ID
+        # False: a limit at a price this trader already rests at replaces that
+        # order. True: it rests beside it (doc/15 S3-10).
+        self.allow_multiple_orders_per_level = allow_multiple_orders_per_level
         self.acc = Account(ID, cash, maker_fee_bps, taker_fee_bps)
 
     def place_order(self, type: str, side: Optional[str], size: int, price: float,
@@ -802,6 +806,10 @@ class Trader:
         # placed as a second order instead of an upsert. `Decimal(str(x))` is
         # exactly the conversion `OrderBook.process_order` applies on the way
         # in, so the two sides of the comparison are built the same way.
+        if self.allow_multiple_orders_per_level:
+            # No upsert: a limit is always a new order, which is also what
+            # `_order_approved` needs to hear (nothing is released by it).
+            return -1, None
         target_price = qoute.get('price')
         if target_price is None:
             return -1, None

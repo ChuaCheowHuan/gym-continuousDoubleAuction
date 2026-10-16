@@ -118,6 +118,18 @@ class TestMetricsCrossTheRunnerBoundary:
         for pid in ("policy_0", "policy_1"):
             assert pid in reported and reported[pid] >= 0.0
 
+    def test_the_risk_adjusted_metrics_reach_the_driver(self):
+        """doc/15 S3-9, logged per module on the runner and compiled on the driver.
+        Max drawdown and the inventory statistics are defined for any agent that
+        reported a NAV, so they must be present for the trainable modules; Sharpe
+        and Sortino are left out when undefined, so they are not required."""
+        for name in ("max_drawdown", "position_turnover", "mean_abs_position",
+                     "max_abs_position"):
+            reported = self.env_runners.get(f"module_{name}")
+            assert isinstance(reported, dict), f"module_{name} missing: {sorted(self.env_runners)}"
+            for pid in ("policy_0", "policy_1"):
+                assert pid in reported and reported[pid] >= 0.0, (name, reported)
+
     def test_the_reward_decomposition_reaches_the_driver(self):
         """doc/11 §2.4: the five terms were captured per step and never
         aggregated, so the variance split doc/07 §6.4 prescribes could only be
