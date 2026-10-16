@@ -1,4 +1,5 @@
 """The hardening and duplication pass of issue #247, one class per item."""
+
 import ast
 import inspect
 import time
@@ -14,7 +15,12 @@ from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
 )
 from gym_continuousDoubleAuction.envs.orderbook.orderbook import OrderBook
 from gym_continuousDoubleAuction.train import train as train_module
-from gym_continuousDoubleAuction.train.model.encoders import jepa, token_embed, tokenize, transformer
+from gym_continuousDoubleAuction.train.model.encoders import (
+    jepa,
+    token_embed,
+    tokenize,
+    transformer,
+)
 
 
 def _q(side, qty, price, tid):
@@ -22,7 +28,6 @@ def _q(side, qty, price, tid):
 
 
 class TestAFreshBookHasBatchUnaffordable:
-
     def test_it_is_an_empty_list_before_any_clearing(self):
         assert OrderBook(10).batch_unaffordable == []
 
@@ -31,7 +36,9 @@ class TestBatchClearingChecksItsVolumeWithoutAssert:
     """A bare `assert` disappears under `python -O`, leaving a one-sided trade."""
 
     def test_clear_batch_contains_no_assert_statement(self):
-        tree = ast.parse(inspect.getsource(OrderBook.clear_batch).replace("\n    ", "\n", 0).lstrip())
+        tree = ast.parse(
+            inspect.getsource(OrderBook.clear_batch).replace("\n    ", "\n", 0).lstrip()
+        )
         assert not [n for n in ast.walk(tree) if isinstance(n, ast.Assert)]
 
     def test_a_mismatch_raises_a_named_error(self, monkeypatch):
@@ -42,7 +49,9 @@ class TestBatchClearingChecksItsVolumeWithoutAssert:
         real = book._auction
         # An auction that claims more volume than the orders can supply: both sides
         # fill 10, the "executable volume" says 15.
-        monkeypatch.setattr(book, "_auction", lambda *a, **k: (lambda r: (r[0], r[1], r[2] + 5))(real(*a, **k)))
+        monkeypatch.setattr(
+            book, "_auction", lambda *a, **k: (lambda r: (r[0], r[1], r[2] + 5))(real(*a, **k))
+        )
         with pytest.raises(RuntimeError, match="sides must match"):
             book.clear_batch(reference_price=100)
 
@@ -55,13 +64,22 @@ class TestBatchClearingChecksItsVolumeWithoutAssert:
 
 
 class TestSettleBatchRefusesBeforeItBooksAnything:
-
     @staticmethod
     def _trade(init, counter, qty=2):
-        return {"price": Decimal(100), "quantity": qty, "time": 1, "timestamp": 1,
-                "init_party": {"ID": init, "side": "bid", "order_id": None, "new_book_quantity": None},
-                "counter_party": {"ID": counter, "side": "ask", "order_id": None,
-                                  "new_book_quantity": None, "resting": False}}
+        return {
+            "price": Decimal(100),
+            "quantity": qty,
+            "time": 1,
+            "timestamp": 1,
+            "init_party": {"ID": init, "side": "bid", "order_id": None, "new_book_quantity": None},
+            "counter_party": {
+                "ID": counter,
+                "side": "ask",
+                "order_id": None,
+                "new_book_quantity": None,
+                "resting": False,
+            },
+        }
 
     def test_a_self_pair_late_in_the_list_leaves_the_ledger_untouched(self):
         traders = [Trader(i, 100_000) for i in range(2)]
@@ -78,7 +96,6 @@ class TestSettleBatchRefusesBeforeItBooksAnything:
 
 
 class TestOneDefinitionOfAMarketPrice:
-
     def test_none_and_the_sentinel_are_market_prices(self):
         assert _is_market_price(None) and _is_market_price(-1.0) and _is_market_price(-1)
 
@@ -90,26 +107,29 @@ class TestOneDefinitionOfAMarketPrice:
         env.reset(seed=1)
         t = env.traders
         t[1].place_order("limit", "ask", 5, 101.0, env.LOB, t)
-        t[0].place_order("market", "bid", 3, None, env.LOB, t)       # was an InvalidOperation
+        t[0].place_order("market", "bid", 3, None, env.LOB, t)  # was an InvalidOperation
         assert t[0].acc.net_position == 3
 
 
 class TestOneLookupForAnAgent:
-
     def test_counter_party_lookup_uses_find_agent(self):
         assert "_find_agent" in inspect.getsource(Trader._process_counter_party)
 
     def test_it_finds_an_agent_whose_id_is_not_its_index(self):
         traders = [Trader(5, 1000), Trader(9, 1000)]
-        trade = {"price": Decimal(10), "quantity": 1, "time": 1, "timestamp": 1,
-                 "init_party": {"ID": 5, "side": "bid"},
-                 "counter_party": {"ID": 9, "side": "ask", "order_id": None, "new_book_quantity": None}}
+        trade = {
+            "price": Decimal(10),
+            "quantity": 1,
+            "time": 1,
+            "timestamp": 1,
+            "init_party": {"ID": 5, "side": "bid"},
+            "counter_party": {"ID": 9, "side": "ask", "order_id": None, "new_book_quantity": None},
+        }
         traders[0]._process_counter_party(traders, trade)
         assert traders[1].acc.net_position == -1
 
 
 class TestMarkToMarketUsesTheProfitRule:
-
     def test_it_agrees_with_cal_profit_for_a_long_and_a_short(self):
         for position, side in ((5, "long"), (-5, "short")):
             acc = Account(0, 1000)
@@ -120,6 +140,7 @@ class TestMarkToMarketUsesTheProfitRule:
 
     def test_calculate_no_longer_restates_the_rule(self):
         from gym_continuousDoubleAuction.envs.account.calculate import Calculate
+
         assert "cal_profit" in inspect.getsource(Calculate.mark_to_mkt)
 
 
@@ -131,6 +152,7 @@ class TestDefaultsAreReadWhenTheObjectIsBuilt:
     def _with_config(tmp_path, monkeypatch, **changes):
         import json
         import shutil
+
         tree = tmp_path / "config"
         shutil.copytree(config_loader.config_dir(), tree)
         path = tree / "env_defaults.json"
@@ -160,18 +182,19 @@ class TestDefaultsAreReadWhenTheObjectIsBuilt:
 
 
 class TestTrainConfigDoesNotReFlattenTheFilePerField:
-
     def test_instantiating_one_is_cheap(self):
-        train_module.TrainConfig()                   # warm the cache
+        train_module.TrainConfig()  # warm the cache
         started = time.perf_counter()
         for _ in range(10):
             train_module.TrainConfig()
-        assert (time.perf_counter() - started) / 10 < 0.012       # was ~0.023 s
+        assert (time.perf_counter() - started) / 10 < 0.012  # was ~0.023 s
 
     def test_the_file_is_flattened_once_across_instances(self, monkeypatch):
         calls = []
         real = config_loader.flatten
-        monkeypatch.setattr(config_loader, "flatten", lambda *a, **k: calls.append(1) or real(*a, **k))
+        monkeypatch.setattr(
+            config_loader, "flatten", lambda *a, **k: calls.append(1) or real(*a, **k)
+        )
         config_loader.reload()
         train_module.TrainConfig()
         train_module.TrainConfig()
@@ -195,6 +218,7 @@ class TestTrainConfigDoesNotReFlattenTheFilePerField:
     def test_a_reload_picks_up_a_changed_file(self, tmp_path, monkeypatch):
         import json
         import shutil
+
         tree = tmp_path / "config"
         shutil.copytree(config_loader.config_dir(), tree)
         monkeypatch.setenv(config_loader.CONFIG_DIR_ENV_VAR, str(tree))
@@ -210,7 +234,6 @@ class TestTrainConfigDoesNotReFlattenTheFilePerField:
 
 
 class TestEnvResetHandsOptionsOn:
-
     def test_reset_calls_the_parent_unconditionally(self):
         source = inspect.getsource(continuousDoubleAuctionEnv.reset)
         assert "if hasattr(super()" not in source
@@ -224,7 +247,6 @@ class TestEnvResetHandsOptionsOn:
 
 
 class TestOnePoolingsDefinition:
-
     def test_the_three_encoders_share_the_tokenizers_tuple(self):
         assert transformer.POOLINGS is tokenize.POOLINGS
         assert jepa.POOLINGS is tokenize.POOLINGS
@@ -233,7 +255,6 @@ class TestOnePoolingsDefinition:
 
 
 class TestTidiedDocsAndDeadCode:
-
     def test_the_record_docstring_does_not_claim_to_set_a_flag(self):
         doc = OrderBook._record.__doc__
         assert "sets no flag" in " ".join(doc.split())
@@ -243,15 +264,28 @@ class TestTidiedDocsAndDeadCode:
         assert "party1" not in source and "party2" not in source
 
     def test_size_decrease_does_not_assign_an_unused_value(self):
-        tree = ast.parse(inspect.getsource(Account._size_decrease).replace("    ", "", 1).lstrip()
-                         if False else "def f():\n" + inspect.getsource(Account._size_decrease))
-        assigned = {t.id for n in ast.walk(tree) if isinstance(n, ast.Assign)
-                    for t in n.targets if isinstance(t, ast.Name)}
+        tree = ast.parse(
+            inspect.getsource(Account._size_decrease).replace("    ", "", 1).lstrip()
+            if False
+            else "def f():\n" + inspect.getsource(Account._size_decrease)
+        )
+        assigned = {
+            t.id
+            for n in ast.walk(tree)
+            if isinstance(n, ast.Assign)
+            for t in n.targets
+            if isinstance(t, ast.Name)
+        }
         # `mkt_val` is used in the branch that computes the position value, and was
         # assigned and dropped in the other; the else branch must not assign it.
         else_branch = [n for n in ast.walk(tree) if isinstance(n, ast.If)][0].orelse
-        assert "mkt_val" not in {t.id for n in else_branch if isinstance(n, ast.Assign)
-                                 for t in n.targets if isinstance(t, ast.Name)}
+        assert "mkt_val" not in {
+            t.id
+            for n in else_branch
+            if isinstance(n, ast.Assign)
+            for t in n.targets
+            if isinstance(t, ast.Name)
+        }
         assert "mkt_val" in assigned
 
 
@@ -281,12 +315,28 @@ class TestPlainKeepsItsBehaviourWithAFastPath:
     paying four isinstance checks to learn they needed nothing."""
 
     VALUES = [
-        0, 1, -3, 2.5, True, False, None, "NAV", "", Decimal("1.5"),
-        np.int32(4), np.int64(5), np.float32(0.25), np.float64(0.5), np.bool_(True),
-        np.array(7), np.array([1, 2]), np.array([[1.0], [2.0]], dtype=np.float32),
+        0,
+        1,
+        -3,
+        2.5,
+        True,
+        False,
+        None,
+        "NAV",
+        "",
+        Decimal("1.5"),
+        np.int32(4),
+        np.int64(5),
+        np.float32(0.25),
+        np.float64(0.5),
+        np.bool_(True),
+        np.array(7),
+        np.array([1, 2]),
+        np.array([[1.0], [2.0]], dtype=np.float32),
         (np.int32(1), np.array([0.5], dtype=np.float32)),
         {"a": np.int64(1), "b": [np.float32(2.0), {"c": np.array([3])}], "d": "x"},
-        [1, 2.5, None], {},
+        [1, 2.5, None],
+        {},
     ]
 
     @pytest.mark.parametrize("value", VALUES, ids=lambda v: type(v).__name__)
@@ -303,6 +353,7 @@ class TestPlainKeepsItsBehaviourWithAFastPath:
 
     def test_the_result_is_json_serialisable(self):
         import json
+
         json.dumps(_plain({"a": np.int64(1), "b": [np.float32(2.0)], "c": np.array([1, 2])}))
 
 
@@ -315,14 +366,16 @@ class TestReferencePriceIsCachedPerSnapshot:
 
     @pytest.mark.parametrize("clearing", ["sequential", "batch"])
     def test_it_always_equals_the_uncached_value(self, clearing):
-        env = continuousDoubleAuctionEnv({"num_of_agents": 4, "max_step": 80,
-                                          "is_render": False, "step_clearing": clearing})
+        env = continuousDoubleAuctionEnv(
+            {"num_of_agents": 4, "max_step": 80, "is_render": False, "step_clearing": clearing}
+        )
         env.reset(seed=3)
         for _ in range(80):
-            for _call in range(3):                    # repeated calls inside one step
+            for _call in range(3):  # repeated calls inside one step
                 assert env.reference_price() == self._uncached(env)
             _o, _r, term, trunc, _i = env.step(
-                {a: env.action_spaces[a].sample() for a in env.agents})
+                {a: env.action_spaces[a].sample() for a in env.agents}
+            )
             assert env.reference_price() == self._uncached(env)
             if term["__all__"] or trunc["__all__"]:
                 break
@@ -343,15 +396,37 @@ class TestReferencePriceIsCachedPerSnapshot:
         t = env.traders
         t[0].place_order("limit", "bid", 5, 95.0, env.LOB, t)
         t[1].place_order("limit", "ask", 5, 105.0, env.LOB, t)
-        env.step({a: {"category": 0, "order_slot": 0, "price": 0, "price_offset": 1,
-                      "size": np.zeros(1, dtype=np.float32)} for a in env.agents})
+        env.step(
+            {
+                a: {
+                    "category": 0,
+                    "order_slot": 0,
+                    "price": 0,
+                    "price_offset": 1,
+                    "size": np.zeros(1, dtype=np.float32),
+                }
+                for a in env.agents
+            }
+        )
         assert env.reference_price() == self._uncached(env)
 
     def test_two_envs_do_not_share_a_cache(self):
-        a = continuousDoubleAuctionEnv({"num_of_agents": 2, "is_render": False, "initial_price_min": 50,
-                                        "initial_price_max": 50})
-        b = continuousDoubleAuctionEnv({"num_of_agents": 2, "is_render": False, "initial_price_min": 150,
-                                        "initial_price_max": 150})
+        a = continuousDoubleAuctionEnv(
+            {
+                "num_of_agents": 2,
+                "is_render": False,
+                "initial_price_min": 50,
+                "initial_price_max": 50,
+            }
+        )
+        b = continuousDoubleAuctionEnv(
+            {
+                "num_of_agents": 2,
+                "is_render": False,
+                "initial_price_min": 150,
+                "initial_price_max": 150,
+            }
+        )
         a.reset(seed=1)
         b.reset(seed=1)
         assert a.reference_price() != b.reference_price()

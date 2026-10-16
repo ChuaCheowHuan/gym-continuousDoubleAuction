@@ -726,7 +726,7 @@ if self.LOB.tape != None and len(self.LOB.tape) > 0:
     num = 0
     for entry in reversed(self.LOB.tape):
         if num < self.LOB.tape_display_length:
-            #tempfile.write(...)
+            # tempfile.write(...)
             num += 1
         else:
             break

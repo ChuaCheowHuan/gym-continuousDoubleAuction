@@ -7,6 +7,7 @@ package used to convert to `latest_episode_data.json` for these scripts to
 read; every visualize_*.py script now goes through `load_episode` here instead
 of each re-deriving where a run's data lives and which episode is "the" one.
 """
+
 import glob
 import os
 
@@ -128,9 +129,7 @@ def load_episode(run_dir=None, episode_id=None, columns=None):
 
     needed = None
     if columns is not None:
-        needed = sorted(
-            set(columns) | {"episode_id", "step", "wall_time", "episode_complete"}
-        )
+        needed = sorted(set(columns) | {"episode_id", "step", "wall_time", "episode_complete"})
     frame = pd.read_parquet(run_dir, columns=needed)
     if frame.empty:
         raise ValueError(f"{run_dir} contains no rows")

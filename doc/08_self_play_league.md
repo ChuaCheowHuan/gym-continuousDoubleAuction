@@ -64,23 +64,26 @@ up on the ends of its range) and carries a fixed bias in the discrete heads for 
 ## 3. Usage
 
 ```python
-from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import SelfPlayCallback
+from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
+    SelfPlayCallback,
+)
 from gym_continuousDoubleAuction.train.policy.policy_handler import create_multi_agent_config
 from ray.rllib.algorithms.ppo import PPOConfig
 
 callback = SelfPlayCallback(
-    num_trainable_policies=2,             # k learning agents
-    num_random_policies=6,                # m initial frozen baselines
-    std_dev_multiplier=0.1,               # snapshot when return > mean + 0.1*std
-    max_champions=8,                      # rolling window size
-    min_iterations_between_champions=2,   # cooldown
-    original_opponent_weight=1.0,         # baseline selection priority
-    champion_weight=3.0,                  # favour champions 3:1
-    episode_data_dir="episode_data",      # None disables the per-step record
+    num_trainable_policies=2,  # k learning agents
+    num_random_policies=6,  # m initial frozen baselines
+    std_dev_multiplier=0.1,  # snapshot when return > mean + 0.1*std
+    max_champions=8,  # rolling window size
+    min_iterations_between_champions=2,  # cooldown
+    original_opponent_weight=1.0,  # baseline selection priority
+    champion_weight=3.0,  # favour champions 3:1
+    episode_data_dir="episode_data",  # None disables the per-step record
 )
 
 policies, policies_to_train, rl_module_spec = create_multi_agent_config(
-    obs_space, act_space, num_agents=8, num_trained_agents=2)
+    obs_space, act_space, num_agents=8, num_trained_agents=2
+)
 
 config = (
     PPOConfig()

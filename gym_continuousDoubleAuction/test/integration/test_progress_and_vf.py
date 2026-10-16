@@ -37,6 +37,7 @@ rescaling, adding an unnormalised reward term - flattens the value loss again
 and reports a small, stable-looking `total_loss` while the critic learns
 nothing.
 """
+
 import json
 import math
 import os
@@ -107,9 +108,7 @@ class TestProgressAndCriticHealth:
     def test_one_line_per_iteration(self):
         assert os.path.isfile(self.cfg.progress_path)
         assert len(self.lines) == NUM_ITERS
-        assert [line["training_iteration"] for line in self.lines] == list(
-            range(1, NUM_ITERS + 1)
-        )
+        assert [line["training_iteration"] for line in self.lines] == list(range(1, NUM_ITERS + 1))
 
     def test_a_real_result_survives_the_json_round_trip(self):
         """Parsing above already proved it; this pins what has to be *in* it.
@@ -157,9 +156,7 @@ class TestProgressAndCriticHealth:
         """
         reported = vf_explained_var(self.last_result, self.cfg)
 
-        noise = {
-            pid: value for pid, value in reported.items() if abs(value) < 1e-3
-        }
+        noise = {pid: value for pid, value in reported.items() if abs(value) < 1e-3}
         assert not noise, (
             f"{VF_EXPLAINED_VAR_KEY} is in the noise floor for {sorted(noise)} "
             f"after {NUM_ITERS} iterations ({noise}): the critic took no useful "
@@ -170,8 +167,6 @@ class TestProgressAndCriticHealth:
     def test_the_file_carries_it_too(self):
         """Not just the returned result: the on-disk record is the durable one."""
         for pid in trainable_policy_ids(self.cfg.num_trained_agents):
-            values = [
-                line["learners"][pid][VF_EXPLAINED_VAR_KEY] for line in self.lines
-            ]
+            values = [line["learners"][pid][VF_EXPLAINED_VAR_KEY] for line in self.lines]
             assert len(values) == NUM_ITERS
             assert all(v is None or isinstance(v, float) for v in values), values

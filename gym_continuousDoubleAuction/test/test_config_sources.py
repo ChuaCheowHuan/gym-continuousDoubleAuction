@@ -9,6 +9,7 @@ value and fail the assertion.
 
 See doc/18_configuration.md.
 """
+
 import importlib
 import json
 import shutil
@@ -56,7 +57,6 @@ def config_tree(tmp_path, monkeypatch):
 
 
 class TestLoader:
-
     def test_documentation_keys_are_stripped_at_every_level(self):
         data = config_loader.load("tunable_constants.json")
         assert not any(k.startswith("_") for k in data)
@@ -91,7 +91,6 @@ class TestLoader:
 
 
 class TestTrainConfigHasNoValuesOfItsOwn:
-
     def test_defaults_equal_the_repo_file(self):
         """TrainConfig() and the file it reads cannot disagree."""
         assert TrainConfig() == TrainConfig.from_json(REPO_CONFIG)
@@ -113,14 +112,15 @@ class TestTrainConfigHasNoValuesOfItsOwn:
     def test_derived_properties_follow_the_file(self, config_tree):
         config_tree(
             "train_config.json",
-            lambda raw: (raw["environment"].update(max_step=10),
-                         raw["ppo"].update(num_episodes_per_iter=3)),
+            lambda raw: (
+                raw["environment"].update(max_step=10),
+                raw["ppo"].update(num_episodes_per_iter=3),
+            ),
         )
         assert TrainConfig().train_batch_size == 30
 
 
 class TestEnvFallbacksComeFromTheFile:
-
     def test_bare_env_uses_env_defaults(self, config_tree):
         config_tree(
             "env_defaults.json",
@@ -148,8 +148,7 @@ class TestEnvFallbacksComeFromTheFile:
     def test_price_anchor_bounds_fall_back_to_the_file(self, config_tree):
         config_tree(
             "env_defaults.json",
-            lambda raw: raw["environment"].update(initial_price_min=33,
-                                                  initial_price_max=33),
+            lambda raw: raw["environment"].update(initial_price_min=33, initial_price_max=33),
         )
         env = continuousDoubleAuctionEnv({"num_of_agents": 2})
         env.reset()
@@ -174,7 +173,6 @@ class TestEnvFallbacksComeFromTheFile:
 
 
 class TestStructuralConstantsComeFromTheFile:
-
     def test_book_depth_drives_observation_and_action_spaces(self, config_tree):
         """k_rows is one definition, read by both spaces and by _set_price."""
         # private_dim follows k_rows since the own-book block exists: 9 base
@@ -264,8 +262,7 @@ class TestStructuralConstantsComeFromTheFile:
     def test_size_bounds_come_from_the_file(self, config_tree):
         config_tree(
             "tunable_constants.json",
-            lambda raw: raw["action_space"].update(size_low=0.25,
-                                                   size_high=0.75),
+            lambda raw: raw["action_space"].update(size_low=0.25, size_high=0.75),
         )
         env = continuousDoubleAuctionEnv({"num_of_agents": 2})
         space = env.action_spaces["agent_0"]["size"]
@@ -288,6 +285,7 @@ class TestStructuralConstantsComeFromTheFile:
             lambda raw: raw["module_id_prefixes"].update(policy_prefix="agent_"),
         )
         import gym_continuousDoubleAuction.train.policy.policy_handler as ph
+
         importlib.reload(ph)
         try:
             assert ph.policy_id(0) == "agent_0"
@@ -304,8 +302,9 @@ class TestStructuralConstantsComeFromTheFile:
         """The two fallbacks used to be independent literals that had to agree."""
         config_tree(
             "tunable_constants.json",
-            lambda raw: (raw["price_anchor_fallbacks"].update(
-                action_helper_last_price=55.0, state_helper_midpoint=55.0)),
+            lambda raw: raw["price_anchor_fallbacks"].update(
+                action_helper_last_price=55.0, state_helper_midpoint=55.0
+            ),
         )
         env = continuousDoubleAuctionEnv({"num_of_agents": 2})
         assert env.last_price == 55.0
@@ -313,9 +312,9 @@ class TestStructuralConstantsComeFromTheFile:
 
 
 class TestCliDefaultsComeFromTheFile:
-
     def test_random_runner_defaults(self, config_tree):
         from gym_continuousDoubleAuction.CDA_rand import _cli
+
         config_tree(
             "cli_defaults.json",
             lambda raw: raw["cda_env_rand"].update(num_agents=3, max_step=5),
@@ -338,8 +337,7 @@ class TestCliDefaultsComeFromTheFile:
 
         def capture(self, *args, **kwargs):
             parser_defaults.extend(
-                action.default for action in self._actions
-                if action.dest not in ("help", "config")
+                action.default for action in self._actions if action.dest not in ("help", "config")
             )
             return real_parse_args(self, *args, **kwargs)
 

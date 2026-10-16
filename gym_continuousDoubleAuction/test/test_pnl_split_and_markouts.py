@@ -4,6 +4,7 @@ The split is checked against the one thing that can falsify it: the ledger. With
 fees it must account for NAV, to the last digit the ledger keeps, through partial
 closes, flips, fees, liquidation and ADL.
 """
+
 from decimal import Decimal
 from unittest.mock import MagicMock
 
@@ -29,13 +30,12 @@ def _fill(acc, side, price, qty):
 
 
 class TestRealisedPnl:
-
     def test_a_partial_close_realises_against_the_average_entry(self):
         acc = Account(0, 100_000)
         _fill(acc, "bid", 100, 10)
         _fill(acc, "ask", 110, 4)
         assert acc.realised_pnl == 40 and acc.net_position == 6
-        assert acc.entry_vwap == 100            # a partial close leaves it alone
+        assert acc.entry_vwap == 100  # a partial close leaves it alone
 
     def test_closing_the_rest_adds_to_it(self):
         acc = Account(0, 100_000)
@@ -53,7 +53,7 @@ class TestRealisedPnl:
     def test_a_flip_realises_only_what_it_closes(self):
         acc = Account(0, 100_000)
         _fill(acc, "bid", 100, 3)
-        _fill(acc, "ask", 110, 5)               # closes 3, opens a 2-short at 110
+        _fill(acc, "ask", 110, 5)  # closes 3, opens a 2-short at 110
         assert acc.realised_pnl == 30
         assert acc.net_position == -2 and acc.entry_vwap == 110
 
@@ -94,15 +94,27 @@ class TestTheSplitAccountsForNav:
     @pytest.mark.parametrize("clearing", ["sequential", "batch"])
     @pytest.mark.parametrize("fee", [0, 10])
     def test_it_holds_every_agent_every_step(self, clearing, fee):
-        env = continuousDoubleAuctionEnv({
-            "num_of_agents": 4, "max_step": 150, "is_render": False, "step_clearing": clearing,
-            "taker_fee_bps": fee, "maker_fee_bps": fee // 2, "init_cash": 100_000,
-            "initial_price_min": 80, "initial_price_max": 120,
-            "liquidation": "market_adl", "maintenance_margin": 0.3})
+        env = continuousDoubleAuctionEnv(
+            {
+                "num_of_agents": 4,
+                "max_step": 150,
+                "is_render": False,
+                "step_clearing": clearing,
+                "taker_fee_bps": fee,
+                "maker_fee_bps": fee // 2,
+                "init_cash": 100_000,
+                "initial_price_min": 80,
+                "initial_price_max": 120,
+                "liquidation": "market_adl",
+                "maintenance_margin": 0.3,
+            }
+        )
         env.reset(seed=2)
         banked = 0
         for _ in range(150):
-            _o, _r, term, trunc, _i = env.step({a: env.action_spaces[a].sample() for a in env.agents})
+            _o, _r, term, trunc, _i = env.step(
+                {a: env.action_spaces[a].sample() for a in env.agents}
+            )
             mark = env.mark_price()
             for trader in env.traders:
                 acc = trader.acc
@@ -116,7 +128,6 @@ class TestTheSplitAccountsForNav:
 
 
 class TestFillCounters:
-
     def test_buys_are_positive_sells_negative_and_the_value_is_signed_too(self):
         acc = Account(0, 100_000)
         _fill(acc, "bid", 100, 10)
@@ -130,8 +141,16 @@ class TestFillCounters:
         t[1].place_order("limit", "ask", 5, 101.0, env.LOB, t)
         t[0].place_order("market", "bid", 3, -1.0, env.LOB, t)
         assert t[0].acc.fill_qty_step == 3
-        pass_all = {a: {"category": 0, "order_slot": 0, "price": 0, "price_offset": 1,
-                        "size": np.zeros(1, dtype=np.float32)} for a in env.agents}
+        pass_all = {
+            a: {
+                "category": 0,
+                "order_slot": 0,
+                "price": 0,
+                "price_offset": 1,
+                "size": np.zeros(1, dtype=np.float32),
+            }
+            for a in env.agents
+        }
         env.step(pass_all)
         assert t[0].acc.fill_qty_step == 0 and t[0].acc.fill_value_step == 0
 
@@ -149,9 +168,16 @@ class TestForcedFillsAreNotTheAgentsExecutions:
 
     @staticmethod
     def _squeeze():
-        env = continuousDoubleAuctionEnv({
-            "num_of_agents": 4, "init_cash": 10_000, "max_step": 50, "is_render": False,
-            "initial_price_min": 100, "initial_price_max": 100})
+        env = continuousDoubleAuctionEnv(
+            {
+                "num_of_agents": 4,
+                "init_cash": 10_000,
+                "max_step": 50,
+                "is_render": False,
+                "initial_price_min": 100,
+                "initial_price_max": 100,
+            }
+        )
         env.reset(seed=1)
         t = env.traders
         t[1].place_order("limit", "bid", 90, 100.0, env.LOB, t)
@@ -179,11 +205,10 @@ class TestForcedFillsAreNotTheAgentsExecutions:
         maker = env.traders[3].acc
         before = maker.fill_qty_step
         env.liquidate()
-        assert maker.fill_qty_step < before         # it sold into the forced buy
+        assert maker.fill_qty_step < before  # it sold into the forced buy
 
 
 class TestMarkouts:
-
     @staticmethod
     def _run(steps, horizons=(1, 2)):
         tally = PerformanceTally(markout_horizons=horizons)
@@ -217,8 +242,8 @@ class TestMarkouts:
     def test_a_missing_mid_resolves_nothing_but_keeps_the_clock(self):
         tally = PerformanceTally(markout_horizons=(1,))
         tally.update("1000", 0, fill_qty=10, fill_value=1000, mid=100)
-        tally.update("1000", 0, mid=None)            # nothing to mark with
-        tally.update("1000", 0, mid=105)             # the fill of step 1 (none) resolves
+        tally.update("1000", 0, mid=None)  # nothing to mark with
+        tally.update("1000", 0, mid=105)  # the fill of step 1 (none) resolves
         assert tally.summary()["markout_1"] is None
 
     def test_no_horizons_means_no_markout_keys(self):
@@ -239,7 +264,6 @@ class TestMarkouts:
 
 
 class TestMarketMid:
-
     def test_two_sided_book_uses_the_midpoint(self):
         assert _market_mid({"best_bid": 99.0, "best_ask": 101.0, "last_price": 50.0}) == 100.0
 
@@ -251,12 +275,12 @@ class TestMarketMid:
 
 
 def _callback(**kwargs):
-    return SelfPlayCallback(num_trainable_policies=2, num_random_policies=6,
-                            episode_data_dir=None, **kwargs)
+    return SelfPlayCallback(
+        num_trainable_policies=2, num_random_policies=6, episode_data_dir=None, **kwargs
+    )
 
 
 class TestTheCallbackWiring:
-
     def test_the_step_hook_feeds_pnl_fills_and_mid(self):
         cb = _callback(markout_horizons=(1,))
 
@@ -270,17 +294,39 @@ class TestTheCallbackWiring:
                 return self._info
 
         steps = [
-            {"NAV": "1000", "net_position": 0, "realised_pnl": 0.0, "unrealised_pnl": 0.0,
-             "fill_qty_step": 10, "fill_value_step": 1000.0, "best_bid": 99.0, "best_ask": 101.0},
-            {"NAV": "1030", "net_position": 10, "realised_pnl": 0.0, "unrealised_pnl": 30.0,
-             "fill_qty_step": 0, "fill_value_step": 0.0, "best_bid": 102.0, "best_ask": 104.0},
+            {
+                "NAV": "1000",
+                "net_position": 0,
+                "realised_pnl": 0.0,
+                "unrealised_pnl": 0.0,
+                "fill_qty_step": 10,
+                "fill_value_step": 1000.0,
+                "best_bid": 99.0,
+                "best_ask": 101.0,
+            },
+            {
+                "NAV": "1030",
+                "net_position": 10,
+                "realised_pnl": 0.0,
+                "unrealised_pnl": 30.0,
+                "fill_qty_step": 0,
+                "fill_value_step": 0.0,
+                "best_bid": 102.0,
+                "best_ask": 104.0,
+            },
         ]
         for info in steps:
-            cb.on_episode_step(episode=Ep(info), env_runner=None, metrics_logger=MagicMock(),
-                               env=None, env_index=0, rl_module=None)
+            cb.on_episode_step(
+                episode=Ep(info),
+                env_runner=None,
+                metrics_logger=MagicMock(),
+                env=None,
+                env_index=0,
+                rl_module=None,
+            )
         summary = cb._activity["e"]["performance"]["agent_0"].summary()
         assert summary["unrealised_pnl"] == 30.0
-        assert summary["markout_1"] == pytest.approx(3.0)      # 10 x 103 - 1000, per contract
+        assert summary["markout_1"] == pytest.approx(3.0)  # 10 x 103 - 1000, per contract
 
     def test_markouts_are_logged_per_module(self):
         tally = PerformanceTally(markout_horizons=(1,))

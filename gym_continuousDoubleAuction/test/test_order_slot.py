@@ -7,6 +7,7 @@ and "the oldest" (the pre-slot FIFO rule) for a modify. A slot past the count
 is a counted miss. Price no longer aims a cancel at all; a limit still matches
 by price, which is the upsert rule.
 """
+
 from decimal import Decimal
 
 import numpy as np
@@ -37,7 +38,6 @@ def _prices(book, side):
 
 
 class TestCancelBySlot:
-
     def test_slot_1_is_the_touch(self):
         book, t = _three_bids()
         t.place_order('cancel', 'bid', 1, 0, book, [t], slot=1)
@@ -100,7 +100,6 @@ class TestCancelBySlot:
 
 
 class TestModifyBySlot:
-
     def test_slot_0_is_the_oldest_order(self):
         book, t = _three_bids()  # oldest is the 98
         t.place_order('modify', 'bid', 1, 97, book, [t], slot=0)
@@ -137,7 +136,6 @@ class TestModifyBySlot:
 
 
 class TestActionSpace:
-
     def test_order_slot_head(self):
         env = continuousDoubleAuctionEnv({"num_of_agents": 2, "is_render": False})
         space = env.action_spaces["agent_0"]
@@ -148,44 +146,57 @@ class TestActionSpace:
     def test_absent_slot_decodes_as_zero(self):
         env = continuousDoubleAuctionEnv({"num_of_agents": 1, "is_render": False})
         env.reset(seed=0)
-        act = env._set_action_mkt_depth("agent_0", {
-            "category": 4, "size": np.array([0.0], dtype=np.float32),
-            "price": 0,
-            "price_offset": 1,
-        })
+        act = env._set_action_mkt_depth(
+            "agent_0",
+            {
+                "category": 4,
+                "size": np.array([0.0], dtype=np.float32),
+                "price": 0,
+                "price_offset": 1,
+            },
+        )
         assert act["slot"] == 0
 
     def test_env_routes_the_slot(self):
-        env = continuousDoubleAuctionEnv({
-            "num_of_agents": 1, "is_render": False, "max_step": 16,
-            "initial_price_min": 100, "initial_price_max": 100, "tick_size": 0.1,
-        })
+        env = continuousDoubleAuctionEnv(
+            {
+                "num_of_agents": 1,
+                "is_render": False,
+                "max_step": 16,
+                "initial_price_min": 100,
+                "initial_price_max": 100,
+                "tick_size": 0.1,
+            }
+        )
         env.reset(seed=2)
 
         def act(category, price=0, offset=1, slot=0):
-            return {"agent_0": {
-                "category": category, "size": np.array([0.2], dtype=np.float32),
-                "price": price,
-                "price_offset": offset, "order_slot": slot,
-            }}
+            return {
+                "agent_0": {
+                    "category": category,
+                    "size": np.array([0.2], dtype=np.float32),
+                    "price": price,
+                    "price_offset": offset,
+                    "order_slot": slot,
+                }
+            }
 
-        env.step(act(2, 0, 1))          # bid at the level-0 ghost price
-        env.step(act(2, 0, 0))          # a second bid one tick below
+        env.step(act(2, 0, 1))  # bid at the level-0 ghost price
+        env.step(act(2, 0, 0))  # a second bid one tick below
         assert len(env.LOB.bids) == 2
-        _, _, _, _, infos = env.step(act(4, slot=2))   # cancel the deeper one
+        _, _, _, _, infos = env.step(act(4, slot=2))  # cancel the deeper one
         assert len(env.LOB.bids) == 1
         assert infos["agent_0"]["num_unmatched_step"] == 0
         assert env.LOB.get_best_bid() == max(env.LOB.bids.price_map)
-        _, _, _, _, infos = env.step(act(8, slot=3))   # no asks at all: a miss
+        _, _, _, _, infos = env.step(act(8, slot=3))  # no asks at all: a miss
         assert infos["agent_0"]["num_unmatched_step"] == 1
         assert len(env.LOB.bids) == 1
-        _, _, _, _, infos = env.step(act(4, slot=0))   # all bids
+        _, _, _, _, infos = env.step(act(4, slot=0))  # all bids
         assert len(env.LOB.bids) == 0
         assert infos["agent_0"]["num_unmatched_step"] == 0
 
 
 class TestRandomPlayHitRate:
-
     def test_slot_aiming_beats_price_aiming(self):
         """Under uniformly random play a cancel used to land 7% of the time it
         was issued (doc/16 16.19). Aimed by a clamped slot it lands whenever

@@ -10,6 +10,7 @@ the reference price snapped to the tick, and the action's price code j quotes
 exactly j ticks from `R` on the passive side. Same cell, same distance, on
 every step and in every frame of the stack.
 """
+
 import numpy as np
 import pytest
 
@@ -43,24 +44,32 @@ def _env(**overrides):
 
 
 def _pass(env):
-    return {agent: {"category": 0, "order_slot": 0, "price": 0, "price_offset": 1,
-                    "size": np.zeros(1, dtype=np.float32)}
-            for agent in env.agents}
+    return {
+        agent: {
+            "category": 0,
+            "order_slot": 0,
+            "price": 0,
+            "price_offset": 1,
+            "size": np.zeros(1, dtype=np.float32),
+        }
+        for agent in env.agents
+    }
 
 
 def _frame(env, obs, index=-1, agent="agent_0"):
     """Snapshot `index` of the stack (-1 = newest) as a (rows, cells) grid."""
     o = obs[agent]
     i = env.n_hist + index if index < 0 else index
-    snap = o[i * env.snapshot_dim:(i + 1) * env.snapshot_dim]
-    return snap[:env.obs_book_dim].reshape(len(env.obs_book_rows), env.obs_book_cells), snap[env.obs_book_dim:]
+    snap = o[i * env.snapshot_dim : (i + 1) * env.snapshot_dim]
+    return snap[: env.obs_book_dim].reshape(len(env.obs_book_rows), env.obs_book_cells), snap[
+        env.obs_book_dim :
+    ]
 
 
 BID, ASK = GRID_ROWS.index("bid_size"), GRID_ROWS.index("ask_size")
 
 
 class TestLayout:
-
     def test_shape_and_version(self):
         env = _env()
         k = env.k_rows
@@ -68,7 +77,9 @@ class TestLayout:
         assert env.obs_book_rows == ("bid_size", "ask_size")
         assert env.obs_book_cells == 2 * k + 1
         assert env.snapshot_dim == 2 * (2 * k + 1) + env.extra_dim
-        assert env.observation_spaces["agent_0"].shape == (env.n_hist * env.snapshot_dim + env.private_dim,)
+        assert env.observation_spaces["agent_0"].shape == (
+            env.n_hist * env.snapshot_dim + env.private_dim,
+        )
         # The raw snapshot the price logic reads is still the six-row levels frame.
         assert env.agg_LOB_raw.shape == (BOOK_DIM,)
         assert OBSERVATION_LAYOUT_VERSION == 6
@@ -89,7 +100,6 @@ class TestLayout:
 
 
 class TestCells:
-
     def test_a_quote_sits_in_the_cell_of_its_tick_offset(self):
         """Bid 97 and ask 102 around M = 99.5 -> R = 100: cells k-3 and k+2."""
         env = _env()
@@ -130,13 +140,13 @@ class TestCells:
         a, b = env.traders
         k = env.k_rows
         a.place_order('limit', 'bid', 10, 99.0, env.LOB, env.traders)
-        b.place_order('limit', 'ask', 10, 101.0, env.LOB, env.traders)   # R = 100
+        b.place_order('limit', 'ask', 10, 101.0, env.LOB, env.traders)  # R = 100
         b.place_order('limit', 'ask', 10, 100.0 + k + 5, env.LOB, env.traders)  # k+5 ticks out
         obs, *_ = env.step(_pass(env))
         grid, _ = _frame(env, obs)
         assert np.count_nonzero(grid[ASK]) == 1  # the far ask is beyond the window
         # It is still in the raw frame the price logic reads.
-        assert (env.agg_LOB_raw[2 * k:3 * k] == 100.0 + k + 5).any()
+        assert (env.agg_LOB_raw[2 * k : 3 * k] == 100.0 + k + 5).any()
 
     def test_sizes_at_one_price_aggregate(self):
         env = _env()
@@ -166,7 +176,6 @@ class TestCells:
 
 
 class TestSharedCoordinate:
-
     def test_price_code_j_is_j_ticks_from_the_reference(self):
         """The action's coordinate is the observation's: no ghost logic, no
         dependence on what is resting."""
@@ -206,8 +215,13 @@ class TestSharedCoordinate:
         a.place_order('limit', 'bid', 10, 99.0, env.LOB, env.traders)
         b.place_order('limit', 'ask', 10, 101.0, env.LOB, env.traders)  # R = 100
         act = _pass(env)
-        act["agent_0"] = {"category": 2, "order_slot": 0, "price": 4, "price_offset": 1,
-                          "size": np.array([0.5], dtype=np.float32)}
+        act["agent_0"] = {
+            "category": 2,
+            "order_slot": 0,
+            "price": 4,
+            "price_offset": 1,
+            "size": np.array([0.5], dtype=np.float32),
+        }
         obs, *_ = env.step(act)
         k = env.k_rows
         grid, _ = _frame(env, obs)
@@ -219,18 +233,21 @@ class TestSharedCoordinate:
         a, b = env.traders
         a.place_order('limit', 'bid', 10, 99.0, env.LOB, env.traders)
         b.place_order('limit', 'ask', 10, 101.0, env.LOB, env.traders)  # R = 100
-        a.place_order('limit', 'bid', 20, 96.0, env.LOB, env.traders)   # 4 ticks below
+        a.place_order('limit', 'bid', 20, 96.0, env.LOB, env.traders)  # 4 ticks below
         obs, *_ = env.step(_pass(env))
-        private = dict(zip(env.private_fields, obs["agent_0"][-env.private_dim:]))
-        assert private["own_bid_size_1"] == pytest.approx(np.sqrt(10 / env.limit_max_size), rel=1e-6)
-        assert private["own_bid_size_4"] == pytest.approx(np.sqrt(20 / env.limit_max_size), rel=1e-6)
+        private = dict(zip(env.private_fields, obs["agent_0"][-env.private_dim :]))
+        assert private["own_bid_size_1"] == pytest.approx(
+            np.sqrt(10 / env.limit_max_size), rel=1e-6
+        )
+        assert private["own_bid_size_4"] == pytest.approx(
+            np.sqrt(20 / env.limit_max_size), rel=1e-6
+        )
         assert private["own_ask_size_1"] == 0.0  # the 101 ask is agent_1's
-        p1 = dict(zip(env.private_fields, obs["agent_1"][-env.private_dim:]))
+        p1 = dict(zip(env.private_fields, obs["agent_1"][-env.private_dim :]))
         assert p1["own_ask_size_1"] == pytest.approx(np.sqrt(10 / env.limit_max_size), rel=1e-6)
 
 
 class TestEncoderLayout:
-
     def test_from_obs_space_reads_the_grid(self):
         env = _env()
         layout = ObsLayout.from_obs_space(env.observation_spaces["agent_0"])

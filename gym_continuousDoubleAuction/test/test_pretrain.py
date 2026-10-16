@@ -12,6 +12,7 @@ is easy to get quietly wrong:
     which is the same guard `train.py` applies to a restore and for the same
     reason.
 """
+
 import json
 import os
 
@@ -56,9 +57,7 @@ def spec_block():
 
 @pytest.fixture(scope="module")
 def corpus():
-    return corpus_module.from_rollouts(
-        num_episodes=EPISODES, max_step=120, num_agents=3, seed=0
-    )
+    return corpus_module.from_rollouts(num_episodes=EPISODES, max_step=120, num_agents=3, seed=0)
 
 
 @pytest.fixture(scope="module")
@@ -66,8 +65,14 @@ def trained(spaces, corpus, spec_block):
     """One short pretraining run, shared by the tests that only read it."""
     obs_space, act_space = spaces
     return pretrain_pkg.pretrain(
-        corpus, obs_space, act_space, encoder_spec=spec_block,
-        steps=STEPS, batch_size=64, log_every=STEPS // 2, seed=0,
+        corpus,
+        obs_space,
+        act_space,
+        encoder_spec=spec_block,
+        steps=STEPS,
+        batch_size=64,
+        log_every=STEPS // 2,
+        seed=0,
     )
 
 
@@ -86,23 +91,26 @@ class TestTheLoop:
         """Adjacent observations share three of their four snapshots, so a
         row-level split would put near-duplicates of a validation row into
         training and the validation curve would mean nothing."""
-        train_mask, validation_mask, _ = probe_module.split_masks(
-            corpus.episode_index, len(corpus)
-        )
+        train_mask, validation_mask, _ = probe_module.split_masks(corpus.episode_index, len(corpus))
         train_episodes = set(corpus.episode_index[train_mask])
         validation_episodes = set(corpus.episode_index[validation_mask])
         assert train_episodes and validation_episodes
         assert not train_episodes & validation_episodes
 
-    def test_only_the_trunk_and_predictor_are_trained(self, spaces, corpus,
-                                                      spec_block):
+    def test_only_the_trunk_and_predictor_are_trained(self, spaces, corpus, spec_block):
         """The EMA target must move only by EMA. If a gradient reached it, it
         would stop lagging and the asymmetry that discourages collapse would be
         gone."""
         obs_space, act_space = spaces
         module, _report = pretrain_pkg.pretrain(
-            corpus, obs_space, act_space, encoder_spec=spec_block,
-            steps=10, batch_size=32, log_every=10, seed=0,
+            corpus,
+            obs_space,
+            act_space,
+            encoder_spec=spec_block,
+            steps=10,
+            batch_size=32,
+            log_every=10,
+            seed=0,
         )
         encoder = module.encoder.actor_encoder
 
@@ -136,7 +144,10 @@ class TestTheLoop:
         for encoder_type in ("mlp", "transformer", "lstm"):
             with pytest.raises(ValueError, match="self-supervised"):
                 pretrain_pkg.pretrain(
-                    corpus, obs_space, act_space, encoder_type=encoder_type,
+                    corpus,
+                    obs_space,
+                    act_space,
+                    encoder_type=encoder_type,
                     steps=1,
                 )
 
@@ -144,12 +155,8 @@ class TestTheLoop:
         """Below three episodes the split falls back to contiguous rows rather
         than refusing - it still bars shuffling, it just cannot promise the
         price-anchor separation an episode split gives."""
-        tiny = corpus_module.from_rollouts(
-            num_episodes=1, max_step=40, num_agents=2, seed=0
-        )
-        train, validation, _test = probe_module.split_masks(
-            tiny.episode_index, len(tiny)
-        )
+        tiny = corpus_module.from_rollouts(num_episodes=1, max_step=40, num_agents=2, seed=0)
+        train, validation, _test = probe_module.split_masks(tiny.episode_index, len(tiny))
         assert train.sum() and validation.sum()
         assert np.flatnonzero(train).max() < np.flatnonzero(validation).min()
 
@@ -159,13 +166,18 @@ def saved(spaces, corpus, spec_block, tmp_path_factory):
     """One pretrained checkpoint on disk, plus the module it came from."""
     obs_space, act_space = spaces
     module, _report = pretrain_pkg.pretrain(
-        corpus, obs_space, act_space, encoder_spec=spec_block,
-        steps=10, batch_size=32, log_every=10, seed=0,
+        corpus,
+        obs_space,
+        act_space,
+        encoder_spec=spec_block,
+        steps=10,
+        batch_size=32,
+        log_every=10,
+        seed=0,
     )
     path = str(tmp_path_factory.mktemp("pretrained"))
     pretrain_pkg.save(module, path, "jepa", spec_block)
     return path, module
-
 
 
 class TestTheFingerprintIdentifiesTheArchitecture:
@@ -244,15 +256,17 @@ class TestPretrainResolvesItsSpec:
         obs_space, act_space = spaces
         with pytest.raises(ValueError, match="world_model"):
             pretrain_pkg.pretrain(
-                corpus, obs_space, act_space,
+                corpus,
+                obs_space,
+                act_space,
                 encoder_type="jepa",
                 encoder_spec={"world_model": True},
-                steps=1, batch_size=4,
+                steps=1,
+                batch_size=4,
             )
 
 
 class TestTheCheckpoint:
-
     def test_it_writes_all_three_pieces(self, saved):
         """Two weight formats, for two consumers: `encoder.pt` is what the probe
         loads into a module it built itself, and `rl_module/` is what a training
@@ -269,15 +283,12 @@ class TestTheCheckpoint:
         assert stored["encoder_type"] == "jepa"
         assert stored["encoder_spec"]["d_model"] == spec_block["d_model"]
 
-    def test_loading_reproduces_the_weights(self, saved, spaces, spec_block,
-                                            corpus):
+    def test_loading_reproduces_the_weights(self, saved, spaces, spec_block, corpus):
         """Round trip: a fresh module plus these weights must encode identically
         to the module they came from."""
         path, source = saved
         obs_space, act_space = spaces
-        target = features_module.build_module(
-            obs_space, act_space, "jepa", spec_block
-        )
+        target = features_module.build_module(obs_space, act_space, "jepa", spec_block)
         pretrain_pkg.load_into(target, path, "jepa", spec_block)
 
         assert np.allclose(
@@ -291,17 +302,14 @@ class TestTheCheckpoint:
         error several frames away - or, worse, as a partial load."""
         path, _module = saved
         with pytest.raises(ValueError, match="does not match"):
-            pretrain_pkg.verify_fingerprint(
-                path, "jepa", {**spec_block, "d_model": 256}
-            )
+            pretrain_pkg.verify_fingerprint(path, "jepa", {**spec_block, "d_model": 256})
 
     def test_a_different_encoder_type_is_refused(self, saved, spec_block):
         path, _module = saved
         with pytest.raises(ValueError, match="does not match"):
             pretrain_pkg.verify_fingerprint(path, "transformer", spec_block)
 
-    def test_a_directory_that_is_not_a_checkpoint_raises(self, tmp_path,
-                                                         spec_block):
+    def test_a_directory_that_is_not_a_checkpoint_raises(self, tmp_path, spec_block):
         (tmp_path / "unrelated.txt").write_text("not a checkpoint")
         with pytest.raises(FileNotFoundError, match="not a pretrain checkpoint"):
             pretrain_pkg.verify_fingerprint(str(tmp_path), "jepa", spec_block)
@@ -327,10 +335,7 @@ class TestTrainingStartsFromIt:
         first = self._built(path, spaces, pretrained_path=path)
         second = self._built(path, spaces, pretrained_path=path)
 
-        assert all(
-            torch.equal(p, q)
-            for p, q in zip(self._trunk(first), self._trunk(second))
-        )
+        assert all(torch.equal(p, q) for p, q in zip(self._trunk(first), self._trunk(second)))
 
     def test_it_differs_from_a_fresh_initialisation(self, saved, spaces):
         path, _module = saved
@@ -338,8 +343,7 @@ class TestTrainingStartsFromIt:
         fresh = self._built(path, spaces)
 
         assert not all(
-            torch.equal(p, q)
-            for p, q in zip(self._trunk(pretrained), self._trunk(fresh))
+            torch.equal(p, q) for p, q in zip(self._trunk(pretrained), self._trunk(fresh))
         )
 
     def test_the_critic_starts_from_it_too(self, saved, spaces):
@@ -357,15 +361,16 @@ class TestTrainingStartsFromIt:
             )
         )
 
-    def test_a_mismatched_spec_is_refused_at_build_time(self, saved, spaces,
-                                                        spec_block):
+    def test_a_mismatched_spec_is_refused_at_build_time(self, saved, spaces, spec_block):
         """Before the path reaches any encoder, so the message can still name
         the architectures rather than reporting a shape."""
         path, _module = saved
         obs_space, act_space = spaces
         with pytest.raises(ValueError, match="does not match"):
             build_trainable_module_spec(
-                obs_space, act_space, encoder_type="jepa",
+                obs_space,
+                act_space,
+                encoder_type="jepa",
                 encoder_specs={"jepa": {**spec_block, "d_model": 64}},
                 pretrained_path=path,
             )
@@ -405,8 +410,9 @@ class TestADivergedRunIsNotUsable:
     """Issue #239: `latent_std < 0.1` is False for NaN, so a diverged run
     passed as healthy."""
 
-    @pytest.mark.parametrize("latent_std", [[0.9, float("nan")], [float("nan")],
-                                            [0.9, float("inf")]])
+    @pytest.mark.parametrize(
+        "latent_std", [[0.9, float("nan")], [float("nan")], [0.9, float("inf")]]
+    )
     def test_a_non_finite_latent_std_is_unusable(self, latent_std):
         report = _report(latent_std)
         assert report.collapsed
@@ -441,6 +447,7 @@ class TestAnUnusableRunIsNotSaved:
             out = tmp_path / "out"
             code = cli.main(["--out", str(out), "--steps", "1"])
             return code, out
+
         return run
 
     @pytest.mark.parametrize("latent_std", [[0.9, 0.01], [0.9, float("nan")]])

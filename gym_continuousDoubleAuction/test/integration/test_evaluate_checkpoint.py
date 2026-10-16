@@ -6,6 +6,7 @@ trainable PPO module (distribution inputs) and a `RandomRLModule` (actions
 emitted directly), the Dict action unbatched into what `env.step` accepts, and
 the layout stamp refusing a foreign checkpoint.
 """
+
 import dataclasses
 import json
 
@@ -27,9 +28,18 @@ def checkpoint(tmp_path_factory):
     ray.init(ignore_reinit_error=True, include_dashboard=False, num_cpus=2)
     root = tmp_path_factory.mktemp("eval")
     cfg = dataclasses.replace(
-        TrainConfig(), num_agents=4, num_trained_agents=2, max_step=32,
-        num_episodes_per_iter=2, num_iters=1, chkpt_freq=1, minibatch_size=64,
-        log_base_dir=str(root), episode_data_dir=None, run_id="eval_test", seed=0,
+        TrainConfig(),
+        num_agents=4,
+        num_trained_agents=2,
+        max_step=32,
+        num_episodes_per_iter=2,
+        num_iters=1,
+        chkpt_freq=1,
+        minibatch_size=64,
+        log_base_dir=str(root),
+        episode_data_dir=None,
+        run_id="eval_test",
+        seed=0,
     )
     algo, _ = train(cfg)
     algo.stop()
@@ -39,8 +49,9 @@ def checkpoint(tmp_path_factory):
 
 
 def test_rolls_episodes_with_the_checkpoints_policies(checkpoint):
-    record = evaluate.evaluate(checkpoint, episodes=2, seed=5, deterministic=False,
-                               env_overrides={"max_step": 16})
+    record = evaluate.evaluate(
+        checkpoint, episodes=2, seed=5, deterministic=False, env_overrides={"max_step": 16}
+    )
     assert record["iteration"] == 1
     assert len(record["episodes"]) == 2
     for ep in record["episodes"]:
@@ -64,12 +75,22 @@ def test_rolls_episodes_with_the_checkpoints_policies(checkpoint):
 
 
 def test_deterministic_is_reproducible(checkpoint):
-    a = evaluate.evaluate(checkpoint, episodes=1, seed=3, deterministic=True,
-                          env_overrides={"max_step": 12})
-    b = evaluate.evaluate(checkpoint, episodes=1, seed=3, deterministic=True,
-                          env_overrides={"max_step": 12})
-    ra = [row["return"] for row in a["episodes"][0]["agents"] if row["module"] in ("policy_0", "policy_1")]
-    rb = [row["return"] for row in b["episodes"][0]["agents"] if row["module"] in ("policy_0", "policy_1")]
+    a = evaluate.evaluate(
+        checkpoint, episodes=1, seed=3, deterministic=True, env_overrides={"max_step": 12}
+    )
+    b = evaluate.evaluate(
+        checkpoint, episodes=1, seed=3, deterministic=True, env_overrides={"max_step": 12}
+    )
+    ra = [
+        row["return"]
+        for row in a["episodes"][0]["agents"]
+        if row["module"] in ("policy_0", "policy_1")
+    ]
+    rb = [
+        row["return"]
+        for row in b["episodes"][0]["agents"]
+        if row["module"] in ("policy_0", "policy_1")
+    ]
     # The random baselines re-sample, so only the trainable modules are pinned,
     # and only if the baselines' draws did not change the book they saw -
     # which the env seed and the mode make true for the first step at least.

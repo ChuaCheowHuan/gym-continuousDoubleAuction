@@ -18,6 +18,7 @@ executions: no last traded price, no direction, no signed volume, no trade
 count. In a continuous double auction aggressive order flow is the most
 predictive public signal there is.
 """
+
 import numpy as np
 import pytest
 
@@ -47,10 +48,7 @@ def _env(**overrides):
 
 def _frames(env, stacked):
     """The stacked observation split back into its snapshots, oldest first."""
-    return [
-        stacked[i * env.snapshot_dim:(i + 1) * env.snapshot_dim]
-        for i in range(env.n_hist)
-    ]
+    return [stacked[i * env.snapshot_dim : (i + 1) * env.snapshot_dim] for i in range(env.n_hist)]
 
 
 def _scalar(env, frame, name):
@@ -65,10 +63,10 @@ class TestOneNormaliserForTheWholeStack:
 
         a.place_order('limit', 'bid', 10, 90.0, env.LOB, env.traders)
         b.place_order('limit', 'ask', 10, 110.0, env.LOB, env.traders)
-        env.prep_next_state()                       # midpoint 100
+        env.prep_next_state()  # midpoint 100
 
         b.place_order('limit', 'ask', 10, 102.0, env.LOB, env.traders)
-        stacked = env.prep_next_state()             # midpoint 96
+        stacked = env.prep_next_state()  # midpoint 96
 
         frames = _frames(env, stacked)
         # The two newest frames both hold the same resting bid at 90.
@@ -88,9 +86,9 @@ class TestOneNormaliserForTheWholeStack:
 
         frames = _frames(env, stacked)
         assert _scalar(env, frames[-1], "log_mid") != pytest.approx(
-            _scalar(env, frames[-2], "log_mid"), abs=1e-6)
-        assert _scalar(env, frames[-1], "mid_return") == pytest.approx(
-            96.0 / 100.0 - 1.0, abs=1e-5)
+            _scalar(env, frames[-2], "log_mid"), abs=1e-6
+        )
+        assert _scalar(env, frames[-1], "mid_return") == pytest.approx(96.0 / 100.0 - 1.0, abs=1e-5)
 
     def test_each_frame_keeps_its_own_price_level(self):
         """`log_mid` is per-frame; only the price *denominator* is shared."""
@@ -104,15 +102,17 @@ class TestOneNormaliserForTheWholeStack:
 
         frames = _frames(env, stacked)
         assert _scalar(env, frames[-2], "log_mid") == pytest.approx(
-            float(np.log(100.0)) - env.log_mid_centre, abs=1e-5)
+            float(np.log(100.0)) - env.log_mid_centre, abs=1e-5
+        )
         assert _scalar(env, frames[-1], "log_mid") == pytest.approx(
-            float(np.log(96.0)) - env.log_mid_centre, abs=1e-5)
+            float(np.log(96.0)) - env.log_mid_centre, abs=1e-5
+        )
 
     def test_mid_return_is_zero_on_the_first_frame(self):
         """No previous midpoint reads the same as a midpoint that did not move."""
         env = _env()
         obs, _ = env.reset(seed=1)
-        frames = _frames(env, obs["agent_0"][:env.n_hist * env.snapshot_dim])
+        frames = _frames(env, obs["agent_0"][: env.n_hist * env.snapshot_dim])
 
         for frame in frames:
             assert _scalar(env, frame, "mid_return") == 0.0
@@ -149,7 +149,8 @@ class TestTheObservationCanSeeExecutions:
         assert _scalar(env, newest, "signed_volume") > 0
         assert _scalar(env, newest, "trade_direction") == 1.0
         assert _scalar(env, newest, "log1p_trade_count") == pytest.approx(
-            float(np.log1p(1.0)), abs=1e-5)
+            float(np.log1p(1.0)), abs=1e-5
+        )
 
     def test_a_sell_initiated_trade_is_signed_negative(self):
         env = _env()
@@ -174,7 +175,8 @@ class TestTheObservationCanSeeExecutions:
 
         newest = _frames(env, stacked)[-1]
         assert _scalar(env, newest, "signed_volume") == pytest.approx(
-            20.0 / env.limit_max_size, abs=1e-5)
+            20.0 / env.limit_max_size, abs=1e-5
+        )
 
     def test_a_quiet_frame_reports_no_flow(self):
         env = _env()
@@ -196,7 +198,7 @@ class TestTheObservationCanSeeExecutions:
         a.place_order('limit', 'bid', 10, 100.0, env.LOB, env.traders)
         env.prep_next_state()
 
-        stacked = env.prep_next_state()   # nothing happened since
+        stacked = env.prep_next_state()  # nothing happened since
         newest = _frames(env, stacked)[-1]
 
         assert _scalar(env, newest, "log1p_trade_count") == 0.0
@@ -210,7 +212,7 @@ class TestTheObservationCanSeeExecutions:
         env.prep_next_state()
 
         a.place_order('limit', 'bid', 10, 100.0, env.LOB, env.traders)
-        env.set_agg_LOB()                 # the pre-action/display call
+        env.set_agg_LOB()  # the pre-action/display call
         stacked = env.prep_next_state()
 
         newest = _frames(env, stacked)[-1]
@@ -219,9 +221,7 @@ class TestTheObservationCanSeeExecutions:
         )
 
     def test_flow_survives_a_full_env_step(self):
-        env = continuousDoubleAuctionEnv(
-            {"num_of_agents": 4, "max_step": 300, "is_render": False}
-        )
+        env = continuousDoubleAuctionEnv({"num_of_agents": 4, "max_step": 300, "is_render": False})
         env.reset(seed=5)
         # `reset(seed=)` seeds the env's generator, not the action spaces:
         # `Space.sample()` has a generator of its own. Seeding both is what

@@ -3,15 +3,16 @@ from decimal import Decimal
 import pytest
 
 from gym_continuousDoubleAuction.envs.account.account import Account
-from gym_continuousDoubleAuction.envs.exchg.reward_helper import Reward_Helper
+from gym_continuousDoubleAuction.envs.exchg.reward_helper import RewardModel
+
 
 class MockTrader:
     def __init__(self, ID, cash):
         self.ID = ID
         self.acc = Account(ID, cash)
 
-class TestRewardLogic:
 
+class TestRewardLogic:
     def test_max_nav_high_water_mark(self):
         """Verify that max_nav tracks the high-water mark of NAV."""
         trader = MockTrader(0, 1000)
@@ -30,7 +31,7 @@ class TestRewardLogic:
         acc.cash = Decimal(900)
         acc.cal_nav()
         assert acc.nav == 900
-        assert acc.max_nav == 1100 # Should stay at peak
+        assert acc.max_nav == 1100  # Should stay at peak
 
         # Recover and exceed peak
         acc.cash = Decimal(1200)
@@ -43,7 +44,12 @@ class TestRewardLogic:
         trader = MockTrader(0, 1000)
         acc = trader.acc
 
-        trade = {'quantity': 10, 'price': Decimal(100), 'init_party': {'side': 'bid'}, 'counter_party': {'side': 'ask'}}
+        trade = {
+            'quantity': 10,
+            'price': Decimal(100),
+            'init_party': {'side': 'bid'},
+            'counter_party': {'side': 'ask'},
+        }
 
         # Aggressive trade
         acc.process_acc(trade, 'init_party')
@@ -56,14 +62,18 @@ class TestRewardLogic:
         assert acc.num_passive_fills_step == 1
 
     def test_reward_formula_components(self):
-        """Verify the multi-factor reward formula in Reward_Helper.
+        """Verify the multi-factor reward formula in RewardModel.
 
         Every NAV quantity is a fraction of `acc.init_nav` (S1-1), and the
         drawdown term is the signed *change* in the level (S2-1).
         """
-        helper = Reward_Helper(order_penalty=1e-5, trade_penalty=2e-5,
-                               drawdown_penalty=0.2, passive_bonus=2e-5,
-                               loss_multiplier=1.0)
+        helper = RewardModel(
+            order_penalty=1e-5,
+            trade_penalty=2e-5,
+            drawdown_penalty=0.2,
+            passive_bonus=2e-5,
+            loss_multiplier=1.0,
+        )
         trader = MockTrader(0, 1000)
         acc = trader.acc
         rewards = {}
@@ -93,9 +103,13 @@ class TestRewardLogic:
         agents. Any multiplier above 1 makes `sum(reward) < 0`, which is what
         made passing dominant for everyone (S1-3).
         """
-        helper = Reward_Helper(order_penalty=0.0, trade_penalty=0.0,
-                               drawdown_penalty=0.0, passive_bonus=0.0,
-                               loss_multiplier=1.0)
+        helper = RewardModel(
+            order_penalty=0.0,
+            trade_penalty=0.0,
+            drawdown_penalty=0.0,
+            passive_bonus=0.0,
+            loss_multiplier=1.0,
+        )
 
         winner, loser = MockTrader(0, 1000), MockTrader(1, 1000)
         winner.acc.prev_nav, winner.acc.nav = Decimal(1000), Decimal(1100)
@@ -117,7 +131,7 @@ class TestRewardLogic:
         `vf_clip_param` cannot silently start binding again because someone
         raised the starting cash (S1-1).
         """
-        helper = Reward_Helper()
+        helper = RewardModel()
         rewards = {}
 
         for ID, cash in enumerate((1_000, 1_000_000)):
@@ -136,7 +150,7 @@ class TestRewardLogic:
         from an agent that never traded again. The signed change is zero when
         nothing moves, so standing still is free.
         """
-        helper = Reward_Helper()
+        helper = RewardModel()
         trader = MockTrader(0, 1000)
         acc = trader.acc
 
@@ -157,9 +171,13 @@ class TestRewardLogic:
         asymmetric loss multiplier by another name, reintroducing the
         negative-sum bias `loss_multiplier: 1.0` exists to remove.
         """
-        helper = Reward_Helper(order_penalty=0.0, trade_penalty=0.0,
-                               drawdown_penalty=0.2, passive_bonus=0.0,
-                               loss_multiplier=1.0)
+        helper = RewardModel(
+            order_penalty=0.0,
+            trade_penalty=0.0,
+            drawdown_penalty=0.2,
+            passive_bonus=0.0,
+            loss_multiplier=1.0,
+        )
         trader = MockTrader(0, 1000)
         acc = trader.acc
         acc.max_nav = Decimal(1000)
@@ -176,7 +194,7 @@ class TestRewardLogic:
 
     def test_a_non_positive_starting_nav_raises(self):
         """Rather than dividing by zero and poisoning training with inf/nan."""
-        helper = Reward_Helper()
+        helper = RewardModel()
         trader = MockTrader(0, 0)
         with pytest.raises(ValueError, match="init_nav"):
             helper.set_reward({}, trader)

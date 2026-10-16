@@ -59,6 +59,7 @@ represents the market, not that PPO can exploit it. That second question needs
 S1-1 and S1-3 fixed first, and this harness is deliberately independent of both
 so its answer stays valid when they are.
 """
+
 from gym_continuousDoubleAuction.train.probe.corpus import (
     ProbeCorpus,
     from_parquet,
@@ -95,10 +96,26 @@ from gym_continuousDoubleAuction.train.probe.targets import (
 )
 
 __all__ = [
-    "ProbeCorpus", "from_parquet", "from_rollouts",
-    "RAW_FEATURES", "build_module", "latents", "load_module", "raw",
-    "RankRow", "effective_rank", "rank_table",
-    "ProbeResult", "balanced_accuracy", "fit_and_score", "r2",
-    "Row", "render", "run",
-    "TARGET_REGISTRY", "Target", "horizon_mask", "selectable_targets",
+    "ProbeCorpus",
+    "from_parquet",
+    "from_rollouts",
+    "RAW_FEATURES",
+    "build_module",
+    "latents",
+    "load_module",
+    "raw",
+    "RankRow",
+    "effective_rank",
+    "rank_table",
+    "ProbeResult",
+    "balanced_accuracy",
+    "fit_and_score",
+    "r2",
+    "Row",
+    "render",
+    "run",
+    "TARGET_REGISTRY",
+    "Target",
+    "horizon_mask",
+    "selectable_targets",
 ]

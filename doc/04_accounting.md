@@ -117,12 +117,12 @@ The second condition is the subtle one, and it is right. Only the part of an ord
 
 ```python
 if (side == 'bid' and net_pos >= 0) or (side == 'ask' and net_pos <= 0):
-    opening_size = size                                # increasing
+    opening_size = size  # increasing
 else:
-    opening_size = max(0, size - abs(net_pos))         # decreasing, covering, or flipping
+    opening_size = max(0, size - abs(net_pos))  # decreasing, covering, or flipping
 
 if opening_size <= 0:
-    return True                                        # purely closing — always allowed
+    return True  # purely closing — always allowed
 ```
 
 You never need capital to flatten. Otherwise `opening_size × est_price` is compared against

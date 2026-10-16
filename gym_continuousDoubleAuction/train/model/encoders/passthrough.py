@@ -12,6 +12,7 @@ the stock RLlib catalog and touches none of this. It can pass while every line
 of the custom path is broken. This fixture is what closes that gap, and it
 tokenises the observation so `ObsLayout` and `tokenize` are covered too.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -53,9 +54,7 @@ class PassthroughEncoderConfig(ModelConfig):
 
     def build(self, framework: str = "torch") -> Encoder:
         if framework != "torch":
-            raise ValueError(
-                f"{type(self).__name__} is torch-only; got framework={framework!r}."
-            )
+            raise ValueError(f"{type(self).__name__} is torch-only; got framework={framework!r}.")
         return TorchPassthroughEncoder(self)
 
 

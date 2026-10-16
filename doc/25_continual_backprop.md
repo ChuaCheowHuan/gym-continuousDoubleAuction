@@ -284,7 +284,7 @@ therefore be unavailable for the exact configuration §2.2 identifies as most at
 `encoders/__init__.py`, as `build_config` used to call it directly:
 
 ```python
-learner_class=learner_class_for(cfg.encoder_type, CDAPPOTorchLearner)
+learner_class = learner_class_for(cfg.encoder_type, CDAPPOTorchLearner)
 ```
 
 RLlib takes **one** Learner for the whole algorithm, resolved from the *configured encoder*. The
@@ -306,6 +306,7 @@ The right shape is therefore a **mixin composed over whichever learner the encod
 ```python
 class CBPLearnerMixin:
     """Selective reinitialisation, after the optimiser step. Encoder-agnostic."""
+
     def apply_gradients(self, gradients_dict):
         super().apply_gradients(gradients_dict)
         if self._cbp_config.active and self._cbp_config.fire_on == "adam_step":

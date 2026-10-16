@@ -6,6 +6,7 @@ from gym_continuousDoubleAuction.envs.exchg.state_helper import (
     SNAPSHOT_DIM,
 )
 
+
 class TestObservationHistory:
     # Observation-space shape across n_hist values (including the default 4)
     # is covered by test_obs_market_features.py::test_observation_shape_across_n_hist.
@@ -19,7 +20,7 @@ class TestObservationHistory:
         # Verify that all N segments of size SNAPSHOT_DIM are identical at step 0
         snapshot_0 = agent_obs[0:SNAPSHOT_DIM]
         for k in range(1, n_hist):
-            snapshot_k = agent_obs[k*SNAPSHOT_DIM:(k+1)*SNAPSHOT_DIM]
+            snapshot_k = agent_obs[k * SNAPSHOT_DIM : (k + 1) * SNAPSHOT_DIM]
             np.testing.assert_array_equal(snapshot_0, snapshot_k)
 
     def test_sliding_window_updates(self):
@@ -29,7 +30,7 @@ class TestObservationHistory:
 
         # Collect snapshots across steps
         book_dim = n_hist * SNAPSHOT_DIM
-        snapshots = [obs_0["agent_0"][book_dim - SNAPSHOT_DIM:book_dim]]
+        snapshots = [obs_0["agent_0"][book_dim - SNAPSHOT_DIM : book_dim]]
 
         # Take a few steps with sample actions
         for step_i in range(n_hist + 2):
@@ -41,12 +42,12 @@ class TestObservationHistory:
 
             # The newest frame ends where the book ends, not where the vector
             # does - the private block is after it.
-            latest_snapshot = agent_obs[book_dim - SNAPSHOT_DIM:book_dim]
+            latest_snapshot = agent_obs[book_dim - SNAPSHOT_DIM : book_dim]
             snapshots.append(latest_snapshot)
 
             # Verify the last book frame matches the latest snapshot
             np.testing.assert_array_equal(
-                agent_obs[book_dim - SNAPSHOT_DIM:book_dim], latest_snapshot
+                agent_obs[book_dim - SNAPSHOT_DIM : book_dim], latest_snapshot
             )
 
     def test_the_book_prefix_is_shared_across_agents(self):
@@ -61,9 +62,7 @@ class TestObservationHistory:
         obs, _ = env.reset()
 
         for agent_id in env.agents:
-            np.testing.assert_array_equal(
-                obs[agent_id][:book_dim], obs["agent_0"][:book_dim]
-            )
+            np.testing.assert_array_equal(obs[agent_id][:book_dim], obs["agent_0"][:book_dim])
 
         actions = {a: env.action_spaces[a].sample() for a in env.agents}
         obs_next, _, _, _, _ = env.step(actions)

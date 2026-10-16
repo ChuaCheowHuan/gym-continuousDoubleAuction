@@ -10,6 +10,7 @@ Three things made it possible, and each is pinned here.
   exactly 0, and 0 beats a league of modules that are losing money, so it
   cleared the return threshold and the pool filled with snapshots of it.
 """
+
 import dataclasses
 import logging
 import math
@@ -26,7 +27,6 @@ from gym_continuousDoubleAuction.train.train import TrainConfig, build_config
 
 
 class TestEntropyBonus:
-
     def test_the_shipped_run_has_a_positive_decaying_bonus(self):
         cfg = TrainConfig()
         ppo = build_config(cfg)
@@ -37,19 +37,22 @@ class TestEntropyBonus:
         assert t1 == cfg.train_batch_size * cfg.entropy_decay_iters
 
     def test_equal_ends_are_a_constant(self):
-        cfg = dataclasses.replace(TrainConfig(), entropy_coeff=0.005,
-                                  entropy_coeff_final=0.005)
+        cfg = dataclasses.replace(TrainConfig(), entropy_coeff=0.005, entropy_coeff_final=0.005)
         assert cfg.entropy_setting == 0.005
 
     def test_zero_ends_are_the_old_behaviour(self):
-        cfg = dataclasses.replace(TrainConfig(), entropy_coeff=0.0,
-                                  entropy_coeff_final=0.0)
+        cfg = dataclasses.replace(TrainConfig(), entropy_coeff=0.0, entropy_coeff_final=0.0)
         assert cfg.entropy_setting == 0.0
 
-    @pytest.mark.parametrize("field,value", [
-        ("entropy_coeff", -0.1), ("entropy_coeff_final", -0.1),
-        ("entropy_decay_iters", 0), ("min_champion_trades", -1.0),
-    ])
+    @pytest.mark.parametrize(
+        "field,value",
+        [
+            ("entropy_coeff", -0.1),
+            ("entropy_coeff_final", -0.1),
+            ("entropy_decay_iters", 0),
+            ("min_champion_trades", -1.0),
+        ],
+    )
     def test_nonsense_is_refused_naming_the_key(self, field, value):
         with pytest.raises(ValueError, match=field):
             dataclasses.replace(TrainConfig(), **{field: value})
@@ -73,20 +76,24 @@ def snapshots(monkeypatch):
 
     def attach(cb):
         monkeypatch.setattr(
-            cb, "_create_champion_snapshot_from_policy",
+            cb,
+            "_create_champion_snapshot_from_policy",
             lambda algorithm, pid, value, iteration: created.append(pid),
         )
         return created
+
     return attach
 
 
 #: A do-nothing policy_0 (return exactly 0) against modules losing money.
-PASSIVE_LEAGUE = {"policy_0": 0.0, "policy_1": -50.0,
-                  **{f"policy_{i}": -100.0 + i for i in range(2, 8)}}
+PASSIVE_LEAGUE = {
+    "policy_0": 0.0,
+    "policy_1": -50.0,
+    **{f"policy_{i}": -100.0 + i for i in range(2, 8)},
+}
 
 
 class TestThePromotionGuard:
-
     def test_a_policy_that_stopped_trading_is_not_promoted(self, snapshots, caplog):
         cb = _callback()
         created = snapshots(cb)
@@ -110,15 +117,17 @@ class TestThePromotionGuard:
     def test_the_bar_is_inclusive(self, snapshots):
         cb = _callback(min_champion_trades=2.0)
         created = snapshots(cb)
-        cb.on_train_result(algorithm=object(), result=_result(
-            PASSIVE_LEAGUE, trades={"policy_0": 2.0}))
+        cb.on_train_result(
+            algorithm=object(), result=_result(PASSIVE_LEAGUE, trades={"policy_0": 2.0})
+        )
         assert created == ["policy_0"]
 
     def test_zero_switches_the_guard_off(self, snapshots):
         cb = _callback(min_champion_trades=0)
         created = snapshots(cb)
-        cb.on_train_result(algorithm=object(), result=_result(
-            PASSIVE_LEAGUE, trades={"policy_0": 0.0}))
+        cb.on_train_result(
+            algorithm=object(), result=_result(PASSIVE_LEAGUE, trades={"policy_0": 0.0})
+        )
         assert created == ["policy_0"]
 
     def test_missing_counts_do_not_block_and_are_reported(self, snapshots, caplog):
@@ -135,8 +144,9 @@ class TestThePromotionGuard:
     def test_a_refusal_leaves_the_league_alone(self, snapshots):
         cb = _callback()
         snapshots(cb)
-        cb.on_train_result(algorithm=object(), result=_result(
-            PASSIVE_LEAGUE, trades={"policy_0": 0.0}))
+        cb.on_train_result(
+            algorithm=object(), result=_result(PASSIVE_LEAGUE, trades={"policy_0": 0.0})
+        )
         assert cb.champion_history == [] and cb.champion_count == 0
 
     def test_the_guard_only_asks_about_a_candidate_that_cleared_the_bar(self, snapshots, caplog):
@@ -144,8 +154,7 @@ class TestThePromotionGuard:
         snapshots(cb)
         flat = {f"policy_{i}": -10.0 for i in range(8)}
         with caplog.at_level(logging.WARNING, logger=LOGGER):
-            cb.on_train_result(algorithm=object(), result=_result(
-                flat, trades={"policy_0": 0.0}))
+            cb.on_train_result(algorithm=object(), result=_result(flat, trades={"policy_0": 0.0}))
         assert "not promoting" not in caplog.text
 
 
@@ -182,26 +191,29 @@ class TestACallbackSavedBeforeTheGuard:
 
 
 class TestTheShippedMultiplier:
-
     def test_it_is_not_the_one_that_promoted_on_the_first_iteration(self):
         assert _callback().std_dev_multiplier >= 1.5
 
     def test_barely_better_than_the_pack_is_not_a_champion(self, snapshots):
         cb = _callback()
         created = snapshots(cb)
-        returns = {"policy_0": 1.0, "policy_1": 0.0,
-                   **{f"policy_{i}": float(i % 3 - 1) for i in range(2, 8)}}
-        cb.on_train_result(algorithm=object(), result=_result(
-            returns, trades={"policy_0": 20.0}))
+        returns = {
+            "policy_0": 1.0,
+            "policy_1": 0.0,
+            **{f"policy_{i}": float(i % 3 - 1) for i in range(2, 8)},
+        }
+        cb.on_train_result(algorithm=object(), result=_result(returns, trades={"policy_0": 20.0}))
         assert created == []
 
     def test_clearly_better_is(self, snapshots):
         cb = _callback()
         created = snapshots(cb)
-        returns = {"policy_0": 100.0, "policy_1": 0.0,
-                   **{f"policy_{i}": float(i % 3 - 1) for i in range(2, 8)}}
-        cb.on_train_result(algorithm=object(), result=_result(
-            returns, trades={"policy_0": 20.0}))
+        returns = {
+            "policy_0": 100.0,
+            "policy_1": 0.0,
+            **{f"policy_{i}": float(i % 3 - 1) for i in range(2, 8)},
+        }
+        cb.on_train_result(algorithm=object(), result=_result(returns, trades={"policy_0": 20.0}))
         assert created == ["policy_0"]
 
     def test_a_multiplier_no_league_can_clear_is_warned_about(self, caplog):
@@ -228,25 +240,31 @@ class MockEpisode:
 
 
 class TestTheTradeCountsTravel:
-
     def _log(self, modules, fills, reporting):
         cb = _callback(episode_data_dir=None)
         metrics = MagicMock()
         tally = {"last_nav": {a: "0" for a in reporting}, "per_agent_fills": fills}
         cb._log_module_trades(MockEpisode(modules), tally, metrics)
-        return {c.args[0][1]: (c.args[1], c.kwargs) for c in metrics.log_value.call_args_list
-                if c.args[0][0] == MODULE_TRADES_METRIC}
+        return {
+            c.args[0][1]: (c.args[1], c.kwargs)
+            for c in metrics.log_value.call_args_list
+            if c.args[0][0] == MODULE_TRADES_METRIC
+        }
 
     def test_each_module_reports_its_agents_trades(self):
-        out = self._log({"agent_0": "policy_0", "agent_1": "policy_1"},
-                        {"agent_0": {"trades": 7, "passive": 3}},
-                        reporting=["agent_0", "agent_1"])
+        out = self._log(
+            {"agent_0": "policy_0", "agent_1": "policy_1"},
+            {"agent_0": {"trades": 7, "passive": 3}},
+            reporting=["agent_0", "agent_1"],
+        )
         assert out["policy_0"][0] == 7.0
 
     def test_an_agent_that_never_traded_reports_zero_not_nothing(self):
-        out = self._log({"agent_0": "policy_0", "agent_1": "policy_1"},
-                        {"agent_0": {"trades": 7, "passive": 3}},
-                        reporting=["agent_0", "agent_1"])
+        out = self._log(
+            {"agent_0": "policy_0", "agent_1": "policy_1"},
+            {"agent_0": {"trades": 7, "passive": 3}},
+            reporting=["agent_0", "agent_1"],
+        )
         assert out["policy_1"][0] == 0.0
 
     def test_it_is_a_mean_over_the_iteration(self):
@@ -256,6 +274,5 @@ class TestTheTradeCountsTravel:
     def test_an_episode_that_cannot_name_modules_logs_nothing(self):
         cb = _callback(episode_data_dir=None)
         metrics = MagicMock()
-        cb._log_module_trades(object(), {"last_nav": {"a": "0"}, "per_agent_fills": {}},
-                              metrics)
+        cb._log_module_trades(object(), {"last_nav": {"a": "0"}, "per_agent_fills": {}}, metrics)
         metrics.log_value.assert_not_called()

@@ -46,26 +46,28 @@ scale = float(trader.acc.init_nav)
 nav_change = float(trader.acc.nav - trader.acc.prev_nav) / scale
 
 # Set from the env config; the values below are the defaults.
-order_penalty    = self.order_penalty      # 1e-05  (0.1 bps of init capital)
-trade_penalty    = self.trade_penalty      # 2e-05  (0.2 bps)
-drawdown_penalty = self.drawdown_penalty   # 0.2
-passive_bonus    = self.passive_bonus      # 2e-05  (0.2 bps)
-loss_multiplier  = self.loss_multiplier    # 1.0    (see below: 1.0 or nothing)
+order_penalty = self.order_penalty  # 1e-05  (0.1 bps of init capital)
+trade_penalty = self.trade_penalty  # 2e-05  (0.2 bps)
+drawdown_penalty = self.drawdown_penalty  # 0.2
+passive_bonus = self.passive_bonus  # 2e-05  (0.2 bps)
+loss_multiplier = self.loss_multiplier  # 1.0    (see below: 1.0 or nothing)
 
 # 1. Loss aversion, currently off
 nav_term = nav_change * (loss_multiplier if nav_change < 0 else 1.0)
 
 # 2. The SIGNED CHANGE in distance from peak NAV, not the distance
 previous_drawdown = float(trader.acc.drawdown)
-current_drawdown  = float(max(0, trader.acc.max_nav - trader.acc.nav))
-drawdown_change   = (current_drawdown - previous_drawdown) / scale
+current_drawdown = float(max(0, trader.acc.max_nav - trader.acc.nav))
+drawdown_change = (current_drawdown - previous_drawdown) / scale
 
 # 3. Comprehensive reward formula
-reward = (nav_term
-          - order_penalty    * trader.acc.order_step_placed
-          - trade_penalty    * trader.acc.num_trades_step
-          - drawdown_penalty * drawdown_change
-          + passive_bonus    * trader.acc.num_passive_fills_step)
+reward = (
+    nav_term
+    - order_penalty * trader.acc.order_step_placed
+    - trade_penalty * trader.acc.num_trades_step
+    - drawdown_penalty * drawdown_change
+    + passive_bonus * trader.acc.num_passive_fills_step
+)
 ```
 
 | Term | Sign | Driven by |
@@ -103,7 +105,7 @@ agent (**S1-3**).
 
 The five coefficients **are** configuration now. They were function-local literals with a code
 comment acknowledging they "can be moved to config"; they are `env_config` keys, set on
-`Reward_Helper.__init__`, defaulting from `config/env_defaults.json` and supplied by
+`RewardModel.__init__`, defaulting from `config/env_defaults.json` and supplied by
 `TrainConfig.env_config` from the `environment` group of `config/train_config.json`. They are
 therefore captured in the checkpoint's config and sweepable — which matters, because for a
 research repository reward shaping is the primary experimental axis.
@@ -111,8 +113,13 @@ research repository reward shaping is the primary experimental axis.
 The formula is also accumulated **as a dict of signed terms**, not as one expression:
 
 ```python
-terms = {"nav_term": ..., "order_penalty": ..., "trade_penalty": ...,
-         "drawdown_penalty": ..., "passive_bonus": ...}
+terms = {
+    "nav_term": ...,
+    "order_penalty": ...,
+    "trade_penalty": ...,
+    "drawdown_penalty": ...,
+    "passive_bonus": ...,
+}
 reward = 0.0
 for value in terms.values():
     reward += value
@@ -252,7 +259,7 @@ the observation — see [05](05_observation_space.md).
 **The fix, and a correction to the one this section used to recommend.** It previously proposed
 
 ```python
-reward += -drawdown_penalty * max(0.0, new_dd - prev_dd)   # penalise deepening only
+reward += -drawdown_penalty * max(0.0, new_dd - prev_dd)  # penalise deepening only
 ```
 
 which is wrong in a way worth recording. Below the peak, a losing step has `nav_term = -X` *and*
@@ -265,8 +272,8 @@ What shipped is the **signed** change:
 
 ```python
 previous_drawdown = float(trader.acc.drawdown)
-current_drawdown  = float(max(0, trader.acc.max_nav - trader.acc.nav))
-drawdown_change   = (current_drawdown - previous_drawdown) / scale
+current_drawdown = float(max(0, trader.acc.max_nav - trader.acc.nav))
+drawdown_change = (current_drawdown - previous_drawdown) / scale
 ```
 
 The per-step charges telescope: over an episode they sum to `-drawdown_penalty × final_drawdown`

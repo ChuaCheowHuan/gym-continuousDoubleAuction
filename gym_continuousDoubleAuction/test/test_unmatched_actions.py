@@ -9,6 +9,7 @@ book does not change - and a return series cannot tell them apart. A policy
 that has drifted to "cancel" at every step scored exactly like one that
 passes, and nothing said so.
 """
+
 from decimal import Decimal
 
 import numpy as np
@@ -37,7 +38,6 @@ _ASK_CANCEL = _act(8)
 
 
 class TestTraderCounter:
-
     def setup_method(self):
         self.book = OrderBook()
         self.t = Trader(ID=1, cash=1000)
@@ -113,12 +113,16 @@ class TestTraderCounter:
 
 
 class TestEnvPlumbing:
-
     def _env(self):
-        env = continuousDoubleAuctionEnv({
-            "num_of_agents": 2, "is_render": False, "max_step": 16,
-            "initial_price_min": 100, "initial_price_max": 100,
-        })
+        env = continuousDoubleAuctionEnv(
+            {
+                "num_of_agents": 2,
+                "is_render": False,
+                "max_step": 16,
+                "initial_price_min": 100,
+                "initial_price_max": 100,
+            }
+        )
         env.reset(seed=3)
         return env
 
@@ -145,4 +149,5 @@ class TestEnvPlumbing:
 
     def test_record_schema_has_the_column(self):
         from gym_continuousDoubleAuction.train.episode_record import INFO_COLUMNS
+
         assert ("num_unmatched_step", "int64") in INFO_COLUMNS

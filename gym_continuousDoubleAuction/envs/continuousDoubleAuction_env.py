@@ -10,23 +10,22 @@ from ray.rllib.env.multi_agent_env import MultiAgentEnv
 
 from .exchg.exchg_helper import Exchg_Helper
 from .agent.trader import Trader
+from .exchg.reward_helper import RewardModel
 from .settings import EnvSettings
 from ..config_loader import env_default
 from ..logging_setup import get_logger
 
 logger = get_logger(__name__)
 
-# The exchange environment
-class continuousDoubleAuctionEnv(
-    Exchg_Helper, 
-    MultiAgentEnv):
 
+# The exchange environment
+class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
     # `render_modes`, not the pre-gymnasium `render.modes`. The old key made
     # `gymnasium.make` warn on every construction - it looks for the new one
     # and reports what it found instead.
     metadata = {'render_modes': ['human']}
 
-    def __init__(self, config=None):      
+    def __init__(self, config=None):
         # Handle config parameter for RLlib compatibility
         self.config = config or {}
 
@@ -57,13 +56,15 @@ class continuousDoubleAuctionEnv(
         self.n_hist = settings.n_hist
 
         # Initialize parent classes
-        super().__init__(**settings.helper_kwargs())
+        super().__init__(
+            reward_model=RewardModel(**settings.reward_kwargs()), **settings.helper_kwargs()
+        )
 
         self.next_states = {}
         self.rewards = {}
         self.terminateds = {}  # Changed from dones
-        self.truncateds = {}   # New in Ray 2.4
-        self.done_set = set()
+        self.truncateds = {}  # New in Ray 2.4
+        self.episode_status.reset()
         self.infos = {}
 
         # step when actions by all traders are executed, not tick time
@@ -74,9 +75,16 @@ class continuousDoubleAuctionEnv(
         self.is_render = is_render
 
         # list of agents or traders
-        self.traders = [Trader(ID, init_cash, self.maker_fee_bps, self.taker_fee_bps,
-                               self.allow_multiple_orders_per_level)
-                        for ID in range(0, self.num_of_agents)]
+        self.traders = [
+            Trader(
+                ID,
+                init_cash,
+                self.maker_fee_bps,
+                self.taker_fee_bps,
+                self.allow_multiple_orders_per_level,
+            )
+            for ID in range(0, self.num_of_agents)
+        ]
 
         # Agent IDs. `agents` / `possible_agents` are built from a sorted list
         # rather than from the set, because iteration order of a set of strings
@@ -119,11 +127,8 @@ class continuousDoubleAuctionEnv(
                 f"observation is {self.n_hist * self.snapshot_dim + self.private_dim}."
             )
         self.observation_spaces = {
-            agent_id: gym.spaces.Box(
-                low=self.obs_low,
-                high=self.obs_high,
-                dtype=np.float32
-            ) for agent_id in agent_ids
+            agent_id: gym.spaces.Box(low=self.obs_low, high=self.obs_high, dtype=np.float32)
+            for agent_id in agent_ids
         }
 
         # Updated action space to use the new Compact Flat structure
@@ -203,7 +208,7 @@ class continuousDoubleAuctionEnv(
         # A fresh book. The tick grid is not the book's concern: it keys
         # prices on whatever Decimal it is handed, and `Action_Helper.min_tick`
         # is what puts every quoted price on the configured grid.
-        self.LOB = self.new_order_book() # new limit order book, under the matching rule
+        self.LOB = self.new_order_book()  # new limit order book, under the matching rule
         self.agg_LOB = {}
         self.agg_LOB_raw = {}
         self.agg_LOB_aft = {}
@@ -211,8 +216,8 @@ class continuousDoubleAuctionEnv(
         self.next_states = {}
         self.rewards = {}
         self.terminateds = {}  # Changed from dones
-        self.truncateds = {}   # New in Ray 2.4
-        self.done_set = set()
+        self.truncateds = {}  # New in Ray 2.4
+        self.episode_status.reset()
         self.infos = {}
 
         # `set_all_done` narrows this to the agents still live, so a new
@@ -253,8 +258,9 @@ class continuousDoubleAuctionEnv(
 
         # The drawn horizon is reported once, here, and never in the
         # observation - `time_left` counts against `time_left_horizon`.
-        infos = {agent_id: {"episode_horizon": self.episode_horizon}
-                 for agent_id in self._agent_ids}
+        infos = {
+            agent_id: {"episode_horizon": self.episode_horizon} for agent_id in self._agent_ids
+        }
 
         return observations, infos
 
@@ -262,9 +268,15 @@ class continuousDoubleAuctionEnv(
     def step(self, actions):
 
         self.model_actions = actions
-        #self.print_table("Model actions:\n", actions)
+        # self.print_table("Model actions:\n", actions)
 
-        self.next_states, self.rewards, self.terminateds, self.truncateds, self.infos = {}, {}, {}, {}, {}
+        self.next_states, self.rewards, self.terminateds, self.truncateds, self.infos = (
+            {},
+            {},
+            {},
+            {},
+            {},
+        )
 
         # The pre-action snapshot. `prep_next_state` took one after the last
         # step's orders, and nothing touches the book between then and now
@@ -273,35 +285,35 @@ class continuousDoubleAuctionEnv(
         # wants the "@ t-1" table; measured at 5.9% of a step otherwise
         # (doc/15 S4-11).
         if self._snapshot_stale or (self.is_render and logger.isEnabledFor(logging.DEBUG)):
-            self.agg_LOB = self.set_agg_LOB() # LOB state at t before processing LOB
+            self.agg_LOB = self.set_agg_LOB()  # LOB state at t before processing LOB
 
         # print(actions)
         # {
-        # 'agent_3': (np.int32(0), np.int32(3), array([0.7106466], dtype=float32), array([0.21718845], dtype=float32), np.int32(7)), 
-        # 'agent_1': (np.int32(2), np.int32(1), array([-0.37776113], dtype=float32), array([0.45237976], dtype=float32), np.int32(11)), 
-        # 'agent_0': (np.int32(2), np.int32(3), array([0.26284337], dtype=float32), array([0.6805017], dtype=float32), np.int32(4)), 
+        # 'agent_3': (np.int32(0), np.int32(3), array([0.7106466], dtype=float32), array([0.21718845], dtype=float32), np.int32(7)),
+        # 'agent_1': (np.int32(2), np.int32(1), array([-0.37776113], dtype=float32), array([0.45237976], dtype=float32), np.int32(11)),
+        # 'agent_0': (np.int32(2), np.int32(3), array([0.26284337], dtype=float32), array([0.6805017], dtype=float32), np.int32(4)),
         # 'agent_2': (np.int32(0), np.int32(0), array([0.45744383], dtype=float32), array([0.19705606], dtype=float32), np.int32(7))
         # }
 
-        actions = self.set_actions(actions) # format actions from nn output to be acceptable by LOB
+        actions = self.set_actions(actions)  # format actions from nn output to be acceptable by LOB
         self.LOB_actions = actions
-        #self.print_table("Formatted actions acceptable by LOB:\n", actions)
+        # self.print_table("Formatted actions acceptable by LOB:\n", actions)
 
-        actions = self.rand_exec_seq(actions, None) # randomized traders execution sequence
+        actions = self.rand_exec_seq(actions, None)  # randomized traders execution sequence
         self.shuffled_actions = actions
-        #self.print_table("Shuffled action queueing sequence for LOB executions:\n", actions)
+        # self.print_table("Shuffled action queueing sequence for LOB executions:\n", actions)
 
-        self.seq_trades, self.seq_order_in_book = self.do_actions(actions) # Begin processing LOB
-        self.mark_to_mkt() # mark to market
+        self.seq_trades, self.seq_order_in_book = self.do_actions(actions)  # Begin processing LOB
+        self.mark_to_mkt()  # mark to market
         # Close out anyone below maintenance margin, before the observation,
         # reward and info are built from the accounts (doc/04 section 8).
         self.liquidations = self.liquidate()
 
-
-
         # after processing LOB
         state_input = self.prep_next_state()
-        self.next_states, self.rewards, self.terminateds, self.truncateds, self.infos = self.set_step_outputs(state_input)
+        self.next_states, self.rewards, self.terminateds, self.truncateds, self.infos = (
+            self.set_step_outputs(state_input)
+        )
         # self.next_states, self.rewards, self.terminateds, self.truncateds, self.infos = self.set_step_outputs_new_api(state_input)
 
         self.render()
@@ -321,21 +333,27 @@ class continuousDoubleAuctionEnv(
         # every account, on every step - none of which is worth constructing
         # for a logger that will drop it.
         if self.is_render == True and logger.isEnabledFor(logging.DEBUG):
-            #if self.t_step % 300 == 0:
+            # if self.t_step % 300 == 0:
             self._render()
 
     def _render(self):
         logger.debug(
-            '*'*50 + ' t_step = %s ' + '*'*50, self.t_step,
+            '*' * 50 + ' t_step = %s ' + '*' * 50,
+            self.t_step,
         )
 
         self.print_table("Model actions:\n", self.model_actions)
         self.print_table("Formatted actions acceptable by LOB:\n", self.LOB_actions)
-        self.print_table("Shuffled action queueing sequence for LOB executions:\n", self.shuffled_actions)
+        self.print_table(
+            "Shuffled action queueing sequence for LOB executions:\n", self.shuffled_actions
+        )
 
         logger.debug(
             'rewards:\n%s\nterminateds:\n%s\ntruncateds:\n%s\ninfos:\n%s',
-            self.rewards, self.terminateds, self.truncateds, self.infos,
+            self.rewards,
+            self.terminateds,
+            self.truncateds,
+            self.infos,
         )
 
         self.print_table("\nagg LOB @ t-1\n", self.agg_LOB)
@@ -351,14 +369,15 @@ class continuousDoubleAuctionEnv(
         self.print_trades_all_seq(self.seq_trades)
         self.print_order_in_book_all_seq(self.seq_order_in_book)
 
-        #print("mark_to_mkt profit@t:")
-        #self.mark_to_mkt() # mark to market
+        # print("mark_to_mkt profit@t:")
+        # self.mark_to_mkt() # mark to market
         self.print_mark_to_mkt("mark_to_mkt profit@t:")
 
         self.print_accs("\nAccounts:\n")
         logger.debug(
             'total_sys_profit = %s; total_sys_nav = %s',
-            self.total_sys_profit(), self.total_sys_nav(),
+            self.total_sys_profit(),
+            self.total_sys_nav(),
         )
 
     def close(self):

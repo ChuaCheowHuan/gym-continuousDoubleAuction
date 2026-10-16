@@ -3,6 +3,7 @@
 Each was filed from a review as a small defect with a reproduction, and each
 test below fails on the source it was filed against.
 """
+
 from decimal import Decimal
 
 import pytest
@@ -40,8 +41,13 @@ class TestFeeRatesAcceptDecimal:
 
 
 def _order(order_list, order_id, qty=1, price=10):
-    quote = {"timestamp": 1, "quantity": Decimal(qty), "price": Decimal(price),
-             "order_id": order_id, "trade_id": "t"}
+    quote = {
+        "timestamp": 1,
+        "quantity": Decimal(qty),
+        "price": Decimal(price),
+        "order_id": order_id,
+        "trade_id": "t",
+    }
     order = Order(quote, order_list)
     order_list.append_order(order)
     return order
@@ -85,8 +91,8 @@ class TestLayoutStampSaysWhenOnlyTheOrderDiffers:
 
     @staticmethod
     def _message(**changes):
-        from gym_continuousDoubleAuction.envs.layout_version import (
-            check_layout_stamp, layout_stamp)
+        from gym_continuousDoubleAuction.envs.layout_version import check_layout_stamp, layout_stamp
+
         stamp = layout_stamp()
         stamp.update(changes)
         with pytest.raises(ValueError) as caught:
@@ -95,6 +101,7 @@ class TestLayoutStampSaysWhenOnlyTheOrderDiffers:
 
     def test_a_reordering_names_the_position(self):
         from gym_continuousDoubleAuction.envs.layout_version import layout_stamp
+
         fields = layout_stamp()["private_fields"]
         swapped = [fields[1], fields[0]] + fields[2:]
         message = self._message(private_fields=swapped)
@@ -104,12 +111,14 @@ class TestLayoutStampSaysWhenOnlyTheOrderDiffers:
 
     def test_a_reordered_action_keys_listing_says_so_too(self):
         from gym_continuousDoubleAuction.envs.layout_version import layout_stamp
+
         keys = layout_stamp()["action_keys"]
         message = self._message(action_keys=list(reversed(keys)))
         assert "action_keys differ in order" in message
 
     def test_a_missing_field_is_still_named(self):
         from gym_continuousDoubleAuction.envs.layout_version import layout_stamp
+
         fields = layout_stamp()["private_fields"]
         message = self._message(private_fields=fields[1:])
         assert f"checkpoint lacks ['{fields[0]}']" in message
@@ -121,6 +130,7 @@ class TestANoneModuleReturnIsHandledEverywhere:
 
     def test_the_helper_treats_missing_nan_and_junk_alike(self):
         from gym_continuousDoubleAuction.train.returns import format_return, usable_return
+
         for bad in (None, float("nan"), "x", True):
             assert usable_return(bad) is None
             assert format_return(bad) == "n/a"
@@ -130,15 +140,23 @@ class TestANoneModuleReturnIsHandledEverywhere:
 
     def test_the_best_candidate_loop_skips_a_trainable_that_played_nothing(self):
         from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
-            SelfPlayCallback)
-        cb = SelfPlayCallback(num_trainable_policies=2, num_random_policies=6,
-                              min_iterations_between_champions=0, min_champion_trades=0)
+            SelfPlayCallback,
+        )
+
+        cb = SelfPlayCallback(
+            num_trainable_policies=2,
+            num_random_policies=6,
+            min_iterations_between_champions=0,
+            min_champion_trades=0,
+        )
         made = []
         cb._create_champion_snapshot_from_policy = lambda algo, pid, value, it: made.append(pid)
-        returns = {"policy_0": 50.0, "policy_1": None,
-                   **{f"policy_{i}": -float(i) for i in range(2, 8)}}
-        result = {"training_iteration": 1,
-                  "env_runners": {"module_episode_returns_mean": returns}}
+        returns = {
+            "policy_0": 50.0,
+            "policy_1": None,
+            **{f"policy_{i}": -float(i) for i in range(2, 8)},
+        }
+        result = {"training_iteration": 1, "env_runners": {"module_episode_returns_mean": returns}}
         cb.on_train_result(algorithm=object(), result=result)  # used to raise TypeError
         assert made == ["policy_0"]
 
@@ -146,8 +164,10 @@ class TestANoneModuleReturnIsHandledEverywhere:
         import logging
         from gym_continuousDoubleAuction.logging_setup import ROOT_NAME
         from gym_continuousDoubleAuction.train.train import TrainConfig, _log_iteration
-        result = {"env_runners": {"module_episode_returns_mean": {
-            "policy_0": None, "policy_1": 2.345}}}
+
+        result = {
+            "env_runners": {"module_episode_returns_mean": {"policy_0": None, "policy_1": 2.345}}
+        }
         with caplog.at_level(logging.INFO, logger=ROOT_NAME):
             _log_iteration(1, 3, result, TrainConfig())
         assert "'policy_0': None" in caplog.text and "'policy_1': 2.3" in caplog.text
@@ -158,12 +178,22 @@ class TestANoneModuleReturnIsHandledEverywhere:
         from gym_continuousDoubleAuction.logging_setup import ROOT_NAME
         from gym_continuousDoubleAuction.train import export
         from gym_continuousDoubleAuction.train.train import LEAGUE_STATE_FILE
-        (tmp_path / LEAGUE_STATE_FILE).write_text(json.dumps({"champion_history": [
-            {"id": "champion_1", "source_policy": None, "iteration": 3, "return": None}]}))
+
+        (tmp_path / LEAGUE_STATE_FILE).write_text(
+            json.dumps(
+                {
+                    "champion_history": [
+                        {"id": "champion_1", "source_policy": None, "iteration": 3, "return": None}
+                    ]
+                }
+            )
+        )
         monkeypatch.setattr(export.features_module, "load_module", lambda *a: object())
-        monkeypatch.setattr(export, "build_record", lambda *a: {
-            "state_dict": {}, "module_class": "X"})
+        monkeypatch.setattr(
+            export, "build_record", lambda *a: {"state_dict": {}, "module_class": "X"}
+        )
         import torch
+
         monkeypatch.setattr(torch, "save", lambda *a, **k: None)
         with caplog.at_level(logging.INFO, logger=ROOT_NAME):
             export.export(str(tmp_path), "champion_1", out=str(tmp_path / "o.pt"))
@@ -171,9 +201,13 @@ class TestANoneModuleReturnIsHandledEverywhere:
 
     def test_a_nan_champion_is_not_ranked(self):
         from gym_continuousDoubleAuction.train import export
-        state = {"champion_history": [
-            {"id": "champion_1", "return": float("nan")},
-            {"id": "champion_2", "return": 1.0}]}
+
+        state = {
+            "champion_history": [
+                {"id": "champion_1", "return": float("nan")},
+                {"id": "champion_2", "return": 1.0},
+            ]
+        }
         assert export.best_champion(state)["id"] == "champion_2"
 
 
@@ -183,6 +217,7 @@ class TestPlatformEnvIsCaseInsensitive:
     @pytest.mark.parametrize("value", ["auto", "Auto", " AUTO "])
     def test_auto_in_any_case_means_detect(self, monkeypatch, value):
         from gym_continuousDoubleAuction.train import runtime
+
         monkeypatch.setenv("CDA_PLATFORM", value)
         monkeypatch.setattr(runtime, "detect_platform", lambda: "local")
         assert runtime.resolve().platform == "local"
@@ -190,21 +225,25 @@ class TestPlatformEnvIsCaseInsensitive:
     @pytest.mark.parametrize("value", ["colab", "COLAB", " Colab\n"])
     def test_a_platform_name_in_any_case_is_found(self, monkeypatch, value):
         from gym_continuousDoubleAuction.train import runtime
+
         monkeypatch.setenv("CDA_PLATFORM", value)
         assert runtime.resolve().platform == "colab"
 
     def test_an_empty_value_is_unset(self, monkeypatch):
         from gym_continuousDoubleAuction.train import runtime
+
         monkeypatch.setenv("CDA_PLATFORM", "")
         monkeypatch.setattr(runtime, "detect_platform", lambda: "local")
         assert runtime.resolve().platform == "local"
 
     def test_an_explicit_argument_is_normalised_too(self):
         from gym_continuousDoubleAuction.train import runtime
+
         assert runtime.resolve(platform="Docker").platform == "docker"
 
     def test_an_unknown_platform_is_still_an_error(self, monkeypatch):
         from gym_continuousDoubleAuction.train import runtime
+
         monkeypatch.setenv("CDA_PLATFORM", "mars")
         with pytest.raises(KeyError, match="mars"):
             runtime.resolve()
@@ -213,17 +252,30 @@ class TestPlatformEnvIsCaseInsensitive:
 class TestCompareSetRefusesAnUnrecognisedBoolean:
     """#236: `--set strict_nav_check=ture` was silently False."""
 
-    @pytest.mark.parametrize("raw,expected", [
-        ("true", True), ("True", True), ("1", True), ("yes", True), ("on", True),
-        ("false", False), ("FALSE", False), ("0", False), ("no", False), ("off", False),
-    ])
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("true", True),
+            ("True", True),
+            ("1", True),
+            ("yes", True),
+            ("on", True),
+            ("false", False),
+            ("FALSE", False),
+            ("0", False),
+            ("no", False),
+            ("off", False),
+        ],
+    )
     def test_the_recognised_spellings(self, raw, expected):
         from gym_continuousDoubleAuction.train.compare import parse_overrides
+
         assert parse_overrides([f"action_mask={raw}"]) == {"action_mask": expected}
 
     @pytest.mark.parametrize("raw", ["ture", "enabled", "True1", "", "2"])
     def test_anything_else_is_refused_naming_the_flag(self, raw):
         from gym_continuousDoubleAuction.train.compare import parse_overrides
+
         with pytest.raises(SystemExit, match="--set action_mask: expected a boolean"):
             parse_overrides([f"action_mask={raw}"])
 
@@ -236,6 +288,7 @@ class TestVisualizeSurvivesBadRecords:
         import numpy as np
         from gym_continuousDoubleAuction.envs.exchg.state_helper import PRIVATE_DIM, SNAPSHOT_DIM
         from gym_continuousDoubleAuction.visualize.visualize_orderbook import _book_sizes
+
         good = np.ones(SNAPSHOT_DIM + PRIVATE_DIM)
         bids, asks, skipped = _book_sizes([good, [], good])
         assert skipped == 1 and len(bids) == len(asks) == 3
@@ -246,6 +299,7 @@ class TestVisualizeSurvivesBadRecords:
         """Only the recorder's own `[]` is forgiven: a wrong-sized vector means
         the recording and the layout disagree, which the plot must not hide."""
         from gym_continuousDoubleAuction.visualize.visualize_orderbook import _book_sizes
+
         with pytest.raises(ValueError, match="whole number"):
             _book_sizes([[1.0, 2.0, 3.0]])
 
@@ -256,25 +310,30 @@ class TestVisualizeSurvivesBadRecords:
 
     def test_a_truncated_last_line_is_skipped_with_a_warning(self, tmp_path):
         from gym_continuousDoubleAuction.visualize.visualize_training import load_progress
+
         path = self._progress(
-            tmp_path, '{"training_iteration": 2}\n{"training_iteration": 1}\n{"training_it')
+            tmp_path, '{"training_iteration": 2}\n{"training_iteration": 1}\n{"training_it'
+        )
         with pytest.warns(UserWarning, match="skipped 1 line"):
             rows = load_progress(path)
         assert [r["training_iteration"] for r in rows] == [1, 2]
 
     def test_a_row_without_an_iteration_is_skipped_not_a_keyerror(self, tmp_path):
         from gym_continuousDoubleAuction.visualize.visualize_training import load_progress
+
         path = self._progress(tmp_path, '{"training_iteration": 1}\n{"other": 1}\n[1, 2]\n')
         with pytest.warns(UserWarning, match="skipped 2 line"):
             assert len(load_progress(path)) == 1
 
     def test_a_clean_file_warns_about_nothing(self, tmp_path, recwarn):
         from gym_continuousDoubleAuction.visualize.visualize_training import load_progress
+
         load_progress(self._progress(tmp_path, '{"training_iteration": 1}\n'))
         assert not [w for w in recwarn if "skipped" in str(w.message)]
 
     def test_a_file_with_no_complete_row_is_still_an_error(self, tmp_path):
         from gym_continuousDoubleAuction.visualize.visualize_training import load_progress
+
         with pytest.warns(UserWarning), pytest.raises(ValueError, match="no rows"):
             load_progress(self._progress(tmp_path, '{"training_it'))
 
@@ -286,6 +345,7 @@ class TestConfigDirIgnoresAForeignConfigDirectory:
     @staticmethod
     def _layout(tmp_path, monkeypatch, *, foreign, packaged, repo_marker=False):
         from gym_continuousDoubleAuction import config_loader
+
         site = tmp_path / "site-packages"
         pkg = site / "gym_continuousDoubleAuction"
         pkg.mkdir(parents=True)
@@ -306,8 +366,9 @@ class TestConfigDirIgnoresAForeignConfigDirectory:
         assert loader.config_dir() == pkg / "config"
 
     def test_the_repo_layout_still_wins_when_it_is_ours(self, tmp_path, monkeypatch):
-        loader, pkg = self._layout(tmp_path, monkeypatch, foreign=True, packaged=True,
-                                   repo_marker=True)
+        loader, pkg = self._layout(
+            tmp_path, monkeypatch, foreign=True, packaged=True, repo_marker=True
+        )
         assert loader.config_dir() == pkg.parent / "config"
 
     def test_only_a_foreign_directory_is_an_error_not_a_wrong_answer(self, tmp_path, monkeypatch):
@@ -317,6 +378,7 @@ class TestConfigDirIgnoresAForeignConfigDirectory:
 
     def test_the_real_checkout_resolves(self):
         from gym_continuousDoubleAuction import config_loader
+
         assert (config_loader.config_dir() / "train_config.json").is_file()
 
 
@@ -328,15 +390,18 @@ class TestJepaVarianceTermWithOneRow:
     def _stats(batch):
         import torch
         from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
-            continuousDoubleAuctionEnv)
+            continuousDoubleAuctionEnv,
+        )
         from gym_continuousDoubleAuction.test.test_encoder_architectures import (
-            build_module, sample_batch)
+            build_module,
+            sample_batch,
+        )
+
         env = continuousDoubleAuctionEnv({})
         agent = env.agents[0]
         spaces = (env.get_observation_space(agent), env.get_action_space(agent))
         # One token hidden per observation: with a batch of one that is one row.
-        module = build_module(spaces, "jepa",
-                              spec={"mask_ratio": 0.01, "mask_axis": "random"})
+        module = build_module(spaces, "jepa", spec={"mask_ratio": 0.01, "mask_axis": "random"})
         module.train()
         torch.manual_seed(0)
         module.encoder(sample_batch(spaces[0], n=batch, module=module))
@@ -344,12 +409,14 @@ class TestJepaVarianceTermWithOneRow:
 
     def test_one_row_gives_a_finite_aux_loss(self):
         import torch
+
         stats = self._stats(1)
         for key in ("aux_loss", "predict_loss", "offdiag_cov"):
             assert torch.isfinite(stats[key]), key
 
     def test_one_row_reports_the_spread_as_not_measured(self):
         import torch
+
         assert torch.isnan(self._stats(1)["latent_std"])
 
     def test_one_row_aux_loss_is_just_the_prediction_loss(self):
@@ -358,6 +425,7 @@ class TestJepaVarianceTermWithOneRow:
 
     def test_two_rows_are_unchanged(self):
         import torch
+
         stats = self._stats(2)
         assert all(torch.isfinite(v) for v in stats.values())
         assert float(stats["latent_std"]) > 0
@@ -367,10 +435,12 @@ class TestJepaVarianceTermWithOneRow:
         import torch
         from gym_continuousDoubleAuction.train.pretrain.pretrain import _evaluate
 
-        stats = iter([
-            {"predict_loss": torch.tensor(0.5), "latent_std": torch.tensor(0.8)},
-            {"predict_loss": torch.tensor(0.5), "latent_std": torch.tensor(float("nan"))},
-        ])
+        stats = iter(
+            [
+                {"predict_loss": torch.tensor(0.5), "latent_std": torch.tensor(0.8)},
+                {"predict_loss": torch.tensor(0.5), "latent_std": torch.tensor(float("nan"))},
+            ]
+        )
 
         class Encoder:
             def __call__(self, batch):
@@ -392,34 +462,53 @@ class TestEvaluateMaxStepInRandomMode:
 
     def test_fixed_mode_sets_only_max_step(self):
         from gym_continuousDoubleAuction.train.evaluate import apply_max_step
-        config = {"episode_length_mode": "fixed", "max_step": 100,
-                  "max_step_min": 10, "max_step_max": 200}
+
+        config = {
+            "episode_length_mode": "fixed",
+            "max_step": 100,
+            "max_step_min": 10,
+            "max_step_max": 200,
+        }
         assert apply_max_step(config, 50) == {**config, "max_step": 50}
 
     def test_random_mode_pins_both_bounds_to_it(self):
         from gym_continuousDoubleAuction.train.evaluate import apply_max_step
-        config = {"episode_length_mode": "random", "max_step": 100,
-                  "max_step_min": 10, "max_step_max": 200}
+
+        config = {
+            "episode_length_mode": "random",
+            "max_step": 100,
+            "max_step_min": 10,
+            "max_step_max": 200,
+        }
         out = apply_max_step(config, 50)
         assert (out["max_step"], out["max_step_min"], out["max_step_max"]) == (50, 50, 50)
 
     def test_no_override_changes_nothing(self):
         from gym_continuousDoubleAuction.train.evaluate import apply_max_step
+
         config = {"episode_length_mode": "random", "max_step_min": 10, "max_step_max": 200}
         assert apply_max_step(config, None) == config
 
     def test_the_input_is_not_modified(self):
         from gym_continuousDoubleAuction.train.evaluate import apply_max_step
+
         config = {"episode_length_mode": "random", "max_step_min": 10, "max_step_max": 200}
         apply_max_step(config, 5)
         assert config["max_step_min"] == 10
 
     def test_a_real_random_mode_env_then_runs_the_requested_length(self):
         from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
-            continuousDoubleAuctionEnv)
+            continuousDoubleAuctionEnv,
+        )
         from gym_continuousDoubleAuction.train.evaluate import apply_max_step
-        base = {"num_of_agents": 2, "is_render": False,
-                "episode_length_mode": "random", "max_step_min": 20, "max_step_max": 60}
+
+        base = {
+            "num_of_agents": 2,
+            "is_render": False,
+            "episode_length_mode": "random",
+            "max_step_min": 20,
+            "max_step_max": 60,
+        }
         lengths = set()
         for seed in range(4):
             env = continuousDoubleAuctionEnv(apply_max_step(base, 9))
@@ -428,7 +517,8 @@ class TestEvaluateMaxStepInRandomMode:
             while steps < 200:  # a bound, so a regression fails instead of hanging
                 steps += 1
                 _o, _r, term, trunc, _i = env.step(
-                    {a: env.action_spaces[a].sample() for a in env.agents})
+                    {a: env.action_spaces[a].sample() for a in env.agents}
+                )
                 if term["__all__"] or trunc["__all__"]:
                     break
             lengths.add(steps)
@@ -441,28 +531,40 @@ class TestCompareTableShowsAFailedRun:
 
     @staticmethod
     def _rows(returns):
-        return [{"encoder": "mlp", "seed": i, "return": r, "vf_explained_var": 0.5,
-                 "pass_action_fraction": 0.1, "parameters": 1000}
-                for i, r in enumerate(returns)]
+        return [
+            {
+                "encoder": "mlp",
+                "seed": i,
+                "return": r,
+                "vf_explained_var": 0.5,
+                "pass_action_fraction": 0.1,
+                "parameters": 1000,
+            }
+            for i, r in enumerate(returns)
+        ]
 
     def test_all_runs_reporting_shows_the_plain_count(self):
         from gym_continuousDoubleAuction.train.compare import render
+
         table = render(self._rows([1.0, 1.1, 0.9]))
         assert "| mlp | 3 |" in table and "No return was recorded" not in table
 
     def test_a_failed_run_shows_n_over_total_and_is_named(self):
         from gym_continuousDoubleAuction.train.compare import render
+
         table = render(self._rows([1.0, None, 0.9]))
         assert "| mlp | 2/3 |" in table
         assert "No return was recorded for: mlp seed 1" in table
 
     def test_every_failed_run_is_named(self):
         from gym_continuousDoubleAuction.train.compare import render
+
         table = render(self._rows([None, 1.0, None]))
         assert "mlp seed 0, mlp seed 2" in table
 
     def test_the_few_seeds_warning_still_counts_usable_runs(self):
         from gym_continuousDoubleAuction.train.compare import render
+
         assert "Fewer than three seeds" in render(self._rows([1.0, None, 0.9]))
 
 
@@ -475,9 +577,12 @@ class TestSizeHighCannotExceedTheMaximumOrder:
     def _validate(**changes):
         import json
         from gym_continuousDoubleAuction.envs.exchg.action_helper import Action_Helper
+
         helper = Action_Helper.__new__(Action_Helper)
-        helper._act = {**json.load(open("config/tunable_constants.json"))["action_space"],
-                       **changes}
+        helper._act = {
+            **json.load(open("config/tunable_constants.json"))["action_space"],
+            **changes,
+        }
         helper._validate_action_space()
 
     def test_the_shipped_value_passes(self):
@@ -493,8 +598,10 @@ class TestSizeHighCannotExceedTheMaximumOrder:
 
     def test_the_bound_is_exactly_where_an_order_reaches_the_maximum(self):
         from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
-            continuousDoubleAuctionEnv)
+            continuousDoubleAuctionEnv,
+        )
         from gym_continuousDoubleAuction.envs.exchg.action_helper import SIZE_FRACTION_AT_MAX
+
         env = continuousDoubleAuctionEnv({"num_of_agents": 2, "is_render": False})
         assert SIZE_FRACTION_AT_MAX * env.mkt_size_mul + env.min_size == env.mkt_max_size
         assert SIZE_FRACTION_AT_MAX * env.limit_size_mul + env.min_size == env.limit_max_size
@@ -507,6 +614,7 @@ class TestDocSyncSkillDoesNotWriteToTheFilesystemRoot:
 
     def test_every_tmpdir_use_has_a_default(self):
         import re
+
         text = open(self.SKILL).read()
         uses = re.findall(r"\$\{?TMPDIR[^/\s\"`]*", text)
         assert uses, "the skill no longer mentions TMPDIR; delete this test"
@@ -514,5 +622,6 @@ class TestDocSyncSkillDoesNotWriteToTheFilesystemRoot:
 
     def test_the_two_steps_name_the_same_file(self):
         import re
+
         paths = set(re.findall(r'"(\$\{TMPDIR:-[^}]+\}/facts\.json)"', open(self.SKILL).read()))
         assert len(paths) == 1, paths

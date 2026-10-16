@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import continuousDoubleAuctionEnv
 
+
 class TestActionSpaceRobust:
     @classmethod
     def setup_class(cls):
@@ -34,82 +35,103 @@ class TestActionSpaceRobust:
     def test_bid_ghost_pricing(self):
         """Verify deterministic Buy Limit (Level 1-10) pricing when book is empty."""
         anchor = self.env.last_price
-        for level in range(10): # 0-9 maps to Level 1-10
+        for level in range(10):  # 0-9 maps to Level 1-10
             action = {
                 'agent_0': {
-                    'category': 2, # Buy Limit
+                    'category': 2,  # Buy Limit
                     'price': level,
-                    'price_offset': 1, # Join
-                    'size': np.array([0.0], dtype=np.float32)
+                    'price_offset': 1,  # Join
+                    'size': np.array([0.0], dtype=np.float32),
                 }
             }
             self.env.step(action)
             actual_price = self.env.LOB_actions[0]['price']
             expected_price = anchor - (level + 1) * self.tick
-            assert actual_price == pytest.approx(expected_price, abs=1e-5), f"Bid Level {level+1} failed"
+            assert actual_price == pytest.approx(expected_price, abs=1e-5), (
+                f"Bid Level {level + 1} failed"
+            )
 
     def test_ask_ghost_pricing(self):
         """Verify deterministic Sell Limit (Level 1-10) pricing when book is empty."""
         anchor = self.env.last_price
-        for level in range(10): # 0-9 maps to Level 1-10
+        for level in range(10):  # 0-9 maps to Level 1-10
             action = {
                 'agent_0': {
-                    'category': 6, # Sell Limit
+                    'category': 6,  # Sell Limit
                     'price': level,
-                    'price_offset': 1, # Join
-                    'size': np.array([0.0], dtype=np.float32)
+                    'price_offset': 1,  # Join
+                    'size': np.array([0.0], dtype=np.float32),
                 }
             }
             self.env.step(action)
             actual_price = self.env.LOB_actions[0]['price']
             expected_price = anchor + (level + 1) * self.tick
-            assert actual_price == pytest.approx(expected_price, abs=1e-5), f"Ask Level {level+1} failed"
+            assert actual_price == pytest.approx(expected_price, abs=1e-5), (
+                f"Ask Level {level + 1} failed"
+            )
 
     def test_price_offsets_bid(self):
         """Verify Passive/Join/Aggressive offsets for Bids."""
         anchor = self.env.last_price
-        level = 0 # Level 1
-        base_ghost = anchor - (level + 1) * self.tick # 99 if anchor 100
+        level = 0  # Level 1
+        base_ghost = anchor - (level + 1) * self.tick  # 99 if anchor 100
 
         offsets = {
-            0: base_ghost - self.tick, # Passive (98)
-            1: base_ghost,             # Join (99)
-            2: base_ghost + self.tick  # Aggressive (100)
+            0: base_ghost - self.tick,  # Passive (98)
+            1: base_ghost,  # Join (99)
+            2: base_ghost + self.tick,  # Aggressive (100)
         }
 
         for off_code, expected in offsets.items():
             self.env.reset()
-            self.env.last_price = anchor # Keep anchor consistent for trial
-            action = {'agent_0': {'category': 2, 'price': level, 'price_offset': off_code,
-                                 'size': np.array([0.0])}}
+            self.env.last_price = anchor  # Keep anchor consistent for trial
+            action = {
+                'agent_0': {
+                    'category': 2,
+                    'price': level,
+                    'price_offset': off_code,
+                    'size': np.array([0.0]),
+                }
+            }
             self.env.step(action)
-            assert self.env.LOB_actions[0]['price'] == pytest.approx(expected), f"Bid Offset {off_code} failed"
+            assert self.env.LOB_actions[0]['price'] == pytest.approx(expected), (
+                f"Bid Offset {off_code} failed"
+            )
 
     def test_price_offsets_ask(self):
         """Verify Passive/Join/Aggressive offsets for Asks."""
         anchor = self.env.last_price
-        level = 0 # Level 1
-        base_ghost = anchor + (level + 1) * self.tick # 101 if anchor 100
+        level = 0  # Level 1
+        base_ghost = anchor + (level + 1) * self.tick  # 101 if anchor 100
 
         offsets = {
-            0: base_ghost + self.tick, # Passive (102)
-            1: base_ghost,             # Join (101)
-            2: base_ghost - self.tick  # Aggressive (100)
+            0: base_ghost + self.tick,  # Passive (102)
+            1: base_ghost,  # Join (101)
+            2: base_ghost - self.tick,  # Aggressive (100)
         }
 
         for off_code, expected in offsets.items():
             self.env.reset()
-            self.env.last_price = anchor # Keep anchor consistent for trial
-            action = {'agent_0': {'category': 6, 'price': level, 'price_offset': off_code,
-                                 'size': np.array([0.0])}}
+            self.env.last_price = anchor  # Keep anchor consistent for trial
+            action = {
+                'agent_0': {
+                    'category': 6,
+                    'price': level,
+                    'price_offset': off_code,
+                    'size': np.array([0.0]),
+                }
+            }
             self.env.step(action)
-            assert self.env.LOB_actions[0]['price'] == pytest.approx(expected), f"Ask Offset {off_code} failed"
+            assert self.env.LOB_actions[0]['price'] == pytest.approx(expected), (
+                f"Ask Offset {off_code} failed"
+            )
 
     def test_market_order_mapping(self):
         """Verify Buy/Sell Market orders (Cat 1, 5) ignore price fields."""
         for cat in [1, 5]:
-            action = {'agent_0': {'category': cat, 'price': 9, 'price_offset': 0,
-                                 'size': np.array([0.0])}}
+            action = {
+                'agent_0': {'category': cat, 'price': 9, 'price_offset': 0, 'size': np.array([0.0])}
+            }
             self.env.step(action)
             assert self.env.LOB_actions[0]['price'] == -1.0
             assert self.env.LOB_actions[0]['type'] == 'market'
@@ -123,13 +145,15 @@ class TestActionSpaceRobust:
 
         # 1. Place a Sell Limit at 100 (Level 1, Aggressive)
         # Sell(6), Level 1(0), Aggressive(2) -> 101 - 1 = 100
-        action = {'agent_0': {'category': 6, 'price': 0, 'price_offset': 2,
-                             'size': np.array([0.0])}}
+        action = {
+            'agent_0': {'category': 6, 'price': 0, 'price_offset': 2, 'size': np.array([0.0])}
+        }
         self.env.step(action)
 
         # 2. Place a Buy Market
-        action = {'agent_1': {'category': 1, 'price': 0, 'price_offset': 1,
-                             'size': np.array([0.1])}}
+        action = {
+            'agent_1': {'category': 1, 'price': 0, 'price_offset': 1, 'size': np.array([0.1])}
+        }
         self.env.step(action)
 
         # Check if trade happened and anchor updated
@@ -140,8 +164,9 @@ class TestActionSpaceRobust:
     def test_neutral_action(self):
         """Verify category 0 (Neutral) results in no order submission."""
         self.env.reset()
-        action = {'agent_0': {'category': 0, 'price': 0, 'price_offset': 1,
-                             'size': np.array([0.0])}}
+        action = {
+            'agent_0': {'category': 0, 'price': 0, 'price_offset': 1, 'size': np.array([0.0])}
+        }
         obs, rewards, term, trunc, info = self.env.step(action)
         # Category 0 results in side=None, which is filtered out before LOB_actions is populated in CDA_env
         assert len(self.env.LOB_actions) == 0, "Neutral action should not produce LOB actions"
@@ -158,15 +183,17 @@ class TestTickGrid:
     """
 
     def _env(self, tick_size, anchor=37):
-        env = continuousDoubleAuctionEnv({
-            "num_of_agents": 2,
-            "init_cash": 100000,
-            "tick_size": tick_size,
-            "initial_price_min": anchor,
-            "initial_price_max": anchor,
-            "is_render": False,
-            "book_mode": "levels",
-        })
+        env = continuousDoubleAuctionEnv(
+            {
+                "num_of_agents": 2,
+                "init_cash": 100000,
+                "tick_size": tick_size,
+                "initial_price_min": anchor,
+                "initial_price_max": anchor,
+                "is_render": False,
+                "book_mode": "levels",
+            }
+        )
         env.reset()
         return env
 
@@ -222,8 +249,13 @@ class TestSizeHead:
 
     def test_the_same_action_gives_the_same_size_whatever_the_env_seed(self):
         """S3-3: the realised size is the action, not a draw the env makes."""
-        action = {"category": 2, "order_slot": 0, "price": 3, "price_offset": 1,
-                  "size": np.array([0.5], dtype=np.float32)}
+        action = {
+            "category": 2,
+            "order_slot": 0,
+            "price": 3,
+            "price_offset": 1,
+            "size": np.array([0.5], dtype=np.float32),
+        }
         sizes = set()
         for seed in range(8):
             env = self._env()
@@ -235,9 +267,16 @@ class TestSizeHead:
         env = self._env()
         env.reset(seed=0)
         for category, mul in ((1, env.mkt_size_mul), (2, env.limit_size_mul)):
-            act = env._set_action_mkt_depth("agent_0", {
-                "category": category, "order_slot": 0, "price": 0, "price_offset": 1,
-                "size": np.array([0.4], dtype=np.float32)})
+            act = env._set_action_mkt_depth(
+                "agent_0",
+                {
+                    "category": category,
+                    "order_slot": 0,
+                    "price": 0,
+                    "price_offset": 1,
+                    "size": np.array([0.4], dtype=np.float32),
+                },
+            )
             assert act["size"] == int(np.rint(0.4 * mul)) + env.min_size
 
     def test_a_value_outside_the_range_is_clipped_not_folded(self):
@@ -257,8 +296,11 @@ class TestSizeHead:
         """Config is the only source of the bounds (CLAUDE.md rule 1), so a bad one must fail."""
         import json
         from gym_continuousDoubleAuction.envs.exchg.action_helper import Action_Helper
+
         helper = Action_Helper.__new__(Action_Helper)
-        helper._act = {**json.load(open("config/tunable_constants.json"))["action_space"],
-                       "size_low": -0.5}
+        helper._act = {
+            **json.load(open("config/tunable_constants.json"))["action_space"],
+            "size_low": -0.5,
+        }
         with pytest.raises(ValueError, match="size_low"):
             helper._validate_action_space()

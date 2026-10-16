@@ -2,6 +2,7 @@
 
 Each test fails on the source the issue was filed against.
 """
+
 import logging
 
 import pytest
@@ -16,10 +17,16 @@ def _restore_logging():
     directory; put the process back as found (the same isolation
     `test_logging_setup.py` uses)."""
     import os
+
     root = logging.getLogger(logging_setup.ROOT_NAME)
-    saved = (list(root.handlers), root.level, root.propagate,
-             logging_setup._configured, logging_setup._log_file_path,
-             os.environ.get(logging_setup.log_dir_env_var()))
+    saved = (
+        list(root.handlers),
+        root.level,
+        root.propagate,
+        logging_setup._configured,
+        logging_setup._log_file_path,
+        os.environ.get(logging_setup.log_dir_env_var()),
+    )
     yield
     for handler in list(root.handlers):
         if handler not in saved[0]:
@@ -40,9 +47,11 @@ class TestRunLoggingRestoresPropagation:
 
     @staticmethod
     def _configure(tmp_path, encoding):
-        configure_run_logging(TrainConfig(
-            log_base_dir=str(tmp_path), episode_data_dir=None,
-            ray_log_encoding=encoding))
+        configure_run_logging(
+            TrainConfig(
+                log_base_dir=str(tmp_path), episode_data_dir=None, ray_log_encoding=encoding
+            )
+        )
         return logging.getLogger(logging_setup.ROOT_NAME).propagate
 
     def test_an_encoding_turns_it_off(self, tmp_path):
@@ -73,6 +82,7 @@ class TestTheByteCapKeepsTheNewestFile:
         import os
         from gym_continuousDoubleAuction.test.test_episode_record import _run
         from gym_continuousDoubleAuction.train.episode_record import EpisodeRecorder
+
         recorder = EpisodeRecorder(str(tmp_path), rows_per_file=1, **kwargs)
         for i in range(episodes):
             _run(recorder, episode_id=f"ep_{i}", steps=2)
@@ -81,6 +91,7 @@ class TestTheByteCapKeepsTheNewestFile:
 
     def test_a_cap_smaller_than_one_file_keeps_exactly_the_newest(self, tmp_path):
         import pyarrow.parquet as pq
+
         files, recorder = self._record(tmp_path, max_bytes=1)
         assert len(files) == 1
         # The newest episode, not an older one that happened to survive.
@@ -98,9 +109,11 @@ class TestTheByteCapKeepsTheNewestFile:
 
     def test_a_cap_that_fits_several_files_still_trims_the_oldest(self, tmp_path):
         import os
+
         files, _ = self._record(tmp_path, episodes=1, max_bytes=0)
         one = os.path.getsize(files[0])
         import shutil
+
         shutil.rmtree(tmp_path)
         tmp_path.mkdir()
         files, _ = self._record(tmp_path, episodes=6, max_bytes=int(one * 2.5))
@@ -122,20 +135,25 @@ class TestEnvVarsContractIsRayInit:
     point that starts Ray.
     """
 
-    @pytest.mark.parametrize("module", [
-        "gym_continuousDoubleAuction.train.train",
-        "gym_continuousDoubleAuction.train.evaluate",
-        "gym_continuousDoubleAuction.train.compare",
-    ])
+    @pytest.mark.parametrize(
+        "module",
+        [
+            "gym_continuousDoubleAuction.train.train",
+            "gym_continuousDoubleAuction.train.evaluate",
+            "gym_continuousDoubleAuction.train.compare",
+        ],
+    )
     def test_the_entry_point_exports_before_it_starts_ray(self, module):
         import importlib
         import inspect
+
         source = inspect.getsource(importlib.import_module(module).main)
         assert "apply_env_vars()" in source and "ray.init(" in source
         assert source.index("apply_env_vars()") < source.index("ray.init(")
 
     def test_the_docs_no_longer_claim_an_import_order_ray_does_not_need(self):
         from gym_continuousDoubleAuction.train import runtime
+
         text = (runtime.__doc__ or "") + (runtime.apply_env_vars.__doc__ or "")
         assert "before ray is first imported" not in text
         assert "before `ray.init`" in text
@@ -146,10 +164,13 @@ class TestEnvVarsContractIsRayInit:
         call has to move ahead of the imports."""
         import inspect
         from ray._private import memory_monitor
+
         source = inspect.getsource(memory_monitor)
         first_function = source.index("\n    def ")
         assert "RAY_DEBUG_DISABLE_MEMORY_MONITOR" in source
         assert "RAY_DEBUG_DISABLE_MEMORY_MONITOR" not in source[:first_function]
         from gym_continuousDoubleAuction.config_loader import constants
+
         assert set(constants("runtime_env_vars")) - {"_source", "_note"} == {
-            "RAY_DEBUG_DISABLE_MEMORY_MONITOR"}
+            "RAY_DEBUG_DISABLE_MEMORY_MONITOR"
+        }

@@ -20,6 +20,7 @@ is a fact about the corpus - a target with one class or no variance in it - and
 printing it beside real results invites reading it as a fact about the
 encoders.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -109,8 +110,11 @@ def run(
             if horizon < target.min_horizon:
                 continue
             values, valid = targets_module.build(
-                target, corpus.snapshots, corpus.layout,
-                corpus.episode_index, horizon,
+                target,
+                corpus.snapshots,
+                corpus.layout,
+                corpus.episode_index,
+                horizon,
             )
             if not valid.any():
                 continue
@@ -119,21 +123,22 @@ def run(
             y = values[valid]
             groups = corpus.episode_index[valid]
             results = {
-                name: fit_and_score(matrix[valid], y, target.kind, groups=groups,
-                                    purge=horizon)
+                name: fit_and_score(matrix[valid], y, target.kind, groups=groups, purge=horizon)
                 for name, matrix in features.items()
             }
             if all(result is None for result in results.values()):
                 continue
-            rows.append(Row(
-                target=target.name,
-                kind=target.kind,
-                metric="r2" if target.kind == "regression" else "balanced_accuracy",
-                describe=target.describe,
-                horizon=horizon,
-                n_rows=int(valid.sum()),
-                results=results,
-            ))
+            rows.append(
+                Row(
+                    target=target.name,
+                    kind=target.kind,
+                    metric="r2" if target.kind == "regression" else "balanced_accuracy",
+                    describe=target.describe,
+                    horizon=horizon,
+                    n_rows=int(valid.sum()),
+                    results=results,
+                )
+            )
 
     return rows
 
@@ -172,16 +177,13 @@ def _legend(rows: Sequence[Row]) -> str:
     lines += [f"  {name}: {text}" for name, text in described.items()]
     lines += [
         "",
-        "r2 is against the test split's own mean; 0 means no better than "
-        "predicting the average.",
+        "r2 is against the test split's own mean; 0 means no better than predicting the average.",
         "balanced_accuracy is the mean of the per-class recalls; 0.5 is chance.",
-        "Every feature set is fit on identical rows with an identical split and "
-        "ridge grid.",
+        "Every feature set is fit on identical rows with an identical split and ridge grid.",
         "A latent is a function of `raw`, so a latent below `raw` has "
         "reorganised nothing a linear readout can use.",
         f"`tie` means the top two are within {TIE_MARGIN} - inside this "
         "harness's own run-to-run variation.",
-        "`-` in a cell means that set could not be scored at all, not that it "
-        "scored zero.",
+        "`-` in a cell means that set could not be scored at all, not that it scored zero.",
     ]
     return "\n".join(lines)

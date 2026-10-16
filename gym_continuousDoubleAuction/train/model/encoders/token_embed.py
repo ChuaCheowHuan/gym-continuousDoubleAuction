@@ -33,6 +33,7 @@ That also means the two overlap: with `n_hist` 4 the LSTM re-reads the last four
 snapshots at every step. Setting `n_hist` to 1 for a recurrent run removes the
 redundancy, at the cost of invalidating checkpoints (it is structural).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -61,7 +62,6 @@ from gym_continuousDoubleAuction.train.model.encoders.tokenize import (
 )
 
 
-
 @dataclass
 class TokenEmbedConfig(ModelConfig):
     """Config for `TorchTokenEmbedEncoder`."""
@@ -79,9 +79,7 @@ class TokenEmbedConfig(ModelConfig):
 
     def build(self, framework: str = "torch") -> Encoder:
         if framework != "torch":
-            raise ValueError(
-                f"{type(self).__name__} is torch-only; got framework={framework!r}."
-            )
+            raise ValueError(f"{type(self).__name__} is torch-only; got framework={framework!r}.")
         return TorchTokenEmbedEncoder(self)
 
 
@@ -93,9 +91,7 @@ class TorchTokenEmbedEncoder(TorchModel, Encoder):
         Encoder.__init__(self, config)
 
         if config.pool not in POOLINGS:
-            raise ValueError(
-                f"Unknown pool {config.pool!r}. Available: {', '.join(POOLINGS)}."
-            )
+            raise ValueError(f"Unknown pool {config.pool!r}. Available: {', '.join(POOLINGS)}.")
 
         self.layout = config.layout
         self.tokenization = config.tokenization
@@ -126,12 +122,8 @@ class TorchTokenEmbedEncoder(TorchModel, Encoder):
         time_idx, level_idx = positional_index(self.layout, self.tokenization)
         self.register_buffer("time_idx", time_idx, persistent=False)
         self.register_buffer("level_idx", level_idx, persistent=False)
-        self.time_embedding = nn.Embedding(
-            int(time_idx.max()) + 1, config.d_model
-        )
-        self.level_embedding = nn.Embedding(
-            int(level_idx.max()) + 1, config.d_model
-        )
+        self.time_embedding = nn.Embedding(int(time_idx.max()) + 1, config.d_model)
+        self.level_embedding = nn.Embedding(int(level_idx.max()) + 1, config.d_model)
 
         # A token-wise nonlinearity, and it is what actually makes the position
         # count. Positional embeddings alone do not: `mean(W x_i + p_i)` is
@@ -154,12 +146,11 @@ class TorchTokenEmbedEncoder(TorchModel, Encoder):
         # One extra token carrying this agent's private state; see PrivateToken.
         self.private_token = (
             PrivateToken(self.layout.private_dim, config.d_model)
-            if self.layout.private_dim else None
+            if self.layout.private_dim
+            else None
         )
         self.pool = (
-            AttentionPool(config.d_model, config.num_heads)
-            if config.pool == "attention"
-            else None
+            AttentionPool(config.d_model, config.num_heads) if config.pool == "attention" else None
         )
 
     @override(Model)
@@ -170,8 +161,9 @@ class TorchTokenEmbedEncoder(TorchModel, Encoder):
         # Added after the LayerNorm, matching the transformer, so the
         # normalisation still does its job on the projected token and the
         # position is not rescaled away with it.
-        embedded = embedded + self.time_embedding(self.time_idx) \
-            + self.level_embedding(self.level_idx)
+        embedded = (
+            embedded + self.time_embedding(self.time_idx) + self.level_embedding(self.level_idx)
+        )
 
         # See the note on `token_mlp`: without this the positions above are an
         # additive constant and change nothing.

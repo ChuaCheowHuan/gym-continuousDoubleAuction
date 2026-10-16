@@ -3,7 +3,12 @@ import pytest
 
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import continuousDoubleAuctionEnv
 from gym_continuousDoubleAuction.envs.exchg.state_helper import (
-    BOOK_DIM, EXTRA_DIM, EXTRA_FIELDS, OBS_BOOK_DIM, PRIVATE_DIM, SNAPSHOT_DIM,
+    BOOK_DIM,
+    EXTRA_DIM,
+    EXTRA_FIELDS,
+    OBS_BOOK_DIM,
+    PRIVATE_DIM,
+    SNAPSHOT_DIM,
 )
 
 #: In `levels` mode the emitted book block is the raw block, so the scalars
@@ -64,8 +69,9 @@ class TestObsMarketFeatures:
 
     def test_observation_shape_across_n_hist(self):
         for n_hist in [1, 2, 4, 6, 10]:
-            env = continuousDoubleAuctionEnv({"num_of_agents": 2, "is_render": False,
-                                              "n_hist": n_hist})
+            env = continuousDoubleAuctionEnv(
+                {"num_of_agents": 2, "is_render": False, "n_hist": n_hist}
+            )
             obs, _ = env.reset()
             # The default mode's width (grid since S3-15), n_hist times.
             expected = (n_hist * SNAPSHOT_DIM + PRIVATE_DIM,)
@@ -93,7 +99,9 @@ class TestObsMarketFeatures:
 
         snap = env.set_agg_LOB()
         expected_M = (98 + 102) / 2.0
-        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(expected_M)) - env.log_mid_centre, abs=1e-5)
+        assert float(snap[LOG_MID_IDX]) == pytest.approx(
+            float(np.log(expected_M)) - env.log_mid_centre, abs=1e-5
+        )
 
     def test_log_mid_bid_only_book_uses_last_price(self):
         """S3-14: a one-sided book is referenced to the last trade, not to its
@@ -104,7 +112,9 @@ class TestObsMarketFeatures:
         self._insert(env, 'bid', 47, 10)
 
         snap = env.set_agg_LOB()
-        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(41.0)) - env.log_mid_centre, abs=1e-5)
+        assert float(snap[LOG_MID_IDX]) == pytest.approx(
+            float(np.log(41.0)) - env.log_mid_centre, abs=1e-5
+        )
 
     def test_log_mid_ask_only_book_uses_last_price(self):
         env = self._make_env()
@@ -112,7 +122,9 @@ class TestObsMarketFeatures:
         self._insert(env, 'ask', 63, 10)
 
         snap = env.set_agg_LOB()
-        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(41.0)) - env.log_mid_centre, abs=1e-5)
+        assert float(snap[LOG_MID_IDX]) == pytest.approx(
+            float(np.log(41.0)) - env.log_mid_centre, abs=1e-5
+        )
 
     def test_log_mid_one_sided_book_without_a_last_price_uses_the_quote(self):
         """The lone quote is still the reference when nothing has ever printed."""
@@ -121,14 +133,18 @@ class TestObsMarketFeatures:
         self._insert(env, 'ask', 63, 10)
 
         snap = env.set_agg_LOB()
-        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(63.0)) - env.log_mid_centre, abs=1e-5)
+        assert float(snap[LOG_MID_IDX]) == pytest.approx(
+            float(np.log(63.0)) - env.log_mid_centre, abs=1e-5
+        )
 
     def test_log_mid_empty_book_uses_last_price(self):
         env = self._make_env()
         env.last_price = 37.0
 
         snap = env.set_agg_LOB()
-        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(37.0)) - env.log_mid_centre, abs=1e-5)
+        assert float(snap[LOG_MID_IDX]) == pytest.approx(
+            float(np.log(37.0)) - env.log_mid_centre, abs=1e-5
+        )
 
     def test_log_mid_survives_non_positive_last_price(self):
         """M defaults to 100.0 when last_price is bad; log must stay finite."""
@@ -136,7 +152,9 @@ class TestObsMarketFeatures:
         env.last_price = 0.0
 
         snap = env.set_agg_LOB()
-        assert float(snap[LOG_MID_IDX]) == pytest.approx(float(np.log(100.0)) - env.log_mid_centre, abs=1e-5)
+        assert float(snap[LOG_MID_IDX]) == pytest.approx(
+            float(np.log(100.0)) - env.log_mid_centre, abs=1e-5
+        )
         assert np.isfinite(snap).all()
 
     # ------------------------------------------------------------------
@@ -181,8 +199,9 @@ class TestObsMarketFeatures:
             env = self._make_env()
             self._insert(env, side, price, 10)
             snap = env.set_agg_LOB()
-            assert float(snap[LOG1P_SPREAD_IDX]) == 0.0, \
+            assert float(snap[LOG1P_SPREAD_IDX]) == 0.0, (
                 f"one-sided ({side}) book must use the 0.0 sentinel"
+            )
 
     def test_spread_sentinel_is_zero_on_empty_book(self):
         env = self._make_env()
@@ -211,14 +230,15 @@ class TestObsMarketFeatures:
     def test_scalars_present_in_every_frame_after_reset(self):
         """reset() pads the history with n_hist copies, so every frame carries them."""
         n_hist = 4
-        env = continuousDoubleAuctionEnv({"num_of_agents": 2, "is_render": False,
-                                          "n_hist": n_hist, "book_mode": "levels"})
+        env = continuousDoubleAuctionEnv(
+            {"num_of_agents": 2, "is_render": False, "n_hist": n_hist, "book_mode": "levels"}
+        )
         obs, _ = env.reset()
         stacked = obs["agent_0"]
         expected_log_mid = float(np.log(env.last_price)) - env.log_mid_centre
 
         for k in range(n_hist):
-            frame = stacked[k * LEVELS_SNAPSHOT_DIM:(k + 1) * LEVELS_SNAPSHOT_DIM]
+            frame = stacked[k * LEVELS_SNAPSHOT_DIM : (k + 1) * LEVELS_SNAPSHOT_DIM]
             assert frame.shape == (LEVELS_SNAPSHOT_DIM,)
             assert float(frame[LOG_MID_IDX]) == pytest.approx(expected_log_mid, abs=1e-5)
             assert float(frame[LOG1P_SPREAD_IDX]) == 0.0
@@ -244,9 +264,15 @@ class TestObsMarketFeatures:
     # ------------------------------------------------------------------
 
     def test_no_nan_or_inf_across_random_rollout(self):
-        env = continuousDoubleAuctionEnv({"num_of_agents": 3, "init_cash": 1_000_000,
-                                          "is_render": False, "max_step": 32,
-                                          "book_mode": "levels"})
+        env = continuousDoubleAuctionEnv(
+            {
+                "num_of_agents": 3,
+                "init_cash": 1_000_000,
+                "is_render": False,
+                "max_step": 32,
+                "book_mode": "levels",
+            }
+        )
         obs, _ = env.reset()
         for _ in range(20):
             actions = {a: env.action_spaces[a].sample() for a in env.agents}

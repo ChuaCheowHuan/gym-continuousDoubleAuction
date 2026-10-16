@@ -16,6 +16,7 @@ What these pin, in the order the algorithm runs:
   * The accumulator is a fractional counter, which is the detail that decides
     whether anything is ever replaced at a realistic replacement rate.
 """
+
 import logging
 import math
 
@@ -59,9 +60,7 @@ def spaces():
 
 def build_module(spaces, encoder_type=MLP_ENCODER_TYPE, **kwargs):
     obs_space, act_space = spaces
-    spec = build_trainable_module_spec(
-        obs_space, act_space, encoder_type=encoder_type, **kwargs
-    )
+    spec = build_trainable_module_spec(obs_space, act_space, encoder_type=encoder_type, **kwargs)
     if spec.module_class is None:
         spec.module_class = CDAPPOTorchRLModule
     return spec.build()
@@ -70,13 +69,12 @@ def build_module(spaces, encoder_type=MLP_ENCODER_TYPE, **kwargs):
 def simple_block(fan_in=6, units=5, fan_out=3):
     """A bare `Linear -> Tanh -> Linear`, the shape the algorithm is defined on."""
     seq = nn.Sequential(nn.Linear(fan_in, units), nn.Tanh(), nn.Linear(units, fan_out))
-    layer = ReplaceableLayer(
-        name="block", incoming=seq[0], outgoing=[seq[2]], activation=seq[1]
-    )
+    layer = ReplaceableLayer(name="block", incoming=seq[0], outgoing=[seq[2]], activation=seq[1])
     return seq, layer
 
 
 # --- Layer discovery --------------------------------------------------------
+
 
 class TestLayerDiscovery:
     """What counts as a replaceable layer, on the real modules."""
@@ -116,8 +114,9 @@ class TestLayerDiscovery:
         assert [out.out_features for out in critic.outgoing] == [1]
 
         # The first hidden layer's consumer is still inside the encoder.
-        assert [o.out_features
-                for o in by_name["encoder.actor_encoder.net.mlp.0"].outgoing] == [256]
+        assert [o.out_features for o in by_name["encoder.actor_encoder.net.mlp.0"].outgoing] == [
+            256
+        ]
 
     def test_a_shared_trunk_feeds_both_heads(self, spaces):
         """Under `vf_share_layers` one layer has two consumers, not one.
@@ -125,9 +124,7 @@ class TestLayerDiscovery:
         The utility sums over both and a replacement zeroes both; getting this
         wrong would credit a unit for only half of what it contributes.
         """
-        layers = find_replaceable_layers(
-            build_module(spaces, vf_share_layers=True)
-        )
+        layers = find_replaceable_layers(build_module(spaces, vf_share_layers=True))
         assert len(layers) == 2
         last = max(layers, key=lambda layer: layer.name)
         assert sorted(out.out_features for out in last.outgoing) == [1, 29]
@@ -147,9 +144,7 @@ class TestLayerDiscovery:
         assert not any("target_trunk" in name for name in names)
         assert any("trunk" in name for name in names)
 
-    @pytest.mark.parametrize(
-        "encoder_type", [MLP_ENCODER_TYPE] + sorted(ENCODER_REGISTRY)
-    )
+    @pytest.mark.parametrize("encoder_type", [MLP_ENCODER_TYPE] + sorted(ENCODER_REGISTRY))
     def test_discovery_runs_on_every_encoder(self, spaces, encoder_type):
         """Discovery must never raise, whatever the architecture.
 
@@ -160,9 +155,7 @@ class TestLayerDiscovery:
         layers = find_replaceable_layers(build_module(spaces, encoder_type))
         for layer in layers:
             assert layer.num_units == layer.incoming.out_features
-            assert all(
-                out.in_features == layer.num_units for out in layer.outgoing
-            )
+            assert all(out.in_features == layer.num_units for out in layer.outgoing)
 
     def test_an_unknown_scope_raises(self, spaces):
         with pytest.raises(ValueError, match="Unknown scope"):
@@ -171,8 +164,8 @@ class TestLayerDiscovery:
 
 # --- Config -----------------------------------------------------------------
 
-class TestConfig:
 
+class TestConfig:
     def test_rejects_unknown_settings(self):
         for field, value, message in (
             ("utility", "made_up", "Unknown utility"),
@@ -200,6 +193,7 @@ class TestConfig:
 
 
 # --- The utility measures ---------------------------------------------------
+
 
 class TestUtility:
     """Each formula against a hand-computed value, not against itself."""
@@ -233,9 +227,7 @@ class TestUtility:
 
         f_hat = bias_corrected(self.state.mean_act, self.state.age, 0.5)
         stats = self._stats(config)
-        torch.testing.assert_close(
-            stats["dev_abs_mean"], (self.h - f_hat).abs().mean(0)
-        )
+        torch.testing.assert_close(stats["dev_abs_mean"], (self.h - f_hat).abs().mean(0))
 
         expected = stats["dev_abs_mean"] * self.layer.outgoing[0].weight.abs().sum(0)
         update_utility(self.state, self.layer, stats, config)
@@ -260,13 +252,14 @@ class TestUtility:
         config = CBPConfig(utility="contribution", utility_decay=0.5)
         second = nn.Linear(self.layer.num_units, 2)
         shared = ReplaceableLayer(
-            name="shared", incoming=self.layer.incoming,
-            outgoing=[self.layer.outgoing[0], second], activation=self.layer.activation,
+            name="shared",
+            incoming=self.layer.incoming,
+            outgoing=[self.layer.outgoing[0], second],
+            activation=self.layer.activation,
         )
         stats = self._stats(config)
         expected = stats["abs_mean"] * (
-            shared.outgoing[0].weight.abs().sum(0)
-            + shared.outgoing[1].weight.abs().sum(0)
+            shared.outgoing[0].weight.abs().sum(0) + shared.outgoing[1].weight.abs().sum(0)
         )
         update_utility(self.state, shared, stats, config)
         torch.testing.assert_close(self.state.utility, 0.5 * expected)
@@ -287,46 +280,40 @@ class TestUtility:
 
 # --- Replacement ------------------------------------------------------------
 
-class TestReplacement:
 
+class TestReplacement:
     def setup_method(self):
         torch.manual_seed(0)
         self.seq, self.layer = simple_block()
         self.state = CBPLayerState.zeros(self.layer.num_units)
-        self.config = CBPConfig(
-            enabled=True, replacement_rate=1.0, maturity_threshold=0
-        )
+        self.config = CBPConfig(enabled=True, replacement_rate=1.0, maturity_threshold=0)
 
     def _mature(self, ages=10):
-        self.state.age = torch.full(
-            (self.layer.num_units,), ages, dtype=torch.long
-        )
+        self.state.age = torch.full((self.layer.num_units,), ages, dtype=torch.long)
 
     def test_replacement_zeroes_outgoing_and_resamples_incoming(self):
         self._mature()
         utility = torch.tensor([5.0, 0.1, 5.0, 5.0, 5.0])
         before_in = self.layer.incoming.weight.clone()
 
-        replaced = select_and_replace(
-            self.state, self.layer, utility, self.config
-        )
+        replaced = select_and_replace(self.state, self.layer, utility, self.config)
 
         assert replaced == [1]
         assert torch.all(self.layer.outgoing[0].weight[:, 1] == 0.0)
         assert not torch.equal(self.layer.incoming.weight[1], before_in[1])
         # Every other unit is untouched.
         untouched = [0, 2, 3, 4]
-        torch.testing.assert_close(
-            self.layer.incoming.weight[untouched], before_in[untouched]
-        )
+        torch.testing.assert_close(self.layer.incoming.weight[untouched], before_in[untouched])
 
     def test_resampled_weights_come_from_the_layers_init_distribution(self):
         """PyTorch's default `nn.Linear` init: U(+/- 1/sqrt(fan_in))."""
         self._mature()
         bound = 1.0 / math.sqrt(self.layer.incoming.in_features)
         select_and_replace(
-            self.state, self.layer,
-            torch.tensor([0.0, 5.0, 5.0, 5.0, 5.0]), self.config,
+            self.state,
+            self.layer,
+            torch.tensor([0.0, 5.0, 5.0, 5.0, 5.0]),
+            self.config,
         )
         assert torch.all(self.layer.incoming.weight[0].abs() <= bound)
         assert self.layer.incoming.bias[0] == 0.0
@@ -348,8 +335,10 @@ class TestReplacement:
         after_zeroing = self.seq(x).clone()
 
         select_and_replace(
-            self.state, self.layer,
-            torch.tensor([5.0, 5.0, 0.0, 5.0, 5.0]), self.config,
+            self.state,
+            self.layer,
+            torch.tensor([5.0, 5.0, 0.0, 5.0, 5.0]),
+            self.config,
         )
         torch.testing.assert_close(self.seq(x), after_zeroing, rtol=0, atol=0)
 
@@ -358,8 +347,10 @@ class TestReplacement:
         self.state.utility.fill_(3.0)
         self.state.mean_act.fill_(3.0)
         select_and_replace(
-            self.state, self.layer,
-            torch.tensor([0.0, 5.0, 5.0, 5.0, 5.0]), self.config,
+            self.state,
+            self.layer,
+            torch.tensor([0.0, 5.0, 5.0, 5.0, 5.0]),
+            self.config,
         )
         assert self.state.utility[0] == 0.0
         assert self.state.mean_act[0] == 0.0
@@ -375,15 +366,15 @@ class TestReplacement:
         assert optimizer.state[self.layer.incoming.weight]["exp_avg_sq"].abs().sum() > 0
 
         select_and_replace(
-            self.state, self.layer,
-            torch.tensor([0.0, 5.0, 5.0, 5.0, 5.0]), self.config,
+            self.state,
+            self.layer,
+            torch.tensor([0.0, 5.0, 5.0, 5.0, 5.0]),
+            self.config,
             optimizer=optimizer,
         )
         for key in ("exp_avg", "exp_avg_sq"):
             assert torch.all(optimizer.state[self.layer.incoming.weight][key][0] == 0)
-            assert torch.all(
-                optimizer.state[self.layer.outgoing[0].weight][key][:, 0] == 0
-            )
+            assert torch.all(optimizer.state[self.layer.outgoing[0].weight][key][:, 0] == 0)
 
     def test_optimizer_reset_can_be_switched_off(self):
         self._mature()
@@ -391,12 +382,17 @@ class TestReplacement:
         self.seq(torch.randn(4, self.layer.incoming.in_features)).sum().backward()
         optimizer.step()
         config = CBPConfig(
-            enabled=True, replacement_rate=1.0, maturity_threshold=0,
+            enabled=True,
+            replacement_rate=1.0,
+            maturity_threshold=0,
             reset_optimizer_state=False,
         )
         select_and_replace(
-            self.state, self.layer,
-            torch.tensor([0.0, 5.0, 5.0, 5.0, 5.0]), config, optimizer=optimizer,
+            self.state,
+            self.layer,
+            torch.tensor([0.0, 5.0, 5.0, 5.0, 5.0]),
+            config,
+            optimizer=optimizer,
         )
         assert optimizer.state[self.layer.incoming.weight]["exp_avg_sq"][0].abs().sum() > 0
 
@@ -441,9 +437,7 @@ class TestAccumulator:
         self.state.age = torch.tensor([0, 10, 10, 10, 10])
         # Unit 0 has the lowest utility but is immature.
         for _ in range(3):
-            replaced = select_and_replace(
-                self.state, self.layer, self.utility, config
-            )
+            replaced = select_and_replace(self.state, self.layer, self.utility, config)
             assert 0 not in replaced
 
     def test_nothing_happens_when_no_unit_is_mature(self):
@@ -453,7 +447,9 @@ class TestAccumulator:
 
     def test_metrics_only_never_replaces(self):
         config = CBPConfig(
-            enabled=True, metrics_only=True, replacement_rate=1.0,
+            enabled=True,
+            metrics_only=True,
+            replacement_rate=1.0,
             maturity_threshold=0,
         )
         before = self.layer.outgoing[0].weight.clone()
@@ -481,8 +477,11 @@ class TestDeterminism:
             state.age = torch.full((layer.num_units,), 10, dtype=torch.long)
             generator = torch.Generator().manual_seed(1234)
             select_and_replace(
-                state, layer, torch.tensor([0.0, 5.0, 5.0, 5.0, 5.0]),
-                config, generator=generator,
+                state,
+                layer,
+                torch.tensor([0.0, 5.0, 5.0, 5.0, 5.0]),
+                config,
+                generator=generator,
             )
             results.append(layer.incoming.weight[0].clone())
         torch.testing.assert_close(results[0], results[1])
@@ -499,7 +498,10 @@ class TestDeterminism:
 
         torch.manual_seed(99)
         select_and_replace(
-            state, layer, torch.tensor([0.0, 5.0, 5.0, 5.0, 5.0]), config,
+            state,
+            layer,
+            torch.tensor([0.0, 5.0, 5.0, 5.0, 5.0]),
+            config,
             generator=torch.Generator().manual_seed(7),
         )
         torch.testing.assert_close(torch.randn(3), expected)
@@ -507,8 +509,8 @@ class TestDeterminism:
 
 # --- State ------------------------------------------------------------------
 
-class TestState:
 
+class TestState:
     def test_round_trips(self):
         state = CBPLayerState.zeros(4)
         state.utility.fill_(1.5)
@@ -527,8 +529,8 @@ class TestState:
 
 # --- Metrics ----------------------------------------------------------------
 
-class TestMetrics:
 
+class TestMetrics:
     def test_effective_rank_of_a_rank_one_matrix_is_one(self):
         column = torch.randn(32, 1)
         assert effective_rank(column @ torch.randn(1, 8)) == 1
@@ -536,9 +538,7 @@ class TestMetrics:
     def test_effective_rank_rises_with_independent_directions(self):
         torch.manual_seed(0)
         full = effective_rank(torch.randn(256, 16))
-        collapsed = effective_rank(
-            torch.randn(256, 2) @ torch.randn(2, 16)
-        )
+        collapsed = effective_rank(torch.randn(256, 2) @ torch.randn(2, 16))
         assert collapsed < full
 
     def test_dead_and_saturated_fractions(self):
@@ -548,9 +548,7 @@ class TestMetrics:
         h = torch.tensor([[0.0, 0.01, 0.5, 0.95]]).repeat(4, 1)
         state = CBPLayerState.zeros(4)
         stats = activation_stats(h, state, config)
-        metrics = plasticity_metrics(
-            layer, stats, torch.zeros(4), config
-        )
+        metrics = plasticity_metrics(layer, stats, torch.zeros(4), config)
         assert metrics["dead_unit_frac"] == 0.5
         assert metrics["saturated_unit_frac"] == 0.25
 
@@ -563,7 +561,6 @@ class TestMetrics:
 
 
 class TestActivationStats:
-
     def test_a_time_major_batch_is_flattened_not_sliced(self):
         """A recurrent module gives (B, T, n); every row is an observation."""
         state = CBPLayerState.zeros(3)
@@ -582,6 +579,7 @@ class TestActivationStats:
 
 
 # --- Device placement -------------------------------------------------------
+
 
 class TestDevicePlacement:
     """State and RNG must live where the parameters live.
@@ -703,6 +701,7 @@ class TestStateHonoursTheComponentFilter:
 
     class _Base:
         from ray.rllib.utils.checkpoints import Checkpointable as _C
+
         _check_component = _C._check_component
 
         def get_state(self, components=None, *, not_components=None, **kwargs):

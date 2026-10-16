@@ -41,6 +41,7 @@ Adam steps (4 epochs over one full batch, `minibatch_size: null`) against the
 the paper would never be reached. See `doc/25` and the `_note_cadence` in
 `config/train_config.json`.
 """
+
 from __future__ import annotations
 
 import math
@@ -99,12 +100,20 @@ FIRE_ON = ("adam_step", "iteration")
 
 #: Modules allowed between a layer's two Linears. Anything else means the pair
 #: is not a plain feed-forward block and is left alone.
-_PASSTHROUGH = (nn.ReLU, nn.GELU, nn.Tanh, nn.ELU, nn.SiLU, nn.Sigmoid,
-                nn.LeakyReLU, nn.Dropout, nn.Identity)
+_PASSTHROUGH = (
+    nn.ReLU,
+    nn.GELU,
+    nn.Tanh,
+    nn.ELU,
+    nn.SiLU,
+    nn.Sigmoid,
+    nn.LeakyReLU,
+    nn.Dropout,
+    nn.Identity,
+)
 
 #: Modules that *are* the hidden nonlinearity, i.e. whose output is `h`.
-_ACTIVATIONS = (nn.ReLU, nn.GELU, nn.Tanh, nn.ELU, nn.SiLU, nn.Sigmoid,
-                nn.LeakyReLU)
+_ACTIVATIONS = (nn.ReLU, nn.GELU, nn.Tanh, nn.ELU, nn.SiLU, nn.Sigmoid, nn.LeakyReLU)
 
 
 @dataclass(frozen=True)
@@ -137,30 +146,21 @@ class CBPConfig:
     def __post_init__(self) -> None:
         if self.utility not in UTILITY_MEASURES:
             raise ValueError(
-                f"Unknown utility {self.utility!r}. "
-                f"Available: {', '.join(UTILITY_MEASURES)}."
+                f"Unknown utility {self.utility!r}. Available: {', '.join(UTILITY_MEASURES)}."
             )
         if self.scope not in SCOPES:
-            raise ValueError(
-                f"Unknown scope {self.scope!r}. Available: {', '.join(SCOPES)}."
-            )
+            raise ValueError(f"Unknown scope {self.scope!r}. Available: {', '.join(SCOPES)}.")
         if self.fire_on not in FIRE_ON:
-            raise ValueError(
-                f"Unknown fire_on {self.fire_on!r}. Available: {', '.join(FIRE_ON)}."
-            )
+            raise ValueError(f"Unknown fire_on {self.fire_on!r}. Available: {', '.join(FIRE_ON)}.")
         if not 0.0 <= self.utility_decay < 1.0:
             raise ValueError(
                 f"utility_decay must be in [0, 1), got {self.utility_decay}. "
                 "It is the decay of a running average; 1.0 would never update."
             )
         if self.replacement_rate < 0.0:
-            raise ValueError(
-                f"replacement_rate must be >= 0, got {self.replacement_rate}."
-            )
+            raise ValueError(f"replacement_rate must be >= 0, got {self.replacement_rate}.")
         if self.maturity_threshold < 0:
-            raise ValueError(
-                f"maturity_threshold must be >= 0, got {self.maturity_threshold}."
-            )
+            raise ValueError(f"maturity_threshold must be >= 0, got {self.maturity_threshold}.")
 
     @classmethod
     def from_dict(cls, values: Optional[Dict[str, Any]]) -> "CBPConfig":
@@ -175,9 +175,16 @@ class CBPConfig:
         fields = {
             key: values[f"cbp_{key}"]
             for key in (
-                "enabled", "metrics_only", "replacement_rate",
-                "maturity_threshold", "utility_decay", "utility", "scope",
-                "fire_on", "reset_optimizer_state", "dead_unit_threshold",
+                "enabled",
+                "metrics_only",
+                "replacement_rate",
+                "maturity_threshold",
+                "utility_decay",
+                "utility",
+                "scope",
+                "fire_on",
+                "reset_optimizer_state",
+                "dead_unit_threshold",
                 "metrics_every_n_updates",
             )
             if f"cbp_{key}" in values
@@ -332,8 +339,14 @@ class RecurrentLayer:
 
     def mean_weight_magnitude(self) -> float:
         return float(
-            torch.cat([self._p("weight_ih").detach().abs().flatten(),
-                       self._p("weight_hh").detach().abs().flatten()]).mean().item()
+            torch.cat(
+                [
+                    self._p("weight_ih").detach().abs().flatten(),
+                    self._p("weight_hh").detach().abs().flatten(),
+                ]
+            )
+            .mean()
+            .item()
         )
 
     def reinitialise(self, index: int, generator: Optional[torch.Generator]) -> None:
@@ -362,8 +375,7 @@ class RecurrentLayer:
         """Zero Adam's moments for every entry `reinitialise` just reset."""
         h = self.lstm.hidden_size
         rows = [g * h + index for g in range(4)]
-        targets = [("weight_ih", rows, None), ("weight_hh", rows, None),
-                   ("weight_hh", None, index)]
+        targets = [("weight_ih", rows, None), ("weight_hh", rows, None), ("weight_hh", None, index)]
         if self.lstm.bias:
             targets += [("bias_ih", rows, None), ("bias_hh", rows, None)]
         with torch.no_grad():
@@ -389,6 +401,7 @@ class RecurrentLayer:
 
 # --- Layer discovery --------------------------------------------------------
 
+
 def _sequential_layers(seq: nn.Sequential, prefix: str) -> List[ReplaceableLayer]:
     """Replaceable layers wholly contained in one `nn.Sequential`.
 
@@ -408,10 +421,14 @@ def _sequential_layers(seq: nn.Sequential, prefix: str) -> List[ReplaceableLayer
         for j in range(i + 1, len(children)):
             nxt = children[j]
             if isinstance(nxt, nn.Linear):
-                layers.append(ReplaceableLayer(
-                    name=f"{prefix}.{i}", incoming=first,
-                    outgoing=[nxt], activation=activation,
-                ))
+                layers.append(
+                    ReplaceableLayer(
+                        name=f"{prefix}.{i}",
+                        incoming=first,
+                        outgoing=[nxt],
+                        activation=activation,
+                    )
+                )
                 break
             if isinstance(nxt, _ACTIVATIONS) and activation is None:
                 activation = nxt
@@ -466,23 +483,20 @@ def _trunk_head_layers(module: nn.Module) -> List[ReplaceableLayer]:
     ]
 
     layers: List[ReplaceableLayer] = []
-    for trunk_name, (trunk, heads) in zip(
-        ("encoder", "actor_encoder", "critic_encoder"), pairings
-    ):
+    for trunk_name, (trunk, heads) in zip(("encoder", "actor_encoder", "critic_encoder"), pairings):
         mlp = _mlp_trunk(trunk) if trunk is not None else None
         if mlp is None:
             continue
         children = list(mlp)
         last_linear = next(
-            (i for i in reversed(range(len(children)))
-             if isinstance(children[i], nn.Linear)),
+            (i for i in reversed(range(len(children))) if isinstance(children[i], nn.Linear)),
             None,
         )
         if last_linear is None:
             continue
         # Anything after the final Linear other than an activation means the
         # trunk's output is not simply that layer's units.
-        tail = children[last_linear + 1:]
+        tail = children[last_linear + 1 :]
         if any(not isinstance(m, _PASSTHROUGH) for m in tail):
             continue
         activation = next((m for m in tail if isinstance(m, _ACTIVATIONS)), None)
@@ -491,18 +505,18 @@ def _trunk_head_layers(module: nn.Module) -> List[ReplaceableLayer]:
         for head in heads:
             if head is None:
                 continue
-            first = next(
-                (m for m in head.modules() if isinstance(m, nn.Linear)), None
-            )
+            first = next((m for m in head.modules() if isinstance(m, nn.Linear)), None)
             if first is not None and first.in_features == children[last_linear].out_features:
                 consumers.append(first)
         if consumers:
-            layers.append(ReplaceableLayer(
-                name=f"encoder.{trunk_name}.net.mlp.{last_linear}",
-                incoming=children[last_linear],
-                outgoing=consumers,
-                activation=activation,
-            ))
+            layers.append(
+                ReplaceableLayer(
+                    name=f"encoder.{trunk_name}.net.mlp.{last_linear}",
+                    incoming=children[last_linear],
+                    outgoing=consumers,
+                    activation=activation,
+                )
+            )
     return layers
 
 
@@ -537,10 +551,14 @@ def _recurrent_layers(module: nn.Module) -> List["RecurrentLayer"]:
             if first is not None and first.in_features == lstm.hidden_size:
                 consumers.append(first)
         if consumers:
-            layers.append(RecurrentLayer(
-                name=f"encoder.{trunk_name}.lstm", lstm=lstm,
-                outgoing=consumers, layer_index=lstm.num_layers - 1,
-            ))
+            layers.append(
+                RecurrentLayer(
+                    name=f"encoder.{trunk_name}.lstm",
+                    lstm=lstm,
+                    outgoing=consumers,
+                    layer_index=lstm.num_layers - 1,
+                )
+            )
     return layers
 
 
@@ -575,9 +593,7 @@ def find_replaceable_layers(
     nothing.
     """
     if scope not in SCOPES:
-        raise ValueError(
-            f"Unknown scope {scope!r}. Available: {', '.join(SCOPES)}."
-        )
+        raise ValueError(f"Unknown scope {scope!r}. Available: {', '.join(SCOPES)}.")
 
     unwrapped = getattr(module, "unwrapped", None)
     if callable(unwrapped):
@@ -624,6 +640,7 @@ def _is_trained(layer: ReplaceableLayer) -> bool:
 
 
 # --- Per-layer state --------------------------------------------------------
+
 
 @dataclass
 class CBPLayerState:
@@ -701,6 +718,7 @@ def bias_corrected(value: torch.Tensor, age: torch.Tensor, decay: float) -> torc
 
 
 # --- The algorithm ----------------------------------------------------------
+
 
 def _outgoing_abs_sum(layer: ReplaceableLayer) -> torch.Tensor:
     """`sum_k |w_out[i, k]|` per unit `i`, over every consumer."""
@@ -818,7 +836,8 @@ def select_and_replace(
 
     # +inf for ineligible units, so argmin can only land on a mature one.
     masked = torch.where(
-        eligible, corrected_utility,
+        eligible,
+        corrected_utility,
         torch.full_like(corrected_utility, float("inf")),
     )
     index = int(masked.argmin().item())
@@ -864,9 +883,7 @@ def _reinitialise(
         # built with a custom initialiser would need this extended; none in this
         # repo is.
         bound = 1.0 / math.sqrt(layer.incoming.in_features)
-        fresh = torch.empty_like(weight[index]).uniform_(
-            -bound, bound, generator=generator
-        )
+        fresh = torch.empty_like(weight[index]).uniform_(-bound, bound, generator=generator)
         weight[index] = fresh
         if layer.incoming.bias is not None:
             layer.incoming.bias[index] = 0.0
@@ -925,6 +942,7 @@ def _reset_optimizer_slots(
 
 
 # --- Plasticity metrics -----------------------------------------------------
+
 
 def effective_rank(activations: torch.Tensor, threshold: float = 0.99) -> float:
     """Threshold rank: the fewest singular values carrying `threshold` of the total.
@@ -996,9 +1014,7 @@ def plasticity_metrics(
     """
     abs_mean = stats["abs_mean"]
     metrics = {
-        "dead_unit_frac": float(
-            (abs_mean < config.dead_unit_threshold).float().mean().item()
-        ),
+        "dead_unit_frac": float((abs_mean < config.dead_unit_threshold).float().mean().item()),
         "saturated_unit_frac": float((abs_mean > 0.9).float().mean().item()),
         "mean_weight_magnitude": layer.mean_weight_magnitude(),
         "utility_min": float(corrected_utility.min().item()),

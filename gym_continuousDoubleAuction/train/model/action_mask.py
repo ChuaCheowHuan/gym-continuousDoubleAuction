@@ -26,6 +26,7 @@ each component's distribution width - `Discrete(n)` takes `n` logits, a
 `Box` of `d` values takes `2d` (mean and log-std). The shipped Dict lists
 `category` first, so the slice is `[0:9]`, and a test pins that.
 """
+
 from __future__ import annotations
 
 from typing import Optional, Tuple

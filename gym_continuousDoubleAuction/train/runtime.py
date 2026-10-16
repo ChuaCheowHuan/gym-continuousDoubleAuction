@@ -29,6 +29,7 @@ not have to run before ray is *imported* - the one variable configured today is
 read when Ray's memory monitor is constructed, not at import (issue #244). A
 variable that Ray did read at import would need an import-time call instead.
 """
+
 from __future__ import annotations
 
 import os
@@ -56,8 +57,7 @@ AUTO = "auto"
 #: even where they do not apply (as null) so a missing one is a typo rather
 #: than a silent fallback - the same rule config_loader enforces elsewhere.
 _REQUIRED_PLATFORM_KEYS = frozenset(
-    {"repo_path", "results_root", "episode_data_root", "drive_mount_point",
-     "pip_packages"}
+    {"repo_path", "results_root", "episode_data_root", "drive_mount_point", "pip_packages"}
 )
 
 _TRUE = frozenset({"1", "true", "yes", "on", "gpu"})
@@ -170,8 +170,7 @@ def _platform_config(platform: str) -> Dict[str, Any]:
     platforms = group(PROFILES_FILE, "platforms")
     if platform not in platforms:
         raise KeyError(
-            f"{PROFILES_FILE}: no platform {platform!r}. "
-            f"Platforms present: {sorted(platforms)}."
+            f"{PROFILES_FILE}: no platform {platform!r}. Platforms present: {sorted(platforms)}."
         )
     entry = platforms[platform]
     missing = sorted(_REQUIRED_PLATFORM_KEYS - set(entry))
@@ -247,7 +246,10 @@ def resolve(
         logger.warning(
             "profile %r asks Ray for %s CPUs but this machine reports %s. Ray "
             "will accept the number as a logical resource and oversubscribe "
-            "the cores.", hardware, requested_cpus, available,
+            "the cores.",
+            hardware,
+            requested_cpus,
+            available,
         )
 
     return Runtime(
@@ -376,7 +378,9 @@ def chdir_to_repo(rt: Runtime) -> str:
         os.chdir(repo_path)
     elif repo_path:
         logger.warning(
-            "platform %r declares repo_path %r, which does not exist here - "
-            "staying in %s.", rt.platform, repo_path, os.getcwd(),
+            "platform %r declares repo_path %r, which does not exist here - staying in %s.",
+            rt.platform,
+            repo_path,
+            os.getcwd(),
         )
     return os.getcwd()

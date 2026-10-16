@@ -49,6 +49,7 @@ random price anchor on reset, so a return read across a boundary is a jump
 between unrelated price levels, and a probe trained on those rows is being
 taught to predict a reset.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -95,7 +96,10 @@ def register(name: str, kind: str, describe: str, min_horizon: int = 1):
         if name in TARGET_REGISTRY:
             raise ValueError(f"Target {name!r} is already registered.")
         TARGET_REGISTRY[name] = Target(
-            name=name, kind=kind, describe=describe, build=build,
+            name=name,
+            kind=kind,
+            describe=describe,
+            build=build,
             min_horizon=min_horizon,
         )
         return build
@@ -104,6 +108,7 @@ def register(name: str, kind: str, describe: str, min_horizon: int = 1):
 
 
 # --- Reading the snapshot ----------------------------------------------------
+
 
 def log_mid(snapshots: np.ndarray, layout: ObsLayout) -> np.ndarray:
     """`log(M)` per row. Always finite: `M` is floored positive in the env."""
@@ -145,8 +150,10 @@ def _ahead(values: np.ndarray, horizon: int) -> np.ndarray:
 
 # --- The targets -------------------------------------------------------------
 
+
 @register(
-    "mid_return", "regression",
+    "mid_return",
+    "regression",
     "log change in the L1 midpoint over the horizon",
 )
 def _mid_return(snapshots, layout, horizon):
@@ -155,7 +162,8 @@ def _mid_return(snapshots, layout, horizon):
 
 
 @register(
-    "mid_moves", "binary",
+    "mid_moves",
+    "binary",
     "whether the L1 midpoint changes at all over the horizon",
 )
 def _mid_moves(snapshots, layout, horizon):
@@ -164,7 +172,8 @@ def _mid_moves(snapshots, layout, horizon):
 
 
 @register(
-    "spread_change", "regression",
+    "spread_change",
+    "regression",
     "change in log1p(spread in ticks) over the horizon",
 )
 def _spread_change(snapshots, layout, horizon):
@@ -173,7 +182,8 @@ def _spread_change(snapshots, layout, horizon):
 
 
 @register(
-    "imbalance_change", "regression",
+    "imbalance_change",
+    "regression",
     "change in signed depth imbalance over the horizon",
 )
 def _imbalance_change(snapshots, layout, horizon):
@@ -182,7 +192,8 @@ def _imbalance_change(snapshots, layout, horizon):
 
 
 @register(
-    "two_sided", "binary",
+    "two_sided",
+    "binary",
     "whether a two-sided market exists at the horizon",
 )
 def _two_sided(snapshots, layout, horizon):
@@ -192,7 +203,8 @@ def _two_sided(snapshots, layout, horizon):
 
 
 @register(
-    "realized_vol", "regression",
+    "realized_vol",
+    "regression",
     "dispersion of midpoint returns across the horizon",
     min_horizon=2,
 )
@@ -204,13 +216,12 @@ def _realized_vol(snapshots, layout, horizon):
     windowed view would read across the end of the array.
     """
     values = log_mid(snapshots, layout)
-    steps = np.stack([
-        _ahead(values, i + 1) - _ahead(values, i) for i in range(horizon)
-    ])
+    steps = np.stack([_ahead(values, i + 1) - _ahead(values, i) for i in range(horizon)])
     return steps.std(axis=0)
 
 
 # --- Assembly ----------------------------------------------------------------
+
 
 def horizon_mask(episode_index: np.ndarray, horizon: int) -> np.ndarray:
     """`(N,)` bool: rows whose `t + horizon` is still inside the same episode.
@@ -222,9 +233,7 @@ def horizon_mask(episode_index: np.ndarray, horizon: int) -> np.ndarray:
     n = len(episode_index)
     valid = np.zeros(n, dtype=bool)
     if horizon < n:
-        valid[: n - horizon] = (
-            episode_index[: n - horizon] == episode_index[horizon:]
-        )
+        valid[: n - horizon] = episode_index[: n - horizon] == episode_index[horizon:]
     return valid
 
 
@@ -242,8 +251,7 @@ def resolve(names) -> List[Target]:
     unknown = sorted(set(names) - set(TARGET_REGISTRY))
     if unknown:
         raise ValueError(
-            f"Unknown probe target(s) {unknown}. Available: "
-            f"{', '.join(selectable_targets())}."
+            f"Unknown probe target(s) {unknown}. Available: {', '.join(selectable_targets())}."
         )
     return [TARGET_REGISTRY[name] for name in names]
 
@@ -269,8 +277,7 @@ def build(
     """
     if horizon < target.min_horizon:
         raise ValueError(
-            f"Target {target.name!r} needs horizon >= {target.min_horizon}; "
-            f"got {horizon}."
+            f"Target {target.name!r} needs horizon >= {target.min_horizon}; got {horizon}."
         )
     values = np.asarray(target.build(snapshots, layout, horizon), dtype=np.float64)
     valid = horizon_mask(episode_index, horizon) & np.isfinite(values)

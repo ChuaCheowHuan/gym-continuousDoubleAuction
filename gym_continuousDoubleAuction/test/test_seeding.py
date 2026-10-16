@@ -21,6 +21,7 @@ These tests deliberately do not touch global `np.random`. That is the point: if
 they passed only because something seeded the global stream, they would pass
 just as well against the code this is fixing.
 """
+
 import numpy as np
 
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
@@ -58,17 +59,18 @@ def _trajectory(seed, action_seed=7, steps=_STEPS):
             space.seed(int(action_rng.randint(0, 2**31 - 1)))
             actions[agent_id] = space.sample()
         _obs, rewards, _term, _trunc, infos = env.step(actions)
-        record.append((
-            env.last_price,
-            tuple(round(float(r), 9) for r in rewards.values()),
-            tuple(infos[a]["NAV"] for a in env.agents),
-            tuple(infos[a]["net_position"] for a in env.agents),
-        ))
+        record.append(
+            (
+                env.last_price,
+                tuple(round(float(r), 9) for r in rewards.values()),
+                tuple(infos[a]["NAV"] for a in env.agents),
+                tuple(infos[a]["net_position"] for a in env.agents),
+            )
+        )
     return record
 
 
 class TestResetSeedIsHonoured:
-
     def test_same_seed_gives_the_same_episode(self):
         assert _trajectory(seed=123) == _trajectory(seed=123)
 
@@ -126,8 +128,7 @@ class TestExecutionOrderIsSeeded:
         env.reset(seed=seed)
         actions = [{"ID": f"agent_{i}"} for i in range(8)]
         return [
-            tuple(a["ID"] for a in env.rand_exec_seq(list(actions), None))
-            for _ in range(calls)
+            tuple(a["ID"] for a in env.rand_exec_seq(list(actions), None)) for _ in range(calls)
         ]
 
     def test_shuffle_follows_the_env_seed(self):
@@ -163,7 +164,6 @@ class TestExecutionOrderIsSeeded:
 
 
 class TestSklearnIsGone:
-
     def test_the_env_package_does_not_import_sklearn(self):
         """A ~30MB dependency in every EnvRunner, to shuffle <= num_agents dicts.
 

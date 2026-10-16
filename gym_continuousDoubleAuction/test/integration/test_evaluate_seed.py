@@ -9,6 +9,7 @@ checkpoints could measure sampling noise.
 A real module set from a freshly built algorithm: no checkpoint is needed, only
 the modules and the league's mapping function that `roll_episode` reads.
 """
+
 import shutil
 import tempfile
 
@@ -22,16 +23,23 @@ from gym_continuousDoubleAuction.train import evaluate
 from gym_continuousDoubleAuction.train.train import TrainConfig, build_config
 
 TEST_CFG = dict(
-    num_agents=4, num_trained_agents=2, max_step=48, num_episodes_per_iter=2,
-    num_epochs=1, minibatch_size=48, num_env_runners=0, num_learners=0,
-    num_gpus_per_learner=0, episode_data_dir=None, log_level="ERROR",
+    num_agents=4,
+    num_trained_agents=2,
+    max_step=48,
+    num_episodes_per_iter=2,
+    num_epochs=1,
+    minibatch_size=48,
+    num_env_runners=0,
+    num_learners=0,
+    num_gpus_per_learner=0,
+    episode_data_dir=None,
+    log_level="ERROR",
 )
 
 
 @pytest.fixture(scope="module")
 def rig():
-    ray.init(ignore_reinit_error=True, include_dashboard=False,
-             log_to_driver=False, num_cpus=2)
+    ray.init(ignore_reinit_error=True, include_dashboard=False, log_to_driver=False, num_cpus=2)
     tmp = tempfile.mkdtemp(prefix="cda_evalseed_")
     cfg = TrainConfig(log_base_dir=tmp, **TEST_CFG)
     ppo, _ = build_config(cfg)
@@ -46,8 +54,10 @@ def rig():
 def _returns(rig, seed, episodes=2, deterministic=False):
     algo, env = rig
     mapping_fn = algo.config.policy_mapping_fn
-    records = [evaluate.roll_episode(algo, env, mapping_fn, i, seed, deterministic)
-               for i in range(episodes)]
+    records = [
+        evaluate.roll_episode(algo, env, mapping_fn, i, seed, deterministic)
+        for i in range(episodes)
+    ]
     return [[a["return"] for a in r["agents"]] for r in records]
 
 

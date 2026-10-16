@@ -12,6 +12,7 @@ Both GPU runs of 2026-08-15 died this way, at iterations 10 and 12 of 16,
 reporting healthy league stats right up to the iteration it happened. See
 doc/15_findings_and_recommendations.md S3-12.
 """
+
 import logging
 
 import pytest
@@ -43,7 +44,8 @@ def snapshots(callback, monkeypatch):
     """Records champion creation instead of touching an Algorithm."""
     created = []
     monkeypatch.setattr(
-        callback, "_create_champion_snapshot_from_policy",
+        callback,
+        "_create_champion_snapshot_from_policy",
         lambda algorithm, pid, return_value, iteration: created.append(
             (pid, return_value, iteration)
         ),
@@ -63,29 +65,34 @@ def _fire(callback, returns, iteration=1):
 
 
 class TestIdleModulesDoNotPoisonTheLeague:
-
     def test_a_champion_is_still_created(self, callback, snapshots, caplog):
         """The regression: one NaN used to veto every champion, forever."""
         with caplog.at_level(logging.INFO, logger=LOGGER):
-            _fire(callback, {
-                "policy_0": -1.0,       # far above the rest: a clear champion
-                "policy_1": -100.0,
-                "policy_2": -100.0,
-                "policy_3": -100.0,
-                "policy_6": float("nan"),   # never drawn this iteration
-            })
+            _fire(
+                callback,
+                {
+                    "policy_0": -1.0,  # far above the rest: a clear champion
+                    "policy_1": -100.0,
+                    "policy_2": -100.0,
+                    "policy_3": -100.0,
+                    "policy_6": float("nan"),  # never drawn this iteration
+                },
+            )
 
         assert [pid for pid, _r, _i in snapshots] == ["policy_0"]
         assert "mean=nan" not in caplog.text
 
     def test_the_idle_modules_are_named(self, callback, snapshots, caplog):
         with caplog.at_level(logging.INFO, logger=LOGGER):
-            _fire(callback, {
-                "policy_0": -1.0,
-                "policy_1": -100.0,
-                "policy_5": float("nan"),
-                "policy_6": float("nan"),
-            })
+            _fire(
+                callback,
+                {
+                    "policy_0": -1.0,
+                    "policy_1": -100.0,
+                    "policy_5": float("nan"),
+                    "policy_6": float("nan"),
+                },
+            )
 
         assert "policy_5, policy_6" in caplog.text
         assert "played no episodes" in caplog.text
@@ -99,12 +106,15 @@ class TestIdleModulesDoNotPoisonTheLeague:
     def test_the_statistics_ignore_the_idle_module(self, callback, snapshots, caplog):
         """Not just NaN-free - computed over the modules that actually played."""
         with caplog.at_level(logging.INFO, logger=LOGGER):
-            _fire(callback, {
-                "policy_0": 10.0,
-                "policy_1": 10.0,
-                "policy_2": 10.0,
-                "policy_7": float("nan"),
-            })
+            _fire(
+                callback,
+                {
+                    "policy_0": 10.0,
+                    "policy_1": 10.0,
+                    "policy_2": 10.0,
+                    "policy_7": float("nan"),
+                },
+            )
 
         assert "mean=10.00 std=0.00" in caplog.text
 
@@ -118,12 +128,15 @@ class TestIdleModulesDoNotPoisonTheLeague:
 
     def test_an_idle_trainable_is_never_the_champion(self, callback, snapshots):
         """NaN loses every comparison, so it must not win by being first."""
-        _fire(callback, {
-            "policy_0": float("nan"),
-            "policy_1": -1.0,
-            "policy_2": -100.0,
-            "policy_3": -100.0,
-        })
+        _fire(
+            callback,
+            {
+                "policy_0": float("nan"),
+                "policy_1": -1.0,
+                "policy_2": -100.0,
+                "policy_3": -100.0,
+            },
+        )
 
         assert [pid for pid, _r, _i in snapshots] == ["policy_1"]
 
@@ -141,6 +154,7 @@ class TestLeagueMetrics:
 
     def _metrics(self):
         from unittest.mock import MagicMock
+
         return MagicMock()
 
     def _emitted(self, metrics, name):
@@ -152,7 +166,8 @@ class TestLeagueMetrics:
     def test_a_quiet_iteration_reports_no_promotion(self, callback, snapshots):
         metrics = self._metrics()
         callback.on_train_result(
-            algorithm=object(), metrics_logger=metrics,
+            algorithm=object(),
+            metrics_logger=metrics,
             result=_result({"policy_0": 1.0, "policy_1": 1.0}),
         )
 
@@ -163,7 +178,8 @@ class TestLeagueMetrics:
     def test_the_pool_size_is_reported(self, callback, snapshots):
         metrics = self._metrics()
         callback.on_train_result(
-            algorithm=object(), metrics_logger=metrics,
+            algorithm=object(),
+            metrics_logger=metrics,
             result=_result({"policy_0": 1.0, "policy_1": 2.0}),
         )
 
@@ -176,11 +192,16 @@ class TestLeagueMetrics:
         is quietly shrinking to the modules the mapping fn happens to draw."""
         metrics = self._metrics()
         callback.on_train_result(
-            algorithm=object(), metrics_logger=metrics,
-            result=_result({
-                "policy_0": 1.0, "policy_1": 2.0,
-                "policy_5": float("nan"), "policy_6": float("nan"),
-            }),
+            algorithm=object(),
+            metrics_logger=metrics,
+            result=_result(
+                {
+                    "policy_0": 1.0,
+                    "policy_1": 2.0,
+                    "policy_5": float("nan"),
+                    "policy_6": float("nan"),
+                }
+            ),
         )
 
         assert self._emitted(metrics, "idle_modules").args[1] == 2.0
@@ -190,12 +211,12 @@ class TestLeagueMetrics:
         discarded every time. It is what says whether the cooldown or the
         threshold is holding the league still."""
         callback.champion_history.append(
-            {"id": "champion_1", "source_policy": "policy_0",
-             "iteration": 4, "return": 1.0}
+            {"id": "champion_1", "source_policy": "policy_0", "iteration": 4, "return": 1.0}
         )
         metrics = self._metrics()
         callback.on_train_result(
-            algorithm=object(), metrics_logger=metrics,
+            algorithm=object(),
+            metrics_logger=metrics,
             result=_result({"policy_0": 1.0, "policy_1": 1.0}, iteration=9),
         )
 
@@ -207,7 +228,8 @@ class TestLeagueMetrics:
         cb = SelfPlayCallback(num_trainable_policies=2, num_random_policies=6)
         metrics = self._metrics()
         cb.on_train_result(
-            algorithm=object(), metrics_logger=metrics,
+            algorithm=object(),
+            metrics_logger=metrics,
             result=_result({"policy_0": 1.0, "policy_1": 1.0}),
         )
 
@@ -216,13 +238,19 @@ class TestLeagueMetrics:
     @staticmethod
     def _promoter(callback):
         """What a successful `_create_champion_snapshot_from_policy` leaves."""
+
         def _promote(algorithm, pid, return_value, iteration):
             callback.champion_id_counter += 1
             callback.champion_history.append(
-                {"id": f"champion_{callback.champion_id_counter}", "source_policy": pid,
-                 "iteration": iteration, "return": return_value}
+                {
+                    "id": f"champion_{callback.champion_id_counter}",
+                    "source_policy": pid,
+                    "iteration": iteration,
+                    "return": return_value,
+                }
             )
             callback.champion_count += 1
+
         return _promote
 
     def test_a_promotion_is_counted(self, callback, monkeypatch):
@@ -231,11 +259,14 @@ class TestLeagueMetrics:
         itself back has not promoted anything, and
         `_create_champion_snapshot_from_policy` swallows its own exceptions."""
         monkeypatch.setattr(
-            callback, "_create_champion_snapshot_from_policy", self._promoter(callback),
+            callback,
+            "_create_champion_snapshot_from_policy",
+            self._promoter(callback),
         )
         metrics = self._metrics()
         callback.on_train_result(
-            algorithm=object(), metrics_logger=metrics,
+            algorithm=object(),
+            metrics_logger=metrics,
             result=_result({"policy_0": 10.0, "policy_1": 0.0, "policy_5": 0.0}),
         )
 
@@ -245,12 +276,17 @@ class TestLeagueMetrics:
         """A full league evicts its oldest champion before the new one is made,
         so the champion count is the same either side: counting its change read
         0 for every promotion once the league had filled up."""
-        cb = SelfPlayCallback(num_trainable_policies=2, num_random_policies=6,
-                              min_iterations_between_champions=0, max_champions=1,
-                              std_dev_multiplier=0.1)
+        cb = SelfPlayCallback(
+            num_trainable_policies=2,
+            num_random_policies=6,
+            min_iterations_between_champions=0,
+            max_champions=1,
+            std_dev_multiplier=0.1,
+        )
         cb.champion_id_counter = 1
-        cb.champion_history.append({"id": "champion_1", "source_policy": "policy_0",
-                                    "iteration": 0, "return": 1.0})
+        cb.champion_history.append(
+            {"id": "champion_1", "source_policy": "policy_0", "iteration": 0, "return": 1.0}
+        )
         cb.champion_count = 1
         monkeypatch.setattr(cb, "_create_champion_snapshot_from_policy", self._promoter(cb))
         metrics = self._metrics()
@@ -266,7 +302,8 @@ class TestLeagueMetrics:
         exactly the shape of a snapshot that raised and rolled back."""
         metrics = self._metrics()
         callback.on_train_result(
-            algorithm=object(), metrics_logger=metrics,
+            algorithm=object(),
+            metrics_logger=metrics,
             result=_result({"policy_0": 10.0, "policy_1": 0.0, "policy_5": 0.0}),
         )
 
@@ -302,18 +339,26 @@ class TestLeagueStateInTheResult:
     def test_a_promotion_lands_in_its_own_iteration(self, callback, monkeypatch):
         """The whole point. Under the metrics channel alone this reads 0 here
         and 1 in the next iteration's row."""
+
         def _promote(algorithm, pid, return_value, iteration):
             callback.champion_count += 1
             callback.champion_history.append(
-                {"id": "champion_1", "source_policy": pid,
-                 "iteration": iteration, "return": return_value}
+                {
+                    "id": "champion_1",
+                    "source_policy": pid,
+                    "iteration": iteration,
+                    "return": return_value,
+                }
             )
 
         monkeypatch.setattr(
-            callback, "_create_champion_snapshot_from_policy", _promote,
+            callback,
+            "_create_champion_snapshot_from_policy",
+            _promote,
         )
         result = _result(
-            {"policy_0": 10.0, "policy_1": 0.0, "policy_5": 0.0}, iteration=4,
+            {"policy_0": 10.0, "policy_1": 0.0, "policy_5": 0.0},
+            iteration=4,
         )
         callback.on_train_result(algorithm=object(), result=result)
 
@@ -322,10 +367,14 @@ class TestLeagueStateInTheResult:
         assert result["league"]["iterations_since_champion"] == 0
 
     def test_idle_modules_are_counted_in_the_result(self, callback, snapshots):
-        result = _result({
-            "policy_0": 1.0, "policy_1": 2.0,
-            "policy_5": float("nan"), "policy_6": float("nan"),
-        })
+        result = _result(
+            {
+                "policy_0": 1.0,
+                "policy_1": 2.0,
+                "policy_5": float("nan"),
+                "policy_6": float("nan"),
+            }
+        )
         callback.on_train_result(algorithm=object(), result=result)
 
         assert result["league"]["idle_modules"] == 2

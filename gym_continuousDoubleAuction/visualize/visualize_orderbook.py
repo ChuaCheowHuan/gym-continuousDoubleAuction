@@ -11,6 +11,7 @@ from gym_continuousDoubleAuction.envs.exchg.state_helper import (
 )
 from gym_continuousDoubleAuction.visualize.episode_data import load_episode
 
+
 def _newest_snapshot(obs):
     """The most recent book snapshot from a recorded observation.
 
@@ -87,7 +88,9 @@ def visualize_episode_data(run_dir=None, episode_id=None, agent_id=None):
         agent_id = constant("visualize_paths", "default_agent_id")
 
     episode = load_episode(
-        run_dir, episode_id, columns=["agent_id", "best_bid", "best_ask", "obs"],
+        run_dir,
+        episode_id,
+        columns=["agent_id", "best_bid", "best_ask", "obs"],
     )
     episode = episode[episode["agent_id"] == agent_id]
     if episode.empty:
@@ -101,8 +104,10 @@ def visualize_episode_data(run_dir=None, episode_id=None, agent_id=None):
 
     total_bid_size, total_ask_size, skipped = _book_sizes(episode["obs"])
     if skipped:
-        print(f"{skipped} of {len(episode)} steps had no recorded observation "
-              "and are gaps in the size plot.")
+        print(
+            f"{skipped} of {len(episode)} steps had no recorded observation "
+            "and are gaps in the size plot."
+        )
 
     # Plotting
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
@@ -116,8 +121,12 @@ def visualize_episode_data(run_dir=None, episode_id=None, agent_id=None):
     ax1.grid(True, alpha=0.3)
 
     # 2. Size Plot (Total Volume)
-    ax2.plot(range(len(total_bid_size)), total_bid_size, color='green', alpha=0.3, label='Total Bid Size')
-    ax2.plot(range(len(total_ask_size)), total_ask_size, color='red', alpha=0.3, label='Total Ask Size')
+    ax2.plot(
+        range(len(total_bid_size)), total_bid_size, color='green', alpha=0.3, label='Total Bid Size'
+    )
+    ax2.plot(
+        range(len(total_ask_size)), total_ask_size, color='red', alpha=0.3, label='Total Ask Size'
+    )
     ax2.set_ylabel('Total Size (Volume)')
     ax2.set_xlabel('Step')
     ax2.set_title('Orderbook Cumulative Size Changes')
@@ -132,6 +141,7 @@ def visualize_episode_data(run_dir=None, episode_id=None, agent_id=None):
     plt.savefig(output_plot)
     print(f"Plot saved to {output_plot}")
     plt.show()
+
 
 if __name__ == "__main__":
     visualize_episode_data()

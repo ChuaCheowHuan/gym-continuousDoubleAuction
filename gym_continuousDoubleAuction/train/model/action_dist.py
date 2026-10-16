@@ -21,6 +21,7 @@ squeezes the time rank off each item, raises (issue #278). A stateless module ha
 trailing singleton is squeezed only when the value has more dimensions than the
 distribution's batch shape, which is the case the line was written for.
 """
+
 from __future__ import annotations
 
 from typing import Dict, Type

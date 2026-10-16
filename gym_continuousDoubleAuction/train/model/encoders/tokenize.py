@@ -39,6 +39,7 @@ channel, the softmax saturates, and attention collapses onto a single token. So
 every encoder built on these tokens applies LayerNorm immediately after the
 input projection. That is not a tuning knob and is not configurable.
 """
+
 from __future__ import annotations
 
 from typing import Tuple
@@ -135,8 +136,12 @@ def tokenize(obs: torch.Tensor, layout: ObsLayout, tokenization: str) -> torch.T
     # is narrower keeps trailing zeros; neither is ever truncated.
     width = token_width(layout)
     tokens = torch.zeros(
-        batch, layout.n_hist, layout.k_rows + 1, width,
-        dtype=book.dtype, device=book.device,
+        batch,
+        layout.n_hist,
+        layout.k_rows + 1,
+        width,
+        dtype=book.dtype,
+        device=book.device,
     )
     tokens[..., : layout.k_rows, : layout.book_rows] = book
     tokens[..., layout.k_rows, : layout.extra_dim] = extras
@@ -168,7 +173,6 @@ def tokenize(obs: torch.Tensor, layout: ObsLayout, tokenization: str) -> torch.T
     return tokens.reshape(batch, layout.n_hist * (layout.k_rows + 1), width)
 
 
-
 def positional_index(layout: ObsLayout, tokenization: str):
     """(time index, level index) per token, for the two positional embeddings.
 
@@ -198,9 +202,9 @@ def positional_index(layout: ObsLayout, tokenization: str):
     # "both" is time-major: index = t * stride + level.
     return positions // stride, positions % stride
 
+
 def _check(tokenization: str) -> None:
     if tokenization not in TOKENIZATIONS:
         raise ValueError(
-            f"Unknown tokenization {tokenization!r}. "
-            f"Available: {', '.join(TOKENIZATIONS)}."
+            f"Unknown tokenization {tokenization!r}. Available: {', '.join(TOKENIZATIONS)}."
         )

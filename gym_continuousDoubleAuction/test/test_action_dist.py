@@ -6,6 +6,7 @@ value. For an `lstm` module run at inference the logits are `(B, 1, n)` and that
 trailing 1 is the time axis, so `(B, 1)` becomes `(B,)` and broadcasts against
 the distribution's `(B, 1)` batch shape to `(B, B)`.
 """
+
 import pytest
 import torch
 from ray.rllib.core.distribution.torch.torch_distribution import (
@@ -37,7 +38,6 @@ def _safe(batch, time):
 
 
 class TestTheBugIsReal:
-
     def test_rllib_returns_a_square_for_two_agents_with_a_time_rank(self):
         """If this stops failing RLlib fixed it and `action_dist` can go."""
         logp = _multi(2, 1).logp(_value(2, 1))
@@ -45,7 +45,6 @@ class TestTheBugIsReal:
 
 
 class TestTheSafeDistribution:
-
     @pytest.mark.parametrize("batch", [1, 2, 5])
     def test_a_time_rank_of_one_keeps_batch_and_time(self, batch):
         logp = _safe(batch, 1).logp(_value(batch, 1))
@@ -63,8 +62,9 @@ class TestTheSafeDistribution:
     def test_values_are_the_sum_of_the_heads(self):
         d = _safe(2, 1)
         v = _value(2, 1)
-        expected = d._flat_child_distributions[0].logp(v[0]) + \
-            d._flat_child_distributions[1].logp(v[1]).reshape(2, 1)
+        expected = d._flat_child_distributions[0].logp(v[0]) + d._flat_child_distributions[1].logp(
+            v[1]
+        ).reshape(2, 1)
         assert torch.allclose(d.logp(v), expected.reshape(2, 1))
 
     def test_the_old_squeeze_case_still_works(self):
@@ -77,7 +77,6 @@ class TestTheSafeDistribution:
 
 
 class TestTheWrapper:
-
     def test_it_is_cached(self):
         assert time_rank_safe(TorchMultiDistribution) is time_rank_safe(TorchMultiDistribution)
 

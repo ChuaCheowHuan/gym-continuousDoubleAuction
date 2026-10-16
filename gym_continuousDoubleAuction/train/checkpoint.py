@@ -1,4 +1,5 @@
 """Checkpoints: save, retention, the league sidecar, restore checks and the optimiser fix (issue #254)."""
+
 from __future__ import annotations
 import json
 import os
@@ -72,7 +73,7 @@ def list_checkpoints(root: str) -> List[Tuple[int, str]]:
             continue
         path = os.path.join(root, name)
         try:
-            iteration = int(name[len(CHECKPOINT_PREFIX):])
+            iteration = int(name[len(CHECKPOINT_PREFIX) :])
         except ValueError:
             continue
         if _is_checkpoint(path):
@@ -129,7 +130,8 @@ def _prune_checkpoints(root: str, keep: int) -> None:
         logger.info(
             "note: %s also holds a checkpoint in the old single-directory "
             "layout. It is kept as a last-resort restore candidate and is never "
-            "pruned; delete it by hand once the iter_* saves are trusted.", root,
+            "pruned; delete it by hand once the iter_* saves are trusted.",
+            root,
         )
 
     prunable = [path for iteration, path in checkpoints if iteration >= 0]
@@ -138,7 +140,7 @@ def _prune_checkpoints(root: str, keep: int) -> None:
     # coarse timestamps produces when two saves land in the same second.
     prunable.sort(key=lambda path: (_mtime(path), _iteration_of(path)))
 
-    for path in prunable[:max(0, len(prunable) - keep)]:
+    for path in prunable[: max(0, len(prunable) - keep)]:
         shutil.rmtree(path, ignore_errors=True)
         logger.info("pruned old checkpoint: %s", path)
 
@@ -154,7 +156,7 @@ def _iteration_of(path: str) -> int:
     """The iteration in an `iter_<n>` basename, or -1 if it has none."""
     name = os.path.basename(path)
     try:
-        return int(name[len(CHECKPOINT_PREFIX):])
+        return int(name[len(CHECKPOINT_PREFIX) :])
     except ValueError:
         return -1
 
@@ -183,7 +185,9 @@ def warn_about_foreign_checkpoints(cfg: TrainConfig) -> List[str]:
             "until it passes their iteration numbers, a --restore would pick "
             "one of them over anything written here. Move or delete them, or "
             "point log_base_dir somewhere new.",
-            cfg.checkpoint_dir, len(stale), ", ".join(os.path.basename(p) for p in stale),
+            cfg.checkpoint_dir,
+            len(stale),
+            ", ".join(os.path.basename(p) for p in stale),
         )
     return stale
 
@@ -281,7 +285,8 @@ def _reconcile_league_state(algo, path: str) -> None:
     repairs = callback.restore_league_state(state, _present_module_ids(algo))
     if not repairs:
         logger.info(
-            "league state verified: %s champion(s)", callback.champion_count,
+            "league state verified: %s champion(s)",
+            callback.champion_count,
         )
         return
 
@@ -425,9 +430,7 @@ def _config_fingerprint(config) -> dict:
         # holds more of them than a freshly built one. `policies_to_train` can be
         # a callable, which has nothing comparable about it.
         if value is not missing and isinstance(value, (list, tuple, set, dict)):
-            fingerprint[key] = sorted(
-                m for m in value if not str(m).startswith(CHAMPION_PREFIX)
-            )
+            fingerprint[key] = sorted(m for m in value if not str(m).startswith(CHAMPION_PREFIX))
 
     for key, value in (getattr(config, "env_config", None) or {}).items():
         fingerprint[f"env_config.{key}"] = value
@@ -458,9 +461,7 @@ def _config_fingerprint(config) -> dict:
                 # Lists are not comparable across a JSON round trip in the way
                 # the `!=` here needs; `adam_betas` is the only one and a tuple
                 # compares cleanly against a list once both are normalised.
-                fingerprint[key] = (
-                    tuple(value) if isinstance(value, list) else value
-                )
+                fingerprint[key] = tuple(value) if isinstance(value, list) else value
 
     fingerprint.update(_encoder_fingerprint(config))
 
@@ -536,17 +537,12 @@ def _check_restored_config(restored, desired) -> None:
         )
         raise ValueError(f"Cannot restore: {kind}\n{detail}\n{explanation}")
 
-    diverged = {
-        key: (old[key], new[key])
-        for key in set(old) & set(new)
-        if old[key] != new[key]
-    }
+    diverged = {key: (old[key], new[key]) for key in set(old) & set(new) if old[key] != new[key]}
 
     structural = {k: v for k, v in diverged.items() if k in STRUCTURAL_CONFIG_KEYS}
     if structural:
         fail(
-            "the configuration changes the shape of the problem the checkpoint "
-            "was trained on.",
+            "the configuration changes the shape of the problem the checkpoint was trained on.",
             structural,
             "The restored weights do not fit. Either revert these keys, or "
             "start a fresh run (is_restore false, or a new log_base_dir).",
@@ -567,8 +563,7 @@ def _check_restored_config(restored, desired) -> None:
     # The tuning knobs only count when the mechanism is actually running on one
     # side or the other; otherwise they describe something that was not going to
     # happen either way, and failing a resume over one would be pure noise.
-    if any(checkpoint_value(k) or new.get(k)
-           for k in ("cbp_enabled", "cbp_metrics_only")):
+    if any(checkpoint_value(k) or new.get(k) for k in ("cbp_enabled", "cbp_metrics_only")):
         checked += list(UNRESTORABLE_WHEN_ACTIVE_KEYS)
 
     unrestorable = {
@@ -601,7 +596,8 @@ def _check_restored_config(restored, desired) -> None:
         "NOT take effect:\n%s\n"
         "  Restore rebuilds the algorithm from the checkpoint, so only the "
         "driver-side knobs (num_iters, chkpt_freq, chkpt_keep) still apply. To "
-        "train with these values, start a fresh run.", detail,
+        "train with these values, start a fresh run.",
+        detail,
     )
 
 
@@ -636,7 +632,8 @@ def restore_candidates(cfg: TrainConfig) -> List[Tuple[int, str]]:
     if not _is_checkpoint(path):
         available = [p for _i, p in reversed(list_checkpoints(cfg.checkpoint_dir))]
         listing = (
-            "\n".join(f"  {p}" for p in available) if available
+            "\n".join(f"  {p}" for p in available)
+            if available
             else f"  (none under {cfg.checkpoint_dir})"
         )
         raise ValueError(
@@ -653,7 +650,7 @@ def _checkpoint_iteration(path: str) -> int:
     name = os.path.basename(os.path.normpath(path))
     if name.startswith(CHECKPOINT_PREFIX):
         try:
-            return int(name[len(CHECKPOINT_PREFIX):])
+            return int(name[len(CHECKPOINT_PREFIX) :])
         except ValueError:
             pass
     return -1
@@ -667,8 +664,7 @@ def _fix_checkpoint_optimizer_betas(algo) -> None:
             for param_group in optimizer.param_groups:
                 if "betas" in param_group:
                     param_group["betas"] = tuple(
-                        b.item() if torch.is_tensor(b) else b
-                        for b in param_group["betas"]
+                        b.item() if torch.is_tensor(b) else b for b in param_group["betas"]
                     )
 
     algo.learner_group.foreach_learner(fix_betas)

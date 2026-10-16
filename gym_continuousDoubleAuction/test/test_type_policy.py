@@ -20,6 +20,7 @@ sizes as Decimal internally, so the boundary is normalised on the way out by
 `trader._normalise_trade_sizes` - these tests pin that boundary, since it is
 what makes the policy hold everywhere else.
 """
+
 import os
 import sys
 from decimal import Decimal
@@ -36,36 +37,55 @@ from gym_continuousDoubleAuction.envs.agent.trader import _normalise_trade_sizes
 NUM_AGENTS = 4
 INIT_CASH = 1000000
 
-MONEY_FIELDS = ["cash", "cash_on_hold", "position_val", "init_nav", "nav",
-                "prev_nav", "max_nav", "profit", "total_profit"]
+MONEY_FIELDS = [
+    "cash",
+    "cash_on_hold",
+    "position_val",
+    "init_nav",
+    "nav",
+    "prev_nav",
+    "max_nav",
+    "profit",
+    "total_profit",
+]
 PRICE_FIELDS = ["VWAP"]
-SIZE_FIELDS = ["net_position", "num_trades", "num_trades_step",
-               "num_passive_fills_step", "order_step_placed"]
+SIZE_FIELDS = [
+    "net_position",
+    "num_trades",
+    "num_trades_step",
+    "num_passive_fills_step",
+    "order_step_placed",
+]
 SIGNAL_FIELDS = ["reward", "drawdown"]
 
 
 @pytest.fixture(scope="module")
 def stepped_env():
-    env = continuousDoubleAuctionEnv({
-        "num_of_agents": NUM_AGENTS,
-        "init_cash": INIT_CASH,
-        "tick_size": 1,
-        "tape_display_length": 100000,
-        "max_step": 100,
-    })
+    env = continuousDoubleAuctionEnv(
+        {
+            "num_of_agents": NUM_AGENTS,
+            "init_cash": INIT_CASH,
+            "tick_size": 1,
+            "tape_display_length": 100000,
+            "max_step": 100,
+        }
+    )
     env.reset()
     snapshots = []
     for _ in range(40):
         actions = {
-            f"agent_{i}": env.action_spaces[f"agent_{i}"].sample()
-            for i in range(NUM_AGENTS)
+            f"agent_{i}": env.action_spaces[f"agent_{i}"].sample() for i in range(NUM_AGENTS)
         }
         _, _, terminateds, truncateds, _ = env.step(actions)
-        snapshots.append([
-            {f: getattr(t.acc, f) for f in
-             MONEY_FIELDS + PRICE_FIELDS + SIZE_FIELDS + SIGNAL_FIELDS}
-            for t in env.traders
-        ])
+        snapshots.append(
+            [
+                {
+                    f: getattr(t.acc, f)
+                    for f in MONEY_FIELDS + PRICE_FIELDS + SIZE_FIELDS + SIGNAL_FIELDS
+                }
+                for t in env.traders
+            ]
+        )
         if terminateds.get("__all__") or truncateds.get("__all__"):
             break
     return env, snapshots
@@ -79,7 +99,6 @@ def _every(snapshots, fields):
 
 
 class TestAccountTypes:
-
     def test_money_is_decimal(self, stepped_env):
         _, snapshots = stepped_env
         for field, value in _every(snapshots, MONEY_FIELDS):
@@ -182,8 +201,7 @@ class TestBookIngress:
     def test_set_actions_emits_int_sizes(self, stepped_env):
         env, _ = stepped_env
         model_outs = {
-            f"agent_{i}": env.action_spaces[f"agent_{i}"].sample()
-            for i in range(NUM_AGENTS)
+            f"agent_{i}": env.action_spaces[f"agent_{i}"].sample() for i in range(NUM_AGENTS)
         }
         for act in env.set_actions(model_outs):
             size = act["size"]
@@ -216,8 +234,7 @@ class TestBookIngress:
             env.LOB.process_order = original
 
         assert seen, "no orders reached the book"
-        offenders = [q for q in seen
-                     if q is not None and not isinstance(q, int)]
+        offenders = [q for q in seen if q is not None and not isinstance(q, int)]
         assert not offenders, (
             f"{len(offenders)} of {len(seen)} orders entered the book with a "
             f"non-int size, e.g. {offenders[0]!r}"

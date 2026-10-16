@@ -14,6 +14,7 @@ relative `visualize/chart/*.png` - e.g.:
     cd gym_continuousDoubleAuction
     python -m visualize.run_all
 """
+
 import argparse
 
 from gym_continuousDoubleAuction.visualize import (
@@ -27,7 +28,10 @@ from gym_continuousDoubleAuction.visualize import (
 
 
 def run_all(
-    run_dir=None, episode_id=None, agent_id=None, num_trained_agents=None,
+    run_dir=None,
+    episode_id=None,
+    agent_id=None,
+    num_trained_agents=None,
     training_run_dir=None,
 ):
     """Runs every visualize_*.py chart function and saves the results.
@@ -55,27 +59,37 @@ def run_all(
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     p.add_argument(
-        "--run-dir", default=None,
+        "--run-dir",
+        default=None,
         help="episode Parquet run directory; defaults to the most recently written run",
     )
     p.add_argument(
-        "--episode-id", default=None,
+        "--episode-id",
+        default=None,
         help="episode within --run-dir; defaults to the most recently completed one",
     )
     p.add_argument(
-        "--agent-id", default=None,
+        "--agent-id",
+        default=None,
         help="agent for the single-agent views; defaults to visualize_paths.default_agent_id",
     )
     p.add_argument(
-        "--trained-agents", dest="num_trained_agents", type=int, default=None,
+        "--trained-agents",
+        dest="num_trained_agents",
+        type=int,
+        default=None,
         help="trainable policy count for the module comparison; defaults to train_config.json",
     )
     p.add_argument(
-        "--training-run-dir", default=None,
+        "--training-run-dir",
+        default=None,
         help="progress.jsonl run directory; defaults to the most recently written run",
     )
     args = p.parse_args()
     run_all(
-        args.run_dir, args.episode_id, args.agent_id, args.num_trained_agents,
+        args.run_dir,
+        args.episode_id,
+        args.agent_id,
+        args.num_trained_agents,
         args.training_run_dir,
     )

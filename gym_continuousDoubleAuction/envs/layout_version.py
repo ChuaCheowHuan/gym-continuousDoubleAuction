@@ -11,6 +11,7 @@ Two version numbers rather than one, because the observation and the action
 Dict change for different reasons and a reader wants to know which moved.
 The field and key lists travel too, so a mismatch names what differs.
 """
+
 from __future__ import annotations
 
 from gym_continuousDoubleAuction.envs.exchg.action_helper import (
@@ -67,8 +68,12 @@ def check_layout_stamp(sidecar, path: str, book_mode=None) -> None:
     stamp = sidecar.get(LAYOUT_KEY)
     current = layout_stamp()
     if stamp is None:
-        stamp = {"observation_version": 1, "action_version": 1,
-                 "private_fields": None, "action_keys": None}
+        stamp = {
+            "observation_version": 1,
+            "action_version": 1,
+            "private_fields": None,
+            "action_keys": None,
+        }
     problems = []
     for axis in ("observation", "action"):
         theirs = stamp.get(f"{axis}_version")
@@ -101,8 +106,9 @@ def check_layout_stamp(sidecar, path: str, book_mode=None) -> None:
     if problems:
         raise ValueError(
             f"Cannot restore {path}: it was trained against a different "
-            f"observation/action layout.\n  " + "\n  ".join(problems) +
-            "\nWeights trained on one layout do not fit another - the input "
+            f"observation/action layout.\n  "
+            + "\n  ".join(problems)
+            + "\nWeights trained on one layout do not fit another - the input "
             "and output widths changed, and even where they did not the "
             "floats mean something else. Start a fresh run (is_restore false, "
             "or a new log_base_dir). See doc/15 S4-19 and doc/05 section 10."

@@ -198,7 +198,9 @@ class SelfPlayCallback(RLlibCallback):
             markout_horizons = league["markout_horizons"]
         markout_horizons = tuple(int(h) for h in markout_horizons)
         if any(h < 1 for h in markout_horizons):
-            raise ValueError(f"markout_horizons must be positive step counts; got {markout_horizons}.")
+            raise ValueError(
+                f"markout_horizons must be positive step counts; got {markout_horizons}."
+            )
         if episode_sample_every is None:
             episode_sample_every = league["episode_sample_every"]
         if episode_max_bytes is None:
@@ -220,7 +222,7 @@ class SelfPlayCallback(RLlibCallback):
 
         self.num_trainable = num_trainable_policies
         self.num_random = num_random_policies
-        
+
         # Champion snapshotting configuration
         self.std_dev_multiplier = std_dev_multiplier
         # With n modules, no module is more than sqrt(n - 1) population standard
@@ -235,7 +237,8 @@ class SelfPlayCallback(RLlibCallback):
                 "modules (the best any module can do is %.2f standard "
                 "deviations above the mean), so no champion will ever be "
                 "promoted. Lower it, or add modules.",
-                std_dev_multiplier, num_trainable_policies + num_random_policies,
+                std_dev_multiplier,
+                num_trainable_policies + num_random_policies,
                 ceiling,
             )
         self.max_champions = max_champions
@@ -244,16 +247,14 @@ class SelfPlayCallback(RLlibCallback):
         # Probabilistic selection configuration
         self.original_opponent_weight = original_opponent_weight
         self.champion_weight = champion_weight
-        
+
         # Champion tracking state
         self.champion_count = 0
         self.champion_id_counter = 0  # Monotonic counter for unique IDs
         self.champion_history = []  # List of dicts with champion metadata
-        
+
         # Initialize available modules: [policy_0...policy_k-1] + [policy_k...policy_n-1]
-        self.available_modules = [
-            policy_id(i) for i in range(self.num_trainable + self.num_random)
-        ]
+        self.available_modules = [policy_id(i) for i in range(self.num_trainable + self.num_random)]
 
         # The per-step episode record, or None when it is switched off.
         #
@@ -278,7 +279,6 @@ class SelfPlayCallback(RLlibCallback):
         # the kind of thing that survives locally and fails on a restore path
         # nobody exercised.
         self._activity = {}
-
 
     #: How many unfinished episodes' tallies to keep. `on_episode_end` is not
     #: called for episodes a force-reset discards (doc/21 §3.2), so a dict keyed
@@ -385,17 +385,13 @@ class SelfPlayCallback(RLlibCallback):
         clip_fraction = tally["clipped_steps"] / agent_steps
 
         metrics_logger.log_value("pass_action_fraction", pass_fraction, window=10)
-        metrics_logger.log_value(
-            "order_rejection_fraction", rejection_fraction, window=10
-        )
+        metrics_logger.log_value("order_rejection_fraction", rejection_fraction, window=10)
         # A modify or cancel that named no resting order. Together the three
         # fractions bound how much of the league's activity is a no-op: an
         # agent whose policy has drifted to "cancel" at every step scores
         # exactly like one that passes, and neither the return series nor
         # pass_action_fraction would say so.
-        metrics_logger.log_value(
-            "unmatched_action_fraction", unmatched_fraction, window=10
-        )
+        metrics_logger.log_value("unmatched_action_fraction", unmatched_fraction, window=10)
         # Share of agent-steps whose observation hit a declared bound. The
         # bounds are measured claims (doc/16 section 16.22); this is the
         # number that says whether the market has since escaped them.
@@ -410,10 +406,12 @@ class SelfPlayCallback(RLlibCallback):
         self._log_module_performance(episode, tally, metrics_logger)
 
         logger.debug(
-            "episode %s activity: %s agent-steps, %.1f%% pass, %.1f%% rejected, "
-            "%.1f%% unmatched",
-            episode.id_, agent_steps, 100 * pass_fraction,
-            100 * rejection_fraction, 100 * unmatched_fraction,
+            "episode %s activity: %s agent-steps, %.1f%% pass, %.1f%% rejected, %.1f%% unmatched",
+            episode.id_,
+            agent_steps,
+            100 * pass_fraction,
+            100 * rejection_fraction,
+            100 * unmatched_fraction,
         )
 
     def _log_module_trades(self, episode, tally, metrics_logger) -> None:
@@ -439,7 +437,9 @@ class SelfPlayCallback(RLlibCallback):
                 continue
             trades = tally["per_agent_fills"].get(agent_id, {}).get("trades", 0)
             metrics_logger.log_value(
-                (MODULE_TRADES_METRIC, module_id), float(trades), reduce="mean",
+                (MODULE_TRADES_METRIC, module_id),
+                float(trades),
+                reduce="mean",
             )
 
     def _threshold_returns(self, policy_returns, valid_returns):
@@ -459,10 +459,12 @@ class SelfPlayCallback(RLlibCallback):
         """
         if self.promotion_reference == "pooled":
             return valid_returns, "pooled"
-        baselines = {policy_id(i) for i in range(
-            self.num_trainable, self.num_trainable + self.num_random)}
+        baselines = {
+            policy_id(i) for i in range(self.num_trainable, self.num_trainable + self.num_random)
+        }
         kept = [
-            v for module_id, v in policy_returns.items()
+            v
+            for module_id, v in policy_returns.items()
             if module_id not in baselines and usable_return(v) is not None
         ]
         if math.sqrt(max(len(kept) - 1, 0)) <= self.std_dev_multiplier:
@@ -473,7 +475,9 @@ class SelfPlayCallback(RLlibCallback):
                     "compare, and with that few nobody can be more than sqrt(n - 1) = "
                     "%.2f standard deviations above the mean, under the %g needed: "
                     "using the pooled threshold until there are enough champions.",
-                    len(kept), math.sqrt(max(len(kept) - 1, 0)), self.std_dev_multiplier,
+                    len(kept),
+                    math.sqrt(max(len(kept) - 1, 0)),
+                    self.std_dev_multiplier,
                 )
             return valid_returns, "pooled"
         return kept, "excluding_baselines"
@@ -503,7 +507,8 @@ class SelfPlayCallback(RLlibCallback):
         for (name, module_id), values in per_module.items():
             metrics_logger.log_value(
                 (MODULE_PERFORMANCE_PREFIX + name, module_id),
-                sum(values) / len(values), reduce="mean",
+                sum(values) / len(values),
+                reduce="mean",
             )
 
     #: Trades an agent needs before its maker share is worth reporting. Below
@@ -570,7 +575,9 @@ class SelfPlayCallback(RLlibCallback):
             variance = max(0.0, tally["term_sq"][term] / agent_steps - mean * mean)
             variances[term] = variance
             metrics_logger.log_value(
-                f"reward_term_mean_{term}", mean, window=10,
+                f"reward_term_mean_{term}",
+                mean,
+                window=10,
             )
 
         total = sum(variances.values())
@@ -578,7 +585,9 @@ class SelfPlayCallback(RLlibCallback):
             return
         for term, variance in variances.items():
             metrics_logger.log_value(
-                f"reward_term_var_share_{term}", variance / total, window=10,
+                f"reward_term_var_share_{term}",
+                variance / total,
+                window=10,
             )
 
     def _log_episode_account(self, last_info, metrics_logger) -> None:
@@ -622,15 +631,21 @@ class SelfPlayCallback(RLlibCallback):
             metrics_logger.log_value("episode_nav_max", max(navs), window=10)
         if drawdowns:
             metrics_logger.log_value(
-                "mean_agent_drawdown", sum(drawdowns) / len(drawdowns), window=10,
+                "mean_agent_drawdown",
+                sum(drawdowns) / len(drawdowns),
+                window=10,
             )
         if positions:
             metrics_logger.log_value(
-                "mean_abs_net_position", sum(positions) / len(positions), window=10,
+                "mean_abs_net_position",
+                sum(positions) / len(positions),
+                window=10,
             )
         if trades:
             metrics_logger.log_value(
-                "mean_num_trades", sum(trades) / len(trades), window=10,
+                "mean_num_trades",
+                sum(trades) / len(trades),
+                window=10,
             )
 
     def _activity_for(self, episode_id) -> dict:
@@ -658,11 +673,11 @@ class SelfPlayCallback(RLlibCallback):
             episode_id = next(iter(self._activity))
             del self._activity[episode_id]
             logger.debug(
-                "dropped the activity tally for episode %s, which never ended "
-                "(%s open, limit %s)",
-                episode_id, len(self._activity) + 1, self._MAX_LIVE_EPISODES,
+                "dropped the activity tally for episode %s, which never ended (%s open, limit %s)",
+                episode_id,
+                len(self._activity) + 1,
+                self._MAX_LIVE_EPISODES,
             )
-
 
     def on_episode_start(
         self,
@@ -760,7 +775,8 @@ class SelfPlayCallback(RLlibCallback):
                 tally["performance"].setdefault(
                     agent_id, PerformanceTally(self.markout_horizons)
                 ).update(
-                    nav, agent_info.get("net_position"),
+                    nav,
+                    agent_info.get("net_position"),
                     realised=agent_info.get("realised_pnl"),
                     unrealised=agent_info.get("unrealised_pnl"),
                     fill_qty=agent_info.get("fill_qty_step"),
@@ -776,13 +792,9 @@ class SelfPlayCallback(RLlibCallback):
 
             trades = int(agent_info.get("num_trades_step", 0) or 0)
             if trades:
-                fills = tally["per_agent_fills"].setdefault(
-                    agent_id, {"trades": 0, "passive": 0}
-                )
+                fills = tally["per_agent_fills"].setdefault(agent_id, {"trades": 0, "passive": 0})
                 fills["trades"] += trades
-                fills["passive"] += int(
-                    agent_info.get("num_passive_fills_step", 0) or 0
-                )
+                fills["passive"] += int(agent_info.get("num_passive_fills_step", 0) or 0)
 
             terms = agent_info.get("reward_terms") or {}
             for term in REWARD_TERMS:
@@ -804,9 +816,7 @@ class SelfPlayCallback(RLlibCallback):
             # `on_episode_start` was never seen (a restored run picking up
             # mid-flight) or the tally was evicted. The local count is the
             # fallback for an episode type that does not carry one.
-            recorder.record_step(
-                episode, getattr(episode, "env_t", None) or tally["steps"]
-            )
+            recorder.record_step(episode, getattr(episode, "env_t", None) or tally["steps"])
 
     _fees_configured = staticmethod(nav_audit.fees_configured)
 
@@ -856,9 +866,7 @@ class SelfPlayCallback(RLlibCallback):
         # Before `_log_activity`, which pops the tally: the NAV check below
         # needs the last NAV of any agent that terminated mid-episode, and
         # asking for it afterwards would silently build a fresh empty tally.
-        carried_nav = dict(
-            (self._activity.get(episode.id_) or {}).get("last_nav", {})
-        )
+        carried_nav = dict((self._activity.get(episode.id_) or {}).get("last_nav", {}))
 
         self._log_activity(episode, metrics_logger)
 
@@ -867,7 +875,7 @@ class SelfPlayCallback(RLlibCallback):
         # this callback was built with - not literals.
         init_cash = env_default("init_cash")
         num_agents = self.num_trainable + self.num_random
-        
+
         init_cash, num_agents = nav_audit.run_parameters(env_runner, env, init_cash, num_agents)
 
         # Decimal, not float, all the way through the check: the ledger is
@@ -880,7 +888,11 @@ class SelfPlayCallback(RLlibCallback):
         logger.debug(
             "episode %s parameters: env=%s env_runner=%s init_cash=%s "
             "num_agents=%s total_initial_cash=%s",
-            episode.id_, type(env), type(env_runner), init_cash, num_agents,
+            episode.id_,
+            type(env),
+            type(env_runner),
+            init_cash,
+            num_agents,
             total_initial_cash,
         )
 
@@ -918,7 +930,9 @@ class SelfPlayCallback(RLlibCallback):
             if self._fees_configured(env_runner, env):
                 logger.warning(
                     "episode %s: exchange fees are on but the env's accounts could "
-                    "not be read, so NAV conservation was not checked.", episode.id_)
+                    "not be read, so NAV conservation was not checked.",
+                    episode.id_,
+                )
                 if metrics_logger:
                     metrics_logger.log_value(NAV_VIOLATIONS_METRIC, 0.0, reduce="sum")
                     metrics_logger.log_value(NAV_UNCHECKED_METRIC, 1.0, reduce="sum")
@@ -940,21 +954,20 @@ class SelfPlayCallback(RLlibCallback):
             # float() only at the boundary: the metrics stack reduces with
             # NumPy and will not take a Decimal. The check above has already
             # been decided exactly by this point.
-            metrics_logger.log_value(
-                "nav_conservation_error", float(abs(error)), reduce="max"
-            )
+            metrics_logger.log_value("nav_conservation_error", float(abs(error)), reduce="max")
             # Emitted every episode, including the conserved ones, so the key is
             # always present in the result and the driver's check reads a count
             # rather than having to distinguish "no violations" from "the metric
             # never arrived".
             metrics_logger.log_value(
-                NAV_VIOLATIONS_METRIC, 0.0 if conserved else 1.0, reduce="sum",
+                NAV_VIOLATIONS_METRIC,
+                0.0 if conserved else 1.0,
+                reduce="sum",
             )
             # Each agent's own last info, not the last env step's: an agent
             # bankrupted earlier is not part of that step, and leaving it out
             # hid exactly the loss `episode_nav_min` exists to show.
-            self._log_episode_account(
-                episode.get_infos(-1, env_steps=False), metrics_logger)
+            self._log_episode_account(episode.get_infos(-1, env_steps=False), metrics_logger)
 
         report = nav_audit.report(episode.id_, nav, fees, total_initial_cash)
 
@@ -983,7 +996,7 @@ class SelfPlayCallback(RLlibCallback):
     def on_train_result(self, *, algorithm, metrics_logger=None, result, **kwargs):
         """
         Callback after each training iteration.
-        
+
         Uses relative ranking based on POLICY returns to identify champions.
         snapshots created when return > mean + std_dev_multiplier * std.
         """
@@ -1007,13 +1020,14 @@ class SelfPlayCallback(RLlibCallback):
             logger.warning(
                 "%r missing or empty in result[%r]; skipping the champion check "
                 "this iteration. Available keys: %s",
-                MODULE_EPISODE_RETURNS_MEAN, ENV_RUNNER_RESULTS,
+                MODULE_EPISODE_RETURNS_MEAN,
+                ENV_RUNNER_RESULTS,
                 sorted(env_runner_results.keys()),
             )
             return
 
         iteration = result['training_iteration']
-        
+
         # Filter mostly interesting policies (exclude extremely sparse ones if any)
         # and calculate league statistics.
         #
@@ -1034,32 +1048,36 @@ class SelfPlayCallback(RLlibCallback):
 
         if idle_modules:
             logger.info(
-                "iteration %s: %s played no episodes and are excluded from the "
-                "league statistics", iteration, ", ".join(idle_modules),
+                "iteration %s: %s played no episodes and are excluded from the league statistics",
+                iteration,
+                ", ".join(idle_modules),
             )
 
-        reference_returns, reference_used = self._threshold_returns(
-            policy_returns, valid_returns)
+        reference_returns, reference_used = self._threshold_returns(policy_returns, valid_returns)
         league_mean = np.mean(reference_returns)
         league_std = np.std(reference_returns)
-        
+
         # Determine dynamic threshold
         # If std is 0 (all same), effectively requires > mean
         threshold = league_mean + (self.std_dev_multiplier * league_std)
-        
+
         # Check trainable policies for champion status
         trainable_policies = [policy_id(i) for i in range(self.num_trainable)]
 
-        best_candidate, best_return = league_stats.best_trainable(policy_returns, trainable_policies)
+        best_candidate, best_return = league_stats.best_trainable(
+            policy_returns, trainable_policies
+        )
 
         logger.info(
-            "iteration %s league stats: mean=%.2f std=%.2f threshold=%.2f "
-            "best_trainable=%s (%.2f)",
-            iteration, league_mean, league_std, threshold, best_candidate,
+            "iteration %s league stats: mean=%.2f std=%.2f threshold=%.2f best_trainable=%s (%.2f)",
+            iteration,
+            league_mean,
+            league_std,
+            threshold,
+            best_candidate,
             best_return,
         )
         logger.debug("iteration %s policy returns: %s", iteration, policy_returns)
-
 
         # Iterations since the last champion snapshot. `_should_create_champion`
         # has computed this since it was written and thrown it away every time
@@ -1087,7 +1105,10 @@ class SelfPlayCallback(RLlibCallback):
                 logger.warning(
                     "iteration %s: no %r for %s in the result, so the "
                     "does-it-trade guard could not run; promoting on return "
-                    "alone.", iteration, MODULE_TRADES_METRIC, best_candidate,
+                    "alone.",
+                    iteration,
+                    MODULE_TRADES_METRIC,
+                    best_candidate,
                 )
             elif trades < self.min_champion_trades:
                 refused_passive = True
@@ -1095,7 +1116,11 @@ class SelfPlayCallback(RLlibCallback):
                     "iteration %s: %s cleared the return threshold (%.2f > %.2f) "
                     "but traded %.2f times per episode, under the %g required; "
                     "not promoting a policy that has stopped trading.",
-                    iteration, best_candidate, best_return, threshold, trades,
+                    iteration,
+                    best_candidate,
+                    best_return,
+                    threshold,
+                    trades,
                     self.min_champion_trades,
                 )
 
@@ -1103,11 +1128,12 @@ class SelfPlayCallback(RLlibCallback):
         if best_candidate and best_return > threshold and not refused_passive:
             # Also check if it's better than previous champion (optional but good for progress)
             # best_historical = max([c['return'] for c in self.champion_history]) if self.champion_history else -float('inf')
-            
+
             if self._should_create_champion(best_return, iteration, algorithm):
-                 # Pass policy ID directly
+                # Pass policy ID directly
                 self._create_champion_snapshot_from_policy(
-                    algorithm, best_candidate, best_return, iteration)
+                    algorithm, best_candidate, best_return, iteration
+                )
         promoted = len({c["id"] for c in self.champion_history} - champions_before)
 
         league_state = {
@@ -1172,10 +1198,14 @@ class SelfPlayCallback(RLlibCallback):
                 reduce="sum",
             )
             metrics_logger.log_value(
-                "available_modules", float(len(self.available_modules)), window=1,
+                "available_modules",
+                float(len(self.available_modules)),
+                window=1,
             )
             metrics_logger.log_value(
-                "idle_modules", float(len(idle_modules)), window=1,
+                "idle_modules",
+                float(len(idle_modules)),
+                window=1,
             )
             if self.champion_history:
                 metrics_logger.log_value(
@@ -1183,7 +1213,7 @@ class SelfPlayCallback(RLlibCallback):
                     float(iteration - self.champion_history[-1]["iteration"]),
                     window=1,
                 )
-    
+
     @staticmethod
     def _candidate_trades(env_runner_results, module_id):
         """The module's mean trades per episode this iteration, or None if absent."""
@@ -1224,7 +1254,9 @@ class SelfPlayCallback(RLlibCallback):
 
         return True
 
-    def _create_champion_snapshot_from_policy(self, algorithm, source_policy_id, return_value, iteration):
+    def _create_champion_snapshot_from_policy(
+        self, algorithm, source_policy_id, return_value, iteration
+    ):
         """
         Create a frozen champion snapshot of the best policy.
 
@@ -1237,12 +1269,14 @@ class SelfPlayCallback(RLlibCallback):
         # Create unique champion name using monotonic counter
         self.champion_id_counter += 1
         champion_id = f"{CHAMPION_PREFIX}{self.champion_id_counter}"
-        
+
         logger.info(
             "Creating champion snapshot %s from %s (return %.2f, iteration %s)",
-            champion_id, source_policy_id, return_value, iteration,
+            champion_id,
+            source_policy_id,
+            return_value,
+            iteration,
         )
-
 
         try:
             # Take the snapshot from the LearnerGroup, not from
@@ -1257,9 +1291,7 @@ class SelfPlayCallback(RLlibCallback):
             # the except below - left the league permanently empty while
             # printing an error per iteration. `get_state` works either way.
             source_state = algorithm.learner_group.get_state(
-                components=(
-                    f"{COMPONENT_LEARNER}/{COMPONENT_RL_MODULE}/{source_policy_id}"
-                ),
+                components=(f"{COMPONENT_LEARNER}/{COMPONENT_RL_MODULE}/{source_policy_id}"),
             )[COMPONENT_LEARNER][COMPONENT_RL_MODULE][source_policy_id]
 
             # The spec only needs the module's shape, not its weights, so it can
@@ -1267,9 +1299,7 @@ class SelfPlayCallback(RLlibCallback):
             # sampling happens remotely). `inference_only=False` keeps the
             # champion's structure identical to the source module on the
             # Learner, so the state loaded above applies cleanly.
-            champion_spec = RLModuleSpec.from_module(
-                algorithm.env_runner.module[source_policy_id]
-            )
+            champion_spec = RLModuleSpec.from_module(algorithm.env_runner.module[source_policy_id])
             champion_spec.inference_only = False
 
             # Put the champion into the matchmaking pool BEFORE add_module.
@@ -1300,15 +1330,17 @@ class SelfPlayCallback(RLlibCallback):
             )
 
             # Copy the trained weights into the champion on the Learner...
-            algorithm.set_state({
-                COMPONENT_LEARNER_GROUP: {
-                    COMPONENT_LEARNER: {
-                        COMPONENT_RL_MODULE: {
-                            champion_id: source_state,
+            algorithm.set_state(
+                {
+                    COMPONENT_LEARNER_GROUP: {
+                        COMPONENT_LEARNER: {
+                            COMPONENT_RL_MODULE: {
+                                champion_id: source_state,
+                            }
                         }
                     }
                 }
-            })
+            )
 
             # ...and then push them out to the EnvRunners, which is where the
             # champion actually acts.
@@ -1361,7 +1393,9 @@ class SelfPlayCallback(RLlibCallback):
                 "random + %s champions). Active champions: %s",
                 champion_id,
                 self.num_trainable + self.num_random + self.champion_count,
-                self.num_trainable, self.num_random, self.champion_count,
+                self.num_trainable,
+                self.num_random,
+                self.champion_count,
                 [c['id'] for c in self.champion_history],
             )
 
@@ -1373,9 +1407,12 @@ class SelfPlayCallback(RLlibCallback):
             # exc_info carries the traceback that the bare `traceback.print_exc`
             # used to put on stderr, unattached to the message it belonged to.
             logger.error(
-                "Error creating champion %s: %s", champion_id, e, exc_info=True,
+                "Error creating champion %s: %s",
+                champion_id,
+                e,
+                exc_info=True,
             )
-    
+
     def _remove_oldest_champion(self, algorithm):
         """
         Remove the oldest champion to maintain the rolling window.
@@ -1397,7 +1434,9 @@ class SelfPlayCallback(RLlibCallback):
         logger.info(
             # %s, not %.2f: a champion adopted on restore has return None.
             "Removing oldest champion %s (from iteration %s, return %s)",
-            champion_id, oldest['iteration'], oldest['return'],
+            champion_id,
+            oldest['iteration'],
+            oldest['return'],
         )
 
         # Remove from available modules (won't be assigned to agents anymore).
@@ -1418,14 +1457,15 @@ class SelfPlayCallback(RLlibCallback):
             # training stays correct - we just keep holding its memory.
             logger.warning(
                 "Could not remove module %s from the algorithm: %s",
-                champion_id, e,
+                champion_id,
+                e,
             )
 
         logger.info(
             "Champion removed. Active champions: %s",
             [c['id'] for c in self.champion_history],
         )
-    
+
     def league_state(self):
         """Champion bookkeeping as plain JSON-able data.
 
@@ -1476,36 +1516,35 @@ class SelfPlayCallback(RLlibCallback):
             self.champion_history = sidecar_history
 
         if present_modules is not None:
-            present_champions = {
-                m for m in present_modules if m.startswith(CHAMPION_PREFIX)
-            }
+            present_champions = {m for m in present_modules if m.startswith(CHAMPION_PREFIX)}
             for champion in list(self.champion_history):
                 if champion['id'] not in present_champions:
                     self.champion_history.remove(champion)
                     repairs.append(
-                        f"dropped {champion['id']}: the restored algorithm has no "
-                        f"such module"
+                        f"dropped {champion['id']}: the restored algorithm has no such module"
                     )
             known = {c['id'] for c in self.champion_history}
             for module_id in sorted(present_champions - known):
                 # Ordering within the history decides eviction order, and an
                 # orphan's true position is unknowable - it goes last, so a
                 # rolling window evicts a champion whose iteration is known first.
-                self.champion_history.append({
-                    'id': module_id,
-                    'source_policy': None,
-                    'iteration': state.get('training_iteration', 0),
-                    'return': None,
-                })
+                self.champion_history.append(
+                    {
+                        'id': module_id,
+                        'source_policy': None,
+                        'iteration': state.get('training_iteration', 0),
+                        'return': None,
+                    }
+                )
                 repairs.append(
                     f"adopted {module_id}: present in the checkpoint but missing "
                     f"from the league state (appended as newest)"
                 )
 
         # The pool is derived, so rebuild it rather than repairing it in place.
-        pool = [
-            policy_id(i) for i in range(self.num_trainable + self.num_random)
-        ] + [c['id'] for c in self.champion_history]
+        pool = [policy_id(i) for i in range(self.num_trainable + self.num_random)] + [
+            c['id'] for c in self.champion_history
+        ]
         if pool != self.available_modules:
             repairs.append(f"matchmaking pool {self.available_modules} -> {pool}")
             self.available_modules = pool
@@ -1518,10 +1557,11 @@ class SelfPlayCallback(RLlibCallback):
         # overwrite a live champion with a new snapshot.
         highest_seen = max(
             [
-                int(c['id'][len(CHAMPION_PREFIX):])
+                int(c['id'][len(CHAMPION_PREFIX) :])
                 for c in self.champion_history
-                if c['id'][len(CHAMPION_PREFIX):].isdigit()
-            ] + [0]
+                if c['id'][len(CHAMPION_PREFIX) :].isdigit()
+            ]
+            + [0]
         )
         counter = max(
             self.champion_id_counter,
@@ -1541,13 +1581,14 @@ class SelfPlayCallback(RLlibCallback):
     def get_mapping_fn(cls, callback_instance):
         """
         Create an agent-to-module mapping function that includes champions.
-        
+
         Args:
             callback_instance: Instance of SelfPlayCallback with champion tracking
-            
+
         Returns:
             Mapping function for use in multi_agent config
         """
+
         def agent_to_module_mapping_fn(agent_id, episode, **kwargs):
             """Assign agents to modules including dynamic champions."""
             agent_num = int(agent_id.split("_")[1])
@@ -1559,7 +1600,7 @@ class SelfPlayCallback(RLlibCallback):
             # For random/league agents, assign from pool (champions + original randoms)
             # The pool starts AFTER the trainable policies
             # Pool = available_modules[k:]
-            candidates = callback_instance.available_modules[callback_instance.num_trainable:]
+            candidates = callback_instance.available_modules[callback_instance.num_trainable :]
 
             if not candidates:
                 # Fallback if the pool is somehow empty
@@ -1588,9 +1629,7 @@ class SelfPlayCallback(RLlibCallback):
             # salted by PYTHONHASHSEED, so it differs between processes and
             # between runs. That made the "deterministic selection" this comment
             # promised reproducible only within a single process.
-            seed = (
-                zlib.crc32(str(episode.id_).encode("utf-8")) + agent_num
-            ) % (2 ** 32)
+            seed = (zlib.crc32(str(episode.id_).encode("utf-8")) + agent_num) % (2**32)
             rng = np.random.RandomState(seed)
             # Cast to plain str: rng.choice returns np.str_, which compares
             # equal to str but shows up as `np.str_('policy_2')` in logs and

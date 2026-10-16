@@ -1,4 +1,5 @@
 """The `python -m gym_continuousDoubleAuction.train.train` command line (issue #254)."""
+
 from __future__ import annotations
 import argparse
 import dataclasses
@@ -31,30 +32,38 @@ def _parse_args(argv=None) -> TrainConfig:
     default would be exactly the hardcoded value `train_config.json` exists to
     hold.
     """
-    p = argparse.ArgumentParser(description="Training entry point for the CDA environment with league-based self-play.")
+    p = argparse.ArgumentParser(
+        description="Training entry point for the CDA environment with league-based self-play."
+    )
     p.add_argument(
         "--config",
         type=str,
         default=None,
         help="Alternative JSON config file. config/train_config.json already "
-             "supplies every default; pass this to run against a different "
-             "file. Flags override it.",
+        "supplies every default; pass this to run against a different "
+        "file. Flags override it.",
     )
     p.add_argument("--agents", type=int, dest="num_agents", default=argparse.SUPPRESS)
-    p.add_argument("--trained-agents", type=int, dest="num_trained_agents", default=argparse.SUPPRESS)
+    p.add_argument(
+        "--trained-agents", type=int, dest="num_trained_agents", default=argparse.SUPPRESS
+    )
     p.add_argument("--iters", type=int, dest="num_iters", default=argparse.SUPPRESS)
     p.add_argument("--max-step", type=int, default=argparse.SUPPRESS)
     p.add_argument("--env-runners", type=int, dest="num_env_runners", default=argparse.SUPPRESS)
-    p.add_argument("--envs-per-runner", type=int, dest="num_envs_per_env_runner", default=argparse.SUPPRESS)
-    p.add_argument("--gpus-per-learner", type=float, dest="num_gpus_per_learner", default=argparse.SUPPRESS)
+    p.add_argument(
+        "--envs-per-runner", type=int, dest="num_envs_per_env_runner", default=argparse.SUPPRESS
+    )
+    p.add_argument(
+        "--gpus-per-learner", type=float, dest="num_gpus_per_learner", default=argparse.SUPPRESS
+    )
     p.add_argument(
         "--sample-timeout",
         type=float,
         dest="sample_timeout_s",
         default=argparse.SUPPRESS,
         help="Seconds to wait for a remote env runner's share of the batch. "
-             "Too low and the iteration discards its rollouts and trains on "
-             "nothing; watch for 'No samples returned from remote workers'.",
+        "Too low and the iteration discards its rollouts and trains on "
+        "nothing; watch for 'No samples returned from remote workers'.",
     )
     p.add_argument("--restore", action="store_true", dest="is_restore", default=argparse.SUPPRESS)
     p.add_argument(
@@ -63,7 +72,7 @@ def _parse_args(argv=None) -> TrainConfig:
         dest="restore_path",
         default=argparse.SUPPRESS,
         help="Resume from this checkpoint directory (one iter_* save, not the "
-             "directory holding them) instead of the newest. Implies --restore.",
+        "directory holding them) instead of the newest. Implies --restore.",
     )
     p.add_argument("--chkpt-freq", type=int, default=argparse.SUPPRESS)
     p.add_argument(
@@ -78,15 +87,18 @@ def _parse_args(argv=None) -> TrainConfig:
         dest="num_iters_is_delta",
         default=argparse.SUPPRESS,
         help="Treat --iters as iterations to run from a restore point, rather "
-             "than the iteration to train through.",
+        "than the iteration to train through.",
     )
     p.add_argument("--log-base-dir", type=str, default=argparse.SUPPRESS)
     p.add_argument(
-        "--run-id", type=str, dest="run_id", default=argparse.SUPPRESS,
+        "--run-id",
+        type=str,
+        dest="run_id",
+        default=argparse.SUPPRESS,
         help="Name of this run's directory under log_base_dir, holding "
-             "progress.jsonl and the run logs. Generated from the date, time "
-             "and four random hex digits when unset. Pass the id of an earlier "
-             "run to write into its directory and extend its progress.jsonl.",
+        "progress.jsonl and the run logs. Generated from the date, time "
+        "and four random hex digits when unset. Pass the id of an earlier "
+        "run to write into its directory and extend its progress.jsonl.",
     )
     p.add_argument("--log-level", type=str, default=argparse.SUPPRESS)
     p.add_argument("--seed", type=int, default=argparse.SUPPRESS)
@@ -95,7 +107,7 @@ def _parse_args(argv=None) -> TrainConfig:
         action="store_true",
         default=argparse.SUPPRESS,
         help="Disable the per-step episode record entirely - both the Parquet "
-             "files and the buffering behind them.",
+        "files and the buffering behind them.",
     )
     p.add_argument(
         "--episode-sample-every",
@@ -103,27 +115,27 @@ def _parse_args(argv=None) -> TrainConfig:
         dest="episode_sample_every",
         default=argparse.SUPPRESS,
         help="Record one episode in N. 1 records every episode (~34MB each at "
-             "max_step 4096 and 8 agents).",
+        "max_step 4096 and 8 agents).",
     )
     p.add_argument(
         "--episode-max-bytes",
         type=int,
         dest="episode_max_bytes",
         default=argparse.SUPPRESS,
-        help="Cap the episode record each writer keeps, oldest deleted first. "
-             "0 keeps everything.",
+        help="Cap the episode record each writer keeps, oldest deleted first. 0 keeps everything.",
     )
     p.add_argument(
         "--no-strict-nav-check",
         action="store_true",
         default=argparse.SUPPRESS,
         help="Log an episode-end NAV conservation violation instead of raising "
-             "on it. The nav_conservation_error metric is emitted either way.",
+        "on it. The nav_conservation_error metric is emitted either way.",
     )
     args = p.parse_args(argv)
 
     overrides = {
-        k: v for k, v in vars(args).items()
+        k: v
+        for k, v in vars(args).items()
         if k not in ("config", "no_episode_data", "no_strict_nav_check")
     }
     if getattr(args, "no_episode_data", False):
@@ -213,13 +225,16 @@ def ray_logging_config(cfg: TrainConfig):
         return None
     try:
         return factory(
-            encoding=cfg.ray_log_encoding.upper(), log_level=cfg.log_level,
+            encoding=cfg.ray_log_encoding.upper(),
+            log_level=cfg.log_level,
         )
     except Exception:
         logger.warning(
             "could not build a ray.LoggingConfig(encoding=%r, log_level=%r) - "
             "continuing with Ray's default logging",
-            cfg.ray_log_encoding, cfg.log_level, exc_info=True,
+            cfg.ray_log_encoding,
+            cfg.log_level,
+            exc_info=True,
         )
         logging.getLogger(ROOT_NAME).propagate = True
         return None
@@ -265,6 +280,7 @@ def main(argv=None) -> None:
     # Imported here: `train.train` re-exports this module's names, so importing it at the
     # top would be a cycle.
     from gym_continuousDoubleAuction.train.train import train
+
     try:
         train(cfg)
     except BaseException:

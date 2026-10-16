@@ -19,6 +19,7 @@ The hop through the module is unavoidable: `ActorCriticEncoder._forward` keeps
 only `ENCODER_OUT` from whatever an encoder returns, so an extra dict key would
 be dropped before anything could read it.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -66,9 +67,7 @@ class MoETransformerEncoderConfig(TransformerEncoderConfig):
 
     def build(self, framework: str = "torch") -> Encoder:
         if framework != "torch":
-            raise ValueError(
-                f"{type(self).__name__} is torch-only; got framework={framework!r}."
-            )
+            raise ValueError(f"{type(self).__name__} is torch-only; got framework={framework!r}.")
         return TorchMoETransformerEncoder(self)
 
 
@@ -98,6 +97,4 @@ def build_moe_transformer_config(
     input_dims: List[int],
 ) -> MoETransformerEncoderConfig:
     settings = encoder_settings("moe_transformer", spec)
-    return MoETransformerEncoderConfig(
-        input_dims=input_dims, layout=layout, **settings
-    )
+    return MoETransformerEncoderConfig(input_dims=input_dims, layout=layout, **settings)

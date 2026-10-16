@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+
 class Order(object):
     '''
     Orders represent the core piece of the exchange. Every bid/ask is an Order.
@@ -7,10 +8,15 @@ class Order(object):
     to help the exchange fullfill orders with quantities larger than a single
     existing Order.
     '''
+
     def __init__(self, quote, order_list):
-        self.timestamp = int(quote['timestamp']) # integer representing the timestamp of order creation
-        self.quantity = Decimal(quote['quantity']) # decimal representing amount of thing - can be partial amounts
-        self.price = Decimal(quote['price']) # decimal representing price (currency)
+        self.timestamp = int(
+            quote['timestamp']
+        )  # integer representing the timestamp of order creation
+        self.quantity = Decimal(
+            quote['quantity']
+        )  # decimal representing amount of thing - can be partial amounts
+        self.price = Decimal(quote['price'])  # decimal representing price (currency)
         self.order_id = int(quote['order_id'])
         self.trade_id = quote['trade_id']
         # doubly linked list to make it easier to re-order Orders for a particular price point
@@ -33,9 +39,9 @@ class Order(object):
         new_quantity = Decimal(new_quantity)
         if new_quantity > self.quantity:
             if self.order_list.tail_order != self:
-                self.order_list.move_to_tail(self) # move to the end
+                self.order_list.move_to_tail(self)  # move to the end
             self.timestamp = new_timestamp
-        self.order_list.volume -= (self.quantity - new_quantity) # update volume
+        self.order_list.volume -= self.quantity - new_quantity  # update volume
         self.quantity = new_quantity
 
     def __str__(self):

@@ -41,6 +41,7 @@ breakage a columnar format is chosen to avoid. Any `info` key not named in
 field added to `Info_Helper` is never silently lost; `test_episode_record.py`
 asserts that the declared columns still cover what the env actually emits.
 """
+
 from __future__ import annotations
 
 import atexit
@@ -297,9 +298,7 @@ class EpisodeRecorder:
         self._written_rows = 0
         self._cap_warned = False
 
-        self._queue: "queue.Queue[List[dict]]" = queue.Queue(
-            maxsize=max(1, int(queue_size))
-        )
+        self._queue: "queue.Queue[List[dict]]" = queue.Queue(maxsize=max(1, int(queue_size)))
         # An Event rather than a sentinel value on the queue. A sentinel has to
         # be *put*, and the one moment `close` is called under load is the one
         # moment the queue is full - so the put fails, the writer never learns
@@ -444,8 +443,7 @@ class EpisodeRecorder:
         if self._pending:
             self._enqueue(self._pending, wait=wait)
             self._pending = []
-        while (self._queue.unfinished_tasks
-               and time.monotonic() - started < wait):
+        while self._queue.unfinished_tasks and time.monotonic() - started < wait:
             time.sleep(0.01)
 
     def close(self) -> None:
@@ -471,7 +469,8 @@ class EpisodeRecorder:
             logger.warning(
                 "episode record: %s batches were dropped because the writer "
                 "could not keep up; %s rows were written",
-                self._dropped_batches, self._written_rows,
+                self._dropped_batches,
+                self._written_rows,
             )
 
     # --- internals ----------------------------------------------------------
@@ -494,12 +493,25 @@ class EpisodeRecorder:
             logger.debug(
                 "episode record: dropped %s buffered rows for episode %s, which "
                 "never ended (%s episodes open, limit %s)",
-                len(rows), episode_id, len(self._live) + 1, self.max_live_episodes,
+                len(rows),
+                episode_id,
+                len(self._live) + 1,
+                self.max_live_episodes,
             )
 
     def _row(
-        self, *, episode, episode_id, step_index, agent_id, info, obs, action,
-        reward, iteration, now,
+        self,
+        *,
+        episode,
+        episode_id,
+        step_index,
+        agent_id,
+        info,
+        obs,
+        action,
+        reward,
+        iteration,
+        now,
     ) -> dict:
         terms = info.get("reward_terms") or {}
         nav_str = info.get("NAV")
@@ -517,8 +529,7 @@ class EpisodeRecorder:
             "episode_complete": False,
             "nav": _optional_float(nav_str),
             "nav_str": None if nav_str is None else str(nav_str),
-            "action": _floats(action if action is not None
-                              else info.get("model_action")),
+            "action": _floats(action if action is not None else info.get("model_action")),
             "obs": [] if obs is None else [float(v) for v in np.ravel(obs)],
         }
         for name, kind in INFO_COLUMNS:
@@ -589,7 +600,8 @@ class EpisodeRecorder:
                 # and this thread dying would silently stop the record for the
                 # rest of the run.
                 logger.warning(
-                    "episode record: a batch could not be written", exc_info=True,
+                    "episode record: a batch could not be written",
+                    exc_info=True,
                 )
             finally:
                 self._queue.task_done()
@@ -603,15 +615,15 @@ class EpisodeRecorder:
 
         os.makedirs(self.output_dir, exist_ok=True)
         self._seq += 1
-        path = os.path.join(
-            self.output_dir, f"episodes.{self._tag}.{self._seq:06d}.parquet"
-        )
+        path = os.path.join(self.output_dir, f"episodes.{self._tag}.{self._seq:06d}.parquet")
         schema = _schema()
         table = pa.Table.from_pylist(rows, schema=schema)
         pq.write_table(table, path, compression="snappy")
         self._written_rows += len(rows)
         logger.debug(
-            "episode record: wrote %s rows to %s", len(rows), path,
+            "episode record: wrote %s rows to %s",
+            len(rows),
+            path,
         )
         self._enforce_cap()
 
@@ -627,10 +639,7 @@ class EpisodeRecorder:
             return
         prefix = f"episodes.{self._tag}."
         try:
-            names = sorted(
-                name for name in os.listdir(self.output_dir)
-                if name.startswith(prefix)
-            )
+            names = sorted(name for name in os.listdir(self.output_dir) if name.startswith(prefix))
             sizes = []
             for name in names:
                 path = os.path.join(self.output_dir, name)
@@ -651,7 +660,9 @@ class EpisodeRecorder:
                     "episode record: a single file (%s bytes) is larger than "
                     "episode_max_bytes (%s), so the newest file is kept and the cap "
                     "cannot be met. Raise episode_max_bytes or lower "
-                    "episode_rows_per_file.", sizes[-1][1], self.max_bytes,
+                    "episode_rows_per_file.",
+                    sizes[-1][1],
+                    self.max_bytes,
                 )
             for path, size in sizes[:-1]:
                 if total <= self.max_bytes:
@@ -660,12 +671,15 @@ class EpisodeRecorder:
                 total -= size
                 logger.debug(
                     "episode record: removed %s to stay under %s bytes",
-                    path, self.max_bytes,
+                    path,
+                    self.max_bytes,
                 )
         except OSError:
             logger.warning(
                 "episode record: could not enforce the %s byte cap in %s",
-                self.max_bytes, self.output_dir, exc_info=True,
+                self.max_bytes,
+                self.output_dir,
+                exc_info=True,
             )
 
 

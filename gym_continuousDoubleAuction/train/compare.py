@@ -41,6 +41,7 @@ final checkpoint:
 * `probe:<target>@<horizon>`: the probe score of the checkpoint's `policy_0`
   latents on that target, against the shared corpus.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -164,6 +165,7 @@ def _cli(key):
 
 # --- one run --------------------------------------------------------------------
 
+
 def run_one(base_cfg, encoder: str, seed: int, out_dir: str, iters: int) -> Dict[str, Any]:
     """Train one (encoder, seed) and return its per-run metrics.
 
@@ -225,7 +227,8 @@ def run_one(base_cfg, encoder: str, seed: int, out_dir: str, iters: int) -> Dict
             "parameters": _parameter_count(algo, trainable[0]),
         }
         row["checkpoint"] = _final_checkpoint(
-            list_checkpoints(cfg.checkpoint_dir), row["iterations"])
+            list_checkpoints(cfg.checkpoint_dir), row["iterations"]
+        )
     finally:
         algo.stop()
     return row
@@ -252,8 +255,9 @@ def _parameter_count(algo, module_id: str) -> Optional[int]:
     return int(sum(p.numel() for p in module.parameters() if p.requires_grad))
 
 
-def probe_checkpoint(row: Dict[str, Any], corpus, module_id: str,
-                     targets: Sequence[str], horizons: Sequence[int]) -> None:
+def probe_checkpoint(
+    row: Dict[str, Any], corpus, module_id: str, targets: Sequence[str], horizons: Sequence[int]
+) -> None:
     """Add `probe:<target>@<horizon>` scores for the run's final checkpoint.
 
     Every run is scored against the *same* corpus object, so the scores are
@@ -269,12 +273,11 @@ def probe_checkpoint(row: Dict[str, Any], corpus, module_id: str,
     features = {"ckpt": features_module.latents(module, corpus)}
     for r in report_module.run(corpus, features, targets, horizons):
         result = r.results.get("ckpt")
-        row[f"probe:{r.target}@{r.horizon}"] = (
-            None if result is None else float(result.score)
-        )
+        row[f"probe:{r.target}@{r.horizon}"] = None if result is None else float(result.score)
 
 
 # --- aggregation (pure; tested without ray) -------------------------------------
+
 
 def _as_float(value) -> Optional[float]:
     try:
@@ -357,7 +360,9 @@ def render(rows: Sequence[Dict[str, Any]], summary=None) -> str:
     """The Markdown table: one row per encoder, means ± std across seeds."""
     summary = summary or aggregate(rows)
     probes = [m for m in metric_names(rows) if m.startswith("probe:")]
-    headers = ["encoder", "seeds", "params"] + [m for m, _ in TABLE_METRICS] + probes + ["separated on"]
+    headers = (
+        ["encoder", "seeds", "params"] + [m for m, _ in TABLE_METRICS] + probes + ["separated on"]
+    )
     lines = ["| " + " | ".join(headers) + " |", "|" + "---|" * len(headers)]
     sep = {m: separated(summary, m) for m, _ in TABLE_METRICS}
     # Runs are counted from the rows, not from the returns that happen to be
@@ -367,8 +372,11 @@ def render(rows: Sequence[Dict[str, Any]], summary=None) -> str:
     launched = {}
     for row in rows:
         launched[row["encoder"]] = launched.get(row["encoder"], 0) + 1
-    failed = [f"{row['encoder']} seed {row.get('seed')}" for row in rows
-              if _as_float(row.get("return")) is None]
+    failed = [
+        f"{row['encoder']} seed {row.get('seed')}"
+        for row in rows
+        if _as_float(row.get("return")) is None
+    ]
     for encoder, stats in summary.items():
         n, total = stats["return"]["n"], launched.get(encoder, stats["return"]["n"])
         cells = [
@@ -403,34 +411,46 @@ def render(rows: Sequence[Dict[str, Any]], summary=None) -> str:
 
 # --- CLI ------------------------------------------------------------------------
 
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(
         description="Train each encoder at several seeds, in separate runs, and "
-                    "tabulate returns, critic quality, passivity and probe scores. "
-                    "See doc/18 §5.5.",
+        "tabulate returns, critic quality, passivity and probe scores. "
+        "See doc/18 §5.5.",
     )
     p.add_argument("--encoders", nargs="+", default=_cli("encoders"))
     p.add_argument("--seeds", nargs="+", type=int, default=_cli("seeds"))
     p.add_argument("--iters", type=int, default=_cli("num_iters"))
     p.add_argument("--out", type=str, default=_cli("out_dir"))
     p.add_argument(
-        "--config", type=str, default=None,
+        "--config",
+        type=str,
+        default=None,
         help="Alternative train_config.json every run starts from. The encoder, "
-             "seed, iteration count and output paths are overridden per run.",
+        "seed, iteration count and output paths are overridden per run.",
     )
     p.add_argument("--agents", type=int, dest="num_agents", default=argparse.SUPPRESS)
-    p.add_argument("--trained-agents", type=int, dest="num_trained_agents", default=argparse.SUPPRESS)
+    p.add_argument(
+        "--trained-agents", type=int, dest="num_trained_agents", default=argparse.SUPPRESS
+    )
     p.add_argument("--max-step", type=int, default=argparse.SUPPRESS)
-    p.add_argument("--episodes-per-iter", type=int, dest="num_episodes_per_iter", default=argparse.SUPPRESS)
+    p.add_argument(
+        "--episodes-per-iter", type=int, dest="num_episodes_per_iter", default=argparse.SUPPRESS
+    )
     p.add_argument("--probe-episodes", type=int, default=_cli("probe_episodes"))
     p.add_argument("--probe-steps", type=int, default=_cli("probe_steps"))
     p.add_argument("--probe-seed", type=int, default=_cli("probe_seed"))
     p.add_argument("--targets", nargs="*", default=_cli("targets"))
     p.add_argument("--horizons", nargs="*", type=int, default=_cli("horizons"))
     p.add_argument("--module-id", type=str, default=_cli("module_id"))
-    p.add_argument("--set", action="append", default=[], metavar="FIELD=VALUE",
-                   help="Override any TrainConfig field for every run, e.g. --set book_mode=levels "
-                        "--set action_mask=false. Repeatable; the value is coerced to the field's type.")
+    p.add_argument(
+        "--set",
+        action="append",
+        default=[],
+        metavar="FIELD=VALUE",
+        help="Override any TrainConfig field for every run, e.g. --set book_mode=levels "
+        "--set action_mask=false. Repeatable; the value is coerced to the field's type.",
+    )
     p.add_argument("--no-probe", action="store_true")
     p.add_argument("--log-level", type=str, default=_cli("log_level"))
     args = p.parse_args(argv)
@@ -448,14 +468,14 @@ def main(argv=None) -> int:
     base = TrainConfig.from_json(args.config) if args.config else TrainConfig()
     base = dataclasses.replace(base, **parse_overrides(args.set))
     overrides = {
-        k: v for k, v in vars(args).items()
+        k: v
+        for k, v in vars(args).items()
         if k in {"num_agents", "num_trained_agents", "max_step", "num_episodes_per_iter"}
     }
     base = dataclasses.replace(base, **overrides)
 
     os.makedirs(args.out, exist_ok=True)
-    ray.init(ignore_reinit_error=True, include_dashboard=False,
-             runtime_env=merge_runtime_env())
+    ray.init(ignore_reinit_error=True, include_dashboard=False, runtime_env=merge_runtime_env())
     rows: List[Dict[str, Any]] = []
     try:
         corpus = None
@@ -463,8 +483,10 @@ def main(argv=None) -> int:
             from gym_continuousDoubleAuction.train.probe import corpus as corpus_module
 
             corpus = corpus_module.from_rollouts(
-                num_episodes=args.probe_episodes, max_step=args.probe_steps,
-                num_agents=base.num_agents, seed=args.probe_seed,
+                num_episodes=args.probe_episodes,
+                max_step=args.probe_steps,
+                num_agents=base.num_agents,
+                seed=args.probe_seed,
                 # The runs train on this layout; the corpus must be in it too.
                 env_config=base.env_config,
             )

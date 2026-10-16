@@ -15,6 +15,7 @@ omitted it and no built wheel carried it - while doc/01 documents
 The packaging half is asserted in CI, where a wheel actually exists; what is
 checkable here is that the package is importable and declared.
 """
+
 import gymnasium as gym
 import pytest
 from setuptools import find_packages
@@ -67,10 +68,12 @@ class TestGymnasiumMake:
 class TestVisualizeIsAPackage:
     def test_it_is_importable(self):
         import importlib
+
         assert importlib.import_module("gym_continuousDoubleAuction.visualize")
 
     def test_its_entry_point_module_imports(self):
         import importlib
+
         pytest.importorskip("matplotlib")
         assert importlib.import_module("gym_continuousDoubleAuction.visualize.run_all")
 
@@ -82,9 +85,7 @@ class TestVisualizeIsAPackage:
         """
         import pathlib
 
-        root = pathlib.Path(
-            gym_continuousDoubleAuction.__file__
-        ).resolve().parent.parent
+        root = pathlib.Path(gym_continuousDoubleAuction.__file__).resolve().parent.parent
         packages = find_packages(
             where=str(root),
             exclude=["*test", "*test.*", "test.*", "test"],

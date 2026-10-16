@@ -1,4 +1,5 @@
 """Building the RLlib PPO config and the Algorithm from a TrainConfig (issue #254)."""
+
 from __future__ import annotations
 from ray import tune
 from ray.rllib.algorithms.algorithm import Algorithm
@@ -93,9 +94,7 @@ def _learner_class(cfg: TrainConfig):
     # The optimiser knobs are composed independently of CBP, so that the
     # papers' tuned Adam can be run on its own. Composing it only alongside CBP
     # would make every CBP-vs-baseline comparison a comparison of both at once.
-    tuned_adam = (
-        list(cfg.adam_betas) != [0.9, 0.999] or cfg.adam_weight_decay != 0.0
-    )
+    tuned_adam = list(cfg.adam_betas) != [0.9, 0.999] or cfg.adam_weight_decay != 0.0
     if not cbp and not tuned_adam:
         return base
 
@@ -221,10 +220,11 @@ def build_config(cfg: TrainConfig):
             # architecture pays for a column it never reads. `learner_connector`
             # returns a list that RLlib appends to the default pipeline; the
             # connector early-outs if NEXT_OBS is already present.
-            **({"learner_connector": _next_obs_connector}
-               if needs_next_obs(cfg.encoder_type,
-                                 cfg.encoder_specs.get(cfg.encoder_type))
-               else {}),
+            **(
+                {"learner_connector": _next_obs_connector}
+                if needs_next_obs(cfg.encoder_type, cfg.encoder_specs.get(cfg.encoder_type))
+                else {}
+            ),
         )
         .training(
             train_batch_size_per_learner=cfg.train_batch_size,
@@ -236,9 +236,10 @@ def build_config(cfg: TrainConfig):
             # the `ppo` group's. The group's value was tuned for the 2x256 tanh
             # MLP; holding an attention stack to it measures the learning rate
             # rather than the architecture.
-            **{"lr": cfg.lr, **training_overrides(
-                cfg.encoder_type, cfg.encoder_specs.get(cfg.encoder_type, {})
-            )},
+            **{
+                "lr": cfg.lr,
+                **training_overrides(cfg.encoder_type, cfg.encoder_specs.get(cfg.encoder_type, {})),
+            },
             # PPO's loss plus the MoE load-balancing term. Identical to the
             # stock learner for every encoder that produces no such term, which
             # is all of them but moe_transformer - so it is wired
@@ -265,8 +266,7 @@ def build_config(cfg: TrainConfig):
             # through untouched, which is what lets a composed-in mixin be
             # configured without inventing a second channel.
             learner_config_dict=_learner_config_dict(cfg),
-            **({"minibatch_size": cfg.minibatch_size}
-               if cfg.minibatch_size is not None else {}),
+            **({"minibatch_size": cfg.minibatch_size} if cfg.minibatch_size is not None else {}),
         )
         # Returns the same instance every call, so the driver-side champion pool
         # is the one the mapping fn reads.
@@ -297,7 +297,9 @@ def build_algo(cfg: TrainConfig):
 
     for _iteration, path in reversed(candidates):
         logger.info(
-            "restoring from %scheckpoint: %s", "pinned " if pinned else "", path,
+            "restoring from %scheckpoint: %s",
+            "pinned " if pinned else "",
+            path,
         )
         # Before touching RLlib: a checkpoint from another observation or
         # action layout can never be resumed into this one, and falling back
@@ -314,7 +316,8 @@ def build_algo(cfg: TrainConfig):
                 raise
             logger.warning(
                 "checkpoint unreadable (%s: %s); falling back to the previous one",
-                type(exc).__name__, exc,
+                type(exc).__name__,
+                exc,
             )
             continue
 
@@ -377,5 +380,8 @@ def log_module_sizes(algo, cfg: TrainConfig) -> None:
         trainable = sum(p.numel() for p in module.parameters() if p.requires_grad)
         logger.info(
             "%s: encoder %s | %s parameters (%s trainable)",
-            pid, cfg.encoder_type, f"{total:,}", f"{trainable:,}",
+            pid,
+            cfg.encoder_type,
+            f"{total:,}",
+            f"{trainable:,}",
         )

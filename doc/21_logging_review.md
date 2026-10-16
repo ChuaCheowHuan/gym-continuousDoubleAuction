@@ -336,7 +336,7 @@ Insertion-ordered, so "oldest" means the episode that started first.
 **5. Parquet instead of `pickle`.** ✅ One row per (episode, step, agent), a declared schema, and
 `run_id` / `iteration` / `wall_time` / `module_id` columns — which also closes "the files carry no
 timestamp or iteration metadata" from doc/11 §3 and makes champion matchups a group-by. An `info`
-key with no column is preserved as JSON in `info_extra`, and a test fails if `Info_Helper` grows a
+key with no column is preserved as JSON in `info_extra`, and a test fails if `InfoBuilder` grows a
 field the schema does not cover.
 
 *Deliberate deviation:* this writes with `pyarrow.parquet` from one background thread, **not** via

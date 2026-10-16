@@ -43,6 +43,7 @@ import it at the bottom of this file, and add its block to `encoder_specs` in
 `config/train_config.json`. A spec block existing is the signal that its encoder
 is implemented.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -299,8 +300,7 @@ def training_overrides(encoder_type: str, spec: Dict[str, Any]) -> Dict[str, Any
 def selectable_encoder_types() -> List[str]:
     """Every `encoder_type` a config file may name, sorted."""
     return sorted(
-        [MLP_ENCODER_TYPE]
-        + [name for name in ENCODER_REGISTRY if not name.startswith("_")]
+        [MLP_ENCODER_TYPE] + [name for name in ENCODER_REGISTRY if not name.startswith("_")]
     )
 
 
@@ -356,12 +356,12 @@ def needs_next_obs(encoder_type: str, encoder_spec: Optional[Dict[str, Any]]) ->
     """
     if encoder_type not in ENCODER_DEFAULTS:
         return False
-    return bool(
-        encoder_settings(encoder_type, encoder_spec or {}).get("world_model")
-    )
+    return bool(encoder_settings(encoder_type, encoder_spec or {}).get("world_model"))
 
 
-def encoder_fingerprint(encoder_type: str, encoder_spec: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def encoder_fingerprint(
+    encoder_type: str, encoder_spec: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
     """The encoder's identity, as something two callers can compare with `!=`.
 
     One definition, because there are now two places that need it and they must
@@ -424,6 +424,7 @@ def fingerprints_match(left: Dict[str, Any], right: Dict[str, Any]) -> bool:
     naive `==` between a freshly built fingerprint and one read back from disk
     is always False. Both sides are re-normalised here.
     """
+
     def normalise(fingerprint):
         spec = fingerprint.get("encoder_spec") or ()
         return (
@@ -500,4 +501,3 @@ from gym_continuousDoubleAuction.train.model.encoders import (  # noqa: E402
 #: The registered encoder modules, named so the side-effect imports above read
 #: as the deliberate re-exports they are rather than as unused imports.
 REGISTERED_ENCODER_MODULES = (jepa, lstm, moe_transformer, passthrough, transformer)
-

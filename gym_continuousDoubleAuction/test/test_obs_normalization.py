@@ -30,7 +30,7 @@ class TestObsNormalization:
         "num_of_agents": 2,
         "init_cash": 1_000_000,
         "is_render": False,
-        "n_hist": 1,          # single snapshot simplifies assertion indexing
+        "n_hist": 1,  # single snapshot simplifies assertion indexing
     }
 
     # ------------------------------------------------------------------
@@ -47,8 +47,7 @@ class TestObsNormalization:
         env = continuousDoubleAuctionEnv(cfg)
         return env
 
-    def _place_limit(self, env, agent_id, category, level, offset,
-                     size=0.5):
+    def _place_limit(self, env, agent_id, category, level, offset, size=0.5):
         """Submit a single limit order action and return the step outputs."""
         action = {
             agent_id: {
@@ -70,7 +69,7 @@ class TestObsNormalization:
         """
         vector = obs[agent_id]
         end = len(vector) - PRIVATE_DIM
-        return vector[end - LEVELS_SNAPSHOT_DIM:end]
+        return vector[end - LEVELS_SNAPSHOT_DIM : end]
 
     # ------------------------------------------------------------------
     # 1. agg_LOB_raw is always populated after reset and step
@@ -97,8 +96,9 @@ class TestObsNormalization:
         raw_after = env.agg_LOB_raw
         assert raw_after.shape == (BOOK_DIM,)
         # Raw should now be non-zero in bid price slot
-        assert not np.array_equal(raw_before, raw_after), \
+        assert not np.array_equal(raw_before, raw_after), (
             "agg_LOB_raw did not change after placing an order"
+        )
 
     # ------------------------------------------------------------------
     # 2. Sign preservation in the normalized observation
@@ -110,13 +110,15 @@ class TestObsNormalization:
         obs, _ = env.reset()
         snap = self._get_snapshot(obs)
         np.testing.assert_array_equal(
-            snap[:BOOK_DIM], np.zeros(BOOK_DIM, dtype=np.float32),
-            err_msg="Empty book block should be all zeros"
+            snap[:BOOK_DIM],
+            np.zeros(BOOK_DIM, dtype=np.float32),
+            err_msg="Empty book block should be all zeros",
         )
         # The market scalars are not part of the book block: log_mid falls back to
         # last_price and the spread sentinel is 0.0 (no two-sided market).
         assert float(snap[BOOK_DIM]) == pytest.approx(
-            float(np.log(env.last_price)) - env.log_mid_centre, abs=1e-5)
+            float(np.log(env.last_price)) - env.log_mid_centre, abs=1e-5
+        )
         assert float(snap[BOOK_DIM + 1]) == 0.0
 
     def test_bid_obs_non_negative_with_orders(self):
@@ -128,11 +130,10 @@ class TestObsNormalization:
         for level in range(3):
             self._place_limit(env, "agent_0", category=2, level=level, offset=1)
 
-        obs_step, _, _, _, _ = self._place_limit(env, "agent_0", category=2,
-                                                  level=3, offset=1)
+        obs_step, _, _, _, _ = self._place_limit(env, "agent_0", category=2, level=3, offset=1)
         snap = self._get_snapshot(obs_step)
         bid_prices = snap[0:10]
-        bid_sizes  = snap[10:20]
+        bid_sizes = snap[10:20]
 
         assert np.all(bid_prices >= 0), f"Bid prices in obs must be >= 0, got {bid_prices}"
         assert np.all(bid_sizes >= 0), f"Bid sizes in obs must be >= 0, got {bid_sizes}"
@@ -150,11 +151,10 @@ class TestObsNormalization:
         for level in range(3):
             self._place_limit(env, "agent_0", category=6, level=level, offset=1)
 
-        obs_step, _, _, _, _ = self._place_limit(env, "agent_0", category=6,
-                                                  level=3, offset=1)
+        obs_step, _, _, _, _ = self._place_limit(env, "agent_0", category=6, level=3, offset=1)
         snap = self._get_snapshot(obs_step)
         ask_prices = snap[20:30]
-        ask_sizes  = snap[30:40]
+        ask_sizes = snap[30:40]
 
         assert np.all(ask_prices >= 0), f"Ask prices in obs must be >= 0, got {ask_prices}"
         assert np.all(ask_sizes >= 0), f"Ask sizes in obs must be >= 0, got {ask_sizes}"
@@ -173,21 +173,20 @@ class TestObsNormalization:
           3. Read back agg_LOB_raw and compute expected normalized values manually.
           4. Compare against the normalized snapshot from the observation.
         """
-        env = self._make_env({"init_cash": 10_000_000,
-                              "initial_price_min": 100,
-                              "initial_price_max": 100})
+        env = self._make_env(
+            {"init_cash": 10_000_000, "initial_price_min": 100, "initial_price_max": 100}
+        )
         env.reset()
-        env.last_price = 100.0   # pin anchor
+        env.last_price = 100.0  # pin anchor
 
         # Place Sell Limit at Level 1 Join → price = 100 + 1 = 101
         self._place_limit(env, "agent_0", category=6, level=0, offset=1)
         # Place Buy Limit at Level 1 Join → price = 100 - 1 = 99
-        obs_step, _, _, _, _ = self._place_limit(
-            env, "agent_1", category=2, level=0, offset=1)
+        obs_step, _, _, _, _ = self._place_limit(env, "agent_1", category=2, level=0, offset=1)
 
         raw = env.agg_LOB_raw  # [bid_prices(10), bid_sizes(10), ask_prices(10), ask_sizes(10)]
-        P_bid_1 = raw[0]       # best bid price (raw, positive)
-        P_ask_1 = raw[20]      # best ask price (raw, positive)
+        P_bid_1 = raw[0]  # best bid price (raw, positive)
+        P_ask_1 = raw[20]  # best ask price (raw, positive)
 
         # Only proceed if both sides were actually placed
         if P_bid_1 == 0 or P_ask_1 == 0:
@@ -201,29 +200,30 @@ class TestObsNormalization:
         expected_norm_ask = (P_ask_1 - M) / M
 
         snap = self._get_snapshot(obs_step)
-        actual_norm_bid = snap[0]    # first bid price slot
-        actual_norm_ask = snap[20]   # first ask price slot
+        actual_norm_bid = snap[0]  # first bid price slot
+        actual_norm_ask = snap[20]  # first ask price slot
 
-        assert float(actual_norm_bid) == pytest.approx(expected_norm_bid, abs=1e-5), \
+        assert float(actual_norm_bid) == pytest.approx(expected_norm_bid, abs=1e-5), (
             "Normalized bid price does not match expected"
-        assert float(actual_norm_ask) == pytest.approx(expected_norm_ask, abs=1e-5), \
+        )
+        assert float(actual_norm_ask) == pytest.approx(expected_norm_ask, abs=1e-5), (
             "Normalized ask price does not match expected"
+        )
 
     def test_level1_bid_ask_symmetric_distance(self):
         """
         At Level 1, the normalized bid distance and ask distance magnitudes
         must be equal: |norm_P_bid_1| == |norm_P_ask_1| == spread / (2 * M).
         """
-        env = self._make_env({"init_cash": 10_000_000,
-                              "initial_price_min": 100,
-                              "initial_price_max": 100})
+        env = self._make_env(
+            {"init_cash": 10_000_000, "initial_price_min": 100, "initial_price_max": 100}
+        )
         env.reset()
         env.last_price = 100.0
 
         # Ask at 101, Bid at 99 → spread = 2, M = 100
         self._place_limit(env, "agent_0", category=6, level=0, offset=1)
-        obs_step, _, _, _, _ = self._place_limit(
-            env, "agent_1", category=2, level=0, offset=1)
+        obs_step, _, _, _, _ = self._place_limit(env, "agent_1", category=2, level=0, offset=1)
 
         raw = env.agg_LOB_raw
         P_bid_1 = raw[0]
@@ -236,8 +236,9 @@ class TestObsNormalization:
         norm_bid_mag = abs(float(snap[0]))
         norm_ask_mag = abs(float(snap[20]))
 
-        assert norm_bid_mag == pytest.approx(norm_ask_mag, abs=1e-5), \
+        assert norm_bid_mag == pytest.approx(norm_ask_mag, abs=1e-5), (
             "Level-1 bid and ask normalized distances should be symmetric"
+        )
 
     # ------------------------------------------------------------------
     # 4. Volume normalization correctness (sqrt)
@@ -247,20 +248,19 @@ class TestObsNormalization:
         """
         The size slots in the normalized observation must equal sqrt(raw_volume).
         """
-        env = self._make_env({"init_cash": 10_000_000,
-                              "initial_price_min": 100,
-                              "initial_price_max": 100})
+        env = self._make_env(
+            {"init_cash": 10_000_000, "initial_price_min": 100, "initial_price_max": 100}
+        )
         env.reset()
         env.last_price = 100.0
 
         self._place_limit(env, "agent_0", category=6, level=0, offset=1)
-        obs_step, _, _, _, _ = self._place_limit(
-            env, "agent_1", category=2, level=0, offset=1)
+        obs_step, _, _, _, _ = self._place_limit(env, "agent_1", category=2, level=0, offset=1)
 
         raw = env.agg_LOB_raw
         # [bid_prices(10), bid_sizes(10), ask_prices(10), ask_sizes(10)]
-        raw_bid_size_l1 = raw[10]          # first bid size level
-        raw_ask_size_l1 = raw[30]          # first ask size level
+        raw_bid_size_l1 = raw[10]  # first bid size level
+        raw_ask_size_l1 = raw[30]  # first ask size level
 
         snap = self._get_snapshot(obs_step)
         norm_bid_size_l1 = float(snap[10])
@@ -268,12 +268,14 @@ class TestObsNormalization:
 
         if raw_bid_size_l1 > 0:
             expected = np.sqrt(raw_bid_size_l1 / env.limit_max_size)
-            assert norm_bid_size_l1 == pytest.approx(expected, abs=1e-4), \
+            assert norm_bid_size_l1 == pytest.approx(expected, abs=1e-4), (
                 "Bid size not sqrt-normalized"
+            )
         if raw_ask_size_l1 > 0:
             expected = np.sqrt(raw_ask_size_l1 / env.limit_max_size)
-            assert norm_ask_size_l1 == pytest.approx(expected, abs=1e-4), \
+            assert norm_ask_size_l1 == pytest.approx(expected, abs=1e-4), (
                 "Ask size not sqrt-normalized"
+            )
 
     # ------------------------------------------------------------------
     # 5. Division-by-zero safety: empty book fallback to last_price
@@ -295,11 +297,15 @@ class TestObsNormalization:
         assert not np.any(np.isnan(snap)), "NaN found in observation with empty book"
         assert not np.any(np.isinf(snap)), "Inf found in observation with empty book"
         # Empty book → all zeros in the book block
-        np.testing.assert_array_equal(snap[:BOOK_DIM], np.zeros(BOOK_DIM, dtype=np.float32),
-                                      err_msg="Empty book should produce an all-zero book block")
+        np.testing.assert_array_equal(
+            snap[:BOOK_DIM],
+            np.zeros(BOOK_DIM, dtype=np.float32),
+            err_msg="Empty book should produce an all-zero book block",
+        )
         # M falls back to last_price (50.0), and there is no two-sided spread
         assert float(snap[BOOK_DIM]) == pytest.approx(
-            float(np.log(50.0)) - env.log_mid_centre, abs=1e-5)
+            float(np.log(50.0)) - env.log_mid_centre, abs=1e-5
+        )
         assert float(snap[BOOK_DIM + 1]) == 0.0
 
     def test_zero_last_price_fallback(self):
@@ -326,9 +332,9 @@ class TestObsNormalization:
         level 0 should resolve to that actual (unnormalized) market price, not
         a normalized value.
         """
-        env = self._make_env({"init_cash": 10_000_000,
-                              "initial_price_min": 100,
-                              "initial_price_max": 100})
+        env = self._make_env(
+            {"init_cash": 10_000_000, "initial_price_min": 100, "initial_price_max": 100}
+        )
         env.reset()
         env.last_price = 100.0
 
@@ -344,8 +350,9 @@ class TestObsNormalization:
         raw_bid_l1 = env.agg_LOB_raw[0]  # bid_prices[0] (raw, positive)
 
         # Resolved action price == raw level price + offset(Join=0)
-        assert resolved_price == pytest.approx(float(raw_bid_l1), abs=1e-4), \
+        assert resolved_price == pytest.approx(float(raw_bid_l1), abs=1e-4), (
             "Action price should equal unnormalized raw level price"
+        )
 
     def test_action_price_is_positive(self):
         """
@@ -355,12 +362,9 @@ class TestObsNormalization:
         env.reset()
 
         for step in range(10):
-            actions = {
-                agent_id: env.action_spaces[agent_id].sample()
-                for agent_id in env.agents
-            }
+            actions = {agent_id: env.action_spaces[agent_id].sample() for agent_id in env.agents}
             env.step(actions)
             for act in env.LOB_actions:
                 price = act.get("price", -1.0)
-                if price != -1.0:   # -1.0 is the sentinel for market orders
+                if price != -1.0:  # -1.0 is the sentinel for market orders
                     assert price > 0, f"Action price {price} is not positive at step {step}"

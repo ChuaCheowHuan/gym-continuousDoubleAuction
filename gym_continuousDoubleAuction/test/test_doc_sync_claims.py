@@ -4,6 +4,7 @@ inventory and checked only seven number categories.
 Run as a subprocess on a throwaway tree, the way the skill runs it: a hand-written
 `facts.json` and a few docs, so each category can be driven both ways.
 """
+
 import json
 import os
 import subprocess
@@ -13,11 +14,22 @@ SCRIPT = os.path.join(".claude", "skills", "cda-doc-sync", "scripts", "claims.py
 ROOT = os.getcwd()
 
 FACTS = {
-    "tests": {"unit": 10, "integration": 2, "total": 12,
-              "per_file": {"gym_continuousDoubleAuction/test/test_a.py": 7,
-                           "gym_continuousDoubleAuction/test/integration/test_b.py": 2}},
-    "obs": {"train_width": 233, "levels_width": 305, "private_dim": 41,
-            "grid_snapshot": 48, "levels_snapshot": 66},
+    "tests": {
+        "unit": 10,
+        "integration": 2,
+        "total": 12,
+        "per_file": {
+            "gym_continuousDoubleAuction/test/test_a.py": 7,
+            "gym_continuousDoubleAuction/test/integration/test_b.py": 2,
+        },
+    },
+    "obs": {
+        "train_width": 233,
+        "levels_width": 305,
+        "private_dim": 41,
+        "grid_snapshot": 48,
+        "levels_snapshot": 66,
+    },
     "action": {"_heads": 5},
     "reward_terms": ["a", "b", "c", "d", "e", "f"],
     "encoders": ["mlp", "lstm", "transformer", "moe_transformer", "jepa"],
@@ -38,12 +50,16 @@ def _run(tmp_path, *, inventory=INVENTORY, facts=None, prose=""):
     (tmp_path / "README.md").write_text("readme\n")
     (tmp_path / "doc" / "10_testing.md").write_text(inventory)
     (tmp_path / "doc" / "14_x.md").write_text(
-        "> 1,234 lines across 12 Python files, with 10 unit tests\n" + prose)
+        "> 1,234 lines across 12 Python files, with 10 unit tests\n" + prose
+    )
     (tmp_path / "doc" / "18_config.md").write_text("`alpha` `beta` `--gamma`\n")
     path = tmp_path / "facts.json"
     path.write_text(json.dumps(facts or FACTS))
-    out = subprocess.run([sys.executable, os.path.join(ROOT, SCRIPT), str(tmp_path), str(path)],
-                         capture_output=True, text=True)
+    out = subprocess.run(
+        [sys.executable, os.path.join(ROOT, SCRIPT), str(tmp_path), str(path)],
+        capture_output=True,
+        text=True,
+    )
     assert out.returncode == 0, out.stderr
     return out.stdout
 
@@ -53,7 +69,6 @@ def test_a_consistent_tree_reports_nothing(tmp_path):
 
 
 class TestInventory:
-
     def test_a_wrong_count_is_reported(self, tmp_path):
         out = _run(tmp_path, inventory=INVENTORY.replace("`test_a.py` | 7", "`test_a.py` | 5"))
         assert "inventory" in out and "test_a.py 5 -> 7" in out
@@ -72,7 +87,6 @@ class TestInventory:
 
 
 class TestCodeSize:
-
     def test_a_stale_size_is_reported(self, tmp_path):
         facts = {**FACTS, "code": {"lines": 2000, "files": 15}}
         out = _run(tmp_path, facts=facts)
@@ -83,7 +97,6 @@ class TestCodeSize:
 
 
 class TestConfigKeysAndFlags:
-
     def test_an_undocumented_key_is_reported(self, tmp_path):
         facts = {**FACTS, "config": {"train_config.json": {"alpha": 1, "orphan": 2}}}
         out = _run(tmp_path, facts=facts)
@@ -110,12 +123,21 @@ class TestConfigKeysAndFlags:
         _run(tmp_path, facts=facts, prose="uses `--gamma-ray` only\n")
         (tmp_path / "doc" / "18_config.md").write_text("`alpha` `beta`\n")
         out = subprocess.run(
-            [sys.executable, os.path.join(ROOT, SCRIPT), str(tmp_path), str(tmp_path / "facts.json")],
-            capture_output=True, text=True).stdout
+            [
+                sys.executable,
+                os.path.join(ROOT, SCRIPT),
+                str(tmp_path),
+                str(tmp_path / "facts.json"),
+            ],
+            capture_output=True,
+            text=True,
+        ).stdout
         assert "--gamma is mentioned in no doc" in out
 
 
 def test_the_real_facts_script_emits_the_code_size_the_check_reads():
     """The check is dead if `facts.py` never writes `code`."""
-    source = open(os.path.join(ROOT, ".claude", "skills", "cda-doc-sync", "scripts", "facts.py")).read()
+    source = open(
+        os.path.join(ROOT, ".claude", "skills", "cda-doc-sync", "scripts", "facts.py")
+    ).read()
     assert 'facts["code"]' in source and "git" in source

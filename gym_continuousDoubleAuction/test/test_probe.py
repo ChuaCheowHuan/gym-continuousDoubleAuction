@@ -14,6 +14,7 @@ anything:
   * the targets compute what their docstrings say, checked against snapshots
     built by hand rather than by the same expressions under test.
 """
+
 import numpy as np
 import pytest
 
@@ -64,16 +65,14 @@ def synthetic(layout, episodes=EPISODES, steps=STEPS, seed=0):
         for step in range(steps):
             snapshot = np.zeros(layout.snapshot_dim, dtype=np.float32)
             snapshot[: layout.k_rows] = rng.normal(size=layout.k_rows) * 0.01
-            snapshot[layout.k_rows: 2 * layout.k_rows] = rng.random(layout.k_rows)
-            snapshot[3 * layout.k_rows: 4 * layout.k_rows] = -rng.random(layout.k_rows)
+            snapshot[layout.k_rows : 2 * layout.k_rows] = rng.random(layout.k_rows)
+            snapshot[3 * layout.k_rows : 4 * layout.k_rows] = -rng.random(layout.k_rows)
             # log_mid: a per-episode level plus an uneven per-step drift, so
             # returns are non-trivial within an episode, large across a
             # boundary, and - because the drift varies - `realized_vol` has
             # something to disperse. A constant drift would make that target
             # degenerate and the report would drop it.
-            snapshot[layout.book_dim] = (
-                2.0 + episode * 10.0 + 0.25 * (step % 5)
-            )
+            snapshot[layout.book_dim] = 2.0 + episode * 10.0 + 0.25 * (step % 5)
             snapshot[layout.book_dim + 1] = 0.7 + 0.1 * (step % 3)
             # The observation stacks n_hist frames, then a private tail. The
             # tail is filled with a value no target should ever read - if one
@@ -92,6 +91,7 @@ def synthetic(layout, episodes=EPISODES, steps=STEPS, seed=0):
 
 # --- Reading the snapshot ----------------------------------------------------
 
+
 class TestSnapshotReaders:
     def test_snapshots_are_the_newest_book_frame(self, layout):
         """The stack is oldest-first; every target reads the last *book* frame.
@@ -104,7 +104,7 @@ class TestSnapshotReaders:
         """
         corpus = synthetic(layout)
         end = layout.book_flat_dim
-        expected = corpus.obs[:, end - layout.snapshot_dim:end]
+        expected = corpus.obs[:, end - layout.snapshot_dim : end]
         assert np.array_equal(corpus.snapshots, expected)
 
     def test_snapshots_never_contain_the_private_block(self, layout):
@@ -128,12 +128,12 @@ class TestSnapshotReaders:
         snapshot = np.zeros((3, layout.snapshot_dim), dtype=np.float32)
         k = layout.k_rows
         # Balanced.
-        snapshot[0, k:2 * k] = 1.0
-        snapshot[0, 3 * k:4 * k] = 1.0
+        snapshot[0, k : 2 * k] = 1.0
+        snapshot[0, 3 * k : 4 * k] = 1.0
         # Bids only.
-        snapshot[1, k:2 * k] = 1.0
+        snapshot[1, k : 2 * k] = 1.0
         # Asks only.
-        snapshot[2, 3 * k:4 * k] = 1.0
+        snapshot[2, 3 * k : 4 * k] = 1.0
 
         imbalance = targets_module.depth_imbalance(snapshot, layout)
         assert imbalance[0] == pytest.approx(0.0)
@@ -148,12 +148,16 @@ class TestSnapshotReaders:
 
 # --- Targets -----------------------------------------------------------------
 
+
 class TestTargets:
     def test_mid_return_is_the_log_mid_difference(self, layout):
         corpus = synthetic(layout)
         values, valid = targets_module.build(
             targets_module.TARGET_REGISTRY["mid_return"],
-            corpus.snapshots, layout, corpus.episode_index, horizon=3,
+            corpus.snapshots,
+            layout,
+            corpus.episode_index,
+            horizon=3,
         )
         mids = targets_module.log_mid(corpus.snapshots, layout)
         rows = np.flatnonzero(valid)
@@ -173,7 +177,10 @@ class TestTargets:
         snapshots[:, layout.book_dim] = 2.0 + 0.25 * np.arange(steps)
         values, valid = targets_module.build(
             targets_module.TARGET_REGISTRY["realized_vol"],
-            snapshots, layout, np.zeros(steps, dtype=np.int32), horizon=4,
+            snapshots,
+            layout,
+            np.zeros(steps, dtype=np.int32),
+            horizon=4,
         )
         assert valid.any()
         assert np.all(values[valid] == 0.0)
@@ -182,7 +189,10 @@ class TestTargets:
         corpus = synthetic(layout)
         values, valid = targets_module.build(
             targets_module.TARGET_REGISTRY["realized_vol"],
-            corpus.snapshots, layout, corpus.episode_index, horizon=4,
+            corpus.snapshots,
+            layout,
+            corpus.episode_index,
+            horizon=4,
         )
         assert (values[valid] > 0).any()
 
@@ -193,7 +203,10 @@ class TestTargets:
         with pytest.raises(ValueError, match="min_horizon|horizon >= 2"):
             targets_module.build(
                 targets_module.TARGET_REGISTRY["realized_vol"],
-                corpus.snapshots, layout, corpus.episode_index, horizon=1,
+                corpus.snapshots,
+                layout,
+                corpus.episode_index,
+                horizon=1,
             )
 
     def test_unknown_target_raises_naming_the_alternatives(self):
@@ -205,7 +218,10 @@ class TestTargets:
         for name in targets_module.selectable_targets():
             target = targets_module.TARGET_REGISTRY[name]
             values, valid = targets_module.build(
-                target, corpus.snapshots, layout, corpus.episode_index,
+                target,
+                corpus.snapshots,
+                layout,
+                corpus.episode_index,
                 horizon=max(2, target.min_horizon),
             )
             assert valid.any(), name
@@ -221,9 +237,7 @@ class TestHorizonMask:
         for horizon in (1, 3, 7):
             valid = targets_module.horizon_mask(corpus.episode_index, horizon)
             rows = np.flatnonzero(valid)
-            assert np.array_equal(
-                corpus.episode_index[rows], corpus.episode_index[rows + horizon]
-            )
+            assert np.array_equal(corpus.episode_index[rows], corpus.episode_index[rows + horizon])
 
     def test_drops_the_tail_of_every_episode(self, layout):
         corpus = synthetic(layout)
@@ -233,12 +247,11 @@ class TestHorizonMask:
 
     def test_a_horizon_longer_than_the_corpus_is_empty_not_an_error(self, layout):
         corpus = synthetic(layout)
-        assert not targets_module.horizon_mask(
-            corpus.episode_index, len(corpus) + 5
-        ).any()
+        assert not targets_module.horizon_mask(corpus.episode_index, len(corpus) + 5).any()
 
 
 # --- The probe ---------------------------------------------------------------
+
 
 class TestSplits:
     def test_splits_on_episodes_when_there_are_enough(self, layout):
@@ -246,9 +259,7 @@ class TestSplits:
         adjacent-row leak at the seams and gives the test split its own price
         anchors."""
         corpus = synthetic(layout)
-        train, validation, test = probe_module.split_masks(
-            corpus.episode_index, len(corpus)
-        )
+        train, validation, test = probe_module.split_masks(corpus.episode_index, len(corpus))
         episodes = [set(corpus.episode_index[m]) for m in (train, validation, test)]
         assert episodes[0] and episodes[1] and episodes[2]
         assert not episodes[0] & episodes[1]
@@ -257,9 +268,7 @@ class TestSplits:
 
     def test_falls_back_to_contiguous_rows_below_the_minimum(self, layout):
         corpus = synthetic(layout, episodes=1, steps=40)
-        train, validation, test = probe_module.split_masks(
-            corpus.episode_index, len(corpus)
-        )
+        train, validation, test = probe_module.split_masks(corpus.episode_index, len(corpus))
         assert train.sum() and validation.sum() and test.sum()
         # Contiguous and in order: every train row precedes every test row.
         assert np.flatnonzero(train).max() < np.flatnonzero(test).min()
@@ -267,9 +276,7 @@ class TestSplits:
     def test_no_split_is_shuffled(self, layout):
         """Shuffling puts a test row's near-duplicate neighbour in training."""
         corpus = synthetic(layout)
-        train, validation, test = probe_module.split_masks(
-            corpus.episode_index, len(corpus)
-        )
+        train, validation, test = probe_module.split_masks(corpus.episode_index, len(corpus))
         for mask in (train, validation, test):
             rows = np.flatnonzero(mask)
             assert np.array_equal(rows, np.sort(rows))
@@ -365,17 +372,13 @@ class TestFitAndScore:
         # Groups 0-1 train, group 2 validation, group 3 test: flatten only the
         # validation group, leaving train and test perfectly well-formed.
         values[groups == 2] = 0.0
-        assert probe_module.fit_and_score(
-            features, values, "regression", groups
-        ) is None
+        assert probe_module.fit_and_score(features, values, "regression", groups) is None
 
     def test_a_constant_regression_target_is_unscoreable(self):
         rng = np.random.default_rng(3)
         features = rng.normal(size=(200, 4))
         groups = np.repeat(np.arange(4), 50)
-        assert probe_module.fit_and_score(
-            features, np.full(200, 7.0), "regression", groups
-        ) is None
+        assert probe_module.fit_and_score(features, np.full(200, 7.0), "regression", groups) is None
 
     def test_too_few_rows_reports_unscoreable_rather_than_zero(self):
         features = np.zeros((2, 3))
@@ -389,9 +392,7 @@ class TestFitAndScore:
         features = rng.normal(size=(400, 3))
         values = np.full(400, 1000.0) + features[:, 0] * 1e-6
         groups = np.repeat(np.arange(4), 100)
-        result = probe_module.fit_and_score(
-            features, values, "regression", groups, alphas=(1e7,)
-        )
+        result = probe_module.fit_and_score(features, values, "regression", groups, alphas=(1e7,))
         assert result is not None
         # The mean predictor is right here; a shrunk intercept would be ~0 and
         # give an enormously negative R^2.
@@ -399,6 +400,7 @@ class TestFitAndScore:
 
 
 # --- The report --------------------------------------------------------------
+
 
 class TestReport:
     def test_every_feature_set_is_scored_on_identical_rows(self, layout):
@@ -418,18 +420,14 @@ class TestReport:
     def test_a_misaligned_feature_set_raises(self, layout):
         corpus = synthetic(layout)
         with pytest.raises(ValueError, match="rows for a corpus of"):
-            report_module.run(
-                corpus, {"short": np.zeros((3, 2))}, ["mid_return"], [1]
-            )
+            report_module.run(corpus, {"short": np.zeros((3, 2))}, ["mid_return"], [1])
 
     def test_a_target_below_its_min_horizon_is_skipped_not_fatal(self, layout):
         """A horizon list is a sweep; one target declining one horizon should
         not end it."""
         corpus = synthetic(layout)
         features = {"raw": corpus.obs.astype(np.float64)}
-        rows = report_module.run(
-            corpus, features, ["realized_vol", "mid_return"], [1, 3]
-        )
+        rows = report_module.run(corpus, features, ["realized_vol", "mid_return"], [1, 3])
         pairs = {(row.target, row.horizon) for row in rows}
         assert ("realized_vol", 1) not in pairs
         assert ("realized_vol", 3) in pairs
@@ -443,8 +441,12 @@ class TestReport:
         rows = report_module.run(corpus, features, ["mid_return"], [2])
         row = rows[0]
         tied = report_module.Row(
-            target=row.target, kind=row.kind, metric=row.metric,
-            describe=row.describe, horizon=row.horizon, n_rows=row.n_rows,
+            target=row.target,
+            kind=row.kind,
+            metric=row.metric,
+            describe=row.describe,
+            horizon=row.horizon,
+            n_rows=row.n_rows,
             results={"a": row.results["a"], "b": row.results["a"]},
         )
         assert tied.best is None
@@ -454,10 +456,18 @@ class TestReport:
         features = {"raw": corpus.obs.astype(np.float64)}
         rows = report_module.run(corpus, features, ["mid_return"], [2])
         rendered = report_module.render(
-            [report_module.Row(
-                target="t", kind="regression", metric="r2", describe="d",
-                horizon=1, n_rows=0, results={"raw": None},
-            )] + list(rows),
+            [
+                report_module.Row(
+                    target="t",
+                    kind="regression",
+                    metric="r2",
+                    describe="d",
+                    horizon=1,
+                    n_rows=0,
+                    results={"raw": None},
+                )
+            ]
+            + list(rows),
             ["raw"],
         )
         assert "| - |" in rendered
@@ -468,6 +478,7 @@ class TestReport:
 
 
 # --- The corpus --------------------------------------------------------------
+
 
 class TestCorpusValidation:
     def test_a_width_the_layout_disagrees_with_raises(self, layout):
@@ -504,21 +515,22 @@ def write_parquet(path, layout, episodes=3, steps=6, agents=4):
                 # emits: the rows at one step are NOT identical any more, which
                 # is what makes "keep one per step" a choice rather than a
                 # lossless collapse.
-                row = np.full(layout.flat_dim, float(episode * 100 + step),
-                              dtype=np.float32)
-                row[layout.book_flat_dim:] = float(agent)
+                row = np.full(layout.flat_dim, float(episode * 100 + step), dtype=np.float32)
+                row[layout.book_flat_dim :] = float(agent)
                 obs.append(row.tolist())
                 episode_id.append(f"ep-{episode}")
                 step_no.append(step)
                 agent_id.append(f"agent_{agent}")
 
     pq.write_table(
-        pa.table({
-            "obs": pa.array(obs, type=pa.list_(pa.float32())),
-            "episode_id": pa.array(episode_id, type=pa.string()),
-            "step": pa.array(step_no, type=pa.int32()),
-            "agent_id": pa.array(agent_id, type=pa.string()),
-        }),
+        pa.table(
+            {
+                "obs": pa.array(obs, type=pa.list_(pa.float32())),
+                "episode_id": pa.array(episode_id, type=pa.string()),
+                "step": pa.array(step_no, type=pa.int32()),
+                "agent_id": pa.array(agent_id, type=pa.string()),
+            }
+        ),
         path,
     )
 
@@ -547,7 +559,7 @@ class TestParquetCorpus:
         corpus = corpus_module.from_parquet(str(file), per_agent=True)
 
         assert len(corpus) == 3 * 6 * 4
-        tails = corpus.obs[:, layout.book_flat_dim:]
+        tails = corpus.obs[:, layout.book_flat_dim :]
         assert len(np.unique(tails[:, 0])) == 4
 
     def test_the_rows_at_one_step_are_not_identical(self, layout, tmp_path):
@@ -558,10 +570,10 @@ class TestParquetCorpus:
         corpus = corpus_module.from_parquet(str(file), per_agent=True)
 
         first_step = corpus.obs[:4]
-        book = first_step[:, :layout.book_flat_dim]
-        tail = first_step[:, layout.book_flat_dim:]
-        assert np.array_equal(book, np.tile(book[0], (4, 1)))   # shared prefix
-        assert len(np.unique(tail[:, 0])) == 4                  # distinct tails
+        book = first_step[:, : layout.book_flat_dim]
+        tail = first_step[:, layout.book_flat_dim :]
+        assert np.array_equal(book, np.tile(book[0], (4, 1)))  # shared prefix
+        assert len(np.unique(tail[:, 0])) == 4  # distinct tails
 
     def test_rows_come_back_in_episode_then_step_order(self, layout, tmp_path):
         file = tmp_path / "record.parquet"
@@ -595,12 +607,14 @@ class TestParquetCorpus:
 
         file = tmp_path / "empty.parquet"
         pq.write_table(
-            pa.table({
-                "obs": pa.array([[], []], type=pa.list_(pa.float32())),
-                "episode_id": pa.array(["ep-0", "ep-0"], type=pa.string()),
-                "step": pa.array([0, 1], type=pa.int32()),
-                "agent_id": pa.array(["agent_0", "agent_0"], type=pa.string()),
-            }),
+            pa.table(
+                {
+                    "obs": pa.array([[], []], type=pa.list_(pa.float32())),
+                    "episode_id": pa.array(["ep-0", "ep-0"], type=pa.string()),
+                    "step": pa.array([0, 1], type=pa.int32()),
+                    "agent_id": pa.array(["agent_0", "agent_0"], type=pa.string()),
+                }
+            ),
             str(file),
         )
         with pytest.raises(ValueError, match="No usable observation"):
@@ -652,8 +666,9 @@ class TestEffectiveRank:
             rng.standard_normal((64, 64)),
             np.zeros((32, 8)),
         ):
-            assert (rank_module.effective_rank(matrix)
-                    == cbp_module.effective_rank(torch.tensor(matrix)))
+            assert rank_module.effective_rank(matrix) == cbp_module.effective_rank(
+                torch.tensor(matrix)
+            )
 
     def test_the_one_deliberate_divergence_is_the_degenerate_row_count(self):
         """Fewer than two rows: 0 here, NaN on the Learner.
@@ -677,10 +692,12 @@ class TestEffectiveRank:
 
     def test_the_table_reports_width_and_usage(self):
         rng = np.random.default_rng(0)
-        table = rank_module.rank_table({
-            "raw": rng.standard_normal((256, 16)),
-            "collapsed": rng.standard_normal((256, 2)) @ rng.standard_normal((2, 64)),
-        })
+        table = rank_module.rank_table(
+            {
+                "raw": rng.standard_normal((256, 16)),
+                "collapsed": rng.standard_normal((256, 2)) @ rng.standard_normal((2, 64)),
+            }
+        )
         assert table["raw"].width == 16
         assert table["raw"].fraction == pytest.approx(table["raw"].rank / 16)
         assert table["collapsed"].rank < table["collapsed"].width
@@ -693,29 +710,29 @@ class TestEffectiveRank:
         The flag is what stops that being read as a finding about the encoder.
         """
         rng = np.random.default_rng(0)
-        table = rank_module.rank_table({
-            "wide": rng.standard_normal((16, 256)),
-            "fine": rng.standard_normal((1024, 16)),
-        })
+        table = rank_module.rank_table(
+            {
+                "wide": rng.standard_normal((16, 256)),
+                "fine": rng.standard_normal((1024, 16)),
+            }
+        )
         assert table["wide"].row_limited
         assert not table["fine"].row_limited
-        assert "* bounded by the corpus" in rank_module.render(
-            table, ["wide", "fine"]
-        )
+        assert "* bounded by the corpus" in rank_module.render(table, ["wide", "fine"])
 
     def test_the_rendering_names_the_threshold_it_was_computed_at(self):
         """The header always printed the default 99%, so a table computed at
         another threshold was labelled with a number it was not measured at."""
         features = {"raw": np.random.default_rng(0).standard_normal((256, 16))}
         assert "(90% of singular mass)" in rank_module.render(
-            rank_module.rank_table(features, threshold=0.9), ["raw"])
+            rank_module.rank_table(features, threshold=0.9), ["raw"]
+        )
         assert "(99% of singular mass)" in rank_module.render(
-            rank_module.rank_table(features), ["raw"])
+            rank_module.rank_table(features), ["raw"]
+        )
 
     def test_the_rendering_names_the_confounded_metric(self):
         """A reader of this table is exactly who needs warning off the other one."""
-        table = rank_module.rank_table(
-            {"raw": np.random.default_rng(0).standard_normal((256, 16))}
-        )
+        table = rank_module.rank_table({"raw": np.random.default_rng(0).standard_normal((256, 16))})
         text = rank_module.render(table, ["raw"])
         assert "cbp_batch_effective_rank" in text

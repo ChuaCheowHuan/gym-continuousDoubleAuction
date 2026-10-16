@@ -12,6 +12,7 @@ Every scenario below is built by hand on a 4-agent book with 10,000 each, so
 the numbers can be checked with a pencil. agent_0 goes short 90 @ 100 against
 agent_1's bid; agents 2 and 3 then quote where the test needs the mid.
 """
+
 import dataclasses
 from decimal import Decimal
 
@@ -21,15 +22,21 @@ import pytest
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
     continuousDoubleAuctionEnv,
 )
-from gym_continuousDoubleAuction.envs.exchg.liquidation_helper import Liquidation_Helper
+from gym_continuousDoubleAuction.envs.exchg.liquidation_helper import LiquidationEngine
 
 CASH = 10000
 TOTAL = Decimal(4 * CASH)
 
 
 def _env(**overrides):
-    config = {"num_of_agents": 4, "init_cash": CASH, "max_step": 50, "is_render": False,
-              "initial_price_min": 100, "initial_price_max": 100}
+    config = {
+        "num_of_agents": 4,
+        "init_cash": CASH,
+        "max_step": 50,
+        "is_render": False,
+        "initial_price_min": 100,
+        "initial_price_max": 100,
+    }
     config.update(overrides)
     env = continuousDoubleAuctionEnv(config)
     env.reset(seed=1)
@@ -50,9 +57,16 @@ def _short_90(env):
 
 
 def _pass(env):
-    return {agent: {"category": 0, "order_slot": 0, "price": 0, "price_offset": 1,
-                    "size": np.zeros(1, dtype=np.float32)}
-            for agent in env.agents}
+    return {
+        agent: {
+            "category": 0,
+            "order_slot": 0,
+            "price": 0,
+            "price_offset": 1,
+            "size": np.zeros(1, dtype=np.float32),
+        }
+        for agent in env.agents
+    }
 
 
 def _total_nav(env):
@@ -60,7 +74,6 @@ def _total_nav(env):
 
 
 class TestTheTrigger:
-
     def test_a_squeezed_short_breaches_before_it_is_bankrupt(self):
         env = _env()
         _short_90(env)
@@ -71,7 +84,7 @@ class TestTheTrigger:
         # 0.3 x 90 x 175 = 4,725 - so margin called, not yet bankrupt.
         assert env.mark_price() == Decimal(175)
         assert env.traders[0].acc.nav == Decimal(3250)
-        assert env._in_breach(env.traders[0], env.mark_price())
+        assert env.liquidation_engine.in_breach(env.traders[0], env.mark_price())
 
     def test_a_fully_paid_long_never_breaches(self):
         """The cash check escrows 100% of an opening order, so a long's
@@ -83,12 +96,11 @@ class TestTheTrigger:
         env.mark_to_mkt()
         assert env.mark_price() == Decimal(2)
         # agent_1: 1,000 cash + 90 x 2 = 1,180 of equity on 180 of value.
-        assert not env._in_breach(env.traders[1], env.mark_price())
+        assert not env.liquidation_engine.in_breach(env.traders[1], env.mark_price())
         assert env.liquidate() == []
 
 
 class TestBookThenADL:
-
     def _squeeze(self, env):
         _short_90(env)
         _order(env, 2, "limit", "bid", 1, 170.0)
@@ -120,8 +132,11 @@ class TestBookThenADL:
         # agent_0's own setup sale is already in its step count.
         own = a0.num_trades_step
         env.liquidate()
-        assert (a0.num_liquidations_step, a0.liquidated_book_qty_step,
-                a0.liquidated_adl_qty_step) == (1, 50, 40)
+        assert (
+            a0.num_liquidations_step,
+            a0.liquidated_book_qty_step,
+            a0.liquidated_adl_qty_step,
+        ) == (1, 50, 40)
         assert a1.adl_qty_step == 40
         # Forced fills are not the agent's trades: trade_penalty must not see them.
         assert a0.num_trades_step == own
@@ -159,7 +174,6 @@ class TestBookThenADL:
 
 
 class TestThroughAStep:
-
     def test_a_liquidated_trader_with_equity_left_keeps_trading(self):
         env = _env()
         _short_90(env)
@@ -195,7 +209,6 @@ class TestThroughAStep:
 
 
 class TestADLSplit:
-
     class _T:
         def __init__(self, ID, pos):
             self.ID = ID
@@ -203,20 +216,19 @@ class TestADLSplit:
 
     def test_pro_rata_is_exact_in_whole_contracts(self):
         ts = [self._T(1, 60), self._T(2, 30)]
-        shares = dict((t.ID, q) for t, q in Liquidation_Helper._pro_rata(ts, 40, 90))
+        shares = dict((t.ID, q) for t, q in LiquidationEngine._pro_rata(ts, 40, 90))
         # 26.67 and 13.33: floors 26 and 13, the residue to the larger remainder.
         assert shares == {1: 27, 2: 13}
 
     def test_nobody_gives_more_than_they_hold(self):
         ts = [self._T(i, p) for i, p in enumerate((1, 1, 1, 97), start=1)]
         for q in range(1, 101):
-            shares = Liquidation_Helper._pro_rata(ts, q, 100)
+            shares = LiquidationEngine._pro_rata(ts, q, 100)
             assert sum(s for _, s in shares) == q
             assert all(s <= abs(t.acc.net_position) for t, s in shares)
 
 
 class TestConfig:
-
     def test_defaults(self):
         env = _env()
         assert env.liquidation == "market_adl"
@@ -265,9 +277,14 @@ class TestGradual:
             _order(env, 3, "limit", "ask", 50, 180.0)
             env.mark_to_mkt()
             (event,) = env.liquidate()
-            results.append((event["book_qty"], event["adl_qty"],
-                            [t.acc.nav for t in env.traders],
-                            [t.acc.net_position for t in env.traders]))
+            results.append(
+                (
+                    event["book_qty"],
+                    event["adl_qty"],
+                    [t.acc.nav for t in env.traders],
+                    [t.acc.net_position for t in env.traders],
+                )
+            )
         assert results[0] == results[1]
 
     def test_it_closes_in_slices_and_adl_takes_the_rest_on_the_last_step(self):
@@ -297,7 +314,8 @@ class TestGradual:
         assert not trader._order_approved("bid", 1, 100.0, env.LOB, "limit")
         assert not trader._order_approved("ask", 1, 100.0, env.LOB, "market")
         from gym_continuousDoubleAuction.envs.exchg.state_helper import MASK_FIELDS
-        mask = obs["agent_0"][-len(MASK_FIELDS):]
+
+        mask = obs["agent_0"][-len(MASK_FIELDS) :]
         assert mask[0] == 1.0 and not any(mask[1:])
 
     def test_the_freeze_lifts_when_the_position_is_closed(self):
@@ -382,7 +400,7 @@ class TestTheBandAllowsForTheTakerFee:
     def test_the_band_is_the_price_at_which_nav_after_the_fee_is_zero(self):
         env = self._near_bankrupt()
         trader = env.traders[0]
-        band = env._bankruptcy_price(trader, env.mark_price())
+        band = env.liquidation_engine._bankruptcy_price(trader, env.mark_price())
         # Buying 90 at p costs 90 (p - 210) + 0.001 x 90 p; that equals the NAV
         # of 91 at p = (210 + 91 / 90) / 1.001 = 210.8, snapped down.
         assert band == Decimal(210)
@@ -411,7 +429,9 @@ class TestTheBandAllowsForTheTakerFee:
         _order(env, 2, "limit", "bid", 1, 209.0)
         _order(env, 1, "limit", "ask", 90, 211.0)
         env.mark_to_mkt()
-        assert env._bankruptcy_price(env.traders[0], env.mark_price()) == Decimal(211)
+        assert env.liquidation_engine._bankruptcy_price(
+            env.traders[0], env.mark_price()
+        ) == Decimal(211)
 
     def test_closing_a_long_sells_no_lower_than_the_fee_adjusted_price(self):
         """A fully paid long cannot reach the breach in a real run, so the
@@ -423,4 +443,4 @@ class TestTheBandAllowsForTheTakerFee:
         trader = env.traders[0]
         trader.acc.net_position = 90
         trader.acc.nav = Decimal(100)
-        assert env._bankruptcy_price(trader, Decimal(100)) == Decimal(100)
+        assert env.liquidation_engine._bankruptcy_price(trader, Decimal(100)) == Decimal(100)

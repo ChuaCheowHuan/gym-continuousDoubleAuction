@@ -13,6 +13,7 @@ the whole custom route is broken. `_passthrough`, the registered test fixture,
 is what travels that route: `CDAModelConfig` -> `CDACatalog` ->
 `build_encoder_config` -> `ActorCriticEncoderConfig` -> the stock pi/vf heads.
 """
+
 import dataclasses
 
 import gymnasium as gym
@@ -79,6 +80,7 @@ def build_module(spaces, encoder_type, **kwargs):
 
 # --- Registry ---------------------------------------------------------------
 
+
 def test_mlp_is_selectable_and_not_in_the_registry():
     """`mlp` is the pass-through, handled before the registry is consulted."""
     assert MLP_ENCODER_TYPE in selectable_encoder_types()
@@ -103,6 +105,7 @@ def test_fixture_is_buildable_but_not_config_selectable():
 
 
 # --- Observation layout ------------------------------------------------------
+
 
 def test_layout_matches_the_declared_observation_space(spaces):
     obs_space, _ = spaces
@@ -144,7 +147,9 @@ class TestPrivateDimIsGuardedByArithmeticAlone:
     def _space(self, layout, private_dim, n_hist=4):
         snapshot = layout["book_rows"] * layout["k_rows"] + layout["extra_dim"]
         return gym.spaces.Box(
-            -np.inf, np.inf, shape=(n_hist * snapshot + private_dim,),
+            -np.inf,
+            np.inf,
+            shape=(n_hist * snapshot + private_dim,),
             dtype=np.float32,
         )
 
@@ -152,7 +157,8 @@ class TestPrivateDimIsGuardedByArithmeticAlone:
         from gym_continuousDoubleAuction.train.model.encoders import obs_layout
 
         monkeypatch.setattr(
-            obs_layout, "group",
+            obs_layout,
+            "group",
             lambda _f, _g: {**layout, "private_dim": private_dim},
         )
 
@@ -193,9 +199,7 @@ class TestPrivateDimIsGuardedByArithmeticAlone:
         snapshot = layout["book_rows"] * layout["k_rows"] + layout["extra_dim"]
         saved = self._space(layout, layout["private_dim"])
 
-        self._with_private_dim(
-            monkeypatch, layout, layout["private_dim"] + snapshot
-        )
+        self._with_private_dim(monkeypatch, layout, layout["private_dim"] + snapshot)
 
         built = ObsLayout.from_obs_space(saved)
         assert built.n_hist == 3, "reinterpreted, not rejected"
@@ -203,6 +207,7 @@ class TestPrivateDimIsGuardedByArithmeticAlone:
 
 
 # --- Tokenisation ------------------------------------------------------------
+
 
 @pytest.mark.parametrize("tokenization", TOKENIZATIONS)
 def test_tokenize_matches_its_declared_shape(spaces, tokenization):
@@ -284,7 +289,9 @@ def test_own_book_rides_on_the_newest_level_tokens(spaces):
     level = tokenize(obs, layout, "level")
     assert torch.equal(level[0, bid_at, layout.book_rows], own_bid)
     assert torch.equal(level[0, ask_at, layout.book_rows + 1], own_ask)
-    assert torch.all(level[0, cells, layout.book_rows:] == 0) or layout.extra_dim > layout.book_rows
+    assert (
+        torch.all(level[0, cells, layout.book_rows :] == 0) or layout.extra_dim > layout.book_rows
+    )
 
     both = tokenize(obs, layout, "both")
     stride = cells + 1
@@ -295,8 +302,7 @@ def test_own_book_rides_on_the_newest_level_tokens(spaces):
         assert torch.all(older[:cells, layout.book_rows : layout.book_rows + 2] == 0), t
 
     # `time` is a pure reshape of the book part.
-    assert torch.equal(tokenize(obs, layout, "time").reshape(1, -1),
-                       split_private(obs, layout)[0])
+    assert torch.equal(tokenize(obs, layout, "time").reshape(1, -1), split_private(obs, layout)[0])
 
 
 def test_level_tokens_carry_one_level_per_token(spaces):
@@ -345,6 +351,7 @@ def test_level_tokenization_appends_a_global_token(spaces):
 
 # --- The mlp pass-through ----------------------------------------------------
 
+
 def test_mlp_spec_is_the_stock_rllib_path(spaces):
     """No catalog override, and a plain DefaultModelConfig - not a CDA one."""
     obs_space, act_space = spaces
@@ -364,9 +371,7 @@ def test_mlp_spec_matches_default_model_config(spaces):
         obs_space, act_space, encoder_type=MLP_ENCODER_TYPE, encoder_specs={}
     )
 
-    assert dataclasses.asdict(spec.model_config) == dataclasses.asdict(
-        default_model_config()
-    )
+    assert dataclasses.asdict(spec.model_config) == dataclasses.asdict(default_model_config())
 
 
 def test_default_config_selects_mlp():
@@ -378,11 +383,10 @@ def test_default_config_selects_mlp():
 
 # --- The custom path ---------------------------------------------------------
 
+
 def test_custom_encoder_routes_through_the_cda_catalog(spaces):
     obs_space, act_space = spaces
-    spec = build_trainable_module_spec(
-        obs_space, act_space, encoder_type=FIXTURE, encoder_specs={}
-    )
+    spec = build_trainable_module_spec(obs_space, act_space, encoder_type=FIXTURE, encoder_specs={})
 
     assert spec.catalog_class is CDACatalog
     assert isinstance(spec.model_config, CDAModelConfig)
@@ -470,6 +474,7 @@ def test_custom_encoder_latent_dim_sizes_the_heads(spaces):
 
 # --- Review findings ---------------------------------------------------------
 
+
 class TestTokenWidthFitsBothKindsOfToken:
     """Regression: the global token was right-padded to `book_rows`, so the
     market-level scalars past the fourth were silently dropped.
@@ -535,7 +540,9 @@ class TestMlpSpecBlockIsValidated:
 
         with pytest.raises(ValueError, match="Unknown key"):
             build_trainable_module_spec(
-                obs_space, act_space, encoder_type=MLP_ENCODER_TYPE,
+                obs_space,
+                act_space,
+                encoder_type=MLP_ENCODER_TYPE,
                 encoder_specs={MLP_ENCODER_TYPE: {"utter_nonsense": 1}},
             )
 
@@ -545,7 +552,9 @@ class TestMlpSpecBlockIsValidated:
         obs_space, act_space = spaces
 
         spec = build_trainable_module_spec(
-            obs_space, act_space, encoder_type=MLP_ENCODER_TYPE,
+            obs_space,
+            act_space,
+            encoder_type=MLP_ENCODER_TYPE,
             encoder_specs={MLP_ENCODER_TYPE: {"vf_share_layers": True}},
             vf_share_layers=False,
         )
@@ -556,14 +565,14 @@ class TestMlpSpecBlockIsValidated:
         obs_space, act_space = spaces
 
         spec = build_trainable_module_spec(
-            obs_space, act_space, encoder_type=MLP_ENCODER_TYPE,
+            obs_space,
+            act_space,
+            encoder_type=MLP_ENCODER_TYPE,
             encoder_specs={MLP_ENCODER_TYPE: {}},
         )
 
         assert spec.catalog_class is None
-        assert dataclasses.asdict(spec.model_config) == dataclasses.asdict(
-            default_model_config()
-        )
+        assert dataclasses.asdict(spec.model_config) == dataclasses.asdict(default_model_config())
 
 
 def test_model_config_get_is_shared_by_both_readers():
@@ -574,6 +583,5 @@ def test_model_config_get_is_shared_by_both_readers():
     from gym_continuousDoubleAuction.train.policy import policy_handler
 
     assert policy_handler.model_config_get is model_config_get
-    assert train_module._model_config_get({"encoder_type": "lstm"},
-                                          "encoder_type", "mlp") == "lstm"
+    assert train_module._model_config_get({"encoder_type": "lstm"}, "encoder_type", "mlp") == "lstm"
     assert model_config_get({}, "encoder_type", "mlp") == "mlp"

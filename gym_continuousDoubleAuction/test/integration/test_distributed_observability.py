@@ -19,6 +19,7 @@ doc/21 were exactly that it did not:
 
 One real one-runner PPO iteration, sized for speed rather than learning.
 """
+
 import glob
 import os
 import shutil
@@ -54,7 +55,6 @@ TEST_CFG = dict(
 
 
 class TestMetricsCrossTheRunnerBoundary:
-
     @classmethod
     def setup_class(cls):
         ray.init(
@@ -123,8 +123,7 @@ class TestMetricsCrossTheRunnerBoundary:
         Max drawdown and the inventory statistics are defined for any agent that
         reported a NAV, so they must be present for the trainable modules; Sharpe
         and Sortino are left out when undefined, so they are not required."""
-        for name in ("max_drawdown", "position_turnover", "mean_abs_position",
-                     "max_abs_position"):
+        for name in ("max_drawdown", "position_turnover", "mean_abs_position", "max_abs_position"):
             reported = self.env_runners.get(f"module_{name}")
             assert isinstance(reported, dict), f"module_{name} missing: {sorted(self.env_runners)}"
             for pid in ("policy_0", "policy_1"):
@@ -140,8 +139,12 @@ class TestMetricsCrossTheRunnerBoundary:
     def test_the_account_state_reaches_the_driver(self):
         """doc/11 §2.3 and §4 item 2."""
         for key in (
-            "episode_nav_mean", "episode_nav_min", "episode_nav_max",
-            "mean_agent_drawdown", "mean_abs_net_position", "mean_num_trades",
+            "episode_nav_mean",
+            "episode_nav_min",
+            "episode_nav_max",
+            "mean_agent_drawdown",
+            "mean_abs_net_position",
+            "mean_num_trades",
             "maker_fill_ratio_max",
         ):
             assert key in self.env_runners
@@ -195,8 +198,7 @@ class TestTheTailIsWrittenAtTheEndOfASample:
 
     @classmethod
     def setup_class(cls):
-        ray.init(ignore_reinit_error=True, include_dashboard=False,
-                 log_to_driver=False, num_cpus=4)
+        ray.init(ignore_reinit_error=True, include_dashboard=False, log_to_driver=False, num_cpus=4)
         cls.tmpdir = tempfile.mkdtemp(prefix="cda_tail_")
         cls.cfg = TrainConfig(
             **TEST_CFG,
@@ -221,6 +223,7 @@ class TestTheTailIsWrittenAtTheEndOfASample:
 
     def test_the_rows_are_on_disk_before_the_run_ends(self):
         """No `stop`, no `shutdown`, no `atexit`: one iteration has returned."""
-        files = glob.glob(os.path.join(self.cfg.episode_data_path, "**", "*.parquet"),
-                          recursive=True)
+        files = glob.glob(
+            os.path.join(self.cfg.episode_data_path, "**", "*.parquet"), recursive=True
+        )
         assert files, "an iteration ended and nothing was written"

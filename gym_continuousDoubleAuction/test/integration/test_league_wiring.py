@@ -15,6 +15,7 @@ what was asked. Three such bugs existed before this suite:
 
 Each test below fails loudly if any of those regress.
 """
+
 import numpy as np
 import ray
 import torch
@@ -58,9 +59,9 @@ def _learner_module_state(algo, module_id):
 def _state_as_numpy(state):
     out = {}
     for k, v in state.items():
-        out[k] = (
-            v.detach().cpu().numpy() if torch.is_tensor(v) else np.asarray(v)
-        ).astype(np.float64)
+        out[k] = (v.detach().cpu().numpy() if torch.is_tensor(v) else np.asarray(v)).astype(
+            np.float64
+        )
     return out
 
 
@@ -102,24 +103,20 @@ class TestLeagueWiring:
         """
         modules = self.algo.env_runner.module
 
-        for pid in baseline_policy_ids(
-            self.cfg.num_agents, self.cfg.num_trained_agents
-        ):
-            assert isinstance(
-                modules[pid], RandomRLModule
-            ), f"{pid} should be a RandomRLModule, got {type(modules[pid]).__name__}"
+        for pid in baseline_policy_ids(self.cfg.num_agents, self.cfg.num_trained_agents):
+            assert isinstance(modules[pid], RandomRLModule), (
+                f"{pid} should be a RandomRLModule, got {type(modules[pid]).__name__}"
+            )
 
         for pid in trainable_policy_ids(self.cfg.num_trained_agents):
-            assert not isinstance(
-                modules[pid], RandomRLModule
-            ), f"{pid} is trainable and must not be a RandomRLModule"
+            assert not isinstance(modules[pid], RandomRLModule), (
+                f"{pid} is trainable and must not be a RandomRLModule"
+            )
 
     def test_baselines_excluded_from_training(self):
         """RandomRLModule._forward_train raises, so it must not be trained."""
         to_train = set(self.algo.config.policies_to_train)
-        for pid in baseline_policy_ids(
-            self.cfg.num_agents, self.cfg.num_trained_agents
-        ):
+        for pid in baseline_policy_ids(self.cfg.num_agents, self.cfg.num_trained_agents):
             assert pid not in to_train
         for pid in trainable_policy_ids(self.cfg.num_trained_agents):
             assert pid in to_train
@@ -147,19 +144,13 @@ class TestLeagueWiring:
         env stays randomly initialised forever while the trained copy sits
         unused in the LearnerGroup.
         """
-        trained = _state_as_numpy(
-            _learner_module_state(self.algo, self.source_pid)
-        )
-        on_runner = _state_as_numpy(
-            self.algo.env_runner.module[self.champion_id].get_state()
-        )
+        trained = _state_as_numpy(_learner_module_state(self.algo, self.source_pid))
+        on_runner = _state_as_numpy(self.algo.env_runner.module[self.champion_id].get_state())
 
         shared = sorted(set(trained) & set(on_runner))
         assert shared, "champion and source share no parameters"
 
-        mismatched = [
-            k for k in shared if not np.allclose(trained[k], on_runner[k])
-        ]
+        mismatched = [k for k in shared if not np.allclose(trained[k], on_runner[k])]
         assert mismatched == [], (
             f"Champion on the EnvRunner does not match the trained policy for "
             f"{len(mismatched)}/{len(shared)} parameters: {mismatched}. "
@@ -187,7 +178,7 @@ class TestLeagueWiring:
             mapping_fn(f"agent_{i}", _Ep())
             for i in range(self.cfg.num_trained_agents, self.cfg.num_agents)
         }
-        pool = set(self.callback.available_modules[self.cfg.num_trained_agents:])
+        pool = set(self.callback.available_modules[self.cfg.num_trained_agents :])
         assert drawn.issubset(pool), f"{drawn} not within pool {pool}"
 
     def test_mapping_fn_is_deterministic_across_processes(self):
@@ -304,10 +295,7 @@ class TestLeagueWiringRemoteEnvRunners:
     def test_sampling_actually_happens_remotely(self):
         """Guard the premise: if there are no remote runners, this whole class
         silently degrades into a duplicate of the in-process tests."""
-        assert (
-            self.algo.env_runner_group.num_healthy_remote_workers()
-            == self.NUM_ENV_RUNNERS
-        )
+        assert self.algo.env_runner_group.num_healthy_remote_workers() == self.NUM_ENV_RUNNERS
         assert len(self.remote_probes) == self.NUM_ENV_RUNNERS
 
     def test_champion_module_exists_on_remote_runners(self):
@@ -316,18 +304,14 @@ class TestLeagueWiringRemoteEnvRunners:
 
     def test_champion_weights_reach_remote_runners(self):
         """The weight force-push must cross the process boundary."""
-        trained = _state_as_numpy(
-            _learner_module_state(self.algo, self.source_pid)
-        )
+        trained = _state_as_numpy(_learner_module_state(self.algo, self.source_pid))
 
         for i, (_has, state, _drawn) in enumerate(self.remote_probes):
             on_runner = _state_as_numpy(state)
             shared = sorted(set(trained) & set(on_runner))
             assert shared, f"remote runner {i}: no shared parameters"
 
-            mismatched = [
-                k for k in shared if not np.allclose(trained[k], on_runner[k])
-            ]
+            mismatched = [k for k in shared if not np.allclose(trained[k], on_runner[k])]
             assert mismatched == [], (
                 f"remote runner {i}: champion differs from the trained policy "
                 f"for {len(mismatched)}/{len(shared)} parameters. The champion "
@@ -393,18 +377,12 @@ class TestLeagueWiringRemoteLearner:
 
     def test_champion_weights_match_with_a_remote_learner(self):
         champion_id = self.callback.champion_history[-1]["id"]
-        trained = _state_as_numpy(
-            _learner_module_state(self.algo, self.source_pid)
-        )
-        on_runner = _state_as_numpy(
-            self.algo.env_runner.module[champion_id].get_state()
-        )
+        trained = _state_as_numpy(_learner_module_state(self.algo, self.source_pid))
+        on_runner = _state_as_numpy(self.algo.env_runner.module[champion_id].get_state())
         shared = sorted(set(trained) & set(on_runner))
         assert shared, "champion and source share no parameters"
 
-        mismatched = [
-            k for k in shared if not np.allclose(trained[k], on_runner[k])
-        ]
+        mismatched = [k for k in shared if not np.allclose(trained[k], on_runner[k])]
         assert mismatched == [], (
             f"champion differs from the trained policy for "
             f"{len(mismatched)}/{len(shared)} parameters"

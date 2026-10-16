@@ -16,6 +16,7 @@ from; `test_refactors.py` holds `EnvSettings` to `env_defaults.json` key for key
 No value is written here: a key the caller omits is read from `config/env_defaults.json`,
 and a key that file lacks raises from the loader.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
@@ -63,12 +64,31 @@ class EnvSettings:
     loss_multiplier: Any
     dead_action_penalty: Any
 
-    #: Read by the env itself rather than forwarded to the mixin chain.
-    ENV_ONLY = frozenset({
-        "num_of_agents", "is_render", "max_step", "episode_length_mode",
-        "max_step_min", "max_step_max", "maker_fee_bps", "taker_fee_bps",
-        "allow_multiple_orders_per_level",
-    })
+    #: Read by the env itself rather than forwarded to the exchange.
+    ENV_ONLY = frozenset(
+        {
+            "num_of_agents",
+            "is_render",
+            "max_step",
+            "episode_length_mode",
+            "max_step_min",
+            "max_step_max",
+            "maker_fee_bps",
+            "taker_fee_bps",
+            "allow_multiple_orders_per_level",
+        }
+    )
+    #: The reward model's coefficients (`RewardModel`).
+    REWARD_KEYS = (
+        "order_penalty",
+        "trade_penalty",
+        "drawdown_penalty",
+        "passive_bonus",
+        "loss_multiplier",
+        "dead_action_penalty",
+    )
+    #: The liquidation engine's settings (`LiquidationEngine`).
+    LIQUIDATION_KEYS = ("liquidation", "maintenance_margin", "liquidation_horizon")
 
     def __post_init__(self) -> None:
         if self.num_of_agents < 1:
@@ -120,6 +140,17 @@ class EnvSettings:
         """All keys as an env config dict (what `TrainConfig.env_config` hands to the env)."""
         return {key: getattr(self, key) for key in self.keys()}
 
+    def reward_kwargs(self) -> Dict[str, Any]:
+        """The keys `RewardModel` takes."""
+        return {key: getattr(self, key) for key in self.REWARD_KEYS}
+
     def helper_kwargs(self) -> Dict[str, Any]:
-        """The keys the exchange / state / action / reward / liquidation mixins take."""
-        return {key: getattr(self, key) for key in self.keys() if key not in self.ENV_ONLY}
+        """The keys the exchange (with its state and action mixins) and its components take.
+
+        The reward coefficients are left out: `reward_kwargs` builds the model that holds them.
+        """
+        return {
+            key: getattr(self, key)
+            for key in self.keys()
+            if key not in self.ENV_ONLY and key not in self.REWARD_KEYS
+        }

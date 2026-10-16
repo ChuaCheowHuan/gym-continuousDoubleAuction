@@ -3,6 +3,7 @@
 Split out of the league callback: these are plain functions of an `info` dict, with no
 callback state, so they can be tested alone.
 """
+
 from gym_continuousDoubleAuction.train.episode_record import REWARD_TERMS
 
 

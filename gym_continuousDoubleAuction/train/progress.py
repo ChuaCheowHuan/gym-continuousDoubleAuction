@@ -1,4 +1,5 @@
 """Per-iteration progress: the progress log, the NAV conservation check and metrics (issue #254)."""
+
 from __future__ import annotations
 import json
 import math
@@ -93,6 +94,7 @@ def _apply_iteration(iteration: Optional[int]):
     Module level rather than a lambda in the loop so it is picklable by name
     and readable in a traceback; the closure carries only an int.
     """
+
     def _apply(_env_runner):
         set_iteration(iteration)
         return True
@@ -130,8 +132,9 @@ def _broadcast_iteration(algo, iteration: int) -> None:
         )
     except Exception:
         logger.debug(
-            "could not broadcast iteration %s to the env runners; their log "
-            "lines will read iter=-", iteration, exc_info=True,
+            "could not broadcast iteration %s to the env runners; their log lines will read iter=-",
+            iteration,
+            exc_info=True,
         )
         return
 
@@ -152,7 +155,10 @@ def _broadcast_iteration(algo, iteration: int) -> None:
             "iteration %s reached only %s of %s env runners within %ss; the "
             "rest will label this iteration's lines and recorded rows with "
             "whatever iteration they were last told",
-            iteration, len(acked), expected, _BROADCAST_TIMEOUT_S,
+            iteration,
+            len(acked),
+            expected,
+            _BROADCAST_TIMEOUT_S,
         )
 
 
@@ -215,7 +221,9 @@ def _append_progress(result: dict, cfg: TrainConfig) -> None:
     except Exception:
         logger.warning(
             "could not append to %s - the run continues without a progress "
-            "record for this iteration", cfg.progress_path, exc_info=True,
+            "record for this iteration",
+            cfg.progress_path,
+            exc_info=True,
         )
 
 
@@ -256,15 +264,16 @@ def _log_iteration(i: int, total: int, result: dict, cfg: TrainConfig) -> None:
     # this metric's whole diagnostic range is near zero, and `round(3.8e-05, 3)`
     # prints `0.0` - which is how a critic that is merely dead ends up looking
     # identical to one that reported nothing at all.
-    vf = ", ".join(
-        f"{pid}={value:.3g}" for pid, value in vf_explained_var(result, cfg).items()
-    )
+    vf = ", ".join(f"{pid}={value:.3g}" for pid, value in vf_explained_var(result, cfg).items())
     logger.info(
-        "iter %s/%s | env steps sampled: %s | module returns: %s | "
-        "vf_explained_var: %s",
-        i, total, steps,
-        {k: (None if usable_return(v) is None else round(usable_return(v), 1))
-         for k, v in returns.items()},
+        "iter %s/%s | env steps sampled: %s | module returns: %s | vf_explained_var: %s",
+        i,
+        total,
+        steps,
+        {
+            k: (None if usable_return(v) is None else round(usable_return(v), 1))
+            for k, v in returns.items()
+        },
         vf or "n/a",
     )
 
@@ -280,6 +289,11 @@ def _log_iteration(i: int, total: int, result: dict, cfg: TrainConfig) -> None:
             "%s env runners did not deliver %s env steps within "
             "sample_timeout_s=%s. Raise sample_timeout_s, or lower max_step "
             "(%s) / num_episodes_per_iter (%s) to shrink the batch.",
-            i, ENV_RUNNER_RESULTS, cfg.num_env_runners, cfg.train_batch_size,
-            cfg.sample_timeout_s, cfg.max_step, cfg.num_episodes_per_iter,
+            i,
+            ENV_RUNNER_RESULTS,
+            cfg.num_env_runners,
+            cfg.train_batch_size,
+            cfg.sample_timeout_s,
+            cfg.max_step,
+            cfg.num_episodes_per_iter,
         )

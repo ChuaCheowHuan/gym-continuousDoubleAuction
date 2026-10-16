@@ -8,6 +8,7 @@ horizon is reported once, in the reset infos, and never shown to the policy:
 agent cannot learn the exact end of the game - the end-game is where a known
 horizon lets inventory be dumped for free. doc/18 section 3.4.
 """
+
 import dataclasses
 
 import numpy as np
@@ -19,16 +20,28 @@ from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
 
 
 def _env(**overrides):
-    config = {"num_of_agents": 2, "is_render": False, "max_step": 16,
-              "initial_price_min": 100, "initial_price_max": 100}
+    config = {
+        "num_of_agents": 2,
+        "is_render": False,
+        "max_step": 16,
+        "initial_price_min": 100,
+        "initial_price_max": 100,
+    }
     config.update(overrides)
     return continuousDoubleAuctionEnv(config)
 
 
 def _pass(env):
-    return {agent: {"category": 0, "order_slot": 0, "price": 0, "price_offset": 1,
-                    "size": np.zeros(1, dtype=np.float32)}
-            for agent in env.agents}
+    return {
+        agent: {
+            "category": 0,
+            "order_slot": 0,
+            "price": 0,
+            "price_offset": 1,
+            "size": np.zeros(1, dtype=np.float32),
+        }
+        for agent in env.agents
+    }
 
 
 def _run(env):
@@ -46,7 +59,6 @@ def _time_left(env, obs):
 
 
 class TestFixed:
-
     def test_default_is_fixed_at_max_step(self):
         env = _env()
         _, infos = env.reset(seed=1)
@@ -64,7 +76,6 @@ class TestFixed:
 
 
 class TestRandom:
-
     def test_the_draw_is_inside_the_range_and_varies(self):
         env = _env(episode_length_mode="random", max_step_min=5, max_step_max=12)
         horizons = [env.reset(seed=s)[1]["agent_0"]["episode_horizon"] for s in range(40)]
@@ -111,7 +122,6 @@ class TestRandom:
 
 
 class TestValidation:
-
     def test_unknown_mode(self):
         with pytest.raises(ValueError, match="episode_length_mode"):
             _env(episode_length_mode="geometric")
@@ -142,12 +152,14 @@ class TestValidation:
 
 
 class TestTrainConfig:
-
     def test_batch_is_sized_by_the_expected_length(self):
         from gym_continuousDoubleAuction.train.train import TrainConfig
+
         fixed = dataclasses.replace(TrainConfig(), max_step=64, num_episodes_per_iter=4)
         assert fixed.expected_episode_length == 64 and fixed.train_batch_size == 256
-        rnd = dataclasses.replace(fixed, episode_length_mode="random", max_step_min=32, max_step_max=96)
+        rnd = dataclasses.replace(
+            fixed, episode_length_mode="random", max_step_min=32, max_step_max=96
+        )
         assert rnd.expected_episode_length == 64 and rnd.train_batch_size == 256
         cfg = rnd.env_config
         assert cfg["episode_length_mode"] == "random"
@@ -155,5 +167,6 @@ class TestTrainConfig:
 
     def test_compare_can_switch_it(self):
         from gym_continuousDoubleAuction.train.compare import parse_overrides
+
         out = parse_overrides(["episode_length_mode=random", "max_step_min=8", "max_step_max=32"])
         assert out == {"episode_length_mode": "random", "max_step_min": 8, "max_step_max": 32}

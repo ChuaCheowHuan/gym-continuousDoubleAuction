@@ -40,6 +40,7 @@ market already trained on. Below `MIN_GROUPS_TO_SPLIT_BY_GROUP` episodes there
 are not enough anchors to go round and it falls back to contiguous rows, which
 still bars shuffling but cannot promise the anchor separation.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -56,8 +57,18 @@ import numpy as np
 #: declines those fits and the score falls back toward 0, which is the honest
 #: answer for "these features carry nothing usable at this sample size".
 RIDGE_ALPHAS = (
-    1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10.0, 100.0,
-    1e3, 1e4, 1e5, 1e6, 1e7,
+    1e-4,
+    1e-3,
+    1e-2,
+    1e-1,
+    1.0,
+    10.0,
+    100.0,
+    1e3,
+    1e4,
+    1e5,
+    1e6,
+    1e7,
 )
 
 #: Fractions of the corpus used for fitting and for choosing `lambda`. The
@@ -84,9 +95,7 @@ class ProbeResult:
     n_features: int
 
 
-def _standardise(
-    train: np.ndarray, *others: np.ndarray
-) -> Tuple[np.ndarray, ...]:
+def _standardise(train: np.ndarray, *others: np.ndarray) -> Tuple[np.ndarray, ...]:
     """Zero-mean, unit-variance every column, using the *training* statistics.
 
     Fitting the scaler on the whole corpus would leak test-split statistics
@@ -150,9 +159,7 @@ def balanced_accuracy(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     if not positive.any() or not negative.any():
         return 0.5
     predicted = y_pred > 0.5
-    return 0.5 * (
-        float(predicted[positive].mean()) + float((~predicted[negative]).mean())
-    )
+    return 0.5 * (float(predicted[positive].mean()) + float((~predicted[negative]).mean()))
 
 
 def split_indices(
@@ -211,7 +218,7 @@ def split_masks(
             mask = np.zeros(n, dtype=bool)
             # Not the last split: nothing follows it for a target to read into.
             stop = part.stop - purge if i < len(parts) - 1 else part.stop
-            mask[part.start:max(part.start, stop)] = True
+            mask[part.start : max(part.start, stop)] = True
             masks.append(mask)
 
     return tuple(masks)
@@ -242,8 +249,8 @@ def _group_spans(ordered, train_fraction, validation_fraction):
 
     return (
         ordered[:n_train],
-        ordered[n_train:n_train + n_validation],
-        ordered[n_train + n_validation:],
+        ordered[n_train : n_train + n_validation],
+        ordered[n_train + n_validation :],
     )
 
 
@@ -308,8 +315,7 @@ def fit_and_score(
     # reports an unregularised fit that nothing selected. Refusing the cell
     # keeps the harness's guarantee uniform: a number it prints always had its
     # regularisation chosen on data.
-    if any(is_degenerate(values[part], kind)
-           for part in (train, validation, test)):
+    if any(is_degenerate(values[part], kind) for part in (train, validation, test)):
         return None
 
     x_train, x_validation, x_test = _standardise(

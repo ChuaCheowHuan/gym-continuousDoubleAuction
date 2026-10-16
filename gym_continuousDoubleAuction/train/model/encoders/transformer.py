@@ -32,6 +32,7 @@ tokens). With the LayerNorm that becomes 9.5% and 2.76. Removing it does not
 degrade the transformer gracefully - it stops attending. See also the scale note
 in `tokenize`.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -79,7 +80,6 @@ TRANSFORMER_DEFAULTS = {
 }
 
 
-
 @dataclass
 class TransformerEncoderConfig(ModelConfig):
     """Config for `TorchTransformerEncoder`."""
@@ -100,9 +100,7 @@ class TransformerEncoderConfig(ModelConfig):
 
     def build(self, framework: str = "torch") -> Encoder:
         if framework != "torch":
-            raise ValueError(
-                f"{type(self).__name__} is torch-only; got framework={framework!r}."
-            )
+            raise ValueError(f"{type(self).__name__} is torch-only; got framework={framework!r}.")
         return TorchTransformerEncoder(self)
 
 
@@ -114,9 +112,7 @@ class TorchTransformerEncoder(TorchModel, Encoder):
         Encoder.__init__(self, config)
 
         if config.pool not in POOLINGS:
-            raise ValueError(
-                f"Unknown pool {config.pool!r}. Available: {', '.join(POOLINGS)}."
-            )
+            raise ValueError(f"Unknown pool {config.pool!r}. Available: {', '.join(POOLINGS)}.")
         if config.num_layers < 1:
             raise ValueError(f"num_layers must be >= 1; got {config.num_layers}.")
 
@@ -133,12 +129,8 @@ class TorchTransformerEncoder(TorchModel, Encoder):
         # must follow the module across devices.
         self.register_buffer("time_idx", time_idx, persistent=False)
         self.register_buffer("level_idx", level_idx, persistent=False)
-        self.time_embedding = nn.Embedding(
-            int(time_idx.max()) + 1, config.d_model
-        )
-        self.level_embedding = nn.Embedding(
-            int(level_idx.max()) + 1, config.d_model
-        )
+        self.time_embedding = nn.Embedding(int(time_idx.max()) + 1, config.d_model)
+        self.level_embedding = nn.Embedding(int(level_idx.max()) + 1, config.d_model)
 
         # The per-agent block joins the sequence as one token; see PrivateToken
         # for why it is not folded into the book's token width. None when the
@@ -146,12 +138,11 @@ class TorchTransformerEncoder(TorchModel, Encoder):
         # being constructed.
         self.private_token = (
             PrivateToken(self.layout.private_dim, config.d_model)
-            if self.layout.private_dim else None
+            if self.layout.private_dim
+            else None
         )
 
-        self.blocks = nn.ModuleList(
-            self._make_block(config) for _ in range(config.num_layers)
-        )
+        self.blocks = nn.ModuleList(self._make_block(config) for _ in range(config.num_layers))
         self.norm_out = nn.LayerNorm(config.d_model)
         self.pool = (
             AttentionPool(config.d_model, config.num_heads, config.dropout)
@@ -193,9 +184,7 @@ class TorchTransformerEncoder(TorchModel, Encoder):
         tokens = tokenize(obs, self.layout, self.tokenization)
 
         x = self.norm_in(self.project(tokens))
-        x = x + self.time_embedding(self.time_idx) + self.level_embedding(
-            self.level_idx
-        )
+        x = x + self.time_embedding(self.time_idx) + self.level_embedding(self.level_idx)
 
         # Appended after the positional embeddings, not before: the private
         # token belongs to no time and no book level, so it is the one token

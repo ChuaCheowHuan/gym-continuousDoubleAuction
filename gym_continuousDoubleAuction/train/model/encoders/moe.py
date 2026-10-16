@@ -34,6 +34,7 @@ why `expert_fractions` is reported as a metric rather than left implicit: a
 degenerate MoE and a healthy one produce identical losses and identical
 throughput, and differ only in that number.
 """
+
 from __future__ import annotations
 
 from typing import Tuple
@@ -66,9 +67,7 @@ class MoEFeedForward(nn.Module):
                 "Use the `transformer` encoder for a dense feed-forward."
             )
         if not 1 <= top_k <= num_experts:
-            raise ValueError(
-                f"top_k must be in [1, num_experts={num_experts}]; got {top_k}."
-            )
+            raise ValueError(f"top_k must be in [1, num_experts={num_experts}]; got {top_k}.")
 
         self.num_experts = num_experts
         self.top_k = top_k

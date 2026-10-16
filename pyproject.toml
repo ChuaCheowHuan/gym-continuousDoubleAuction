@@ -6,6 +6,7 @@
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+extend-exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
 # The same rule family test_lint.py enforces with pyflakes (F = pyflakes), so
@@ -14,6 +15,20 @@ target-version = "py312"
 # formatter is reformatted in one deliberate pass or not at all, not rule by
 # rule in unrelated commits (doc/15 S4-6).
 select = ["F"]
+
+[tool.mypy]
+# The env package is type-checked and `test_types.py` holds it at zero errors. `train/`
+# is not covered yet: it has not been annotated to the same standard (issue #148).
+files = ["gym_continuousDoubleAuction/envs"]
+exclude = ["gym_continuousDoubleAuction/envs/orderbook/test/"]
+ignore_missing_imports = true
+follow_imports = "silent"
+
+[tool.ruff.format]
+# One formatter pass over a tree that had never had one (issue #148). Quotes are left as
+# written: switching 18,000 lines to one style would touch every string for no reason a
+# reader benefits from. The CLI notebook is JSON and is not formatted.
+quote-style = "preserve"
 
 [tool.pytest.ini_options]
 testpaths = ["gym_continuousDoubleAuction/test"]
@@ -35,3 +50,11 @@ branch = true
 skip_covered = false
 show_missing = false
 precision = 1
+# Measured on the unit suite (`pytest gym_continuousDoubleAuction/test --ignore=.../integration
+# --cov`): 86.4% line-and-branch. The floor sits two points under it so an ordinary change
+# does not trip it and a real loss of coverage does. The integration suite is not under
+# coverage, so the CLI mains and the RLlib-bound modules are the least covered; raise this
+# as they are tested (issue #148).
+fail_under = 84
+# A command-line entry point is run by hand or by CI's smoke step, not by the unit suite.
+exclude_also = ["if __name__ == .__main__.:"]

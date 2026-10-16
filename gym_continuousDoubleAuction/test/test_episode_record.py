@@ -14,6 +14,7 @@ each of them is a defect that shipped (doc/21 §2.2-2.4, §6):
 * it **costs nothing when it is off**, which the old flag did not: it disabled
   the write and kept the ~34 MB per episode of accumulation.
 """
+
 import glob
 import os
 import pickle
@@ -76,19 +77,13 @@ class FakeEpisode:
         return {a: np.zeros(OBS_LEN, dtype=np.float32) for a in self._agents}
 
     def get_actions(self, index):
-        return {
-            a: (np.int32(1), np.array([0.5], dtype=np.float32))
-            for a in self._agents
-        }
+        return {a: (np.int32(1), np.array([0.5], dtype=np.float32)) for a in self._agents}
 
     def get_rewards(self, index):
         return {a: 0.25 for a in self._agents}
 
     def get_infos(self, index):
-        return {
-            a: _info(i, **self._overrides)
-            for i, a in enumerate(self._agents)
-        }
+        return {a: _info(i, **self._overrides) for i, a in enumerate(self._agents)}
 
     def module_for(self, agent_id):
         return "policy_0"
@@ -99,9 +94,9 @@ def _read_all(directory):
 
     files = sorted(glob.glob(os.path.join(directory, "*.parquet")))
     assert files, f"no parquet written in {directory}"
-    return pq.read_table(files[0]).to_pandas() if len(files) == 1 else pq.read_table(
-        files
-    ).to_pandas()
+    return (
+        pq.read_table(files[0]).to_pandas() if len(files) == 1 else pq.read_table(files).to_pandas()
+    )
 
 
 def _run(recorder, episode_id="ep", steps=4, **kwargs):
@@ -113,7 +108,6 @@ def _run(recorder, episode_id="ep", steps=4, **kwargs):
 
 
 class TestWhatIsWritten:
-
     def test_one_row_per_episode_step_agent(self, tmp_path):
         recorder = EpisodeRecorder(str(tmp_path), run_id="run_x")
         _run(recorder, steps=4)
@@ -186,7 +180,7 @@ class TestWhatIsWritten:
         assert df["spread"].isna().all()
 
     def test_an_unknown_info_field_is_preserved_as_json(self, tmp_path):
-        """A field added to Info_Helper must not be silently dropped by a
+        """A field added to InfoBuilder must not be silently dropped by a
         schema written before it existed."""
         recorder = EpisodeRecorder(str(tmp_path))
         _run(recorder, something_new=7)
@@ -218,6 +212,7 @@ class TestWhatIsWritten:
         """`module_for` is the one field that comes from RLlib's episode API
         rather than this repository's `info`, so a rename there must leave a
         null column rather than stop a run."""
+
         class NoModule(FakeEpisode):
             def module_for(self, agent_id):
                 raise AttributeError("renamed in this Ray")
@@ -233,7 +228,6 @@ class TestWhatIsWritten:
 
 
 class TestSchema:
-
     def test_the_schema_is_declared_not_inferred(self):
         """Inference would let two files of one run disagree about a column's
         type whenever an episode happened to hold only nulls in it."""
@@ -247,14 +241,14 @@ class TestSchema:
             assert f"reward_term_{term}" in names
 
     def test_it_covers_what_the_env_actually_emits(self):
-        """The drift guard. A field added to `Info_Helper.set_info` should get a
+        """The drift guard. A field added to `InfoBuilder.set_info` should get a
         column; this fails if one is added and forgotten, which is how a
         columnar record quietly turns back into a blob.
         """
-        from gym_continuousDoubleAuction.envs.exchg.info_helper import Info_Helper
+        from gym_continuousDoubleAuction.envs.exchg.info_helper import InfoBuilder
         import inspect
 
-        source = inspect.getsource(Info_Helper.set_info)
+        source = inspect.getsource(InfoBuilder.set_info)
         # The literal keys the helper writes, as they appear in the source.
         emitted = {
             line.split('"')[1]
@@ -262,17 +256,18 @@ class TestSchema:
             if line.strip().startswith('"') and '":' in line
         }
         known = {name for name, _ in INFO_COLUMNS} | {
-            "NAV", "reward_terms", "model_action",
+            "NAV",
+            "reward_terms",
+            "model_action",
         }
         # Reward-term names appear in the helper's own dict, not in info.
         assert emitted - known - set(REWARD_TERMS) == set(), (
-            "Info_Helper emits fields the episode record has no column for. Add "
+            "InfoBuilder emits fields the episode record has no column for. Add "
             "them to INFO_COLUMNS, or accept that they land in info_extra."
         )
 
 
 class TestBounds:
-
     def test_sampling_records_one_episode_in_n(self, tmp_path):
         """~34 MB per 4096-step episode: "on" used to mean "until the disk
         fills"."""
@@ -347,7 +342,7 @@ class TestBounds:
         recorder = EpisodeRecorder(str(tmp_path), max_live_episodes=1)
         a, b = FakeEpisode("ep_a"), FakeEpisode("ep_b")
         recorder.record_step(a, 0)
-        recorder.record_step(b, 0)   # evicts ep_a, still running
+        recorder.record_step(b, 0)  # evicts ep_a, still running
         recorder.record_step(a, 1)
         recorder.finish_episode("ep_a")
         recorder.finish_episode("ep_b")
@@ -358,7 +353,6 @@ class TestBounds:
 
 
 class TestItCannotBreakTheRun:
-
     def test_an_unwritable_directory_does_not_raise(self, tmp_path):
         """Instrumentation. A run that cannot write its diagnostics should
         still train - and on an env runner a raise here is a killed worker."""
@@ -367,10 +361,11 @@ class TestItCannotBreakTheRun:
         recorder = EpisodeRecorder(str(blocked / "nested"), rows_per_file=1)
 
         _run(recorder, steps=2)
-        recorder.close()   # must not raise
+        recorder.close()  # must not raise
 
     def test_a_bad_row_does_not_raise(self, tmp_path):
         """Something the declared schema cannot hold is a warning, not a stop."""
+
         class Broken(FakeEpisode):
             def get_infos(self, index):
                 return {"agent_0": _info(0, num_trades="not a number")}
@@ -378,7 +373,7 @@ class TestItCannotBreakTheRun:
         recorder = EpisodeRecorder(str(tmp_path), rows_per_file=1)
         recorder.record_step(Broken("ep"), 0)
         recorder.finish_episode("ep")
-        recorder.close()   # must not raise
+        recorder.close()  # must not raise
 
     def test_a_full_queue_drops_rather_than_blocks(self, tmp_path):
         """Blocking here would put the filesystem into the env runner's step
@@ -434,7 +429,9 @@ class TestItCannotBreakTheRun:
         )
 
         callback = SelfPlayCallback(
-            num_trainable_policies=1, num_random_policies=1, episode_data_dir=None,
+            num_trainable_policies=1,
+            num_random_policies=1,
+            episode_data_dir=None,
         )
         assert callback._recorder() is None
 
@@ -468,7 +465,7 @@ class TestCloseKeepsTheTail:
 
     def test_the_tail_is_written_rather_than_dropped(self, tmp_path):
         """A slow writer at close must cost latency, not data."""
-        recorder = EpisodeRecorder(str(tmp_path), rows_per_file=10 ** 9, queue_size=1)
+        recorder = EpisodeRecorder(str(tmp_path), rows_per_file=10**9, queue_size=1)
         _run(recorder, episode_id="a", steps=2)
         _run(recorder, episode_id="b", steps=2)
         recorder.close()
@@ -506,11 +503,11 @@ class TestCompleteAndTruncatedEpisodes:
         episode = FakeEpisode("ep")
         for step in range(3):
             recorder.record_step(episode, step)
-        recorder.close()          # no finish_episode: sampling stopped first
+        recorder.close()  # no finish_episode: sampling stopped first
 
         df = _read_all(str(tmp_path))
-        assert len(df) == 3 * NUM_AGENTS      # the rows are kept...
-        assert not df["episode_complete"].any()   # ...and labelled
+        assert len(df) == 3 * NUM_AGENTS  # the rows are kept...
+        assert not df["episode_complete"].any()  # ...and labelled
 
     def test_the_two_are_separable_in_one_file(self, tmp_path):
         """The shape a real run produces: finished episodes plus whatever was
@@ -550,7 +547,7 @@ class TestTheTailDoesNotWaitForExit:
     """
 
     def test_finished_episodes_are_written_without_close(self, tmp_path):
-        recorder = EpisodeRecorder(str(tmp_path), rows_per_file=10 ** 9)
+        recorder = EpisodeRecorder(str(tmp_path), rows_per_file=10**9)
         _run(recorder, steps=2)
         assert not glob.glob(os.path.join(str(tmp_path), "*.parquet"))
 
@@ -565,7 +562,7 @@ class TestTheTailDoesNotWaitForExit:
     def test_an_episode_still_running_is_left_alone(self, tmp_path):
         """A sample boundary is not an episode boundary, and `flush` would have
         written the running episode out as truncated."""
-        recorder = EpisodeRecorder(str(tmp_path), rows_per_file=10 ** 9)
+        recorder = EpisodeRecorder(str(tmp_path), rows_per_file=10**9)
         _run(recorder, episode_id="done", steps=2)
         running = FakeEpisode("running")
         for step in range(2):
@@ -587,7 +584,7 @@ class TestTheTailDoesNotWaitForExit:
         assert len(df) == (2 + 4) * NUM_AGENTS
 
     def test_nothing_buffered_writes_no_file(self, tmp_path):
-        recorder = EpisodeRecorder(str(tmp_path), rows_per_file=10 ** 9)
+        recorder = EpisodeRecorder(str(tmp_path), rows_per_file=10**9)
         recorder.flush_finished(wait=5.0)
         recorder.close()
         assert not glob.glob(os.path.join(str(tmp_path), "*.parquet"))
@@ -595,7 +592,7 @@ class TestTheTailDoesNotWaitForExit:
     def test_it_does_not_hang_when_the_writer_is_stuck(self, tmp_path):
         import time
 
-        recorder = EpisodeRecorder(str(tmp_path), rows_per_file=10 ** 9)
+        recorder = EpisodeRecorder(str(tmp_path), rows_per_file=10**9)
         _run(recorder, steps=2)
         release = threading.Event()
         recorder._write = lambda rows: release.wait(30)  # a filesystem that stalls
@@ -615,8 +612,10 @@ class TestTheCallbackFlushesAtTheEndOfASample:
         from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
             SelfPlayCallback,
         )
-        return SelfPlayCallback(num_trainable_policies=2, num_random_policies=6,
-                                episode_data_dir=None)
+
+        return SelfPlayCallback(
+            num_trainable_policies=2, num_random_policies=6, episode_data_dir=None
+        )
 
     def test_it_asks_the_recorder_to_flush_what_has_finished(self):
         cb = self._callback()

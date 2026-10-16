@@ -50,6 +50,7 @@ runs once per `update()` and so cannot disturb PPO's ratio between minibatches.
 The papers use the per-step placement and it held up over 100M steps, so that
 is the default; the conservative one stays available.
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -110,9 +111,7 @@ class CBPLearnerMixin:
     def build(self) -> None:
         super().build()
 
-        self._cbp_config = _as_config(
-            getattr(self.config, "learner_config_dict", None)
-        )
+        self._cbp_config = _as_config(getattr(self.config, "learner_config_dict", None))
         self._cbp_layers: Dict[Any, List[ReplaceableLayer]] = {}
         self._cbp_state: Dict[Any, Dict[str, CBPLayerState]] = {}
         self._cbp_stats: Dict[Tuple[Any, str], Dict[str, torch.Tensor]] = {}
@@ -193,7 +192,8 @@ class CBPLearnerMixin:
                 "continual backprop is on, but %s has no layer it can replace "
                 "(scope %r); it will train as if continual backprop were off. "
                 "An lstm encoder needs cbp_scope \"recurrent\".",
-                module_id, self._cbp_config.scope,
+                module_id,
+                self._cbp_config.scope,
             )
             return
 
@@ -205,16 +205,12 @@ class CBPLearnerMixin:
         # raise. Read off the weight rather than from `_cbp_device` so the two
         # cannot drift apart.
         self._cbp_state[module_id] = {
-            layer.name: CBPLayerState.zeros(
-                layer.num_units, device=layer.device
-            )
+            layer.name: CBPLayerState.zeros(layer.num_units, device=layer.device)
             for layer in layers
         }
         for layer in layers:
             self._cbp_handles.append(
-                layer.hook_target.register_forward_hook(
-                    self._cbp_hook(module_id, layer)
-                )
+                layer.hook_target.register_forward_hook(self._cbp_hook(module_id, layer))
             )
 
     def _cbp_hook(self, module_id, layer: ReplaceableLayer):
@@ -240,9 +236,7 @@ class CBPLearnerMixin:
             if not torch.is_tensor(output):
                 return
             state = self._cbp_state[module_id][layer.name]
-            self._cbp_stats[key] = activation_stats(
-                output, state, self._cbp_config
-            )
+            self._cbp_stats[key] = activation_stats(output, state, self._cbp_config)
             if self._cbp_wants_rank_sample():
                 sample = output.detach()
                 if sample.dim() > 2:
@@ -283,19 +277,22 @@ class CBPLearnerMixin:
                 state = self._cbp_state[module_id][layer.name]
                 corrected = update_utility(state, layer, stats, self._cbp_config)
                 select_and_replace(
-                    state, layer, corrected, self._cbp_config,
-                    generator=self._cbp_generator, optimizer=optimizer,
+                    state,
+                    layer,
+                    corrected,
+                    self._cbp_config,
+                    generator=self._cbp_generator,
+                    optimizer=optimizer,
                 )
                 if log_metrics:
                     metrics = plasticity_metrics(
-                        layer, stats, corrected, self._cbp_config,
-                        activations=self._cbp_activations.pop(
-                            (module_id, layer.name), None
-                        ),
+                        layer,
+                        stats,
+                        corrected,
+                        self._cbp_config,
+                        activations=self._cbp_activations.pop((module_id, layer.name), None),
                     )
-                    metrics["mature_unit_frac"] = mature_fraction(
-                        state, self._cbp_config
-                    )
+                    metrics["mature_unit_frac"] = mature_fraction(state, self._cbp_config)
                     metrics["replacements"] = float(state.replacements)
                     per_layer.append(metrics)
             if per_layer:
@@ -353,8 +350,7 @@ class CBPLearnerMixin:
                 reduced[name] = float(sum(values) / len(values))
 
         self.metrics.log_dict(
-            {f"{CBP_METRIC_PREFIX}{name}": value
-             for name, value in reduced.items()},
+            {f"{CBP_METRIC_PREFIX}{name}": value for name, value in reduced.items()},
             key=module_id,
             window=1,
         )
@@ -378,8 +374,7 @@ class CBPLearnerMixin:
         if self._cbp_state and self._check_component(CBP_STATE, components, not_components):
             state[CBP_STATE] = {
                 str(module_id): {
-                    name: layer_state.get_state()
-                    for name, layer_state in layers.items()
+                    name: layer_state.get_state() for name, layer_state in layers.items()
                 }
                 for module_id, layers in self._cbp_state.items()
             }

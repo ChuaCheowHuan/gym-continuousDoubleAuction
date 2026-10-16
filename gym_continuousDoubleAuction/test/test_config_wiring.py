@@ -1,7 +1,7 @@
 """The `env_config` keys promoted from hardcoded literals actually take effect.
 
 The reward coefficients and the order-sizing knobs were literals inside
-`Reward_Helper.set_reward` and `Action_Helper.__init__` until they became config
+`RewardModel.set_reward` and `Action_Helper.__init__` until they became config
 keys. They reach their consumers through a cooperative `__init__` chain across
 the env mixins, where a single mixin that calls `super().__init__()` without
 forwarding `**kwargs` silently drops every key downstream of it - and the env
@@ -10,6 +10,7 @@ values arrive, not merely that the keys are accepted.
 
 See doc/18_configuration.md sections 2.1-2.3.
 """
+
 import os
 
 import pytest
@@ -58,7 +59,6 @@ def _env(**overrides):
 
 
 class TestSizingKnobs:
-
     def test_defaults_when_keys_absent(self):
         env = _env()
         for key, expected in DEFAULTS.items():
@@ -86,7 +86,6 @@ class TestSizingKnobs:
 
 
 class TestRewardCoefficients:
-
     def _scored(self, **overrides):
         """Score one trader against a fixed account state.
 
@@ -99,8 +98,8 @@ class TestRewardCoefficients:
         trader = env.traders[0]
         acc = trader.acc
         acc.prev_nav = 100_000
-        acc.nav = 105_000         # nav_change      = +5% of starting capital
-        acc.max_nav = 110_000     # drawdown_change = +5% (from 0 at reset)
+        acc.nav = 105_000  # nav_change      = +5% of starting capital
+        acc.max_nav = 110_000  # drawdown_change = +5% (from 0 at reset)
         acc.order_step_placed = 1
         acc.num_trades_step = 2
         acc.num_passive_fills_step = 1
@@ -134,7 +133,7 @@ class TestRewardCoefficients:
         trader = env.traders[0]
         acc = trader.acc
         acc.prev_nav = 100_000
-        acc.nav = 90_000          # nav_change = -10% of starting capital
+        acc.nav = 90_000  # nav_change = -10% of starting capital
         acc.max_nav = 100_000
         acc.order_step_placed = 0
         acc.num_trades_step = 0

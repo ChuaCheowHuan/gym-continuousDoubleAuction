@@ -19,6 +19,7 @@ Prevention lives in `Trader`, not in `OrderBook.process_order_list` where a
 `trade_id` skip would be the natural place for it, because `envs/orderbook/` is
 off-limits to changes (doc/15 S3-4).
 """
+
 from decimal import Decimal
 
 import pytest
@@ -40,8 +41,7 @@ class TestSelfMatchPrevention:
     def test_crossing_your_own_bid_prints_nothing(self):
         self.a.place_order('limit', 'bid', 10, 100, self.book, self.agents)
 
-        trades, _residue = self.a.place_order(
-            'limit', 'ask', 10, 100, self.book, self.agents)
+        trades, _residue = self.a.place_order('limit', 'ask', 10, 100, self.book, self.agents)
 
         assert trades == []
         assert len(self.book.tape) == 0
@@ -50,8 +50,7 @@ class TestSelfMatchPrevention:
     def test_crossing_your_own_ask_prints_nothing(self):
         self.a.place_order('limit', 'ask', 10, 100, self.book, self.agents)
 
-        trades, _residue = self.a.place_order(
-            'limit', 'bid', 10, 100, self.book, self.agents)
+        trades, _residue = self.a.place_order('limit', 'bid', 10, 100, self.book, self.agents)
 
         assert trades == []
         assert len(self.book.tape) == 0
@@ -60,8 +59,7 @@ class TestSelfMatchPrevention:
         self.a.place_order('limit', 'ask', 10, 100, self.book, self.agents)
         self.a.place_order('limit', 'ask', 10, 101, self.book, self.agents)
 
-        trades, _residue = self.a.place_order(
-            'market', 'bid', 20, -1, self.book, self.agents)
+        trades, _residue = self.a.place_order('market', 'bid', 20, -1, self.book, self.agents)
 
         assert trades == []
         assert len(self.book.asks) == 0, "a market order is in every level's path"
@@ -80,8 +78,7 @@ class TestSelfMatchPrevention:
         """The guard against a fix that suppresses genuine trades."""
         self.a.place_order('limit', 'ask', 10, 100, self.book, self.agents)
 
-        trades, _residue = self.b.place_order(
-            'limit', 'bid', 10, 100, self.book, self.agents)
+        trades, _residue = self.b.place_order('limit', 'bid', 10, 100, self.book, self.agents)
 
         assert len(trades) == 1
         assert len(self.book.tape) == 1

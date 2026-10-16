@@ -7,6 +7,7 @@ no longer summed to the total line beside them, which reads as an accounting
 break. The variance-share stack got six series and five colours, so matplotlib
 reused the first and drew the sixth term in `nav_term`'s blue.
 """
+
 import matplotlib
 
 matplotlib.use("Agg")
@@ -22,10 +23,13 @@ from gym_continuousDoubleAuction.visualize.visualize_rewards import TERM_COLORS 
 def _rows():
     share = 1.0 / len(REWARD_TERMS)
     return [
-        {"training_iteration": it, ENV_RUNNER_RESULTS: {
-            **{f"reward_term_mean_{t}": -0.1 for t in REWARD_TERMS},
-            **{f"reward_term_var_share_{t}": share for t in REWARD_TERMS},
-        }}
+        {
+            "training_iteration": it,
+            ENV_RUNNER_RESULTS: {
+                **{f"reward_term_mean_{t}": -0.1 for t in REWARD_TERMS},
+                **{f"reward_term_var_share_{t}": share for t in REWARD_TERMS},
+            },
+        }
         for it in (1, 2)
     ]
 
@@ -38,8 +42,9 @@ def test_every_term_has_a_colour_of_its_own():
 def test_the_means_panel_draws_every_term():
     fig, ax = plt.subplots()
     visualize_training._plot_reward_term_means(ax, _rows())
-    assert sorted(line.get_label() for line in ax.get_lines() if line.get_label() in REWARD_TERMS) \
-        == sorted(REWARD_TERMS)
+    assert sorted(
+        line.get_label() for line in ax.get_lines() if line.get_label() in REWARD_TERMS
+    ) == sorted(REWARD_TERMS)
     plt.close(fig)
 
 

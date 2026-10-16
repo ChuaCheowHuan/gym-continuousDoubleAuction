@@ -50,8 +50,14 @@ def _is_market_price(price) -> bool:
 
 
 class Trader:
-    def __init__(self, ID: int, cash=UNSET, maker_fee_bps=UNSET, taker_fee_bps=UNSET,
-                 allow_multiple_orders_per_level=UNSET) -> None:
+    def __init__(
+        self,
+        ID: int,
+        cash=UNSET,
+        maker_fee_bps=UNSET,
+        taker_fee_bps=UNSET,
+        allow_multiple_orders_per_level=UNSET,
+    ) -> None:
         # UNSET means the configured default, read now. These were
         # `env_default(...)` in the signature, evaluated once at import, so a
         # config change after import never reached a bare `Trader()` (issue #247).
@@ -63,14 +69,22 @@ class Trader:
             taker_fee_bps = env_default("taker_fee_bps")
         if allow_multiple_orders_per_level is UNSET:
             allow_multiple_orders_per_level = env_default("allow_multiple_orders_per_level")
-        self.ID = ID # trader unique ID
+        self.ID = ID  # trader unique ID
         # False: a limit at a price this trader already rests at replaces that
         # order. True: it rests beside it (doc/15 S3-10).
         self.allow_multiple_orders_per_level = allow_multiple_orders_per_level
         self.acc = Account(ID, cash, maker_fee_bps, taker_fee_bps)
 
-    def place_order(self, type: str, side: Optional[str], size: int, price: float,
-                    LOB, agents: Sequence["Trader"], slot: int = 0) -> Tuple[List[dict], Any]:
+    def place_order(
+        self,
+        type: str,
+        side: Optional[str],
+        size: int,
+        price: float,
+        LOB,
+        agents: Sequence["Trader"],
+        slot: int = 0,
+    ) -> Tuple[List[dict], Any]:
         """
         Execute an action.
 
@@ -105,8 +119,11 @@ class Trader:
         # prevention would cancel the trader's opposite-side orders for an
         # action that then did nothing. An account that cannot act at all is
         # still refused below, as every other order from it is.
-        if (type == 'modify' and self._can_act()
-                and self._replaced_order_id(LOB, type, side, price, slot) is None):
+        if (
+            type == 'modify'
+            and self._can_act()
+            and self._replaced_order_id(LOB, type, side, price, slot) is None
+        ):
             self.acc.num_unmatched_step += 1
             return [], []
 
@@ -240,8 +257,9 @@ class Trader:
 
         return total
 
-    def _opening_size(self, LOB, side: str, size: int,
-                      exclude_order_id: Optional[int] = None) -> Tuple[int, int]:
+    def _opening_size(
+        self, LOB, side: str, size: int, exclude_order_id: Optional[int] = None
+    ) -> Tuple[int, int]:
         """How much of an order of `size` on `side` opens risk, and how much closes.
 
         Returns `(opening, closable)`. Scenario 1: the order is on the same
@@ -308,8 +326,11 @@ class Trader:
         if position >= 0:
             return Decimal(0)
         lots = -position
-        bids = [o for order_ID, o in self._own_orders_from_touch(LOB, 'bid')
-                if exclude_order_id is None or order_ID != exclude_order_id]
+        bids = [
+            o
+            for order_ID, o in self._own_orders_from_touch(LOB, 'bid')
+            if exclude_order_id is None or order_ID != exclude_order_id
+        ]
         if sum(int(o.quantity) for o in bids) < lots:
             return Decimal(0)
         worst = max(o.price for o in bids)
@@ -332,7 +353,7 @@ class Trader:
         tree = LOB.asks if side == 'bid' else LOB.bids
         levels = list(tree.price_map.items())
         if side == 'ask':
-            levels.reverse()               # best bid first
+            levels.reverse()  # best bid first
         remaining, seen, cost = size, 0, Decimal(0)
         for price, order_list in levels:
             available = sum(int(o.quantity) for o in order_list if o.trade_id != self.ID)
@@ -346,8 +367,15 @@ class Trader:
                 break
         return cost, seen
 
-    def can_pay_at_clearing(self, LOB, side: str, size: int, price,
-                            resting_limit=None, resting_order_id: Optional[int] = None) -> bool:
+    def can_pay_at_clearing(
+        self,
+        LOB,
+        side: str,
+        size: int,
+        price,
+        resting_limit=None,
+        resting_order_id: Optional[int] = None,
+    ) -> bool:
         """Whether this trader can pay for a batch fill at the clearing `price`.
 
         `_order_approved` runs when an order is queued, at a price the order
@@ -376,7 +404,7 @@ class Trader:
             need = opening * price
         else:
             need = opening * max(price - Decimal(str(resting_limit)), Decimal(0))
-        need += need * self.acc.max_fee_rate      # a fee is charged on a notional, not on a loss
+        need += need * self.acc.max_fee_rate  # a fee is charged on a notional, not on a loss
         need += loss + self._resting_maker_fees(LOB)
         if opening > 0:
             need += self._resting_cover_loss(LOB, exclude_order_id=resting_order_id)
@@ -461,8 +489,8 @@ class Trader:
             return None, None
 
         order_ID, order = self._get_order_ID(
-            LOB, {'trade_id': self.ID, 'side': side,
-                  'price': price, 'type': type, 'slot': slot},
+            LOB,
+            {'trade_id': self.ID, 'side': side, 'price': price, 'type': type, 'slot': slot},
         )
         if order_ID == -1:
             return None, None
@@ -482,8 +510,9 @@ class Trader:
         """
         return self.acc.nav > 0 and self.acc.liquidation_steps_left == 0
 
-    def _order_approved(self, side: str, size: int, price: float, LOB,
-                        type: Optional[str] = None, slot: int = 0) -> bool:
+    def _order_approved(
+        self, side: str, size: int, price: float, LOB, type: Optional[str] = None, slot: int = 0
+    ) -> bool:
         """
         Conditions for order approval. Handles:
         1. NAV positivity.
@@ -522,14 +551,10 @@ class Trader:
         # processed. It is therefore excluded from the resting exposure below
         # and counted as available cash in the check at the bottom.
         replaced_id, replaced = self._replaced_order(LOB, type, side, price, slot)
-        released = (
-            replaced.price * replaced.quantity if replaced is not None
-            else Decimal(0)
-        )
+        released = replaced.price * replaced.quantity if replaced is not None else Decimal(0)
 
         # Determine how much of the order is "opening" a new/larger position
-        opening_size, closable = self._opening_size(LOB, side, size,
-                                                    exclude_order_id=replaced_id)
+        opening_size, closable = self._opening_size(LOB, side, size, exclude_order_id=replaced_id)
 
         # Covering a short past its collateral realises a loss into cash
         # (doc/15 S2-15); zero for every other order.
@@ -547,7 +572,7 @@ class Trader:
             order_val = Decimal(0)
         elif _is_market_price(price):
             order_val, filled = self._sweep_cost(LOB, side, size, skip=size - opening_size)
-            if filled == 0:                 # nothing to sweep: the last print is the estimate
+            if filled == 0:  # nothing to sweep: the last print is the estimate
                 est_price = LOB.tape[-1]['price'] if LOB.tape else 1
                 order_val = Decimal(str(opening_size)) * Decimal(str(est_price))
         else:
@@ -584,7 +609,9 @@ class Trader:
 
         return False
 
-    def _create_order(self, type: str, side: str, size: int, price: float, slot: int = 0) -> Dict[str, Any]:
+    def _create_order(
+        self, type: str, side: str, size: int, price: float, slot: int = 0
+    ) -> Dict[str, Any]:
         """
         Create the order dictionary.
 
@@ -593,30 +620,33 @@ class Trader:
         """
 
         if type == 'market':
-            order = {'type': type,
-                     'side': side,
-                     'quantity': size,
-                     'trade_id': self.ID}
+            order = {'type': type, 'side': side, 'quantity': size, 'trade_id': self.ID}
         elif type == 'limit':
-            order = {'type': type,
-                     'side': side,
-                     'quantity': size,
-                     'price': price,
-                     'trade_id': self.ID}
+            order = {
+                'type': type,
+                'side': side,
+                'quantity': size,
+                'price': price,
+                'trade_id': self.ID,
+            }
         elif type == 'modify':
-            order = {'type': type,
-                     'side': side,
-                     'quantity': size,
-                     'price': price,
-                     'trade_id': self.ID,
-                     'slot': slot}
+            order = {
+                'type': type,
+                'side': side,
+                'quantity': size,
+                'price': price,
+                'trade_id': self.ID,
+                'slot': slot,
+            }
         elif type == 'cancel':
-            order = {'type': type,
-                     'side': side,
-                     'quantity': size,
-                     'price': price,
-                     'trade_id': self.ID,
-                     'slot': slot}
+            order = {
+                'type': type,
+                'side': side,
+                'quantity': size,
+                'price': price,
+                'trade_id': self.ID,
+                'slot': slot,
+            }
         else:
             order = {}
 
@@ -629,7 +659,7 @@ class Trader:
             Otherwise, modify the existing limit order.
         """
 
-        trades, order_in_book = [],[]
+        trades, order_in_book = [], []
         order_id, order = self._get_order_ID(orderBook, qoute)
         if order_id == -1:  # no such order exist
             trades, order_in_book = orderBook.process_order(qoute, False, False)
@@ -649,7 +679,7 @@ class Trader:
             # Counted, so a policy that keeps modifying orders it does not
             # have is distinguishable from one that manages real ones.
             self.acc.num_unmatched_step += 1
-            trades, order_in_book = [],[]
+            trades, order_in_book = [], []
         else:
             trades, order_in_book = self.__modify_limit_order(orderBook, order_id, order, qoute)
 
@@ -717,8 +747,9 @@ class Trader:
         order_map = self._find_orderTree(orderBook, {'side': side})
         if order_map is None:
             return []
-        mine = [(order_ID, order) for order_ID, order in order_map.items()
-                if order.trade_id == self.ID]
+        mine = [
+            (order_ID, order) for order_ID, order in order_map.items() if order.trade_id == self.ID
+        ]
         if side == 'bid':
             mine.sort(key=lambda item: (-item[1].price, item[1].timestamp))
         else:
@@ -747,8 +778,11 @@ class Trader:
             order_map = self._find_orderTree(LOB, {'side': side})
             if order_map is None:
                 continue
-            mine = [(order_ID, order) for order_ID, order in order_map.items()
-                    if order.trade_id == self.ID]
+            mine = [
+                (order_ID, order)
+                for order_ID, order in order_map.items()
+                if order.trade_id == self.ID
+            ]
             for order_ID, order in mine:
                 LOB.cancel_order(side, order_ID)
                 self.acc.cancel_cash_transfer(order)
@@ -803,7 +837,7 @@ class Trader:
             # modify, slot 0: FIFO - the oldest existing order (smallest
             # timestamp), which is what a modify always did before slots.
             return min(matching_orders, key=lambda x: x[1].timestamp)
-        
+
         # For 'cancel' or 'limit', we match the specific price.
         #
         # Compared as Decimal, the type the book stores prices in. The action
@@ -826,7 +860,7 @@ class Trader:
             if order.price == target_price:
                 return order_ID, order
 
-        return -1, None # no matching order found for this price
+        return -1, None  # no matching order found for this price
 
     def _find_orderTree(self, orderBook, qoute):
         """
@@ -898,8 +932,11 @@ class Trader:
                 else:
                     other = self._find_agent(agents, counter['ID'])
                     if other is not None:
-                        view = {'price': trade['price'], 'quantity': trade['quantity'],
-                                'init_party': counter}
+                        view = {
+                            'price': trade['price'],
+                            'quantity': trade['quantity'],
+                            'init_party': counter,
+                        }
                         other.acc.process_acc(view, 'init_party', fee_role='maker')
         self.acc.order_in_book_passive_party(order_in_book)
         return 0
@@ -921,21 +958,21 @@ class Trader:
         """
 
         for i, trade in enumerate(trades):
-            trade_val = Decimal(trade.get('quantity')) * trade.get('price')
+            trade_val = Decimal(trade['quantity']) * trade['price']
 
             # init_party is not counter_party
-            if trade.get('counter_party').get('ID') != trade.get('init_party').get('ID'):
+            if trade['counter_party']['ID'] != trade['init_party']['ID']:
                 self._process_counter_party(agents, trade)
                 self.acc.process_acc(trade, 'init_party')
 
-                #self.acc.print_both_accs("\nAffected accounts_0:\n", i, counter_party, init_party=self)
+                # self.acc.print_both_accs("\nAffected accounts_0:\n", i, counter_party, init_party=self)
 
-            else: # init_party is also counter_party, balance out limit order in LOB with mkt order.
+            else:  # init_party is also counter_party, balance out limit order in LOB with mkt order.
                 self.acc.init_is_counter_cash_transfer(trade_val)
 
-                #self.acc.print_both_accs("\nAffected accounts (init_party = counter_party)_0:\n", i, counter_party=self, init_party=self)
+                # self.acc.print_both_accs("\nAffected accounts (init_party = counter_party)_0:\n", i, counter_party=self, init_party=self)
 
-            #print('trades:', trades)
+            # print('trades:', trades)
 
         return 0
 

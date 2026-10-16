@@ -15,7 +15,7 @@ production-deployable as a service, but as a research codebase it is above avera
 
 > **This section is the original audit and is no longer accurate.** It was measured against a
 > tree of 7,478 Python lines with 90 unit tests and no logging module. The repository is now
-> 49,399 lines across 183 Python files, with 1,800 unit and 185 integration tests, a 523-line
+> 52,193 lines across 188 Python files, with 1,827 unit and 185 integration tests, a 523-line
 > `logging_setup` and a test that fails the build on a bare `print` in `envs/` or `train/`. The
 > `sklearn.utils.shuffle` import it names was removed (`action_helper.py:182` records that), and
 > the `install_requires` block it quotes no longer exists - `ray[rllib]` and `six` are in it and
@@ -69,6 +69,12 @@ action / reward / done / info into files makes each concern easy to find.
   — which is how a real bug once surfaced as
   `AttributeError: … has no attribute 'min_tick'`.
 
+> **Update (issue #152).** Reward, done, info and liquidation are composed objects now
+> (`RewardModel`, `EpisodeStatus`, `InfoBuilder`, `LiquidationEngine`); the state/action pair still
+> shares one `self`, with the shared attributes declared in `SharedState` and checked by `mypy`.
+> The costs above describe the six-mixin design this section audited. See
+> [02_architecture.md](02_architecture.md) §2.4.
+
 A composition refactor (`self.state = StateBuilder(book, cfg)`, `self.reward = RewardFn(cfg)`)
 would be mechanical and would make reward/obs variants swappable — which is what a research
 codebase most needs.
@@ -88,8 +94,13 @@ codebase most needs.
 [`setup.py`](../setup.py) declares:
 
 ```python
-install_requires = ["gymnasium==1.2.2", "numpy>=2.5,<3", "pandas>=3.0,<4",
-                    "sortedcontainers>=2.4", "tabulate>=0.10"]
+install_requires = [
+    "gymnasium==1.2.2",
+    "numpy>=2.5,<3",
+    "pandas>=3.0,<4",
+    "sortedcontainers>=2.4",
+    "tabulate>=0.10",
+]
 ```
 
 with the comment *"Kept deliberately narrow: these are what the environment needs to import… so
@@ -358,12 +369,12 @@ called `build_config(cfg)` unconditionally, then on the restore branch discarded
 algorithm:
 
 ```python
-ppo, callback_instance = build_config(cfg)          # builds a NEW callback
+ppo, callback_instance = build_config(cfg)  # builds a NEW callback
 if cfg.is_restore and os.path.exists(...):
-    algo = Algorithm.from_checkpoint(...)           # uses the RESTORED callback
+    algo = Algorithm.from_checkpoint(...)  # uses the RESTORED callback
 else:
     algo = ppo.build_algo()
-return algo, callback_instance                      # ...but returns the new one
+return algo, callback_instance  # ...but returns the new one
 ```
 
 `train()` ignores the returned callback, so training is unaffected. But any caller that *uses* it

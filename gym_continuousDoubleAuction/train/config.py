@@ -3,6 +3,7 @@
 Split out of `train.train` so the config can be imported and tested without building an
 algorithm. `train.train` re-exports every public name.
 """
+
 from __future__ import annotations
 import copy
 import dataclasses
@@ -387,9 +388,7 @@ class TrainConfig:
                 f"{self.entropy_coeff} and {self.entropy_coeff_final}."
             )
         if self.entropy_decay_iters < 1:
-            raise ValueError(
-                f"entropy_decay_iters must be >= 1; got {self.entropy_decay_iters}."
-            )
+            raise ValueError(f"entropy_decay_iters must be >= 1; got {self.entropy_decay_iters}.")
         if self.promotion_reference not in PROMOTION_REFERENCES:
             raise ValueError(
                 f"promotion_reference must be one of {PROMOTION_REFERENCES}; "
@@ -400,9 +399,7 @@ class TrainConfig:
                 f"markout_horizons must be positive step counts; got {self.markout_horizons}."
             )
         if self.min_champion_trades < 0:
-            raise ValueError(
-                f"min_champion_trades must be >= 0; got {self.min_champion_trades}."
-            )
+            raise ValueError(f"min_champion_trades must be >= 0; got {self.min_champion_trades}.")
 
     @property
     def entropy_setting(self):
@@ -417,8 +414,7 @@ class TrainConfig:
             return float(self.entropy_coeff)
         return [
             [0, float(self.entropy_coeff)],
-            [self.train_batch_size * self.entropy_decay_iters,
-             float(self.entropy_coeff_final)],
+            [self.train_batch_size * self.entropy_decay_iters, float(self.entropy_coeff_final)],
         ]
 
     @classmethod
@@ -451,10 +447,7 @@ class TrainConfig:
         known = {f.name for f in dataclasses.fields(cls)}
         unknown = sorted(set(values) - known)
         if unknown:
-            raise ValueError(
-                f"{path}: unknown config keys {unknown}. "
-                f"Valid keys: {sorted(known)}"
-            )
+            raise ValueError(f"{path}: unknown config keys {unknown}. Valid keys: {sorted(known)}")
         return cls(**values)
 
     @property
@@ -559,15 +552,17 @@ class TrainConfig:
         `TrainConfig` field of the same name (or an entry in `_ENV_KEY_FIELDS`) reaches
         the env without a third place to write it out.
         """
-        return {key: getattr(self, self._ENV_KEY_FIELDS.get(key, key))
-                for key in EnvSettings.keys()}
+        return {
+            key: getattr(self, self._ENV_KEY_FIELDS.get(key, key)) for key in EnvSettings.keys()
+        }
 
     def resolved_gpus_per_learner(self) -> float:
         """num_gpus_per_learner, forced to 0 when no CUDA device is present."""
         if self.num_gpus_per_learner and not torch.cuda.is_available():
             logger.warning(
                 "num_gpus_per_learner=%s requested but torch.cuda.is_available() "
-                "is False - falling back to CPU.", self.num_gpus_per_learner,
+                "is False - falling back to CPU.",
+                self.num_gpus_per_learner,
             )
             return 0.0
         return self.num_gpus_per_learner

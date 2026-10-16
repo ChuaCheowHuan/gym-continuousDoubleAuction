@@ -28,7 +28,7 @@ flowchart LR
         ACC["Account<br/>cash / position / NAV"]
         MTM["mark_to_mkt<br/>last tape price"]
         OBS["State_Helper<br/>snapshot + history"]
-        REW["Reward_Helper<br/>six signed terms"]
+        REW["RewardModel<br/>six signed terms"]
     end
 
     POL -->|"action Dict"| ACT
@@ -150,14 +150,16 @@ gym_continuousDoubleAuction/
 ├── CDA_train.ipynb                   notebook driver; imports TrainConfig / train from train.py
 ├── envs/
 │   ├── continuousDoubleAuction_env.py   MultiAgentEnv: reset / step / render
-│   ├── exchg/                           the "exchange" mixin family
+│   ├── exchg/                           the exchange: two mixins and four components
 │   │   ├── exchg_helper.py                composition root + render path + mark-to-market
 │   │   ├── state_helper.py                observation construction + history deque
 │   │   ├── action_helper.py               action space + action decoding + pricing
-│   │   ├── reward_helper.py               reward function
-│   │   ├── done_helper.py                 termination / truncation
-│   │   ├── info_helper.py                 per-agent info dict
-│   │   └── liquidation_helper.py          margin breach, forced close, auto-deleveraging
+│   │   ├── shared_state.py                what State_Helper and Action_Helper share, declared
+│   │   ├── venue.py                       the protocol the components are given
+│   │   ├── reward_helper.py               RewardModel: the reward function
+│   │   ├── done_helper.py                 EpisodeStatus: termination / truncation
+│   │   ├── info_helper.py                 InfoBuilder: per-agent info dict
+│   │   └── liquidation_helper.py          LiquidationEngine: margin breach, forced close, ADL
 │   ├── layout_version.py                observation + action layout versions, stamped beside checkpoints
 │   ├── orderbook/                       matching engine
 │   │   ├── orderbook.py                   OrderBook: process / cancel / modify + tape
@@ -201,7 +203,7 @@ gym_continuousDoubleAuction/
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   ├── inspect_latest_episode*.py        print the newest episode as a table or JSON
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               1,800 unit tests
+└── test/                               1,827 unit tests
     └── integration/                    172 tests that build real Algorithms
 ```
 
@@ -210,9 +212,10 @@ revision of this document listed — have been deleted.
 
 ---
 
-## 2.4 Class composition — the mixin chain
+## 2.4 Class composition — two mixins and four components
 
-The environment is assembled by **multiple inheritance**, not composition:
+The environment is assembled from two mixins and four composed components (issue #152; it was
+six mixins sharing one `self`):
 
 ```mermaid
 classDiagram
@@ -220,13 +223,14 @@ classDiagram
         +reset(seed, options)
         +step(actions)
         +render()
-        traders, LOB, agg_LOB
+        settings, traders, LOB
     }
     class Exchg_Helper {
         composition root
         +mark_to_mkt()
         +set_market_snapshot()
         +set_step_outputs()
+        reward_model, episode_status, info_builder, liquidation_engine
     }
     class State_Helper {
         consumes n_hist
@@ -239,36 +243,63 @@ classDiagram
         +set_actions()
         +do_actions()
     }
-    class Reward_Helper {
-        consumes the 5 coefficients
-        +set_reward()
+    class SharedState {
+        declared for the type checker
     }
-    class Done_Helper {
-        +set_done()
-        +set_all_done()
+    class RewardModel {
+        the 6 coefficients
+        +set_reward(rewards, trader)
     }
-    class Info_Helper {
-        +set_info()
+    class EpisodeStatus {
+        done_set
+        +set_done(terminateds, trader, venue)
+        +set_all_done(...)
+    }
+    class InfoBuilder {
+        +set_info(infos, trader, mark=, ...)
+    }
+    class LiquidationEngine {
+        venue
+        +liquidate()
+    }
+    class Venue {
+        <<protocol>>
+        traders, LOB, min_tick, t_step
+        mark_price(), mark_to_mkt(), is_live(), invalidate_snapshot()
     }
 
     MultiAgentEnv <|-- continuousDoubleAuctionEnv
     Exchg_Helper <|-- continuousDoubleAuctionEnv
     State_Helper <|-- Exchg_Helper
-    Action_Helper <|-- State_Helper
-    Reward_Helper <|-- Action_Helper
-    Done_Helper <|-- Reward_Helper
-    Info_Helper <|-- Done_Helper
+    Action_Helper <|-- Exchg_Helper
+    SharedState <|-- State_Helper
+    SharedState <|-- Action_Helper
+    Exchg_Helper o-- RewardModel
+    Exchg_Helper o-- EpisodeStatus
+    Exchg_Helper o-- InfoBuilder
+    Exchg_Helper o-- LiquidationEngine
+    LiquidationEngine ..> Venue
+    EpisodeStatus ..> Venue
 ```
 
-Read the arrows as "is a base of". The MRO is the reverse: `continuousDoubleAuctionEnv` →
-`Exchg_Helper` → `State_Helper` → `Action_Helper` → `Reward_Helper` → `Done_Helper` →
-`Info_Helper` → `object`, and each `__init__` consumes its own keyword arguments before calling
-`super().__init__(**kwargs)`.
-
-Declared at
+Read inheritance arrows as "is a base of", and the diamonds as "owns". The MRO is
+`continuousDoubleAuctionEnv` → `Exchg_Helper` → `State_Helper` → `Action_Helper` →
+`SharedState` → `object`, and each `__init__` consumes its own keyword arguments before calling
+`super().__init__(**kwargs)`. Declared at
 [`continuousDoubleAuction_env.py`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py)
-and
-[`exchg_helper.py`](../gym_continuousDoubleAuction/envs/exchg/exchg_helper.py).
+and [`exchg_helper.py`](../gym_continuousDoubleAuction/envs/exchg/exchg_helper.py).
+
+**The components.** `RewardModel` ([`reward_helper.py`](../gym_continuousDoubleAuction/envs/exchg/reward_helper.py))
+reads a trader's account and its own coefficients and nothing else. `InfoBuilder`
+([`info_helper.py`](../gym_continuousDoubleAuction/envs/exchg/info_helper.py)) is given the mark,
+the market snapshot, the pass set and the model actions per call. `EpisodeStatus`
+([`done_helper.py`](../gym_continuousDoubleAuction/envs/exchg/done_helper.py)) owns `done_set`, and
+`LiquidationEngine` ([`liquidation_helper.py`](../gym_continuousDoubleAuction/envs/exchg/liquidation_helper.py))
+owns the liquidation settings; those two are given a
+[`Venue`](../gym_continuousDoubleAuction/envs/exchg/venue.py) — the whole of what they may use of
+the exchange. `Exchg_Helper` keeps the entry points callers use (`set_reward`, `set_done`,
+`set_all_done`, `is_live`, `set_info`, `liquidate`) and forwards the long-standing attributes
+(`env.order_penalty`, `env.done_set`, `env.maintenance_margin`, ...) to the component that owns them.
 
 **MRO rule.** Every `__init__` in the chain must call `super().__init__()`, and each class must
 consume its own keyword arguments — nothing unrecognised may reach `object.__init__`, which
@@ -278,20 +309,20 @@ raises `TypeError`. This was the root cause of a real bug: `State_Helper.__init_
 `test_config_wiring.py` now asserts `mkt_size_mul` is initialised on a built env, which is an
 MRO health check: it exists only if `Action_Helper.__init__` ran to completion.
 
-The trader side uses the same idiom:
+The trader side uses the same idiom, with its shared fields declared too:
 
 ```
-Trader                       →  owns  Account(Calculate, Cash_Processor)
+Trader                       →  owns  Account(Calculate, Cash_Processor)   # both share AccountState
 ```
 
-**Cost of the pattern.** The five mixins are not behavioural variants — they are one class split
-five ways, sharing mutable state (`self.LOB`, `self.traders`, `self.last_price`, `self.min_tick`)
-with no declared contract. `State_Helper` reads attributes it neither owns nor declares, guarded
-by defensive fallbacks such as `getattr(self, 'last_price', self.midpoint_fallback)` and
-`getattr(self, 'min_tick', env_default("tick_size"))` — both of which are `Action_Helper`'s state,
-read from `State_Helper`. `Info_Helper` does the same for `pass_agents`, `best_bid`, `spread` and
-`model_actions`. Nothing is independently testable, and a name reused across
-two mixins would collide silently. See
+**What is left of the pattern.** `State_Helper` and `Action_Helper` are still one class split in
+two: each reads the other's state (`self.LOB`, `self.traders`, `self.last_price`, `self.min_tick`,
+the layout sizes). That contract is no longer implicit: [`SharedState`](../gym_continuousDoubleAuction/envs/exchg/shared_state.py)
+(and [`AccountState`](../gym_continuousDoubleAuction/envs/account/account_state.py) for the account
+mixins) declares it for the type checker, `mypy` holds `envs/` at zero errors
+(`test_types.py`), and `test_composition.py` checks that every declared attribute exists on a
+built env. Unwinding the pair itself into composed objects was judged not worth its cost: they
+share the observation layout and the book snapshot on every call. See
 [14_perspective_ai_engineer.md](14_perspective_ai_engineer.md) §5.2.
 
 ---
@@ -528,7 +559,7 @@ flowchart LR
     TCFG -->|"env_config property<br/>num_agents -> num_of_agents"| ENV["continuousDoubleAuctionEnv"]
     ED["config/env_defaults.json"] -.->|"only for keys the caller omitted"| ENV
     ENV --> AH["Action_Helper<br/>min_tick, sizing"]
-    ENV --> RH["Reward_Helper<br/>5 coefficients"]
+    ENV --> RH["RewardModel<br/>6 coefficients"]
     ENV --> SH["State_Helper<br/>n_hist"]
     TK["config/tunable_constants.json"] --> SH
     TK --> AH

@@ -8,6 +8,7 @@ field at all (`initial_price_min` / `initial_price_max`).
 
 See doc/18_configuration.md section 1.
 """
+
 import dataclasses
 import json
 
@@ -54,7 +55,6 @@ class TestDefaultsAreNotShared:
 
 
 class TestFromJson:
-
     def test_repo_config_loads(self):
         """The checked-in file must stay loadable by the loader that reads it."""
         cfg = TrainConfig.from_json(REPO_CONFIG)
@@ -69,25 +69,34 @@ class TestFromJson:
             if key.startswith("_"):
                 continue
             in_file.update(
-                k for k in (value if isinstance(value, dict) else {key: value})
+                k
+                for k in (value if isinstance(value, dict) else {key: value})
                 if not k.startswith("_")
             )
         assert in_file == {f.name for f in dataclasses.fields(TrainConfig)}
 
     def test_groups_are_flattened(self, tmp_path):
-        path = _write(tmp_path, {
-            "environment": {"num_agents": 3},
-            "ppo": {"lr": 0.01},
-            "run": {"num_iters": 2},
-        })
+        path = _write(
+            tmp_path,
+            {
+                "environment": {"num_agents": 3},
+                "ppo": {"lr": 0.01},
+                "run": {"num_iters": 2},
+            },
+        )
         cfg = TrainConfig.from_json(path)
         assert (cfg.num_agents, cfg.lr, cfg.num_iters) == (3, 0.01, 2)
 
     def test_documentation_keys_are_skipped(self, tmp_path):
-        path = _write(tmp_path, {
-            "_source": "x", "_description": "y", "_note": "z",
-            "environment": {"_note": "nested doc", "num_agents": 4},
-        })
+        path = _write(
+            tmp_path,
+            {
+                "_source": "x",
+                "_description": "y",
+                "_note": "z",
+                "environment": {"_note": "nested doc", "num_agents": 4},
+            },
+        )
         assert TrainConfig.from_json(path).num_agents == 4
 
     def test_unknown_key_raises(self, tmp_path):
@@ -104,7 +113,6 @@ class TestFromJson:
 
 
 class TestMergedEnvKeys:
-
     def test_rename_across_the_env_boundary(self):
         cfg = TrainConfig(num_agents=3)
         env_config = cfg.env_config
@@ -120,11 +128,18 @@ class TestMergedEnvKeys:
         assert env.last_price == 50.0
 
     def test_file_reaches_the_env(self, tmp_path):
-        path = _write(tmp_path, {"environment": {
-            "num_agents": 2,
-            "initial_price_min": 42, "initial_price_max": 42,
-            "mkt_max_size": 55, "order_penalty": 0.7,
-        }})
+        path = _write(
+            tmp_path,
+            {
+                "environment": {
+                    "num_agents": 2,
+                    "initial_price_min": 42,
+                    "initial_price_max": 42,
+                    "mkt_max_size": 55,
+                    "order_penalty": 0.7,
+                }
+            },
+        )
         env = continuousDoubleAuctionEnv(TrainConfig.from_json(path).env_config)
         env.reset()
         assert env.last_price == 42.0
@@ -133,14 +148,12 @@ class TestMergedEnvKeys:
 
 
 class TestCliPrecedence:
-
     def test_defaults_without_config(self):
         cfg = _parse_args([])
         assert cfg.num_agents == TrainConfig().num_agents
 
     def test_config_file_applies(self, tmp_path):
-        path = _write(tmp_path, {"environment": {"num_agents": 3},
-                                 "run": {"num_iters": 99}})
+        path = _write(tmp_path, {"environment": {"num_agents": 3}, "run": {"num_iters": 99}})
         cfg = _parse_args(["--config", path])
         assert (cfg.num_agents, cfg.num_iters) == (3, 99)
 
@@ -148,7 +161,7 @@ class TestCliPrecedence:
         """The trap: argparse defaults would silently overwrite --config."""
         path = _write(tmp_path, {"environment": {"num_agents": 3}})
         cfg = _parse_args(["--config", path, "--iters", "5"])
-        assert cfg.num_agents == 3   # from the file, not the flag default of 8
+        assert cfg.num_agents == 3  # from the file, not the flag default of 8
         assert cfg.num_iters == 5
 
     def test_explicit_flag_overrides_the_file(self, tmp_path):

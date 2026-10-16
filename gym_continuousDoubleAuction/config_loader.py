@@ -29,6 +29,7 @@ Derived quantities are deliberately *not* stored in the JSON. `snapshot_dim` is
 copy that can disagree with the first. The files hold inputs, the code derives
 the rest.
 """
+
 from __future__ import annotations
 
 import copy
@@ -61,9 +62,7 @@ def config_dir() -> Path:
     if override:
         path = Path(override).expanduser().resolve()
         if not path.is_dir():
-            raise FileNotFoundError(
-                f"{CONFIG_DIR_ENV_VAR}={override!r} is not a directory."
-            )
+            raise FileNotFoundError(f"{CONFIG_DIR_ENV_VAR}={override!r} is not a directory.")
         return path
 
     # A directory counts only if it holds our files. For an installed wheel
@@ -85,11 +84,7 @@ def config_dir() -> Path:
 def _strip_doc_keys(node: Any) -> Any:
     """Drop `_`-prefixed documentation keys at every level."""
     if isinstance(node, dict):
-        return {
-            key: _strip_doc_keys(sub)
-            for key, sub in node.items()
-            if not key.startswith("_")
-        }
+        return {key: _strip_doc_keys(sub) for key, sub in node.items() if not key.startswith("_")}
     return node
 
 
@@ -129,10 +124,7 @@ def group(filename: str, group_name: str) -> Dict[str, Any]:
     """
     data = load(filename)
     if group_name not in data:
-        raise KeyError(
-            f"{filename}: no group {group_name!r}. "
-            f"Groups present: {sorted(data)}."
-        )
+        raise KeyError(f"{filename}: no group {group_name!r}. Groups present: {sorted(data)}.")
     section = data[group_name]
     if not isinstance(section, dict):
         raise TypeError(
@@ -147,8 +139,7 @@ def value(filename: str, group_name: str, key: str) -> Any:
     section = group(filename, group_name)
     if key not in section:
         raise KeyError(
-            f"{filename}: {group_name!r} has no key {key!r}. "
-            f"Keys present: {sorted(section)}."
+            f"{filename}: {group_name!r} has no key {key!r}. Keys present: {sorted(section)}."
         )
     return section[key]
 
@@ -215,6 +206,7 @@ def reload() -> None:
 #
 # These exist so the rest of the package names a group once, here, instead of
 # repeating a filename string at every call site.
+
 
 def env_default(key: str) -> Any:
     """A fallback used when the env is constructed without that config key.

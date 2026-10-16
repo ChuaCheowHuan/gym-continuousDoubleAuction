@@ -18,6 +18,7 @@ What these pin, on a plain `nn.LSTM` plus a head Linear (no Ray, no RLlib):
 And, on the real `lstm` module, that the discovery finds the right layers under
 each scope and leaves every other encoder where it was.
 """
+
 import pytest
 import torch
 import torch.nn as nn
@@ -75,7 +76,6 @@ def _rows(index):
 
 
 class TestWhichParametersAreAUnit:
-
     def test_a_unit_is_the_top_layers_hidden_unit(self, layer):
         assert layer.num_units == H
         assert layer.hook_target is layer.lstm
@@ -112,17 +112,16 @@ def _replace(layer, net, index, optimizer=None, seed=0):
     state.accumulator = 2.0
     corrected = torch.full((H,), 5.0)
     corrected[index] = 0.0
-    config = CBPConfig(enabled=True, scope="recurrent", maturity_threshold=1,
-                       replacement_rate=0.5)
+    config = CBPConfig(enabled=True, scope="recurrent", maturity_threshold=1, replacement_rate=0.5)
     generator = torch.Generator().manual_seed(seed)
-    replaced = select_and_replace(state, layer, corrected, config,
-                                  generator=generator, optimizer=optimizer)
+    replaced = select_and_replace(
+        state, layer, corrected, config, generator=generator, optimizer=optimizer
+    )
     assert replaced == [index]
     return state
 
 
 class TestAReplacement:
-
     def test_outgoing_is_zeroed_and_incoming_resampled(self, layer, net):
         index = 2
         before_ih = net.lstm.weight_ih_l1.detach().clone()
@@ -133,7 +132,7 @@ class TestAReplacement:
         for row in _rows(index):
             assert not torch.equal(net.lstm.weight_ih_l1[row], before_ih[row])
             assert net.lstm.bias_ih_l1[row] == 0 and net.lstm.bias_hh_l1[row] == 0
-        bound = 1.0 / H ** 0.5
+        bound = 1.0 / H**0.5
         assert net.lstm.weight_ih_l1[_rows(index)].abs().max() <= bound
 
     def test_no_other_unit_is_touched(self, layer, net):
@@ -188,9 +187,10 @@ class TestAReplacement:
         corrected = torch.full((H,), 5.0)
         corrected[index] = 0.0
         select_and_replace(
-            state, layer, corrected,
-            CBPConfig(enabled=True, scope="recurrent", maturity_threshold=1,
-                      replacement_rate=0.5),
+            state,
+            layer,
+            corrected,
+            CBPConfig(enabled=True, scope="recurrent", maturity_threshold=1, replacement_rate=0.5),
             generator=torch.Generator().manual_seed(0),
         )
         assert state.age[index] == 0 and state.utility[index] == 0
@@ -199,7 +199,6 @@ class TestAReplacement:
 
 
 class TestAdamIsToldWhatWasReset:
-
     def test_exactly_the_reset_entries_lose_their_moments(self, layer, net, x):
         index = 1
         optimizer = torch.optim.Adam(net.parameters(), lr=1e-3)
@@ -227,15 +226,13 @@ class TestAdamIsToldWhatWasReset:
 
 
 class TestTheUtilityCountsTheRecurrentPath:
-
     def test_a_unit_only_the_recurrence_reads_is_not_worth_zero(self, layer, net):
         """Zero the head's column for unit 0: it is still read by the other
         units through `weight_hh`, so its utility is not 0."""
         with torch.no_grad():
             net.head.weight[:, 0] = 0.0
         state = CBPLayerState.zeros(H)
-        stats = {"abs_mean": torch.ones(H), "dev_abs_mean": torch.ones(H),
-                 "mean": torch.zeros(H)}
+        stats = {"abs_mean": torch.ones(H), "dev_abs_mean": torch.ones(H), "mean": torch.zeros(H)}
         utility = update_utility(
             state, layer, stats, CBPConfig(enabled=True, utility="contribution")
         )
@@ -243,7 +240,6 @@ class TestTheUtilityCountsTheRecurrentPath:
 
 
 class TestTheHookSeesTheSequence:
-
     def test_an_lstm_returns_a_tuple_and_the_hook_takes_the_sequence(self, layer, net, x):
         mixin = CBPLearnerMixin.__new__(CBPLearnerMixin)
         mixin._cbp_config = CBPConfig(enabled=True, scope="recurrent")
@@ -268,7 +264,6 @@ def spaces():
 
 
 class TestDiscoveryOnTheRealEncoders:
-
     def test_recurrent_is_a_scope_and_unknown_ones_are_refused(self):
         assert "recurrent" in SCOPES
         assert CBPConfig(scope="recurrent").scope == "recurrent"
@@ -283,7 +278,9 @@ class TestDiscoveryOnTheRealEncoders:
         module = build_module(spaces, encoder_type="lstm", vf_share_layers=False)
         layers = find_replaceable_layers(module, "recurrent")
         assert [layer.name for layer in layers] == [
-            "encoder.actor_encoder.lstm", "encoder.critic_encoder.lstm"]
+            "encoder.actor_encoder.lstm",
+            "encoder.critic_encoder.lstm",
+        ]
         assert all(layer.num_units == 256 for layer in layers)
         assert [len(layer.outgoing) for layer in layers] == [1, 1]
 

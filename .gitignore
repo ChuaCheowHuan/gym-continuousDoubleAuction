@@ -34,3 +34,4 @@ dist
 gym_continuousDoubleAuction/config
 # Hypothesis example database, written beside the tests it drives
 .hypothesis
+.coverage

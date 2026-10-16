@@ -7,12 +7,14 @@ if "../" not in sys.path:
 
 from gym_continuousDoubleAuction.envs.orderbook.orderbook import OrderBook
 
+
 class TestOrderBookCrossedBook:
     """
     Test case to ensure the OrderBook does not become crossed.
     This was previously a reproduction script for a bug where modify_order
     could result in a crossed book.
     """
+
     def setup_method(self):
         self.ob = OrderBook()
 
@@ -23,7 +25,7 @@ class TestOrderBookCrossedBook:
             'side': 'ask',
             'quantity': Decimal('10'),
             'price': Decimal('100'),
-            'trade_id': 'S1'
+            'trade_id': 'S1',
         }
         self.ob.process_order(ask, from_data=False, verbose=False)
 
@@ -33,7 +35,7 @@ class TestOrderBookCrossedBook:
             'side': 'bid',
             'quantity': Decimal('10'),
             'price': Decimal('90'),
-            'trade_id': 'B1'
+            'trade_id': 'B1',
         }
         _, quote = self.ob.process_order(bid, from_data=False, verbose=False)
         order_id = quote['order_id']
@@ -46,7 +48,7 @@ class TestOrderBookCrossedBook:
             'side': 'bid',
             'quantity': Decimal('10'),
             'price': Decimal('110'),
-            'timestamp': 2
+            'timestamp': 2,
         }
         self.ob.modify_order(order_id, update_data)
 
@@ -55,4 +57,6 @@ class TestOrderBookCrossedBook:
 
         # If the book is not empty on both sides, it should not be crossed
         if best_bid is not None and best_ask is not None:
-            assert best_bid < best_ask, f"Book is CROSSED: Best Bid ({best_bid}) >= Best Ask ({best_ask})"
+            assert best_bid < best_ask, (
+                f"Book is CROSSED: Best Bid ({best_bid}) >= Best Ask ({best_ask})"
+            )

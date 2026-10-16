@@ -24,6 +24,7 @@ value feeds mask noise straight into the policy-gradient ratio rather than
 regularising anything. The knob exists because it is standard on this component,
 not because it is advisable.
 """
+
 from __future__ import annotations
 
 from typing import Callable, Optional
@@ -63,9 +64,7 @@ class TransformerBlock(nn.Module):
     ) -> None:
         super().__init__()
         if d_model % num_heads:
-            raise ValueError(
-                f"d_model={d_model} must be divisible by num_heads={num_heads}."
-            )
+            raise ValueError(f"d_model={d_model} must be divisible by num_heads={num_heads}.")
 
         self.norm_attn = nn.LayerNorm(d_model)
         self.attn = nn.MultiheadAttention(
@@ -75,10 +74,7 @@ class TransformerBlock(nn.Module):
             batch_first=True,
         )
         self.norm_ff = nn.LayerNorm(d_model)
-        self.ff = (
-            ff_factory() if ff_factory is not None
-            else feedforward(d_model, ff_dim, dropout)
-        )
+        self.ff = ff_factory() if ff_factory is not None else feedforward(d_model, ff_dim, dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """`(B, T, d_model)` in, same out.

@@ -16,6 +16,7 @@ env, once it has a clearing price, whether each order's owner can pay for it;
 those who cannot sit out (a new order is counted as rejected) and the auction
 runs again without them, until everyone left can pay.
 """
+
 from decimal import Decimal
 
 import pytest
@@ -29,7 +30,7 @@ from gym_continuousDoubleAuction.envs.orderbook.orderbook import OrderBook
 
 def _book(cash=1000, n=3, **kw):
     lob = OrderBook()
-    traders = [Trader(i, cash if i == 0 else 10 ** 7, **kw) for i in range(n)]
+    traders = [Trader(i, cash if i == 0 else 10**7, **kw) for i in range(n)]
     return lob, traders
 
 
@@ -40,7 +41,6 @@ def _sell_into(lob, traders, seller, levels):
 
 
 class TestTheSweepIsPricedLevelByLevel:
-
     def test_the_documented_overdraw_is_refused(self):
         lob, t = _book(cash=1000)
         _sell_into(lob, t, 1, [(100, 1), (200, 9)])
@@ -70,7 +70,7 @@ class TestTheSweepIsPricedLevelByLevel:
     def test_the_traders_own_orders_are_not_part_of_the_sweep(self):
         """Self-match prevention cancels them first, so the sweep skips them."""
         lob, t = _book(cash=800)
-        _sell_into(lob, t, 0, [(100, 5)])           # its own ask, cancelled on arrival
+        _sell_into(lob, t, 0, [(100, 5)])  # its own ask, cancelled on arrival
         _sell_into(lob, t, 1, [(150, 5)])
         # Priced at the touch (100) it would be 500; the real sweep is 5 @ 150.
         assert not t[0]._order_approved("bid", 5, -1.0, lob, "market")
@@ -78,30 +78,37 @@ class TestTheSweepIsPricedLevelByLevel:
         assert t[0]._order_approved("bid", 5, -1.0, lob, "market")
 
     def test_only_the_opening_part_of_a_flip_is_charged(self):
-        lob, t = _book(cash=10 ** 7)
+        lob, t = _book(cash=10**7)
         t[0].place_order("limit", "bid", 4, 100, lob, t)
-        t[1].place_order("market", "ask", 4, -1.0, lob, t)      # t[0] long 4
+        t[1].place_order("market", "ask", 4, -1.0, lob, t)  # t[0] long 4
         assert t[0].acc.net_position == 4
-        lob2, u = _book(cash=10 ** 7)
+        lob2, u = _book(cash=10**7)
         # Short 4 means the first 4 contracts of a buy only close; 6 open.
         u[1].place_order("limit", "bid", 4, 100, lob2, u)
-        u[0].place_order("market", "ask", 4, -1.0, lob2, u)     # u[0] short 4
+        u[0].place_order("market", "ask", 4, -1.0, lob2, u)  # u[0] short 4
         assert u[0].acc.net_position == -4
         _sell_into(lob2, u, 2, [(100, 4), (120, 6)])
         u[0].acc.cash = Decimal(719)
-        assert not u[0]._order_approved("bid", 10, -1.0, lob2, "market")   # 6 @ 120 = 720
+        assert not u[0]._order_approved("bid", 10, -1.0, lob2, "market")  # 6 @ 120 = 720
         u[0].acc.cash = Decimal(720)
         assert u[0]._order_approved("bid", 10, -1.0, lob2, "market")
 
     def test_an_empty_book_falls_back_to_the_last_print(self):
         lob, t = _book(cash=1000)
-        assert t[0]._order_approved("bid", 5, -1.0, lob, "market") in (True, False)   # no crash
+        assert t[0]._order_approved("bid", 5, -1.0, lob, "market") in (True, False)  # no crash
 
 
 def _env(**cfg):
-    base = {"num_of_agents": 3, "init_cash": 10 ** 6, "is_render": False, "max_step": 40,
-            "step_clearing": "batch", "initial_price_min": 100, "initial_price_max": 100,
-            "liquidation": "off"}
+    base = {
+        "num_of_agents": 3,
+        "init_cash": 10**6,
+        "is_render": False,
+        "max_step": 40,
+        "step_clearing": "batch",
+        "initial_price_min": 100,
+        "initial_price_max": 100,
+        "liquidation": "off",
+    }
     base.update(cfg)
     env = continuousDoubleAuctionEnv(base)
     env.reset(seed=1)
@@ -127,7 +134,6 @@ def _uncrossed(env):
 
 
 class TestABatchIsReClearedWithoutWhatItsOwnersCannotPay:
-
     def _asks(self, env):
         a1 = env.traders[1]
         a1.place_order("limit", "ask", 5, 100, env.LOB, env.traders)
@@ -137,11 +143,11 @@ class TestABatchIsReClearedWithoutWhatItsOwnersCannotPay:
         env = _env()
         self._asks(env)
         buyer = env.traders[0]
-        buyer.acc.cash = Decimal(920)            # 9 @ 100 = 900 passes the check; 9 clears at 110 = 990
+        buyer.acc.cash = Decimal(920)  # 9 @ 100 = 900 passes the check; 9 clears at 110 = 990
         _clear(env, [(buyer, "market", "bid", 9, -1.0)])
         assert buyer.acc.cash == 920 and buyer.acc.net_position == 0
         assert buyer.acc.num_rejected_step == 1
-        assert env.LOB.asks.volume == 10          # the book is untouched
+        assert env.LOB.asks.volume == 10  # the book is untouched
         assert _whole(env)
 
     def test_the_same_order_with_the_cash_fills(self):
@@ -170,7 +176,7 @@ class TestABatchIsReClearedWithoutWhatItsOwnersCannotPay:
         env = _env()
         env.traders[1].place_order("limit", "bid", 10, 110, env.LOB, env.traders)
         seller = env.traders[0]
-        seller.acc.cash = Decimal(1000)           # 10 @ 100 passes; the auction clears at 108
+        seller.acc.cash = Decimal(1000)  # 10 @ 100 passes; the auction clears at 108
         _clear(env, [(seller, "limit", "ask", 10, 100)], reference=108)
         # It could not pay for the short at 108, so it sits out. It must not rest
         # at 100 under a resting bid at 110, which would cross the book: it lapses,
@@ -184,11 +190,11 @@ class TestABatchIsReClearedWithoutWhatItsOwnersCannotPay:
         env = _env()
         seller, buyer = env.traders[0], env.traders[1]
         seller.acc.cash = Decimal(1000)
-        seller.place_order("limit", "ask", 10, 100, env.LOB, env.traders)    # escrows 1,000
+        seller.place_order("limit", "ask", 10, 100, env.LOB, env.traders)  # escrows 1,000
         assert seller.acc.cash == 0
         _clear(env, [(buyer, "market", "bid", 10, -1.0)], reference=108)
-        assert seller.acc.net_position == 0       # it would owe 80 more than it has
-        assert env.LOB.asks.volume == 10          # still resting
+        assert seller.acc.net_position == 0  # it would owe 80 more than it has
+        assert env.LOB.asks.volume == 10  # still resting
         assert _whole(env)
 
     def test_a_limit_left_over_by_a_sitting_out_ask_does_not_cross_it(self):
@@ -197,11 +203,11 @@ class TestABatchIsReClearedWithoutWhatItsOwnersCannotPay:
         env = _env()
         seller, buyer = env.traders[0], env.traders[1]
         seller.acc.cash = Decimal(1000)
-        seller.place_order("limit", "ask", 10, 98, env.LOB, env.traders)     # escrows 980
+        seller.place_order("limit", "ask", 10, 98, env.LOB, env.traders)  # escrows 980
         _clear(env, [(buyer, "limit", "bid", 10, 105)], reference=104)
         assert seller.acc.net_position == 0 and buyer.acc.net_position == 0
-        assert env.LOB.asks.volume == 10           # the ask stays
-        assert env.LOB.bids.volume == 0            # the bid lapses instead of crossing it
+        assert env.LOB.asks.volume == 10  # the ask stays
+        assert env.LOB.bids.volume == 0  # the bid lapses instead of crossing it
         assert _uncrossed(env) and _whole(env)
 
     def test_the_next_batch_can_still_clear_after_an_order_sat_out(self):
@@ -253,21 +259,32 @@ class TestNoFillEverOverdrawsCash:
     def test_random_play_at_thin_cash(self, clearing, fee):
         overdrawn = 0
         for seed in OVERDREW[clearing] + [0, 1, 2]:
-            env = continuousDoubleAuctionEnv({
-                "num_of_agents": 4, "init_cash": 3000, "max_step": 80, "step_clearing": clearing,
-                "initial_price_min": 20, "initial_price_max": 60, "liquidation": "off",
-                "maker_fee_bps": fee, "taker_fee_bps": fee})
+            env = continuousDoubleAuctionEnv(
+                {
+                    "num_of_agents": 4,
+                    "init_cash": 3000,
+                    "max_step": 80,
+                    "step_clearing": clearing,
+                    "initial_price_min": 20,
+                    "initial_price_max": 60,
+                    "liquidation": "off",
+                    "maker_fee_bps": fee,
+                    "taker_fee_bps": fee,
+                }
+            )
             env.reset(seed=seed)
             for a in env.agents:
                 env.action_spaces[a].seed(seed)
             while True:
                 _, _, dones, truncs, _ = env.step(
-                    {a: env.action_spaces[a].sample() for a in env.agents})
+                    {a: env.action_spaces[a].sample() for a in env.agents}
+                )
                 for t in env.traders:
                     if t.acc.cash + t.acc.cash_on_hold < 0:
                         overdrawn += 1
-                assert env.fees_collected + sum(t.acc.nav for t in env.traders) \
-                    == Decimal(4) * Decimal(env.init_cash)
+                assert env.fees_collected + sum(t.acc.nav for t in env.traders) == Decimal(
+                    4
+                ) * Decimal(env.init_cash)
                 assert _uncrossed(env), f"seed {seed}: the book is crossed"
                 if dones["__all__"] or truncs["__all__"]:
                     break
@@ -282,9 +299,9 @@ def _underwater_short(cash_after, entry=10, squeezed_to=30, lots=10):
     twice the entry. Covering it settles that value into cash.
     """
     lob = OrderBook()
-    t = [Trader(0, 10 ** 6), Trader(1, 10 ** 7), Trader(2, 10 ** 7)]
+    t = [Trader(0, 10**6), Trader(1, 10**7), Trader(2, 10**7)]
     t[1].place_order("limit", "bid", lots, entry, lob, t)
-    t[0].place_order("market", "ask", lots, -1.0, lob, t)            # t0 short at `entry`
+    t[0].place_order("market", "ask", lots, -1.0, lob, t)  # t0 short at `entry`
     assert t[0].acc.net_position == -lots
     t[2].place_order("limit", "ask", 3 * lots, squeezed_to, lob, t)  # liquidity to cover into
     t[0].acc.mark_to_mkt(t[0].ID, Decimal(squeezed_to))
@@ -321,20 +338,20 @@ class TestClosingALosingShortNeedsTheCashForTheLoss:
 
     def test_a_flip_needs_the_loss_and_the_new_position(self):
         lob, t = _underwater_short(cash_after=249)
-        assert not t[0]._order_approved("bid", 15, -1.0, lob, "market")   # 100 + 5 x 30 = 250
+        assert not t[0]._order_approved("bid", 15, -1.0, lob, "market")  # 100 + 5 x 30 = 250
         t[0].acc.cash = Decimal(250)
         assert t[0]._order_approved("bid", 15, -1.0, lob, "market")
 
     def test_a_short_not_past_its_collateral_costs_nothing_to_cover(self):
-        lob, t = _underwater_short(cash_after=0, squeezed_to=15)      # worth 2 x 100 - 150 = 50 > 0
+        lob, t = _underwater_short(cash_after=0, squeezed_to=15)  # worth 2 x 100 - 150 = 50 > 0
         assert t[0]._order_approved("bid", 10, -1.0, lob, "market")
 
     def test_a_long_never_has_a_loss_to_reserve(self):
         lob = OrderBook()
-        t = [Trader(0, 10 ** 6), Trader(1, 10 ** 7)]
+        t = [Trader(0, 10**6), Trader(1, 10**7)]
         t[1].place_order("limit", "ask", 10, 100, lob, t)
         t[0].place_order("market", "bid", 10, -1.0, lob, t)
-        t[1].place_order("limit", "bid", 10, 1, lob, t)               # price collapses
+        t[1].place_order("limit", "bid", 10, 1, lob, t)  # price collapses
         t[0].acc.mark_to_mkt(t[0].ID, Decimal(1))
         t[0].acc.cash = Decimal(0)
         assert t[0]._order_approved("ask", 10, -1.0, lob, "market")
@@ -348,7 +365,7 @@ class TestClosingALosingShortNeedsTheCashForTheLoss:
         env.traders[2].place_order("limit", "ask", 5, 29, env.LOB, env.traders)
         env.traders[2].place_order("limit", "ask", 5, 40, env.LOB, env.traders)
         short.acc.mark_to_mkt(short.ID, Decimal(29))
-        short.acc.cash = Decimal(110)       # 10 @ 29 -> loss 90; 5 @ 29 + 5 @ 40 clears at 40 -> 200
+        short.acc.cash = Decimal(110)  # 10 @ 29 -> loss 90; 5 @ 29 + 5 @ 40 clears at 40 -> 200
         _clear(env, [(short, "market", "bid", 10, -1.0)], reference=40)
         assert short.acc.net_position == -10 and short.acc.num_rejected_step == 1
         assert _whole(env) and _uncrossed(env)
@@ -359,8 +376,8 @@ class TestTheLossReserveHoldsAcrossOrders:
 
     def test_a_resting_cover_keeps_its_loss_from_a_later_order(self):
         """A bid that will cover an under-water short owes the loss when it fills."""
-        lob, t = _underwater_short(cash_after=100)          # position_val -100
-        t[0].place_order("limit", "bid", 10, 29, lob, t)    # rests under the asks at 30
+        lob, t = _underwater_short(cash_after=100)  # position_val -100
+        t[0].place_order("limit", "bid", 10, 29, lob, t)  # rests under the asks at 30
         assert t[0].acc.net_position == -10 and lob.bids.volume == 10
         # Covering at 29 realises 290 - 200 = 90. 100 of free cash is left, and a
         # 1-lot opening ask at 30 takes 30 of it, leaving 70: not enough for 90.

@@ -14,6 +14,7 @@ only level at which NAV conservation is defined - every account has to be
 marked at the same price - and asserts it exactly, in Decimal, after every
 step.
 """
+
 from decimal import Decimal
 
 import numpy as np
@@ -29,16 +30,18 @@ N_TRADERS = 3
 INIT_CASH = 100_000
 PRICES = list(range(95, 106))
 
-order = st.fixed_dictionaries({
-    "who": st.integers(0, N_TRADERS - 1),
-    "type": st.sampled_from(["limit", "limit", "market", "modify", "cancel"]),
-    "side": st.sampled_from(["bid", "ask"]),
-    "size": st.integers(1, 40),
-    "price": st.sampled_from(PRICES),
-    # Which own order a modify/cancel aims at: 0 is all/oldest, k the k-th
-    # from the touch, past the count a counted miss (doc/15 S3-24).
-    "slot": st.integers(0, 5),
-})
+order = st.fixed_dictionaries(
+    {
+        "who": st.integers(0, N_TRADERS - 1),
+        "type": st.sampled_from(["limit", "limit", "market", "modify", "cancel"]),
+        "side": st.sampled_from(["bid", "ask"]),
+        "size": st.integers(1, 40),
+        "price": st.sampled_from(PRICES),
+        # Which own order a modify/cancel aims at: 0 is all/oldest, k the k-th
+        # from the touch, past the count a counted miss (doc/15 S3-24).
+        "slot": st.integers(0, 5),
+    }
+)
 
 
 def _check_tree(tree, side):
@@ -73,7 +76,6 @@ def check_book(book):
 
 
 class TestBookInvariants:
-
     @settings(max_examples=300, deadline=None)
     @given(st.lists(order, min_size=1, max_size=60))
     def test_tree_caches_and_uncrossed_book(self, sequence):
@@ -82,8 +84,9 @@ class TestBookInvariants:
         for act in sequence:
             t = traders[act["who"]]
             price = -1.0 if act["type"] == "market" else float(act["price"])
-            t.place_order(act["type"], act["side"], act["size"], price, book, traders,
-                          slot=act["slot"])
+            t.place_order(
+                act["type"], act["side"], act["size"], price, book, traders, slot=act["slot"]
+            )
             check_book(book)
 
     @settings(max_examples=200, deadline=None)
@@ -101,8 +104,9 @@ class TestBookInvariants:
         for act in sequence:
             t = traders[act["who"]]
             price = -1.0 if act["type"] == "market" else float(act["price"])
-            t.place_order(act["type"], act["side"], act["size"], price, book, traders,
-                          slot=act["slot"])
+            t.place_order(
+                act["type"], act["side"], act["size"], price, book, traders, slot=act["slot"]
+            )
             for trader in traders:
                 resting = sum(
                     o.price * o.quantity
@@ -121,22 +125,29 @@ class TestBookInvariants:
         for act in sequence:
             t = traders[act["who"]]
             price = -1.0 if act["type"] == "market" else float(act["price"])
-            t.place_order(act["type"], act["side"], act["size"], price, book, traders,
-                          slot=act["slot"])
+            t.place_order(
+                act["type"], act["side"], act["size"], price, book, traders, slot=act["slot"]
+            )
             assert sum(tr.acc.net_position for tr in traders) == 0
 
 
 class TestEnvInvariants:
-
-    @settings(max_examples=12, deadline=None,
-              suppress_health_check=[HealthCheck.too_slow])
-    @given(seed=st.integers(0, 2**31 - 1), tick=st.sampled_from([1, 0.5, 0.1]),
-           steps=st.integers(5, 40))
+    @settings(max_examples=12, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+    @given(
+        seed=st.integers(0, 2**31 - 1),
+        tick=st.sampled_from([1, 0.5, 0.1]),
+        steps=st.integers(5, 40),
+    )
     def test_nav_conserved_and_book_sound_under_random_play(self, seed, tick, steps):
-        env = continuousDoubleAuctionEnv({
-            "num_of_agents": 4, "tick_size": tick, "is_render": False,
-            "max_step": 64, "init_cash": INIT_CASH,
-        })
+        env = continuousDoubleAuctionEnv(
+            {
+                "num_of_agents": 4,
+                "tick_size": tick,
+                "is_render": False,
+                "max_step": 64,
+                "init_cash": INIT_CASH,
+            }
+        )
         env.reset(seed=seed)
         rng = np.random.default_rng(seed)
         for agent in env.agents:
