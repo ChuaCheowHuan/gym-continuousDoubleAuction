@@ -21,6 +21,7 @@ from gym_continuousDoubleAuction.train.episode_record import (
     REWARD_TERMS,
     SAMPLE_END_DRAIN_S,
 )
+from gym_continuousDoubleAuction.train.performance import PerformanceTally
 from gym_continuousDoubleAuction.train.returns import usable_return
 from gym_continuousDoubleAuction.train.policy.policy_handler import (
     CHAMPION_PREFIX,
@@ -64,6 +65,11 @@ NAV_UNCHECKED_METRIC = "nav_conservation_unchecked"
 #: and read by the driver's champion check (doc/15 S3-11). Nested under the
 #: module id: `result["env_runners"][MODULE_TRADES_METRIC]["policy_0"]`.
 MODULE_TRADES_METRIC = "module_trades_per_episode"
+
+#: Prefix of the per-module risk-adjusted metrics (doc/15 S3-9): one metric per
+#: name in `performance.METRICS`, e.g. `module_sharpe`, each nested under the
+#: module id like `MODULE_TRADES_METRIC` and meaned over the iteration's episodes.
+MODULE_PERFORMANCE_PREFIX = "module_"
 
 
 def _new_tally() -> dict:
@@ -112,6 +118,8 @@ def _new_tally() -> dict:
         "last_nav": {},
         "term_sum": {term: 0.0 for term in REWARD_TERMS},
         "term_sq": {term: 0.0 for term in REWARD_TERMS},
+        # Per agent, O(1) each: Sharpe, drawdown and the rest of S3-9.
+        "performance": {},
     }
 
 
@@ -423,6 +431,8 @@ class SelfPlayCallback(RLlibCallback):
 
         self._log_module_trades(episode, tally, metrics_logger)
 
+        self._log_module_performance(episode, tally, metrics_logger)
+
         logger.debug(
             "episode %s activity: %s agent-steps, %.1f%% pass, %.1f%% rejected, "
             "%.1f%% unmatched",
@@ -454,6 +464,34 @@ class SelfPlayCallback(RLlibCallback):
             trades = tally["per_agent_fills"].get(agent_id, {}).get("trades", 0)
             metrics_logger.log_value(
                 (MODULE_TRADES_METRIC, module_id), float(trades), reduce="mean",
+            )
+
+    def _log_module_performance(self, episode, tally, metrics_logger) -> None:
+        """Each module's risk-adjusted performance in this episode (doc/15 S3-9).
+
+        Per module, like the trade counts, because the question is "how does this
+        policy compare", and meaned over the iteration's episodes. A metric that is
+        undefined for an agent's episode (a Sharpe with no variance: it never
+        traded) is left out rather than logged as 0, which would read as a
+        measurement; the mean is over the episodes where it exists. When two
+        agents played one module in an episode their values are averaged first, so
+        an episode counts once.
+        """
+        module_for = getattr(episode, "module_for", None)
+        if module_for is None:
+            return
+        per_module = {}
+        for agent_id, perf in tally["performance"].items():
+            module_id = module_for(agent_id)
+            if module_id is None:
+                continue
+            for name, value in perf.summary().items():
+                if value is not None and math.isfinite(value):
+                    per_module.setdefault((name, module_id), []).append(value)
+        for (name, module_id), values in per_module.items():
+            metrics_logger.log_value(
+                (MODULE_PERFORMANCE_PREFIX + name, module_id),
+                sum(values) / len(values), reduce="mean",
             )
 
     #: Trades an agent needs before its maker share is worth reporting. Below
@@ -707,6 +745,8 @@ class SelfPlayCallback(RLlibCallback):
             nav = agent_info.get("NAV")
             if nav is not None:
                 tally["last_nav"][agent_id] = nav
+                tally["performance"].setdefault(agent_id, PerformanceTally()).update(
+                    nav, agent_info.get("net_position"))
             if agent_info.get("is_pass_action"):
                 tally["passes"] += 1
             tally["rejections"] += int(agent_info.get("num_rejected_step", 0) or 0)
