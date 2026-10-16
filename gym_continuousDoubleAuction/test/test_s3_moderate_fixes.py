@@ -189,3 +189,110 @@ class TestSeveralOrdersPerLevel:
         cfg = TrainConfig(allow_multiple_orders_per_level=True)
         assert continuousDoubleAuctionEnv(
             {**cfg.env_config, "is_render": False}).allow_multiple_orders_per_level is True
+
+
+# --------------------------------------------------------------------------- #124
+from unittest.mock import MagicMock  # noqa: E402
+
+from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (  # noqa: E402
+    PROMOTION_REFERENCES,
+    SelfPlayCallback,
+)
+
+
+def _league(reference, **kwargs):
+    return SelfPlayCallback(num_trainable_policies=2, num_random_policies=6,
+                            min_iterations_between_champions=0, min_champion_trades=0,
+                            promotion_reference=reference, **kwargs)
+
+
+def _returns(trainable, champions, baseline):
+    out = {f"policy_{i}": v for i, v in enumerate(trainable)}
+    out.update({f"champion_{i + 1}": v for i, v in enumerate(champions)})
+    out.update({f"policy_{i}": baseline for i in range(2, 8)})
+    return out
+
+
+def _check(cb, returns, monkeypatch=None):
+    made = []
+    cb._create_champion_snapshot_from_policy = lambda algo, pid, value, it: made.append(pid)
+    result = {"training_iteration": 1, "env_runners": {"module_episode_returns_mean": returns}}
+    cb.on_train_result(algorithm=MagicMock(), result=result)
+    return made, result["league"]
+
+
+class TestPromotionReference:
+    """#124: the threshold was a pooled mean + k*std over every module, the frozen
+    random baselines included, though a baseline's return is what a random agent
+    earns in whatever role it is dealt."""
+
+    def test_the_default_is_the_pooled_behaviour(self):
+        assert TrainConfig().promotion_reference == "pooled"
+        assert SelfPlayCallback(num_trainable_policies=2,
+                                num_random_policies=6).promotion_reference == "pooled"
+
+    def test_the_choices_are_named(self):
+        assert PROMOTION_REFERENCES == ("pooled", "excluding_baselines")
+
+    @pytest.mark.parametrize("bad", ["", "all", "excluding baselines", None])
+    def test_nonsense_is_refused_naming_the_key(self, bad):
+        with pytest.raises(ValueError, match="promotion_reference"):
+            TrainConfig(promotion_reference=bad)
+
+    def test_the_callback_refuses_it_too(self):
+        with pytest.raises(ValueError, match="promotion_reference"):
+            _league("nope")
+
+    def test_train_config_hands_it_to_the_callback(self):
+        _ppo_cfg, callback = build_config(TrainConfig(promotion_reference="excluding_baselines"))
+        assert callback.promotion_reference == "excluding_baselines"
+
+    # Learners 1.3 / 0.4, champions 1.0 / 0.9 / 1.1, baselines at -0.5: the baselines sit
+    # just under the learners, so the pooled bar (1.27) is lower than the one over the
+    # learners and champions alone (1.39), and 1.3 clears the first only.
+    def test_baselines_close_to_the_learners_lower_the_bar_they_clear(self):
+        returns = _returns([1.3, 0.4], [1.0, 0.9, 1.1], -0.5)
+        pooled, league_p = _check(_league("pooled"), returns)
+        excluded, league_e = _check(_league("excluding_baselines"), returns)
+        assert pooled == ["policy_0"] and excluded == []
+        assert league_p["threshold"] < 1.3 < league_e["threshold"]
+
+    # The other direction: baselines far below inflate the pooled spread and raise the
+    # bar past a learner that is clearly ahead of its peers.
+    def test_baselines_far_below_raise_the_bar_past_a_clearly_better_learner(self):
+        returns = _returns([2.0, 0.4], [1.0, 0.9, 1.1], -10.0)
+        pooled, league_p = _check(_league("pooled"), returns)
+        excluded, league_e = _check(_league("excluding_baselines"), returns)
+        assert pooled == [] and excluded == ["policy_0"]
+        assert league_e["threshold"] < 2.0 < league_p["threshold"]
+
+    def test_the_result_says_which_set_the_threshold_used(self):
+        returns = _returns([2.0, 0.4], [1.0, 0.9, 1.1], -10.0)
+        assert _check(_league("pooled"), returns)[1]["reference"] == "pooled"
+        assert _check(_league("excluding_baselines"), returns)[1]["reference"] == "excluding_baselines"
+
+    def test_a_set_too_small_to_clear_falls_back_to_pooled_and_warns_once(self, caplog):
+        """Two learners and no champion: sqrt(2 - 1) = 1 is under 1.5, so nobody could ever
+        be promoted and the league would never grow."""
+        cb = _league("excluding_baselines")
+        returns = _returns([5.0, 0.4], [], -1.0)
+        with caplog.at_level(logging.WARNING, logger=LOGGER):
+            _made, league = _check(cb, returns)
+            _check(cb, returns)
+        assert league["reference"] == "pooled"
+        assert caplog.text.count("using the pooled threshold") == 1
+
+    def test_an_idle_champion_is_left_out_of_the_reference(self):
+        returns = _returns([2.0, 0.4], [1.0, 0.9, float("nan")], -10.0)
+        made, league = _check(_league("excluding_baselines"), returns)
+        assert league["reference"] == "excluding_baselines"     # 4 modules: sqrt(3) > 1.5
+        assert made == ["policy_0"]
+
+    def test_a_callback_saved_before_the_key_runs_pooled(self):
+        cb = _league("pooled")
+        state = cb.__getstate__()
+        del state["promotion_reference"]
+        del state["_warned_reference_fallback"]
+        old = SelfPlayCallback.__new__(SelfPlayCallback)
+        old.__setstate__(state)
+        assert old.promotion_reference == "pooled"
