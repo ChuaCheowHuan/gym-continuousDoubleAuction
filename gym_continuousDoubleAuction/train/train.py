@@ -18,6 +18,7 @@ From a notebook:
 from __future__ import annotations
 
 import argparse
+import copy
 import dataclasses
 import json
 import logging
@@ -36,7 +37,7 @@ from ray.rllib.algorithms.algorithm import Algorithm
 from ray.rllib.algorithms.ppo import PPOConfig
 
 from gym_continuousDoubleAuction.config_loader import (
-    flat as flat_config,
+    flat_view,
     flatten,
 )
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
@@ -135,13 +136,16 @@ def _default(key: str, *, compare: bool = True):
     """
 
     def factory():
-        values = flat_config(TRAIN_CONFIG_FILE)
+        # The cached view, not `flat_config`: TrainConfig() reads ~90 fields and
+        # the copying version re-flattened the whole file for each one. Only the
+        # value taken is copied, so a list default is still its own object.
+        values = flat_view(TRAIN_CONFIG_FILE)
         if key not in values:
             raise KeyError(
                 f"{TRAIN_CONFIG_FILE} is missing the key {key!r}, which "
                 f"TrainConfig has no default for. Keys found: {sorted(values)}."
             )
-        return values[key]
+        return copy.deepcopy(values[key])
 
     return field(default_factory=factory, compare=compare)
 
@@ -332,6 +336,8 @@ class TrainConfig:
     # Which modules the promotion threshold is computed over (doc/15 S3-12):
     # "pooled" or "excluding_baselines".
     promotion_reference: str = _default("promotion_reference")
+    # Steps ahead at which fills are marked out (doc/15 S3-9).
+    markout_horizons: List[int] = _default("markout_horizons")
     original_opponent_weight: float = _default("original_opponent_weight")
     champion_weight: float = _default("champion_weight")
     # null disables the per-step episode record entirely. See episode_data_path
@@ -440,6 +446,10 @@ class TrainConfig:
             raise ValueError(
                 f"promotion_reference must be one of {PROMOTION_REFERENCES}; "
                 f"got {self.promotion_reference!r}."
+            )
+        if any(int(h) < 1 for h in self.markout_horizons):
+            raise ValueError(
+                f"markout_horizons must be positive step counts; got {self.markout_horizons}."
             )
         if self.min_champion_trades < 0:
             raise ValueError(
@@ -787,6 +797,7 @@ def build_config(cfg: TrainConfig):
         strict_nav_check=cfg.strict_nav_check,
         min_champion_trades=cfg.min_champion_trades,
         promotion_reference=cfg.promotion_reference,
+        markout_horizons=cfg.markout_horizons,
         episode_sample_every=cfg.episode_sample_every,
         episode_max_bytes=cfg.episode_max_bytes,
         episode_rows_per_file=cfg.episode_rows_per_file,

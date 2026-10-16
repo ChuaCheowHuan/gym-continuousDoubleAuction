@@ -323,6 +323,7 @@ class Liquidation_Helper(object):
         if quantity <= 0:
             return 0
         own_step_trades = trader.acc.num_trades_step
+        own_fill = (trader.acc.fill_qty_step, trader.acc.fill_value_step)
         before = abs(trader.acc.net_position)
         quote = {'type': 'limit', 'side': side, 'quantity': int(quantity),
                  'price': band, 'trade_id': trader.ID}
@@ -333,6 +334,8 @@ class Liquidation_Helper(object):
             _normalise_trade_sizes(trades)
             trader._process_trades(trades, self.traders)
         trader.acc.num_trades_step = own_step_trades
+        # Not the agent's execution either, so not a mark-out candidate (issue #286).
+        trader.acc.fill_qty_step, trader.acc.fill_value_step = own_fill
         return before - abs(trader.acc.net_position)
 
     def _deleverage(self, trader, quantity, mark) -> int:
@@ -372,6 +375,7 @@ class Liquidation_Helper(object):
                 continue
             for party, side in ((trader, own_side), (other, other_side)):
                 steps = party.acc.num_trades_step
+                fill = (party.acc.fill_qty_step, party.acc.fill_value_step)
                 party.acc.process_acc(
                     {'price': mark, 'quantity': qty,
                      'init_party': {'ID': party.ID, 'side': side}},
@@ -379,6 +383,8 @@ class Liquidation_Helper(object):
                     fee_role='none',    # a transfer at the mark, not an exchange fill
                 )
                 party.acc.num_trades_step = steps
+                # A transfer at the mark is no execution: nothing to mark out.
+                party.acc.fill_qty_step, party.acc.fill_value_step = fill
             other.acc.adl_qty_step += qty
         return quantity
 

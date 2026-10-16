@@ -997,9 +997,15 @@ state per agent from the exact NAV and net position, and the callback logs per m
 the iteration: `module_sharpe`, `module_sortino` (per-step returns, not annualised), `module_max_drawdown`
 (over the path), `module_hit_rate`, `module_position_turnover`, `module_mean_abs_position` and
 `module_max_abs_position`. A metric undefined for an episode is left out, not logged as 0. The maker
-share already existed (`maker_fill_ratio_max`). **Still absent:** the realised-vs-unrealised P&L split
-(the account does not track realised P&L) and adverse-selection mark-outs (they need each fill's price
-against the later mid).
+share already existed (`maker_fill_ratio_max`).
+
+**Fixed, the rest** (issue #286, changelog [17](17_changelog.md) §80). The account now tracks realised P&L
+(booked on the closing part of a fill, against the average entry; fees excluded) and the callback logs
+`module_realised_pnl` and `module_unrealised_pnl`; they satisfy `NAV - init_nav == realised + unrealised -
+fees_paid` exactly. Adverse-selection mark-outs are `module_markout_<h>` for each `markout_horizons` entry
+(default 1 and 10 steps): the signed fill quantity times the mid `h` steps later, less the signed fill value,
+per contract filled. Forced fills (liquidation, ADL) are realised P&L but are not counted as the agent's
+executions.
 
 ### S3-10 · A trader can hold only one resting order per price level **[verified]**
 
@@ -1615,7 +1621,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **1,578 unit tests pass** (plus 185 integration), covering every position-flip path, cash-check edge case, modify-order
+- **1,703 unit tests pass** (plus 185 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 

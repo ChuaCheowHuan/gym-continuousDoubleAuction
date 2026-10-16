@@ -22,7 +22,7 @@ beginning with `_`, at every level.
 | [`config/train_config.json`](../config/train_config.json) | Every `TrainConfig` value, **including the env keys** | `TrainConfig`, `default_model_config`, `SelfPlayCallback` |
 | [`config/env_defaults.json`](../config/env_defaults.json) | Fallbacks for an env built without a full config dict | `continuousDoubleAuctionEnv` and the env mixins |
 | [`config/tunable_constants.json`](../config/tunable_constants.json) | Structural constants: space layout, ID prefixes, logging setup, path defaults | `state_helper`, `action_helper`, `policy_handler`, `logging_setup`, `visualize/` |
-| [`config/cli_defaults.json`](../config/cli_defaults.json) | Flag defaults with no other config home | `CDA_rand`, `train/probe` |
+| [`config/cli_defaults.json`](../config/cli_defaults.json) | Flag defaults with no other config home | `CDA_rand`, `train/probe`, `train/pretrain`, `train/compare`, `train/export`, `train/evaluate` |
 | [`config/runtime_profiles.json`](../config/runtime_profiles.json) | *Where* a run executes: the `gpu` / `cpu` hardware sets and per-platform paths | `train/runtime.py`, `CDA_train.ipynb` |
 
 ```mermaid
@@ -417,27 +417,36 @@ real config rather than documentation:
 
 ### 4.3 The rest
 
-**Price anchor fallbacks.** The price used before any trade has printed, previously the literal
+**Price anchor fallbacks** (`price_anchor_fallbacks`: `action_helper_last_price`,
+`state_helper_midpoint`, both 100.0). The price used before any trade has printed, previously the literal
 `100.0` written twice — once in `Action_Helper.__init__`, once in the observation midpoint fallback
 in `state_helper`. Both paths are dead in practice, since `reset()` overwrites `last_price` from
 `initial_price_min` / `initial_price_max`, but they are read from one place now and cannot drift.
 
-**Module ID prefixes.** `policy_` / `champion_` are a naming contract `SelfPlayCallback` parses,
+**Module ID prefixes** (`module_id_prefixes`: `policy_prefix`, `champion_prefix`). `policy_` / `champion_` are a naming contract `SelfPlayCallback` parses,
 not a knob — changing them invalidates existing checkpoints, whose module directories carry the old
 prefix.
 
-**Runtime env vars.** Set with `setdefault` before `ray.init`, so a value already exported in the
-shell wins.
+**Runtime env vars** (`runtime_env_vars`, today `RAY_DEBUG_DISABLE_MEMORY_MONITOR`). Set with
+`setdefault` before `ray.init`, so a value already exported in the shell wins. (On the pinned Ray the
+one variable configured is read only by a memory monitor that Ray's own test utilities construct, so it
+does nothing in a training run; see [17](17_changelog.md) §77.)
 
-**Logging.** The default level, the format string, the date format, and the name of the
-environment variable the level travels in (`CDA_LOG_LEVEL`). Read by
+**Logging** (`logging`: `level`, `env_var`, `format`, `datefmt`, `dir_env_var`, `file_name`,
+`file_max_bytes`, `file_backup_count`). The default level, the format string, `datefmt` (the date
+format), `env_var` (the environment variable the level travels in, `CDA_LOG_LEVEL`) and `dir_env_var`
+(the one the log directory travels in, `CDA_LOG_DIR`). Read by
 [`logging_setup.py`](../gym_continuousDoubleAuction/logging_setup.py), which applies them once per
 process on the first `get_logger` call — including inside Ray's worker processes, which never run
 `main()` and would otherwise come up unconfigured. The pid is in the format on purpose: with
 `num_env_runners > 0` several processes log into one stream. See
 [11 §1.3](11_logging_and_observability.md).
 
-**Visualize defaults.** The paths the `visualize/` scripts read. (The `plot_defaults` group went
+**Visualize defaults** (`visualize_paths`). The paths the `visualize/` scripts read:
+`episode_parquet_dir` (default `episode_data`) with `episode_parquet_fallback` (`../episode_data`,
+tried when the first does not exist, as when run from inside `visualize/`), `training_log_dir`
+(`results`) with `training_log_fallback`, and `default_agent_id` (`agent_0`), the agent a chart plots
+when `--agent-id` is not given. (The `plot_defaults` group went
 with `plot_handler.py` — see [11 §1.4](11_logging_and_observability.md).)
 
 ---
@@ -503,6 +512,7 @@ differs from what RLlib or the earlier config gave:
 | `entropy_decay_iters` | `ppo` | 16 | Iterations over which it falls, linearly in env steps (one iteration is `train_batch_size` steps). At least 1 |
 | `std_dev_multiplier` | `league_self_play` | 1.5 | A champion must beat `league_mean + multiplier × league_std`. Was 0.1 |
 | `promotion_reference` | `league_self_play` | `pooled` | Which modules the promotion threshold is computed over: `pooled` (all, the frozen random baselines included) or `excluding_baselines` (trainable modules and champions). While the latter set is too small for `std_dev_multiplier` to be clearable (two learners and no champion) the threshold falls back to the pooled one, and `result["league"]["reference"]` says which was used |
+| `markout_horizons` | `league_self_play` | `[1, 10]` | Steps ahead at which each fill is marked against the mid, logged as `module_markout_<h>` (adverse selection: positive when the price moved the agent's way after the fill). Positive integers; `[]` switches them off (#286) |
 | `min_champion_trades` | `league_self_play` | 1.0 | Mean trades per episode, over the iteration, the candidate needs to be promoted. 0 turns the guard off |
 
 `entropy_coeff` and `entropy_coeff_final` both 0 builds the config it always did. They reach RLlib
@@ -681,7 +691,7 @@ Selects the network the **trainable** modules encode observations with. The froz
 | Key | Meaning |
 |---|---|
 | `encoder_type` | Which encoder. `mlp` (default) plus whatever is registered in [`train/model/encoders/`](../gym_continuousDoubleAuction/train/model/encoders/). |
-| `encoder_specs` | Per-encoder hyperparameter blocks, keyed by encoder type. A block existing is the signal that its encoder is implemented. |
+| `encoder_specs` | Per-encoder hyperparameter blocks, keyed by encoder type. A block existing is the signal that its encoder is implemented. `num_heads` is the attention-head count (4 in `transformer`, `moe_transformer` and `jepa`); in `lstm` it configures the per-step tokenizer, and `hidden_dim` (256) is the width of the LSTM that recurs over the rollout axis on top of it. |
 
 Available encoders:
 
@@ -910,6 +920,11 @@ checkpoints go to the Drive-backed repo so a disconnected session is recoverable
 `is_restore`, while the per-step episode record (~34MB per 4096-step episode) goes to the VM's local
 disk and never crosses the Drive FUSE layer.
 
+`drive_mount_point` is where the Colab platform's Google Drive is mounted (`/content/gdrive`); `null`
+on `docker` and `local`, which have no Drive. It records the value rather than driving it: the
+notebook's bootstrap cell mounts the Drive itself (`COLAB_DRIVE_MOUNT`), before the package, and so
+this file, can be read.
+
 `platforms.colab.pip_packages` is the one entry read *without* the loader — the notebook's
 bootstrap cell reads it with plain `json.load`, because it runs before the package is importable
 and installing what makes it importable is the whole job of that cell. Its pins must track
@@ -1096,7 +1111,9 @@ damage getting them wrong does:
    and the final checkpoint is scored on the probe of point 5 against one shared corpus collected under the same env config as the runs (so a `--set` of `book_mode`, `n_hist` or the fees applies to it too). It writes
    per-run JSON and a Markdown table of means and standard deviations, and marks two encoders as
    *separated* on a metric only when the gap exceeds both standard deviations with at least three
-   seeds a side. Defaults are in `cli_defaults.json` under `cda_compare`; see
+   seeds a side. Defaults are in `cli_defaults.json` under `cda_compare` (`out_dir`, `probe_episodes`,
+`probe_steps` and `probe_seed` are the keys behind `--out`, `--probe-episodes`, `--probe-steps` and
+`--probe-seed`); see
    [26](26_runbook.md) §26.9 for the command and [16](16_verification_log.md) §16.18 for a
    smoke-scale run.
 

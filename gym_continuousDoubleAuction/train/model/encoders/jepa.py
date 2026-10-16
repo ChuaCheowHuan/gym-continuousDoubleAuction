@@ -85,6 +85,7 @@ from gym_continuousDoubleAuction.train.model.encoders.obs_layout import (
     split_private,
 )
 from gym_continuousDoubleAuction.train.model.encoders.tokenize import (
+    POOLINGS,
     token_shape,
     tokenize,
 )
@@ -113,9 +114,6 @@ JEPA_DEFAULTS = {
     "world_model_coeff": 0.1,
 }
 
-#: How a token sequence is reduced to one latent vector. Same set as
-#: `transformer`, named here so this module does not depend on that one's.
-POOLINGS = ("mean", "attention")
 
 #: What a mask hides. See the module docstring.
 MASK_AXES = ("level", "time", "random")

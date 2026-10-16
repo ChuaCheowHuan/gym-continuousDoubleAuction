@@ -53,6 +53,10 @@ from gym_continuousDoubleAuction.train.model.encoders.obs_layout import (
 #: Valid values for an encoder spec's `tokenization` key.
 TOKENIZATIONS = ("time", "level", "both")
 
+#: How a token sequence is reduced to one vector per observation. One definition for
+#: the `transformer`, `jepa` and `token_embed` (`lstm`) encoders, which each had a copy.
+POOLINGS = ("mean", "attention")
+
 
 def token_width(layout: ObsLayout) -> int:
     """Channels in a level/global token: wide enough for either kind.

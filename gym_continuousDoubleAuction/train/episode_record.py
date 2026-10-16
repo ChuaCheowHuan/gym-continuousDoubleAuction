@@ -96,6 +96,13 @@ INFO_COLUMNS = (
     ("liquidated_adl_qty_step", "int64"),
     ("adl_qty_step", "int64"),
     ("liquidation_steps_left", "int64"),
+    # The P&L split and this step's signed fills (issue #286; doc/11 §2). With the
+    # mark, `nav - init_nav == realised + unrealised - fees`; `fill_value_step` and
+    # `fill_qty_step` give a mark-out at any horizon: qty x later_mid - value.
+    ("realised_pnl", "float64"),
+    ("unrealised_pnl", "float64"),
+    ("fill_qty_step", "int64"),
+    ("fill_value_step", "float64"),
     ("is_pass_action", "bool"),
     ("last_price", "float64"),
     ("best_bid", "float64"),

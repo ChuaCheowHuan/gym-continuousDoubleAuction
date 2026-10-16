@@ -134,7 +134,9 @@ class TestTheCallbackLogsPerModule:
     def test_each_metric_is_keyed_by_module(self):
         logged = self._logged({"agent_0": _tally()}, {"agent_0": "policy_0"})
         assert (MODULE_PERFORMANCE_PREFIX + "sharpe", "policy_0") in logged
-        assert set(k[0] for k in logged) == {MODULE_PERFORMANCE_PREFIX + m for m in METRICS}
+        defined = {name for name, value in _tally().summary().items() if value is not None}
+        assert set(k[0] for k in logged) == {MODULE_PERFORMANCE_PREFIX + m for m in defined}
+        assert defined == set(METRICS) - {"realised_pnl", "unrealised_pnl"}
 
     def test_it_is_a_mean_over_the_iteration(self):
         logged = self._logged({"agent_0": _tally()}, {"agent_0": "policy_0"})
@@ -177,4 +179,7 @@ class TestTheCallbackLogsPerModule:
                                metrics_logger=MagicMock(), env=None, env_index=0,
                                rl_module=None)
         perf = cb._activity["e1"]["performance"]["agent_0"]
-        assert perf.summary() == _tally().summary()
+        want = _tally().summary()
+        got = perf.summary()
+        assert {k: got[k] for k in want} == want
+        assert set(got) - set(want) == {"markout_1", "markout_10"}     # the configured horizons

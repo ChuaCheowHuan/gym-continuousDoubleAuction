@@ -47,6 +47,10 @@ class OrderBook(object):
         self.last_timestamp = 0
         self.time = 0
         self.next_order_id = 0
+        # Orders that sat out the last batch because their owner could not pay at
+        # the clearing price. Set here as well as in `clear_batch`, so a read on
+        # a book that has not cleared yet is an empty list, not an AttributeError.
+        self.batch_unaffordable = []
         self.tape_display_length = tape_display_length
         if matching_rule not in self.MATCHING_RULES:
             raise ValueError(
@@ -176,14 +180,6 @@ class OrderBook(object):
                                   'price': traded_price,
                                   'quantity': traded_quantity,
                                   'time': self.time}
-            """
-            if side == 'bid': # counter_party's side
-                transaction_record['party1'] = [counter_party, 'bid', head_order.order_id, new_book_quantity]
-                transaction_record['party2'] = [quote['trade_id'], 'ask', None, None]
-            else:
-                transaction_record['party1'] = [counter_party, 'ask', head_order.order_id, new_book_quantity]
-                transaction_record['party2'] = [quote['trade_id'], 'bid', None, None]
-            """
             if side == 'bid': # counter_party's side
                 transaction_record['counter_party'] = {'ID': counter_party,
                                                 'side': 'bid',
@@ -220,9 +216,11 @@ class OrderBook(object):
     def _record(price, quantity, init, counter):
         """A tape record in the sequential engine's format.
 
-        `counter['resting']` says whether the counter party's order was on the
-        book (escrowed) or arrived in the same batch; the sequential engine's
-        records carry no flag because their counter party always rested.
+        The records `clear_batch` builds put a `resting` key in the counter party
+        dict they pass in, saying whether that order was on the book (escrowed) or
+        arrived in the same batch; this function only assembles the record and sets
+        no flag. The sequential engine's records carry none because their counter
+        party always rested.
         """
         return {'price': price, 'quantity': quantity,
                 'init_party': init, 'counter_party': counter}
@@ -426,7 +424,14 @@ class OrderBook(object):
 
         buy_fills = side_fills(True)
         sell_fills = side_fills(False)
-        assert sum(f for *_, f in buy_fills) == sum(f for *_, f in sell_fills) == volume
+        bought, sold = sum(f for *_, f in buy_fills), sum(f for *_, f in sell_fills)
+        if not bought == sold == volume:
+            # An exception, not an assert: `python -O` removes asserts, and a
+            # mismatch here would go on to pair the two lists into a one-sided trade.
+            raise RuntimeError(
+                f"batch auction filled {bought} on the buy side and {sold} on the sell "
+                f"side against an executable volume of {volume}; the sides must match"
+            )
 
         # Pair the two fill lists into trade records at p*.
         self.update_time()

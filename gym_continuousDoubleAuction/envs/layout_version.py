@@ -105,5 +105,5 @@ def check_layout_stamp(sidecar, path: str, book_mode=None) -> None:
             "\nWeights trained on one layout do not fit another - the input "
             "and output widths changed, and even where they did not the "
             "floats mean something else. Start a fresh run (is_restore false, "
-            "or a new log_base_dir). See doc/15 S4-19 and doc/05 section 1."
+            "or a new log_base_dir). See doc/15 S4-19 and doc/05 section 10."
         )

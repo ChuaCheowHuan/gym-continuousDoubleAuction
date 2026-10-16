@@ -54,13 +54,12 @@ from gym_continuousDoubleAuction.train.model.encoders.obs_layout import (
     split_private,
 )
 from gym_continuousDoubleAuction.train.model.encoders.tokenize import (
+    POOLINGS,
     positional_index,
     token_shape,
     tokenize,
 )
 
-#: How the token sequence is reduced to one vector per observation.
-POOLINGS = ("mean", "attention")
 
 
 @dataclass

@@ -285,6 +285,8 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Liquidation_Helpe
 
             # Reset per-step counters after reward is calculated
             trader.acc.num_trades_step = 0
+            trader.acc.fill_qty_step = 0
+            trader.acc.fill_value_step = 0
             trader.acc.num_passive_fills_step = 0
             trader.acc.order_step_placed = 0
             trader.acc.num_rejected_step = 0

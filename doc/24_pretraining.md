@@ -30,7 +30,10 @@ python -m gym_continuousDoubleAuction.train.pretrain --steps 300
 python -m gym_continuousDoubleAuction.train.pretrain --parquet <log_dir>/episodes --steps 2000
 ```
 
-Defaults live in [`config/cli_defaults.json`](../config/cli_defaults.json) under `cda_pretrain`.
+Defaults live in [`config/cli_defaults.json`](../config/cli_defaults.json) under `cda_pretrain`:
+`out_dir` (`pretrained/jepa`), `batch_size` (128) and `log_every` (50) are the keys behind
+`--out`, `--batch-size` and `--log-every`, beside `encoder_type`, `steps`, `lr`, `seed` and the
+rollout settings.
 The encoder's *hyperparameters* are deliberately **not** duplicated there — they come from
 `encoder_specs.jepa` in `train_config.json`, so a pretrained encoder is built from the same numbers
 the training run will build it from, and the fingerprint written beside the weights is comparable

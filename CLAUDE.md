@@ -13,8 +13,9 @@ register is `doc/15_findings_and_recommendations.md`.
 2. **History files are not edited to match the code.** `doc/16_verification_log.md` and
    `doc/17_changelog.md` record what was true when written. New facts get a new section.
 3. **Run `pytest`, never `python test_x.py`.** `python -m pytest gym_continuousDoubleAuction/test -q`
-   (unit, then `test/integration/`, about four minutes in all). CI smoke run:
-   `CDA_rand --steps 200 --agents 4`. `test_lint` runs pyflakes, so unused imports fail the suite.
+   (unit, then `test/integration/`, about four minutes in all). CI's smoke run is
+   `python gym_continuousDoubleAuction/CDA_rand.py` (no arguments); `CDA_rand --steps 200 --agents 4`
+   is the manual runbook check. `test_lint` runs pyflakes over the package, `tools/` and the skill scripts, so unused imports fail the suite.
 4. **Test first, and show it failing.** A fix lands with a regression test that fails on the previous
    source (`git stash push -- gym_continuousDoubleAuction/envs`, run, `git stash pop`).
 5. **Atomic commits**, one fix per commit: code, then tests, then docs. After a PR merges, restart
@@ -22,7 +23,7 @@ register is `doc/15_findings_and_recommendations.md`.
 6. **Do not rest a claim on a review.** Reproduce it first (skill `cda-verify-finding`).
 7. **Counts move together.** A new test file changes the unit total, the suite total, the code size
    in `doc/14_perspective_ai_engineer.md` and the inventory in `doc/10_testing.md`
-   (skill `cda-doc-sync`; `tools/check_links.py` must report 0 broken links).
+   (skill `cda-doc-sync`; `tools/check_links.py` must report 0 broken links; `test_links` runs it over README, `doc/`, `CLAUDE.md`, `CONTRIBUTING.md` and the skills).
 8. **Reviews file, they do not fix.** When asked for a review, file each confirmed finding as a
    GitHub issue with a severity label (`S1-blocking` to `S4-minor`) plus `bug`, `enhancement`,
    `documentation`, `test-gap` or `refactor`, and an issue type (Bug, Task or Feature). Do not open

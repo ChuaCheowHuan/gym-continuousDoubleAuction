@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from ..account.account import Account
+from ..account.account import UNSET, Account
 from ...config_loader import env_default
 
 
@@ -39,11 +39,30 @@ def _normalise_trade_sizes(trades):
         trade['quantity'] = as_int
 
 
+def _is_market_price(price) -> bool:
+    """Whether `price` names a market order: `None`, or the -1.0 sentinel.
+
+    One definition for the self-match check, the cash check and the cover-loss
+    check, which disagreed: only the first accepted `None`, so a market order
+    with no price reached `Decimal('None')` in the others (issue #247).
+    """
+    return price is None or price == -1.0
+
+
 class Trader:
-    def __init__(self, ID: int, cash=env_default("init_cash"),
-                 maker_fee_bps=env_default("maker_fee_bps"),
-                 taker_fee_bps=env_default("taker_fee_bps"),
-                 allow_multiple_orders_per_level=env_default("allow_multiple_orders_per_level")) -> None:
+    def __init__(self, ID: int, cash=UNSET, maker_fee_bps=UNSET, taker_fee_bps=UNSET,
+                 allow_multiple_orders_per_level=UNSET) -> None:
+        # UNSET means the configured default, read now. These were
+        # `env_default(...)` in the signature, evaluated once at import, so a
+        # config change after import never reached a bare `Trader()` (issue #247).
+        if cash is UNSET:
+            cash = env_default("init_cash")
+        if maker_fee_bps is UNSET:
+            maker_fee_bps = env_default("maker_fee_bps")
+        if taker_fee_bps is UNSET:
+            taker_fee_bps = env_default("taker_fee_bps")
+        if allow_multiple_orders_per_level is UNSET:
+            allow_multiple_orders_per_level = env_default("allow_multiple_orders_per_level")
         self.ID = ID # trader unique ID
         # False: a limit at a price this trader already rests at replaces that
         # order. True: it rests beside it (doc/15 S3-10).
@@ -184,7 +203,7 @@ class Trader:
 
         # A market order names no price and sweeps the whole contra side, so
         # every one of this trader's resting orders there is in its path.
-        is_market = (type == 'market') or (price is None) or (price == -1.0)
+        is_market = (type == 'market') or _is_market_price(price)
         # Decimal, matching how the book stores a resting price, so the
         # comparison below is exact rather than going through a float.
         limit = None if is_market else Decimal(str(price))
@@ -278,7 +297,7 @@ class Trader:
         if side != 'bid' or position >= 0 or size < -position:
             return Decimal(0)
         lots = -position
-        if price == -1.0:
+        if _is_market_price(price):
             cost, filled = self._sweep_cost(LOB, side, lots, skip=0)
             if filled < lots:
                 return Decimal(0)
@@ -538,7 +557,7 @@ class Trader:
         # for the contracts that open, after the ones that only close.
         if opening_size <= 0:
             order_val = Decimal(0)
-        elif price == -1.0:
+        elif _is_market_price(price):
             order_val, filled = self._sweep_cost(LOB, side, size, skip=size - opening_size)
             if filled == 0:                 # nothing to sweep: the last print is the estimate
                 est_price = LOB.tape[-1]['price'] if LOB.tape else 1
@@ -861,11 +880,14 @@ class Trader:
         bounds' clip counter (doc/16 section 16.26).
         """
         if trades:
+            # Before any booking: raised from inside the loop, this left the trades
+            # already processed in the ledger and the rest not (issue #247).
+            for trade in trades:
+                if trade['counter_party']['ID'] == trade['init_party']['ID']:
+                    raise ValueError("a batch cannot pair an order with its owner's own order")
             _normalise_trade_sizes(trades)
             for trade in trades:
                 counter = trade['counter_party']
-                if counter['ID'] == trade['init_party']['ID']:
-                    raise ValueError("a batch cannot pair an order with its owner's own order")
                 self.acc.process_acc(trade, 'init_party')
                 if counter.get('resting', True):
                     limit = counter.get('limit_price')
@@ -934,14 +956,7 @@ class Trader:
         # traders[i]), so the counter-party is one lookup. The scan is kept as
         # the fallback for callers that pass an arbitrary list - the tests do -
         # and for a roster whose IDs are not its indices (doc/15 S4-11).
-        agent = None
-        if isinstance(wanted, int) and 0 <= wanted < len(agents) and agents[wanted].ID == wanted:
-            agent = agents[wanted]
-        else:
-            for counter_party in agents: # search for counter_party
-                if counter_party.ID == wanted:
-                    agent = counter_party
-                    break
+        agent = self._find_agent(agents, wanted)
         if agent is not None:
             agent.acc.process_acc(trade, 'counter_party')
 

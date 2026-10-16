@@ -3,6 +3,9 @@ from typing import Any, Dict
 import numpy as np
 
 
+_PASS_THROUGH = frozenset({int, float, str, bool, type(None)})
+
+
 def _plain(value):
     """Convert a numpy scalar or array into something JSON can hold.
 
@@ -17,6 +20,13 @@ def _plain(value):
     hand back the Discrete action components 0-d - which made every recurrent
     encoder fail on the first env step until this branch existed.
     """
+    # The common case first. `set_info` runs this over ~35 fields per agent per step,
+    # nearly all of them plain Python scalars, and each used to pay four isinstance
+    # checks to learn it had nothing to do (14% of a profiled batch episode, issue
+    # #248). `type(...) in` is exact: a numpy scalar, a bool subclass or a str
+    # subclass is not one of these types and takes the full path below.
+    if type(value) in _PASS_THROUGH:
+        return value
     if isinstance(value, np.ndarray):
         if value.ndim == 0:
             return value.item()
@@ -101,6 +111,16 @@ class Info_Helper(object):
             "liquidated_adl_qty_step": acc.liquidated_adl_qty_step,
             "adl_qty_step": acc.adl_qty_step,
             "liquidation_steps_left": acc.liquidation_steps_left,
+            # Realised and unrealised P&L, gross of fees (issue #286). Exact in the
+            # ledger and converted here, like every diagnostic: `nav - init_nav ==
+            # realised + unrealised - fees_paid` holds on the Decimals, to the
+            # last digit the ledger keeps.
+            "realised_pnl": float(acc.realised_pnl),
+            "unrealised_pnl": float(acc.unrealised_pnl(self.mark_price())),
+            # This step's fills, signed (buys +): contracts and price x contracts.
+            # A mark-out at horizon h is `qty x mid_{t+h} - value`.
+            "fill_qty_step": acc.fill_qty_step,
+            "fill_value_step": float(acc.fill_value_step),
         })
 
         # Did this agent choose to do nothing this step? The two behaviours a

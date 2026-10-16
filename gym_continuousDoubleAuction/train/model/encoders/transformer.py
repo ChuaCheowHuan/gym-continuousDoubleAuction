@@ -59,6 +59,7 @@ from gym_continuousDoubleAuction.train.model.encoders.obs_layout import (
     split_private,
 )
 from gym_continuousDoubleAuction.train.model.encoders.tokenize import (
+    POOLINGS,
     positional_index,
     token_shape,
     tokenize,
@@ -77,8 +78,6 @@ TRANSFORMER_DEFAULTS = {
     "pool": "attention",
 }
 
-#: How a token sequence is reduced to one latent vector.
-POOLINGS = ("mean", "attention")
 
 
 @dataclass
