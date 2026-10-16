@@ -344,3 +344,83 @@ class TestGradual:
         )
         assert cfg.env_config["liquidation"] == "gradual_adl"
         assert cfg.env_config["liquidation_horizon"] == 20
+
+
+class TestTheBandAllowsForTheTakerFee:
+    """Issue #233: the forced close is a taker fill and pays the taker fee, but
+    the bankruptcy price was sized from the mark alone, so a trader closed at
+    its band price ended with NAV below zero by the fee. The comment on
+    `_liquidate_one` promised the opposite."""
+
+    FEE = 10  # basis points; 0.1% of the fill's notional
+
+    def _near_bankrupt(self, **config):
+        """agent_0 short 90 @ 100, mark 210, NAV 91: closable only at the band.
+
+        (10,000 less the 9 it paid to open: 90 x 100 x 0.1%, less 90 x 110.)
+
+        agent_1, long 90 from the opening trade, offers all 90 at 211, which
+        is the bankruptcy band without the fee, so the whole close fills at the
+        worst price the band allows. (A short could not post it: agent_3's
+        10,000 does not cover 90 x 211.)
+        """
+        env = _env(taker_fee_bps=self.FEE, **config)
+        _short_90(env)
+        _order(env, 2, "limit", "bid", 1, 209.0)
+        _order(env, 1, "limit", "ask", 90, 211.0)
+        env.mark_to_mkt()
+        assert env.mark_price() == Decimal(210)
+        assert env.traders[0].acc.nav == Decimal(91)
+        return env
+
+    def test_the_liquidated_trader_does_not_end_below_zero(self):
+        env = self._near_bankrupt()
+        env.liquidate()
+        assert env.traders[0].acc.net_position == 0
+        assert env.traders[0].acc.nav >= 0
+
+    def test_the_band_is_the_price_at_which_nav_after_the_fee_is_zero(self):
+        env = self._near_bankrupt()
+        trader = env.traders[0]
+        band = env._bankruptcy_price(trader, env.mark_price())
+        # Buying 90 at p costs 90 (p - 210) + 0.001 x 90 p; that equals the NAV
+        # of 91 at p = (210 + 91 / 90) / 1.001 = 210.8, snapped down.
+        assert band == Decimal(210)
+
+    def test_money_is_still_conserved_with_the_fee(self):
+        env = self._near_bankrupt()
+        env.liquidate()
+        assert _total_nav(env) + env.fees_collected == TOTAL
+
+    def test_what_the_band_refuses_goes_to_adl_not_to_a_negative_nav(self):
+        env = self._near_bankrupt()
+        event = env.liquidate()[0]
+        assert event["book_qty"] + event["adl_qty"] == 90
+        assert event["adl_qty"] > 0
+
+    def test_gradual_adl_keeps_the_same_guarantee(self):
+        env = self._near_bankrupt(liquidation="gradual_adl", liquidation_horizon=3)
+        for _ in range(4):
+            env.liquidate()
+        assert env.traders[0].acc.net_position == 0
+        assert env.traders[0].acc.nav >= 0
+
+    def test_without_a_fee_the_band_is_unchanged(self):
+        env = _env()
+        _short_90(env)
+        _order(env, 2, "limit", "bid", 1, 209.0)
+        _order(env, 1, "limit", "ask", 90, 211.0)
+        env.mark_to_mkt()
+        assert env._bankruptcy_price(env.traders[0], env.mark_price()) == Decimal(211)
+
+    def test_closing_a_long_sells_no_lower_than_the_fee_adjusted_price(self):
+        """A fully paid long cannot reach the breach in a real run, so the
+        formula is pinned directly: selling q at p leaves
+        NAV - q (mark - p) - fee, zero at (mark - NAV / q) / (1 - rate).
+        At 100 bps that is (100 - 100 / 90) / 0.99 = 99.89, snapped up to 100;
+        the mark alone would have allowed 99."""
+        env = _env(taker_fee_bps=100)
+        trader = env.traders[0]
+        trader.acc.net_position = 90
+        trader.acc.nav = Decimal(100)
+        assert env._bankruptcy_price(trader, Decimal(100)) == Decimal(100)
