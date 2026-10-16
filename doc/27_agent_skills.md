@@ -43,10 +43,10 @@ That is the repository's main maintenance cost, because [15](15_findings_and_rec
 
 ## 1. First, a `CLAUDE.md`
 
-The repository has none (`find . -name CLAUDE.md` is empty); only `.claude/settings.json` and a
-session-start hook that builds a Python 3.12 venv. A short file of the rules below would have
-prevented most of the corrections in the last two passes. Suggested contents, each from something
-that went wrong once:
+`CLAUDE.md` now exists at the repository root and is loaded every session (alongside
+`.claude/settings.json` and a session-start hook that builds a Python 3.12 venv). The list below is
+the proposal it was built from; **the file is the current statement**, so change it there and not
+here. Each point came from something that went wrong once:
 
 1. **Config is the only source of values.** `config/*.json`, read through `config_loader`; no
    literal defaults in Python ([18](18_configuration.md)). A new key is added to *both*
@@ -55,8 +55,9 @@ that went wrong once:
 2. **History files are not edited to match the code.** [16](16_verification_log.md) and
    [17](17_changelog.md) record what was true when written. New facts get a new section.
 3. **Run `pytest`, never `python test_x.py`** ([10](10_testing.md) §0). The full suite is about four
-   minutes (`test/` unit, then `test/integration/`); `CDA_rand --steps 200 --agents 4` is the CI
-   smoke run.
+   minutes (`test/` unit, then `test/integration/`). CI's smoke run is
+   `python gym_continuousDoubleAuction/CDA_rand.py` with no arguments (the defaults);
+   `CDA_rand --steps 200 --agents 4` is the manual check in [26](26_runbook.md).
 4. **Test first, and show it failing.** A fix lands with a regression test that fails on the
    previous source (`git stash push -- gym_continuousDoubleAuction/envs` is the quick way to check).
 5. **Atomic commits**, one fix per commit ([CONTRIBUTING](../CONTRIBUTING.md)): code, then tests,
@@ -71,7 +72,7 @@ that went wrong once:
    links up to 221 were not). Link to files, not anchors, in issue text. The REST create call did
    not set the issue `type`; use the issue tool and read the type back in the UI. GraphQL is blocked.
 
-Build it with the existing `init` skill, then trim to these points.
+It was built with the existing `init` skill and trimmed to these points.
 
 ---
 
@@ -79,46 +80,22 @@ Build it with the existing `init` skill, then trim to these points.
 
 ### `cda-doc-sync`
 
-**Trigger.** Any change to tests, observation or action layout, reward terms, config keys, CLI
-flags or the package tree; or "update the docs".
+**Built:** [`.claude/skills/cda-doc-sync/SKILL.md`](../.claude/skills/cda-doc-sync/SKILL.md), with
+`scripts/facts.py` and `scripts/claims.py` beside it and the shared `tools/check_links.py`. Read the
+skill for the procedure; it is the one description of it.
 
 **Evidence.** At the start of the 2026-10-07 pass the docs gave 1,144 unit tests (actual 1,173), had
 153, 156, 165 and 112 integration tests in different files (actual 163), and called the
-observation 216 floats in 17 current-tense lines (actual 233). 18 config keys and 9 CLI flags are
+observation 216 floats in 17 current-tense lines (actual 233). 18 config keys and 9 CLI flags were
 documented nowhere ([#249](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/249),
 [#250](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/250)).
-
-**Steps.**
-1. Compute the facts from the code, not from the docs: `pytest --collect-only` totals and per-file
-   counts; observation width in `grid` and `levels` mode and the private-block field list from
-   `State_Helper.private_fields`; the action Dict heads; `REWARD_TERMS`; every key in
-   `config/*.json`; each entry point's `--help`; the real file tree.
-2. Scan `README.md` and `doc/*.md` (excluding 16 and 17) for each fact and print
-   `file:line  claimed -> actual`.
-3. Triage each hit: **current tense** is corrected; **historical** ("193 to 216 with the own-book
-   block") is left; a measured figure that reads as current gets the current value added beside it.
-4. Recompute the dependent figures: the per-file inventory table and the coverage mindmap in
-   [10](10_testing.md), the code size in [14](14_perspective_ai_engineer.md), the expected lines in
-   [26](26_runbook.md) §26.2.
-5. Run the link checker (file and heading anchors); render any changed Mermaid block with
-   `@mermaid-js/mermaid-cli`.
-6. Record the pass as a new section in [17](17_changelog.md), never by editing old ones.
-
-**Ships with.** `scripts/facts.py` (step 1, writes JSON) and `scripts/claims.py` (step 2) in the
-skill's own folder, and the shared `tools/check_links.py` (step 5). All three existed during the
-passes; none was committed.
-
-**Guardrails.** A "1,000-unit drawdown" is not a test count: the scanner needs a skip list. Heading
-renames break anchors in other files (`#4-there-are-no-transaction-costs` did): re-run the link
-check after any heading edit. A test that fails if a config key or CLI flag is documented nowhere
-would make steps 1 and 2 a CI job rather than a skill; do that too.
 
 ---
 
 ### `cda-verify-finding`
 
-**Trigger.** Any claimed bug, from a review, a linter, a bot comment or the agent's own reading,
-before it is fixed or filed.
+**Built:** [`.claude/skills/cda-verify-finding/SKILL.md`](../.claude/skills/cda-verify-finding/SKILL.md).
+Read the skill for the procedure; it is the one description of it.
 
 **Evidence.** Of about 64 raw findings in the last full review, 22 issues were filed (some
 consolidating several findings) and 3 more were added as comments on existing ones. Dropped after a
@@ -128,24 +105,6 @@ is shared, a split cover said to escape the loss reserve (it does not: the total
 While checking one PR review's findings, the agent's own first reproduction was wrong (a second bid
 at the same price *replaced* the first rather than adding to it), which is the kind of mistake the
 skill exists to catch.
-
-**Steps.**
-1. Restate the claim as a falsifiable scenario with concrete numbers.
-2. Reproduce it on the current source in a scratch script; record the raw output.
-3. Check the **scenario is reachable**: can the env, the config or RLlib actually produce that
-   state? One action per trader per step, self-match prevention running first, and a shared mark
-   each rule out a class of reviewer scenarios.
-4. Classify: **confirmed**, **false positive**, **unreachable**, **real but already tracked**
-   (search the open issues and [15](15_findings_and_recommendations.md) first), **cannot reproduce**
-   (file with the `question` label and say so).
-5. For a confirmed one, write the failing test *before* the fix, and prove it fails on the
-   previous source.
-
-**Ships with.** A scratch-script template and the issue search command; nothing else.
-
-**Guardrails.** Do not trust a repro until you have checked it with the inverse (the case that
-should pass). Check the *measure* as well as the code: the first S2-15 stress test counted
-`cash + cash_on_hold < 0` for traders under water and had to be restated before it meant anything.
 
 ---
 
