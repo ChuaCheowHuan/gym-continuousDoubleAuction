@@ -113,6 +113,9 @@ Expected: `1363 passed`, a line reading `completed 200 steps with 4 random agent
 `172 passed`. `pytest` is the only runner that works; `python test_x.py` defines classes and exits
 ([10](10_testing.md) §0).
 
+`CDA_rand` also takes `--init-cash` (each trader's starting cash; the default is in
+`cli_defaults.json` under `cda_env_rand`). At 0 no order is ever approved and the book stays empty.
+
 To see the env work step by step, ask for the render, which writes at DEBUG:
 
 ```bash
@@ -192,6 +195,11 @@ What the terminal shows, in order:
 4. Per iteration: `iteration N league stats: mean=... std=... threshold=... best_trainable=...`
    then `iter N/M | env steps sampled: ... | module returns: {...} | vf_explained_var: ...`.
 5. `checkpoint at iter N: .../chkpt/iter_0000N` on every `chkpt_freq`-th iteration and at the end.
+
+Flags that change what a run does (the others are in `--help`, and every one has a `TrainConfig`
+field of the same name): `--env-runners` sets `num_env_runners` (0 samples in the driver),
+`--envs-per-runner` sets `num_envs_per_env_runner` (environments each runner steps), and
+`--gpus-per-learner` sets `num_gpus_per_learner` (0 trains on CPU).
 
 To use more than one core, raise `num_env_runners` and read [09](09_distributed_training.md)
 first, especially about `sample_timeout_s`: an iteration whose runners time out trains on
@@ -298,8 +306,10 @@ Every chart in `visualize/` from one command. It reads the newest run under `epi
 ```bash
 python -m gym_continuousDoubleAuction.visualize.run_all
 python -m gym_continuousDoubleAuction.visualize.run_all --run-dir episode_data/run_runbook \
-    --training-run-dir results/run_runbook --agent-id agent_1
+    --training-run-dir results/run_runbook --agent-id agent_1 --episode-id <episode id>
 ```
+
+`--episode-id` picks one episode from `--run-dir`; without it the most recent is plotted.
 
 Produces `orderbook`, `nav`, `nav_drawdown`, `cumulative_rewards`, `reward_decomposition`,
 `execution_quality`, `modules` and `training` visualisations. The `modules` chart assumes the
@@ -335,6 +345,12 @@ python -m gym_continuousDoubleAuction.train.probe --pretrained pretrained/jepa \
     --pretrained-encoder jepa
 ```
 
+`pretrain` takes `--encoder` (only `jepa` has a self-supervised objective), `--steps` (optimiser
+steps), `--batch-size` and `--lr` (the optimiser), `--log-every` (steps between validation and the
+`latent_std` read-out), and `--env-steps` (steps per rollout episode, with `--episodes` and
+`--agents`, when no `--parquet` is given). Their defaults are in `cli_defaults.json` under
+`cda_pretrain`.
+
 For pretraining watch `latent_std`, not the loss: a collapsed encoder has a perfect loss
 ([24](24_pretraining.md) §5). The CLI exits non-zero when it detects one.
 
@@ -360,6 +376,9 @@ python -m gym_continuousDoubleAuction.train.compare --encoders mlp transformer -
 python -m gym_continuousDoubleAuction.train.compare --encoders mlp transformer --seeds 0 1 2 \
     --set step_clearing=batch --out compare_batch          # or --set matching_rule=pro_rata
 ```
+
+`--probe-seed` seeds the shared probe corpus (with `--probe-episodes` and `--probe-steps`), and
+`--no-probe` skips the corpus and the probe, leaving only the training metrics.
 
 Output: `compare_out/compare_results.json` (every per-run number) and
 `compare_out/compare_table.md`. The `separated on` column names metrics where one encoder's mean
