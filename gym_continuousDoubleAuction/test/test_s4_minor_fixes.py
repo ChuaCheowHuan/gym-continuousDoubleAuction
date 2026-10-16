@@ -277,3 +277,44 @@ class TestVisualizeSurvivesBadRecords:
         from gym_continuousDoubleAuction.visualize.visualize_training import load_progress
         with pytest.warns(UserWarning), pytest.raises(ValueError, match="no rows"):
             load_progress(self._progress(tmp_path, '{"training_it'))
+
+
+class TestConfigDirIgnoresAForeignConfigDirectory:
+    """#241: for an installed wheel `<package>/..` is `site-packages`, and any
+    other distribution's top-level `config/` was taken for ours."""
+
+    @staticmethod
+    def _layout(tmp_path, monkeypatch, *, foreign, packaged, repo_marker=False):
+        from gym_continuousDoubleAuction import config_loader
+        site = tmp_path / "site-packages"
+        pkg = site / "gym_continuousDoubleAuction"
+        pkg.mkdir(parents=True)
+        if foreign:
+            (site / "config").mkdir()
+            (site / "config" / "settings.ini").write_text("x")
+        if repo_marker:
+            (site / "config" / "train_config.json").write_text("{}")
+        if packaged:
+            (pkg / "config").mkdir()
+            (pkg / "config" / "train_config.json").write_text("{}")
+        monkeypatch.setattr(config_loader, "_PACKAGE_DIR", pkg)
+        monkeypatch.delenv(config_loader.CONFIG_DIR_ENV_VAR, raising=False)
+        return config_loader, pkg
+
+    def test_a_foreign_config_directory_is_skipped(self, tmp_path, monkeypatch):
+        loader, pkg = self._layout(tmp_path, monkeypatch, foreign=True, packaged=True)
+        assert loader.config_dir() == pkg / "config"
+
+    def test_the_repo_layout_still_wins_when_it_is_ours(self, tmp_path, monkeypatch):
+        loader, pkg = self._layout(tmp_path, monkeypatch, foreign=True, packaged=True,
+                                   repo_marker=True)
+        assert loader.config_dir() == pkg.parent / "config"
+
+    def test_only_a_foreign_directory_is_an_error_not_a_wrong_answer(self, tmp_path, monkeypatch):
+        loader, _ = self._layout(tmp_path, monkeypatch, foreign=True, packaged=False)
+        with pytest.raises(FileNotFoundError, match="train_config.json"):
+            loader.config_dir()
+
+    def test_the_real_checkout_resolves(self):
+        from gym_continuousDoubleAuction import config_loader
+        assert (config_loader.config_dir() / "train_config.json").is_file()
