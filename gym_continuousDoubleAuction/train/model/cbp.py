@@ -856,10 +856,13 @@ def _reinitialise(
 
     with torch.no_grad():
         weight = layer.incoming.weight
-        # PyTorch's default `nn.Linear` init, which is what RLlib's MLP leaves
-        # in place: U(-1/sqrt(fan_in), +1/sqrt(fan_in)) for weight and bias.
-        # An encoder built with a custom initialiser would need this extended;
-        # none in this repo is.
+        # The incoming weights are redrawn from PyTorch's default `nn.Linear`
+        # weight init, which is what RLlib's MLP leaves in place:
+        # U(-1/sqrt(fan_in), +1/sqrt(fan_in)). The bias is NOT drawn from the
+        # default's bias distribution: it is set to 0 below, as the continual-
+        # backprop papers prescribe (and as the recurrent layer does). An encoder
+        # built with a custom initialiser would need this extended; none in this
+        # repo is.
         bound = 1.0 / math.sqrt(layer.incoming.in_features)
         fresh = torch.empty_like(weight[index]).uniform_(
             -bound, bound, generator=generator
