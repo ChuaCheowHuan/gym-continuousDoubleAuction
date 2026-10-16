@@ -227,8 +227,9 @@ class TestRunLogFile:
 
         logs = sorted(p.name for p in tmp_path.glob("run.log*"))
         assert logs, "nothing was written"
-        # 1 live file + at most backup_count rotated ones, and none oversized
-        assert len(logs) <= 3, logs
+        # 1 live file + at most backup_count rotated ones + the kept start of the run
+        # (`.head`, issue #216), and none oversized
+        assert len(logs) <= 4, logs
         for name in logs:
             assert (tmp_path / name).stat().st_size < 8192, name
 
