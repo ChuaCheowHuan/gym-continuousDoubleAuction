@@ -23,6 +23,7 @@ import pytest
 
 from gym_continuousDoubleAuction import logging_setup
 from gym_continuousDoubleAuction.logging_setup import ROOT_NAME as LOGGER
+from gym_continuousDoubleAuction.train import progress as progress_mod
 from gym_continuousDoubleAuction.train import train as train_mod
 from gym_continuousDoubleAuction.train.train import (
     PROGRESS_FILE,
@@ -231,7 +232,7 @@ class TestFailuresDoNotStopTraining:
         def explode(*_args, **_kwargs):
             raise OSError("No space left on device")
 
-        monkeypatch.setattr(train_mod, "open", explode, raising=False)
+        monkeypatch.setattr(progress_mod, "open", explode, raising=False)
 
         with caplog.at_level(logging.WARNING, logger=LOGGER):
             _append_progress({"training_iteration": 1}, cfg)

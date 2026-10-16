@@ -18,6 +18,7 @@ from types import SimpleNamespace
 import pytest
 
 from gym_continuousDoubleAuction.logging_setup import ROOT_NAME as LOGGER
+from gym_continuousDoubleAuction.train import build as build_mod
 from gym_continuousDoubleAuction.train import train as train_mod
 from gym_continuousDoubleAuction.train.train import (
     CHECKPOINT_PREFIX,
@@ -515,7 +516,7 @@ class TestForeignCheckpoints:
     def test_build_algo_warns_on_the_scratch_path(self, cfg, monkeypatch, caplog):
         _write_stale_checkpoint(cfg.checkpoint_dir, 16)
         monkeypatch.setattr(
-            train_mod, "build_config",
+            build_mod, "build_config",
             lambda _cfg: (SimpleNamespace(build_algo=FakeAlgo), None),
         )
 
@@ -539,8 +540,8 @@ class TestRestoreSelection:
             build_algo=lambda: FakeAlgo(callback=fresh),
         )
 
-        monkeypatch.setattr(train_mod, "build_config", lambda _cfg: (config, fresh))
-        monkeypatch.setattr(train_mod, "_fix_checkpoint_optimizer_betas", lambda _a: None)
+        monkeypatch.setattr(build_mod, "build_config", lambda _cfg: (config, fresh))
+        monkeypatch.setattr(build_mod, "_fix_checkpoint_optimizer_betas", lambda _a: None)
 
         loaded = []
 
@@ -554,7 +555,7 @@ class TestRestoreSelection:
 
         unreadable = None
         monkeypatch.setattr(
-            train_mod, "Algorithm", SimpleNamespace(from_checkpoint=from_checkpoint)
+            build_mod, "Algorithm", SimpleNamespace(from_checkpoint=from_checkpoint)
         )
 
         def configure(broken=None):
@@ -585,7 +586,7 @@ class TestRestoreSelection:
         save_checkpoint(FakeAlgo(), cfg, 1)
         restorable.configure()
         made = []
-        load = train_mod.Algorithm.from_checkpoint
+        load = build_mod.Algorithm.from_checkpoint
 
         def tracking(path):
             made.append(load(path))
@@ -594,8 +595,8 @@ class TestRestoreSelection:
         def refuse(*args, **kwargs):
             raise ValueError("n_hist changed")
 
-        monkeypatch.setattr(train_mod, "Algorithm", SimpleNamespace(from_checkpoint=tracking))
-        monkeypatch.setattr(train_mod, "_check_restored_config", refuse)
+        monkeypatch.setattr(build_mod, "Algorithm", SimpleNamespace(from_checkpoint=tracking))
+        monkeypatch.setattr(build_mod, "_check_restored_config", refuse)
 
         with pytest.raises(ValueError, match="n_hist"):
             train_mod.build_algo(dataclasses_replace(cfg, is_restore=True))
