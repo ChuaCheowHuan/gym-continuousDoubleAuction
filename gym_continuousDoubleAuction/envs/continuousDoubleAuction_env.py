@@ -46,6 +46,12 @@ class continuousDoubleAuctionEnv(
         self.maker_fee_bps = self._cfg("maker_fee_bps")
         self.taker_fee_bps = self._cfg("taker_fee_bps")
         validate_fee_rates(self.maker_fee_bps, self.taker_fee_bps)
+        self.allow_multiple_orders_per_level = self._cfg("allow_multiple_orders_per_level")
+        if not isinstance(self.allow_multiple_orders_per_level, bool):
+            raise ValueError(
+                f"allow_multiple_orders_per_level must be true or false; got "
+                f"{self.allow_multiple_orders_per_level!r}."
+            )
         tick_size = self._cfg("tick_size")
         mark_price_source = self._cfg("mark_price_source")
         tape_display_length = self._cfg("tape_display_length")
@@ -140,7 +146,8 @@ class continuousDoubleAuctionEnv(
         self.is_render = is_render
 
         # list of agents or traders
-        self.traders = [Trader(ID, init_cash, self.maker_fee_bps, self.taker_fee_bps)
+        self.traders = [Trader(ID, init_cash, self.maker_fee_bps, self.taker_fee_bps,
+                               self.allow_multiple_orders_per_level)
                         for ID in range(0, self.num_of_agents)]
 
         # Agent IDs. `agents` / `possible_agents` are built from a sorted list

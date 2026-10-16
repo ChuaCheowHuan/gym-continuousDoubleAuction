@@ -182,6 +182,8 @@ class TrainConfig:
     # arrival or at one uniform price ("sequential" / "batch").
     matching_rule: str = _default("matching_rule")
     step_clearing: str = _default("step_clearing")
+    # Whether a trader may rest several orders at one price (doc/15 S3-10).
+    allow_multiple_orders_per_level: bool = _default("allow_multiple_orders_per_level")
     # What happens when equity runs out (doc/04 section 8): "market_adl"
     # closes a trader out below maintenance_margin - book first, then ADL for
     # the remainder, "gradual_adl" the same spread over up to
@@ -597,6 +599,7 @@ class TrainConfig:
             "action_mask": self.action_mask,
             "matching_rule": self.matching_rule,
             "step_clearing": self.step_clearing,
+            "allow_multiple_orders_per_level": self.allow_multiple_orders_per_level,
             "liquidation": self.liquidation,
             "maintenance_margin": self.maintenance_margin,
             "liquidation_horizon": self.liquidation_horizon,
