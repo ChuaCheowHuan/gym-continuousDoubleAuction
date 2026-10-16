@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (1,670 tests: 1,486 unit + 184 integration)
+# everything (1,684 tests: 1,500 unit + 184 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -101,6 +101,7 @@ Counts re-measured with `--collect-only`.
 | `test_info_dict.py` | 24 | Per-step `info`: back-compat, reward terms summing exactly, live counters, spread, pass/rejection fields, JSON, and 0-d numpy arrays — which only a *recurrent* module produces |
 | `test_type_policy.py` | 15 | Decimal money/prices, int sizes, no field changing type mid-episode, book boundary |
 | `test_activity_metrics.py` | 34 | `pass_action_fraction` / `order_rejection_fraction` / `obs_clip_fraction`: the S1-3 detector, per-episode tallies, pickling; the reward-term variance split, the maker-ratio metric and the end-of-episode account metrics |
+| `test_open_bug_fixes.py` | 14 | The last three open `bug` issues: run logging turns propagation back on without a Ray encoding (#238), the byte cap never deletes the newest episode file and warns once (#246), and `apply_env_vars()` is pinned to run before `ray.init` in every entry point, with the fact that the configured variable is not read at Ray's import checked against the installed Ray (#244) |
 | `test_s4_minor_fixes.py` | 76 | The fourteen S4-minor bugs, one class each (#230 #232 #234 #235 #236 #237 #240 #241 #242 #243 #262 #263 #265 #275): a `Decimal` fee rate, order book bookkeeping, the layout-stamp order message, a `None` module return, `--set` booleans, `$CDA_PLATFORM` case, the plots on bad records, a foreign `config/`, a single-row JEPA batch, `evaluate`'s `--max-step`, the compare table's failed run, the `size_high` bound and the doc-sync `TMPDIR` default |
 | `test_episode_record.py` | 40 | The Parquet per-step record: declared schema and its drift guard against `Info_Helper`, identity columns, sampling rate, byte cap, eviction of episodes that never end, the ways it must fail without raising, and the end-of-sample flush that gets finished episodes to disk without waiting for exit (#245) |
 | `test_encoder_registry.py` | 46 | The selectable-encoder seam: registry, `CDACatalog`, the `mlp` pass-through staying byte-for-byte what it was, `ObsLayout`, tokenisation |
@@ -151,7 +152,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((1,670 tests))
+  root((1,684 tests))
     Simulator
       orderbook 57
         components, matching, invariants
