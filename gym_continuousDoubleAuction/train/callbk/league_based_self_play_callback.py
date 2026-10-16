@@ -21,6 +21,12 @@ from gym_continuousDoubleAuction.train.episode_record import (
     REWARD_TERMS,
     SAMPLE_END_DRAIN_S,
 )
+from gym_continuousDoubleAuction.train.callbk import league_stats, nav_audit
+from gym_continuousDoubleAuction.train.callbk.activity import (
+    as_float as _as_float,
+    market_mid as _market_mid,
+    new_tally as _new_tally,
+)
 from gym_continuousDoubleAuction.train.performance import PerformanceTally
 from gym_continuousDoubleAuction.train.returns import usable_return
 from gym_continuousDoubleAuction.train.policy.policy_handler import (
@@ -73,80 +79,6 @@ PROMOTION_REFERENCES = ("pooled", "excluding_baselines")
 #: name in `performance.METRICS`, e.g. `module_sharpe`, each nested under the
 #: module id like `MODULE_TRADES_METRIC` and meaned over the iteration's episodes.
 MODULE_PERFORMANCE_PREFIX = "module_"
-
-
-def _new_tally() -> dict:
-    """A fresh per-episode tally.
-
-    Running sums rather than a retained series: the variance share in
-    `_log_reward_terms` needs only the first two moments, and an episode is
-    `max_step` x `num_agents` agent-steps - keeping them all to compute five
-    numbers at the end is the memory cost doc/21 §2.2 is about.
-    """
-    return {
-        # Env steps and agent-steps are different denominators: the fractions
-        # are per agent-step, while the episode record is keyed by env step.
-        "steps": 0,
-        "agent_steps": 0,
-        "passes": 0,
-        "rejections": 0,
-        # modify/cancel actions that found no order to act on. The third
-        # silent no-op beside a pass and a refusal (doc/15 S4-14).
-        "unmatched": 0,
-        # Agent-steps on which at least one observation element was clipped to
-        # the declared bounds (doc/15 S4-15). A bound that is wrong for the
-        # market shows here, not as a silent saturation.
-        "clipped_steps": 0,
-        # Per agent, because the maker share summed over *all* agents is a
-        # tautology: `process_acc` runs once per side of every trade, both
-        # sides increment `num_trades_step`, and only the passive side
-        # increments `num_passive_fills_step` - so the aggregate is exactly 0.5
-        # in every episode of a closed double auction, whatever anyone did.
-        # What carries information is whether one agent is specialising as a
-        # maker, which is a statement about the spread across agents.
-        #
-        # Accumulated here rather than read from the last step's info, because
-        # both are *per-step* counters that `exchg_helper` zeroes on every step.
-        # Only `num_trades` is cumulative, so pairing it with a step counter
-        # would divide an episode's trades by one step's passive fills.
-        "per_agent_fills": {},
-        # The last NAV string each agent reported, carried forward so the
-        # conservation check can still add up after an agent stops reporting.
-        # A bankrupt agent is terminated and drops out of `info` from its
-        # terminal step onward (doc/15 S2-4), and the check used to read only
-        # `get_infos(-1)` - so a terminated agent's NAV silently vanished from
-        # the total and the ledger looked broken when it was not. Kept as the
-        # exact `str()` of the Decimal, which is the whole reason `info["NAV"]`
-        # is a string.
-        "last_nav": {},
-        "term_sum": {term: 0.0 for term in REWARD_TERMS},
-        "term_sq": {term: 0.0 for term in REWARD_TERMS},
-        # Per agent, O(1) each: Sharpe, drawdown and the rest of S3-9.
-        "performance": {},
-    }
-
-
-def _market_mid(info):
-    """The midpoint of the best quotes in an agent's `info`, else the last price, else None."""
-    bid, ask = _as_float(info.get("best_bid")), _as_float(info.get("best_ask"))
-    if bid and ask and bid > 0 and ask > 0:
-        return (bid + ask) / 2.0
-    last = _as_float(info.get("last_price"))
-    return last if last and last > 0 else None
-
-
-def _as_float(value):
-    """float(value), or None if it is absent or not a number.
-
-    `info["NAV"]` is a string by design (doc/11 §2.6) and `spread` is None on a
-    one-sided book, so both cases are ordinary here rather than exceptional.
-    """
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
 
 
 class SelfPlayCallback(RLlibCallback):
@@ -876,87 +808,11 @@ class SelfPlayCallback(RLlibCallback):
                 episode, getattr(episode, "env_t", None) or tally["steps"]
             )
 
-    @staticmethod
-    def _fees_configured(env_runner, env):
-        """Whether the run charges exchange fees, from its env config or the env."""
-        rates = []
-        config = getattr(getattr(env_runner, "config", None), "env_config", None)
-        if isinstance(config, dict):
-            rates += [config.get("maker_fee_bps", 0), config.get("taker_fee_bps", 0)]
-        env_obj = getattr(env, "unwrapped", env)
-        rates += [getattr(env_obj, "maker_fee_bps", 0), getattr(env_obj, "taker_fee_bps", 0)]
-        def on(rate):
-            try:
-                return not isinstance(rate, bool) and Decimal(str(rate)) != 0
-            except Exception:       # None, or anything that is not a number
-                return False
-        return any(on(r) for r in rates)
+    _fees_configured = staticmethod(nav_audit.fees_configured)
 
-    @staticmethod
-    def _ledger_fees(env, env_index, num_agents):
-        """The exchange's fee ledger from the finished env's accounts, or None.
+    _ledger_fees = staticmethod(nav_audit.ledger_fees)
 
-        Money is conserved with the fees counted: the traders' NAVs plus what
-        they paid the exchange equal the starting cash. An account with no
-        `fees_paid` (a test double, an env without fees) paid none.
-        """
-        envs = getattr(env, "envs", None)
-        if envs is not None:
-            try:
-                env = envs[env_index]
-            except (IndexError, TypeError):
-                return None
-        env = getattr(env, "unwrapped", env)
-        traders = getattr(env, "traders", None)
-        if not traders or len(traders) != num_agents:
-            return None
-        try:
-            return sum((Decimal(str(getattr(t.acc, "fees_paid", 0))) for t in traders),
-                       Decimal(0))
-        except AttributeError:
-            return None
-
-    @staticmethod
-    def _ledger_navs(env, env_index, last_info, num_agents):
-        """Every trader's NAV from the finished env's own accounts, or None.
-
-        `env` is what RLlib hands the hook: the vector env on an env runner
-        (the episode's env is `env.envs[env_index]`), or a bare env. Its
-        vector wrapper resets a finished sub-env on the *next* `step()`
-        (`autoreset_mode="next_step"`), so at `on_episode_end` the traders
-        still hold this episode's accounts.
-
-        That is an assumption about RLlib, so it is checked rather than
-        trusted: every NAV the final step reported must equal the account it
-        came from. If any differs, or there are no traders to read (a test
-        double, another env), the answer is None and the caller falls back to
-        what was reported.
-        """
-        envs = getattr(env, "envs", None)
-        if envs is not None:
-            try:
-                env = envs[env_index]
-            except (IndexError, TypeError):
-                return None
-        env = getattr(env, "unwrapped", env)
-        traders = getattr(env, "traders", None)
-        if not traders or len(traders) != num_agents:
-            return None
-
-        try:
-            navs = {f"agent_{t.ID}": Decimal(str(t.acc.nav)) for t in traders}
-        except AttributeError:
-            return None
-        if len(navs) != num_agents:
-            return None
-
-        for agent_key, info in (last_info or {}).items():
-            reported = info.get("NAV") if isinstance(info, dict) else None
-            if reported is None:
-                continue
-            if navs.get(agent_key) != Decimal(str(reported)):
-                return None
-        return navs
+    _ledger_navs = staticmethod(nav_audit.ledger_navs)
 
     def on_sample_end(self, *, env_runner=None, metrics_logger=None, samples=None, **kwargs):
         """Get the episodes finished so far onto disk.
@@ -1012,22 +868,7 @@ class SelfPlayCallback(RLlibCallback):
         init_cash = env_default("init_cash")
         num_agents = self.num_trainable + self.num_random
         
-        # 1. Try env_runner.config
-        if hasattr(env_runner, "config"):
-            env_config = getattr(env_runner.config, "env_config", {})
-            init_cash = env_config.get("init_cash", init_cash)
-            num_agents = env_config.get("num_of_agents", num_agents)
-        
-        # 2. Try env object directly or via unwrapped
-        if hasattr(env, "unwrapped"):
-            env_obj = env.unwrapped
-            if hasattr(env_obj, "init_cash"):
-                init_cash = env_obj.init_cash
-            if hasattr(env_obj, "num_of_agents"):
-                num_agents = env_obj.num_of_agents
-        elif hasattr(env, "init_cash"):
-            init_cash = env.init_cash
-            num_agents = getattr(env, "num_of_agents", num_agents)
+        init_cash, num_agents = nav_audit.run_parameters(env_runner, env, init_cash, num_agents)
 
         # Decimal, not float, all the way through the check: the ledger is
         # Decimal end to end and `info["NAV"]` is its exact `str()`, so parsing
@@ -1064,25 +905,8 @@ class SelfPlayCallback(RLlibCallback):
         # reached, and the carry is the fallback.
         ledger = self._ledger_navs(env, env_index, last_info, num_agents)
 
-        total_nav = Decimal(0)
-        per_agent = []
-        for i in range(num_agents):
-            agent_key = f"agent_{i}"
-            info = last_info.get(agent_key) if last_info else None
-            reported = info.get("NAV") if isinstance(info, dict) else None
-            note = ""
-            if ledger is not None:
-                if reported is None:
-                    note = " (terminated; marked to the end of the episode)"
-                reported = ledger[agent_key]
-            elif reported is None:
-                reported = carried.get(agent_key)
-                if reported is not None:
-                    note = " (terminated; last reported)"
-            if reported is not None:
-                nav = Decimal(str(reported))
-                total_nav += nav
-                per_agent.append(f"  {agent_key} NAV: {nav:,.2f}{note}")
+        nav = nav_audit.sum_navs(last_info, carried, ledger, num_agents)
+        total_nav = nav.total
 
         # Fees leave the traders for the exchange, so they are part of the sum.
         # They are only readable from the env's own accounts. Without those
@@ -1132,15 +956,7 @@ class SelfPlayCallback(RLlibCallback):
             self._log_episode_account(
                 episode.get_infos(-1, env_steps=False), metrics_logger)
 
-        report = "\n".join(
-            [f"Episode {episode.id_} NAV verification"]
-            + per_agent
-            + [
-                f"  Total NAV: {total_nav:,.2f}",
-            ]
-            + ([f"  Exchange fees collected: {fees:,.2f}"] if fees else [])
-            + [f"  Expected total initial cash: {total_initial_cash:,.2f}"]
-        )
+        report = nav_audit.report(episode.id_, nav, fees, total_initial_cash)
 
         if conserved:
             logger.info("%s\n  Conserved (within %g)", report, self.nav_tolerance)
@@ -1210,13 +1026,7 @@ class SelfPlayCallback(RLlibCallback):
         # some baseline goes undrawn. Both GPU runs of 2026-08-15 died this way,
         # at iterations 10 and 12 of 16, having reported healthy league stats
         # right up to the iteration it happened.
-        idle_modules = sorted(
-            module_id for module_id, value in policy_returns.items()
-            if value is None or np.isnan(value)
-        )
-        valid_returns = [
-            v for v in policy_returns.values() if v is not None and not np.isnan(v)
-        ]
+        valid_returns, idle_modules = league_stats.split_returns(policy_returns)
 
         if not valid_returns:
             logger.warning("No valid policy returns found this iteration.")
@@ -1240,16 +1050,8 @@ class SelfPlayCallback(RLlibCallback):
         # Check trainable policies for champion status
         trainable_policies = [policy_id(i) for i in range(self.num_trainable)]
 
-        best_candidate = None
-        best_return = -float('inf')
-        
-        for pid in trainable_policies:
-            if pid in policy_returns:
-                p_ret = usable_return(policy_returns[pid])
-                if p_ret is not None and p_ret > best_return:
-                    best_return = p_ret
-                    best_candidate = pid
-        
+        best_candidate, best_return = league_stats.best_trainable(policy_returns, trainable_policies)
+
         logger.info(
             "iteration %s league stats: mean=%.2f std=%.2f threshold=%.2f "
             "best_trainable=%s (%.2f)",
@@ -1385,13 +1187,7 @@ class SelfPlayCallback(RLlibCallback):
     @staticmethod
     def _candidate_trades(env_runner_results, module_id):
         """The module's mean trades per episode this iteration, or None if absent."""
-        by_module = env_runner_results.get(MODULE_TRADES_METRIC)
-        if not isinstance(by_module, dict):
-            return None
-        value = _as_float(by_module.get(module_id))
-        if value is None or math.isnan(value):
-            return None
-        return value
+        return league_stats.candidate_trades(env_runner_results, module_id, MODULE_TRADES_METRIC)
 
     def _should_create_champion(self, return_value, iteration, algorithm):
         """
