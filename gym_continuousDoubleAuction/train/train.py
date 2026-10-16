@@ -258,6 +258,10 @@ class TrainConfig:
     # The PPO entropy bonus, falling linearly from `entropy_coeff` to
     # `entropy_coeff_final` over `entropy_decay_iters` iterations (doc/15
     # S3-11). RLlib's own default is 0.0.
+    # The discount and the GAE parameter (doc/15 S3-13). RLlib's own defaults are
+    # 0.99 and 1.0.
+    gamma: float = _default("gamma")
+    lambda_: float = _default("lambda_")
     entropy_coeff: float = _default("entropy_coeff")
     entropy_coeff_final: float = _default("entropy_coeff_final")
     entropy_decay_iters: int = _default("entropy_decay_iters")
@@ -413,6 +417,10 @@ class TrainConfig:
 
         validate_encoder_type(self.encoder_type)
 
+        if not 0.0 < self.gamma <= 1.0:
+            raise ValueError(f"gamma must be in (0, 1]; got {self.gamma}.")
+        if not 0.0 <= self.lambda_ <= 1.0:
+            raise ValueError(f"lambda_ must be in [0, 1]; got {self.lambda_}.")
         if self.entropy_coeff < 0 or self.entropy_coeff_final < 0:
             raise ValueError(
                 f"entropy_coeff and entropy_coeff_final must be >= 0; got "
@@ -812,6 +820,8 @@ def build_config(cfg: TrainConfig):
             train_batch_size_per_learner=cfg.train_batch_size,
             num_epochs=cfg.num_epochs,
             entropy_coeff=cfg.entropy_setting,
+            gamma=cfg.gamma,
+            lambda_=cfg.lambda_,
             # `lr` last, so an encoder that sets one in its spec block wins over
             # the `ppo` group's. The group's value was tuned for the 2x256 tanh
             # MLP; holding an attention stack to it measures the learning rate
@@ -1229,6 +1239,11 @@ def _config_fingerprint(config) -> dict:
         # RLlib's 0.0 in a checkpoint from before the entropy bonus: the
         # restore keeps it, and without this the run said nothing (S3-11).
         "entropy_coeff",
+        # A different discount or GAE parameter is a different objective: a
+        # resume of a 0.99/1.0 checkpoint under the new defaults would continue
+        # optimising something else without saying so (S3-13).
+        "gamma",
+        "lambda_",
         "num_epochs",
         "minibatch_size",
         "train_batch_size_per_learner",

@@ -70,6 +70,9 @@
     "vf_share_layers": false,
     "minibatch_size": null,
     "_note_entropy": "entropy_coeff is the PPO entropy bonus at the start of the run and entropy_coeff_final the value it has fallen to after entropy_decay_iters iterations, interpolated linearly in env steps (one iteration is train_batch_size steps) and held there afterwards. RLlib's own default is 0.0, which let a league collapse to always-pass, a policy that still clears the champion threshold when the others lose money (doc/15 S3-11). 0.01 falling to 0.001 over the 16-iteration default run is the usual PPO range, not a tuned value. Set both to 0 to get the old behaviour. entropy_decay_iters must be at least 1.",
+    "_note_discount": "gamma is the PPO discount and lambda_ the GAE parameter. RLlib's own defaults are 0.99 and 1.0: at 0.99 the effective horizon is about 100 steps, 2.5% of a 4,096-step episode, so strategies whose payoff comes later (accumulating inventory, sustained market making) are invisible to the return, and lambda_ 1.0 makes the advantage pure Monte-Carlo, the highest-variance estimate (doc/15 S3-13). 0.999 gives a horizon of about 1,000 steps and 0.95 is the usual GAE value. They are the usual choices for a long episode, not values tuned on this env, and changing them changes what a run optimises, so a checkpoint trained at 0.99/1.0 is not comparable with one trained at these. gamma must be in (0, 1] and lambda_ in [0, 1]; set 0.99 and 1.0 for the old behaviour.",
+    "gamma": 0.999,
+    "lambda_": 0.95,
     "entropy_coeff": 0.01,
     "entropy_coeff_final": 0.001,
     "entropy_decay_iters": 16
