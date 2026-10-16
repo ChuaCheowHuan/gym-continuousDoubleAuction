@@ -18,6 +18,8 @@ import glob
 import os
 import pickle
 import sys
+import threading
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -538,3 +540,97 @@ class TestCompleteAndTruncatedEpisodes:
 
         df = _read_all(str(tmp_path))
         assert "ep_0" not in set(df["episode_id"])
+
+
+class TestTheTailDoesNotWaitForExit:
+    """Issue #245: rows below `rows_per_file` were written only by an `atexit`
+    handler, and Ray stops env runners with `ray.shutdown()` or an actor kill,
+    which does not reliably run it. A short run, or the last stretch of a long
+    one, left no Parquet at all.
+    """
+
+    def test_finished_episodes_are_written_without_close(self, tmp_path):
+        recorder = EpisodeRecorder(str(tmp_path), rows_per_file=10 ** 9)
+        _run(recorder, steps=2)
+        assert not glob.glob(os.path.join(str(tmp_path), "*.parquet"))
+
+        recorder.flush_finished(wait=5.0)
+
+        # Readable now, with the writer thread still alive and `close` unrun.
+        df = _read_all(str(tmp_path))
+        assert len(df) == 2 * NUM_AGENTS
+        assert bool(df["episode_complete"].all())
+        recorder.close()
+
+    def test_an_episode_still_running_is_left_alone(self, tmp_path):
+        """A sample boundary is not an episode boundary, and `flush` would have
+        written the running episode out as truncated."""
+        recorder = EpisodeRecorder(str(tmp_path), rows_per_file=10 ** 9)
+        _run(recorder, episode_id="done", steps=2)
+        running = FakeEpisode("running")
+        for step in range(2):
+            recorder.record_step(running, step)
+
+        recorder.flush_finished(wait=5.0)
+        first = _read_all(str(tmp_path))
+        assert set(first["episode_id"]) == {"done"}
+
+        for step in range(2, 4):
+            recorder.record_step(running, step)
+        recorder.finish_episode("running")
+        recorder.close()
+
+        df = _read_all(str(tmp_path))
+        mine = df[df["episode_id"] == "running"]
+        assert len(mine) == 4 * NUM_AGENTS
+        assert bool(mine["episode_complete"].all())
+        assert len(df) == (2 + 4) * NUM_AGENTS
+
+    def test_nothing_buffered_writes_no_file(self, tmp_path):
+        recorder = EpisodeRecorder(str(tmp_path), rows_per_file=10 ** 9)
+        recorder.flush_finished(wait=5.0)
+        recorder.close()
+        assert not glob.glob(os.path.join(str(tmp_path), "*.parquet"))
+
+    def test_it_does_not_hang_when_the_writer_is_stuck(self, tmp_path):
+        import time
+
+        recorder = EpisodeRecorder(str(tmp_path), rows_per_file=10 ** 9)
+        _run(recorder, steps=2)
+        release = threading.Event()
+        recorder._write = lambda rows: release.wait(30)  # a filesystem that stalls
+        started = time.monotonic()
+        recorder.flush_finished(wait=0.5)
+        assert time.monotonic() - started < 5.0
+        release.set()
+        recorder.close()
+
+
+class TestTheCallbackFlushesAtTheEndOfASample:
+    """The hook that gets finished episodes to disk without waiting for
+    `rows_per_file` or for process exit (issue #245)."""
+
+    @staticmethod
+    def _callback():
+        from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
+            SelfPlayCallback,
+        )
+        return SelfPlayCallback(num_trainable_policies=2, num_random_policies=6,
+                                episode_data_dir=None)
+
+    def test_it_asks_the_recorder_to_flush_what_has_finished(self):
+        cb = self._callback()
+        cb._episode_recorder = MagicMock()
+        cb.on_sample_end(env_runner=object(), metrics_logger=MagicMock(), samples=[])
+        cb._episode_recorder.flush_finished.assert_called_once()
+
+    def test_it_does_not_build_a_recorder_just_to_flush_it(self):
+        cb = self._callback()
+        cb.on_sample_end(env_runner=object(), metrics_logger=MagicMock(), samples=[])
+        assert cb._episode_recorder is None
+
+    def test_a_failing_flush_does_not_raise_into_the_runner(self):
+        cb = self._callback()
+        cb._episode_recorder = MagicMock()
+        cb._episode_recorder.flush_finished.side_effect = OSError("disk full")
+        cb.on_sample_end(env_runner=object(), metrics_logger=MagicMock(), samples=[])
