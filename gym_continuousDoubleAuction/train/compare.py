@@ -80,6 +80,10 @@ TABLE_METRICS = (
 )
 
 
+_TRUE_SPELLINGS = frozenset({"1", "true", "yes", "on"})
+_FALSE_SPELLINGS = frozenset({"0", "false", "no", "off"})
+
+
 def parse_overrides(items) -> Dict[str, Any]:
     """`FIELD=VALUE` strings into TrainConfig field values of the right type.
 
@@ -118,7 +122,20 @@ def parse_overrides(items) -> Dict[str, Any]:
                 raise SystemExit(f"--set {name}: expected a JSON {want.__name__}, got {raw!r}")
             out[name] = parsed
         elif "bool" in annotation:
-            out[name] = raw.lower() in ("1", "true", "yes", "on")
+            # An explicit set each way, and nothing else: `ture` or `enabled`
+            # used to be silently False, and a typo in `action_mask` or
+            # `cbp_enabled` would run a whole sweep with the wrong setting.
+            spelling = raw.strip().lower()
+            if spelling in _TRUE_SPELLINGS:
+                out[name] = True
+            elif spelling in _FALSE_SPELLINGS:
+                out[name] = False
+            else:
+                raise SystemExit(
+                    f"--set {name}: expected a boolean "
+                    f"({' '.join(sorted(_TRUE_SPELLINGS))} / "
+                    f"{' '.join(sorted(_FALSE_SPELLINGS))}), got {raw!r}"
+                )
         elif "int" in annotation:
             out[name] = int(raw)
         elif "float" in annotation:
