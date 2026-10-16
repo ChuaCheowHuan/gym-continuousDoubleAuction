@@ -18,3 +18,14 @@ def test_envs_is_mypy_clean():
         "mypy found problems in gym_continuousDoubleAuction/envs "
         "(install the dev extra: pip install -e '.[dev]'):\n" + result.stdout[-3000:]
         + result.stderr[-500:])
+
+
+def test_the_coverage_floor_is_configured():
+    """`pytest --cov` fails below `fail_under` (issue #148); keep the floor from being dropped."""
+    import tomllib
+
+    with open(REPO_ROOT / "pyproject.toml", "rb") as fh:
+        config = tomllib.load(fh)
+    floor = config["tool"]["coverage"]["report"]["fail_under"]
+    assert 80 <= floor < 100
+    assert config["tool"]["coverage"]["run"]["branch"] is True
