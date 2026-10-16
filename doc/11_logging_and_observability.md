@@ -254,7 +254,7 @@ logger = get_logger(__name__)
 
 **[verified]** no `print()` survives in `envs/` or `train/`; `test_logging_setup.py` asserts it,
 so a new one fails CI. `visualize/` is deliberately exempt - those are one-shot terminal tools
-whose stdout *is* the product - as are the demo scripts under `envs/orderbook/test/`.
+whose stdout *is* the product.
 
 | Level | What goes here |
 |---|---|
