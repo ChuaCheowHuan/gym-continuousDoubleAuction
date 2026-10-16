@@ -284,18 +284,7 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Liquidation_Helpe
             infos = self.set_info(infos, trader)
 
             # Reset per-step counters after reward is calculated
-            trader.acc.num_trades_step = 0
-            trader.acc.fill_qty_step = 0
-            trader.acc.fill_value_step = 0
-            trader.acc.num_passive_fills_step = 0
-            trader.acc.order_step_placed = 0
-            trader.acc.num_rejected_step = 0
-            trader.acc.num_unmatched_step = 0
-            trader.acc.num_obs_clipped_step = 0
-            trader.acc.num_liquidations_step = 0
-            trader.acc.liquidated_book_qty_step = 0
-            trader.acc.liquidated_adl_qty_step = 0
-            trader.acc.adl_qty_step = 0
+            trader.acc.clear_step_counters()
 
         dones, truncateds = self.set_all_done(dones)
 
