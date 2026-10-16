@@ -20,7 +20,6 @@ select = ["F"]
 # The env package is type-checked and `test_types.py` holds it at zero errors. `train/`
 # is not covered yet: it has not been annotated to the same standard (issue #148).
 files = ["gym_continuousDoubleAuction/envs"]
-exclude = ["gym_continuousDoubleAuction/envs/orderbook/test/"]
 ignore_missing_imports = true
 follow_imports = "silent"
 
@@ -41,7 +40,6 @@ addopts = "-p no:cacheprovider"
 source = ["gym_continuousDoubleAuction"]
 omit = [
     "gym_continuousDoubleAuction/test/*",
-    "gym_continuousDoubleAuction/envs/orderbook/test/*",
     "gym_continuousDoubleAuction/visualize/*",
 ]
 branch = true

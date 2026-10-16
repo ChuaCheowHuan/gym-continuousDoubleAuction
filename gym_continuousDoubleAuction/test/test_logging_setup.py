@@ -155,7 +155,7 @@ class TestPackageModulesUseIt:
         """envs/ and train/ report through the logger, not stdout.
 
         visualize/ is deliberately exempt: those are one-shot terminal tools
-        whose output *is* the product. orderbook/test/ holds demo scripts.
+        whose output *is* the product.
         """
         import pathlib
         import re
@@ -167,8 +167,6 @@ class TestPackageModulesUseIt:
         root = pathlib.Path(logging_setup.__file__).parent
         offenders = []
         for path in list((root / "envs").rglob("*.py")) + list((root / "train").rglob("*.py")):
-            if "orderbook/test" in path.as_posix():
-                continue
             for number, line in enumerate(path.read_text().splitlines(), 1):
                 stripped = line.strip()
                 if stripped.startswith("#"):
