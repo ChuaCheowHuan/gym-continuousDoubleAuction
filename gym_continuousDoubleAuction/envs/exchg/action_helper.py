@@ -37,6 +37,13 @@ ACTION_KEYS = ("category", "order_slot", "price", "price_offset", "size")
 ACTION_LAYOUT_VERSION = 4
 
 
+#: The `size` fraction at which an order reaches its configured maximum. The env
+#: turns a fraction into contracts as `rint(size * mul) + min_size` with `mul`
+#: half of `max_size - min_size`, so 1.0 is half the maximum and 2.0 is the
+#: whole of it. `size_high` may not exceed this (issue #275).
+SIZE_FRACTION_AT_MAX = 2.0
+
+
 class Action_Helper():
     def __init__(self, min_size=env_default("min_size"),
                  mkt_max_size=env_default("mkt_max_size"),
@@ -114,6 +121,15 @@ class Action_Helper():
                 f"size_high; got {self._act['size_low']} and "
                 f"{self._act['size_high']}. size is a fraction of the size "
                 f"ceiling, so it cannot be negative."
+            )
+        if self._act["size_high"] > SIZE_FRACTION_AT_MAX:
+            raise ValueError(
+                f"tunable_constants.json: action_space.size_high="
+                f"{self._act['size_high']} is above {SIZE_FRACTION_AT_MAX}, the "
+                f"size at which an order reaches mkt_max_size / limit_max_size "
+                f"(mul is half the range, so {SIZE_FRACTION_AT_MAX} x mul + "
+                f"min_size is the maximum). Anything higher lets a policy submit "
+                f"an order above the configured maximum."
             )
         price_offset_n = self._act["price_offset_n"]
         if price_offset_n < 1 or price_offset_n % 2 == 0:
