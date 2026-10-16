@@ -98,3 +98,44 @@ class TestDoc27DoesNotDescribeBuiltThingsAsMissing:
         text = open(self.DOC).read()
         for name in self._built_skills():
             assert "**Steps.**" not in self._entry(text, name), name
+
+
+class TestStaleCommentsAndNotes:
+    """#251: three texts that contradicted the code they describe."""
+
+    def test_the_cbp_comment_says_the_bias_is_zeroed_not_redrawn(self):
+        import inspect
+        from gym_continuousDoubleAuction.train.model import cbp
+        source = inspect.getsource(cbp._reinitialise)
+        assert "for weight and bias" not in source
+        assert "bias is NOT drawn" in source
+
+    def test_and_the_code_does_zero_it(self):
+        import torch
+        from gym_continuousDoubleAuction.train.model import cbp
+        incoming, outgoing = torch.nn.Linear(4, 3), torch.nn.Linear(3, 2)
+        with torch.no_grad():
+            incoming.bias.fill_(7.0)
+        layer = cbp.ReplaceableLayer(name="x", incoming=incoming, outgoing=[outgoing],
+                                     activation=torch.nn.Tanh())
+        state = cbp.CBPLayerState.zeros(3)
+        cbp._reinitialise(state, layer, 1, None, None, cbp.CBPConfig())
+        assert float(incoming.bias[1]) == 0.0 and float(incoming.bias[0]) == 7.0
+
+    def test_the_probe_note_describes_the_split_the_probe_makes(self):
+        import json
+        from gym_continuousDoubleAuction.config_loader import config_dir
+        from gym_continuousDoubleAuction.train.probe.probe import MIN_GROUPS_TO_SPLIT_BY_GROUP
+        note = json.load(open(config_dir() / "cli_defaults.json"))["cda_probe"]["_note_corpus"]
+        assert "the split is contiguous, so" not in note
+        assert "by episode" in note and "contiguous" in note
+        assert str(MIN_GROUPS_TO_SPLIT_BY_GROUP) in note or "three" in note
+
+    def test_the_file_source_names_every_command_it_drives(self):
+        import json
+        from gym_continuousDoubleAuction.config_loader import config_dir
+        data = json.load(open(config_dir() / "cli_defaults.json"))
+        for block in data.values():
+            if isinstance(block, dict) and "_module" in block:
+                command = block["_module"].split(".")[-1]
+                assert command in data["_source"], command
