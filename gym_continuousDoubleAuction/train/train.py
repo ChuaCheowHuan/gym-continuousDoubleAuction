@@ -43,6 +43,7 @@ from gym_continuousDoubleAuction.config_loader import (
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
     continuousDoubleAuctionEnv,
 )
+from gym_continuousDoubleAuction.envs.settings import EnvSettings
 from gym_continuousDoubleAuction.envs.layout_version import (
     LAYOUT_KEY,
     check_layout_stamp,
@@ -600,43 +601,19 @@ class TrainConfig:
             return None
         return os.path.abspath(os.path.join(self.episode_data_dir, self.run_id))
 
+    #: Env config keys whose `TrainConfig` field has another name.
+    _ENV_KEY_FIELDS = {"num_of_agents": "num_agents"}
+
     @property
     def env_config(self) -> dict:
-        return {
-            "num_of_agents": self.num_agents,
-            "init_cash": self.init_cash,
-            "tick_size": self.tick_size,
-            "mark_price_source": self.mark_price_source,
-            "tape_display_length": self.tape_display_length,
-            "max_step": self.max_step,
-            "episode_length_mode": self.episode_length_mode,
-            "max_step_min": self.max_step_min,
-            "max_step_max": self.max_step_max,
-            "is_render": self.is_render,
-            "n_hist": self.n_hist,
-            "book_mode": self.book_mode,
-            "action_mask": self.action_mask,
-            "matching_rule": self.matching_rule,
-            "step_clearing": self.step_clearing,
-            "allow_multiple_orders_per_level": self.allow_multiple_orders_per_level,
-            "liquidation": self.liquidation,
-            "maintenance_margin": self.maintenance_margin,
-            "liquidation_horizon": self.liquidation_horizon,
-            "maker_fee_bps": self.maker_fee_bps,
-            "taker_fee_bps": self.taker_fee_bps,
-            "initial_price_min": self.initial_price_min,
-            "initial_price_max": self.initial_price_max,
-            "min_size": self.min_size,
-            "mkt_max_size": self.mkt_max_size,
-            "limit_size_multiple": self.limit_size_multiple,
-            "position_scale": self.position_scale,
-            "order_penalty": self.order_penalty,
-            "trade_penalty": self.trade_penalty,
-            "drawdown_penalty": self.drawdown_penalty,
-            "passive_bonus": self.passive_bonus,
-            "loss_multiplier": self.loss_multiplier,
-            "dead_action_penalty": self.dead_action_penalty,
-        }
+        """The env's config dict, one entry per `EnvSettings` key (issue #257).
+
+        Generated from the settings' field list, so a key added there and given a
+        `TrainConfig` field of the same name (or an entry in `_ENV_KEY_FIELDS`) reaches
+        the env without a third place to write it out.
+        """
+        return {key: getattr(self, self._ENV_KEY_FIELDS.get(key, key))
+                for key in EnvSettings.keys()}
 
     def resolved_gpus_per_learner(self) -> float:
         """num_gpus_per_learner, forced to 0 when no CUDA device is present."""
