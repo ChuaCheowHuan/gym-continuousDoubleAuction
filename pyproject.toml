@@ -40,7 +40,6 @@ addopts = "-p no:cacheprovider"
 source = ["gym_continuousDoubleAuction"]
 omit = [
     "gym_continuousDoubleAuction/test/*",
-    "gym_continuousDoubleAuction/visualize/*",
 ]
 branch = true
 
