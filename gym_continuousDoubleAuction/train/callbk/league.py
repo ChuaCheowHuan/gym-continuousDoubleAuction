@@ -67,6 +67,19 @@ class League:
                 f"promotion_reference must be one of {PROMOTION_REFERENCES}; "
                 f"got {promotion_reference!r}."
             )
+        for name, weight in (
+            ("champion_weight", champion_weight),
+            ("original_opponent_weight", original_opponent_weight),
+        ):
+            # A weight is a share of the draw: not a count, not negative, not unbounded.
+            # Zero is allowed - it removes that kind from the draw (issue #207).
+            if (
+                isinstance(weight, bool)
+                or not isinstance(weight, (int, float))
+                or not math.isfinite(weight)
+                or weight < 0
+            ):
+                raise ValueError(f"{name} must be a finite number >= 0; got {weight!r}.")
         self.num_trainable = num_trainable
         self.num_random = num_random
         self.min_champion_trades = min_champion_trades
@@ -678,6 +691,8 @@ class League:
             Mapping function for use in multi_agent config
         """
 
+        warned_zero_total = []
+
         def agent_to_module_mapping_fn(agent_id, episode, **kwargs):
             """Assign agents to modules including dynamic champions."""
             agent_num = int(agent_id.split("_")[1])
@@ -709,7 +724,24 @@ class League:
 
             # Normalize to probabilities
             weights = np.array(weights, dtype=np.float64)
-            probs = weights / weights.sum()
+            total = weights.sum()
+            if total <= 0.0:
+                # Every candidate has weight zero (both weights 0, or only zero-weight
+                # champions left in the pool): the draw has no preference to express, and
+                # dividing by the sum gave NaN probabilities and a crash in `rng.choice`
+                # (issue #207). Uniform is the neutral reading; say so once per process.
+                if not warned_zero_total:
+                    warned_zero_total.append(True)
+                    logger.warning(
+                        "every candidate in the matchmaking pool has weight 0 "
+                        "(champion_weight=%s, original_opponent_weight=%s): drawing "
+                        "uniformly instead",
+                        league.champion_weight,
+                        league.original_opponent_weight,
+                    )
+                probs = np.full(len(weights), 1.0 / len(weights))
+            else:
+                probs = weights / total
 
             # Seed from the episode ID and agent index so the assignment is
             # reproducible.
