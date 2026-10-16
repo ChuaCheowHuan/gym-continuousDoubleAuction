@@ -202,8 +202,8 @@ class Liquidation_Helper(object):
         # stage. The book fills may have moved the mid against the trader;
         # transferring at that newer price could take it below zero, which the
         # band exists to prevent. At the trigger mark its final NAV is
-        # `nav_before` less the book stage's slippage, >= 0 whenever
-        # `nav_before` was.
+        # `nav_before` less the book stage's slippage and taker fee, >= 0
+        # whenever `nav_before` was: the band is priced to include the fee.
         remainder = abs(acc.net_position)
         adl_qty = self._deleverage(trader, remainder, mark) if remainder else 0
 
@@ -276,20 +276,33 @@ class Liquidation_Helper(object):
     def _bankruptcy_price(self, trader, mark) -> Decimal:
         """The worst closing price at which the trader's NAV stays >= 0.
 
-        Closing `|pos|` contracts at price p changes NAV by
-        `net_position * (p - mark)`, so NAV reaches 0 at
-        `mark - NAV / net_position`. With NAV already <= 0 there is no equity
-        to protect, and the band is the mark itself: the book may only improve
-        on it. Snapped to the tick grid on the conservative side - down for a
-        buy, up for a sell - and never below one tick.
+        The close is a taker fill, so it pays the taker fee on its notional as
+        well as the slippage against the mark. Closing `|pos|` contracts at
+        price p changes NAV by `net_position * (p - mark)` less
+        `rate * |pos| * p`, with `rate` the taker fee as a fraction. That
+        reaches 0 at `(mark + cushion) / (1 + rate)` for a short being bought
+        back and `(mark - cushion) / (1 - rate)` for a long being sold, where
+        `cushion = NAV / |pos|`; at a rate of 0 both are
+        `mark -/+ NAV / net_position`. With NAV already <= 0 there is no equity
+        to protect, and the band is the mark itself (less the fee, which only
+        tightens it): the book may only improve on it. Snapped to the tick
+        grid on the conservative side - down for a buy, up for a sell - and
+        never below one tick.
+
+        A smaller fill than `|pos|` (a gradual slice, a thin book) pays a
+        smaller fee at no worse a price, so the whole-position band is
+        conservative for it.
         """
         acc = trader.acc
         tick = Decimal(str(self.min_tick))
+        rate = acc.taker_fee_bps.scaleb(-4)
         cushion = max(acc.nav, Decimal(0)) / abs(acc.net_position)
         if acc.net_position < 0:  # closing a short: buy, at most this
-            price = ((mark + cushion) / tick).to_integral_value(rounding=ROUND_FLOOR) * tick
+            price = ((mark + cushion) / (1 + rate) / tick).to_integral_value(
+                rounding=ROUND_FLOOR) * tick
         else:  # closing a long: sell, at least this
-            price = ((mark - cushion) / tick).to_integral_value(rounding=ROUND_CEILING) * tick
+            price = ((mark - cushion) / (1 - rate) / tick).to_integral_value(
+                rounding=ROUND_CEILING) * tick
         return max(price, tick)
 
     def _close_in_book(self, trader, side, quantity, band) -> int:
