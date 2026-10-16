@@ -221,9 +221,13 @@ def resolve(
     `platform=AUTO` consults `$CDA_PLATFORM` before falling back to detection,
     so a headless or CI run can pin what an interactive one guesses.
     """
-    if platform in (None, AUTO):
-        platform = os.environ.get(PLATFORM_ENV_VAR, AUTO)
-    if platform in (None, AUTO):
+    # Case and surrounding space do not matter, as for `CDA_USE_GPU` (`_toggle`):
+    # `Auto` and `COLAB` used to raise a KeyError naming a platform that exists
+    # (issue #237). An empty value is unset.
+    platform = AUTO if platform is None else str(platform).strip().lower() or AUTO
+    if platform == AUTO:
+        platform = os.environ.get(PLATFORM_ENV_VAR, AUTO).strip().lower() or AUTO
+    if platform == AUTO:
         platform = detect_platform()
 
     platform_config = _platform_config(platform)

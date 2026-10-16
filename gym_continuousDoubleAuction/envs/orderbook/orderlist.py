@@ -60,6 +60,10 @@ class OrderList(object):
         self.volume -= order.quantity
         self.length -= 1
         if len(self) == 0: # if there are no more Orders, stop/return
+            # Clear the ends too: they would otherwise still point at the
+            # order just removed, and iteration would yield it at length 0.
+            self.head_order = None
+            self.tail_order = None
             return
 
         # Remove an Order from the OrderList. First grab next / prev order

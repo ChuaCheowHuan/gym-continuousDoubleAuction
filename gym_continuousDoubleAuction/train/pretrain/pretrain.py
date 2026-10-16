@@ -213,7 +213,11 @@ def _evaluate(encoder, module, rows, corpus, batch_size) -> Dict[str, float]:
         if stats is None:
             continue
         losses.append(float(stats["predict_loss"]))
-        stds.append(float(stats["latent_std"]))
+        # A one-row chunk reports NaN (the spread of one row is undefined); it
+        # is "not measured", not a datapoint to average in (issue #242).
+        std = float(stats["latent_std"])
+        if math.isfinite(std):
+            stds.append(std)
     return {
         "loss": float(np.mean(losses)) if losses else float("nan"),
         "latent_std": float(np.mean(stds)) if stds else float("nan"),

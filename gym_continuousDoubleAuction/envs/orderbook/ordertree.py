@@ -68,8 +68,10 @@ class OrderTree(object):
             self.volume += order.quantity - original_quantity
 
     def remove_order_by_id(self, order_id):
-        self.num_orders -= 1
+        # The lookup first: an unknown id raises KeyError, and a counter already
+        # decremented by then stays wrong for a caller that catches it.
         order = self.order_map[order_id]
+        self.num_orders -= 1
         self.volume -= order.quantity
         order.order_list.remove_order(order)
         if len(order.order_list) == 0:

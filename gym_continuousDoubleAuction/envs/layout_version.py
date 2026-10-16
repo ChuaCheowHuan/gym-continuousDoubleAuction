@@ -83,10 +83,21 @@ def check_layout_stamp(sidecar, path: str, book_mode=None) -> None:
         if theirs is not None and list(theirs) != list(ours):
             missing = sorted(set(ours) - set(theirs))
             extra = sorted(set(theirs) - set(ours))
-            problems.append(
-                f"{listing} differ: checkpoint lacks {missing or 'nothing'}, "
-                f"has extra {extra or 'nothing'}"
-            )
+            if missing or extra:
+                problems.append(
+                    f"{listing} differ: checkpoint lacks {missing or 'nothing'}, "
+                    f"has extra {extra or 'nothing'}"
+                )
+            else:
+                # The same members in another order is still a mismatch (the
+                # floats sit at other offsets), and "lacks nothing, has extra
+                # nothing" would leave the reader nothing to act on.
+                at = next(i for i, (a, b) in enumerate(zip(theirs, ours)) if a != b)
+                problems.append(
+                    f"{listing} differ in order, not membership: position {at} is "
+                    f"{list(theirs)[at]!r} in the checkpoint and {list(ours)[at]!r} "
+                    f"in this code"
+                )
     if problems:
         raise ValueError(
             f"Cannot restore {path}: it was trained against a different "

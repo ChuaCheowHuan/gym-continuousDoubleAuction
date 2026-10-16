@@ -52,6 +52,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from gym_continuousDoubleAuction.config_loader import cli_default
 from gym_continuousDoubleAuction.envs.layout_version import LAYOUT_KEY, layout_stamp
 from gym_continuousDoubleAuction.logging_setup import configure as configure_logging
+from gym_continuousDoubleAuction.train.returns import format_return, usable_return
 from gym_continuousDoubleAuction.logging_setup import get_logger
 from gym_continuousDoubleAuction.train.probe import features as features_module
 from gym_continuousDoubleAuction.train.train import LEAGUE_STATE_FILE
@@ -101,7 +102,8 @@ def best_champion(state: Dict[str, Any]) -> Optional[dict]:
     champion found in the checkpoint but missing from the sidecar with
     `return: None`, and there is nothing to rank it by.
     """
-    ranked = [c for c in state.get("champion_history") or [] if c.get("return") is not None]
+    ranked = [c for c in state.get("champion_history") or []
+              if usable_return(c.get("return")) is not None]
     return max(ranked, key=lambda c: c["return"]) if ranked else None
 
 
@@ -204,10 +206,9 @@ def render(state: Dict[str, Any], modules: List[str]) -> str:
     lines.append("| champion | from | iteration | return | best |")
     lines.append("|---|---|---|---|---|")
     for champion in history:
-        ret = champion.get("return")
         lines.append(
             f"| {champion['id']} | {champion['source_policy']} | "
-            f"{champion['iteration']} | {'n/a' if ret is None else format(ret, '.6g')} | "
+            f"{champion['iteration']} | {format_return(champion.get('return'))} | "
             f"{'yes' if champion is best else ''} |"
         )
     lines.append("")
@@ -230,8 +231,9 @@ def export(checkpoint: str, module_id: Optional[str] = None,
     module_id, record = resolve_module(state, module_id)
     if record is not None:
         logger.info(
-            "%s was promoted from %s at iteration %s, return %.6g",
-            module_id, record["source_policy"], record["iteration"], record["return"],
+            "%s was promoted from %s at iteration %s, return %s",
+            module_id, record["source_policy"], record["iteration"],
+            format_return(record["return"]),
         )
     warn_about_layout(state)
 

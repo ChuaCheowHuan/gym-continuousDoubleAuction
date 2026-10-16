@@ -44,6 +44,9 @@ CONFIG_DIR_ENV_VAR = "CDA_CONFIG_DIR"
 
 _PACKAGE_DIR = Path(__file__).resolve().parent
 
+#: The file that says a `config/` directory is this project's.
+CONFIG_MARKER_FILE = "train_config.json"
+
 
 def config_dir() -> Path:
     """Locate the `config/` directory.
@@ -62,12 +65,17 @@ def config_dir() -> Path:
             )
         return path
 
+    # A directory counts only if it holds our files. For an installed wheel
+    # `_PACKAGE_DIR.parent` is `site-packages`, and any other distribution that
+    # installs a top-level `config/` would otherwise be taken for ours and read,
+    # or fail on, the wrong files without ever reaching the packaged copy
+    # (issue #241).
     for candidate in (_PACKAGE_DIR.parent / "config", _PACKAGE_DIR / "config"):
-        if candidate.is_dir():
+        if (candidate / CONFIG_MARKER_FILE).is_file():
             return candidate
 
     raise FileNotFoundError(
-        "Could not locate the config/ directory. Looked in "
+        f"Could not locate the config/ directory (one holding {CONFIG_MARKER_FILE}). Looked in "
         f"{_PACKAGE_DIR.parent / 'config'} and {_PACKAGE_DIR / 'config'}. "
         f"Set {CONFIG_DIR_ENV_VAR} to point at it."
     )

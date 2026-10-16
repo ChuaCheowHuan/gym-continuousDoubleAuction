@@ -11,12 +11,12 @@ They drift. Work from the code, not from the docs.
 ## Steps
 
 1. **Compute the facts** (about two minutes, it collects the whole suite):
-   `python .claude/skills/cda-doc-sync/scripts/facts.py . "$TMPDIR/facts.json"`
+   `python .claude/skills/cda-doc-sync/scripts/facts.py . "${TMPDIR:-/tmp}/facts.json"`
    It writes test totals and per-file counts, the observation width in `grid` and `levels` mode,
    the private-block fields, the action heads, `REWARD_TERMS`, the encoders, every config file, each
    entry point's flags and the file tree.
 2. **List disagreements:**
-   `python .claude/skills/cda-doc-sync/scripts/claims.py . "$TMPDIR/facts.json"`
+   `python .claude/skills/cda-doc-sync/scripts/claims.py . "${TMPDIR:-/tmp}/facts.json"`
    Output is `category  file:line  claimed -> actual  | line`. `16_verification_log.md`,
    `17_changelog.md` and `27_agent_skills.md` are skipped on purpose.
 3. **Triage every hit.** Current tense is corrected. Historical ("193 to 216 with the own-book

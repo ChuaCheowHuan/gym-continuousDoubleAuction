@@ -29,8 +29,13 @@ def validate_fee_rates(maker_fee_bps, taker_fee_bps) -> None:
     than the taker fee would let two agents trading with each other create
     money.
     """
+    rates = {}
     for key, value in (("maker_fee_bps", maker_fee_bps), ("taker_fee_bps", taker_fee_bps)):
-        if (not isinstance(value, Real) or isinstance(value, bool)
+        # `Decimal` is not a `numbers.Real`, but it is the type an `Account`
+        # stores its rates as, so a rate read back from one account has to be
+        # accepted by another (issue #230). A bool is an int to Python and is
+        # still refused.
+        if (not isinstance(value, (Real, Decimal)) or isinstance(value, bool)
                 or not math.isfinite(value)):
             raise ValueError(f"{key} must be a finite number; got {value!r}.")
         if abs(value) > MAX_FEE_BPS:
@@ -38,9 +43,12 @@ def validate_fee_rates(maker_fee_bps, taker_fee_bps) -> None:
                 f"{key} must be within +/-{MAX_FEE_BPS} (a tenth of the notional); "
                 f"got {value!r}. Basis points: 10 is 0.1%."
             )
-    if taker_fee_bps < 0:
+        # Compared as Decimal below: a Decimal and a float do not add.
+        rates[key] = Decimal(str(value))
+    maker, taker = rates["maker_fee_bps"], rates["taker_fee_bps"]
+    if taker < 0:
         raise ValueError(f"taker_fee_bps must be >= 0; got {taker_fee_bps!r}.")
-    if maker_fee_bps + taker_fee_bps < 0:
+    if maker + taker < 0:
         raise ValueError(
             f"maker_fee_bps + taker_fee_bps must be >= 0, or a fill pays out more "
             f"than it takes in; got {maker_fee_bps!r} and {taker_fee_bps!r} "

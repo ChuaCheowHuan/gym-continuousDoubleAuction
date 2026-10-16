@@ -3814,3 +3814,33 @@ tied to the layout version or finding it describes, the "five-head" checkpoint n
 - **Tests.** Four in `test_episode_record.py` for the recorder, three for the callback hook, and two integration tests in
   `test_distributed_observability.py` at the shipped threshold; six fail on the previous source. Unit 1,403 to 1,410,
   integration 179 to 181; suite 1,591.
+
+## 76. The fourteen S4-minor bugs (issues #230 #232 #234 #235 #236 #237 #240 #241 #242 #243 #262 #263 #265 #275)
+
+Every open issue labelled only `bug` and `S4-minor`. Three more with an extra label (#238, #244, #246) were left alone. Each was
+reproduced or its reading checked before the change, and each has a test class in `test_s4_minor_fixes.py` (`test_evaluate_seed.py`
+for #243); the unit total goes from 1,410 to 1,486, integration from 181 to 184, suite 1,670.
+
+| Issue | Defect | Fix |
+|---|---|---|
+| #230 | `validate_fee_rates` refused a `Decimal`, the type `Account` stores | accepts `Decimal` (bool, NaN, infinity still refused); the pair is compared as `Decimal` |
+| #232 | `num_orders` decremented before the lookup; `time=0` taken as unset; `OrderList` head/tail left on the removed order | lookup first; `time is not None`; head and tail cleared when the list empties |
+| #234 | layout-stamp message said "lacks nothing, has extra nothing" for a reordering | says the order differs and names the first position |
+| #235 | `None` module return raised in the best-candidate loop, `_log_iteration` and `export` | `train/returns.py` (`usable_return`, `format_return`) used in all three; `best_champion` also skips NaN |
+| #236 | `--set` read any unrecognised boolean as `False` | explicit true and false sets; anything else is an error naming the flag |
+| #237 | `$CDA_PLATFORM` was case-sensitive | stripped and lower-cased; empty is unset |
+| #240 | an empty recorded observation, or a truncated `progress.jsonl` line, aborted the plots | empty observation is a NaN gap; unparseable lines are skipped with a warning |
+| #241 | `config_dir()` took any `<package>/../config` directory | a candidate must contain `train_config.json` |
+| #242 | JEPA variance term NaN for a single masked row | hinge skipped for fewer than two rows, `latent_std` NaN meaning not measured; pretraining averages only measured chunks |
+| #243 | `evaluate --seed` did not seed sampling | torch and every module's action space seeded per episode |
+| #262 | compare table's `seeds` counted non-None returns | counts runs from the rows, `n/N` where they differ, failed runs named |
+| #263 | `evaluate --max-step` ignored in `random` episode-length mode | also pins `max_step_min` and `max_step_max` there |
+| #265 | cda-doc-sync wrote `/facts.json` when `TMPDIR` was unset | `${TMPDIR:-/tmp}` |
+| #275 | `size_high` had no upper bound | refused above 2.0 (the fraction at which an order reaches the maximum) |
+
+- **Reproduced by running.** #230 (the `ValueError`), #235 (the `TypeError` in the best-candidate loop), #237 (the `KeyError`),
+  #242 (aux loss NaN with one observation and one masked token, `mask_axis: random`), #243 (two same-seed runs differ). The
+  rest were checked by reading the code and are pinned by tests that fail on the previous source.
+- **Not claimed.** #242: a NaN `latent_std` can still reach the learner's logged metric for a one-row minibatch (window 1, so it
+  affects only that minibatch's value). #243 seeds sampling; it does not make a multi-process run deterministic. #275 chose the
+  bound over redefining `mul`, which would change every size. #232's three defects are not reachable from the env today.
