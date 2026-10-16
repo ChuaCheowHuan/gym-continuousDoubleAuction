@@ -433,3 +433,34 @@ class TestEvaluateMaxStepInRandomMode:
                     break
             lengths.add(steps)
         assert lengths == {9}
+
+
+class TestCompareTableShowsAFailedRun:
+    """#262: the `seeds` column counted runs with a non-None return, so a failed
+    run was recorded as a smaller experiment rather than as a failure."""
+
+    @staticmethod
+    def _rows(returns):
+        return [{"encoder": "mlp", "seed": i, "return": r, "vf_explained_var": 0.5,
+                 "pass_action_fraction": 0.1, "parameters": 1000}
+                for i, r in enumerate(returns)]
+
+    def test_all_runs_reporting_shows_the_plain_count(self):
+        from gym_continuousDoubleAuction.train.compare import render
+        table = render(self._rows([1.0, 1.1, 0.9]))
+        assert "| mlp | 3 |" in table and "No return was recorded" not in table
+
+    def test_a_failed_run_shows_n_over_total_and_is_named(self):
+        from gym_continuousDoubleAuction.train.compare import render
+        table = render(self._rows([1.0, None, 0.9]))
+        assert "| mlp | 2/3 |" in table
+        assert "No return was recorded for: mlp seed 1" in table
+
+    def test_every_failed_run_is_named(self):
+        from gym_continuousDoubleAuction.train.compare import render
+        table = render(self._rows([None, 1.0, None]))
+        assert "mlp seed 0, mlp seed 2" in table
+
+    def test_the_few_seeds_warning_still_counts_usable_runs(self):
+        from gym_continuousDoubleAuction.train.compare import render
+        assert "Fewer than three seeds" in render(self._rows([1.0, None, 0.9]))
