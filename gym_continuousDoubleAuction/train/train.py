@@ -59,6 +59,7 @@ from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback im
     NAV_VIOLATIONS_METRIC,
     SelfPlayCallback,
 )
+from gym_continuousDoubleAuction.train.returns import usable_return
 from gym_continuousDoubleAuction.train.model.encoders import (
     MLP_ENCODER_TYPE,
     encoder_fingerprint,
@@ -1918,7 +1919,9 @@ def _log_iteration(i: int, total: int, result: dict, cfg: TrainConfig) -> None:
     logger.info(
         "iter %s/%s | env steps sampled: %s | module returns: %s | "
         "vf_explained_var: %s",
-        i, total, steps, {k: round(float(v), 1) for k, v in returns.items()},
+        i, total, steps,
+        {k: (None if usable_return(v) is None else round(usable_return(v), 1))
+         for k, v in returns.items()},
         vf or "n/a",
     )
 

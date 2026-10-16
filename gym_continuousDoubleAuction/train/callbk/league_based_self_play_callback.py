@@ -21,6 +21,7 @@ from gym_continuousDoubleAuction.train.episode_record import (
     REWARD_TERMS,
     SAMPLE_END_DRAIN_S,
 )
+from gym_continuousDoubleAuction.train.returns import usable_return
 from gym_continuousDoubleAuction.train.policy.policy_handler import (
     CHAMPION_PREFIX,
     POLICY_PREFIX,
@@ -1114,8 +1115,8 @@ class SelfPlayCallback(RLlibCallback):
         
         for pid in trainable_policies:
             if pid in policy_returns:
-                p_ret = policy_returns[pid]
-                if p_ret > best_return:
+                p_ret = usable_return(policy_returns[pid])
+                if p_ret is not None and p_ret > best_return:
                     best_return = p_ret
                     best_candidate = pid
         
