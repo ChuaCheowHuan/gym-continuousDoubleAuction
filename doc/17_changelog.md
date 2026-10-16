@@ -3768,3 +3768,23 @@ tied to the layout version or finding it describes, the "five-head" checkpoint n
   checkpoint probed through `train.probe` is still built from the default env config (R-17, issue #187). `episode_length_mode`
   is passed through, but the rollout loop still runs `max_step` steps and stops early only when the env does.
 - **Tests.** `test_probe_corpus_config.py` (8); seven fail on the previous source. Unit 1,388 to 1,396; suite 1,575.
+
+## 74. The liquidation band allows for the taker fee (issue #233)
+
+- **What was open.** `LiquidationHelper` closes a position through `_process_trades`, which charges the taker fee since §59's
+  fees. `_bankruptcy_price` was sized from the mark and NAV alone, and `_liquidate_one` documented that the final NAV is
+  `>= 0` whenever `nav_before` was. A trader closed at its band price therefore paid the fee on top and could end negative,
+  with the loss going to nobody (money was conserved; the fee sits on the exchange ledger).
+- **Reproduced first** (the issue said "not reproduced"). With `taker_fee_bps=10`, agent_0 short 90 @ 100 and a mark of 210
+  has NAV 91 (10,000 less the 9 it paid to open and the 90 x 110 loss). Another trader offering all 90 at 211, the old band,
+  filled in full and left NAV at **-17.99**.
+- **Fix.** The band is the price at which NAV is zero after the fee: `(mark + cushion) / (1 + rate)` to buy back a short,
+  `(mark - cushion) / (1 - rate)` to sell a long, `cushion = NAV / |pos|`, `rate = taker_fee_bps / 10,000`. At a rate of 0
+  it is the old band exactly. Whatever the tighter band refuses goes to ADL, which pays no fee, so the guarantee holds for
+  the whole close. A partial fill (a `gradual_adl` slice, a thin book) pays a smaller fee at no worse a price, so the
+  whole-position band is conservative for it. Fee rates are capped at 1,000 bps, so `1 - rate` cannot reach zero.
+- **Chosen over exempting the forced close from the fee,** the issue's other direction: a real venue charges a liquidation
+  fee, the fee stays on the exchange ledger, and §9 already said the forced close pays. `doc/04` §8.2 and §9 now say so.
+- **Not claimed.** The long-side formula is pinned directly: a fully paid long cannot reach the breach in a real run, so it
+  has no end-to-end scenario. A trader already at NAV <= 0 keeps the mark (less the fee) as its band, as before.
+- **Tests.** Seven in `test_liquidation.py` (23 to 30); four fail on the previous source. Unit 1,396 to 1,403; suite 1,582.

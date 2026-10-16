@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (1,575 tests: 1,396 unit + 179 integration)
+# everything (1,582 tests: 1,403 unit + 179 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -82,7 +82,7 @@ Counts re-measured with `--collect-only`.
 | `test_grid_book.py` | 14 | The fixed tick-offset grid (S3-15): a quote sits in the cell of its tick offset, the same price lands in the same cell of every frame, out-of-window levels are not shown, price code j is j ticks from the reference whatever rests, own block and tokeniser alignment, `ObsLayout` reads both modes |
 | `test_occupancy_channel.py` | 11 | The two occupancy rows equal `size > 0` on every cell of every step and ride with their frame; an absent level and a quote at the reference price differ; a one-sided book is referenced to the last trade, agreeing with `mark_price`; layout version 4 (S3-14) |
 | `test_reward_logic.py` | 8 | Reward formula components: normalisation by `init_nav`, scale invariance, the signed drawdown telescoping, zero-sum symmetry |
-| `test_liquidation.py` | 23 | Maintenance margin and close-out (04 section 8): the trigger, the book inside the bankruptcy band then ADL, the counters, a bankrupt trader terminated flat, the pro-rata ADL split, `gradual_adl` slices and freeze, and refusing a non-numeric margin or horizon by name |
+| `test_liquidation.py` | 30 | Maintenance margin and close-out (04 section 8): the trigger, the book inside the bankruptcy band (priced to include the taker fee, #233) then ADL, the counters, a bankrupt trader terminated flat, the pro-rata ADL split, `gradual_adl` slices and freeze, and refusing a non-numeric margin or horizon by name |
 | `test_visualize_reward_terms.py` | 3 | Every reward term is drawn in the charts, each in its own colour, so the plotted terms still sum to the total |
 | `test_env_lifecycle.py` | 10 | The bare env is tradable (S1-4) and truncation lands exactly on `max_step` (S3-19) |
 | `test_seeding.py` | 11 | `reset(seed=...)` really seeds the episode: anchor, sizes, queueing order; the global NumPy stream is not the source; `sklearn` is not imported (S3-5, S3-6) |
@@ -149,7 +149,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((1,575 tests))
+  root((1,582 tests))
     Simulator
       orderbook 57
         components, matching, invariants

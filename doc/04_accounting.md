@@ -344,7 +344,10 @@ apply to short stock (FINRA Rule 4210). `maintenance_margin = 0` liquidates at b
 1. **Margin call.** Every resting order of the trader is cancelled; their escrow returns to cash.
 2. **The book (A).** An immediate-or-cancel order for the whole position goes to the book on the
    closing side, limited to the trader's **bankruptcy price** — the worst price at which its NAV is
-   still ≥ 0, `mark - nav / net_position`, snapped to the tick on the conservative side. The fills
+   still ≥ 0 *after the taker fee the close pays*: `(mark + nav / |pos|) / (1 + rate)` for a short
+   being bought back, `(mark - nav / |pos|) / (1 - rate)` for a long being sold, with `rate` the
+   taker fee as a fraction (at 0 it is `mark - nav / net_position`). Snapped to the tick on the
+   conservative side. The fills
    are ordinary trades against orders other agents chose to rest, settled by `_process_trades`, and
    they print. Nothing is left resting. With NAV already ≤ 0 (a gap through bankruptcy in one step)
    the limit is the mark itself: the book may only improve on it.
@@ -451,7 +454,9 @@ notional (`price × quantity`). Both ship at **0**, so nothing changes until a r
 - **What pays nothing.** A self-trade (a market order meeting the trader's own resting order never
   reaches `process_acc`), and ADL, a transfer at the mark that the exchange imposes
   (`fee_role='none'`). The forced close in the book is an ordinary fill and pays, including each slice of a
-  `gradual_adl` close, so a liquidated trader's loss to the bankruptcy price includes the fee.
+  `gradual_adl` close, so a liquidated trader's loss to the bankruptcy price includes the fee, and
+  the band of §8.2 is priced to allow for it: the book stage cannot take NAV below zero even with
+  fees on. What the tighter band refuses goes to ADL, which pays nothing.
 - **Cash check.** §3's check reserves the largest fee on top of an order's notional, and also the
   maker fee every resting order of the trader's will owe if it fills (`Trader._resting_maker_fees`),
   because a resting order escrows its notional but not its fee, so that fee sits in cash until the
