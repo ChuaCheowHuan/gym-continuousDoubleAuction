@@ -139,3 +139,67 @@ class TestStaleCommentsAndNotes:
             if isinstance(block, dict) and "_module" in block:
                 command = block["_module"].split(".")[-1]
                 assert command in data["_source"], command
+
+
+import glob  # noqa: E402
+import json  # noqa: E402
+
+#: Documents that describe the present. The history files are excluded on purpose.
+_HISTORY = {"16_verification_log.md", "17_changelog.md", "README_v1.md", "27_agent_skills.md"}
+_ENTRY_POINTS = (
+    "CDA_rand.py", "train/train.py", "train/probe/__main__.py", "train/pretrain/__main__.py",
+    "train/compare.py", "train/evaluate.py", "train/export.py", "visualize/run_all.py",
+)
+
+
+def _docs_text():
+    paths = ["README.md"] + sorted(
+        p for p in glob.glob("doc/*.md") if os.path.basename(p) not in _HISTORY)
+    return "\n".join(open(p, encoding="utf-8").read() for p in paths)
+
+
+def _leaves(tree, prefix=""):
+    for key, value in tree.items():
+        if key.startswith("_"):
+            continue
+        if isinstance(value, dict) and value:
+            yield from _leaves(value, prefix + key + ".")
+        else:
+            yield prefix + key
+
+
+class TestEveryConfigKeyAndFlagIsDocumented:
+    """#249 and #250: 18 config keys and 9 CLI flags appeared in no document, and nothing
+    would have said so when the next one was added. Both are static, so they cost nothing."""
+
+    def test_every_config_key_is_mentioned_in_some_document(self):
+        text = _docs_text()
+        missing = []
+        for path in sorted(glob.glob("config/*.json")):
+            for key in _leaves(json.load(open(path))):
+                leaf = key.split(".")[-1]
+                if not re.search(r"(?<![\w-])" + re.escape(leaf) + r"(?![\w])", text):
+                    missing.append(f"{os.path.basename(path)}:{key}")
+        assert not missing, (
+            "config keys no document mentions (add them to doc/18 or the doc that owns "
+            f"them): {missing}")
+
+    def test_every_cli_flag_is_mentioned_in_some_document(self):
+        text = _docs_text()
+        package = "gym_continuousDoubleAuction"
+        missing = []
+        for relative in _ENTRY_POINTS:
+            source = open(os.path.join(package, relative), encoding="utf-8").read()
+            for flag in re.findall(r"add_argument\(\s*(?:\"-\w\",\s*)?\"(--[a-z][a-z0-9-]*)\"", source):
+                if not re.search(re.escape(flag) + r"(?![\w-])", text):
+                    missing.append(f"{relative}:{flag}")
+        assert not missing, f"CLI flags no document mentions (add them to doc/26): {missing}"
+
+    def test_the_flag_scan_finds_flags_at_all(self):
+        """A regex that silently matched nothing would make the check above vacuous."""
+        source = open("gym_continuousDoubleAuction/train/compare.py", encoding="utf-8").read()
+        found = re.findall(r"add_argument\(\s*(?:\"-\w\",\s*)?\"(--[a-z][a-z0-9-]*)\"", source)
+        assert "--no-probe" in found and "--probe-seed" in found and len(found) > 10
+
+    def test_an_undocumented_key_would_be_caught(self):
+        assert not re.search(r"(?<![\w-])zz_not_a_real_key(?![\w])", _docs_text())
