@@ -1009,6 +1009,11 @@ A second limit at the same price *replaces* the first (level volume 7, not 12) �
 `_place_limit_order` upserts via `_get_order_ID`. Layering, iceberg and multi-clip quoting are
 not expressible. Different price levels are unaffected.
 
+**Fixed as an option** (issue #122, changelog [17](17_changelog.md) §79): `allow_multiple_orders_per_level`
+(env key, default `false` = the behaviour above) makes a limit always a new order. The default is
+deliberately unchanged, so no existing run or checkpoint moves. One branch in `Trader._get_order_ID`,
+which the cash check shares.
+
 ### S3-11 · No entropy bonus, and champion promotion cannot detect passivity **[verified, fixed]**
 
 _Tracked in [#123](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/123)._
@@ -1047,6 +1052,14 @@ The four shaping terms are not zero-sum, so returns depend on the role a module 
 episode. The promotion threshold is a pooled `mean + k·std` over *all* modules including the
 frozen random baselines. A policy can clear it by trading *less*, not *better*.
 
+**Fixed as an option** (issue #124, changelog [17](17_changelog.md) §79):
+`league_self_play.promotion_reference: "excluding_baselines"` computes the threshold over the trainable
+modules and champions only. Default `pooled`, unchanged. The bias runs both ways, depending on where the
+baselines sit: just under the learners they lower the bar a candidate clears, far below they raise it past
+a clearly better learner (both pinned in `test_s3_moderate_fixes.py`). "Trading less" is guarded by
+`min_champion_trades` (S3-11). While the non-baseline set is too small for the multiplier to be clearable
+the threshold falls back to the pooled one, so the league can still start.
+
 ### S3-13 · γ=0.99 against 4,096-step episodes **[verified]**
 
 _Tracked in [#125](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/125)._
@@ -1056,6 +1069,12 @@ that (inventory accumulation, sustained market making) are invisible to the retu
 episodes per training iteration also means very few samples of the episode-level randomness
 (price anchor, opponent draw). `lambda_=1.0` (RLlib's PPO default, not the usual 0.95) makes
 advantages pure Monte-Carlo.
+
+**Fixed** (issue #125, changelog [17](17_changelog.md) §79): `gamma` and `lambda_` are `ppo` config keys now,
+shipped at **0.999** and **0.95** (effective horizon about 1,000 steps, GAE variance reduction back). They are the
+usual choices for a long episode, **not tuned on this env and not shown to be better**; they change what every
+default run optimises, so results trained at 0.99 / 1.0 are not comparable. In the restore fingerprint. The
+4-episodes-per-iteration point is `num_episodes_per_iter`, untouched.
 
 ### S3-14 · Zero means three different things in the observation **[verified, fixed]**
 
@@ -1596,7 +1615,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **1,540 unit tests pass** (plus 185 integration), covering every position-flip path, cash-check edge case, modify-order
+- **1,578 unit tests pass** (plus 185 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 

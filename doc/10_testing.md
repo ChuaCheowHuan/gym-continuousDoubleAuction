@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (1,725 tests: 1,540 unit + 185 integration)
+# everything (1,763 tests: 1,578 unit + 185 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -101,6 +101,7 @@ Counts re-measured with `--collect-only`.
 | `test_info_dict.py` | 24 | Per-step `info`: back-compat, reward terms summing exactly, live counters, spread, pass/rejection fields, JSON, and 0-d numpy arrays — which only a *recurrent* module produces |
 | `test_type_policy.py` | 15 | Decimal money/prices, int sizes, no field changing type mid-episode, book boundary |
 | `test_activity_metrics.py` | 34 | `pass_action_fraction` / `order_rejection_fraction` / `obs_clip_fraction`: the S1-3 detector, per-episode tallies, pickling; the reward-term variance split, the maker-ratio metric and the end-of-episode account metrics |
+| `test_s3_moderate_fixes.py` | 38 | The three design issues: `gamma` / `lambda_` reaching PPO with validation and the restore warning (#125); several resting orders at one price, default replace-in-place, escrow and both clearing modes (#122); and `promotion_reference`, both directions of the pooled-threshold bias, the small-set fallback and the restore default (#124) |
 | `test_performance.py` | 27 | Risk-adjusted performance (S3-9): Sharpe, Sortino, max drawdown, hit rate, turnover and inventory against a hand-worked series, undefined metrics left out rather than logged as 0, bad NAVs skipped, and the callback logging them per module (#121) |
 | `test_doc_sync_claims.py` | 13 | `cda-doc-sync`'s `claims.py` checking the inventory table, the code size and that every config key and CLI flag is mentioned in some doc, each in both directions (#264) |
 | `test_open_bug_fixes.py` | 14 | The last three open `bug` issues: run logging turns propagation back on without a Ray encoding (#238), the byte cap never deletes the newest episode file and warns once (#246), and `apply_env_vars()` is pinned to run before `ray.init` in every entry point, with the fact that the configured variable is not read at Ray's import checked against the installed Ray (#244) |
@@ -154,7 +155,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((1,725 tests))
+  root((1,763 tests))
     Simulator
       orderbook 57
         components, matching, invariants

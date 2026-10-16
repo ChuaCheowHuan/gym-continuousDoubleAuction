@@ -241,6 +241,7 @@ written before they existed restores with the env defaults, i.e. with liquidatio
 
 | Key | Default | Meaning |
 |---|---|---|
+| `allow_multiple_orders_per_level` | `false` | `false`: a limit at a price the trader already rests at replaces that order. `true`: it rests beside it, each with its own escrow and place in the queue (layering, multi-clip quoting). Changes the game; a checkpoint trained under one setting is not comparable with the other |
 | `taker_fee_bps` | `0` | Fee the aggressing order pays, in basis points of a fill's notional. In `[0, 1000]`. A `Decimal` is accepted, as an account stores its rates that way |
 | `maker_fee_bps` | `0` | Fee the resting order pays; negative is a rebate. In `[-1000, 1000]`, and the pair must sum to >= 0 |
 
@@ -495,10 +496,13 @@ differs from what RLlib or the earlier config gave:
 
 | Key | Group | Shipped | Meaning |
 |---|---|---|---|
+| `gamma` | `ppo` | 0.999 | PPO discount. RLlib's own default is 0.99, an effective horizon of about 100 steps against a 4,096-step episode; 0.999 gives about 1,000. In `(0, 1]` |
+| `lambda_` | `ppo` | 0.95 | GAE parameter. RLlib's own default is 1.0, which makes the advantage pure Monte-Carlo. In `[0, 1]`. Both are in the restore fingerprint: a resume of a 0.99 / 1.0 checkpoint keeps them and says so. Set 0.99 and 1.0 for the old behaviour |
 | `entropy_coeff` | `ppo` | 0.01 | PPO entropy bonus at the start of the run. RLlib's own default is 0.0 |
 | `entropy_coeff_final` | `ppo` | 0.001 | The value it has fallen to after `entropy_decay_iters` iterations, held there afterwards |
 | `entropy_decay_iters` | `ppo` | 16 | Iterations over which it falls, linearly in env steps (one iteration is `train_batch_size` steps). At least 1 |
 | `std_dev_multiplier` | `league_self_play` | 1.5 | A champion must beat `league_mean + multiplier × league_std`. Was 0.1 |
+| `promotion_reference` | `league_self_play` | `pooled` | Which modules the promotion threshold is computed over: `pooled` (all, the frozen random baselines included) or `excluding_baselines` (trainable modules and champions). While the latter set is too small for `std_dev_multiplier` to be clearable (two learners and no champion) the threshold falls back to the pooled one, and `result["league"]["reference"]` says which was used |
 | `min_champion_trades` | `league_self_play` | 1.0 | Mean trades per episode, over the iteration, the candidate needs to be promoted. 0 turns the guard off |
 
 `entropy_coeff` and `entropy_coeff_final` both 0 builds the config it always did. They reach RLlib

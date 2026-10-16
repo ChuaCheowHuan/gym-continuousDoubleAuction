@@ -3896,3 +3896,29 @@ Two of the five open `S3-moderate` issues. The other three (#122 one resting ord
 - **Tests.** `test_performance.py` (27, against a hand-worked series, plus a real one-runner iteration in
   `test_distributed_observability.py` showing the metrics reach the driver) and `test_doc_sync_claims.py` (13, each check driven
   both ways). Unit 1,500 to 1,540, integration 184 to 185, suite 1,725.
+
+## 79. The three S3-moderate design issues (#122, #124, #125)
+
+These changed behaviour and had more than one reasonable fix, so the choice was put to the owner: raise gamma and set lambda_ (#125),
+an opt-in flag (#122), exclude the baselines behind a default-off key (#124). Only #125 changes a default.
+
+- **#125, gamma and lambda_.** RLlib's 0.99 and 1.0 were not config keys at all. `gamma` and `lambda_` are `ppo` keys now (validated:
+  gamma in (0, 1], lambda_ in [0, 1]), threaded into `PPOConfig.training`, and part of the restore fingerprint, and ship at **0.999 and
+  0.95**: an effective horizon of about 1,000 steps instead of about 100 against a 4,096-step episode, and GAE with its variance
+  reduction. **Not tuned and not shown to improve anything**; results at 0.99 / 1.0 are not comparable with these.
+- **#122, several orders per level.** `allow_multiple_orders_per_level` (env key, `false` default) makes a limit always a new order.
+  One branch in `Trader._get_order_ID`, which `_order_approved` shares through `_replaced_order`, so the cash check charges the
+  second order in full instead of crediting a release that does not happen. Checked with random play in both clearing modes (1,440
+  steps, 306 price levels holding two or more orders of one trader): escrow equal to the value of what rests, every step.
+- **#124, the promotion reference.** The threshold was `mean + k*std` over every module, the frozen baselines included. Measured by
+  construction in the tests, the bias runs both ways: baselines just under the learners lower the bar a candidate clears (1.3
+  promotes at a pooled 1.27, not at 1.39 over the learners and champions), baselines far below raise it past a learner that is clearly
+  ahead (2.0 refused at a pooled 3.33, promoted at 1.86). `promotion_reference: "excluding_baselines"` uses the trainable modules and
+  champions. With n modules nobody is more than sqrt(n - 1) deviations above the mean, which two learners and no champion (n = 2) never
+  clear at 1.5, so while that set is too small the pooled threshold is used, once warned, and `result["league"]["reference"]` says
+  which. A callback saved before the key restores as `pooled`.
+- **Not claimed.** That any of the three makes training better. #122 and #124 are off by default and #125 is the usual choice, not
+  a measured one; a sweep (`train.compare --set gamma=0.99 --set lambda_=1.0` against the defaults) is the way to find out.
+  #124's `excluding_baselines` still compares returns that depend on the role played; it removes the baselines' contribution, not
+  the role dependence of the rest.
+- **Tests.** `test_s3_moderate_fixes.py` (38). Unit 1,540 to 1,578; suite 1,763.
