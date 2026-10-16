@@ -122,6 +122,13 @@ REWARD_TERMS = (
 #: episodes a killed run most wants to keep.
 _CLOSE_ENQUEUE_WAIT_S = 10.0
 
+#: How long the end of a sample waits for the writer to finish what it was just
+#: handed. Bounded, because the next thing to happen is the learner update and a
+#: stalled filesystem must not stall training; non-zero, because a runner that is
+#: killed right after the iteration returns would otherwise take a batch that was
+#: queued but not yet on disk with it. Writing a file takes milliseconds.
+SAMPLE_END_DRAIN_S = 5.0
+
 #: `info` keys handled outside `INFO_COLUMNS`, so they do not also land in
 #: `info_extra`.
 _HANDLED_KEYS = frozenset(
@@ -404,6 +411,32 @@ class EpisodeRecorder:
         if self._pending:
             self._enqueue(self._pending, wait=wait)
             self._pending = []
+
+    def flush_finished(self, *, wait: float = 0.0) -> None:
+        """Write the episodes that have finished, and leave running ones alone.
+
+        The end-of-sample counterpart of `flush`. `rows_per_file` is a floor on
+        a file's size, and `close` runs from `atexit`, which Ray does not
+        reliably run when it stops an env runner (`ray.shutdown()`, an actor
+        kill). Left to those two, a run with fewer rows than `rows_per_file`
+        wrote nothing at all, and a long one lost up to `rows_per_file - 1`
+        rows per runner (doc/15, issue #245).
+
+        Unlike `flush` this does not touch `_live`: a sample boundary is not an
+        episode boundary, and writing a running episode out now would label it
+        `episode_complete=False` and split it across files.
+
+        Blocks for at most `wait` seconds in total for the writer to take the
+        batch and finish it, so the rows are on disk when this returns rather
+        than queued.
+        """
+        started = time.monotonic()
+        if self._pending:
+            self._enqueue(self._pending, wait=wait)
+            self._pending = []
+        while (self._queue.unfinished_tasks
+               and time.monotonic() - started < wait):
+            time.sleep(0.01)
 
     def close(self) -> None:
         """Flush, stop the writer thread, and wait for it - briefly.
