@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (1,684 tests: 1,500 unit + 184 integration)
+# everything (1,725 tests: 1,540 unit + 185 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -101,6 +101,8 @@ Counts re-measured with `--collect-only`.
 | `test_info_dict.py` | 24 | Per-step `info`: back-compat, reward terms summing exactly, live counters, spread, pass/rejection fields, JSON, and 0-d numpy arrays — which only a *recurrent* module produces |
 | `test_type_policy.py` | 15 | Decimal money/prices, int sizes, no field changing type mid-episode, book boundary |
 | `test_activity_metrics.py` | 34 | `pass_action_fraction` / `order_rejection_fraction` / `obs_clip_fraction`: the S1-3 detector, per-episode tallies, pickling; the reward-term variance split, the maker-ratio metric and the end-of-episode account metrics |
+| `test_performance.py` | 27 | Risk-adjusted performance (S3-9): Sharpe, Sortino, max drawdown, hit rate, turnover and inventory against a hand-worked series, undefined metrics left out rather than logged as 0, bad NAVs skipped, and the callback logging them per module (#121) |
+| `test_doc_sync_claims.py` | 13 | `cda-doc-sync`'s `claims.py` checking the inventory table, the code size and that every config key and CLI flag is mentioned in some doc, each in both directions (#264) |
 | `test_open_bug_fixes.py` | 14 | The last three open `bug` issues: run logging turns propagation back on without a Ray encoding (#238), the byte cap never deletes the newest episode file and warns once (#246), and `apply_env_vars()` is pinned to run before `ray.init` in every entry point, with the fact that the configured variable is not read at Ray's import checked against the installed Ray (#244) |
 | `test_s4_minor_fixes.py` | 76 | The fourteen S4-minor bugs, one class each (#230 #232 #234 #235 #236 #237 #240 #241 #242 #243 #262 #263 #265 #275): a `Decimal` fee rate, order book bookkeeping, the layout-stamp order message, a `None` module return, `--set` booleans, `$CDA_PLATFORM` case, the plots on bad records, a foreign `config/`, a single-row JEPA batch, `evaluate`'s `--max-step`, the compare table's failed run, the `size_high` bound and the doc-sync `TMPDIR` default |
 | `test_episode_record.py` | 40 | The Parquet per-step record: declared schema and its drift guard against `Info_Helper`, identity columns, sampling rate, byte cap, eviction of episodes that never end, the ways it must fail without raising, and the end-of-sample flush that gets finished episodes to disk without waiting for exit (#245) |
@@ -129,7 +131,7 @@ Counts re-measured with `--collect-only`.
 | `integration/test_export_checkpoint.py` | 7 | Train, force a champion, save, export and reload: the default picks the winner, and the exported tensors are the source policy's rather than a fresh initialisation |
 | `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported, finite, and **above 1e-3** — a live guard since S1-1 was fixed |
 | `integration/test_evaluate_seed.py` | 3 | `train.evaluate --seed` repeats sampled actions on a real module set, a different seed does not, and an unseeded run is not claimed to (#243) |
-| `integration/test_distributed_observability.py` | 13 | A real `num_env_runners=1` iteration: every episode-hook metric arrives on the driver, the episode record is written by the *worker* into the driver's absolute run-scoped path, and at the shipped `episode_rows_per_file` it is on disk when the iteration returns (#245) |
+| `integration/test_distributed_observability.py` | 14 | A real `num_env_runners=1` iteration: every episode-hook metric arrives on the driver, the episode record is written by the *worker* into the driver's absolute run-scoped path, and at the shipped `episode_rows_per_file` it is on disk when the iteration returns (#245) |
 | `integration/test_encoder_wiring.py` | 48 | Champions inherit the encoder; a restore cannot change it; the recurrent and MoE paths train end to end; a real checkpoint round-trip with a custom encoder |
 | `integration/test_probe_harness.py` | 28 | The probe against the real env: a usable rollout corpus, every registered encoder frozen and read, the LSTM's state reset per episode, a real checkpoint restored with its weights |
 | `integration/test_cbp_wiring.py` | 46 | Continual Backprop inside a real `Algorithm`: composition over the encoder's Learner, a real save and restore, and the restore guard — §6.6.2 |
@@ -152,7 +154,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((1,684 tests))
+  root((1,725 tests))
     Simulator
       orderbook 57
         components, matching, invariants

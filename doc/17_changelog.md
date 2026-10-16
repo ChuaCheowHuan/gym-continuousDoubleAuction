@@ -3869,3 +3869,30 @@ These carried `bug` plus another label (`logging`, `question`) and were left out
   test-only), so it may be inert; that was not investigated further. #246: a cap smaller than one file means the record exceeds the
   cap by up to one file per writer, which is the trade for never writing nothing.
 - **Tests.** `test_open_bug_fixes.py` (14); six fail on the previous source. Unit 1,486 to 1,500; suite 1,684.
+
+## 78. S3-moderate: the doc-sync checker (#264) and risk-adjusted metrics (#121)
+
+Two of the five open `S3-moderate` issues. The other three (#122 one resting order per price level, #124 the league ranking signal,
+#125 gamma and lambda) are design decisions rather than defects and are not done here; see the end of this section.
+
+- **#264, `claims.py` checked seven number categories, not what the skill promised.** It now also checks the per-file inventory in
+  `doc/10` (a wrong count, a stale row, a test file with no row), the code size in `doc/14`, and whether every config key and CLI
+  flag in `facts.json` is mentioned in some doc. `facts.py` gains `code` (lines and files of `git ls-files '*.py'`, so a build
+  copy or a virtualenv is not counted). `SKILL.md` says what step 2 now covers.
+- **It found things on its first run.** The code size in `doc/14` was wrong: it had been kept by adding deltas to a figure of
+  unknown origin and read 44,840 lines / 159 files when the repository had 46,352 / 165. It is now the counted value (46,838 /
+  168). The inventory was missing two rows and one count was stale (`test_distributed_observability.py`). And 27 config keys and 12
+  CLI flags are mentioned in no doc (for example `--env-runners`, `--no-probe`, `cda_compare.probe_seed`,
+  `module_id_prefixes.*`, `visualize_paths.*`); those are reported on every run until they are documented, which is the point, and
+  were not documented here.
+- **#121, no risk-adjusted metrics.** `train/performance.py` (`PerformanceTally`) keeps O(1) state per agent from the exact NAV
+  string and net position. The callback logs, per module and meaned over the iteration: `module_sharpe`, `module_sortino`,
+  `module_max_drawdown` (over the path; the existing `mean_agent_drawdown` is the last step's), `module_hit_rate`,
+  `module_position_turnover`, `module_mean_abs_position`, `module_max_abs_position`. Returns are per step, in `Decimal`, not
+  annualised; a metric undefined for an episode is left out rather than logged as 0. Definitions are in the module docstring and
+  `doc/11` §1.
+- **Not done from #121:** the realised-vs-unrealised P&L split (the account has no realised P&L) and adverse-selection mark-outs.
+  Filed as #286. The maker/taker share already existed as `maker_fill_ratio_max`.
+- **Tests.** `test_performance.py` (27, against a hand-worked series, plus a real one-runner iteration in
+  `test_distributed_observability.py` showing the metrics reach the driver) and `test_doc_sync_claims.py` (13, each check driven
+  both ways). Unit 1,500 to 1,540, integration 184 to 185, suite 1,725.

@@ -168,6 +168,7 @@ in the repository writes a pickle any more.
 | `mean_abs_net_position` | Mean absolute inventory at episode end | 10 | `on_episode_end` |
 | `mean_num_trades` | Mean trades per agent over the episode | 10 | `on_episode_end` |
 | `maker_fill_ratio_max` | The most maker-like agent's share of its own fills | 10 | `on_episode_end` |
+| `module_sharpe`, `module_sortino`, `module_max_drawdown`, `module_hit_rate`, `module_position_turnover`, `module_mean_abs_position`, `module_max_abs_position` | Each module's risk-adjusted performance in the episode (doc/15 S3-9), nested under the module id. Per-step returns from the exact NAV, not annualised; a metric undefined for the episode (a Sharpe with no variance) is left out, not logged as 0. Definitions in `train/performance.py` | `reduce="mean"` over the iteration | `on_episode_end` |
 | `module_trades_per_episode` | Each module's trades per episode, nested under the module id; read by the champion guard (doc/15 S3-11) | `reduce="mean"` over the iteration | `on_episode_end` |
 | `league_size` | `num_trainable + num_random + champion_count` | 1 | `on_train_result` |
 | `league_mean_return` | Mean module return across the league | 10 | `on_train_result` |

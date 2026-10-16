@@ -990,8 +990,16 @@ discarded after the reward consumes them. `info["NAV"]` is a **string**, round-t
 round trip was harmless at the default `init_cash = 1e6`, but that **above `init_cash ≈ 1e10` the
 float check could not resolve its own `1e-6` tolerance** — a genuine breach read as exactly `0.0`
 and would have passed a corrupt ledger silently. It also corrects the claim that `nav_tolerance`
-was absorbing float noise. The missing risk-adjusted metrics above, and the remaining `float()`
-consumers of `info["NAV"]`, are untouched.
+was absorbing float noise. The remaining `float()` consumers of `info["NAV"]` are untouched.
+
+**Fixed, in part** (issue #121, changelog [17](17_changelog.md) §78). `train/performance.py` keeps O(1)
+state per agent from the exact NAV and net position, and the callback logs per module, meaned over
+the iteration: `module_sharpe`, `module_sortino` (per-step returns, not annualised), `module_max_drawdown`
+(over the path), `module_hit_rate`, `module_position_turnover`, `module_mean_abs_position` and
+`module_max_abs_position`. A metric undefined for an episode is left out, not logged as 0. The maker
+share already existed (`maker_fill_ratio_max`). **Still absent:** the realised-vs-unrealised P&L split
+(the account does not track realised P&L) and adverse-selection mark-outs (they need each fill's price
+against the later mid).
 
 ### S3-10 · A trader can hold only one resting order per price level **[verified]**
 
@@ -1588,7 +1596,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **1,500 unit tests pass** (plus 184 integration), covering every position-flip path, cash-check edge case, modify-order
+- **1,540 unit tests pass** (plus 185 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 

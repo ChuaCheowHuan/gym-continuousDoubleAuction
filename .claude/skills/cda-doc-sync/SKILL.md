@@ -18,13 +18,17 @@ They drift. Work from the code, not from the docs.
 2. **List disagreements:**
    `python .claude/skills/cda-doc-sync/scripts/claims.py . "${TMPDIR:-/tmp}/facts.json"`
    Output is `category  file:line  claimed -> actual  | line`. `16_verification_log.md`,
-   `17_changelog.md` and `27_agent_skills.md` are skipped on purpose.
+   `17_changelog.md` and `27_agent_skills.md` are skipped on purpose. Besides the number
+   categories it checks the per-file inventory in `doc/10` (a wrong count, a stale row, a test file
+   with no row), the code size in `doc/14`, and that every config key and CLI flag is mentioned in
+   some doc (`config key`, `cli flag`: a key or flag nothing documents).
 3. **Triage every hit.** Current tense is corrected. Historical ("193 to 216 with the own-book
    block", "was 168 floats") is left alone. A measured figure that reads as current gets the
    current value added beside it. A hit may be a number that only sits near a noun; ignore those.
-4. **Recompute the dependent figures** that the scanner cannot see: the per-file inventory and the
-   coverage mindmap in `doc/10_testing.md`, the code size in `doc/14_perspective_ai_engineer.md`,
-   the expected lines in `doc/26_runbook.md` (§26.2). Take them from `facts.json`.
+4. **Recompute the dependent figures** that the scanner still cannot see: the coverage mindmap in
+   `doc/10_testing.md` and the expected lines in `doc/26_runbook.md` (§26.2). Take them from
+   `facts.json`. (The inventory rows and the code size are checked in step 2; `facts.code` counts
+   `git ls-files '*.py'`.)
 5. **Check links:** `python tools/check_links.py`. It must print `TOTAL 0`. Re-run it after any
    heading edit: renaming a heading breaks anchors in other files.
 6. **Render any changed Mermaid block** with `@mermaid-js/mermaid-cli` before committing.
