@@ -57,6 +57,7 @@ from gym_continuousDoubleAuction.logging_setup import (
 )
 from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
     NAV_VIOLATIONS_METRIC,
+    PROMOTION_REFERENCES,
     SelfPlayCallback,
 )
 from gym_continuousDoubleAuction.train.returns import usable_return
@@ -328,6 +329,9 @@ class TrainConfig:
     # Mean trades per episode a trainable policy needs over the iteration to be
     # promoted (doc/15 S3-11). 0 disables the guard.
     min_champion_trades: float = _default("min_champion_trades")
+    # Which modules the promotion threshold is computed over (doc/15 S3-12):
+    # "pooled" or "excluding_baselines".
+    promotion_reference: str = _default("promotion_reference")
     original_opponent_weight: float = _default("original_opponent_weight")
     champion_weight: float = _default("champion_weight")
     # null disables the per-step episode record entirely. See episode_data_path
@@ -431,6 +435,11 @@ class TrainConfig:
         if self.entropy_decay_iters < 1:
             raise ValueError(
                 f"entropy_decay_iters must be >= 1; got {self.entropy_decay_iters}."
+            )
+        if self.promotion_reference not in PROMOTION_REFERENCES:
+            raise ValueError(
+                f"promotion_reference must be one of {PROMOTION_REFERENCES}; "
+                f"got {self.promotion_reference!r}."
             )
         if self.min_champion_trades < 0:
             raise ValueError(
@@ -777,6 +786,7 @@ def build_config(cfg: TrainConfig):
         nav_tolerance=cfg.nav_tolerance,
         strict_nav_check=cfg.strict_nav_check,
         min_champion_trades=cfg.min_champion_trades,
+        promotion_reference=cfg.promotion_reference,
         episode_sample_every=cfg.episode_sample_every,
         episode_max_bytes=cfg.episode_max_bytes,
         episode_rows_per_file=cfg.episode_rows_per_file,

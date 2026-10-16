@@ -66,6 +66,9 @@ NAV_UNCHECKED_METRIC = "nav_conservation_unchecked"
 #: module id: `result["env_runners"][MODULE_TRADES_METRIC]["policy_0"]`.
 MODULE_TRADES_METRIC = "module_trades_per_episode"
 
+#: The modules the promotion threshold can be computed over (doc/15 S3-12).
+PROMOTION_REFERENCES = ("pooled", "excluding_baselines")
+
 #: Prefix of the per-module risk-adjusted metrics (doc/15 S3-9): one metric per
 #: name in `performance.METRICS`, e.g. `module_sharpe`, each nested under the
 #: module id like `MODULE_TRADES_METRIC` and meaned over the iteration's episodes.
@@ -153,6 +156,7 @@ class SelfPlayCallback(RLlibCallback):
         nav_tolerance=None,
         strict_nav_check=None,
         min_champion_trades=None,
+        promotion_reference=None,
         episode_sample_every=None,
         episode_max_bytes=None,
         episode_rows_per_file=None,
@@ -188,6 +192,10 @@ class SelfPlayCallback(RLlibCallback):
                 collapsed to always-pass earns exactly 0, which beats a league of
                 money-losing modules, so it would otherwise clear the return
                 threshold (doc/15 S3-11). 0 disables the guard.
+            promotion_reference: Which modules the promotion threshold is computed
+                over: "pooled" (all of them, baselines included) or
+                "excluding_baselines" (trainable modules and champions). See
+                `_threshold_returns` and doc/15 S3-12.
             episode_sample_every: Record one episode in N. 1 records every one.
             episode_max_bytes: Cap on the episode record each process keeps.
                 0 disables the cap.
@@ -234,6 +242,13 @@ class SelfPlayCallback(RLlibCallback):
             strict_nav_check = league["strict_nav_check"]
         if min_champion_trades is None:
             min_champion_trades = league["min_champion_trades"]
+        if promotion_reference is None:
+            promotion_reference = league["promotion_reference"]
+        if promotion_reference not in PROMOTION_REFERENCES:
+            raise ValueError(
+                f"promotion_reference must be one of {PROMOTION_REFERENCES}; "
+                f"got {promotion_reference!r}."
+            )
         if episode_sample_every is None:
             episode_sample_every = league["episode_sample_every"]
         if episode_max_bytes is None:
@@ -245,6 +260,8 @@ class SelfPlayCallback(RLlibCallback):
         self.nav_tolerance = nav_tolerance
         self.strict_nav_check = strict_nav_check
         self.min_champion_trades = min_champion_trades
+        self.promotion_reference = promotion_reference
+        self._warned_reference_fallback = False
         self.episode_sample_every = episode_sample_every
         self.episode_max_bytes = episode_max_bytes
         self.episode_rows_per_file = episode_rows_per_file
@@ -345,6 +362,12 @@ class SelfPlayCallback(RLlibCallback):
         stays whatever it was pickled with, as it always has.
         """
         self.__dict__.update(state)
+        # Saved before the knob existed: the pooled threshold it always used.
+        # Quiet, because nothing changes for it.
+        if "promotion_reference" not in state:
+            self.promotion_reference = "pooled"
+        if "_warned_reference_fallback" not in state:
+            self._warned_reference_fallback = False
         if "min_champion_trades" not in state:
             self.min_champion_trades = 0.0
             logger.warning(
@@ -465,6 +488,42 @@ class SelfPlayCallback(RLlibCallback):
             metrics_logger.log_value(
                 (MODULE_TRADES_METRIC, module_id), float(trades), reduce="mean",
             )
+
+    def _threshold_returns(self, policy_returns, valid_returns):
+        """The returns the promotion threshold is computed over, and which set that is.
+
+        `pooled` is every module that played, the frozen random baselines
+        included. `excluding_baselines` leaves them out: a baseline's return is
+        what a random agent earns in whatever role it is dealt, which is not
+        comparable with a learner's, and with them in a learner can clear the bar
+        by trading less rather than better (doc/15 S3-12).
+
+        With n modules nobody is more than sqrt(n - 1) standard deviations above
+        the mean, so a set of n <= multiplier^2 + 1 can never promote anyone
+        (n = 2 at the start, two trainables and no champion, for the default 1.5).
+        Rather than stop the league growing, the threshold falls back to the
+        pooled one while the non-baseline set is that small, once warned.
+        """
+        if self.promotion_reference == "pooled":
+            return valid_returns, "pooled"
+        baselines = {policy_id(i) for i in range(
+            self.num_trainable, self.num_trainable + self.num_random)}
+        kept = [
+            v for module_id, v in policy_returns.items()
+            if module_id not in baselines and usable_return(v) is not None
+        ]
+        if math.sqrt(max(len(kept) - 1, 0)) <= self.std_dev_multiplier:
+            if not self._warned_reference_fallback:
+                self._warned_reference_fallback = True
+                logger.warning(
+                    "promotion_reference 'excluding_baselines' has %s module(s) to "
+                    "compare, and with that few nobody can be more than sqrt(n - 1) = "
+                    "%.2f standard deviations above the mean, under the %g needed: "
+                    "using the pooled threshold until there are enough champions.",
+                    len(kept), math.sqrt(max(len(kept) - 1, 0)), self.std_dev_multiplier,
+                )
+            return valid_returns, "pooled"
+        return kept, "excluding_baselines"
 
     def _log_module_performance(self, episode, tally, metrics_logger) -> None:
         """Each module's risk-adjusted performance in this episode (doc/15 S3-9).
@@ -1140,8 +1199,10 @@ class SelfPlayCallback(RLlibCallback):
                 "league statistics", iteration, ", ".join(idle_modules),
             )
 
-        league_mean = np.mean(valid_returns)
-        league_std = np.std(valid_returns)
+        reference_returns, reference_used = self._threshold_returns(
+            policy_returns, valid_returns)
+        league_mean = np.mean(reference_returns)
+        league_std = np.std(reference_returns)
         
         # Determine dynamic threshold
         # If std is 0 (all same), effectively requires > mean
@@ -1225,6 +1286,9 @@ class SelfPlayCallback(RLlibCallback):
             "threshold": float(threshold),
             "promoted": promoted,
             "refused_passive": int(refused_passive),
+            # Which set the threshold above was computed over, which is not the
+            # configured one while that set is too small to be cleared.
+            "reference": reference_used,
             "available_modules": len(self.available_modules),
             "idle_modules": len(idle_modules),
             "champions": [c["id"] for c in self.champion_history],
