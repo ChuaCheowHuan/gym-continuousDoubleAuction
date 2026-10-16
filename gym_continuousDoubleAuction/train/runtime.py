@@ -22,8 +22,12 @@ is read from the file.
 `train_config.json` is untouched by any of this: `TrainConfig()` still supplies
 every training value, and a profile overlays only the resource fields it names.
 
-Nothing here imports `ray` at module scope, because `apply_env_vars()` has to
-run *before* ray is first imported.
+Nothing here imports `ray` at module scope, so the profile can be resolved (and
+`--help` answered) without paying for it. `apply_env_vars()` has to run before
+`ray.init`, which is where the variables are read and handed to workers; it does
+not have to run before ray is *imported* - the one variable configured today is
+read when Ray's memory monitor is constructed, not at import (issue #244). A
+variable that Ray did read at import would need an import-time call instead.
 """
 from __future__ import annotations
 
@@ -296,7 +300,7 @@ def changed_fields(before, after) -> Dict[str, tuple]:
 
 
 def apply_env_vars() -> Dict[str, str]:
-    """Export the `runtime_env_vars` constants, before ray is imported.
+    """Export the `runtime_env_vars` constants, before `ray.init`.
 
     `setdefault`, so a value already exported in the shell wins over the file.
     Returns what is now in the environment for those names, so a caller can

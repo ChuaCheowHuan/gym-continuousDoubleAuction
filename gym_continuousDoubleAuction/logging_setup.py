@@ -328,8 +328,9 @@ def worker_file_tag() -> str:
     and dropping it would make a file hard to tie back to its lines.
 
     Ray is read from `sys.modules` rather than imported. Importing it here would
-    break a documented ordering: `runtime.apply_env_vars()` must run *before*
-    ray is first imported, and `configure()` runs before that in `main()`. In
+    make every consumer of this module (`--help` included) pay for Ray, and
+    would put the import ahead of `configure()` and `runtime.apply_env_vars()`,
+    which `main()` runs before `ray.init`. In
     an env runner - the only process that takes this branch in earnest - ray is
     long since imported, so the lookup succeeds exactly where it matters.
 
