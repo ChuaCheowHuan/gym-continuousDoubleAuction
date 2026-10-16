@@ -3844,3 +3844,28 @@ for #243); the unit total goes from 1,410 to 1,486, integration from 181 to 184,
 - **Not claimed.** #242: a NaN `latent_std` can still reach the learner's logged metric for a one-row minibatch (window 1, so it
   affects only that minibatch's value). #243 seeds sampling; it does not make a multi-process run deterministic. #275 chose the
   bound over redefining `mul`, which would change every size. #232's three defects are not reachable from the env today.
+
+## 77. The last three open `bug` issues (#238, #244, #246)
+
+These carried `bug` plus another label (`logging`, `question`) and were left out of §76. After this there is no open issue labelled `bug`.
+
+- **#238, run logging left propagation off.** `configure_run_logging` passed `propagate=None` for an empty `ray_log_encoding`, and
+  `configure()` leaves `None` as it found it, so a process that ran once with an encoding (a notebook, a `compare` sweep) kept
+  propagation off for every later run without one. Reproduced: `configure(propagate=False)` then `configure(propagate=None)` left
+  it False. It now passes `not cfg.ray_log_encoding`, so it is turned back on explicitly. `configure(None)` still means "leave it",
+  which `get_logger`'s reconfigure relies on and a test already pins.
+- **#246, the byte cap could delete the file it just wrote.** `_enforce_cap` removed files oldest-first until the total fit; one
+  file larger than `episode_max_bytes` made the loop remove everything, while `_written_rows` still counted the rows and nothing
+  was logged. The newest file is now never a candidate, and a warning (once) says the cap is smaller than one file. The existing
+  cap test asserted `<= 1`, which the empty record satisfied; it is `== 1` now.
+- **#244, the `apply_env_vars()` contract.** Not reproduced as a failure, and checked rather than assumed: the one configured
+  variable, `RAY_DEBUG_DISABLE_MEMORY_MONITOR`, is read in one place in Ray 2.56, `MemoryMonitor.__init__`, which is not run at
+  import (only Ray's own `test_utils` constructs one). Every entry point (`train`, `evaluate`, `compare`) calls `apply_env_vars()`
+  before `ray.init`. So the code was right and the docstrings in `runtime.py`, the rationale in `logging_setup.py`, the notebook
+  comment and `doc/11` were not: they now say before `ray.init`. Tests pin the order in all three entry points and the
+  not-read-at-import fact against the installed Ray, so an upgrade that changes it fails there and the call must move ahead of
+  the imports.
+- **Not claimed.** #244: that variable does not appear to be read by anything in a training run on this Ray at all (the monitor is
+  test-only), so it may be inert; that was not investigated further. #246: a cap smaller than one file means the record exceeds the
+  cap by up to one file per writer, which is the trade for never writing nothing.
+- **Tests.** `test_open_bug_fixes.py` (14); six fail on the previous source. Unit 1,486 to 1,500; suite 1,684.

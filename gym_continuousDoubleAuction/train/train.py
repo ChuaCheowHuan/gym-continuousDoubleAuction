@@ -2091,13 +2091,16 @@ def configure_run_logging(cfg: TrainConfig) -> None:
     # configures the *root* logger of this process and of every worker Ray
     # starts for the job, so a package record travelling on to root would be
     # printed twice - once by the handler attached here and once by Ray's.
-    # Left alone otherwise, because propagation is what any root-attached
-    # handler (pytest's caplog among them) depends on.
+    # Turned back ON otherwise, explicitly: `configure` leaves propagation as
+    # it found it for None, so a process that ran once with an encoding (a
+    # notebook, a `compare` sweep) kept it off for every later run without one
+    # (issue #238). Propagation is what any root-attached handler (pytest's
+    # caplog among them) depends on.
     configure_logging(
         cfg.cda_log_level,
         log_dir=cfg.run_dir,
         force=True,
-        propagate=False if cfg.ray_log_encoding else None,
+        propagate=not cfg.ray_log_encoding,
     )
     logger.info("run id: %s (%s)", cfg.run_id, cfg.run_dir)
     if log_file_path():

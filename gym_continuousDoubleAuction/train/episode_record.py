@@ -237,7 +237,9 @@ class EpisodeRecorder:
             1 records everything.
         max_bytes: Cap on what *this process* keeps. After each write the
             oldest of its own files are deleted until the total is under the
-            cap. 0 disables the cap. Per process rather than per directory
+            cap, but never the newest: when one file alone exceeds the cap it
+            is kept and a warning says the cap is too small. 0 disables the
+            cap. Per process rather than per directory
             because deleting another worker's files is a cross-process race for
             no benefit - each writer owns the files carrying its own tag.
         rows_per_file: Rows to accumulate before a file is written. A floor
@@ -286,6 +288,7 @@ class EpisodeRecorder:
         self._seq = 0
         self._dropped_batches = 0
         self._written_rows = 0
+        self._cap_warned = False
 
         self._queue: "queue.Queue[List[dict]]" = queue.Queue(
             maxsize=max(1, int(queue_size))
@@ -629,7 +632,21 @@ class EpisodeRecorder:
                 except OSError:
                     continue
             total = sum(size for _, size in sizes)
-            for path, size in sizes:
+            # Never the newest file. `rows_per_file` is a floor, so one file can
+            # hold several whole episodes; when a single file is larger than the
+            # cap the loop used to remove everything including the file just
+            # written, while `_written_rows` still counted it and nothing warned
+            # (issue #246). The newest file is kept and the cap is said to be
+            # too small, once.
+            if sizes and sizes[-1][1] > self.max_bytes and not self._cap_warned:
+                self._cap_warned = True
+                logger.warning(
+                    "episode record: a single file (%s bytes) is larger than "
+                    "episode_max_bytes (%s), so the newest file is kept and the cap "
+                    "cannot be met. Raise episode_max_bytes or lower "
+                    "episode_rows_per_file.", sizes[-1][1], self.max_bytes,
+                )
+            for path, size in sizes[:-1]:
                 if total <= self.max_bytes:
                     break
                 os.remove(path)

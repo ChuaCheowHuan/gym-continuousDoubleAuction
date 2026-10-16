@@ -583,8 +583,9 @@ Three of those were previously weaker than they looked:
   hold the same pid and open the same `run.<pid>.log`, which is the exact rotation race the
   per-worker name exists to prevent. The name now carries Ray's worker id, which is unique
   cluster-wide, behind the pid, which is what the `pid=` field of each line matches. Ray is read
-  out of `sys.modules` rather than imported: `runtime.apply_env_vars()` must run before ray is
-  first imported, and `configure()` runs before *that*.
+  out of `sys.modules` rather than imported: importing it here would make every consumer of the module (`--help` included) pay for ray, and
+  would put the import ahead of `configure()` and `runtime.apply_env_vars()`, which `main()` runs
+  before `ray.init`.
 * **The driver's own files were not covered at all.** `run.log` carries no pid, and `log_base_dir`
   defaulted to a fixed `results`, so two concurrent runs - or a notebook session alongside a CLI
   run - shared both it and `progress.jsonl`. §1.11 is the fix.
@@ -714,7 +715,8 @@ argument, costs the run its log formatting and nothing else.
 
 Setting it also turns **propagation off** on this package's logger. `LoggingConfig` configures the
 *root* logger, and this package's handler hangs off `gym_continuousDoubleAuction` with propagation
-on, so every line would otherwise be printed twice. Propagation stays on by default, because that is
+on, so every line would otherwise be printed twice. Propagation stays on by default - and is turned back on explicitly for a run with no encoding, so an
+earlier run in the same process (a notebook, a `compare` sweep) cannot leave it off (issue #238) - because that is
 what any root-attached handler depends on - `caplog`, which is how most of the test suite reads log
 output, among them. It is a `configure()` argument rather than a constant for exactly that reason:
 the duplication exists only once Ray has configured root.

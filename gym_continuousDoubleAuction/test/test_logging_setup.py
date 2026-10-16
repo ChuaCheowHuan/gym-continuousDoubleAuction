@@ -416,7 +416,8 @@ class TestWorkerProcessesGetTheirOwn:
         self, tmp_path, monkeypatch
     ):
         """Ray is read from sys.modules, never imported: importing it here would
-        break apply_env_vars(), which must run before ray is first imported."""
+        make every consumer of the module pay for Ray, and put the import ahead
+        of configure() and apply_env_vars()."""
         import os
         import sys
 

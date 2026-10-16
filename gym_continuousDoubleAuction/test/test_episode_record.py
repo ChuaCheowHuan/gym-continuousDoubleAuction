@@ -317,7 +317,7 @@ class TestBounds:
 
         # A cap of one byte cannot hold even one file, so exactly the newest
         # survives each round - the point being that it is bounded at all.
-        assert len(glob.glob(os.path.join(str(tmp_path), "*.parquet"))) <= 1
+        assert len(glob.glob(os.path.join(str(tmp_path), "*.parquet"))) == 1
 
     def test_no_cap_keeps_everything(self, tmp_path):
         recorder = EpisodeRecorder(str(tmp_path), rows_per_file=1, max_bytes=0)
