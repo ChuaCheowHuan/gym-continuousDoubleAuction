@@ -32,6 +32,7 @@ split puts near-duplicates of a validation row in training.
 from __future__ import annotations
 
 import json
+import math
 import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -84,14 +85,34 @@ class PretrainReport:
 
     @property
     def collapsed(self) -> bool:
-        """Whether the latent spread fell far enough to call it a collapse.
+        """Whether the weights must not be used: the latent spread fell far
+        enough to call it a collapse, or the run diverged (see `diverged`).
 
         The check that matters, and the reason `latent_std` is recorded at all:
         a collapsed JEPA drives its *loss* to zero, so a run that reports only
         the loss cannot distinguish "learned everything" from "learned nothing
         and says so in the most flattering way available".
         """
-        return bool(self.latent_std) and self.latent_std[-1] < 0.1
+        return not self.usable
+
+    @property
+    def diverged(self) -> bool:
+        """Whether nothing trustworthy was measured: no reading at all, or a
+        loss or latent spread that is NaN or infinite.
+
+        `latent_std < 0.1` is False for NaN, so a run that blew up (or whose
+        validation batches all returned no stats) used to pass as healthy and
+        be saved under a valid fingerprint.
+        """
+        readings = (self.latent_std, self.train_loss, self.validation_loss)
+        return not self.latent_std or not all(
+            math.isfinite(v) for series in readings for v in series
+        )
+
+    @property
+    def usable(self) -> bool:
+        """Measured, finite and spread out: the weights are worth saving."""
+        return not self.diverged and self.latent_std[-1] >= 0.1
 
     def summary(self) -> str:
         lines = [
@@ -100,7 +121,13 @@ class PretrainReport:
             f"validation loss  : {self._first_last(self.validation_loss)}",
             f"latent std       : {self._first_last(self.latent_std)}",
         ]
-        if self.collapsed:
+        if self.diverged:
+            lines.append(
+                "DIVERGED: the loss or latent_std is NaN or infinite, or was "
+                "never measured, so nothing here can be vouched for - do not "
+                "use these weights."
+            )
+        elif self.collapsed:
             lines.append(
                 "COLLAPSED: latent_std fell below 0.1, so the encoder maps every "
                 "observation to nearly the same vector. The prediction loss "

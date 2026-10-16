@@ -391,3 +391,76 @@ class TestTrainingStartsFromIt:
         )
         assert "pretrained_path" not in spec.model_config.encoder_spec
         assert spec.model_config.pretrained_path == path
+
+
+def _report(latent_std, loss=(0.5, 0.1)):
+    report = pretrain_pkg.PretrainReport(steps=1)
+    report.train_loss = list(loss)
+    report.validation_loss = list(loss)
+    report.latent_std = list(latent_std)
+    return report
+
+
+class TestADivergedRunIsNotUsable:
+    """Issue #239: `latent_std < 0.1` is False for NaN, so a diverged run
+    passed as healthy."""
+
+    @pytest.mark.parametrize("latent_std", [[0.9, float("nan")], [float("nan")],
+                                            [0.9, float("inf")]])
+    def test_a_non_finite_latent_std_is_unusable(self, latent_std):
+        report = _report(latent_std)
+        assert report.collapsed
+        assert "do not use" in report.summary()
+
+    def test_a_non_finite_loss_is_unusable(self):
+        assert _report([0.9, 0.8], loss=(0.5, float("nan"))).collapsed
+
+    def test_a_healthy_run_is_usable(self):
+        assert not _report([0.9, 0.8]).collapsed
+
+    def test_a_run_with_no_measurements_is_unusable(self):
+        """`take_jepa_stats()` returned None for every batch: nothing was
+        measured, so nothing can be vouched for."""
+        assert _report([], loss=()).collapsed
+
+
+class TestAnUnusableRunIsNotSaved:
+    """Issue #239: `main` wrote the weights and a valid fingerprint before it
+    looked at the report, so a script that ignored the exit code, or a notebook
+    calling `main()`, left dead weights that `pretrained_path` would load."""
+
+    @pytest.fixture
+    def run_main(self, monkeypatch, trained, corpus, tmp_path):
+        from gym_continuousDoubleAuction.train.pretrain import __main__ as cli
+
+        module, _ = trained
+        monkeypatch.setattr(corpus_module, "from_rollouts", lambda **kw: corpus)
+
+        def run(report):
+            monkeypatch.setattr(cli, "pretrain", lambda *a, **kw: (module, report))
+            out = tmp_path / "out"
+            code = cli.main(["--out", str(out), "--steps", "1"])
+            return code, out
+        return run
+
+    @pytest.mark.parametrize("latent_std", [[0.9, 0.01], [0.9, float("nan")]])
+    def test_nothing_is_written(self, run_main, latent_std):
+        code, out = run_main(_report(latent_std))
+        assert code == 1
+        assert not out.exists() or not any(out.iterdir())
+
+    def test_a_good_checkpoint_is_not_overwritten_by_a_bad_run(self, run_main, tmp_path):
+        out = tmp_path / "out"
+        out.mkdir()
+        marker = out / "previous.txt"
+        marker.write_text("previous good checkpoint")
+        code, _ = run_main(_report([0.9, 0.01]))
+        assert code == 1
+        assert marker.read_text() == "previous good checkpoint"
+        assert [p.name for p in out.iterdir()] == [marker.name]
+
+    def test_a_healthy_run_is_saved(self, run_main):
+        code, out = run_main(_report([0.9, 0.8]))
+        assert code == 0
+        assert (out / pretrain_pkg.WEIGHTS_FILE).exists()
+        assert (out / pretrain_pkg.FINGERPRINT_FILE).exists()

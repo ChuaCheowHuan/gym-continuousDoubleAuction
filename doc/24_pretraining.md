@@ -119,7 +119,10 @@ latent std       : 0.71992 -> 0.66829
 makes its prediction *perfect* — the loss goes to zero and reads as a spectacular success, with
 throughput unchanged. `latent_std` goes to zero at the same moment and is the only signal that
 separates the two. `PretrainReport.collapsed` checks for it and the CLI **exits non-zero**, rather
-than leaving a good-looking number in the log beside weights nobody should load.
+than leaving a good-looking number in the log beside weights nobody should load. It is also true
+when the run diverged: a NaN or infinite loss or `latent_std`, or no reading at all (`diverged`).
+The CLI checks before it saves, so a collapsed or diverged run writes **nothing**, and a
+checkpoint already in `--out` is left as it was.
 
 The validation curve is the second thing to read. It is split **by episode**, because consecutive
 observations share three of their four snapshots — a row-level split would put near-duplicates of a

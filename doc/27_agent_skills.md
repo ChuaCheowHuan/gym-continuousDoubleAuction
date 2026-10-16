@@ -303,9 +303,8 @@ has an excellent loss ([24](24_pretraining.md)); probe with `--pretrained <dir> 
 against the held-out fifth; compare to the untrained encoder on the same targets and horizons; report
 the effective rank per feature set.
 
-**Guardrails.** Today the command saves the weights *before* it checks for collapse and does not
-treat a NaN run as collapsed ([#239](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/239)):
-the skill must check `latent_std` itself and delete or quarantine a failed output directory. The
+**Guardrails.** The command no longer saves a collapsed or NaN run (issue #239, changelog
+[17](17_changelog.md) §72), but the skill should still read `latent_std` itself rather than trust an exit code alone. The
 probe's `--per-agent` mode shifts targets by rows, not steps ([#188](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/188)): do not use it for horizon targets.
 
 ---
