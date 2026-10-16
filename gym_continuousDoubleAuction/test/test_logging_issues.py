@@ -3,6 +3,7 @@
 Each test pins one behaviour of the fix; the shape of the problem is in doc/21.
 """
 
+import itertools
 import json
 import logging
 import os
@@ -77,6 +78,19 @@ def edit_logging(tmp_path, monkeypatch):
         config_loader.reload()
 
     return edit
+
+
+def _fresh_ray_logger(parent):
+    """A logger under `parent` that nothing has configured or disabled.
+
+    Not a named Ray logger, and records are logged at ERROR: a test that ran Ray earlier in
+    the process leaves `ray.rllib` at the level Ray's `LoggingConfig` gave it (ERROR), and
+    capturing Ray's records does not change what Ray decides to emit.
+    """
+    return logging.getLogger(f"{parent}.cda_test_{next(_counter)}")
+
+
+_counter = itertools.count()
 
 
 def _logs(tmp_path):
@@ -207,7 +221,7 @@ class TestRaysOwnRecordsReachTheRunLog:
 
     def test_a_record_from_a_ray_logger_lands_in_the_file(self, tmp_path):
         logging_setup.configure("INFO", log_dir=str(tmp_path), force=True)
-        ray_log = logging.getLogger("ray.rllib.env.env_runner_group")
+        ray_log = _fresh_ray_logger("ray.rllib.env.env_runner_group")
         ray_log.setLevel(logging.INFO)
         ray_log.warning("No samples returned from remote workers")
         for handler in logging.getLogger(PKG).handlers:
@@ -222,7 +236,7 @@ class TestRaysOwnRecordsReachTheRunLog:
         rllib.propagate = False  # what RLlib does once it has set itself up
         try:
             logging_setup.configure("INFO", log_dir=str(tmp_path), force=True)
-            logging.getLogger("ray.rllib.algorithms.algorithm").warning("restarting env runner 3")
+            _fresh_ray_logger("ray.rllib.algorithms").error("restarting env runner 3")
             for handler in logging.getLogger(PKG).handlers:
                 handler.flush()
         finally:
@@ -235,7 +249,7 @@ class TestRaysOwnRecordsReachTheRunLog:
         rllib.propagate = True  # a process where RLlib has not configured itself yet
         try:
             logging_setup.configure("INFO", log_dir=str(tmp_path), force=True)
-            logging.getLogger("ray.rllib.env").warning("only-once-marker")
+            _fresh_ray_logger("ray.rllib.env").error("only-once-marker")
             for handler in logging.getLogger(PKG).handlers:
                 handler.flush()
         finally:
