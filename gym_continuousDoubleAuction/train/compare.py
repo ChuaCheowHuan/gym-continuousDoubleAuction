@@ -347,10 +347,20 @@ def render(rows: Sequence[Dict[str, Any]], summary=None) -> str:
     headers = ["encoder", "seeds", "params"] + [m for m, _ in TABLE_METRICS] + probes + ["separated on"]
     lines = ["| " + " | ".join(headers) + " |", "|" + "---|" * len(headers)]
     sep = {m: separated(summary, m) for m, _ in TABLE_METRICS}
+    # Runs are counted from the rows, not from the returns that happen to be
+    # numbers: a run whose final iteration produced no module return used to
+    # show as a smaller experiment ("seeds 2") instead of as a failure
+    # (issue #262).
+    launched = {}
+    for row in rows:
+        launched[row["encoder"]] = launched.get(row["encoder"], 0) + 1
+    failed = [f"{row['encoder']} seed {row.get('seed')}" for row in rows
+              if _as_float(row.get("return")) is None]
     for encoder, stats in summary.items():
+        n, total = stats["return"]["n"], launched.get(encoder, stats["return"]["n"])
         cells = [
             encoder,
-            str(stats["return"]["n"]),
+            str(total) if n == total else f"{n}/{total}",
             "-" if stats["parameters"]["mean"] is None else f"{int(stats['parameters']['mean']):,}",
         ]
         cells += [_fmt(stats[m], spec) for m, spec in TABLE_METRICS]
@@ -364,6 +374,12 @@ def render(rows: Sequence[Dict[str, Any]], summary=None) -> str:
         "further from every other encoder's than the two standard deviations "
         "combined. It is not a significance test."
     )
+    if failed:
+        note += (
+            f" No return was recorded for: {', '.join(failed)}. The seeds column "
+            "reads n/N where a run did not report one; its other metrics may still "
+            "be averaged in."
+        )
     if any(n < 3 for n in n_seeds):
         note += (
             " Fewer than three seeds per encoder: treat every row as a "
