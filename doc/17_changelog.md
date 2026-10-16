@@ -3753,3 +3753,18 @@ tied to the layout version or finding it describes, the "five-head" checkpoint n
 - **Not claimed.** The 0.1 threshold is unchanged and still a literal in code, not a config value. A run that is finite and
   above it is not thereby shown to be good.
 - **Tests.** Ten in `test_pretrain.py` (26 to 36); eight fail on the previous source. Unit 1,378 to 1,388; suite 1,567.
+
+## 73. The comparison driver probes under the run's env config (issue #261)
+
+- **What was open.** `train.compare` trained each run from the overridden config (`--set book_mode=levels`, `n_hist`, the fee
+  rates, `--config`) but built the shared probe corpus with `from_rollouts(num_episodes, max_step, num_agents, seed)`, which
+  takes no env config, so the corpus was always the default layout (233 floats in `grid` mode). The probe then fed those rows
+  to modules trained on another layout: a shape error, or, where the widths matched, scores that meant nothing.
+- **Reproduced first.** `from_rollouts` had no `env_config` argument; the compare driver passed none. With the config applied,
+  `book_mode=levels` gives 305-float rows and `n_hist=2` gives 137 (2 x 48 + 41).
+- **Fix.** `from_rollouts(env_config=...)`. The dict is copied, never modified; `num_agents`, `max_step`, `init_cash` and
+  `is_render` still come from the explicit arguments. `train.compare` passes `base.env_config`.
+- **Not claimed.** `train.probe` and `train.pretrain` still collect in the default layout; neither takes an env override, and a
+  checkpoint probed through `train.probe` is still built from the default env config (R-17, issue #187). `episode_length_mode`
+  is passed through, but the rollout loop still runs `max_step` steps and stops early only when the env does.
+- **Tests.** `test_probe_corpus_config.py` (8); seven fail on the previous source. Unit 1,388 to 1,396; suite 1,575.

@@ -1088,7 +1088,7 @@ damage getting them wrong does:
 0. **Run the protocol as a command.** Points 1, 2 and 4 are what
    `python -m gym_continuousDoubleAuction.train.compare` does for you: every (encoder, seed) is a
    separate run with the seed pinned and its own `log_base_dir`, the parameter count is recorded,
-   and the final checkpoint is scored on the probe of point 5 against one shared corpus. It writes
+   and the final checkpoint is scored on the probe of point 5 against one shared corpus collected under the same env config as the runs (so a `--set` of `book_mode`, `n_hist` or the fees applies to it too). It writes
    per-run JSON and a Markdown table of means and standard deviations, and marks two encoders as
    *separated* on a metric only when the gap exceeds both standard deviations with at least three
    seeds a side. Defaults are in `cli_defaults.json` under `cda_compare`; see
