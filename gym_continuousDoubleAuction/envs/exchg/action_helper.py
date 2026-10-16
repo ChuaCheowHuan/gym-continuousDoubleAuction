@@ -1,5 +1,7 @@
 from typing import Any, Dict, List, Optional
 
+from .shared_state import SharedState
+
 import numpy as np
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -44,7 +46,7 @@ ACTION_LAYOUT_VERSION = 4
 SIZE_FRACTION_AT_MAX = 2.0
 
 
-class Action_Helper():
+class Action_Helper(SharedState):
     def __init__(self, min_size=env_default("min_size"),
                  mkt_max_size=env_default("mkt_max_size"),
                  limit_size_multiple=env_default("limit_size_multiple"),
@@ -264,11 +266,11 @@ class Action_Helper():
         seq_trades = []
         seq_order_in_book = []
         for action in actions:
-            ID_str = action.get("ID")
-            type = action.get("type")
-            side = action.get("side")
-            size = action.get("size")
-            price = action.get("price")
+            ID_str = action["ID"]
+            type = action["type"]
+            side = action["side"]
+            size = action["size"]
+            price = action["price"]
 
 
 
@@ -304,7 +306,7 @@ class Action_Helper():
         # behaviour, so an action dict from before the head existed decodes.
         order_slot = int(model_out.get("order_slot", 0))
 
-        act = {}
+        act: Dict[str, Any] = {}
         act["ID"] = ID
         act["slot"] = order_slot
 

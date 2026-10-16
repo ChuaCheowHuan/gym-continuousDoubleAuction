@@ -44,7 +44,7 @@ def validate_fee_rates(maker_fee_bps, taker_fee_bps) -> None:
         if (not isinstance(value, (Real, Decimal)) or isinstance(value, bool)
                 or not math.isfinite(value)):
             raise ValueError(f"{key} must be a finite number; got {value!r}.")
-        if abs(value) > MAX_FEE_BPS:
+        if abs(value) > MAX_FEE_BPS:  # type: ignore[operator]  # Real or Decimal; exact compare
             raise ValueError(
                 f"{key} must be within +/-{MAX_FEE_BPS} (a tenth of the notional); "
                 f"got {value!r}. Basis points: 10 is 0.1%."
@@ -223,7 +223,7 @@ class Account(Calculate, Cash_Processor):
         # so initialising this as a Decimal would make the field change type on
         # the first step - the same defect net_position and VWAP already have.
         self.drawdown = 0.0 # max_nav - nav, the level the penalty uses
-        self.reward_terms = {} # signed contributions, summing to self.reward
+        self.reward_terms: Dict[str, float] = {} # signed contributions, summing to self.reward
 
     def clear_step_counters(self) -> None:
         """Zero the per-step counters (`STEP_COUNTERS`) once the step's outputs are built."""
@@ -461,9 +461,9 @@ class Account(Calculate, Cash_Processor):
         if party == 'counter_party':
             self.num_passive_fills_step += 1
 
-        trade_val = Decimal(trade.get('quantity')) * trade.get('price')
-        sign = 1 if trade.get(party).get('side') == 'bid' else -1
-        self.fill_qty_step += sign * int(trade.get('quantity'))
+        trade_val = Decimal(trade['quantity']) * trade['price']
+        sign = 1 if trade[party]['side'] == 'bid' else -1
+        self.fill_qty_step += sign * int(trade['quantity'])
         self.fill_value_step += sign * trade_val
         if self.net_position > 0: #long
             self._net_long(trade_val, trade, party)
@@ -471,6 +471,6 @@ class Account(Calculate, Cash_Processor):
             self._net_short(trade_val, trade, party)
         else: # neutral
             self._neutral(trade_val, trade, party)
-        self._update_net_position(trade.get(party).get('side'), trade.get('quantity'))
+        self._update_net_position(trade[party]['side'], trade['quantity'])
         self._charge_fee(trade_val, fee_role)
         return 0

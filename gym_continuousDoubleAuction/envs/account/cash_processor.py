@@ -1,6 +1,8 @@
 from decimal import Decimal
 
-class Cash_Processor(object):
+from .account_state import AccountState
+
+class Cash_Processor(AccountState):
     """
     Handles the cash & cash_on_hold for the trader's account.
 

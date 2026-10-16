@@ -921,10 +921,10 @@ class Trader:
         """
 
         for i, trade in enumerate(trades):
-            trade_val = Decimal(trade.get('quantity')) * trade.get('price')
+            trade_val = Decimal(trade['quantity']) * trade['price']
 
             # init_party is not counter_party
-            if trade.get('counter_party').get('ID') != trade.get('init_party').get('ID'):
+            if trade['counter_party']['ID'] != trade['init_party']['ID']:
                 self._process_counter_party(agents, trade)
                 self.acc.process_acc(trade, 'init_party')
 

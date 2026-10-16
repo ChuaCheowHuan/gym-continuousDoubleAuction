@@ -1,8 +1,10 @@
 
 from decimal import Decimal
 
+from .account_state import AccountState
 
-class Calculate(object):
+
+class Calculate(AccountState):
 
     def cal_nav(self) -> Decimal:
         """

@@ -133,6 +133,7 @@ setup(
         # a workflow change; hypothesis drives the order-book invariant tests.
         # pytest-cov for `pytest --cov` (the [tool.coverage] tables in
         # pyproject.toml scope it); the measured number is in doc/10 section 7.
-        "dev": ["pytest>=8", "pyflakes>=3.2", "hypothesis>=6.100", "pytest-cov>=5"],
+        "dev": ["pytest>=8", "pyflakes>=3.2", "hypothesis>=6.100", "pytest-cov>=5", "mypy>=1.10",
+            "ruff==0.17.1"],
     },
 )
