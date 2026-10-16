@@ -30,6 +30,7 @@ frozen randomly-initialised networks rather than random samplers.
 Module classes are now declared explicitly through `MultiRLModuleSpec`, which is
 the only thing the new stack actually reads.
 """
+
 from ray.rllib.core.rl_module.multi_rl_module import MultiRLModuleSpec
 from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 
@@ -182,12 +183,12 @@ def create_multi_agent_config(
     trainable_spec = spec.rl_module_specs[policies_to_train[0]]
     logger.info(
         "modules: %s | trainable: %s (encoder %s) | frozen random baselines: %s",
-        sorted(policies), policies_to_train,
+        sorted(policies),
+        policies_to_train,
         # Not `getattr`: a spec's model_config is a dataclass when freshly
         # built but a plain dict once `add_module` has normalised it, and
         # reading the wrong one silently reports "mlp" for every encoder.
-        model_config_get(trainable_spec.model_config, "encoder_type",
-                         MLP_ENCODER_TYPE),
+        model_config_get(trainable_spec.model_config, "encoder_type", MLP_ENCODER_TYPE),
         baseline_policy_ids(num_agents, num_trained_agents),
     )
     return policies, policies_to_train, spec

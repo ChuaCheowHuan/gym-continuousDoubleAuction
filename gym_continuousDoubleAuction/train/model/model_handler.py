@@ -43,6 +43,7 @@ If you want a genuinely custom architecture later, subclass
 `DefaultPPOTorchRLModule` and pass it as `RLModuleSpec(module_class=...)` in
 policy_handler.build_multi_rl_module_spec - not via ModelCatalog.
 """
+
 import numpy as np
 from ray.rllib.algorithms.ppo.ppo_catalog import PPOCatalog
 from ray.rllib.core.columns import Columns
@@ -124,8 +125,7 @@ class RandomRLModule(RLModule):
         """No-op, for parity with TorchRLModule's compile hook."""
 
 
-def default_model_config(fcnet_hiddens=None, fcnet_activation=None,
-                         vf_share_layers=None):
+def default_model_config(fcnet_hiddens=None, fcnet_activation=None, vf_share_layers=None):
     """Network config for the trainable PPO modules.
 
     Args:
@@ -174,20 +174,25 @@ class CDACatalog(PPOCatalog):
 
     @classmethod
     @override(PPOCatalog)
-    def _get_encoder_config(cls, observation_space, model_config_dict,
-                            action_space=None, **kwargs) -> ModelConfig:
+    def _get_encoder_config(
+        cls, observation_space, model_config_dict, action_space=None, **kwargs
+    ) -> ModelConfig:
         # `action_space` is forwarded because the JEPA world model needs it to
         # size its action embedding. Every other encoder ignores it - the
         # catalog has always passed it and nothing read it until now.
-        return build_encoder_config(
-            observation_space, model_config_dict, action_space
-        )
+        return build_encoder_config(observation_space, model_config_dict, action_space)
 
 
-def build_trainable_module_spec(obs_space, act_space, encoder_type=None,
-                                encoder_specs=None, fcnet_hiddens=None,
-                                fcnet_activation=None, vf_share_layers=None,
-                                pretrained_path=None):
+def build_trainable_module_spec(
+    obs_space,
+    act_space,
+    encoder_type=None,
+    encoder_specs=None,
+    fcnet_hiddens=None,
+    fcnet_activation=None,
+    vf_share_layers=None,
+    pretrained_path=None,
+):
     """The `RLModuleSpec` for one trainable PPO module.
 
     Args:

@@ -62,7 +62,8 @@ sampling purposes — the remote actors do the work. (It is still used for
 
 ```python
 cfg = TrainConfig(
-    num_agents=8, num_trained_agents=2,
+    num_agents=8,
+    num_trained_agents=2,
     num_env_runners=2,
     num_envs_per_env_runner=2,
 )

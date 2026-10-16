@@ -21,6 +21,7 @@ every episode ran `max_step + 1` steps. Nothing caught it because the existing
 loops all stop on `truncateds["__all__"]` without counting. `train_batch_size`
 is defined as `max_step * num_episodes_per_iter`, so the count is the contract.
 """
+
 import pytest
 
 from gym_continuousDoubleAuction.config_loader import env_default
@@ -77,9 +78,7 @@ class TestBareEnvIsTradable:
         )
         assert not terminateds["__all__"]
         assert not truncateds["__all__"]
-        assert env.done_set == set(), (
-            f"agents went bankrupt on step 1: {sorted(env.done_set)}"
-        )
+        assert env.done_set == set(), f"agents went bankrupt on step 1: {sorted(env.done_set)}"
 
     def test_bare_env_runs_to_its_configured_horizon(self):
         env = continuousDoubleAuctionEnv({})
@@ -93,14 +92,20 @@ class TestEpisodeLength:
 
     @pytest.mark.parametrize("max_step", [1, 2, 5, 10, 64])
     def test_truncation_lands_on_max_step(self, max_step):
-        env = continuousDoubleAuctionEnv({
-            "max_step": max_step, "num_of_agents": 3, "is_render": False,
-        })
+        env = continuousDoubleAuctionEnv(
+            {
+                "max_step": max_step,
+                "num_of_agents": 3,
+                "is_render": False,
+            }
+        )
         env.reset()
         steps, _trades = _run(env, max_step + 5)
         assert steps == max_step
 
-    def test_the_last_step_is_the_truncated_one(self, ):
+    def test_the_last_step_is_the_truncated_one(
+        self,
+    ):
         """Truncation is reported *on* the final step, not after it.
 
         The distinction the off-by-one turned on: a caller that stops when
@@ -108,15 +113,18 @@ class TestEpisodeLength:
         point, not `max_step + 1`.
         """
         max_step = 8
-        env = continuousDoubleAuctionEnv({
-            "max_step": max_step, "num_of_agents": 3, "is_render": False,
-        })
+        env = continuousDoubleAuctionEnv(
+            {
+                "max_step": max_step,
+                "num_of_agents": 3,
+                "is_render": False,
+            }
+        )
         env.reset()
         for step in range(1, max_step + 1):
             _obs, _rew, _term, truncateds, _infos = env.step(
                 {a: env.action_spaces[a].sample() for a in env.agents}
             )
             assert truncateds["__all__"] is (step == max_step), (
-                f"step {step} of {max_step} reported "
-                f"truncateds['__all__']={truncateds['__all__']}"
+                f"step {step} of {max_step} reported truncateds['__all__']={truncateds['__all__']}"
             )

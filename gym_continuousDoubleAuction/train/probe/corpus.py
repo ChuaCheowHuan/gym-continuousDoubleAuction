@@ -48,6 +48,7 @@ which has an unrelated random price anchor. `episode_index` marks which episode
 each row belongs to so `targets.horizon_mask` can drop those rows rather than
 teaching the probe to predict a reset.
 """
+
 from __future__ import annotations
 
 import glob
@@ -122,7 +123,7 @@ class ProbeCorpus:
         several assertions.
         """
         end = self.layout.book_flat_dim
-        return self.obs[:, end - self.layout.snapshot_dim:end]
+        return self.obs[:, end - self.layout.snapshot_dim : end]
 
     def describe(self) -> str:
         return (
@@ -190,11 +191,13 @@ def from_rollouts(
         num_agents = _cli("num_agents")
 
     run_config = dict(env_config or {})
-    run_config.update({
-        "num_of_agents": num_agents,
-        "max_step": max_step,
-        "is_render": False,
-    })
+    run_config.update(
+        {
+            "num_of_agents": num_agents,
+            "max_step": max_step,
+            "is_render": False,
+        }
+    )
     if init_cash is not None:
         run_config["init_cash"] = init_cash
     env = continuousDoubleAuctionEnv(run_config)
@@ -218,10 +221,7 @@ def from_rollouts(
         episodes.append(episode)
 
         for _ in range(max_step):
-            actions = {
-                agent_id: env.action_spaces[agent_id].sample()
-                for agent_id in env.agents
-            }
+            actions = {agent_id: env.action_spaces[agent_id].sample() for agent_id in env.agents}
             observations, _r, terminateds, truncateds, _i = env.step(actions)
 
             # A terminated agent drops out of the observation dict, so read
@@ -289,9 +289,7 @@ def from_parquet(
         step_col = table.column("step").to_pylist()
         agent_col = table.column("agent_id").to_pylist()
 
-        for obs, episode_id, step, agent_id in zip(
-            obs_col, episode_col, step_col, agent_col
-        ):
+        for obs, episode_id, step, agent_id in zip(obs_col, episode_col, step_col, agent_col):
             # `episode_record` writes an empty list when the observation was
             # not available for that row; those rows carry no probe input.
             if not obs:

@@ -46,7 +46,7 @@ class EpisodeStatus(object):
         """
         agent = f'agent_{trader.ID}'
         if trader.acc.nav <= 0 and agent not in self.done_set:
-            self.done_set.add(agent) # done_set is a set
+            self.done_set.add(agent)  # done_set is a set
             terminateds[agent] = True
             # Its orders outlive it otherwise - see the docstring.
             if trader.cancel_all_orders(venue.LOB):
@@ -65,9 +65,14 @@ class EpisodeStatus(object):
         """
         return f'agent_{trader.ID}' not in self.done_set
 
-    def set_all_done(self, terminateds: Dict[str, bool], agents: List[str], num_traders: int,
-                     t_step: int, episode_horizon: int
-                     ) -> Tuple[Dict[str, bool], Dict[str, bool], List[str]]:
+    def set_all_done(
+        self,
+        terminateds: Dict[str, bool],
+        agents: List[str],
+        num_traders: int,
+        t_step: int,
+        episode_horizon: int,
+    ) -> Tuple[Dict[str, bool], Dict[str, bool], List[str]]:
         """
         Complete the per-agent `terminateds` and derive the two `__all__` keys.
 

@@ -19,6 +19,7 @@ while (it failed identically on the older Ray/gymnasium pin):
 Actions are now sampled from the env's own action space, so this stays valid if
 the action space changes again.
 """
+
 import argparse
 import sys
 
@@ -37,8 +38,7 @@ def _cli(key):
     return cli_default("cda_env_rand", key)
 
 
-def run_random(num_agents=None, max_step=None, init_cash=None, is_render=None,
-               seed=None):
+def run_random(num_agents=None, max_step=None, init_cash=None, is_render=None, seed=None):
     """Step the env with random actions until it terminates or runs out of steps.
 
     Any argument left as None is read from `config/cli_defaults.json` ->
@@ -58,12 +58,14 @@ def run_random(num_agents=None, max_step=None, init_cash=None, is_render=None,
     if is_render is None:
         is_render = _cli("is_render")
 
-    env = continuousDoubleAuctionEnv({
-        "num_of_agents": num_agents,
-        "init_cash": init_cash,
-        "max_step": max_step,
-        "is_render": is_render,
-    })
+    env = continuousDoubleAuctionEnv(
+        {
+            "num_of_agents": num_agents,
+            "init_cash": init_cash,
+            "max_step": max_step,
+            "is_render": is_render,
+        }
+    )
 
     env.reset(seed=seed)
     if seed is not None:
@@ -72,10 +74,7 @@ def run_random(num_agents=None, max_step=None, init_cash=None, is_render=None,
 
     steps = 0
     for _ in range(max_step):
-        actions = {
-            agent_id: env.action_spaces[agent_id].sample()
-            for agent_id in env.agents
-        }
+        actions = {agent_id: env.action_spaces[agent_id].sample() for agent_id in env.agents}
         _obs, _rewards, terminateds, truncateds, _infos = env.step(actions)
         steps += 1
 
@@ -98,15 +97,14 @@ def main(argv=None):
         type=str,
         default=_cli("log_level"),
         help="Level for this package's logging. null in cli_defaults.json "
-             "means the logging group of tunable_constants.json decides.",
+        "means the logging group of tunable_constants.json decides.",
     )
     args = p.parse_args(argv)
 
     # The env's per-step render writes at DEBUG, so --render without a level
     # would produce nothing at all. Asking for the render is asking for the
     # output it produces; an explicit --log-level still wins.
-    configure_logging(args.log_level or ("DEBUG" if args.render else None),
-                      force=True)
+    configure_logging(args.log_level or ("DEBUG" if args.render else None), force=True)
 
     steps = run_random(
         num_agents=args.agents,
@@ -116,7 +114,9 @@ def main(argv=None):
         seed=args.seed,
     )
     logger.info(
-        "completed %s steps with %s random agents.", steps, args.agents,
+        "completed %s steps with %s random agents.",
+        steps,
+        args.agents,
     )
     return 0
 

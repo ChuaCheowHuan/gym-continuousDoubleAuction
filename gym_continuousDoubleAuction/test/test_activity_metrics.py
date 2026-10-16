@@ -16,6 +16,7 @@ one whose order was rejected.
 
 See doc/11 2.2 and 4.
 """
+
 import os
 import pickle
 import sys
@@ -79,16 +80,17 @@ class ActivityHarness:
 
     def __init__(self, **kwargs):
         kwargs.setdefault("episode_data_dir", None)
-        self.callback = SelfPlayCallback(
-            num_trainable_policies=2, num_random_policies=2, **kwargs
-        )
+        self.callback = SelfPlayCallback(num_trainable_policies=2, num_random_policies=2, **kwargs)
         self.metrics = MagicMock()
         self.env_runner = MagicMock()
 
     def _hook_args(self, episode):
         return dict(
-            episode=episode, env_runner=self.env_runner,
-            metrics_logger=self.metrics, env=MagicMock(), env_index=0,
+            episode=episode,
+            env_runner=self.env_runner,
+            metrics_logger=self.metrics,
+            env=MagicMock(),
+            env_index=0,
             rl_module=None,
         )
 
@@ -96,9 +98,7 @@ class ActivityHarness:
         self.callback.on_episode_start(**self._hook_args(MockEpisode(episode_id)))
 
     def step(self, episode_id, infos):
-        self.callback.on_episode_step(
-            **self._hook_args(MockEpisode(episode_id, infos))
-        )
+        self.callback.on_episode_step(**self._hook_args(MockEpisode(episode_id, infos)))
 
     def end(self, episode_id):
         """Only the activity part - the NAV check needs its own scaffolding."""
@@ -112,7 +112,6 @@ class ActivityHarness:
 
 
 class TestPassActionFraction:
-
     def test_a_fully_passive_episode_reports_one(self):
         """The S1-3 signature. This is the number that would have made the
         collapse visible instead of leaving it to be inferred."""
@@ -149,7 +148,6 @@ class TestPassActionFraction:
 
 
 class TestOrderRejectionFraction:
-
     def test_rejections_are_counted(self):
         h = ActivityHarness()
         h.start("ep")
@@ -199,7 +197,6 @@ class TestObsClipFraction:
 
 
 class TestBookkeeping:
-
     def test_an_episode_with_no_infos_emits_nothing(self):
         """0.0 would read as 'nothing passed', a claim about behaviour that an
         episode reporting no agent infos gives no evidence for."""
@@ -228,8 +225,8 @@ class TestBookkeeping:
         h.start("a")
         h.start("b")
         for _ in range(4):
-            h.step("a", _infos(passes=NUM_AGENTS))   # a: all passing
-            h.step("b", _infos(passes=0))            # b: none passing
+            h.step("a", _infos(passes=NUM_AGENTS))  # a: all passing
+            h.step("b", _infos(passes=0))  # b: none passing
         h.end("a")
         a_value = h.emitted("pass_action_fraction").args[1]
         h.metrics.reset_mock()
@@ -268,7 +265,7 @@ class TestBookkeeping:
         h.step("ep", _infos(passes=1))
         h.callback._log_activity(MockEpisode("ep"), None)
 
-        assert "ep" not in h.callback._activity   # still released
+        assert "ep" not in h.callback._activity  # still released
 
     def test_the_callback_still_pickles(self):
         """It is cloudpickled into every checkpoint and every env runner.
@@ -345,12 +342,26 @@ class TestRewardDecomposition:
 
     def test_the_mean_of_each_term_is_reported(self):
         h = ActivityHarness()
-        self._steps(h, "ep", [
-            {"nav_term": 1.0, "order_penalty": -0.5, "trade_penalty": 0.0,
-             "drawdown_penalty": 0.0, "passive_bonus": 0.0},
-            {"nav_term": 3.0, "order_penalty": -0.5, "trade_penalty": 0.0,
-             "drawdown_penalty": 0.0, "passive_bonus": 0.0},
-        ])
+        self._steps(
+            h,
+            "ep",
+            [
+                {
+                    "nav_term": 1.0,
+                    "order_penalty": -0.5,
+                    "trade_penalty": 0.0,
+                    "drawdown_penalty": 0.0,
+                    "passive_bonus": 0.0,
+                },
+                {
+                    "nav_term": 3.0,
+                    "order_penalty": -0.5,
+                    "trade_penalty": 0.0,
+                    "drawdown_penalty": 0.0,
+                    "passive_bonus": 0.0,
+                },
+            ],
+        )
 
         assert h.emitted("reward_term_mean_nav_term").args[1] == pytest.approx(2.0)
         assert h.emitted("reward_term_mean_order_penalty").args[1] == pytest.approx(-0.5)
@@ -360,31 +371,62 @@ class TestRewardDecomposition:
         the same every step explains none of the reward's movement, however
         large it is."""
         h = ActivityHarness()
-        self._steps(h, "ep", [
-            {"nav_term": 0.0, "order_penalty": -100.0, "trade_penalty": 0.0,
-             "drawdown_penalty": 0.0, "passive_bonus": 0.0},
-            {"nav_term": 4.0, "order_penalty": -100.0, "trade_penalty": 0.0,
-             "drawdown_penalty": 0.0, "passive_bonus": 0.0},
-        ])
+        self._steps(
+            h,
+            "ep",
+            [
+                {
+                    "nav_term": 0.0,
+                    "order_penalty": -100.0,
+                    "trade_penalty": 0.0,
+                    "drawdown_penalty": 0.0,
+                    "passive_bonus": 0.0,
+                },
+                {
+                    "nav_term": 4.0,
+                    "order_penalty": -100.0,
+                    "trade_penalty": 0.0,
+                    "drawdown_penalty": 0.0,
+                    "passive_bonus": 0.0,
+                },
+            ],
+        )
 
         assert h.emitted("reward_term_var_share_nav_term").args[1] == pytest.approx(1.0)
-        assert h.emitted(
-            "reward_term_var_share_order_penalty"
-        ).args[1] == pytest.approx(0.0)
+        assert h.emitted("reward_term_var_share_order_penalty").args[1] == pytest.approx(0.0)
 
     def test_the_shares_sum_to_one(self):
         h = ActivityHarness()
-        self._steps(h, "ep", [
-            {"nav_term": 1.0, "order_penalty": -2.0, "trade_penalty": 0.5,
-             "drawdown_penalty": -1.0, "passive_bonus": 0.25},
-            {"nav_term": -3.0, "order_penalty": 1.0, "trade_penalty": -0.5,
-             "drawdown_penalty": 2.0, "passive_bonus": -0.75},
-        ])
+        self._steps(
+            h,
+            "ep",
+            [
+                {
+                    "nav_term": 1.0,
+                    "order_penalty": -2.0,
+                    "trade_penalty": 0.5,
+                    "drawdown_penalty": -1.0,
+                    "passive_bonus": 0.25,
+                },
+                {
+                    "nav_term": -3.0,
+                    "order_penalty": 1.0,
+                    "trade_penalty": -0.5,
+                    "drawdown_penalty": 2.0,
+                    "passive_bonus": -0.75,
+                },
+            ],
+        )
 
         total = sum(
             h.emitted(f"reward_term_var_share_{term}").args[1]
-            for term in ("nav_term", "order_penalty", "trade_penalty",
-                         "drawdown_penalty", "passive_bonus")
+            for term in (
+                "nav_term",
+                "order_penalty",
+                "trade_penalty",
+                "drawdown_penalty",
+                "passive_bonus",
+            )
         )
         assert total == pytest.approx(1.0)
 
@@ -393,9 +435,16 @@ class TestRewardDecomposition:
         be a claim this episode gives no evidence for, and 0/0 is not a number.
         """
         h = ActivityHarness()
-        flat = {term: 1.0 for term in
-                ("nav_term", "order_penalty", "trade_penalty",
-                 "drawdown_penalty", "passive_bonus")}
+        flat = {
+            term: 1.0
+            for term in (
+                "nav_term",
+                "order_penalty",
+                "trade_penalty",
+                "drawdown_penalty",
+                "passive_bonus",
+            )
+        }
         self._steps(h, "ep", [flat, flat, flat])
 
         assert h.emitted("reward_term_mean_nav_term") is not None
@@ -406,7 +455,7 @@ class TestRewardDecomposition:
         an older checkpoint's env, can hand back."""
         h = ActivityHarness()
         h.start("ep")
-        h.step("ep", _infos(passes=1))       # no reward_terms in these infos
+        h.step("ep", _infos(passes=1))  # no reward_terms in these infos
         h.end("ep")
 
         assert h.emitted("reward_term_mean_nav_term").args[1] == pytest.approx(0.0)
@@ -508,9 +557,7 @@ class TestMakerFillRatio:
         """Every agent taking half its fills passively - which is what the
         aggregate reports whether or not it is true."""
         h = ActivityHarness()
-        self._episode(
-            h, [{0: (1, 1), 1: (1, 0)}] * 5 + [{0: (1, 0), 1: (1, 1)}] * 5
-        )
+        self._episode(h, [{0: (1, 1), 1: (1, 0)}] * 5 + [{0: (1, 0), 1: (1, 1)}] * 5)
 
         assert h.emitted("maker_fill_ratio_max").args[1] == pytest.approx(0.5)
 
@@ -530,7 +577,8 @@ class TestMakerFillRatio:
         limit = h.callback._MIN_TRADES_FOR_MAKER_RATIO
         # agent_0 trades a lot and crosses every time; agent_1 trades once.
         self._episode(
-            h, [{0: (1, 0)}] * (limit + 2) + [{1: (1, 1)}],
+            h,
+            [{0: (1, 0)}] * (limit + 2) + [{1: (1, 1)}],
         )
 
         assert h.emitted("maker_fill_ratio_max").args[1] == pytest.approx(0.0)

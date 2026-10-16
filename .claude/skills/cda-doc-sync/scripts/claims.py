@@ -9,6 +9,7 @@ config key and CLI flag in facts.json is mentioned in some doc at all.
 A hit is a candidate, not a verdict: a historical line ("193 to 216 with the own-book block")
 is left alone, and so is a number that merely sits near a noun (a "1,000-unit drawdown").
 """
+
 import glob
 import json
 import os
@@ -32,16 +33,32 @@ CHECKS = {
     "unit tests": (rf"{NUM}[- ]unit[- ]tests?", {f["tests"]["unit"]}),
     "integration": (rf"{NUM}[- ]integration[- ]tests?", {f["tests"]["integration"]}),
     # only suite-sized figures; per-file and per-class counts are checked below
-    "suite total": (rf"{NUM}[- ]tests?\b(?! in)", {f["tests"]["total"], f["tests"]["unit"], f["tests"]["integration"]}),
-    "obs width": (rf"{NUM}[- ]floats?\b", {f["obs"]["train_width"], f["obs"]["levels_width"], f["obs"]["private_dim"],
-                                          f["obs"]["grid_snapshot"], f["obs"]["levels_snapshot"]}),
+    "suite total": (
+        rf"{NUM}[- ]tests?\b(?! in)",
+        {f["tests"]["total"], f["tests"]["unit"], f["tests"]["integration"]},
+    ),
+    "obs width": (
+        rf"{NUM}[- ]floats?\b",
+        {
+            f["obs"]["train_width"],
+            f["obs"]["levels_width"],
+            f["obs"]["private_dim"],
+            f["obs"]["grid_snapshot"],
+            f["obs"]["levels_snapshot"],
+        },
+    ),
     "action heads": (rf"{NUM}[- ]heads?\b", {f["action"]["_heads"]}),
     "reward terms": (rf"{NUM}[- ](?:signed )?(?:reward )?terms?\b", {len(f["reward_terms"])}),
     "encoders": (rf"{NUM}[- ]encoders?\b", {len(f["encoders"])}),
 }
 files = [os.path.join(ROOT, "README.md")] + sorted(
-    p for p in glob.glob(os.path.join(ROOT, "doc", "*.md")) if os.path.basename(p) not in SKIP)
-MIN = {"suite total": 1000, "obs width": 100, "encoders": 3}   # smaller figures are per-class or sub-block counts
+    p for p in glob.glob(os.path.join(ROOT, "doc", "*.md")) if os.path.basename(p) not in SKIP
+)
+MIN = {
+    "suite total": 1000,
+    "obs width": 100,
+    "encoders": 3,
+}  # smaller figures are per-class or sub-block counts
 FILE_COUNT = re.compile(r"`(?:integration/)?(test_\w+\.py)(?:::\w+)?`[^\n]{0,30}?\b(\d+) tests?\b")
 per_file = {os.path.basename(k): v for k, v in f["tests"]["per_file"].items()}
 hits = 0
@@ -49,16 +66,24 @@ for path in files:
     for n, line in enumerate(open(path, encoding="utf-8"), 1):
         for m in FILE_COUNT.finditer(line):
             name, claimed = m.group(1), int(m.group(2))
-            if "::" not in line[m.start():m.end()] and name in per_file and per_file[name] != claimed:
+            if (
+                "::" not in line[m.start() : m.end()]
+                and name in per_file
+                and per_file[name] != claimed
+            ):
                 hits += 1
-                print(f"{'file count':12s} {os.path.relpath(path, ROOT)}:{n}  {name} {claimed} -> {per_file[name]}")
+                print(
+                    f"{'file count':12s} {os.path.relpath(path, ROOT)}:{n}  {name} {claimed} -> {per_file[name]}"
+                )
         for cat, (pat, ok) in CHECKS.items():
             for m in re.finditer(pat, line, re.I):
                 v = val(m.group(1))
                 if v is not None and v >= MIN.get(cat, 0) and v not in ok:
                     hits += 1
                     actual = "/".join(str(x) for x in sorted(ok))
-                    print(f"{cat:12s} {os.path.relpath(path, ROOT)}:{n}  {m.group(1)} -> {actual}  | {line.strip()[:120]}")
+                    print(
+                        f"{cat:12s} {os.path.relpath(path, ROOT)}:{n}  {m.group(1)} -> {actual}  | {line.strip()[:120]}"
+                    )
 
 
 # --- what the numeric categories above cannot see ---------------------------------
@@ -77,17 +102,23 @@ for path in files:
             mentioned_in_inventory.add(name)
             if name in per_file and per_file[name] != claimed:
                 hits += 1
-                print(f"{'inventory':12s} {os.path.relpath(path, ROOT)}:{n}  {name} {claimed} -> {per_file[name]}")
+                print(
+                    f"{'inventory':12s} {os.path.relpath(path, ROOT)}:{n}  {name} {claimed} -> {per_file[name]}"
+                )
             elif name not in per_file:
                 hits += 1
-                print(f"{'inventory':12s} {os.path.relpath(path, ROOT)}:{n}  {name} is listed but no longer collected")
+                print(
+                    f"{'inventory':12s} {os.path.relpath(path, ROOT)}:{n}  {name} is listed but no longer collected"
+                )
         m = CODE_SIZE.search(line)
         if m and "code" in f:
             lines, count = int(m.group(1).replace(",", "")), int(m.group(2))
             if (lines, count) != (f["code"]["lines"], f["code"]["files"]):
                 hits += 1
-                print(f"{'code size':12s} {os.path.relpath(path, ROOT)}:{n}  {lines:,} lines / {count} files -> "
-                      f"{f['code']['lines']:,} / {f['code']['files']}  | {line.strip()[:100]}")
+                print(
+                    f"{'code size':12s} {os.path.relpath(path, ROOT)}:{n}  {lines:,} lines / {count} files -> "
+                    f"{f['code']['lines']:,} / {f['code']['files']}  | {line.strip()[:100]}"
+                )
 
 for name in sorted(set(per_file) - mentioned_in_inventory):
     hits += 1
@@ -98,7 +129,7 @@ corpus = "\n".join(open(p, encoding="utf-8").read() for p in files)
 
 def leaves(tree, prefix=""):
     for key, value in tree.items():
-        if key.startswith("_"):          # _note, _source: prose, not settings
+        if key.startswith("_"):  # _note, _source: prose, not settings
             continue
         if isinstance(value, dict) and value:
             yield from leaves(value, prefix + key + ".")

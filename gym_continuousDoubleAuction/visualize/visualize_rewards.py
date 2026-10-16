@@ -49,7 +49,9 @@ def visualize_rewards(run_dir=None, episode_id=None):
     sorted_agents = sorted(episode["agent_id"].unique())
 
     for agent_id in sorted_agents:
-        rewards_history = episode.loc[episode["agent_id"] == agent_id, "reward"].fillna(0.0).to_numpy()
+        rewards_history = (
+            episode.loc[episode["agent_id"] == agent_id, "reward"].fillna(0.0).to_numpy()
+        )
         cumulative_rewards = np.cumsum(rewards_history)
         plt.plot(cumulative_rewards, label=agent_id, linewidth=1.5)
 
@@ -109,8 +111,12 @@ def visualize_reward_decomposition(run_dir=None, episode_id=None, agent_id=None)
 
     total = episode["reward"].fillna(0.0).to_numpy()
     plt.plot(
-        np.cumsum(total), label="reward (total)",
-        color="black", linestyle="--", linewidth=1.5, alpha=0.7,
+        np.cumsum(total),
+        label="reward (total)",
+        color="black",
+        linestyle="--",
+        linewidth=1.5,
+        alpha=0.7,
     )
 
     plt.title(f'Cumulative Reward Decomposition ({agent_id})')
@@ -126,6 +132,7 @@ def visualize_reward_decomposition(run_dir=None, episode_id=None, agent_id=None)
     plt.savefig(output_file)
     print(f"Visualization saved to {output_file}")
     plt.show()
+
 
 if __name__ == "__main__":
     visualize_rewards()

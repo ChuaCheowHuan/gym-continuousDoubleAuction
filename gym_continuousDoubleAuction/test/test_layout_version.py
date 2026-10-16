@@ -5,6 +5,7 @@
 `Algorithm.from_checkpoint`, so a restore into a different observation or
 action layout fails by name rather than by tensor shape - or worse, not at all.
 """
+
 import pytest
 
 from gym_continuousDoubleAuction.envs.layout_version import (
@@ -86,8 +87,9 @@ def test_save_writes_it(tmp_path, monkeypatch):
     )
 
     class FakeAlgo:
-        callbacks = [SelfPlayCallback(num_trainable_policies=1, num_random_policies=1,
-                                      episode_data_dir=None)]
+        callbacks = [
+            SelfPlayCallback(num_trainable_policies=1, num_random_policies=1, episode_data_dir=None)
+        ]
 
     train_module._write_league_state(str(tmp_path), FakeAlgo(), iteration=3)
     written = json.load(open(tmp_path / train_module.LEAGUE_STATE_FILE))

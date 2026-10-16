@@ -12,6 +12,7 @@ none, on a measured 5.0% of open-position agent-steps.
 maintained by the three methods that open or reset a position and deliberately
 untouched by `_size_decrease`, so it stays positive whenever a position exists.
 """
+
 from decimal import Decimal
 
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
@@ -99,9 +100,7 @@ class TestEntryVwapTracksTheRealBasis:
 
 class TestTheObservationSaysWhatItMeans:
     def _env(self):
-        env = continuousDoubleAuctionEnv(
-            {"num_of_agents": 3, "max_step": 50, "is_render": False}
-        )
+        env = continuousDoubleAuctionEnv({"num_of_agents": 3, "max_step": 50, "is_render": False})
         env.reset(seed=2)
         return env
 
@@ -129,9 +128,7 @@ class TestTheObservationSaysWhatItMeans:
         assert private[VWAP_VS_MID] == 0.0
 
     def test_no_open_position_reports_flat_over_a_long_rollout(self):
-        env = continuousDoubleAuctionEnv(
-            {"num_of_agents": 4, "max_step": 400, "is_render": False}
-        )
+        env = continuousDoubleAuctionEnv({"num_of_agents": 4, "max_step": 400, "is_render": False})
         env.reset(seed=11)
         # `reset(seed=)` seeds the env's generator, not the action spaces:
         # `Space.sample()` has a generator of its own. Seeding both is what

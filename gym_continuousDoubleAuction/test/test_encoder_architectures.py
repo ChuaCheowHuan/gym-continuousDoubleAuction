@@ -11,6 +11,7 @@ trips (checkpointing and champion snapshots both need it), `vf_share_layers`
 honoured in both directions, and a forward pass that is deterministic in eval
 mode - which PPO's ratio depends on, and which a stray dropout would break.
 """
+
 import numpy as np
 import pytest
 import tree
@@ -67,9 +68,7 @@ SEQ_LEN = 3
 ALL_ENCODERS = [MLP_ENCODER_TYPE] + sorted(ENCODER_REGISTRY)
 
 #: The ones a config file may actually select.
-SHIPPED_ENCODERS = [
-    e for e in ALL_ENCODERS if not e.startswith("_") and e != MLP_ENCODER_TYPE
-]
+SHIPPED_ENCODERS = [e for e in ALL_ENCODERS if not e.startswith("_") and e != MLP_ENCODER_TYPE]
 
 
 @pytest.fixture(scope="module")
@@ -119,9 +118,7 @@ def sample_batch(obs_space, n=4, seed=0, module=None, seq_len=SEQ_LEN):
         obs = np.stack([obs_space.sample() for _ in range(n)])
         return {Columns.OBS: torch.from_numpy(obs)}
 
-    obs = np.stack(
-        [[obs_space.sample() for _ in range(seq_len)] for _ in range(n)]
-    )
+    obs = np.stack([[obs_space.sample() for _ in range(seq_len)] for _ in range(n)])
     # Initial states come back unbatched; give every sequence its own copy.
     state_in = tree.map_structure(
         lambda s: s.unsqueeze(0).expand(n, *s.shape).contiguous(),
@@ -131,6 +128,7 @@ def sample_batch(obs_space, n=4, seed=0, module=None, seq_len=SEQ_LEN):
 
 
 # --- The contract, for every encoder ----------------------------------------
+
 
 @pytest.mark.parametrize("encoder_type", ALL_ENCODERS)
 class TestEveryEncoder:
@@ -183,15 +181,11 @@ class TestEveryEncoder:
             source.forward_train(batch)[Columns.ACTION_DIST_INPUTS],
             target.forward_train(batch)[Columns.ACTION_DIST_INPUTS],
         )
-        assert torch.allclose(
-            source.compute_values(batch), target.compute_values(batch)
-        )
+        assert torch.allclose(source.compute_values(batch), target.compute_values(batch))
 
     @pytest.mark.parametrize("vf_share_layers", [False, True])
     def test_vf_share_layers_is_honoured(self, spaces, encoder_type, vf_share_layers):
-        module = build_module(
-            spaces, encoder_type, vf_share_layers=vf_share_layers
-        )
+        module = build_module(spaces, encoder_type, vf_share_layers=vf_share_layers)
 
         has_critic = getattr(module.encoder, "critic_encoder", None) is not None
         assert has_critic is (not vf_share_layers)
@@ -216,7 +210,7 @@ class TestEveryEncoder:
         base = ["vf", "encoder.critic_encoder"]
         assert attributes[: len(base)] == base
 
-        extra = attributes[len(base):]
+        extra = attributes[len(base) :]
         if encoder_type != "jepa":
             assert extra == [], (
                 f"{encoder_type} declared extra non-inference attributes "
@@ -255,7 +249,8 @@ class TestEveryEncoder:
         module.forward_train(batch)[Columns.ACTION_DIST_INPUTS].sum().backward()
 
         encoder_grads = [
-            p.grad for name, p in module.named_parameters()
+            p.grad
+            for name, p in module.named_parameters()
             if name.startswith("encoder.") and "critic" not in name
         ]
         assert encoder_grads, f"{encoder_type} exposed no actor-side encoder params"
@@ -269,8 +264,7 @@ def test_every_shipped_encoder_has_a_config_block(encoder_type):
     specs = group("train_config.json", "encoder")["encoder_specs"]
 
     assert encoder_type in specs, (
-        f"{encoder_type!r} is selectable but has no encoder_specs block in "
-        "train_config.json."
+        f"{encoder_type!r} is selectable but has no encoder_specs block in train_config.json."
     )
 
 
@@ -283,6 +277,7 @@ def test_config_block_keys_are_all_recognised(spaces, encoder_type):
 
 
 # --- Transformer specifics ---------------------------------------------------
+
 
 @pytest.mark.parametrize("encoder_type", SHIPPED_ENCODERS)
 class TestEncodersReadTheGridAsAGrid:
@@ -317,9 +312,9 @@ class TestEncodersReadTheGridAsAGrid:
         """
         batch = sample_batch(obs_space, n=1, module=module)
         if module.is_stateful():
-            batch[Columns.OBS] = obs.unsqueeze(1).expand(
-                1, batch[Columns.OBS].shape[1], obs.shape[-1]
-            ).contiguous()
+            batch[Columns.OBS] = (
+                obs.unsqueeze(1).expand(1, batch[Columns.OBS].shape[1], obs.shape[-1]).contiguous()
+            )
         else:
             batch[Columns.OBS] = obs
 
@@ -343,8 +338,8 @@ class TestEncodersReadTheGridAsAGrid:
             base = snapshot * layout.snapshot_dim
             for field in range(layout.book_rows):
                 start = base + field * layout.k_rows
-                row = shuffled[0, start:start + layout.k_rows]
-                shuffled[0, start:start + layout.k_rows] = row[permutation]
+                row = shuffled[0, start : start + layout.k_rows]
+                shuffled[0, start : start + layout.k_rows] = row[permutation]
 
         with torch.no_grad():
             before = self._latent(module, obs_space, obs)
@@ -365,11 +360,11 @@ class TestEncodersReadTheGridAsAGrid:
         obs = self._observation(obs_space)
         reversed_obs = obs.clone()
         snapshots = [
-            obs[0, i * layout.snapshot_dim:(i + 1) * layout.snapshot_dim].clone()
+            obs[0, i * layout.snapshot_dim : (i + 1) * layout.snapshot_dim].clone()
             for i in range(layout.n_hist)
         ]
         for i, snapshot in enumerate(reversed(snapshots)):
-            reversed_obs[0, i * layout.snapshot_dim:(i + 1) * layout.snapshot_dim] = snapshot
+            reversed_obs[0, i * layout.snapshot_dim : (i + 1) * layout.snapshot_dim] = snapshot
 
         with torch.no_grad():
             before = self._latent(module, obs_space, obs)
@@ -386,9 +381,7 @@ class TestTransformer:
     @pytest.mark.parametrize("tokenization", TOKENIZATIONS)
     def test_every_tokenization_builds_and_runs(self, spaces, tokenization):
         obs_space, _ = spaces
-        module = build_module(
-            spaces, self.ENCODER, spec={"tokenization": tokenization}
-        )
+        module = build_module(spaces, self.ENCODER, spec={"tokenization": tokenization})
 
         out = module.forward_train(sample_batch(obs_space))
 
@@ -454,9 +447,7 @@ class TestPositionalIndex:
     @classmethod
     def layout(cls):
         env = continuousDoubleAuctionEnv({})
-        return ObsLayout.from_obs_space(
-            env.get_observation_space(env.agents[0])
-        )
+        return ObsLayout.from_obs_space(env.get_observation_space(env.agents[0]))
 
     @pytest.mark.parametrize("tokenization", TOKENIZATIONS)
     def test_index_length_matches_the_token_count(self, layout, tokenization):
@@ -492,6 +483,7 @@ class TestPositionalIndex:
 
 # --- LSTM specifics ----------------------------------------------------------
 
+
 class TestLSTM:
     ENCODER = "lstm"
 
@@ -524,9 +516,7 @@ class TestLSTM:
         assert set(state["actor"]) == {"h", "c"}
 
     def test_initial_state_is_shaped_by_the_spec(self, spaces):
-        module = build_module(
-            spaces, self.ENCODER, spec={"hidden_dim": 64, "num_layers": 2}
-        )
+        module = build_module(spaces, self.ENCODER, spec={"hidden_dim": 64, "num_layers": 2})
 
         h = module.get_initial_state()["actor"]["h"]
 
@@ -558,9 +548,7 @@ class TestLSTM:
 
         zeroed = module.forward_train(batch)[Columns.ACTION_DIST_INPUTS]
         perturbed = dict(batch)
-        perturbed[Columns.STATE_IN] = tree.map_structure(
-            lambda t: t + 1.0, batch[Columns.STATE_IN]
-        )
+        perturbed[Columns.STATE_IN] = tree.map_structure(lambda t: t + 1.0, batch[Columns.STATE_IN])
         shifted = module.forward_train(perturbed)[Columns.ACTION_DIST_INPUTS]
 
         assert not torch.allclose(zeroed, shifted)
@@ -574,9 +562,7 @@ class TestLSTM:
 
         module = build_module(spaces, self.ENCODER)
 
-        assert isinstance(
-            module.encoder.actor_encoder.tokenizer, TorchTokenEmbedEncoder
-        )
+        assert isinstance(module.encoder.actor_encoder.tokenizer, TorchTokenEmbedEncoder)
 
     def test_max_seq_len_reaches_the_model_config(self, spaces):
         """It configures RLlib's connectors, not the encoder, so it has to be
@@ -616,6 +602,7 @@ class TestLSTM:
 
 # --- Mixture-of-experts specifics --------------------------------------------
 
+
 class TestMoETransformer:
     ENCODER = "moe_transformer"
 
@@ -649,9 +636,7 @@ class TestMoETransformer:
         out = module.forward_train(sample_batch(obs_space, module=module))
         out[MOE_AUX_LOSS].backward()
 
-        gate_grads = [
-            p.grad for name, p in module.named_parameters() if ".gate." in name
-        ]
+        gate_grads = [p.grad for name, p in module.named_parameters() if ".gate." in name]
         assert gate_grads
         assert any(g is not None and g.abs().sum() > 0 for g in gate_grads)
 
@@ -768,24 +753,19 @@ class TestMoETransformer:
                 with torch.random.fork_rng(devices=[]):
                     torch.manual_seed(0)
                     module = build_module(
-                        spaces, self.ENCODER,
+                        spaces,
+                        self.ENCODER,
                         spec={"num_layers": num_layers, "top_k": self.TOP_K},
                         vf_share_layers=vf_share_layers,
                     )
-                    out = module.forward_train(
-                        sample_batch(obs_space, module=module)
-                    )
-                losses[(num_layers, vf_share_layers)] = float(
-                    out[MOE_AUX_LOSS].detach()
-                )
+                    out = module.forward_train(sample_batch(obs_space, module=module))
+                losses[(num_layers, vf_share_layers)] = float(out[MOE_AUX_LOSS].detach())
 
         lowest = min(losses.values())
         highest = max(losses.values())
 
         # The floor, which no routing can go below.
-        assert lowest >= self.TOP_K, (
-            f"aux loss {lowest} is below the floor {self.TOP_K}: {losses}"
-        )
+        assert lowest >= self.TOP_K, f"aux loss {lowest} is below the floor {self.TOP_K}: {losses}"
         # Near it, for an untrained gate. Summing would put even the
         # two-block case at ~4.3.
         assert highest < 1.5 * self.TOP_K, (
@@ -815,6 +795,7 @@ class TestMoETransformer:
 
 
 # --- Common spec keys --------------------------------------------------------
+
 
 class TestCommonSpecKeys:
     """`lr` and `vf_share_layers` are accepted in every encoder's spec block.
@@ -847,7 +828,9 @@ class TestCommonSpecKeys:
     def test_vf_share_layers_override_takes_effect(self, spaces):
         """The ppo group ships false; an encoder setting true must win."""
         module = build_module(
-            spaces, "transformer", spec={"vf_share_layers": True},
+            spaces,
+            "transformer",
+            spec={"vf_share_layers": True},
             vf_share_layers=False,
         )
 
@@ -862,6 +845,7 @@ class TestCommonSpecKeys:
 
 
 # --- JEPA --------------------------------------------------------------------
+
 
 class TestJEPA:
     """The latent-prediction objective and the collapse metrics.
@@ -926,10 +910,9 @@ class TestJEPA:
 
         out[JEPA_AUX_LOSS].backward()
         trunk = module.encoder.actor_encoder.trunk
-        assert any(
-            p.grad is not None and p.grad.abs().sum() > 0
-            for p in trunk.parameters()
-        ), "the online trunk took no gradient from the objective"
+        assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in trunk.parameters()), (
+            "the online trunk took no gradient from the objective"
+        )
 
     def test_the_target_trunk_takes_no_gradient(self, spaces):
         """It is an EMA copy, not a trained one. If it learned by gradient it
@@ -1071,10 +1054,7 @@ class TestJEPA:
         )
         assert aux_on > aux_off, "precondition: the hinge is off its floor"
 
-        assert any(
-            not torch.allclose(without[name], with_hinge[name])
-            for name in without
-        ), (
+        assert any(not torch.allclose(without[name], with_hinge[name]) for name in without), (
             "the trunk's gradient is unchanged by variance_coeff, so the "
             "variance hinge is a constant again"
         )
@@ -1155,11 +1135,7 @@ class TestJEPAWorldModel:
         obs_space.seed(int(rng.integers(1 << 30)))
         act_space.seed(int(rng.integers(1 << 30)))
 
-        batch = {
-            Columns.OBS: torch.from_numpy(
-                np.stack([obs_space.sample() for _ in range(n)])
-            )
-        }
+        batch = {Columns.OBS: torch.from_numpy(np.stack([obs_space.sample() for _ in range(n)]))}
         if with_next:
             batch[Columns.NEXT_OBS] = torch.from_numpy(
                 np.stack([obs_space.sample() for _ in range(n)])
@@ -1187,10 +1163,7 @@ class TestJEPAWorldModel:
 
         out[JEPA_WORLD_LOSS].backward()
         world = module.encoder.actor_encoder.world_model
-        assert any(
-            p.grad is not None and p.grad.abs().sum() > 0
-            for p in world.parameters()
-        )
+        assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in world.parameters())
 
     def test_a_batch_without_next_obs_is_not_an_error(self, spaces):
         """PPO's own batch has none, and `compute_values` runs on one. Raising
@@ -1199,9 +1172,7 @@ class TestJEPAWorldModel:
         module = build_module(spaces, "jepa", spec={"world_model": True})
         module.train()
 
-        out = module._forward_train(
-            self._batch(obs_space, act_space, with_next=False)
-        )
+        out = module._forward_train(self._batch(obs_space, act_space, with_next=False))
 
         assert JEPA_WORLD_LOSS not in out
         # The masked objective still ran; only the world-model term is absent.
@@ -1238,9 +1209,7 @@ class TestJEPAWorldModel:
         other["category"] = (actions["category"] + 1) % 9
 
         with torch.no_grad():
-            assert not torch.allclose(
-                world(latent, actions), world(latent, other)
-            )
+            assert not torch.allclose(world(latent, actions), world(latent, other))
 
     def test_the_policy_latent_is_unchanged_by_it(self, spaces):
         """The world model is an auxiliary term, not a change to what the agent
@@ -1274,12 +1243,14 @@ class TestJEPAWorldModel:
         import gymnasium as gym
 
         obs_space, act_space = spaces
-        trimmed = gym.spaces.Dict({
-            k: v for k, v in act_space.spaces.items() if k != "price_offset"
-        })
+        trimmed = gym.spaces.Dict(
+            {k: v for k, v in act_space.spaces.items() if k != "price_offset"}
+        )
         with pytest.raises(ValueError, match="missing"):
             build_trainable_module_spec(
-                obs_space, trimmed, encoder_type="jepa",
+                obs_space,
+                trimmed,
+                encoder_type="jepa",
                 encoder_specs={"jepa": {"world_model": True}},
             ).build()
 
@@ -1306,9 +1277,7 @@ class TestJEPAReviewRegressions:
         the leaf's parent.
         """
         obs_space, act_space = spaces
-        spec = build_trainable_module_spec(
-            obs_space, act_space, encoder_type="jepa"
-        )
+        spec = build_trainable_module_spec(obs_space, act_space, encoder_type="jepa")
         spec.inference_only = True
 
         module = spec.build()
@@ -1321,28 +1290,26 @@ class TestJEPAReviewRegressions:
         declare a submodule that is not there - and `setup` would then try to
         delete it."""
         off = build_module(spaces, "jepa", vf_share_layers=False)
-        on = build_module(
-            spaces, "jepa", spec={"world_model": True}, vf_share_layers=False
-        )
+        on = build_module(spaces, "jepa", spec={"world_model": True}, vf_share_layers=False)
 
-        assert "encoder.actor_encoder.world_model" not in (
-            off.get_non_inference_attributes()
-        )
-        assert "encoder.actor_encoder.world_model" in (
-            on.get_non_inference_attributes()
-        )
+        assert "encoder.actor_encoder.world_model" not in (off.get_non_inference_attributes())
+        assert "encoder.actor_encoder.world_model" in (on.get_non_inference_attributes())
 
     def test_an_inference_only_module_is_smaller(self, spaces):
         """The point of declaring them: a champion should not carry a second
         encoder it never runs."""
         obs_space, act_space = spaces
         full = build_trainable_module_spec(
-            obs_space, act_space, encoder_type="jepa",
+            obs_space,
+            act_space,
+            encoder_type="jepa",
             encoder_specs={"jepa": {"world_model": True}},
         ).build()
 
         spec = build_trainable_module_spec(
-            obs_space, act_space, encoder_type="jepa",
+            obs_space,
+            act_space,
+            encoder_type="jepa",
             encoder_specs={"jepa": {"world_model": True}},
         )
         spec.inference_only = True
@@ -1394,20 +1361,14 @@ class TestJEPAReviewRegressions:
         and not tokens: at `n_hist` 1 it masked the whole sequence, leaving the
         context encoder no input. `n_hist: 1` is a setting the `lstm` block
         explicitly recommends, so it was reachable."""
-        layout = ObsLayout(
-            n_hist=n_hist, book_rows=4, k_rows=10, extra_dim=2, private_dim=9
-        )
+        layout = ObsLayout(n_hist=n_hist, book_rows=4, k_rows=10, extra_dim=2, private_dim=9)
         for tokenization in TOKENIZATIONS:
             total = token_shape(layout, tokenization)[0]
             if total < 2:
                 continue  # refused at construction; see the next test
             for ratio in (0.01, 0.5, 0.99):
-                masked = sample_mask(
-                    total, layout, tokenization, mask_axis, ratio
-                )
-                assert 0 < len(masked) < total, (
-                    tokenization, mask_axis, ratio, len(masked), total
-                )
+                masked = sample_mask(total, layout, tokenization, mask_axis, ratio)
+                assert 0 < len(masked) < total, (tokenization, mask_axis, ratio, len(masked), total)
 
     def test_a_single_token_sequence_is_refused(self, spaces):
         """One token cannot be both hidden and visible, so the contract
@@ -1419,12 +1380,16 @@ class TestJEPAReviewRegressions:
         layout = group("tunable_constants.json", "observation_layout")
         snapshot = layout["book_rows"] * layout["k_rows"] + layout["extra_dim"]
         one_frame = gym.spaces.Box(
-            -np.inf, np.inf,
-            shape=(snapshot + layout["private_dim"],), dtype=np.float32,
+            -np.inf,
+            np.inf,
+            shape=(snapshot + layout["private_dim"],),
+            dtype=np.float32,
         )
 
         with pytest.raises(ValueError, match="at least two"):
             build_trainable_module_spec(
-                one_frame, act_space, encoder_type="jepa",
+                one_frame,
+                act_space,
+                encoder_type="jepa",
                 encoder_specs={"jepa": {"tokenization": "time"}},
             ).build()

@@ -41,6 +41,7 @@ from the checkpoint's own spec rather than hard-coded here - the same reasoning
 `probe.features.load_module` gives. A frozen graph would be a second definition
 of the network to keep in step with the first.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -78,7 +79,8 @@ def read_league_state(checkpoint: str) -> Dict[str, Any]:
         logger.warning(
             "%s has no %s. Champions cannot be named without it - pass "
             "--module-id, or --list to see what the checkpoint holds.",
-            checkpoint, LEAGUE_STATE_FILE,
+            checkpoint,
+            LEAGUE_STATE_FILE,
         )
         return {}
     try:
@@ -102,13 +104,13 @@ def best_champion(state: Dict[str, Any]) -> Optional[dict]:
     champion found in the checkpoint but missing from the sidecar with
     `return: None`, and there is nothing to rank it by.
     """
-    ranked = [c for c in state.get("champion_history") or []
-              if usable_return(c.get("return")) is not None]
+    ranked = [
+        c for c in state.get("champion_history") or [] if usable_return(c.get("return")) is not None
+    ]
     return max(ranked, key=lambda c: c["return"]) if ranked else None
 
 
-def resolve_module(state: Dict[str, Any],
-                   module_id: Optional[str]) -> Tuple[str, Optional[dict]]:
+def resolve_module(state: Dict[str, Any], module_id: Optional[str]) -> Tuple[str, Optional[dict]]:
     """Which module to export, and its promotion record if it has one.
 
     Raises:
@@ -140,8 +142,9 @@ def resolve_module(state: Dict[str, Any],
     return champion["id"], champion
 
 
-def build_record(module, module_id: str, checkpoint: str,
-                 state: Dict[str, Any], record: Optional[dict]) -> Dict[str, Any]:
+def build_record(
+    module, module_id: str, checkpoint: str, state: Dict[str, Any], record: Optional[dict]
+) -> Dict[str, Any]:
     """What gets written: the weights, and enough to know what they mean."""
     import torch
 
@@ -176,7 +179,8 @@ def warn_about_layout(state: Dict[str, Any]) -> Optional[str]:
         return None
     current = layout_stamp(stamped.get("book_mode"))
     differs = [
-        key for key in ("observation_version", "action_version")
+        key
+        for key in ("observation_version", "action_version")
         if stamped.get(key) != current.get(key)
     ]
     if not differs:
@@ -219,8 +223,9 @@ def render(state: Dict[str, Any], modules: List[str]) -> str:
     return "\n".join(lines)
 
 
-def export(checkpoint: str, module_id: Optional[str] = None,
-           out: Optional[str] = None) -> Dict[str, Any]:
+def export(
+    checkpoint: str, module_id: Optional[str] = None, out: Optional[str] = None
+) -> Dict[str, Any]:
     """Load one module out of `checkpoint` and write its weights to `out`.
 
     Returns the record that was written, with `out` added as `path`.
@@ -232,7 +237,9 @@ def export(checkpoint: str, module_id: Optional[str] = None,
     if record is not None:
         logger.info(
             "%s was promoted from %s at iteration %s, return %s",
-            module_id, record["source_policy"], record["iteration"],
+            module_id,
+            record["source_policy"],
+            record["iteration"],
             format_return(record["return"]),
         )
     warn_about_layout(state)
@@ -248,7 +255,9 @@ def export(checkpoint: str, module_id: Optional[str] = None,
     weights = written["state_dict"]
     logger.info(
         "wrote %s: %s, %s tensor(s), %s parameter(s)\n%s",
-        out, written["module_class"], len(weights),
+        out,
+        written["module_class"],
+        len(weights),
         f"{sum(v.numel() for v in weights.values()):,}",
         "\n".join(f"    {k}  {tuple(v.shape)}" for k, v in weights.items()),
     )
@@ -258,16 +267,26 @@ def export(checkpoint: str, module_id: Optional[str] = None,
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(
         description="Export one module's weights from a training checkpoint. "
-                    "See doc/26 section 26.9.2.",
+        "See doc/26 section 26.9.2.",
     )
     p.add_argument("--checkpoint", required=True, help="One iter_<n> directory.")
-    p.add_argument("--module-id", type=str, default=_cli("module_id"),
-                   help="Export this module. Default: the champion with the best "
-                        "recorded return.")
-    p.add_argument("--out", type=str, default=_cli("out"),
-                   help="Where to write the .pt. Default: <module_id>.pt here.")
-    p.add_argument("--list", action="store_true",
-                   help="Print the checkpoint's modules and champions, export nothing.")
+    p.add_argument(
+        "--module-id",
+        type=str,
+        default=_cli("module_id"),
+        help="Export this module. Default: the champion with the best recorded return.",
+    )
+    p.add_argument(
+        "--out",
+        type=str,
+        default=_cli("out"),
+        help="Where to write the .pt. Default: <module_id>.pt here.",
+    )
+    p.add_argument(
+        "--list",
+        action="store_true",
+        help="Print the checkpoint's modules and champions, export nothing.",
+    )
     p.add_argument("--log-level", type=str, default=_cli("log_level"))
     args = p.parse_args(argv)
 
@@ -275,8 +294,11 @@ def main(argv=None) -> int:
 
     if args.list:
         state = read_league_state(args.checkpoint)
-        logger.info("%s\n%s", os.path.abspath(args.checkpoint),
-                    render(state, features_module.available_modules(args.checkpoint)))
+        logger.info(
+            "%s\n%s",
+            os.path.abspath(args.checkpoint),
+            render(state, features_module.available_modules(args.checkpoint)),
+        )
         return 0
 
     try:

@@ -4,6 +4,7 @@ The training half is `train.train`, which the integration suite already
 exercises; these pin what the driver does with the numbers it collects, which
 is the part a reader will quote.
 """
+
 import json
 
 import pytest
@@ -13,9 +14,14 @@ from gym_continuousDoubleAuction.train import compare
 
 
 def _row(encoder, seed, ret, vf, pas=0.1, params=1000, **probe):
-    row = {"encoder": encoder, "seed": seed, "return": ret,
-           "vf_explained_var": vf, "pass_action_fraction": pas,
-           "parameters": params}
+    row = {
+        "encoder": encoder,
+        "seed": seed,
+        "return": ret,
+        "vf_explained_var": vf,
+        "pass_action_fraction": pas,
+        "parameters": params,
+    }
     row.update({f"probe:{k}": v for k, v in probe.items()})
     return row
 
@@ -31,7 +37,6 @@ ROWS = [
 
 
 class TestAggregate:
-
     def test_mean_std_n_per_encoder(self):
         summary = compare.aggregate(ROWS)
         assert summary["mlp"]["return"]["n"] == 3
@@ -55,14 +60,17 @@ class TestAggregate:
 
 
 class TestSeparated:
-
     def test_clear_gap_is_separated(self):
         summary = compare.aggregate(ROWS)
         assert compare.separated(summary, "return") == {"mlp": True, "transformer": True}
 
     def test_overlapping_spread_is_not(self):
-        rows = [_row("a", 0, 1.0, 0.5), _row("a", 1, 3.0, 0.5),
-                _row("b", 0, 2.0, 0.5), _row("b", 1, 4.0, 0.5)]
+        rows = [
+            _row("a", 0, 1.0, 0.5),
+            _row("a", 1, 3.0, 0.5),
+            _row("b", 0, 2.0, 0.5),
+            _row("b", 1, 4.0, 0.5),
+        ]
         summary = compare.aggregate(rows)
         assert compare.separated(summary, "return") == {"a": False, "b": False}
 
@@ -75,7 +83,6 @@ class TestSeparated:
 
 
 class TestRender:
-
     def test_table_has_a_row_per_encoder_and_the_caveat(self):
         text = compare.render(ROWS)
         lines = text.splitlines()
@@ -96,9 +103,19 @@ class TestRender:
 
 
 def test_cli_defaults_exist():
-    for key in ("encoders", "seeds", "num_iters", "out_dir", "probe_episodes",
-                "probe_steps", "probe_seed", "targets", "horizons", "module_id",
-                "log_level"):
+    for key in (
+        "encoders",
+        "seeds",
+        "num_iters",
+        "out_dir",
+        "probe_episodes",
+        "probe_steps",
+        "probe_seed",
+        "targets",
+        "horizons",
+        "module_id",
+        "log_level",
+    ):
         cli_default("cda_compare", key)
     assert len(cli_default("cda_compare", "seeds")) >= 3
 
@@ -114,7 +131,8 @@ class TestParseOverrides:
 
     def test_a_dict_field_takes_json(self):
         assert compare.parse_overrides(['encoder_specs={"lstm": {"max_seq_len": 8}}']) == {
-            "encoder_specs": {"lstm": {"max_seq_len": 8}}}
+            "encoder_specs": {"lstm": {"max_seq_len": 8}}
+        }
 
     def test_the_wrong_shape_is_refused_by_name(self):
         for item in ("fcnet_hiddens=128", "fcnet_hiddens=[128,", 'adam_betas={"a": 1}'):
@@ -123,7 +141,10 @@ class TestParseOverrides:
 
     def test_scalars_are_unchanged(self):
         assert compare.parse_overrides(["max_step=64", "lr=0.001", "action_mask=false"]) == {
-            "max_step": 64, "lr": 0.001, "action_mask": False}
+            "max_step": 64,
+            "lr": 0.001,
+            "action_mask": False,
+        }
 
 
 class TestFinalCheckpoint:

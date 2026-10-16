@@ -40,6 +40,7 @@ Definitions, so a number is not mistaken for a different one:
   both bought and sold nets within itself. Fills whose horizon runs past the end of the
   episode are dropped, not marked at the last price.
 """
+
 from __future__ import annotations
 
 import math
@@ -49,9 +50,17 @@ from typing import Dict, Optional, Sequence
 
 #: The fixed metric names `summary()` returns, in a fixed order. A mark-out per
 #: configured horizon, `markout_<h>`, follows them.
-METRICS = ("sharpe", "sortino", "max_drawdown", "hit_rate",
-           "position_turnover", "mean_abs_position", "max_abs_position",
-           "realised_pnl", "unrealised_pnl")
+METRICS = (
+    "sharpe",
+    "sortino",
+    "max_drawdown",
+    "hit_rate",
+    "position_turnover",
+    "mean_abs_position",
+    "max_abs_position",
+    "realised_pnl",
+    "unrealised_pnl",
+)
 
 
 def _decimal(value) -> Optional[Decimal]:
@@ -65,17 +74,34 @@ def _decimal(value) -> Optional[Decimal]:
 class PerformanceTally:
     """Running statistics for one agent in one episode."""
 
-    __slots__ = ("_prev_nav", "_prev_position", "_peak", "n", "_sum", "_sum_sq",
-                 "_downside_sq", "_up", "_down", "max_drawdown", "turnover",
-                 "_abs_position_sum", "_steps", "max_abs_position",
-                 "horizons", "_fills", "_markout", "_markout_qty",
-                 "realised", "unrealised")
+    __slots__ = (
+        "_prev_nav",
+        "_prev_position",
+        "_peak",
+        "n",
+        "_sum",
+        "_sum_sq",
+        "_downside_sq",
+        "_up",
+        "_down",
+        "max_drawdown",
+        "turnover",
+        "_abs_position_sum",
+        "_steps",
+        "max_abs_position",
+        "horizons",
+        "_fills",
+        "_markout",
+        "_markout_qty",
+        "realised",
+        "unrealised",
+    )
 
     def __init__(self, markout_horizons: Sequence[int] = ()) -> None:
         self._prev_nav: Optional[Decimal] = None
         self._prev_position: Optional[float] = None
         self._peak: Optional[Decimal] = None
-        self.n = 0                       # steps with a defined return
+        self.n = 0  # steps with a defined return
         self._sum = 0.0
         self._sum_sq = 0.0
         self._downside_sq = 0.0
@@ -95,8 +121,17 @@ class PerformanceTally:
         self._markout = {h: 0.0 for h in self.horizons}
         self._markout_qty = {h: 0.0 for h in self.horizons}
 
-    def update(self, nav, net_position=None, *, realised=None, unrealised=None,
-               fill_qty=None, fill_value=None, mid=None) -> None:
+    def update(
+        self,
+        nav,
+        net_position=None,
+        *,
+        realised=None,
+        unrealised=None,
+        fill_qty=None,
+        fill_value=None,
+        mid=None,
+    ) -> None:
         """Feed one step. `nav` is the exact NAV (a string or a Decimal).
 
         `realised` / `unrealised` are the account's P&L now (the last one fed is
@@ -177,7 +212,10 @@ class PerformanceTally:
             "max_abs_position": self.max_abs_position if self._steps else None,
             "realised_pnl": self.realised,
             "unrealised_pnl": self.unrealised,
-            **{f"markout_{h}": (self._markout[h] / self._markout_qty[h]
-                                if self._markout_qty[h] else None)
-               for h in self.horizons},
+            **{
+                f"markout_{h}": (
+                    self._markout[h] / self._markout_qty[h] if self._markout_qty[h] else None
+                )
+                for h in self.horizons
+            },
         }

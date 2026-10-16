@@ -21,6 +21,7 @@ So now the callback *reports* - the ERROR, `nav_conservation_error`, and a
 on it, on the driver, where an exception genuinely ends a run. These tests cover
 both halves and the seam between them.
 """
+
 import logging
 import sys
 import os
@@ -85,7 +86,7 @@ class TestNAVCallback:
         self.mock_runner.config = MagicMock()
         self.mock_runner.config.env_config = {
             "init_cash": self.init_cash,
-            "num_of_agents": self.num_agents
+            "num_of_agents": self.num_agents,
         }
 
     def _callback(self, **kwargs):
@@ -97,15 +98,10 @@ class TestNAVCallback:
         from.
         """
         kwargs.setdefault("episode_data_dir", None)
-        return SelfPlayCallback(
-            num_trainable_policies=2, num_random_policies=2, **kwargs
-        )
+        return SelfPlayCallback(num_trainable_policies=2, num_random_policies=2, **kwargs)
 
     def _end_episode(self, callback, episode_id, nav_each, metrics_logger=None):
-        info = {
-            f"agent_{i}": {"NAV": str(float(nav_each))}
-            for i in range(self.num_agents)
-        }
+        info = {f"agent_{i}": {"NAV": str(float(nav_each))} for i in range(self.num_agents)}
         callback.on_episode_end(
             episode=MockEpisode(episode_id, info),
             env_runner=self.mock_runner,
@@ -193,7 +189,7 @@ class TestNAVCallback:
         continued on a corrupt ledger. Decimal sees the 0.25. The cliff is at
         roughly init_cash 1e10; see doc/16 §16.10.
         """
-        self.init_cash = 10 ** 15
+        self.init_cash = 10**15
         self.mock_env = MockEnv(self.init_cash, self.num_agents)
         callback = self._callback()
         metrics = MagicMock()
@@ -237,8 +233,12 @@ class TestNAVCallback:
         metrics = MagicMock()
 
         # Long fractional tails that cancel exactly - what the ledger produces.
-        tails = ["0.000000000000000000001", "-0.000000000000000000001",
-                 "0.000000000000000000002", "-0.000000000000000000002"]
+        tails = [
+            "0.000000000000000000001",
+            "-0.000000000000000000001",
+            "0.000000000000000000002",
+            "-0.000000000000000000002",
+        ]
         info = {
             f"agent_{i}": {"NAV": str(Decimal(self.init_cash) + Decimal(t))}
             for i, t in enumerate(tails)
@@ -319,18 +319,20 @@ class TestATerminatedAgentStillCounts:
 
         # Every agent alive, each holding a quarter of the system's cash.
         share = self.init_cash
-        self._step(callback, episode, {
-            f"agent_{i}": {"NAV": str(float(share))} for i in range(4)
-        })
+        self._step(callback, episode, {f"agent_{i}": {"NAV": str(float(share))} for i in range(4)})
 
         # agent_0 goes bankrupt at a NAV of -60 - non-zero deliberately, so
         # the total is only right if that number is actually carried. The
         # survivors hold what it lost plus the 60 it went under by.
         survivor = (Decimal(4 * share) + Decimal(60)) / 3
-        self._step(callback, episode, {
-            "agent_0": {"NAV": "-60"},
-            **{f"agent_{i}": {"NAV": str(survivor)} for i in (1, 2, 3)},
-        })
+        self._step(
+            callback,
+            episode,
+            {
+                "agent_0": {"NAV": "-60"},
+                **{f"agent_{i}": {"NAV": str(survivor)} for i in (1, 2, 3)},
+            },
+        )
         final = {f"agent_{i}": {"NAV": str(survivor)} for i in (1, 2, 3)}
         self._step(callback, episode, final)
 
@@ -354,9 +356,7 @@ class TestATerminatedAgentStillCounts:
         episode = MockEpisode("ep_broken", {})
 
         share = self.init_cash
-        self._step(callback, episode, {
-            f"agent_{i}": {"NAV": str(float(share))} for i in range(4)
-        })
+        self._step(callback, episode, {f"agent_{i}": {"NAV": str(float(share))} for i in range(4)})
         # agent_0 terminates at 0, and the survivors do NOT absorb its loss -
         # a quarter of the system's cash has simply evaporated.
         final = {f"agent_{i}": {"NAV": str(float(share))} for i in (1, 2, 3)}
@@ -445,18 +445,25 @@ class TestATerminatedAgentWithAPositionStillCounts:
         metrics = MagicMock()
         episode = MockEpisode("ep_short_squeeze", {})
         for info in (
-            {"agent_0": {"NAV": "-60"},
-             **{f"agent_{i}": {"NAV": "1333353.33"} for i in (1, 2, 3)}},
+            {"agent_0": {"NAV": "-60"}, **{f"agent_{i}": {"NAV": "1333353.33"} for i in (1, 2, 3)}},
             {f"agent_{i}": {"NAV": final_navs[i]} for i in (1, 2, 3)},
         ):
             episode.last_info = info
             callback.on_episode_step(
-                episode=episode, env_runner=self.mock_runner,
-                metrics_logger=None, env=env, env_index=0, rl_module=None,
+                episode=episode,
+                env_runner=self.mock_runner,
+                metrics_logger=None,
+                env=env,
+                env_index=0,
+                rl_module=None,
             )
         callback.on_episode_end(
-            episode=episode, env_runner=self.mock_runner,
-            metrics_logger=metrics, env=env, env_index=0, rl_module=None,
+            episode=episode,
+            env_runner=self.mock_runner,
+            metrics_logger=metrics,
+            env=env,
+            env_index=0,
+            rl_module=None,
         )
         return metrics
 
@@ -563,26 +570,39 @@ def test_episode_account_metrics_include_an_agent_terminated_midway():
     from ray.rllib.utils.metrics.metrics_logger import MetricsLogger
 
     episode = MultiAgentEpisode(agent_module_ids={"agent_0": "policy_0", "agent_1": "policy_0"})
-    episode.add_env_reset(observations={"agent_0": 0, "agent_1": 0},
-                          infos={"agent_0": {"NAV": "100"}, "agent_1": {"NAV": "100"}})
-    episode.add_env_step(observations={"agent_0": 1, "agent_1": 1},
-                         actions={"agent_0": 0, "agent_1": 0},
-                         rewards={"agent_0": 0.0, "agent_1": 0.0},
-                         infos={"agent_0": {"NAV": "110"}, "agent_1": {"NAV": "0"}},
-                         terminateds={"agent_1": True, "__all__": False},
-                         truncateds={"__all__": False})
-    episode.add_env_step(observations={"agent_0": 2}, actions={"agent_0": 0},
-                         rewards={"agent_0": 0.0}, infos={"agent_0": {"NAV": "200"}},
-                         terminateds={"__all__": False},
-                         truncateds={"agent_0": True, "__all__": True})
+    episode.add_env_reset(
+        observations={"agent_0": 0, "agent_1": 0},
+        infos={"agent_0": {"NAV": "100"}, "agent_1": {"NAV": "100"}},
+    )
+    episode.add_env_step(
+        observations={"agent_0": 1, "agent_1": 1},
+        actions={"agent_0": 0, "agent_1": 0},
+        rewards={"agent_0": 0.0, "agent_1": 0.0},
+        infos={"agent_0": {"NAV": "110"}, "agent_1": {"NAV": "0"}},
+        terminateds={"agent_1": True, "__all__": False},
+        truncateds={"__all__": False},
+    )
+    episode.add_env_step(
+        observations={"agent_0": 2},
+        actions={"agent_0": 0},
+        rewards={"agent_0": 0.0},
+        infos={"agent_0": {"NAV": "200"}},
+        terminateds={"__all__": False},
+        truncateds={"agent_0": True, "__all__": True},
+    )
 
     runner = MagicMock()
     runner.config.env_config = {"init_cash": 100, "num_of_agents": 2}
     metrics = MetricsLogger(root=True)
-    SelfPlayCallback(num_trainable_policies=1, num_random_policies=1,
-                     episode_data_dir=None).on_episode_end(
-        episode=episode, env_runner=runner, metrics_logger=metrics,
-        env=MockEnv(100, 2), env_index=0, rl_module=None,
+    SelfPlayCallback(
+        num_trainable_policies=1, num_random_policies=1, episode_data_dir=None
+    ).on_episode_end(
+        episode=episode,
+        env_runner=runner,
+        metrics_logger=metrics,
+        env=MockEnv(100, 2),
+        env_index=0,
+        rl_module=None,
     )
 
     assert metrics.peek("episode_nav_min") == 0.0

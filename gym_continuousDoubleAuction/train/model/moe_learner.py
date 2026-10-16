@@ -18,6 +18,7 @@ key is written, and the Learner adds nothing. So they can be wired
 unconditionally rather than only for `moe_transformer`, which keeps one code
 path instead of two.
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict
@@ -65,8 +66,7 @@ def _collect(encoder) -> Dict[str, Any]:
     exists to remove. The mean's floor is `top_k` regardless.
     """
     candidates = [
-        getattr(encoder, name, None)
-        for name in ("encoder", "actor_encoder", "critic_encoder")
+        getattr(encoder, name, None) for name in ("encoder", "actor_encoder", "critic_encoder")
     ]
 
     aux_terms = []

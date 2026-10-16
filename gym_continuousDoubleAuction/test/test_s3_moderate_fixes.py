@@ -1,5 +1,6 @@
 """The S3-moderate design issues, one class each: #125 (gamma and lambda), #122 (several
 resting orders at one price) and #124 (what the league promotes against)."""
+
 import logging
 
 import pytest
@@ -32,10 +33,16 @@ class TestDiscountAndGae:
         ppo = _ppo(gamma=0.99, lambda_=1.0)
         assert (ppo.gamma, ppo.lambda_) == (0.99, 1.0)
 
-    @pytest.mark.parametrize("field,value", [
-        ("gamma", 0.0), ("gamma", -0.1), ("gamma", 1.5),
-        ("lambda_", -0.1), ("lambda_", 1.1),
-    ])
+    @pytest.mark.parametrize(
+        "field,value",
+        [
+            ("gamma", 0.0),
+            ("gamma", -0.1),
+            ("gamma", 1.5),
+            ("lambda_", -0.1),
+            ("lambda_", 1.1),
+        ],
+    )
     def test_nonsense_is_refused_naming_the_key(self, field, value):
         with pytest.raises(ValueError, match=field):
             TrainConfig(**{field: value})
@@ -46,12 +53,23 @@ class TestDiscountAndGae:
     @staticmethod
     def _config(**overrides):
         from types import SimpleNamespace
-        values = {"lr": 0.0001, "gamma": 0.999, "lambda_": 0.95, "num_epochs": 1,
-                  "minibatch_size": 64, "train_batch_size_per_learner": 256,
-                  "num_env_runners": 0, "num_envs_per_env_runner": 1,
-                  "sample_timeout_s": 60.0, "num_learners": 0, "num_gpus_per_learner": 0.0,
-                  "policies": ["policy_0"], "policies_to_train": ["policy_0"],
-                  "env_config": {"num_of_agents": 2}}
+
+        values = {
+            "lr": 0.0001,
+            "gamma": 0.999,
+            "lambda_": 0.95,
+            "num_epochs": 1,
+            "minibatch_size": 64,
+            "train_batch_size_per_learner": 256,
+            "num_env_runners": 0,
+            "num_envs_per_env_runner": 1,
+            "sample_timeout_s": 60.0,
+            "num_learners": 0,
+            "num_gpus_per_learner": 0.0,
+            "policies": ["policy_0"],
+            "policies_to_train": ["policy_0"],
+            "env_config": {"num_of_agents": 2},
+        }
         values.update(overrides)
         return SimpleNamespace(**values)
 
@@ -79,10 +97,17 @@ CASH = 100000
 
 
 def _env(multiple, **config):
-    env = continuousDoubleAuctionEnv({
-        "num_of_agents": 2, "is_render": False, "init_cash": CASH,
-        "initial_price_min": 100, "initial_price_max": 100,
-        "allow_multiple_orders_per_level": multiple, **config})
+    env = continuousDoubleAuctionEnv(
+        {
+            "num_of_agents": 2,
+            "is_render": False,
+            "init_cash": CASH,
+            "initial_price_min": 100,
+            "initial_price_max": 100,
+            "allow_multiple_orders_per_level": multiple,
+            **config,
+        }
+    )
     env.reset(seed=1)
     return env
 
@@ -144,14 +169,14 @@ class TestSeveralOrdersPerLevel:
     def test_by_default_a_replacement_needs_no_extra_cash(self):
         env = _env(False, init_cash=1000)
         _place(env, 0, "limit", "bid", 10, 90.0)
-        _place(env, 0, "limit", "bid", 10, 90.0)       # replaces: still 900 held
+        _place(env, 0, "limit", "bid", 10, 90.0)  # replaces: still 900 held
         assert _level(env, "bid", 90).volume == 10
         assert env.traders[0].acc.num_rejected_step == 0
 
     def test_when_allowed_the_cash_check_counts_both_orders(self):
         env = _env(True, init_cash=1000)
         _place(env, 0, "limit", "bid", 10, 90.0)
-        _place(env, 0, "limit", "bid", 10, 90.0)       # would need 900 more: refused
+        _place(env, 0, "limit", "bid", 10, 90.0)  # would need 900 more: refused
         assert _level(env, "bid", 90).volume == 10 and len(_level(env, "bid", 90)) == 1
         assert env.traders[0].acc.num_rejected_step == 1
 
@@ -169,26 +194,37 @@ class TestSeveralOrdersPerLevel:
         env = _env(True, num_of_agents=4, step_clearing=clearing, max_step=60)
         for _ in range(60):
             _o, _r, term, trunc, _i = env.step(
-                {a: env.action_spaces[a].sample() for a in env.agents})
+                {a: env.action_spaces[a].sample() for a in env.agents}
+            )
             for trader in env.traders:
                 held = sum(
-                    (o.price * o.quantity for tree in (env.LOB.bids, env.LOB.asks)
-                     for o in tree.order_map.values() if o.trade_id == trader.ID),
-                    Decimal(0))
+                    (
+                        o.price * o.quantity
+                        for tree in (env.LOB.bids, env.LOB.asks)
+                        for o in tree.order_map.values()
+                        if o.trade_id == trader.ID
+                    ),
+                    Decimal(0),
+                )
                 assert trader.acc.cash_on_hold == held
             if term["__all__"] or trunc["__all__"]:
                 break
 
     def test_a_non_boolean_is_refused(self):
         with pytest.raises(ValueError, match="allow_multiple_orders_per_level"):
-            continuousDoubleAuctionEnv({"num_of_agents": 2, "is_render": False,
-                                        "allow_multiple_orders_per_level": "yes"})
+            continuousDoubleAuctionEnv(
+                {"num_of_agents": 2, "is_render": False, "allow_multiple_orders_per_level": "yes"}
+            )
 
     def test_train_config_forwards_it_to_the_env(self):
         assert TrainConfig().env_config["allow_multiple_orders_per_level"] is False
         cfg = TrainConfig(allow_multiple_orders_per_level=True)
-        assert continuousDoubleAuctionEnv(
-            {**cfg.env_config, "is_render": False}).allow_multiple_orders_per_level is True
+        assert (
+            continuousDoubleAuctionEnv(
+                {**cfg.env_config, "is_render": False}
+            ).allow_multiple_orders_per_level
+            is True
+        )
 
 
 # --------------------------------------------------------------------------- #124
@@ -201,9 +237,14 @@ from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback im
 
 
 def _league(reference, **kwargs):
-    return SelfPlayCallback(num_trainable_policies=2, num_random_policies=6,
-                            min_iterations_between_champions=0, min_champion_trades=0,
-                            promotion_reference=reference, **kwargs)
+    return SelfPlayCallback(
+        num_trainable_policies=2,
+        num_random_policies=6,
+        min_iterations_between_champions=0,
+        min_champion_trades=0,
+        promotion_reference=reference,
+        **kwargs,
+    )
 
 
 def _returns(trainable, champions, baseline):
@@ -228,8 +269,10 @@ class TestPromotionReference:
 
     def test_the_default_is_the_pooled_behaviour(self):
         assert TrainConfig().promotion_reference == "pooled"
-        assert SelfPlayCallback(num_trainable_policies=2,
-                                num_random_policies=6).promotion_reference == "pooled"
+        assert (
+            SelfPlayCallback(num_trainable_policies=2, num_random_policies=6).promotion_reference
+            == "pooled"
+        )
 
     def test_the_choices_are_named(self):
         assert PROMOTION_REFERENCES == ("pooled", "excluding_baselines")
@@ -269,7 +312,9 @@ class TestPromotionReference:
     def test_the_result_says_which_set_the_threshold_used(self):
         returns = _returns([2.0, 0.4], [1.0, 0.9, 1.1], -10.0)
         assert _check(_league("pooled"), returns)[1]["reference"] == "pooled"
-        assert _check(_league("excluding_baselines"), returns)[1]["reference"] == "excluding_baselines"
+        assert (
+            _check(_league("excluding_baselines"), returns)[1]["reference"] == "excluding_baselines"
+        )
 
     def test_a_set_too_small_to_clear_falls_back_to_pooled_and_warns_once(self, caplog):
         """Two learners and no champion: sqrt(2 - 1) = 1 is under 1.5, so nobody could ever
@@ -285,7 +330,7 @@ class TestPromotionReference:
     def test_an_idle_champion_is_left_out_of_the_reference(self):
         returns = _returns([2.0, 0.4], [1.0, 0.9, float("nan")], -10.0)
         made, league = _check(_league("excluding_baselines"), returns)
-        assert league["reference"] == "excluding_baselines"     # 4 modules: sqrt(3) > 1.5
+        assert league["reference"] == "excluding_baselines"  # 4 modules: sqrt(3) > 1.5
         assert made == ["policy_0"]
 
     def test_a_callback_saved_before_the_key_runs_pooled(self):

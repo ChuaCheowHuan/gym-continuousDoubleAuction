@@ -100,17 +100,20 @@ Two secondary effects:
 stop broadcasting a single vector:
 
 ```python
-private = np.array([
-    net_position / max_position_scale,
-    (nav - init_cash) / init_cash,
-    (max_nav - nav) / init_cash,          # current drawdown
-    cash / init_cash,
-    cash_on_hold / init_cash,
-    (VWAP - M) / M if net_position else 0.0,
-    resting_bid_notional / init_cash,
-    resting_ask_notional / init_cash,
-    1.0 - t_step / max_step,              # time remaining
-], dtype=np.float32)
+private = np.array(
+    [
+        net_position / max_position_scale,
+        (nav - init_cash) / init_cash,
+        (max_nav - nav) / init_cash,  # current drawdown
+        cash / init_cash,
+        cash_on_hold / init_cash,
+        (VWAP - M) / M if net_position else 0.0,
+        resting_bid_notional / init_cash,
+        resting_ask_notional / init_cash,
+        1.0 - t_step / max_step,  # time remaining
+    ],
+    dtype=np.float32,
+)
 ```
 
 This is a ~9-float addition per snapshot and the single highest-value *structural* change in the
@@ -200,7 +203,7 @@ risk-aversion hyper-parameter; (c) it is non-Markov in the agent's observation.
 
 ```python
 new_dd = max(0, max_nav - nav)
-reward += -drawdown_penalty * max(0.0, new_dd - prev_dd)   # penalise deepening only
+reward += -drawdown_penalty * max(0.0, new_dd - prev_dd)  # penalise deepening only
 ```
 
 > **Correction — do not apply the clip.** The diagnosis above is right and the patch is not. The
@@ -253,8 +256,8 @@ records as the highest-leverage edit in the repository, now made.
 **This was the single most consequential finding.** RLlib's PPO clips the value-function loss:
 
 ```python
-vf_loss         = torch.pow(value_fn_out - batch[Postprocessing.VALUE_TARGETS], 2.0)
-vf_loss_clipped = torch.clamp(vf_loss, 0, config.vf_clip_param)   # default 10.0
+vf_loss = torch.pow(value_fn_out - batch[Postprocessing.VALUE_TARGETS], 2.0)
+vf_loss_clipped = torch.clamp(vf_loss, 0, config.vf_clip_param)  # default 10.0
 ```
 (`ray/rllib/algorithms/ppo/torch/ppo_torch_learner.py:99-100`)
 

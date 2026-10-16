@@ -17,6 +17,7 @@ from tabulate import tabulate
 
 logger = get_logger(__name__)
 
+
 def _delegated(component: str, name: str) -> property:
     """A read-write property that forwards `name` to `self.<component>`.
 
@@ -24,8 +25,10 @@ def _delegated(component: str, name: str) -> property:
     `env.maintenance_margin`, ...) now live on the component that owns them; these keep
     them readable (and settable, as tests do) where callers have always looked.
     """
-    return property(lambda self: getattr(getattr(self, component), name),
-                    lambda self, value: setattr(getattr(self, component), name, value))
+    return property(
+        lambda self: getattr(getattr(self, component), name),
+        lambda self, value: setattr(getattr(self, component), name, value),
+    )
 
 
 class Exchg_Helper(State_Helper, Action_Helper):
@@ -55,16 +58,21 @@ class Exchg_Helper(State_Helper, Action_Helper):
     #: The agents out of the episode, owned by `episode_status`.
     done_set = _delegated("episode_status", "done_set")
 
-    def __init__(self, init_cash=env_default("init_cash"),
-                 tick_size=env_default("tick_size"),
-                 tape_display_length=env_default("tape_display_length"),
-                 n_hist=env_default("n_hist"),
-                 mark_price_source=env_default("mark_price_source"),
-                 matching_rule=env_default("matching_rule"),
-                 step_clearing=env_default("step_clearing"),
-                 reward_model=None,
-                 liquidation=UNSET, maintenance_margin=UNSET, liquidation_horizon=UNSET,
-                 **kwargs):
+    def __init__(
+        self,
+        init_cash=env_default("init_cash"),
+        tick_size=env_default("tick_size"),
+        tape_display_length=env_default("tape_display_length"),
+        n_hist=env_default("n_hist"),
+        mark_price_source=env_default("mark_price_source"),
+        matching_rule=env_default("matching_rule"),
+        step_clearing=env_default("step_clearing"),
+        reward_model=None,
+        liquidation=UNSET,
+        maintenance_margin=UNSET,
+        liquidation_horizon=UNSET,
+        **kwargs,
+    ):
         # tick_size goes on to Action_Helper as well: it is the tick the action
         # space quotes on, not just a property of the book.
         super().__init__(n_hist=n_hist, tick_size=tick_size, **kwargs)
@@ -90,13 +98,13 @@ class Exchg_Helper(State_Helper, Action_Helper):
         self.tick_size = tick_size
 
         self.tape_display_length = tape_display_length
-        self.LOB = self.new_order_book() # limit order book
-        self.agg_LOB = {} # aggregated or consolidated LOB
-        self.agg_LOB_raw = {} # unnormalized raw aggregated LOB
-        self.agg_LOB_aft = {} # aggregated or consolidated LOB after processing orders
+        self.LOB = self.new_order_book()  # limit order book
+        self.agg_LOB = {}  # aggregated or consolidated LOB
+        self.agg_LOB_raw = {}  # unnormalized raw aggregated LOB
+        self.agg_LOB_aft = {}  # aggregated or consolidated LOB after processing orders
 
-        self.seq_trades = [] # list of trade lists
-        self.seq_order_in_book = [] # list of new order_in_book dicts
+        self.seq_trades = []  # list of trade lists
+        self.seq_order_in_book = []  # list of new order_in_book dicts
 
         self.init_cash = init_cash
 
@@ -118,8 +126,11 @@ class Exchg_Helper(State_Helper, Action_Helper):
         self.episode_status = EpisodeStatus()
         self.info_builder = InfoBuilder()
         self.liquidation_engine = LiquidationEngine(
-            self, liquidation=liquidation, maintenance_margin=maintenance_margin,
-            liquidation_horizon=liquidation_horizon)
+            self,
+            liquidation=liquidation,
+            maintenance_margin=maintenance_margin,
+            liquidation_horizon=liquidation_horizon,
+        )
 
         # Top of book at the last `set_market_snapshot`; None until a step.
         self.best_bid = None
@@ -170,8 +181,9 @@ class Exchg_Helper(State_Helper, Action_Helper):
         market order turned away that way is a rejection, like any order the
         cash check refuses.
         """
-        cleared = self.LOB.clear_batch(reference_price=reference_price,
-                                       affordable=self._batch_affordable)
+        cleared = self.LOB.clear_batch(
+            reference_price=reference_price, affordable=self._batch_affordable
+        )
         for q in self.LOB.batch_unaffordable:
             self.traders[q['trade_id']].acc.num_rejected_step += 1
         results = {tid: (trades, oib) for tid, trades, oib in cleared}
@@ -182,8 +194,13 @@ class Exchg_Helper(State_Helper, Action_Helper):
     def _batch_affordable(self, trade_id, side, quantity, price, resting_limit, order_id):
         """Whether `trade_id` can pay for a batch fill of `quantity` at `price`."""
         return self.traders[trade_id].can_pay_at_clearing(
-            self.LOB, side, int(quantity), price,
-            resting_limit=resting_limit, resting_order_id=order_id)
+            self.LOB,
+            side,
+            int(quantity),
+            price,
+            resting_limit=resting_limit,
+            resting_order_id=order_id,
+        )
 
     def reset_traders_acc(self):
         """
@@ -260,7 +277,7 @@ class Exchg_Helper(State_Helper, Action_Helper):
         both of those want "where did this market last actually trade".
         """
         if len(self.LOB.tape) > 0:
-            self.last_price = float(self.LOB.tape[-1].get('price')) # anchor
+            self.last_price = float(self.LOB.tape[-1].get('price'))  # anchor
 
         mkt_price = self.mark_price()
         if mkt_price is None:
@@ -312,7 +329,7 @@ class Exchg_Helper(State_Helper, Action_Helper):
         # last_price.
         self.set_market_snapshot()
 
-        next_states, rewards, dones, infos = {},{},{},{}
+        next_states, rewards, dones, infos = {}, {}, {}, {}
         for trader in self.traders:
             # A trader terminated on an earlier step is not scored again. It
             # still holds an account (the NAV-conservation check sums every
@@ -321,7 +338,9 @@ class Exchg_Helper(State_Helper, Action_Helper):
             if not self.is_live(trader):
                 continue
 
-            next_states = self.set_next_state(next_states, trader, state_input) # dict of tuple of tuples
+            next_states = self.set_next_state(
+                next_states, trader, state_input
+            )  # dict of tuple of tuples
             rewards = self.set_reward(rewards, trader)
             # After the reward, so the step on which an agent goes bankrupt
             # still carries the observation and reward of its terminal
@@ -353,15 +372,23 @@ class Exchg_Helper(State_Helper, Action_Helper):
     def set_all_done(self, terminateds):
         """Complete `terminateds`, derive truncation, and narrow `agents` to the live ones."""
         terminateds, truncateds, self.agents = self.episode_status.set_all_done(
-            terminateds, self.agents, len(self.traders), self.t_step, self.episode_horizon)
+            terminateds, self.agents, len(self.traders), self.t_step, self.episode_horizon
+        )
         return terminateds, truncateds
 
     def set_info(self, infos, trader):
         """Fill the trader's `info` for the step (see `InfoBuilder.set_info`)."""
         return self.info_builder.set_info(
-            infos, trader, mark=self.mark_price(), pass_agents=self.pass_agents,
-            last_price=self.last_price, best_bid=self.best_bid, best_ask=self.best_ask,
-            spread=self.spread, model_actions=self.model_actions)
+            infos,
+            trader,
+            mark=self.mark_price(),
+            pass_agents=self.pass_agents,
+            last_price=self.last_price,
+            best_bid=self.best_bid,
+            best_ask=self.best_ask,
+            spread=self.spread,
+            model_actions=self.model_actions,
+        )
 
     def liquidate(self):
         """Run this step's liquidations (see `LiquidationEngine.liquidate`)."""
@@ -381,8 +408,8 @@ class Exchg_Helper(State_Helper, Action_Helper):
         log any trailing market-level scalars on their own line.
         """
         if isinstance(data, np.ndarray) and data.ndim == 1 and data.size >= self.obs_book_dim:
-            book = data[:self.obs_book_dim]
-            extras = data[self.obs_book_dim:]
+            book = data[: self.obs_book_dim]
+            extras = data[self.obs_book_dim :]
             # shape (cells, rows): each row of the table is one level or one
             # tick offset, depending on `book_mode`.
             reshaped = book.reshape(len(self.obs_book_rows), self.obs_book_cells).T
@@ -391,7 +418,8 @@ class Exchg_Helper(State_Helper, Action_Helper):
             if extras.size == self.extra_dim:
                 logger.debug(
                     "log_mid = %.6f; log1p_spread_ticks = %.6f",
-                    extras[0], extras[1],
+                    extras[0],
+                    extras[1],
                 )
         else:
             logger.debug("%s %s", msg, tabulate(data))
@@ -402,7 +430,8 @@ class Exchg_Helper(State_Helper, Action_Helper):
             if order_in_book is not None and order_in_book != []:
                 logger.debug(
                     "order_in_book (act_seq_num): %s\n%s",
-                    act_seq_num, tabulate([order_in_book], headers="keys"),
+                    act_seq_num,
+                    tabulate([order_in_book], headers="keys"),
                 )
 
     def print_trades_all_seq(self, all_trades):
@@ -450,7 +479,9 @@ class Exchg_Helper(State_Helper, Action_Helper):
 
         trade_dict = {}
 
-        trade_dict['seq_Trade_ID'] = i # seq means all actions by all traders(agents) in current t-step
+        trade_dict['seq_Trade_ID'] = (
+            i  # seq means all actions by all traders(agents) in current t-step
+        )
 
         trade_dict['timestamp'] = trade['timestamp']
         trade_dict['price'] = trade['price']
@@ -477,8 +508,7 @@ class Exchg_Helper(State_Helper, Action_Helper):
         """
 
         rows = "\n".join(
-            'ID: {}; profit: {}'.format(trader.ID, trader.acc.profit)
-            for trader in self.traders
+            'ID: {}; profit: {}'.format(trader.ID, trader.acc.profit) for trader in self.traders
         )
         logger.debug("%s\n%s", msg, rows)
 

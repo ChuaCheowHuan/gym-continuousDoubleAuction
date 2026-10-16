@@ -5,6 +5,7 @@ shape: the mixins are out of the class hierarchy, each component can be used on 
 explicit inputs, the env's long-standing attributes still resolve where callers look for
 them, and what the two remaining mixins share is declared and true.
 """
+
 import inspect
 from types import SimpleNamespace
 from decimal import Decimal
@@ -30,7 +31,6 @@ def env():
 
 
 class TestTheMixinsAreGone:
-
     def test_the_exchange_inherits_only_the_state_and_action_mixins(self):
         names = [c.__name__ for c in Exchg_Helper.__mro__]
         for gone in ("Reward_Helper", "Done_Helper", "Info_Helper", "Liquidation_Helper"):
@@ -50,7 +50,6 @@ class TestTheMixinsAreGone:
 
 
 class TestAttributesStillResolveWhereCallersLook:
-
     def test_reward_coefficients_forward_to_the_model(self, env):
         assert env.order_penalty == env.reward_model.order_penalty
         env.order_penalty = 0.5
@@ -73,7 +72,6 @@ class TestAttributesStillResolveWhereCallersLook:
 
 
 class TestEachComponentWorksAlone:
-
     def test_the_reward_model_needs_no_exchange(self):
         class Trader:
             ID = 0
@@ -81,13 +79,20 @@ class TestEachComponentWorksAlone:
 
         trader = Trader()
         trader.acc.nav = Decimal(1100)
-        model = RewardModel(order_penalty=0.0, trade_penalty=0.0, drawdown_penalty=0.0,
-                            passive_bonus=0.0, loss_multiplier=1.0, dead_action_penalty=0.0)
+        model = RewardModel(
+            order_penalty=0.0,
+            trade_penalty=0.0,
+            drawdown_penalty=0.0,
+            passive_bonus=0.0,
+            loss_multiplier=1.0,
+            dead_action_penalty=0.0,
+        )
         rewards = model.set_reward({}, trader)
         assert rewards["agent_0"] == pytest.approx(0.1)
 
     def test_a_model_built_without_arguments_reads_the_config_when_built(self):
         from gym_continuousDoubleAuction.config_loader import env_default
+
         assert RewardModel().order_penalty == env_default("order_penalty")
 
     def test_episode_status_terminates_a_broke_trader_and_pulls_its_orders(self):
@@ -129,11 +134,12 @@ class TestEachComponentWorksAlone:
     def test_set_all_done_takes_its_inputs_and_returns_the_narrowed_agents(self):
         status = EpisodeStatus()
         status.done_set.update({"agent_1"})
-        term, trunc, agents = status.set_all_done({"agent_1": True}, ["agent_0", "agent_1"],
-                                                  num_traders=2, t_step=9, episode_horizon=10)
+        term, trunc, agents = status.set_all_done(
+            {"agent_1": True}, ["agent_0", "agent_1"], num_traders=2, t_step=9, episode_horizon=10
+        )
         assert agents == ["agent_0"]
         assert term["agent_0"] is False and term["__all__"] is False
-        assert trunc["__all__"] is True              # step 10 of 10
+        assert trunc["__all__"] is True  # step 10 of 10
 
     def test_every_trader_out_ends_the_episode(self):
         status = EpisodeStatus()
@@ -144,8 +150,16 @@ class TestEachComponentWorksAlone:
     def test_the_info_builder_uses_only_what_it_is_given(self):
         trader = SimpleNamespace(ID=1, acc=Account(1, 1000))
         infos = InfoBuilder().set_info(
-            {}, trader, mark=Decimal(100), pass_agents={"agent_1"}, last_price=101.0,
-            best_bid=Decimal(99), best_ask=Decimal(102), spread=None, model_actions=None)
+            {},
+            trader,
+            mark=Decimal(100),
+            pass_agents={"agent_1"},
+            last_price=101.0,
+            best_bid=Decimal(99),
+            best_ask=Decimal(102),
+            spread=None,
+            model_actions=None,
+        )
         info = infos["agent_1"]
         assert info["is_pass_action"] is True and info["spread"] is None
         assert info["best_bid"] == 99.0 and info["last_price"] == 101.0
@@ -163,13 +177,17 @@ class TestEachComponentWorksAlone:
 
 
 class TestWhatTheTwoRemainingMixinsShareIsDeclared:
-
     def test_the_declarations_name_real_attributes(self, env):
         # Declared under TYPE_CHECKING, so nothing exists at runtime: read the source.
         source = inspect.getsource(shared_state.SharedState)
-        names = [line.split(":")[0].strip() for line in source.splitlines()
-                 if line.startswith("        ") and not line.startswith("         ")
-                 and ":" in line and not line.strip().startswith(("#", "def ", '"""'))]
+        names = [
+            line.split(":")[0].strip()
+            for line in source.splitlines()
+            if line.startswith("        ")
+            and not line.startswith("         ")
+            and ":" in line
+            and not line.strip().startswith(("#", "def ", '"""'))
+        ]
         assert len(names) >= 10
         env.step({a: env.action_spaces[a].sample() for a in env.agents})
         missing = [n for n in names if not hasattr(env, n)]
@@ -178,6 +196,7 @@ class TestWhatTheTwoRemainingMixinsShareIsDeclared:
     def test_both_mixins_derive_from_it(self):
         from gym_continuousDoubleAuction.envs.exchg.action_helper import Action_Helper
         from gym_continuousDoubleAuction.envs.exchg.state_helper import State_Helper
+
         assert issubclass(State_Helper, shared_state.SharedState)
         assert issubclass(Action_Helper, shared_state.SharedState)
 
@@ -185,6 +204,7 @@ class TestWhatTheTwoRemainingMixinsShareIsDeclared:
         from gym_continuousDoubleAuction.envs.account.account_state import AccountState
         from gym_continuousDoubleAuction.envs.account.calculate import Calculate
         from gym_continuousDoubleAuction.envs.account.cash_processor import Cash_Processor
+
         assert issubclass(Calculate, AccountState) and issubclass(Cash_Processor, AccountState)
 
     def test_the_env_satisfies_the_venue_the_components_are_given(self, env):

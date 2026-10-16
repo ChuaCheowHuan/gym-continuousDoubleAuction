@@ -7,6 +7,7 @@ phase 3. Level k of the own book is level k of the public book in the same
 snapshot, which is what lets the tokenising encoders carry it as two extra
 channels of each level token (test_encoder_registry covers that half).
 """
+
 import numpy as np
 
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
@@ -24,13 +25,19 @@ from gym_continuousDoubleAuction.envs.exchg.state_helper import (
 
 
 def _env(agents=2, **cfg):
-    env = continuousDoubleAuctionEnv({
-        "num_of_agents": agents, "is_render": False, "max_step": 64,
-        "initial_price_min": 100, "initial_price_max": 100,
-        # Level-aligned own sizes are the `levels` mode's; the grid's alignment
-        # is pinned in test_grid_book.py.
-        "book_mode": "levels", **cfg,
-    })
+    env = continuousDoubleAuctionEnv(
+        {
+            "num_of_agents": agents,
+            "is_render": False,
+            "max_step": 64,
+            "initial_price_min": 100,
+            "initial_price_max": 100,
+            # Level-aligned own sizes are the `levels` mode's; the grid's alignment
+            # is pinned in test_grid_book.py.
+            "book_mode": "levels",
+            **cfg,
+        }
+    )
     env.reset(seed=7)
     return env
 
@@ -49,19 +56,22 @@ _PASS = _act(0)
 
 
 def _private(env, obs, agent="agent_0"):
-    tail = obs[agent][-env.private_dim:]
+    tail = obs[agent][-env.private_dim :]
     return dict(zip(env.private_fields, tail))
 
 
 class TestLayout:
-
     def test_field_list_shape(self):
         k = 10
         fields = private_fields(k)
         assert fields[:9] == BASE_PRIVATE_FIELDS
-        assert fields[9:9 + k] == own_book_fields(k)[:k]
-        assert fields[9 + k:9 + 2 * k] == own_book_fields(k)[k:]
-        assert fields[9 + 2 * k:9 + 2 * k + 3] == ("own_bid_count", "own_ask_count", "unmatched_last_step")
+        assert fields[9 : 9 + k] == own_book_fields(k)[:k]
+        assert fields[9 + k : 9 + 2 * k] == own_book_fields(k)[k:]
+        assert fields[9 + 2 * k : 9 + 2 * k + 3] == (
+            "own_bid_count",
+            "own_ask_count",
+            "unmatched_last_step",
+        )
         assert fields[-9:] == MASK_FIELDS  # the action mask closes the block (doc/06 section 7)
         assert len(fields) == 41 == len(PRIVATE_FIELDS)
         assert OWN_BOOK_OFFSET == 9
@@ -82,13 +92,15 @@ class TestLayout:
         env = _env()
         obs, _ = env.reset(seed=1)
         p = _private(env, obs)
-        for name in own_book_fields(env.k_rows) + ("own_bid_count", "own_ask_count",
-                                                   "unmatched_last_step"):
+        for name in own_book_fields(env.k_rows) + (
+            "own_bid_count",
+            "own_ask_count",
+            "unmatched_last_step",
+        ):
             assert p[name] == 0.0, name
 
 
 class TestOwnSizes:
-
     def test_own_bid_at_the_touch(self):
         env = _env()
         # agent_0 posts a bid at level 0 (ghost: anchor - 1 tick), agent_1 passes.
@@ -109,7 +121,7 @@ class TestOwnSizes:
         obs, _, _, _, _ = env.step({"agent_0": _act(6), "agent_1": _PASS})
         p0 = _private(env, obs)
         assert p0["own_ask_size_0"] > 0
-        book = obs["agent_0"][-env.private_dim - env.snapshot_dim:-env.private_dim]
+        book = obs["agent_0"][-env.private_dim - env.snapshot_dim : -env.private_dim]
         # Same value as the public ask size at level 0 (only one order there).
         public_ask_size_0 = book[3 * env.k_rows]
         assert p0["own_ask_size_0"] == public_ask_size_0
@@ -145,7 +157,6 @@ class TestOwnSizes:
 
 
 class TestDeadActionFlag:
-
     def test_flag_is_set_on_the_step_of_the_miss_and_cleared_after(self):
         env = _env()
         obs, _, _, _, infos = env.step({"agent_0": _act(4, slot=1), "agent_1": _PASS})

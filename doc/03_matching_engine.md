@@ -115,10 +115,18 @@ Every fill appends a `transaction_record` carrying explicit `counter_party` and 
 dictionaries:
 
 ```python
-transaction_record['counter_party'] = {'ID': ..., 'side': ..., 'order_id': ...,
-                                       'new_book_quantity': ...}
-transaction_record['init_party']    = {'ID': ..., 'side': ..., 'order_id': None,
-                                       'new_book_quantity': None}
+transaction_record['counter_party'] = {
+    'ID': ...,
+    'side': ...,
+    'order_id': ...,
+    'new_book_quantity': ...,
+}
+transaction_record['init_party'] = {
+    'ID': ...,
+    'side': ...,
+    'order_id': None,
+    'new_book_quantity': None,
+}
 ```
 
 That party attribution is what lets the accounting layer debit both sides of a fill and

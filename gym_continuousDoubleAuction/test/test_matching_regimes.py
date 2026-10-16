@@ -10,6 +10,7 @@ price, then the smallest imbalance, then the one closest to the reference - so
 that where the step's shuffle put an order decides nothing unless the order
 is marginal. Leftover limits rest; leftover markets lapse.
 """
+
 from decimal import Decimal
 
 import pytest
@@ -19,15 +20,22 @@ from gym_continuousDoubleAuction.envs.orderbook.orderbook import OrderBook
 
 
 def _q(side, qty, price=None, tid=0):
-    d = {"type": "limit" if price is not None else "market", "side": side,
-         "quantity": qty, "trade_id": tid}
+    d = {
+        "type": "limit" if price is not None else "market",
+        "side": side,
+        "quantity": qty,
+        "trade_id": tid,
+    }
     if price is not None:
         d["price"] = price
     return d
 
 
 def _fills(trades):
-    return [(str(t["price"]), int(t["quantity"]), t["init_party"]["ID"], t["counter_party"]["ID"]) for t in trades]
+    return [
+        (str(t["price"]), int(t["quantity"]), t["init_party"]["ID"], t["counter_party"]["ID"])
+        for t in trades
+    ]
 
 
 def _level_volume(tree):
@@ -35,7 +43,6 @@ def _level_volume(tree):
 
 
 class TestAllocationRule:
-
     def test_the_rule_is_validated_and_keyword_only(self):
         with pytest.raises(ValueError, match="matching_rule"):
             OrderBook(10, matching_rule="lottery")
@@ -90,14 +97,16 @@ class TestAllocationRule:
 
 
 class TestBatchClearing:
-
     def test_a_crossing_pair_clears_at_the_reference_inside_the_interval(self):
         b = OrderBook(10)
         b.begin_batch()
         assert b.process_order(_q("bid", 10, 102, 0), False, False) == ([], None)
         assert b.process_order(_q("ask", 10, 98, 1), False, False) == ([], None)
         res = b.clear_batch(reference_price=100)
-        assert [(tid, _fills(tr), oib) for tid, tr, oib in res] == [(0, [("100", 10, 0, 1)], None), (1, [], None)]
+        assert [(tid, _fills(tr), oib) for tid, tr, oib in res] == [
+            (0, [("100", 10, 0, 1)], None),
+            (1, [], None),
+        ]
         assert res[0][1][0]["counter_party"]["resting"] is False
         assert len(b.tape) == 1 and b.get_best_bid() is None and b.get_best_ask() is None
 
@@ -114,22 +123,22 @@ class TestBatchClearing:
         b.process_order(_q("ask", 10, 101, 1), False, False)
         b.begin_batch()
         b.process_order(_q("bid", 15, 103, 0), False, False)
-        (tid, trades, oib), = b.clear_batch(reference_price=100)
+        ((tid, trades, oib),) = b.clear_batch(reference_price=100)
         assert tid == 0 and _fills(trades) == [("101", 10, 0, 1)]
         assert trades[0]["counter_party"]["resting"] is True
-        assert str(oib["price"]) == "103" and int(oib["quantity"]) == 5   # the leftover rests
+        assert str(oib["price"]) == "103" and int(oib["quantity"]) == 5  # the leftover rests
         assert b.get_best_bid() == Decimal("103") and b.asks.volume == 0
 
     def test_the_marginal_level_is_rationed_resting_first_then_fifo(self):
         b = OrderBook(10)
-        b.process_order(_q("bid", 5, 100, 1), False, False)          # resting
+        b.process_order(_q("bid", 5, 100, 1), False, False)  # resting
         b.begin_batch()
         b.process_order(_q("bid", 5, 100, 2), False, False)
         b.process_order(_q("bid", 5, 100, 3), False, False)
         b.process_order(_q("ask", 8, 100, 4), False, False)
         res = {tid: (tr, oib) for tid, tr, oib in b.clear_batch(reference_price=100)}
-        assert _fills(res[4][0]) == [("100", 5, 4, 1)]                # resting bid first, ask is init
-        assert _fills(res[2][0]) == [("100", 3, 2, 4)]                # then the oldest batch bid
+        assert _fills(res[4][0]) == [("100", 5, 4, 1)]  # resting bid first, ask is init
+        assert _fills(res[2][0]) == [("100", 3, 2, 4)]  # then the oldest batch bid
         assert int(res[2][1]["quantity"]) == 2 and int(res[3][1]["quantity"]) == 5
         assert b.bids.volume == 7 == _level_volume(b.bids) and b.asks.volume == 0
 
@@ -146,6 +155,7 @@ class TestBatchClearing:
     def test_position_in_the_batch_decides_nothing_off_the_margin(self):
         """Three buys strictly above the clearing price against one ask: the
         same fills whatever order they were queued in."""
+
         def run(order):
             b = OrderBook(10)
             b.process_order(_q("ask", 30, 100, 9), False, False)
@@ -153,6 +163,7 @@ class TestBatchClearing:
             for tid in order:
                 b.process_order(_q("bid", 10, 100 + tid, tid), False, False)
             return {tid: sum(int(t["quantity"]) for t in tr) for tid, tr, _ in b.clear_batch(100)}
+
         assert run([1, 2, 3]) == run([3, 1, 2]) == run([2, 3, 1]) == {1: 10, 2: 10, 3: 10}
 
     def test_no_cross_rests_everything(self):
@@ -179,8 +190,9 @@ class TestBatchClearing:
         b.process_order(_q("ask", 5, 101, 1), False, False)
         b.begin_batch()
         # Re-price the bid across the spread: sequentially it would fill now.
-        assert b.modify_order(resting["order_id"], {"side": "bid", "quantity": 5, "price": 101,
-                                                     "trade_id": 0}) == ([], None)
+        assert b.modify_order(
+            resting["order_id"], {"side": "bid", "quantity": 5, "price": 101, "trade_id": 0}
+        ) == ([], None)
         assert b.get_best_bid() is None
         res = {tid: tr for tid, tr, _ in b.clear_batch(reference_price=100)}
         assert _fills(res[0]) == [("101", 5, 0, 1)]
@@ -189,7 +201,10 @@ class TestBatchClearing:
         book = OrderBook(10)
         traders = [Trader(i, 100_000) for i in range(3)]
         book.begin_batch()
-        for t, args in zip(traders, (("limit", "bid", 10, 102.0), ("limit", "ask", 4, 98.0), ("market", "ask", 3, -1.0))):
+        for t, args in zip(
+            traders,
+            (("limit", "bid", 10, 102.0), ("limit", "ask", 4, 98.0), ("market", "ask", 3, -1.0)),
+        ):
             assert t.place_order(*args, book, traders) == ([], None)
         for tid, trades, oib in book.clear_batch(reference_price=100):
             traders[tid].settle_batch(trades, oib, traders)
@@ -233,13 +248,13 @@ class TestPriceImprovementEscrow:
         assert [Decimal(str(t["price"])) for t in book.tape] == [Decimal(100)]
         assert rester.acc.cash_on_hold == 0
         assert rester.acc.net_position == 5
-        assert rester.acc.cash == Decimal(100_000 - 500)      # paid the clearing price, not the limit
+        assert rester.acc.cash == Decimal(100_000 - 500)  # paid the clearing price, not the limit
         assert sum(t.acc.nav for t in traders) == Decimal(300_000)
 
     def test_resting_ask_filled_above_its_limit(self):
         book, rester, taker, traders = self._cleared("ask", 98)
         assert [Decimal(str(t["price"])) for t in book.tape] == [Decimal(100)]
-        assert rester.acc.cash_on_hold == 0                    # the case that went negative
+        assert rester.acc.cash_on_hold == 0  # the case that went negative
         assert rester.acc.net_position == -5
         assert sum(t.acc.nav for t in traders) == Decimal(300_000)
         for t in traders:
@@ -249,8 +264,10 @@ class TestPriceImprovementEscrow:
         from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
             continuousDoubleAuctionEnv,
         )
-        env = continuousDoubleAuctionEnv({"num_of_agents": 4, "max_step": 128, "is_render": False,
-                                          "step_clearing": "batch"})
+
+        env = continuousDoubleAuctionEnv(
+            {"num_of_agents": 4, "max_step": 128, "is_render": False, "step_clearing": "batch"}
+        )
         for seed in range(3):
             env.reset(seed=300 + seed)
             while True:

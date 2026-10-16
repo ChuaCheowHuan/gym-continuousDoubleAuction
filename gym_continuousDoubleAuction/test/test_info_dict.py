@@ -13,6 +13,7 @@ reason this file exists:
   * everything in `info` survives `json.dumps`. The per-iteration progress log
     (doc/11 1.6) is the durable record, and a numpy scalar in `info` breaks it.
 """
+
 import json
 import os
 import sys
@@ -49,20 +50,21 @@ def _naive_sum(values):
 @pytest.fixture(scope="module")
 def stepped_env():
     """A real env driven far enough that positions, trades and fills exist."""
-    env = continuousDoubleAuctionEnv({
-        "num_of_agents": NUM_AGENTS,
-        "init_cash": INIT_CASH,
-        "tick_size": 1,
-        "tape_display_length": 10,
-        "max_step": 100,
-    })
+    env = continuousDoubleAuctionEnv(
+        {
+            "num_of_agents": NUM_AGENTS,
+            "init_cash": INIT_CASH,
+            "tick_size": 1,
+            "tape_display_length": 10,
+            "max_step": 100,
+        }
+    )
     env.reset()
     last_infos, last_rewards = {}, {}
     every_info = []
     for _ in range(40):
         actions = {
-            f"agent_{i}": env.action_spaces[f"agent_{i}"].sample()
-            for i in range(NUM_AGENTS)
+            f"agent_{i}": env.action_spaces[f"agent_{i}"].sample() for i in range(NUM_AGENTS)
         }
         _, rewards, terminateds, truncateds, infos = env.step(actions)
         last_infos, last_rewards = infos, rewards
@@ -103,8 +105,12 @@ class TestRewardDecomposition:
     def test_all_six_terms_are_reported(self, stepped_env):
         _, infos, _, _ = stepped_env
         expected = {
-            "nav_term", "order_penalty", "trade_penalty",
-            "drawdown_penalty", "passive_bonus", "dead_action_penalty",
+            "nav_term",
+            "order_penalty",
+            "trade_penalty",
+            "drawdown_penalty",
+            "passive_bonus",
+            "dead_action_penalty",
         }
         for i in range(NUM_AGENTS):
             assert set(infos[f"agent_{i}"]["reward_terms"]) == expected
@@ -154,9 +160,13 @@ class TestRewardDecomposition:
         """
         # A fresh env, not `stepped_env`: this drives account state directly,
         # and `stepped_env` is shared with every other test in this file.
-        env = continuousDoubleAuctionEnv({
-            "num_of_agents": 1, "init_cash": INIT_CASH, "max_step": 10,
-        })
+        env = continuousDoubleAuctionEnv(
+            {
+                "num_of_agents": 1,
+                "init_cash": INIT_CASH,
+                "max_step": 10,
+            }
+        )
         env.reset()
         trader = env.traders[0]
         acc = trader.acc
@@ -170,8 +180,8 @@ class TestRewardDecomposition:
         acc.nav = acc.prev_nav = acc.max_nav = start
         acc.drawdown = 0.0
 
-        opening = term_after(start * Decimal("0.90"))   # 10% below the peak
-        closing = term_after(start * Decimal("0.95"))   # half of it recovered
+        opening = term_after(start * Decimal("0.90"))  # 10% below the peak
+        closing = term_after(start * Decimal("0.95"))  # half of it recovered
 
         assert opening < 0, "opening a drawdown must be charged"
         assert closing > 0, (
@@ -203,9 +213,16 @@ class TestAccountState:
     def test_the_account_fields_are_present(self, stepped_env):
         _, infos, _, _ = stepped_env
         expected = {
-            "net_position", "VWAP", "cash", "cash_on_hold", "position_val",
-            "drawdown", "max_nav", "num_trades_step",
-            "num_passive_fills_step", "order_step_placed",
+            "net_position",
+            "VWAP",
+            "cash",
+            "cash_on_hold",
+            "position_val",
+            "drawdown",
+            "max_nav",
+            "num_trades_step",
+            "num_passive_fills_step",
+            "order_step_placed",
         }
         for i in range(NUM_AGENTS):
             assert expected <= set(infos[f"agent_{i}"])
@@ -252,13 +269,8 @@ class TestAccountState:
         _, _, _, every_info = stepped_env
         assert every_info, "fixture stepped no episodes"
 
-        for key in ("num_trades_step", "num_passive_fills_step",
-                    "order_step_placed"):
-            observed = [
-                infos[f"agent_{i}"][key]
-                for infos in every_info
-                for i in range(NUM_AGENTS)
-            ]
+        for key in ("num_trades_step", "num_passive_fills_step", "order_step_placed"):
+            observed = [infos[f"agent_{i}"][key] for infos in every_info for i in range(NUM_AGENTS)]
             assert all(isinstance(v, int) for v in observed)
             assert any(v != 0 for v in observed), (
                 f"{key} was 0 on every step of every agent: set_info is "
@@ -281,9 +293,7 @@ class TestMarketState:
         _, infos, _, _ = stepped_env
         info = infos["agent_0"]
         if info["best_bid"] is not None and info["best_ask"] is not None:
-            assert info["spread"] == pytest.approx(
-                info["best_ask"] - info["best_bid"]
-            )
+            assert info["spread"] == pytest.approx(info["best_ask"] - info["best_bid"])
         else:
             assert info["spread"] is None
 
@@ -291,6 +301,7 @@ class TestMarketState:
         """0.0 would be indistinguishable from a book whose touch is touching.
         The observation needs a finite sentinel; a log does not (doc/15 S3-14).
         """
+
         class FakeTree:
             def __init__(self, price):
                 self.price = price
@@ -344,13 +355,15 @@ class TestSerialisation:
     def test_plain_converts_nested_numpy(self):
         import numpy as np
 
-        converted = _plain({
-            "i": np.int64(3),
-            "f": np.float32(1.5),
-            "arr": np.array([1, 2], dtype=np.int64),
-            "nested": {"deep": np.int32(7)},
-            "tup": (np.int64(1), "s"),
-        })
+        converted = _plain(
+            {
+                "i": np.int64(3),
+                "f": np.float32(1.5),
+                "arr": np.array([1, 2], dtype=np.int64),
+                "nested": {"deep": np.int32(7)},
+                "tup": (np.int64(1), "s"),
+            }
+        )
         json.dumps(converted)
         assert converted["i"] == 3
         assert converted["arr"] == [1, 2]
@@ -404,8 +417,7 @@ class TestActivityFields:
                     continue
                 checked += 1
                 assert info["is_pass_action"] == (category == 0), (
-                    f"agent_{i}: is_pass_action={info['is_pass_action']} but "
-                    f"category={category}"
+                    f"agent_{i}: is_pass_action={info['is_pass_action']} but category={category}"
                 )
         assert checked, "no model actions were available to cross-check"
 
@@ -415,8 +427,7 @@ class TestActivityFields:
         """
         _, _, _, every_info = stepped_env
         assert any(
-            infos[f"agent_{i}"]["is_pass_action"]
-            for infos in every_info for i in range(NUM_AGENTS)
+            infos[f"agent_{i}"]["is_pass_action"] for infos in every_info for i in range(NUM_AGENTS)
         )
 
     def test_rejections_are_counted_when_cash_runs_out(self):
@@ -424,28 +435,27 @@ class TestActivityFields:
         orders cannot be afforded, so refusals are the common case - measured at
         151 of 200 agent-steps when this was written.
         """
-        env = continuousDoubleAuctionEnv({
-            "num_of_agents": NUM_AGENTS,
-            "init_cash": 500,
-            "tick_size": 1,
-            "tape_display_length": 10,
-            "max_step": 60,
-        })
+        env = continuousDoubleAuctionEnv(
+            {
+                "num_of_agents": NUM_AGENTS,
+                "init_cash": 500,
+                "tick_size": 1,
+                "tape_display_length": 10,
+                "max_step": 60,
+            }
+        )
         env.reset()
         rejections = 0
         for _ in range(30):
             actions = {
-                f"agent_{i}": env.action_spaces[f"agent_{i}"].sample()
-                for i in range(NUM_AGENTS)
+                f"agent_{i}": env.action_spaces[f"agent_{i}"].sample() for i in range(NUM_AGENTS)
             }
             _, _, terminateds, truncateds, infos = env.step(actions)
             # Over the agents that reported, not over `range(NUM_AGENTS)`: at
             # this cash level an agent can go bankrupt, and a terminated agent
             # stops appearing in `info` from its terminal step onward
             # (doc/15 S2-4).
-            rejections += sum(
-                agent_info["num_rejected_step"] for agent_info in infos.values()
-            )
+            rejections += sum(agent_info["num_rejected_step"] for agent_info in infos.values())
             if terminateds.get("__all__") or truncateds.get("__all__"):
                 break
 

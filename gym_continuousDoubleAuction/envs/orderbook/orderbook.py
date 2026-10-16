@@ -17,9 +17,10 @@ whatever `Decimal` it is handed. The grid is the action layer's
 used to accept a `tick_size` it stored and never read; that parameter is
 gone, so the code no longer suggests a guarantee the book does not provide.
 """
+
 from io import StringIO
 from itertools import chain
-from collections import deque # a faster insert/pop queue
+from collections import deque  # a faster insert/pop queue
 from decimal import Decimal
 from typing import Any, Callable, NamedTuple
 
@@ -30,15 +31,17 @@ from ...logging_setup import get_logger
 
 logger = get_logger(__name__)
 
+
 class _Clearing(NamedTuple):
     """What one batch auction settled: the price, the volume, and who took part."""
-    p_star: Any                 # the clearing price; None when nothing crosses
-    volume: Any                 # the executable volume
-    live: list                  # queued orders that did not sit out
-    buys: list                  # ... the bids among them
-    sells: list                 # ... and the asks
-    dropped: set                # ids of queued orders that could not pay
-    sit_out: set                # ids of resting orders that could not pay
+
+    p_star: Any  # the clearing price; None when nothing crosses
+    volume: Any  # the executable volume
+    live: list  # queued orders that did not sit out
+    buys: list  # ... the bids among them
+    sells: list  # ... and the asks
+    dropped: set  # ids of queued orders that could not pay
+    sit_out: set  # ids of resting orders that could not pay
 
     @property
     def disturbed(self) -> bool:
@@ -56,15 +59,19 @@ class _QuantityOnly:
 
 class _Side(NamedTuple):
     """One side of the book from the point of view of an order resting or arriving on it."""
-    own: Any                    # the tree the order rests in
-    opposite: Any               # the tree it trades against
-    opposite_name: str          # that tree's side name, as `process_order_list` takes it
+
+    own: Any  # the tree the order rests in
+    opposite: Any  # the tree it trades against
+    opposite_name: str  # that tree's side name, as `process_order_list` takes it
     crosses: Callable[[Any], bool]  # whether a limit price reaches the opposite touch
 
     def best_opposite_list(self):
         """The orders at the opposite touch (lowest ask for a bid, highest bid for an ask)."""
-        return (self.opposite.min_price_list() if self.opposite_name == 'ask'
-                else self.opposite.max_price_list())
+        return (
+            self.opposite.min_price_list()
+            if self.opposite_name == 'ask'
+            else self.opposite.max_price_list()
+        )
 
 
 class OrderBook(object):
@@ -78,7 +85,7 @@ class OrderBook(object):
     MATCHING_RULES = ("fifo", "pro_rata")
 
     def __init__(self, tape_display_length=10, *, matching_rule="fifo"):
-        self.tape = deque(maxlen=None) # appended, so tape[-1] is the most recent trade
+        self.tape = deque(maxlen=None)  # appended, so tape[-1] is the most recent trade
         self.bids = OrderTree()
         self.asks = OrderTree()
         self.last_tick = None
@@ -134,8 +141,7 @@ class OrderBook(object):
             trades, order_in_book = self.process_limit_order(quote, from_data, verbose)
         else:
             raise ValueError(
-                f"process_order(): order type must be 'market' or 'limit', "
-                f"got {order_type!r}"
+                f"process_order(): order type must be 'market' or 'limit', got {order_type!r}"
             )
         return trades, order_in_book
 
@@ -164,8 +170,10 @@ class OrderBook(object):
                 left -= fill
             return out
         # pro_rata: floors, then the residue in time order.
-        fills = [(Decimal(o.quantity) * quantity / total).to_integral_value(rounding="ROUND_FLOOR")
-                 for o in orders]
+        fills = [
+            (Decimal(o.quantity) * quantity / total).to_integral_value(rounding="ROUND_FLOOR")
+            for o in orders
+        ]
         residue = quantity - sum(fills, Decimal(0))
         i = 0
         while residue > 0:
@@ -196,7 +204,7 @@ class OrderBook(object):
         (`matching_rule`); this method only executes the allocation and writes
         the records.
         '''
-        trades = [] # local only
+        trades = []  # local only
         quantity_to_trade = Decimal(quantity_still_to_trade)
         if len(order_list) == 0 or quantity_to_trade <= 0:
             return quantity_to_trade, trades
@@ -210,35 +218,48 @@ class OrderBook(object):
                 logger.debug(
                     "TRADE: Time - %s, Price - %s, Quantity - %s, TradeID - %s, "
                     "Matching TradeID - %s",
-                    self.time, traded_price, traded_quantity, counter_party,
+                    self.time,
+                    traded_price,
+                    traded_quantity,
+                    counter_party,
                     quote['trade_id'],
                 )
 
-            transaction_record = {'timestamp': self.time,
-                                  'price': traded_price,
-                                  'quantity': traded_quantity,
-                                  'time': self.time}
-            if side == 'bid': # counter_party's side
-                transaction_record['counter_party'] = {'ID': counter_party,
-                                                'side': 'bid',
-                                                'order_id': head_order.order_id,
-                                                'new_book_quantity': new_book_quantity}
-                transaction_record['init_party'] = {'ID': quote['trade_id'],
-                                                'side': 'ask',
-                                                'order_id': None,
-                                                'new_book_quantity': None}
+            transaction_record = {
+                'timestamp': self.time,
+                'price': traded_price,
+                'quantity': traded_quantity,
+                'time': self.time,
+            }
+            if side == 'bid':  # counter_party's side
+                transaction_record['counter_party'] = {
+                    'ID': counter_party,
+                    'side': 'bid',
+                    'order_id': head_order.order_id,
+                    'new_book_quantity': new_book_quantity,
+                }
+                transaction_record['init_party'] = {
+                    'ID': quote['trade_id'],
+                    'side': 'ask',
+                    'order_id': None,
+                    'new_book_quantity': None,
+                }
             else:
-                transaction_record['counter_party'] = {'ID': counter_party,
-                                                'side': 'ask',
-                                                'order_id': head_order.order_id,
-                                                'new_book_quantity': new_book_quantity}
-                transaction_record['init_party'] = {'ID': quote['trade_id'],
-                                                'side': 'bid',
-                                                'order_id': None,
-                                                'new_book_quantity': None}
+                transaction_record['counter_party'] = {
+                    'ID': counter_party,
+                    'side': 'ask',
+                    'order_id': head_order.order_id,
+                    'new_book_quantity': new_book_quantity,
+                }
+                transaction_record['init_party'] = {
+                    'ID': quote['trade_id'],
+                    'side': 'bid',
+                    'order_id': None,
+                    'new_book_quantity': None,
+                }
 
             self.tape.append(transaction_record)
-            trades.append(transaction_record) # appending indicates a trade done, order filled
+            trades.append(transaction_record)  # appending indicates a trade done, order filled
         return quantity_to_trade, trades
 
     # ------------------------------------------------------------------
@@ -260,8 +281,7 @@ class OrderBook(object):
         no flag. The sequential engine's records carry none because their counter
         party always rested.
         """
-        return {'price': price, 'quantity': quantity,
-                'init_party': init, 'counter_party': counter}
+        return {'price': price, 'quantity': quantity, 'init_party': init, 'counter_party': counter}
 
     def _auction(self, buys, sells, limit_of, sit_out, reference_price):
         """The clearing price: `(key, price, executable volume)`, or None.
@@ -283,17 +303,37 @@ class OrderBook(object):
             return None
 
         def demand(p):
-            total = sum((Decimal(o.quantity) for price, ol in self.bids.price_map.items()
-                         if price >= p for o in ol if o.order_id not in sit_out), Decimal(0))
-            total += sum((Decimal(q['quantity']) for q in buys
-                          if limit_of(q) is None or limit_of(q) >= p), Decimal(0))
+            total = sum(
+                (
+                    Decimal(o.quantity)
+                    for price, ol in self.bids.price_map.items()
+                    if price >= p
+                    for o in ol
+                    if o.order_id not in sit_out
+                ),
+                Decimal(0),
+            )
+            total += sum(
+                (Decimal(q['quantity']) for q in buys if limit_of(q) is None or limit_of(q) >= p),
+                Decimal(0),
+            )
             return total
 
         def supply(p):
-            total = sum((Decimal(o.quantity) for price, ol in self.asks.price_map.items()
-                         if price <= p for o in ol if o.order_id not in sit_out), Decimal(0))
-            total += sum((Decimal(q['quantity']) for q in sells
-                          if limit_of(q) is None or limit_of(q) <= p), Decimal(0))
+            total = sum(
+                (
+                    Decimal(o.quantity)
+                    for price, ol in self.asks.price_map.items()
+                    if price <= p
+                    for o in ol
+                    if o.order_id not in sit_out
+                ),
+                Decimal(0),
+            )
+            total += sum(
+                (Decimal(q['quantity']) for q in sells if limit_of(q) is None or limit_of(q) <= p),
+                Decimal(0),
+            )
             return total
 
         ref = Decimal(str(reference_price)) if reference_price is not None else None
@@ -317,20 +357,26 @@ class OrderBook(object):
         for q in buys:
             lim = limit_of(q)
             if (lim is None or lim >= p_star) and not affordable(
-                    q['trade_id'], 'bid', Decimal(q['quantity']), p_star, None, None):
+                q['trade_id'], 'bid', Decimal(q['quantity']), p_star, None, None
+            ):
                 out_new.append(q)
         for q in sells:
             lim = limit_of(q)
             if (lim is None or lim <= p_star) and not affordable(
-                    q['trade_id'], 'ask', Decimal(q['quantity']), p_star, None, None):
+                q['trade_id'], 'ask', Decimal(q['quantity']), p_star, None, None
+            ):
                 out_new.append(q)
         out_resting = set()
-        for price, ol in self.asks.price_map.items():       # a resting bid never pays more than its limit
+        for (
+            price,
+            ol,
+        ) in self.asks.price_map.items():  # a resting bid never pays more than its limit
             if price > p_star:
                 break
             for o in ol:
                 if o.order_id not in sit_out and not affordable(
-                        o.trade_id, 'ask', o.quantity, p_star, o.price, o.order_id):
+                    o.trade_id, 'ask', o.quantity, p_star, o.price, o.order_id
+                ):
                     out_resting.add(o.order_id)
         return out_new, out_resting
 
@@ -410,7 +456,7 @@ class OrderBook(object):
         Returns the `_Clearing` that settled: the price and volume, the queued orders
         still live, and who sat out. A `volume` of 0 means nothing crosses.
         """
-        dropped, sit_out = set(), set()     # queued ids / resting order ids that sit out
+        dropped, sit_out = set(), set()  # queued ids / resting order ids that sit out
         while True:
             live = [q for q in pending if id(q) not in dropped]
             buys = [q for q in live if q['side'] == 'bid']
@@ -422,7 +468,8 @@ class OrderBook(object):
             if affordable is None:
                 break
             out_new, out_resting = self._unaffordable(
-                buys, sells, self._limit_of, sit_out, p_star, affordable)
+                buys, sells, self._limit_of, sit_out, p_star, affordable
+            )
             if not out_new and not out_resting:
                 break
             for q in out_new:
@@ -507,12 +554,22 @@ class OrderBook(object):
             # `limit_price` on a resting party: its escrow was posted at that
             # price, and a batch can fill it at a better one, so the settler
             # needs both (Trader.settle_batch).
-            b_party = {'ID': b_id, 'side': 'bid', 'order_id': b.order_id if b_rest else b.get('order_id'),
-                       'new_book_quantity': None, 'resting': b_rest,
-                       'limit_price': b.price if b_rest else None}
-            s_party = {'ID': s_id, 'side': 'ask', 'order_id': s.order_id if s_rest else s.get('order_id'),
-                       'new_book_quantity': None, 'resting': s_rest,
-                       'limit_price': s.price if s_rest else None}
+            b_party = {
+                'ID': b_id,
+                'side': 'bid',
+                'order_id': b.order_id if b_rest else b.get('order_id'),
+                'new_book_quantity': None,
+                'resting': b_rest,
+                'limit_price': b.price if b_rest else None,
+            }
+            s_party = {
+                'ID': s_id,
+                'side': 'ask',
+                'order_id': s.order_id if s_rest else s.get('order_id'),
+                'new_book_quantity': None,
+                'resting': s_rest,
+                'limit_price': s.price if s_rest else None,
+            }
             if b_rest:
                 b_party['new_book_quantity'] = self._fill_resting('bid', b, q)
             else:
@@ -601,7 +658,8 @@ class OrderBook(object):
         side = self._side(quote['side'], 'process_market_order')
         while quantity_to_trade > 0 and side.opposite:
             quantity_to_trade, new_trades = self.process_order_list(
-                side.opposite_name, side.best_opposite_list(), quantity_to_trade, quote, verbose)
+                side.opposite_name, side.best_opposite_list(), quantity_to_trade, quote, verbose
+            )
             trades += new_trades
         return trades
 
@@ -613,7 +671,8 @@ class OrderBook(object):
         price = quote['price']
         while side.opposite and side.crosses(price) and quantity_to_trade > 0:
             quantity_to_trade, new_trades = self.process_order_list(
-                side.opposite_name, side.best_opposite_list(), quantity_to_trade, quote, verbose)
+                side.opposite_name, side.best_opposite_list(), quantity_to_trade, quote, verbose
+            )
             trades += new_trades
         # If volume remains, need to update the book with new quantity
         if quantity_to_trade > 0:
@@ -652,11 +711,11 @@ class OrderBook(object):
 
         original_price = original_order.price
         original_quantity = original_order.quantity
-        
+
         # Ensure price and quantity are Decimals for type-safety in underlying logic
         order_update['price'] = Decimal(str(order_update['price']))
         order_update['quantity'] = Decimal(str(order_update['quantity']))
-        
+
         new_price = order_update['price']
         new_quantity = order_update['quantity']
         if new_quantity <= 0:
@@ -682,7 +741,7 @@ class OrderBook(object):
             'price': new_price,
             'trade_id': trade_id,
             'timestamp': self.time,
-            'order_id': order_id
+            'order_id': order_id,
         }
 
         if self.batching:
@@ -707,16 +766,16 @@ class OrderBook(object):
     def tape_dump(self, filename, filemode, tapemode):
         dumpfile = open(filename, filemode)
         for tapeitem in self.tape:
-            dumpfile.write('Time: %s, Price: %s, Quantity: %s\n' % (tapeitem['time'],
-                                                                    tapeitem['price'],
-                                                                    tapeitem['quantity']))
+            dumpfile.write(
+                'Time: %s, Price: %s, Quantity: %s\n'
+                % (tapeitem['time'], tapeitem['price'], tapeitem['quantity'])
+            )
         dumpfile.close()
         if tapemode == 'wipe':
             self.tape.clear()
 
     def __str__(self):
         tempfile = StringIO()
-
 
         tempfile.write("***Bids***\n")
         if self.bids != None and len(self.bids) > 0:
@@ -725,7 +784,7 @@ class OrderBook(object):
             for key, value in reversed(self.bids.price_map.items()):
                 all_bids.append(value.to_list())
 
-            flat_bids = list(self._flatten(all_bids)) # flat list of dicts
+            flat_bids = list(self._flatten(all_bids))  # flat list of dicts
             df_bid = pd.DataFrame(flat_bids)
             tempfile.write(df_bid.to_string())
 
@@ -735,7 +794,7 @@ class OrderBook(object):
             for key, value in self.asks.price_map.items():
                 all_asks.append(value.to_list())
 
-            flat_ask = list(self._flatten(all_asks)) # flat list of dicts
+            flat_ask = list(self._flatten(all_asks))  # flat list of dicts
             df_ask = pd.DataFrame(flat_ask)
             tempfile.write(df_ask.to_string())
 
@@ -744,7 +803,7 @@ class OrderBook(object):
             num = 0
             all_TS = []
             for entry in reversed(self.tape):
-                if num < self.tape_display_length: # get last num of entries
+                if num < self.tape_display_length:  # get last num of entries
                     TS = {}
                     TS["size"] = entry['quantity']
                     TS["price"] = entry['price']
@@ -752,7 +811,7 @@ class OrderBook(object):
                     TS["counter_party_ID"] = entry['counter_party']['ID']
                     TS["init_party_ID"] = entry['init_party']['ID']
                     TS["init_party_side"] = entry['init_party']['side']
-                    #tempfile.write(str(TS) + "\n")
+                    # tempfile.write(str(TS) + "\n")
                     all_TS.append(TS)
 
                     num += 1

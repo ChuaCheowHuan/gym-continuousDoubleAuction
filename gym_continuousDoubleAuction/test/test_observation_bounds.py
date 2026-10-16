@@ -15,6 +15,7 @@ the newest frame's midpoint (doc/05 section 2.2), so a bid resting above
 counter must be 0 on ordinary play, since every measured value sits inside
 the bounds with headroom (doc/16 section 16.22).
 """
+
 import numpy as np
 import pytest
 
@@ -45,13 +46,19 @@ def _env(**overrides):
 
 
 def _pass(env):
-    return {agent: {"category": 0, "order_slot": 0, "price": 0, "price_offset": 1,
-                    "size": np.zeros(1, dtype=np.float32)}
-            for agent in env.agents}
+    return {
+        agent: {
+            "category": 0,
+            "order_slot": 0,
+            "price": 0,
+            "price_offset": 1,
+            "size": np.zeros(1, dtype=np.float32),
+        }
+        for agent in env.agents
+    }
 
 
 class TestTheSpace:
-
     def test_bounds_are_finite_and_ordered(self):
         env = _env()
         space = env.observation_spaces["agent_0"]
@@ -85,12 +92,18 @@ class TestTheSpace:
                 lo, hi = cfg["extra"][name]
                 assert env.obs_low[base + env.obs_book_dim + e] == np.float32(lo), name
                 assert env.obs_high[base + env.obs_book_dim + e] == np.float32(hi), name
-        tail_low = env.obs_low[-env.private_dim:]
-        tail_high = env.obs_high[-env.private_dim:]
+        tail_low = env.obs_low[-env.private_dim :]
+        tail_high = env.obs_high[-env.private_dim :]
         for i, name in enumerate(env.private_fields):
-            key = ("own_size" if name.startswith("own_bid_size") or name.startswith("own_ask_size")
-                   else "own_count" if name.endswith("_count")
-                   else "action_mask" if name.startswith("can_") else name)
+            key = (
+                "own_size"
+                if name.startswith("own_bid_size") or name.startswith("own_ask_size")
+                else "own_count"
+                if name.endswith("_count")
+                else "action_mask"
+                if name.startswith("can_")
+                else name
+            )
             lo, hi = cfg["private"][key]
             assert tail_low[i] == np.float32(lo), name
             assert tail_high[i] == np.float32(hi), name
@@ -98,8 +111,8 @@ class TestTheSpace:
     def test_identity_bounds_are_exact(self):
         """The sides that are mathematics, not measurement."""
         cfg = state_helper.constants("observation_bounds")
-        assert cfg["book"]["bid_price"][1] == 1.0     # (M - P) / M < 1 for P > 0
-        assert cfg["book"]["ask_price"][0] == -1.0    # (P - M) / M > -1 for P > 0
+        assert cfg["book"]["bid_price"][1] == 1.0  # (M - P) / M < 1 for P > 0
+        assert cfg["book"]["ask_price"][0] == -1.0  # (P - M) / M > -1 for P > 0
         for row in ("bid_size", "ask_size"):
             assert cfg["book"][row][0] == 0.0
         assert cfg["extra"]["trade_direction"] == [-1.0, 1.0]
@@ -114,8 +127,11 @@ class TestTheSpace:
     def test_a_field_without_a_bound_fails_at_construction(self, monkeypatch):
         env = _env()
         cfg = state_helper.constants("observation_bounds")
-        broken = {"book": dict(cfg["book"]), "extra": dict(cfg["extra"]),
-                  "private": dict(cfg["private"])}
+        broken = {
+            "book": dict(cfg["book"]),
+            "extra": dict(cfg["extra"]),
+            "private": dict(cfg["private"]),
+        }
         del broken["private"]["nav"]
         monkeypatch.setattr(state_helper, "constants", lambda group: broken)
         with pytest.raises(ValueError, match="'nav'"):
@@ -124,8 +140,11 @@ class TestTheSpace:
     def test_a_non_interval_fails_at_construction(self, monkeypatch):
         env = _env()
         cfg = state_helper.constants("observation_bounds")
-        broken = {"book": dict(cfg["book"]), "extra": dict(cfg["extra"]),
-                  "private": dict(cfg["private"])}
+        broken = {
+            "book": dict(cfg["book"]),
+            "extra": dict(cfg["extra"]),
+            "private": dict(cfg["private"]),
+        }
         broken["book"]["bid_size"] = [8.0, 0.0]
         monkeypatch.setattr(state_helper, "constants", lambda group: broken)
         with pytest.raises(ValueError, match="bid_size"):
@@ -133,7 +152,6 @@ class TestTheSpace:
 
 
 class TestEmission:
-
     def test_every_observation_is_inside_the_space(self):
         env = _env(num_of_agents=4, max_step=60)
         space = env.observation_spaces["agent_0"]
@@ -179,8 +197,8 @@ class TestEmission:
         b.place_order('limit', 'ask', 10, 82.0, env.LOB, env.traders)
         obs, _, _, _, infos = env.step(_pass(env))
         stacked = obs["agent_0"]
-        older = stacked[(env.n_hist - 2) * env.snapshot_dim:(env.n_hist - 1) * env.snapshot_dim]
-        newest = stacked[(env.n_hist - 1) * env.snapshot_dim:env.n_hist * env.snapshot_dim]
+        older = stacked[(env.n_hist - 2) * env.snapshot_dim : (env.n_hist - 1) * env.snapshot_dim]
+        newest = stacked[(env.n_hist - 1) * env.snapshot_dim : env.n_hist * env.snapshot_dim]
         assert older[0] < 0, "the 98 bid, measured against M_t = 91, is above the midpoint"
         assert older[0] == pytest.approx((91 - 98) / 91, abs=1e-5)
         assert newest[0] == pytest.approx((91 - 80) / 91, abs=1e-5)

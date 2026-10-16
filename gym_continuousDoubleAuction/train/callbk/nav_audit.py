@@ -5,6 +5,7 @@ starting cash. The callback's `on_episode_end` used to hold all of this inline; 
 reading of the env's ledger and the arithmetic are plain functions that can be tested
 without RLlib, and the callback keeps the hook, the metrics and the decision to log.
 """
+
 from decimal import Decimal
 from typing import Dict, List, NamedTuple, Optional
 
@@ -17,11 +18,13 @@ def fees_configured(env_runner, env) -> bool:
         rates += [config.get("maker_fee_bps", 0), config.get("taker_fee_bps", 0)]
     env_obj = getattr(env, "unwrapped", env)
     rates += [getattr(env_obj, "maker_fee_bps", 0), getattr(env_obj, "taker_fee_bps", 0)]
+
     def on(rate):
         try:
             return not isinstance(rate, bool) and Decimal(str(rate)) != 0
-        except Exception:       # None, or anything that is not a number
+        except Exception:  # None, or anything that is not a number
             return False
+
     return any(on(r) for r in rates)
 
 
@@ -43,8 +46,7 @@ def ledger_fees(env, env_index, num_agents):
     if not traders or len(traders) != num_agents:
         return None
     try:
-        return sum((Decimal(str(getattr(t.acc, "fees_paid", 0))) for t in traders),
-                   Decimal(0))
+        return sum((Decimal(str(getattr(t.acc, "fees_paid", 0))) for t in traders), Decimal(0))
     except AttributeError:
         return None
 
@@ -118,6 +120,7 @@ def run_parameters(env_runner, env, init_cash, num_agents):
 
 class NavTotal(NamedTuple):
     """What the agents' NAVs add up to, and the lines that say where each came from."""
+
     total: Decimal
     lines: List[str]
 

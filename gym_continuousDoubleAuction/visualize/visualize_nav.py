@@ -69,7 +69,10 @@ def visualize_nav_drawdown(run_dir=None, episode_id=None):
 
     sorted_agents = sorted(episode["agent_id"].unique())
     fig, axes = plt.subplots(
-        len(sorted_agents), 1, figsize=(14, 2.5 * len(sorted_agents)), sharex=True,
+        len(sorted_agents),
+        1,
+        figsize=(14, 2.5 * len(sorted_agents)),
+        sharex=True,
     )
     if len(sorted_agents) == 1:
         axes = [axes]
@@ -83,8 +86,13 @@ def visualize_nav_drawdown(run_dir=None, episode_id=None):
         ax.plot(steps, nav, label="NAV", color="#2a78d6", linewidth=1.5)
         ax.plot(steps, peak, label="Running peak", color="#898781", linestyle="--", linewidth=1.0)
         ax.fill_between(
-            steps, nav, peak, where=peak >= nav,
-            color="#d03b3b", alpha=0.15, label="Drawdown",
+            steps,
+            nav,
+            peak,
+            where=peak >= nav,
+            color="#d03b3b",
+            alpha=0.15,
+            label="Drawdown",
         )
         ax.set_ylabel(agent_id)
         ax.grid(True, linestyle='--', alpha=0.5)
@@ -99,6 +107,7 @@ def visualize_nav_drawdown(run_dir=None, episode_id=None):
     plt.savefig(output_file)
     print(f"Visualization saved to {output_file}")
     plt.show()
+
 
 if __name__ == "__main__":
     visualize_nav()

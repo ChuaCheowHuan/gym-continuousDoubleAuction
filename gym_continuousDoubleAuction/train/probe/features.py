@@ -34,6 +34,7 @@ threaded through, and reset at each episode boundary. Batching its rows the way
 the stateless encoders are batched would silently score it on a memory that was
 re-initialised every row - which is not the encoder anyone configured.
 """
+
 from __future__ import annotations
 
 import os
@@ -166,14 +167,12 @@ def available_modules(checkpoint: str) -> list:
     root = os.path.join(checkpoint, *_MODULE_SUBPATH)
     if not os.path.isdir(root):
         return []
-    return sorted(
-        name for name in os.listdir(root)
-        if _is_module_dir(os.path.join(root, name))
-    )
+    return sorted(name for name in os.listdir(root) if _is_module_dir(os.path.join(root, name)))
 
 
-def pretrained_module(obs_space, act_space, encoder_type: str,
-                     path: str, encoder_spec: Optional[Dict] = None) -> RLModule:
+def pretrained_module(
+    obs_space, act_space, encoder_type: str, path: str, encoder_spec: Optional[Dict] = None
+) -> RLModule:
     """A module of the configured architecture, carrying pretrained weights.
 
     The measurement offline pretraining exists to make: the same architecture
@@ -218,7 +217,7 @@ def _encode(module: RLModule, batch) -> torch.Tensor:
 def _stateless_latents(module: RLModule, corpus: ProbeCorpus) -> np.ndarray:
     out = []
     for start in range(0, len(corpus), BATCH_ROWS):
-        obs = torch.from_numpy(corpus.obs[start:start + BATCH_ROWS])
+        obs = torch.from_numpy(corpus.obs[start : start + BATCH_ROWS])
         out.append(_encode(module, {Columns.OBS: obs}).numpy())
     return np.concatenate(out).astype(np.float64)
 
@@ -254,8 +253,6 @@ def _latent_width(module: RLModule, corpus: ProbeCorpus) -> int:
     depending on either.
     """
     obs = torch.from_numpy(corpus.obs[:1]).unsqueeze(0)
-    state_in = tree.map_structure(
-        lambda s: s.unsqueeze(0).contiguous(), module.get_initial_state()
-    )
+    state_in = tree.map_structure(lambda s: s.unsqueeze(0).contiguous(), module.get_initial_state())
     latent = _encode(module, {Columns.OBS: obs, Columns.STATE_IN: state_in})
     return int(latent.shape[-1])

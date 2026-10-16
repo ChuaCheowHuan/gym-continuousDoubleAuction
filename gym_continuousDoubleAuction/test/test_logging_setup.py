@@ -12,6 +12,7 @@ but the three properties this package needs from it:
 
 See doc/11_logging_and_observability.md.
 """
+
 import json
 import logging
 import shutil
@@ -34,13 +35,14 @@ def restore_logging():
     # set, the next test to call configure() would resolve it from the
     # environment and write a file into a tmp_path that no longer exists.
     import os as _os
+
     saved_dir_var = _os.environ.get(logging_setup.log_dir_env_var())
 
     yield
 
     for handler in list(root.handlers):
         if handler not in saved_handlers:
-            handler.close()   # release the run log before tmp_path is removed
+            handler.close()  # release the run log before tmp_path is removed
     root.handlers = saved_handlers
     root.setLevel(saved_level)
     logging_setup._configured = saved_configured
@@ -74,7 +76,6 @@ def config_tree(tmp_path, monkeypatch):
 
 
 class TestLevelResolution:
-
     def test_explicit_argument_wins(self, monkeypatch):
         monkeypatch.setenv(logging_setup.level_env_var(), "ERROR")
         assert logging_setup.resolve_level("debug") == "DEBUG"
@@ -93,7 +94,6 @@ class TestLevelResolution:
 
 
 class TestConfigure:
-
     def test_applies_the_level_to_the_package_logger(self, monkeypatch):
         monkeypatch.delenv(logging_setup.level_env_var(), raising=False)
         logging_setup.configure("WARNING", force=True)
@@ -105,6 +105,7 @@ class TestConfigure:
         logging_setup.configure("DEBUG", force=True)
 
         import os
+
         assert os.environ[logging_setup.level_env_var()] == "DEBUG"
 
     def test_does_not_stack_handlers_when_reconfigured(self):
@@ -116,9 +117,7 @@ class TestConfigure:
 
     def test_child_loggers_inherit_the_package_level(self, caplog):
         logging_setup.configure("INFO", force=True)
-        logger = logging_setup.get_logger(
-            f"{logging_setup.ROOT_NAME}.test_child"
-        )
+        logger = logging_setup.get_logger(f"{logging_setup.ROOT_NAME}.test_child")
 
         with caplog.at_level(logging.INFO, logger=logging_setup.ROOT_NAME):
             logger.debug("dropped")
@@ -129,7 +128,6 @@ class TestConfigure:
 
 
 class TestNoLiteralsOfItsOwn:
-
     def test_format_comes_from_the_file(self, config_tree):
         config_tree(
             "tunable_constants.json",
@@ -137,9 +135,12 @@ class TestNoLiteralsOfItsOwn:
         )
         logging_setup.configure("INFO", force=True)
         handler = logging.getLogger(logging_setup.ROOT_NAME).handlers[0]
-        assert handler.formatter.format(
-            logging.LogRecord("n", logging.INFO, "p", 1, "hello", None, None)
-        ) == "CUSTOM hello"
+        assert (
+            handler.formatter.format(
+                logging.LogRecord("n", logging.INFO, "p", 1, "hello", None, None)
+            )
+            == "CUSTOM hello"
+        )
 
     def test_env_var_name_comes_from_the_file(self, config_tree):
         config_tree(
@@ -150,7 +151,6 @@ class TestNoLiteralsOfItsOwn:
 
 
 class TestPackageModulesUseIt:
-
     def test_no_module_calls_print(self):
         """envs/ and train/ report through the logger, not stdout.
 
@@ -166,8 +166,7 @@ class TestPackageModulesUseIt:
 
         root = pathlib.Path(logging_setup.__file__).parent
         offenders = []
-        for path in list((root / "envs").rglob("*.py")) + \
-                list((root / "train").rglob("*.py")):
+        for path in list((root / "envs").rglob("*.py")) + list((root / "train").rglob("*.py")):
             if "orderbook/test" in path.as_posix():
                 continue
             for number, line in enumerate(path.read_text().splitlines(), 1):
@@ -216,9 +215,10 @@ class TestRunLogFile:
     def test_rotation_bounds_the_file(self, tmp_path, config_tree):
         """doc/11 3 lists unbounded growth as a persistence problem; a run log
         that fills the disk would be a new instance of it."""
-        config_tree("tunable_constants.json", lambda raw: raw["logging"].update(
-            {"file_max_bytes": 2048, "file_backup_count": 2}
-        ))
+        config_tree(
+            "tunable_constants.json",
+            lambda raw: raw["logging"].update({"file_max_bytes": 2048, "file_backup_count": 2}),
+        )
         logging_setup.configure("INFO", log_dir=str(tmp_path), force=True)
         logger = logging_setup.get_logger("gym_continuousDoubleAuction.t")
 
@@ -233,8 +233,7 @@ class TestRunLogFile:
             assert (tmp_path / name).stat().st_size < 8192, name
 
     def test_an_empty_file_name_disables_it(self, tmp_path, config_tree):
-        config_tree("tunable_constants.json",
-                    lambda raw: raw["logging"].update({"file_name": ""}))
+        config_tree("tunable_constants.json", lambda raw: raw["logging"].update({"file_name": ""}))
         logging_setup.configure("INFO", log_dir=str(tmp_path), force=True)
         logging_setup.get_logger("gym_continuousDoubleAuction.t").info("nowhere")
 
@@ -254,9 +253,10 @@ class TestRunLogFile:
 
     def test_the_file_name_and_bounds_come_from_the_file(self, tmp_path, config_tree):
         """No literal copy in Python - the property doc/18 claims."""
-        config_tree("tunable_constants.json", lambda raw: raw["logging"].update(
-            {"file_name": "renamed.log"}
-        ))
+        config_tree(
+            "tunable_constants.json",
+            lambda raw: raw["logging"].update({"file_name": "renamed.log"}),
+        )
         logging_setup.configure("INFO", log_dir=str(tmp_path), force=True)
         logging_setup.get_logger("gym_continuousDoubleAuction.t").info("x")
 
@@ -302,9 +302,9 @@ class TestIterationTag:
         logging_setup.configure("INFO", log_dir=str(tmp_path), force=True)
         logging_setup.set_iteration(5)
 
-        logging_setup.get_logger(
-            "gym_continuousDoubleAuction.envs.exchg.info_helper"
-        ).info("from a child")
+        logging_setup.get_logger("gym_continuousDoubleAuction.envs.exchg.info_helper").info(
+            "from a child"
+        )
 
         assert "iter=5" in (tmp_path / "run.log").read_text()
 
@@ -316,7 +316,6 @@ class TestIterationTag:
 
 
 class TestTimestampsAreOrderable:
-
     def test_the_date_is_in_the_stamp(self, tmp_path):
         """A training run outlasts a day; a time-only stamp cannot be ordered
         across midnight, nor joined to anything dated."""
@@ -345,14 +344,12 @@ class TestWorkerProcessesGetTheirOwn:
 
         assert os.environ[logging_setup.log_dir_env_var()] == str(tmp_path)
 
-    def test_a_worker_resolves_the_directory_from_the_environment(
-        self, tmp_path, monkeypatch
-    ):
+    def test_a_worker_resolves_the_directory_from_the_environment(self, tmp_path, monkeypatch):
         """A worker never runs train.main, so this is the only channel it has -
         the same route the level takes."""
         monkeypatch.setenv(logging_setup.log_dir_env_var(), str(tmp_path))
 
-        logging_setup.configure("INFO", force=True)   # no log_dir: a worker
+        logging_setup.configure("INFO", force=True)  # no log_dir: a worker
         logging_setup.get_logger("gym_continuousDoubleAuction.t").info("worker line")
 
         written = list(tmp_path.glob("run.*.log"))
@@ -377,9 +374,7 @@ class TestWorkerProcessesGetTheirOwn:
         assert path.endswith(".log")
         assert not (tmp_path / "run.log").exists()
 
-    def test_the_tag_is_unique_across_nodes_not_just_within_one(
-        self, tmp_path, monkeypatch
-    ):
+    def test_the_tag_is_unique_across_nodes_not_just_within_one(self, tmp_path, monkeypatch):
         """A pid is unique per node, and `log_base_dir` can be a shared mount.
 
         Two nodes number processes independently, so with results on NFS or a
@@ -394,9 +389,7 @@ class TestWorkerProcessesGetTheirOwn:
 
         def fake_ray(worker_id):
             return SimpleNamespace(
-                get_runtime_context=lambda: SimpleNamespace(
-                    get_worker_id=lambda: worker_id
-                )
+                get_runtime_context=lambda: SimpleNamespace(get_worker_id=lambda: worker_id)
             )
 
         # Same pid, two workers: the names must still differ.
@@ -412,9 +405,7 @@ class TestWorkerProcessesGetTheirOwn:
         assert first.endswith("aaaaaaaa.log")
         assert second.endswith("cccccccc.log")
 
-    def test_the_tag_falls_back_to_the_pid_without_ray(
-        self, tmp_path, monkeypatch
-    ):
+    def test_the_tag_falls_back_to_the_pid_without_ray(self, tmp_path, monkeypatch):
         """Ray is read from sys.modules, never imported: importing it here would
         make every consumer of the module pay for Ray, and put the import ahead
         of configure() and apply_env_vars()."""
@@ -426,28 +417,24 @@ class TestWorkerProcessesGetTheirOwn:
 
         logging_setup.configure("INFO", force=True)
 
-        assert logging_setup.log_file_path() == str(
-            tmp_path / f"run.{os.getpid()}.log"
-        )
+        assert logging_setup.log_file_path() == str(tmp_path / f"run.{os.getpid()}.log")
 
-    def test_a_ray_without_a_worker_id_does_not_break_logging(
-        self, tmp_path, monkeypatch
-    ):
+    def test_a_ray_without_a_worker_id_does_not_break_logging(self, tmp_path, monkeypatch):
         """A renamed API degrades to the pid rather than losing the log."""
         import os
         import sys
         from types import SimpleNamespace
 
         monkeypatch.setenv(logging_setup.log_dir_env_var(), str(tmp_path))
-        monkeypatch.setitem(sys.modules, "ray", SimpleNamespace(
-            get_runtime_context=lambda: (_ for _ in ()).throw(RuntimeError())
-        ))
+        monkeypatch.setitem(
+            sys.modules,
+            "ray",
+            SimpleNamespace(get_runtime_context=lambda: (_ for _ in ()).throw(RuntimeError())),
+        )
 
         logging_setup.configure("INFO", force=True)
 
-        assert logging_setup.log_file_path() == str(
-            tmp_path / f"run.{os.getpid()}.log"
-        )
+        assert logging_setup.log_file_path() == str(tmp_path / f"run.{os.getpid()}.log")
 
     def test_the_driver_keeps_the_plain_name(self, tmp_path):
         """Passing log_dir explicitly is what makes a process the driver."""
@@ -457,9 +444,10 @@ class TestWorkerProcessesGetTheirOwn:
         assert logging_setup.log_file_path() == str(tmp_path / "run.log")
 
     def test_the_variable_name_comes_from_the_file(self, config_tree):
-        config_tree("tunable_constants.json", lambda raw: raw["logging"].update(
-            {"dir_env_var": "CDA_OTHER_DIR"}
-        ))
+        config_tree(
+            "tunable_constants.json",
+            lambda raw: raw["logging"].update({"dir_env_var": "CDA_OTHER_DIR"}),
+        )
         assert logging_setup.log_dir_env_var() == "CDA_OTHER_DIR"
 
     def test_no_file_when_nothing_points_anywhere(self, tmp_path, monkeypatch):
@@ -496,9 +484,7 @@ class TestConcurrentConfiguration:
             start.wait()
             logging_setup.get_logger("gym_continuousDoubleAuction.race")
 
-        threads = [
-            threading.Thread(target=configure_from_scratch) for _ in range(8)
-        ]
+        threads = [threading.Thread(target=configure_from_scratch) for _ in range(8)]
         for thread in threads:
             thread.start()
         for thread in threads:
@@ -525,17 +511,15 @@ class TestConcurrentConfiguration:
         def reconfigure():
             while not stop.is_set():
                 try:
-                    logging_setup.configure(
-                        "INFO", log_dir=str(tmp_path), force=True
-                    )
-                except Exception as exc:      # pragma: no cover - the failure
+                    logging_setup.configure("INFO", log_dir=str(tmp_path), force=True)
+                except Exception as exc:  # pragma: no cover - the failure
                     errors.append(exc)
 
         def emit():
             for i in range(200):
                 try:
                     logger.info("line %s", i)
-                except Exception as exc:      # pragma: no cover - the failure
+                except Exception as exc:  # pragma: no cover - the failure
                     errors.append(exc)
 
         spinner = threading.Thread(target=reconfigure)
@@ -562,18 +546,13 @@ class TestConcurrentConfiguration:
             for i in range(100):
                 logger.info("%s-%03d-END", marker, i)
 
-        threads = [
-            threading.Thread(target=emit, args=(f"w{n}",)) for n in range(6)
-        ]
+        threads = [threading.Thread(target=emit, args=(f"w{n}",)) for n in range(6)]
         for thread in threads:
             thread.start()
         for thread in threads:
             thread.join()
 
-        lines = [
-            line for line in (tmp_path / "run.log").read_text().splitlines()
-            if "-END" in line
-        ]
+        lines = [line for line in (tmp_path / "run.log").read_text().splitlines() if "-END" in line]
         assert len(lines) == 600
         # A torn line would show a second record's text after the terminator.
         assert all(line.endswith("-END") for line in lines)
@@ -602,13 +581,9 @@ for i in range(200):
         import subprocess
         import sys
 
-        repo = str(
-            __import__("pathlib").Path(__file__).resolve().parents[2]
-        )
+        repo = str(__import__("pathlib").Path(__file__).resolve().parents[2])
         script = tmp_path / f"{name}.py"
-        script.write_text(self.SCRIPT.format(
-            repo=repo, kwargs=kwargs, marker=marker
-        ))
+        script.write_text(self.SCRIPT.format(repo=repo, kwargs=kwargs, marker=marker))
         return subprocess.Popen([sys.executable, str(script)])
 
     def test_two_workers_write_separate_files_and_lose_nothing(self, tmp_path):
@@ -620,28 +595,24 @@ for i in range(200):
         import subprocess
         import sys
 
-        repo = str(
-            __import__("pathlib").Path(__file__).resolve().parents[2]
-        )
+        repo = str(__import__("pathlib").Path(__file__).resolve().parents[2])
         env = dict(os.environ, **{env_var: str(tmp_path)})
         script = tmp_path / "worker.py"
-        script.write_text(self.SCRIPT.format(
-            repo=repo, kwargs=kwargs, marker="W",
-        ))
+        script.write_text(
+            self.SCRIPT.format(
+                repo=repo,
+                kwargs=kwargs,
+                marker="W",
+            )
+        )
 
-        procs = [
-            subprocess.Popen([sys.executable, str(script)], env=env)
-            for _ in range(2)
-        ]
+        procs = [subprocess.Popen([sys.executable, str(script)], env=env) for _ in range(2)]
         for proc in procs:
             assert proc.wait(timeout=120) == 0
 
         files = sorted(tmp_path.glob("run.*.log"))
         assert len(files) == 2, [f.name for f in files]
-        total = sum(
-            len([l for l in f.read_text().splitlines() if "END" in l])
-            for f in files
-        )
+        total = sum(len([l for l in f.read_text().splitlines() if "END" in l]) for f in files)
         assert total == 400
 
     def test_two_runs_do_not_share_a_driver_log(self, tmp_path):
@@ -692,23 +663,19 @@ configure("INFO", log_dir={log_dir!r}, force=True)
         import subprocess
         import sys
 
-        repo = str(
-            __import__("pathlib").Path(__file__).resolve().parents[2]
-        )
+        repo = str(__import__("pathlib").Path(__file__).resolve().parents[2])
         script = tmp_path / "dies.py"
-        script.write_text(self.SCRIPT.format(
-            repo=repo, log_dir=str(tmp_path), body=body
-        ))
+        script.write_text(self.SCRIPT.format(repo=repo, log_dir=str(tmp_path), body=body))
         proc = subprocess.run(
             [sys.executable, str(script)],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
         return proc, (tmp_path / "run.log").read_text()
 
     def test_the_traceback_reaches_the_run_log(self, tmp_path):
-        proc, log = self._run(
-            tmp_path, "raise AssertionError('NAV conservation VIOLATED')"
-        )
+        proc, log = self._run(tmp_path, "raise AssertionError('NAV conservation VIOLATED')")
 
         assert proc.returncode != 0
         assert "NAV conservation VIOLATED" in log
@@ -724,11 +691,14 @@ configure("INFO", log_dir={log_dir!r}, force=True)
 
     def test_an_exception_in_a_thread_is_logged(self, tmp_path):
         """threading.excepthook, which no try/except around train() would reach."""
-        _, log = self._run(tmp_path, (
-            "import threading\n"
-            "t = threading.Thread(target=lambda: 1 / 0, name='sampler')\n"
-            "t.start(); t.join()\n"
-        ))
+        _, log = self._run(
+            tmp_path,
+            (
+                "import threading\n"
+                "t = threading.Thread(target=lambda: 1 / 0, name='sampler')\n"
+                "t.start(); t.join()\n"
+            ),
+        )
 
         assert "unhandled ZeroDivisionError in thread sampler" in log
 
@@ -768,14 +738,14 @@ warnings.warn("ray is going to break this", DeprecationWarning)
         import subprocess
         import sys
 
-        repo = str(
-            __import__("pathlib").Path(__file__).resolve().parents[2]
-        )
+        repo = str(__import__("pathlib").Path(__file__).resolve().parents[2])
         script = tmp_path / "warns.py"
         script.write_text(self.SCRIPT.format(repo=repo, log_dir=str(tmp_path)))
         proc = subprocess.run(
             [sys.executable, str(script)],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
         return proc, (tmp_path / "run.log").read_text()
 
@@ -862,10 +832,7 @@ class TestIterationAcrossThreads:
         thread.start()
         thread.join()
 
-        line = [
-            l for l in (tmp_path / "run.log").read_text().splitlines()
-            if "elsewhere" in l
-        ][0]
+        line = [l for l in (tmp_path / "run.log").read_text().splitlines() if "elsewhere" in l][0]
         assert "iter=7" in line
 
     def test_a_thread_can_set_it_for_the_process(self, tmp_path):
@@ -921,11 +888,12 @@ class TestPropagation:
         """Turning propagation off must not cost the run its own log - the
         handler is on the package logger, not on root."""
         logging_setup.configure(
-            "INFO", log_dir=str(tmp_path), force=True, propagate=False,
+            "INFO",
+            log_dir=str(tmp_path),
+            force=True,
+            propagate=False,
         )
-        logging_setup.get_logger("gym_continuousDoubleAuction.test_prop").info(
-            "still recorded"
-        )
+        logging_setup.get_logger("gym_continuousDoubleAuction.test_prop").info("still recorded")
         for handler in logging.getLogger(logging_setup.ROOT_NAME).handlers:
             handler.flush()
 
@@ -946,6 +914,7 @@ class TestRayLoggingConfig:
 
     def _cfg(self, **kwargs):
         from gym_continuousDoubleAuction.train.train import TrainConfig
+
         return TrainConfig(episode_data_dir=None, **kwargs)
 
     def test_it_is_built_from_the_config(self):
@@ -1048,7 +1017,7 @@ class TestExcepthookInstallationIsGuarded:
         import inspect
 
         source = inspect.getsource(logging_setup.configure)
-        body = source[source.index("with _configure_lock:"):]
+        body = source[source.index("with _configure_lock:") :]
         installed = body.index("install_excepthooks()")
         # Everything inside the `with` block is indented past its own line.
         line = body[:installed].rsplit("\n", 1)[-1]

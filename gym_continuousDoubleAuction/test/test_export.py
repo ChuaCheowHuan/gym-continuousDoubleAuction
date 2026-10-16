@@ -7,6 +7,7 @@ the part that decides *which* module, which is where a wrong answer is silent:
 exporting policy_0 when the user wanted the winner produces a perfectly valid
 file of the wrong weights.
 """
+
 import json
 
 import pytest
@@ -59,16 +60,24 @@ class TestResolveModule:
             export.resolve_module({"champion_history": []}, None)
 
     def test_ties_go_to_the_earlier_promotion(self):
-        state = {"champion_history": [_champion("champion_1", "policy_0", 2, -5.0),
-                                      _champion("champion_2", "policy_1", 8, -5.0)]}
+        state = {
+            "champion_history": [
+                _champion("champion_1", "policy_0", 2, -5.0),
+                _champion("champion_2", "policy_1", 8, -5.0),
+            ]
+        }
         assert export.resolve_module(state, None)[0] == "champion_1"
 
     def test_a_champion_with_no_recorded_return_is_not_ranked(self):
         """A restore adopts a champion found in the checkpoint but missing from
         the sidecar with `return: None`. Ranked, it raised a TypeError comparing
         None with a float, which the CLI does not catch."""
-        state = {"champion_history": [_champion("champion_1", None, 3, None),
-                                      _champion("champion_2", "policy_1", 8, -5.0)]}
+        state = {
+            "champion_history": [
+                _champion("champion_1", None, 3, None),
+                _champion("champion_2", "policy_1", 8, -5.0),
+            ]
+        }
         assert export.resolve_module(state, None)[0] == "champion_2"
 
     def test_only_unranked_champions_is_an_error_that_says_so(self):
@@ -111,7 +120,10 @@ class TestLayoutWarning:
 class TestRecord:
     def test_it_carries_the_stamp_and_the_promotion(self):
         record = export.build_record(
-            _FakeModule(), "champion_2", "/tmp/iter_00016", STATE,
+            _FakeModule(),
+            "champion_2",
+            "/tmp/iter_00016",
+            STATE,
             STATE["champion_history"][1],
         )
         assert record["module_id"] == "champion_2"

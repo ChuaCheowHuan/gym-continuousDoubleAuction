@@ -13,6 +13,7 @@ price of a one-sided book is the last trade rather than the lone quote, which
 is also the chain `Exchg_Helper.mark_price` uses, so what the agent sees and
 what it is marked at agree.
 """
+
 import numpy as np
 import pytest
 
@@ -44,23 +45,29 @@ def _env(**overrides):
 
 
 def _pass(env):
-    return {agent: {"category": 0, "order_slot": 0, "price": 0, "price_offset": 1,
-                    "size": np.zeros(1, dtype=np.float32)}
-            for agent in env.agents}
+    return {
+        agent: {
+            "category": 0,
+            "order_slot": 0,
+            "price": 0,
+            "price_offset": 1,
+            "size": np.zeros(1, dtype=np.float32),
+        }
+        for agent in env.agents
+    }
 
 
 def _rows(env, frame):
     """The book block of one snapshot as a (book_rows, k_rows) grid."""
-    return np.asarray(frame[:env.book_dim]).reshape(env.book_rows, env.k_rows)
+    return np.asarray(frame[: env.book_dim]).reshape(env.book_rows, env.k_rows)
 
 
 def _newest(env, obs, agent="agent_0"):
     o = obs[agent]
-    return o[(env.n_hist - 1) * env.snapshot_dim:env.n_hist * env.snapshot_dim]
+    return o[(env.n_hist - 1) * env.snapshot_dim : env.n_hist * env.snapshot_dim]
 
 
 class TestLayout:
-
     def test_six_book_rows_and_the_version(self):
         env = _env()
         assert BOOK_ROW_ORDER[4:] == ("bid_occupied", "ask_occupied")
@@ -81,7 +88,6 @@ class TestLayout:
 
 
 class TestOccupancy:
-
     def test_occupancy_equals_size_present(self):
         """The row is exactly `size > 0`, per level, on both sides, every step."""
         env = _env(num_of_agents=4, max_step=40)
@@ -105,7 +111,9 @@ class TestOccupancy:
         env = _env()
         a, _ = env.traders
         env.last_price = 98.0
-        a.place_order('limit', 'bid', 10, 98.0, env.LOB, env.traders)  # one-sided, at the last trade
+        a.place_order(
+            'limit', 'bid', 10, 98.0, env.LOB, env.traders
+        )  # one-sided, at the last trade
         obs, _, _, _, _ = env.step(_pass(env))
         grid = _rows(env, _newest(env, obs))
         bid_price = grid[BOOK_ROW_ORDER.index("bid_price")]
@@ -124,7 +132,9 @@ class TestOccupancy:
         b.place_order('limit', 'ask', 10, 98.0, env.LOB, env.traders)
         obs, _, _, _, _ = env.step(_pass(env))
         o = obs["agent_0"]
-        older = _rows(env, o[(env.n_hist - 2) * env.snapshot_dim:(env.n_hist - 1) * env.snapshot_dim])
+        older = _rows(
+            env, o[(env.n_hist - 2) * env.snapshot_dim : (env.n_hist - 1) * env.snapshot_dim]
+        )
         newest = _rows(env, _newest(env, obs))
         assert older[BID_OCC][0] == 1.0
         assert newest[BID_OCC][0] == 0.0
@@ -141,7 +151,6 @@ class TestOccupancy:
 
 
 class TestReferencePrice:
-
     def test_two_sided_book_uses_the_midpoint(self):
         env = _env()
         a, b = env.traders
@@ -177,7 +186,7 @@ class TestReferencePrice:
         a, b = env.traders
         a.place_order('limit', 'bid', 10, 100.0, env.LOB, env.traders)
         b.place_order('limit', 'ask', 10, 100.0, env.LOB, env.traders)  # prints at 100
-        a.place_order('limit', 'bid', 10, 90.0, env.LOB, env.traders)   # one-sided now
+        a.place_order('limit', 'bid', 10, 90.0, env.LOB, env.traders)  # one-sided now
         env.set_agg_LOB()
         assert float(env.last_price) == 100.0
         assert env.mid_price() == float(env.mark_price()) == 100.0

@@ -19,6 +19,7 @@ them would fail against a perfectly good checkpoint. `ACTING_ONLY` names the
 subset a runner is expected to keep current, and the champion test uses it to
 check the weights that actually choose actions.
 """
+
 import os
 import shutil
 import tempfile
@@ -66,18 +67,14 @@ def _acting_only(state):
     structure: it never runs on an EnvRunner, so its copy there is whatever the
     module was built with.
     """
-    return {
-        k: v for k, v in state.items()
-        if "critic" not in k and not k.startswith("vf.")
-    }
+    return {k: v for k, v in state.items() if "critic" not in k and not k.startswith("vf.")}
 
 
 def _as_numpy(state):
     out = {}
     for key, value in state.items():
         out[key] = (
-            value.detach().cpu().numpy() if torch.is_tensor(value)
-            else np.asarray(value)
+            value.detach().cpu().numpy() if torch.is_tensor(value) else np.asarray(value)
         ).astype(np.float64)
     return out
 
@@ -117,9 +114,7 @@ class TestRealCheckpointRoundTrip:
             num_cpus=2,
         )
         cls.tmpdir = tempfile.mkdtemp(prefix="cda_ckpt_roundtrip_")
-        cls.cfg = TrainConfig(
-            log_base_dir=cls.tmpdir, chkpt_keep=0, **TEST_CFG
-        )
+        cls.cfg = TrainConfig(log_base_dir=cls.tmpdir, chkpt_keep=0, **TEST_CFG)
 
         ppo, callback = build_config(cls.cfg)
         original = ppo.build_algo()
@@ -138,13 +133,9 @@ class TestRealCheckpointRoundTrip:
         cls.champion_id_counter = callback.champion_id_counter
 
         cls.saved_iteration = int(original.iteration)
-        cls.checkpoint_path = save_checkpoint(
-            original, cls.cfg, cls.saved_iteration
-        )
+        cls.checkpoint_path = save_checkpoint(original, cls.cfg, cls.saved_iteration)
         cls.saved_weights = _learner_weights(original, cls.source_pid)
-        cls.saved_champion_acting = _acting_only(
-            _runner_weights(original, cls.champion_id)
-        )
+        cls.saved_champion_acting = _acting_only(_runner_weights(original, cls.champion_id))
         original.stop()
 
         cls.restored, cls.restored_callback = build_algo(
@@ -162,9 +153,7 @@ class TestRealCheckpointRoundTrip:
             self.cfg.checkpoint_dir,
             f"{CHECKPOINT_PREFIX}{self.saved_iteration:05d}",
         )
-        assert os.path.isfile(
-            os.path.join(self.checkpoint_path, LEAGUE_STATE_FILE)
-        )
+        assert os.path.isfile(os.path.join(self.checkpoint_path, LEAGUE_STATE_FILE))
 
     def test_trained_weights_survive(self):
         """The point of the whole mechanism: not a fresh initialisation."""
@@ -198,9 +187,7 @@ class TestRealCheckpointRoundTrip:
         """The callback handed back is the algorithm's own, holding the league."""
         assert self.restored_callback is not None
         assert self.restored_callback is train_mod.algo_callback(self.restored)
-        assert [
-            c["id"] for c in self.restored_callback.champion_history
-        ] == self.champion_ids
+        assert [c["id"] for c in self.restored_callback.champion_history] == self.champion_ids
         for champion_id in self.champion_ids:
             assert champion_id in self.restored_callback.available_modules
         # Nothing may re-mint an ID a live champion already holds.
@@ -246,10 +233,9 @@ class TestRealCheckpointRoundTrip:
 
         assert int(self.restored.iteration) == self.saved_iteration + 1
         assert result.get(ENV_RUNNER_RESULTS), (
-            "the resumed iteration produced no env_runners block, i.e. it "
-            "trained on no samples"
+            "the resumed iteration produced no env_runners block, i.e. it trained on no samples"
         )
         after = _learner_weights(self.restored, self.source_pid)
-        assert any(
-            not np.allclose(before[k], after[k]) for k in before
-        ), "weights did not move: the resumed run is not learning"
+        assert any(not np.allclose(before[k], after[k]) for k in before), (
+            "weights did not move: the resumed run is not learning"
+        )

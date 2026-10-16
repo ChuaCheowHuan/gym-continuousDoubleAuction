@@ -31,6 +31,7 @@ term - silently, and only under that setting. `moe_learner` hit exactly this
 and had to average over blocks rather than sum. Here the collector takes the
 *first* sub-encoder that has stats, actor before critic, and stops.
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, List
@@ -150,8 +151,7 @@ class JEPARLModule(CDAPPOTorchRLModule):
         collected, _sub = _jepa_sub_encoder(getattr(self, "encoder", None))
         for name in _SUB_ENCODERS:
             other = getattr(getattr(self, "encoder", None), name, None)
-            if (name != collected and other is not None
-                    and hasattr(other, "objective_enabled")):
+            if name != collected and other is not None and hasattr(other, "objective_enabled"):
                 other.objective_enabled = False
 
         if not self.inference_only:
@@ -236,12 +236,9 @@ class CDAJEPALearner(CDAPPOTorchLearner):
 
         world_loss = fwd_out.get(JEPA_WORLD_LOSS)
         if world_loss is not None:
-            self.metrics.log_dict(
-                {JEPA_WORLD_LOSS_KEY: world_loss}, key=module_id, window=1
-            )
+            self.metrics.log_dict({JEPA_WORLD_LOSS_KEY: world_loss}, key=module_id, window=1)
             total_loss = total_loss + (
-                self._encoder_setting(module_id, "world_model_coeff")
-                * world_loss
+                self._encoder_setting(module_id, "world_model_coeff") * world_loss
             )
         return total_loss
 
@@ -259,9 +256,7 @@ class CDAJEPALearner(CDAPPOTorchLearner):
         coefficient would be added unweighted, which is a silent change to what
         is being optimised.
         """
-        _name, sub = _jepa_sub_encoder(
-            getattr(self.module[module_id], "encoder", None)
-        )
+        _name, sub = _jepa_sub_encoder(getattr(self.module[module_id], "encoder", None))
         value = getattr(getattr(sub, "config", None), name, None)
         if value is None:
             raise ValueError(

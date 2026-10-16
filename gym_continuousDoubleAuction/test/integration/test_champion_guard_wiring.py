@@ -6,6 +6,7 @@ fine while doing nothing: that the per-module trade counts logged at episode end
 really arrive, under the module ids the check asks about, in the compiled
 result; and that RLlib applies the entropy schedule the config asks for.
 """
+
 import shutil
 import tempfile
 
@@ -37,14 +38,13 @@ TEST_CFG = dict(
 
 
 class TestTheGuardOnARealRun:
-
     @classmethod
     def setup_class(cls):
-        ray.init(ignore_reinit_error=True, include_dashboard=False,
-                 log_to_driver=False, num_cpus=2)
+        ray.init(ignore_reinit_error=True, include_dashboard=False, log_to_driver=False, num_cpus=2)
         cls.tmpdir = tempfile.mkdtemp(prefix="cda_guard_")
-        cls.cfg = TrainConfig(log_base_dir=cls.tmpdir, num_iters=NUM_ITERS,
-                              chkpt_freq=0, chkpt_keep=0, **TEST_CFG)
+        cls.cfg = TrainConfig(
+            log_base_dir=cls.tmpdir, num_iters=NUM_ITERS, chkpt_freq=0, chkpt_keep=0, **TEST_CFG
+        )
         cls.algo, cls.result = train(cls.cfg)
 
     @classmethod

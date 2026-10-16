@@ -15,6 +15,7 @@ From a notebook:
     cfg = TrainConfig(num_agents=8, num_trained_agents=2, num_iters=16)
     algo, result = train(cfg)
 """
+
 from __future__ import annotations
 import os
 from typing import Tuple
@@ -115,14 +116,19 @@ def train(cfg: TrainConfig) -> Tuple[Algorithm, dict]:
 
     if start:
         logger.info(
-            "resuming at iteration %s, training through %s", start, target,
+            "resuming at iteration %s, training through %s",
+            start,
+            target,
         )
 
     if start >= target:
         logger.warning(
             "checkpoint is already at iteration %s, at or past the target of "
             "%s - nothing to do. Raise num_iters, or set num_iters_is_delta to "
-            "run %s more from here.", start, target, cfg.num_iters,
+            "run %s more from here.",
+            start,
+            target,
+            cfg.num_iters,
         )
         return algo, {}
 
@@ -155,12 +161,14 @@ def train(cfg: TrainConfig) -> Tuple[Algorithm, dict]:
             saved_at = iteration
             logger.info(
                 "checkpoint at iter %s: %s",
-                iteration, save_checkpoint(algo, cfg, iteration),
+                iteration,
+                save_checkpoint(algo, cfg, iteration),
             )
 
     if saved_at != iteration:
         logger.info(
-            "final checkpoint: %s", save_checkpoint(algo, cfg, iteration),
+            "final checkpoint: %s",
+            save_checkpoint(algo, cfg, iteration),
         )
     return algo, result
 
@@ -173,13 +181,71 @@ _CLI_NAMES = ("_parse_args", "configure_run_logging", "ray_logging_config", "mai
 def __getattr__(name):
     if name in _CLI_NAMES:
         from gym_continuousDoubleAuction.train import cli
+
         return getattr(cli, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = ["train", "generate_run_id", "_default", "TrainConfig", "ENV_NAME", "TRAIN_CONFIG_FILE", "PROGRESS_FILE", "_BROADCAST_TIMEOUT_S", "VF_EXPLAINED_VAR_KEY", "register_env", "make_spaces", "_next_obs_connector", "CBP_CONFIG_KEY", "OPTIMIZER_CONFIG_KEY", "_learner_class", "_learner_config_dict", "build_config", "build_algo", "log_module_sizes", "CHECKPOINT_PREFIX", "CHECKPOINT_TMP_SUFFIX", "LEAGUE_STATE_FILE", "_NOTED_OLD_LAYOUT", "_is_checkpoint", "list_checkpoints", "save_checkpoint", "_prune_checkpoints", "_mtime", "_iteration_of", "warn_about_foreign_checkpoints", "algo_callback", "_write_league_state", "_read_league_state", "_present_module_ids", "_reconcile_league_state", "STRUCTURAL_CONFIG_KEYS", "UNRESTORABLE_CONFIG_KEYS", "UNRESTORABLE_WHEN_ACTIVE_KEYS", "PRE_FEATURE_BEHAVIOUR", "_config_fingerprint", "_encoder_fingerprint", "_model_config_get", "_check_restored_config", "restore_candidates", "_checkpoint_iteration", "_fix_checkpoint_optimizer_betas", "NavConservationError", "nav_violations", "_check_nav_conservation", "_apply_iteration", "_broadcast_iteration", "_json_safe", "_append_progress", "vf_explained_var", "_log_iteration"]
+__all__ = [
+    "train",
+    "generate_run_id",
+    "_default",
+    "TrainConfig",
+    "ENV_NAME",
+    "TRAIN_CONFIG_FILE",
+    "PROGRESS_FILE",
+    "_BROADCAST_TIMEOUT_S",
+    "VF_EXPLAINED_VAR_KEY",
+    "register_env",
+    "make_spaces",
+    "_next_obs_connector",
+    "CBP_CONFIG_KEY",
+    "OPTIMIZER_CONFIG_KEY",
+    "_learner_class",
+    "_learner_config_dict",
+    "build_config",
+    "build_algo",
+    "log_module_sizes",
+    "CHECKPOINT_PREFIX",
+    "CHECKPOINT_TMP_SUFFIX",
+    "LEAGUE_STATE_FILE",
+    "_NOTED_OLD_LAYOUT",
+    "_is_checkpoint",
+    "list_checkpoints",
+    "save_checkpoint",
+    "_prune_checkpoints",
+    "_mtime",
+    "_iteration_of",
+    "warn_about_foreign_checkpoints",
+    "algo_callback",
+    "_write_league_state",
+    "_read_league_state",
+    "_present_module_ids",
+    "_reconcile_league_state",
+    "STRUCTURAL_CONFIG_KEYS",
+    "UNRESTORABLE_CONFIG_KEYS",
+    "UNRESTORABLE_WHEN_ACTIVE_KEYS",
+    "PRE_FEATURE_BEHAVIOUR",
+    "_config_fingerprint",
+    "_encoder_fingerprint",
+    "_model_config_get",
+    "_check_restored_config",
+    "restore_candidates",
+    "_checkpoint_iteration",
+    "_fix_checkpoint_optimizer_betas",
+    "NavConservationError",
+    "nav_violations",
+    "_check_nav_conservation",
+    "_apply_iteration",
+    "_broadcast_iteration",
+    "_json_safe",
+    "_append_progress",
+    "vf_explained_var",
+    "_log_iteration",
+]
 
 
 if __name__ == "__main__":
     from gym_continuousDoubleAuction.train.cli import main
+
     main()

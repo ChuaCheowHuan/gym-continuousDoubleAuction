@@ -3,6 +3,7 @@
 Defaults come from `config/cli_defaults.json` -> `cda_probe`; this module holds
 no literal default, on the same rule as `CDA_rand`.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -57,9 +58,7 @@ def build_features(
     for encoder_type in encoders:
         module = features_module.build_module(obs_space, act_space, encoder_type)
         features[encoder_type] = features_module.latents(module, corpus)
-        logger.info(
-            "%s: untrained latents %s", encoder_type, features[encoder_type].shape
-        )
+        logger.info("%s: untrained latents %s", encoder_type, features[encoder_type].shape)
 
     if checkpoint:
         module = features_module.load_module(checkpoint, module_id)
@@ -71,9 +70,7 @@ def build_features(
         # Built from the config file's spec block, so the fingerprint written
         # beside the weights is comparable with the one being built here - a
         # mismatch raises rather than loading partially.
-        spec = group("train_config.json", "encoder")["encoder_specs"].get(
-            pretrained_encoder, {}
-        )
+        spec = group("train_config.json", "encoder")["encoder_specs"].get(pretrained_encoder, {})
         module = features_module.pretrained_module(
             obs_space, act_space, pretrained_encoder, pretrained, spec
         )
@@ -87,19 +84,26 @@ def build_features(
 def main(argv=None):
     p = argparse.ArgumentParser(
         description="Score observation encoders on reward-free microstructure "
-                    "targets. See doc/23_probe_harness.md.",
+        "targets. See doc/23_probe_harness.md.",
     )
     p.add_argument(
-        "--encoders", nargs="*", default=_cli("encoders"),
+        "--encoders",
+        nargs="*",
+        default=_cli("encoders"),
         help=f"Architectures to score untrained. Available: "
-             f"{', '.join(selectable_encoder_types())}.",
+        f"{', '.join(selectable_encoder_types())}.",
     )
     p.add_argument(
-        "--targets", nargs="*", default=_cli("targets"),
+        "--targets",
+        nargs="*",
+        default=_cli("targets"),
         help=f"Available: {', '.join(targets_module.selectable_targets())}.",
     )
     p.add_argument(
-        "--horizons", nargs="*", type=int, default=_cli("horizons"),
+        "--horizons",
+        nargs="*",
+        type=int,
+        default=_cli("horizons"),
         help="Steps ahead each target looks.",
     )
     p.add_argument("--episodes", type=int, default=_cli("num_episodes"))
@@ -107,39 +111,49 @@ def main(argv=None):
     p.add_argument("--agents", type=int, default=_cli("num_agents"))
     p.add_argument("--seed", type=int, default=_cli("seed"))
     p.add_argument(
-        "--parquet", type=str, default=None,
+        "--parquet",
+        type=str,
+        default=None,
         help="Read the corpus from episode_record output instead of running "
-             "rollouts. A file or a directory searched recursively.",
+        "rollouts. A file or a directory searched recursively.",
     )
     p.add_argument(
-        "--max-rows", type=int, default=None,
+        "--max-rows",
+        type=int,
+        default=None,
         help="Cap on rows read from --parquet.",
     )
     p.add_argument(
-        "--per-agent", action="store_true",
+        "--per-agent",
+        action="store_true",
         help="Keep every agent's row from --parquet rather than one per step. "
-             "The rows at one step share a book and differ only in their "
-             "private tail, so this multiplies the corpus by the agent count "
-             "while adding only private state - useful when that is the "
-             "subject, misleading otherwise.",
+        "The rows at one step share a book and differ only in their "
+        "private tail, so this multiplies the corpus by the agent count "
+        "while adding only private state - useful when that is the "
+        "subject, misleading otherwise.",
     )
     p.add_argument(
-        "--checkpoint", type=str, default=None,
-        help="An iter_<n> checkpoint directory, scored alongside the "
-             "untrained encoders.",
+        "--checkpoint",
+        type=str,
+        default=None,
+        help="An iter_<n> checkpoint directory, scored alongside the untrained encoders.",
     )
     p.add_argument("--module-id", type=str, default=_cli("module_id"))
     p.add_argument(
-        "--pretrained", type=str, default=None,
+        "--pretrained",
+        type=str,
+        default=None,
         help="A directory written by `train.pretrain`, scored alongside the "
-             "untrained encoders. Putting the same architecture in the report "
-             "twice - once at initialisation, once pretrained - is what "
-             "isolates what the self-supervised objective actually taught it.",
+        "untrained encoders. Putting the same architecture in the report "
+        "twice - once at initialisation, once pretrained - is what "
+        "isolates what the self-supervised objective actually taught it.",
     )
     p.add_argument(
-        "--pretrained-encoder", type=str, default="jepa",
+        "--pretrained-encoder",
+        type=str,
+        default="jepa",
         help="Which architecture --pretrained holds. Its spec comes from "
-             "train_config.json, so the fingerprint check is meaningful.",
+        "train_config.json, so the fingerprint check is meaningful.",
     )
     p.add_argument("--out", type=str, default=None, help="Write the report here too.")
     p.add_argument("--log-level", type=str, default=_cli("log_level"))
@@ -149,7 +163,9 @@ def main(argv=None):
 
     if args.parquet:
         corpus = corpus_module.from_parquet(
-            args.parquet, max_rows=args.max_rows, per_agent=args.per_agent,
+            args.parquet,
+            max_rows=args.max_rows,
+            per_agent=args.per_agent,
         )
     else:
         corpus = corpus_module.from_rollouts(
@@ -160,20 +176,26 @@ def main(argv=None):
         )
 
     features = build_features(
-        corpus, args.encoders, args.checkpoint, args.module_id,
-        args.pretrained, args.pretrained_encoder,
+        corpus,
+        args.encoders,
+        args.checkpoint,
+        args.module_id,
+        args.pretrained,
+        args.pretrained_encoder,
     )
     rows = report_module.run(corpus, features, args.targets, args.horizons)
     ranks = rank_module.rank_table(features)
-    text = "\n".join([
-        f"Corpus: {corpus.describe()}",
-        f"Source: {args.parquet or 'random-agent rollouts'}"
-        + (" (per-agent rows)" if args.parquet and args.per_agent else ""),
-        "",
-        report_module.render(rows, list(features)),
-        "",
-        rank_module.render(ranks, list(features)),
-    ])
+    text = "\n".join(
+        [
+            f"Corpus: {corpus.describe()}",
+            f"Source: {args.parquet or 'random-agent rollouts'}"
+            + (" (per-agent rows)" if args.parquet and args.per_agent else ""),
+            "",
+            report_module.render(rows, list(features)),
+            "",
+            rank_module.render(ranks, list(features)),
+        ]
+    )
 
     # Through the logger, not `print`: everything under `train/` reports that
     # way (`test_no_module_calls_print`), and it means the report also lands in

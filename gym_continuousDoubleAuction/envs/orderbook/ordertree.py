@@ -2,6 +2,7 @@ from sortedcontainers import SortedDict
 from .orderlist import OrderList
 from .order import Order
 
+
 class OrderTree(object):
     '''A red-black tree used to store OrderLists in price order
 
@@ -10,12 +11,12 @@ class OrderTree(object):
     '''
 
     def __init__(self):
-        self.price_map = SortedDict() # Dictionary containing price : OrderList object
-        self.prices = self.price_map.keys() # sorted by prices so prices are keys
-        self.order_map = {} # Dictionary containing order_id : Order object
-        self.volume = 0 # Contains total quantity from all Orders in tree
-        self.num_orders = 0 # Contains count of Orders in tree
-        self.depth = 0 # Number of different prices in tree (http://en.wikipedia.org/wiki/Order_book_(trading)#Book_depth)
+        self.price_map = SortedDict()  # Dictionary containing price : OrderList object
+        self.prices = self.price_map.keys()  # sorted by prices so prices are keys
+        self.order_map = {}  # Dictionary containing order_id : Order object
+        self.volume = 0  # Contains total quantity from all Orders in tree
+        self.num_orders = 0  # Contains count of Orders in tree
+        self.depth = 0  # Number of different prices in tree (http://en.wikipedia.org/wiki/Order_book_(trading)#Book_depth)
 
     def __len__(self):
         return len(self.order_map)
@@ -27,12 +28,12 @@ class OrderTree(object):
         return self.order_map[order_id]
 
     def create_price(self, price):
-        self.depth += 1 # Add a price depth level to the tree
+        self.depth += 1  # Add a price depth level to the tree
         new_list = OrderList()
         self.price_map[price] = new_list
 
     def remove_price(self, price):
-        self.depth -= 1 # Remove a price depth level
+        self.depth -= 1  # Remove a price depth level
         del self.price_map[price]
 
     def price_exists(self, price):
@@ -45,12 +46,14 @@ class OrderTree(object):
         if self.order_exists(quote['order_id']):
             self.remove_order_by_id(quote['order_id'])
         self.num_orders += 1
-        
-        if quote['price'] not in self.price_map:
-            self.create_price(quote['price']) # If price not in Price Map, create a node in RBtree
 
-        order = Order(quote, self.price_map[quote['price']]) # Create an order
-        self.price_map[order.price].append_order(order) # Add the order to the OrderList in Price Map
+        if quote['price'] not in self.price_map:
+            self.create_price(quote['price'])  # If price not in Price Map, create a node in RBtree
+
+        order = Order(quote, self.price_map[quote['price']])  # Create an order
+        self.price_map[order.price].append_order(
+            order
+        )  # Add the order to the OrderList in Price Map
         self.order_map[order.order_id] = order
         self.volume += order.quantity
 

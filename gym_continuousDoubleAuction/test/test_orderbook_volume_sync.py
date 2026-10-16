@@ -7,11 +7,13 @@ if "../" not in sys.path:
 
 from gym_continuousDoubleAuction.envs.orderbook.orderbook import OrderBook
 
+
 class TestOrderBookVolumeSync:
     """
     Test case to ensure that OrderTree.volume remains in sync with
     the actual sum of order volumes, especially after partial fills.
     """
+
     def setup_method(self):
         self.ob = OrderBook()
 
@@ -22,13 +24,17 @@ class TestOrderBookVolumeSync:
 
     def test_partial_fill_volume_sync(self):
         # 1. Place a limit ask for 10 units at price 100
-        self.ob.process_order({
-            'type': 'limit',
-            'side': 'ask',
-            'quantity': Decimal('10'),
-            'price': Decimal('100'),
-            'trade_id': 'S1'
-        }, False, False)
+        self.ob.process_order(
+            {
+                'type': 'limit',
+                'side': 'ask',
+                'quantity': Decimal('10'),
+                'price': Decimal('100'),
+                'trade_id': 'S1',
+            },
+            False,
+            False,
+        )
 
         initial_tree_vol = self.ob.asks.volume
         initial_calc_vol = self.get_calculated_volume('ask')
@@ -37,13 +43,17 @@ class TestOrderBookVolumeSync:
         assert initial_calc_vol == Decimal('10')
 
         # 2. Execute a partial fill: A bid for 4 units at price 100
-        self.ob.process_order({
-            'type': 'limit',
-            'side': 'bid',
-            'quantity': Decimal('4'),
-            'price': Decimal('100'),
-            'trade_id': 'B1'
-        }, False, False)
+        self.ob.process_order(
+            {
+                'type': 'limit',
+                'side': 'bid',
+                'quantity': Decimal('4'),
+                'price': Decimal('100'),
+                'trade_id': 'B1',
+            },
+            False,
+            False,
+        )
 
         final_tree_vol = self.ob.asks.volume
         final_calc_vol = self.get_calculated_volume('ask')

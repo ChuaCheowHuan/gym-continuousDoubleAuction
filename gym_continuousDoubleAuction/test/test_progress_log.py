@@ -12,6 +12,7 @@ scalars and arrays, occasionally an object with no JSON form, and NaNs early in
 a run; a logger that raised on any of those would take down a training run that
 was otherwise fine. See doc/11 2.1.
 """
+
 import dataclasses
 import json
 import logging
@@ -65,10 +66,14 @@ class FakeAlgo:
                 "module_episode_returns_mean": {"policy_0": np.float32(1.5)},
             },
         }
-        result.update(_learner_block(**{
-            f"policy_{i}": {VF_EXPLAINED_VAR_KEY: np.float32(v)}
-            for i, v in enumerate(self.vf_values)
-        }))
+        result.update(
+            _learner_block(
+                **{
+                    f"policy_{i}": {VF_EXPLAINED_VAR_KEY: np.float32(v)}
+                    for i, v in enumerate(self.vf_values)
+                }
+            )
+        )
         return result
 
     def save(self, path):
@@ -126,9 +131,7 @@ class TestProgressFile:
         an *earlier* run. A per-run checkpoint tree would hide it and every
         resumed run would start from nothing.
         """
-        assert cfg.checkpoint_dir == os.path.join(
-            os.path.abspath(cfg.log_base_dir), "chkpt"
-        )
+        assert cfg.checkpoint_dir == os.path.join(os.path.abspath(cfg.log_base_dir), "chkpt")
         assert not cfg.checkpoint_dir.startswith(cfg.run_dir)
 
     def test_one_line_per_iteration(self, cfg, looped):
@@ -241,7 +244,8 @@ class TestFailuresDoNotStopTraining:
 
     def test_the_loop_finishes_even_when_every_write_fails(self, cfg, monkeypatch, looped):
         monkeypatch.setattr(
-            train_mod, "_json_safe",
+            train_mod,
+            "_json_safe",
             lambda _r: (_ for _ in ()).throw(RuntimeError("unserialisable")),
         )
 
@@ -358,9 +362,7 @@ class TestRunDirectoryIsolation:
         second = dataclasses.replace(cfg, num_iters=2, run_id="second")
 
         for config in (first, second):
-            monkeypatch.setattr(
-                train_mod, "build_algo", lambda _cfg: (FakeAlgo(), None)
-            )
+            monkeypatch.setattr(train_mod, "build_algo", lambda _cfg: (FakeAlgo(), None))
             train(config)
 
         assert first.progress_path != second.progress_path
@@ -370,9 +372,7 @@ class TestRunDirectoryIsolation:
     def test_a_pinned_id_extends_rather_than_starting_over(self, cfg, monkeypatch):
         """The append-mode property, still true inside a run directory."""
         config = dataclasses.replace(cfg, run_id="resumed", num_iters=2)
-        monkeypatch.setattr(
-            train_mod, "build_algo", lambda _cfg: (FakeAlgo(), None)
-        )
+        monkeypatch.setattr(train_mod, "build_algo", lambda _cfg: (FakeAlgo(), None))
         train(config)
         monkeypatch.setattr(
             train_mod,
@@ -381,9 +381,7 @@ class TestRunDirectoryIsolation:
         )
         train(dataclasses.replace(config, num_iters=4))
 
-        assert [line["training_iteration"] for line in _lines(config)] == [
-            1, 2, 3, 4
-        ]
+        assert [line["training_iteration"] for line in _lines(config)] == [1, 2, 3, 4]
 
 
 class TestIterationReachesTheEnvRunners:
@@ -506,6 +504,7 @@ class TestIterationBroadcastReportsPartialDelivery:
     def test_a_group_that_cannot_be_counted_stays_quiet(self, caplog):
         """The count is itself best-effort - an RLlib rename here must not turn
         a working broadcast into a warning on every iteration."""
+
         class NoCount(self._Group):
             def num_healthy_remote_env_runners(self):
                 raise AttributeError("renamed in this Ray")
@@ -520,6 +519,7 @@ class TestIterationBroadcastReportsPartialDelivery:
     def test_a_failed_broadcast_still_degrades_quietly(self, caplog):
         """The pre-existing contract: a runner that is restarting must cost
         `iter=-`, never the run."""
+
         class Broken:
             def foreach_env_runner(self, func, **kwargs):
                 raise RuntimeError("actor unreachable")

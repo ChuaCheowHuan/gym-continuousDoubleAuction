@@ -41,6 +41,7 @@ Levels used across the package:
 `ERROR`      A broken invariant, e.g. NAV conservation failing.
 ===========  =============================================================
 """
+
 from __future__ import annotations
 
 import logging
@@ -234,9 +235,7 @@ def configure(
                 root.removeHandler(handler)
             _log_file_path = None
 
-            formatter = logging.Formatter(
-                settings["format"], datefmt=settings["datefmt"]
-            )
+            formatter = logging.Formatter(settings["format"], datefmt=settings["datefmt"])
             iteration_filter = _IterationFilter()
 
             # Explicitly stdout. `logging.StreamHandler()` defaults to stderr,
@@ -386,7 +385,8 @@ def _build_file_handler(log_dir: str, settings: dict, own_file: bool):
     except OSError:
         logging.getLogger(ROOT_NAME).warning(
             "could not open the run log at %s - continuing with stdout only",
-            path, exc_info=True,
+            path,
+            exc_info=True,
         )
         return None
 
@@ -478,17 +478,17 @@ def install_excepthooks() -> None:
             logger.info("interrupted")
         else:
             logger.error(
-                "unhandled %s, the process is exiting", exc_type.__name__,
+                "unhandled %s, the process is exiting",
+                exc_type.__name__,
                 exc_info=(exc_type, exc_value, exc_tb),
             )
         previous_sys_hook(exc_type, exc_value, exc_tb)
 
     def _thread_hook(args):
-        if args.exc_type is not None and not issubclass(
-            args.exc_type, SystemExit
-        ):
+        if args.exc_type is not None and not issubclass(args.exc_type, SystemExit):
             logger.error(
-                "unhandled %s in thread %s", args.exc_type.__name__,
+                "unhandled %s in thread %s",
+                args.exc_type.__name__,
                 getattr(args.thread, "name", "?"),
                 exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
             )

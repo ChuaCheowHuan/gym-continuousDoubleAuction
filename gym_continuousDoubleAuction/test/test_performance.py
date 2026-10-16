@@ -4,6 +4,7 @@ The arithmetic is checked against a four-step series worked by hand, so a change
 definition (annualising, a different denominator, counting passes in the hit rate) fails
 here rather than quietly moving every reported number.
 """
+
 import math
 from decimal import Decimal
 from unittest.mock import MagicMock
@@ -61,12 +62,11 @@ class TestTheDefinitions:
 
 
 class TestUndefinedIsNotZero:
-
     def test_an_agent_that_did_nothing_has_no_sharpe_sortino_or_hit_rate(self):
         summary = _tally([("100", 0)] * 5).summary()
         assert summary["sharpe"] is None and summary["sortino"] is None
         assert summary["hit_rate"] is None
-        assert summary["max_drawdown"] == 0.0           # it is defined, and it is zero
+        assert summary["max_drawdown"] == 0.0  # it is defined, and it is zero
         assert summary["position_turnover"] == 0.0
 
     def test_no_losing_step_means_no_sortino(self):
@@ -80,10 +80,9 @@ class TestUndefinedIsNotZero:
 
 
 class TestBadInput:
-
     def test_a_nonpositive_previous_nav_gives_no_return_for_that_step(self):
         tally = _tally([("0", 0), ("10", 0), ("20", 0)])
-        assert tally.n == 1                              # only 10 -> 20
+        assert tally.n == 1  # only 10 -> 20
 
     def test_a_negative_nav_does_not_divide_by_it(self):
         tally = _tally([("-5", 0), ("10", 0)])
@@ -107,12 +106,11 @@ class TestBadInput:
         tally = PerformanceTally()
         tally.update(Decimal("1000000000000000.01"), 0)
         tally.update(Decimal("1000000000000000.02"), 0)
-        assert tally._sum > 0                            # a float round trip makes this 0
+        assert tally._sum > 0  # a float round trip makes this 0
 
 
 def _callback():
-    return SelfPlayCallback(num_trainable_policies=2, num_random_policies=6,
-                            episode_data_dir=None)
+    return SelfPlayCallback(num_trainable_policies=2, num_random_policies=6, episode_data_dir=None)
 
 
 class _Episode:
@@ -124,7 +122,6 @@ class _Episode:
 
 
 class TestTheCallbackLogsPerModule:
-
     @staticmethod
     def _logged(tally, modules):
         metrics = MagicMock()
@@ -144,10 +141,13 @@ class TestTheCallbackLogsPerModule:
 
     def test_two_agents_on_one_module_count_once(self):
         a, b = _tally(), _tally([("100", 0), ("120", 10), ("90", 10)])
-        logged = self._logged({"agent_0": a, "agent_1": b},
-                              {"agent_0": "policy_2", "agent_1": "policy_2"})
+        logged = self._logged(
+            {"agent_0": a, "agent_1": b}, {"agent_0": "policy_2", "agent_1": "policy_2"}
+        )
         expected = (a.max_drawdown + b.max_drawdown) / 2
-        assert logged[(MODULE_PERFORMANCE_PREFIX + "max_drawdown", "policy_2")][0] == pytest.approx(expected)
+        assert logged[(MODULE_PERFORMANCE_PREFIX + "max_drawdown", "policy_2")][0] == pytest.approx(
+            expected
+        )
 
     def test_an_undefined_metric_is_left_out_not_logged_as_zero(self):
         logged = self._logged({"agent_0": _tally([("100", 0)] * 4)}, {"agent_0": "policy_0"})
@@ -175,11 +175,16 @@ class TestTheCallbackLogsPerModule:
                 return self._info
 
         for nav, pos in SERIES:
-            cb.on_episode_step(episode=Ep(nav, pos), env_runner=None,
-                               metrics_logger=MagicMock(), env=None, env_index=0,
-                               rl_module=None)
+            cb.on_episode_step(
+                episode=Ep(nav, pos),
+                env_runner=None,
+                metrics_logger=MagicMock(),
+                env=None,
+                env_index=0,
+                rl_module=None,
+            )
         perf = cb._activity["e1"]["performance"]["agent_0"]
         want = _tally().summary()
         got = perf.summary()
         assert {k: got[k] for k in want} == want
-        assert set(got) - set(want) == {"markout_1", "markout_10"}     # the configured horizons
+        assert set(got) - set(want) == {"markout_1", "markout_10"}  # the configured horizons

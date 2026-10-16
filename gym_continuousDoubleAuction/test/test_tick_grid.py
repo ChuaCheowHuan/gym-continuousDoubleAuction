@@ -10,6 +10,7 @@ order, so cancels were silent no-ops and a re-quote at the same price rested a
 second order instead of upserting. Measured before the fix, at tick_size 0.1:
 one new level per step from an agent quoting the same level every step.
 """
+
 from decimal import Decimal
 
 import numpy as np
@@ -21,14 +22,16 @@ from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
 
 
 def _env(tick):
-    env = continuousDoubleAuctionEnv({
-        "num_of_agents": 2,
-        "tick_size": tick,
-        "is_render": False,
-        "max_step": 64,
-        "initial_price_min": 100,
-        "initial_price_max": 100,
-    })
+    env = continuousDoubleAuctionEnv(
+        {
+            "num_of_agents": 2,
+            "tick_size": tick,
+            "is_render": False,
+            "max_step": 64,
+            "initial_price_min": 100,
+            "initial_price_max": 100,
+        }
+    )
     env.reset(seed=1)
     return env
 
@@ -51,7 +54,6 @@ def _on_grid(price, tick):
 
 
 class TestSetPriceIsOnTheGrid:
-
     @pytest.mark.parametrize("tick", [1, 0.5, 0.1, 0.05, 0.01, 0.3, 0.0001])
     def test_ghost_levels_every_level_and_offset(self, tick):
         env = _env(tick)
@@ -69,8 +71,7 @@ class TestSetPriceIsOnTheGrid:
         # Rest one bid and one ask - passive offsets, so they sit a tick
         # either side of the reference in grid mode rather than crossing -
         # then quote at level 0 on both sides.
-        env.step({"agent_0": _act(2, price=0, offset=0),
-                  "agent_1": _act(6, price=0, offset=0)})
+        env.step({"agent_0": _act(2, price=0, offset=0), "agent_1": _act(6, price=0, offset=0)})
         assert env.LOB.get_best_bid() is not None
         assert env.LOB.get_best_ask() is not None
         for side in ("bid", "ask"):
@@ -95,6 +96,7 @@ class TestSetPriceIsOnTheGrid:
         two roundings could disagree: at tick 0.1, bid 199.9 / ask 200.0 gave
         an observation origin of 199.9 and an action origin of 200.0."""
         from gym_continuousDoubleAuction.envs.exchg.state_helper import _FRAME_M
+
         disagree = []
         for lo in range(1900, 2100):
             env = _env(tick)
@@ -110,7 +112,6 @@ class TestSetPriceIsOnTheGrid:
 
 
 class TestFractionalTickBookStaysConsistent:
-
     def test_requoting_the_same_level_upserts(self):
         env = _env(0.1)
         for _ in range(5):

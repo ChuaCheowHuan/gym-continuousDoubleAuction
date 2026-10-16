@@ -16,8 +16,8 @@ PROGRESS_FILE = "progress.jsonl"
 #: Status colors, reserved for the two discrete "something happened" events
 #: this dashboard marks - never reused for a plain data series (dataviz
 #: skill's status-palette rule).
-_VIOLATION_COLOR = "#d03b3b"   # critical
-_PROMOTION_COLOR = "#0ca30c"   # good
+_VIOLATION_COLOR = "#d03b3b"  # critical
+_PROMOTION_COLOR = "#0ca30c"  # good
 
 
 def default_log_root():
@@ -36,7 +36,8 @@ def latest_run_dir(root):
     `progress.jsonl` has the newest mtime.
     """
     run_dirs = [
-        d for d in glob.glob(os.path.join(root, "*"))
+        d
+        for d in glob.glob(os.path.join(root, "*"))
         if os.path.isfile(os.path.join(d, PROGRESS_FILE))
     ]
     if not run_dirs:
@@ -140,7 +141,11 @@ def _mark_events(ax, iterations, color, label):
     """
     for i, iteration in enumerate(iterations):
         ax.axvline(
-            iteration, color=color, linestyle="--", linewidth=1.0, alpha=0.7,
+            iteration,
+            color=color,
+            linestyle="--",
+            linewidth=1.0,
+            alpha=0.7,
             label=label if i == 0 else None,
         )
 
@@ -178,10 +183,14 @@ def _plot_league_return(ax, rows):
     _, std = _league_series(rows, "std_return")
     if len(iterations):
         ax.plot(iterations, mean, color="#2a78d6", linewidth=1.5, label="Mean return")
-        ax.fill_between(iterations, mean - std, mean + std, color="#2a78d6", alpha=0.15, label="+/- 1 std")
+        ax.fill_between(
+            iterations, mean - std, mean + std, color="#2a78d6", alpha=0.15, label="+/- 1 std"
+        )
 
     promo_iterations, promoted = _league_series(rows, "promoted")
-    _mark_events(ax, _event_iterations(promo_iterations, promoted), _PROMOTION_COLOR, "Champion promoted")
+    _mark_events(
+        ax, _event_iterations(promo_iterations, promoted), _PROMOTION_COLOR, "Champion promoted"
+    )
 
     ax.set_ylabel('Return')
     ax.set_title('League Return')
@@ -225,8 +234,13 @@ def _plot_reward_term_shares(ax, rows):
 
     if common_iterations:
         values = [[per_term[term][it] for it in common_iterations] for term in REWARD_TERMS]
-        ax.stackplot(common_iterations, values, colors=[TERM_COLORS[t] for t in REWARD_TERMS],
-                     labels=REWARD_TERMS, alpha=0.85)
+        ax.stackplot(
+            common_iterations,
+            values,
+            colors=[TERM_COLORS[t] for t in REWARD_TERMS],
+            labels=REWARD_TERMS,
+            alpha=0.85,
+        )
 
     ax.set_ylim(0, 1)
     ax.set_ylabel('Variance share')
@@ -281,7 +295,10 @@ def visualize_training(run_dir=None):
     )
 
     fig, (ax_nav, ax_league, ax_means, ax_shares, ax_fractions) = plt.subplots(
-        5, 1, figsize=(14, 20), sharex=True,
+        5,
+        1,
+        figsize=(14, 20),
+        sharex=True,
     )
 
     _plot_nav_conservation(ax_nav, rows)
@@ -299,6 +316,7 @@ def visualize_training(run_dir=None):
     plt.savefig(output_file)
     print(f"Visualization saved to {output_file}")
     plt.show()
+
 
 if __name__ == "__main__":
     visualize_training()

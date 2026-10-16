@@ -36,6 +36,7 @@ already searched and never found. Nothing moves and no path in the docs
 changes. The staged copy is a build artefact, is git-ignored, and is never
 preferred in-tree because `config_dir()` checks the repo root first.
 """
+
 import os
 import shutil
 
@@ -64,8 +65,7 @@ def _stage_config():
     os.makedirs(_CONFIG_DST, exist_ok=True)
     for name in os.listdir(_CONFIG_SRC):
         if name.endswith(".json"):
-            shutil.copy2(os.path.join(_CONFIG_SRC, name),
-                         os.path.join(_CONFIG_DST, name))
+            shutil.copy2(os.path.join(_CONFIG_SRC, name), os.path.join(_CONFIG_DST, name))
 
 
 class _BuildPyWithConfig(_build_py):
@@ -133,7 +133,13 @@ setup(
         # a workflow change; hypothesis drives the order-book invariant tests.
         # pytest-cov for `pytest --cov` (the [tool.coverage] tables in
         # pyproject.toml scope it); the measured number is in doc/10 section 7.
-        "dev": ["pytest>=8", "pyflakes>=3.2", "hypothesis>=6.100", "pytest-cov>=5", "mypy>=1.10",
-            "ruff==0.17.1"],
+        "dev": [
+            "pytest>=8",
+            "pyflakes>=3.2",
+            "hypothesis>=6.100",
+            "pytest-cov>=5",
+            "mypy>=1.10",
+            "ruff==0.17.1",
+        ],
     },
 )

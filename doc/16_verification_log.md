@@ -261,7 +261,7 @@ fires on the first eligible iteration.
 `ray/rllib/algorithms/ppo/torch/ppo_torch_learner.py:99-100`:
 
 ```python
-vf_loss         = torch.pow(value_fn_out - batch[Postprocessing.VALUE_TARGETS], 2.0)
+vf_loss = torch.pow(value_fn_out - batch[Postprocessing.VALUE_TARGETS], 2.0)
 vf_loss_clipped = torch.clamp(vf_loss, 0, config.vf_clip_param)
 ```
 
@@ -281,7 +281,9 @@ Advantages **are** standardised per module by
 `ray/rllib/connectors/learner/general_advantage_estimation.py`:
 
 ```python
-module_advantages = (module_advantages - module_advantages.mean()) / max(1e-4, module_advantages.std())
+module_advantages = (module_advantages - module_advantages.mean()) / max(
+    1e-4, module_advantages.std()
+)
 ```
 
 which is why the update does not diverge despite the reward scale — the damage is confined to the

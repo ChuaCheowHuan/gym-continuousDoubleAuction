@@ -12,11 +12,13 @@ from gym_continuousDoubleAuction.envs.orderbook.order import Order
 from gym_continuousDoubleAuction.envs.orderbook.orderlist import OrderList
 from gym_continuousDoubleAuction.envs.orderbook.ordertree import OrderTree
 
+
 class TestOrderComponents:
     """
     Unit tests for the basic building blocks: Order, OrderList, and OrderTree.
     These tests ensure that the underlying data structures manage priority and state correctly.
     """
+
     def setup_method(self):
         # Define a standard quote dictionary to use across tests.
         # Quantities and prices are cast to Decimal for precision.
@@ -25,7 +27,7 @@ class TestOrderComponents:
             'quantity': Decimal('10'),
             'price': Decimal('50.5'),
             'order_id': 1,
-            'trade_id': 'T1'
+            'trade_id': 'T1',
         }
         # Initialize a fresh OrderList for head/tail testing.
         self.order_list = OrderList()
@@ -85,11 +87,13 @@ class TestOrderComponents:
         assert tree.volume == 0
         assert not tree.price_exists(Decimal('50.5'))
 
+
 class TestOrderBookIntegration:
     """
     Integration tests for the OrderBook.
     These tests simulate real trading scenarios like limit/market orders and cancellations.
     """
+
     def setup_method(self):
         # Initialize a fresh OrderBook for every test case.
         self.ob = OrderBook()
@@ -105,7 +109,13 @@ class TestOrderBookIntegration:
     def test_limit_order_placement(self):
         """Verify that passive limit orders (orders that don't match immediately) are stored correctly."""
         # 1. Post a bid below the current market (assuming empty)
-        bid = {'type': 'limit', 'side': 'bid', 'quantity': Decimal('10'), 'price': Decimal('100'), 'trade_id': 'B1'}
+        bid = {
+            'type': 'limit',
+            'side': 'bid',
+            'quantity': Decimal('10'),
+            'price': Decimal('100'),
+            'trade_id': 'B1',
+        }
         self.ob.process_order(bid, False, False)
         assert self.ob.get_best_bid() == Decimal('100')
         assert self.get_real_volume('bid') == Decimal('10')
@@ -113,10 +123,26 @@ class TestOrderBookIntegration:
     def test_limit_order_full_match(self):
         """Verify that an aggressive limit order correctly clears an existing passive order."""
         # 1. Seed the book with a passive ask
-        self.ob.process_order({'type': 'limit', 'side': 'ask', 'quantity': Decimal('10'), 'price': Decimal('100'), 'trade_id': 'S1'}, False, False)
+        self.ob.process_order(
+            {
+                'type': 'limit',
+                'side': 'ask',
+                'quantity': Decimal('10'),
+                'price': Decimal('100'),
+                'trade_id': 'S1',
+            },
+            False,
+            False,
+        )
 
         # 2. Send an aggressive bid at the same price
-        bid = {'type': 'limit', 'side': 'bid', 'quantity': Decimal('10'), 'price': Decimal('100'), 'trade_id': 'B1'}
+        bid = {
+            'type': 'limit',
+            'side': 'bid',
+            'quantity': Decimal('10'),
+            'price': Decimal('100'),
+            'trade_id': 'B1',
+        }
         trades, _ = self.ob.process_order(bid, False, False)
 
         # 3. Verify the trade occurred and the book is now empty
@@ -127,10 +153,26 @@ class TestOrderBookIntegration:
     def test_limit_order_partial_match(self):
         """Verify that a large aggressive order matches what it can and places the remainder in the book."""
         # 1. Seed the book with a small passive ask
-        self.ob.process_order({'type': 'limit', 'side': 'ask', 'quantity': Decimal('10'), 'price': Decimal('100'), 'trade_id': 'S1'}, False, False)
+        self.ob.process_order(
+            {
+                'type': 'limit',
+                'side': 'ask',
+                'quantity': Decimal('10'),
+                'price': Decimal('100'),
+                'trade_id': 'S1',
+            },
+            False,
+            False,
+        )
 
         # 2. Send a larger aggressive bid
-        bid = {'type': 'limit', 'side': 'bid', 'quantity': Decimal('15'), 'price': Decimal('100'), 'trade_id': 'B1'}
+        bid = {
+            'type': 'limit',
+            'side': 'bid',
+            'quantity': Decimal('15'),
+            'price': Decimal('100'),
+            'trade_id': 'B1',
+        }
         trades, _ = self.ob.process_order(bid, False, False)
 
         # 3. 10 units should trade, and 5 should remain in the Bids tree
@@ -141,8 +183,28 @@ class TestOrderBookIntegration:
     def test_market_order_execution(self):
         """Verify that a market order sweeps through multiple price levels."""
         # 1. Seed the book with asks at different prices
-        self.ob.process_order({'type': 'limit', 'side': 'ask', 'quantity': Decimal('10'), 'price': Decimal('100'), 'trade_id': 'S1'}, False, False)
-        self.ob.process_order({'type': 'limit', 'side': 'ask', 'quantity': Decimal('10'), 'price': Decimal('101'), 'trade_id': 'S2'}, False, False)
+        self.ob.process_order(
+            {
+                'type': 'limit',
+                'side': 'ask',
+                'quantity': Decimal('10'),
+                'price': Decimal('100'),
+                'trade_id': 'S1',
+            },
+            False,
+            False,
+        )
+        self.ob.process_order(
+            {
+                'type': 'limit',
+                'side': 'ask',
+                'quantity': Decimal('10'),
+                'price': Decimal('101'),
+                'trade_id': 'S2',
+            },
+            False,
+            False,
+        )
 
         # 2. Send a market bid for 15 units
         mkt_bid = {'type': 'market', 'side': 'bid', 'quantity': Decimal('15'), 'trade_id': 'B1'}
@@ -156,7 +218,13 @@ class TestOrderBookIntegration:
     def test_cancel_order(self):
         """Verify that an order can be successfully removed using its unique order_id."""
         # 1. Place an order and capture the returned ID
-        bid = {'type': 'limit', 'side': 'bid', 'quantity': Decimal('10'), 'price': Decimal('100'), 'trade_id': 'B1'}
+        bid = {
+            'type': 'limit',
+            'side': 'bid',
+            'quantity': Decimal('10'),
+            'price': Decimal('100'),
+            'trade_id': 'B1',
+        }
         _, quote = self.ob.process_order(bid, False, False)
         order_id = quote['order_id']
 
@@ -168,12 +236,21 @@ class TestOrderBookIntegration:
     def test_modify_order_quantity_decrease(self):
         """Verify that modifying an order to a smaller quantity updates the book accurately."""
         # 1. Place an order
-        bid = {'type': 'limit', 'side': 'bid', 'quantity': Decimal('10'), 'price': Decimal('100'), 'trade_id': 'B1'}
+        bid = {
+            'type': 'limit',
+            'side': 'bid',
+            'quantity': Decimal('10'),
+            'price': Decimal('100'),
+            'trade_id': 'B1',
+        }
         _, quote = self.ob.process_order(bid, False, False)
         order_id = quote['order_id']
 
         # 2. Modify to half its size
-        self.ob.modify_order(order_id, {'side': 'bid', 'quantity': Decimal('5'), 'price': Decimal('100'), 'timestamp': 101})
+        self.ob.modify_order(
+            order_id,
+            {'side': 'bid', 'quantity': Decimal('5'), 'price': Decimal('100'), 'timestamp': 101},
+        )
         assert self.get_real_volume('bid') == Decimal('5')
 
     def test_modify_order_price_change(self):
@@ -183,16 +260,27 @@ class TestOrderBookIntegration:
         without causing double-deletion or data corruption.
         """
         # 1. Place an order at 100
-        bid = {'type': 'limit', 'side': 'bid', 'quantity': Decimal('10'), 'price': Decimal('100'), 'trade_id': 'B1'}
+        bid = {
+            'type': 'limit',
+            'side': 'bid',
+            'quantity': Decimal('10'),
+            'price': Decimal('100'),
+            'trade_id': 'B1',
+        }
         _, quote = self.ob.process_order(bid, False, False)
         order_id = quote['order_id']
 
         # 2. Modify price to 101 (this currently triggers a ValueError in OrderList)
-        self.ob.modify_order(order_id, {'side': 'bid', 'quantity': Decimal('10'), 'price': Decimal('101'), 'timestamp': 101})
+        self.ob.modify_order(
+            order_id,
+            {'side': 'bid', 'quantity': Decimal('10'), 'price': Decimal('101'), 'timestamp': 101},
+        )
         assert self.ob.get_best_bid() == Decimal('101')
+
 
 class TestOrderBookInvariants:
     """Tests ensuring fundamental logic invariants hold true under various conditions."""
+
     def setup_method(self):
         self.ob = OrderBook()
 
@@ -204,8 +292,28 @@ class TestOrderBookInvariants:
 
     def test_order_id_uniqueness(self):
         """Ensure that every new order processed is assigned a unique, incrementing order_id."""
-        _, quote1 = self.ob.process_order({'type': 'limit', 'side': 'bid', 'quantity': Decimal('1'), 'price': Decimal('100'), 'trade_id': 'B1'}, False, False)
-        _, quote2 = self.ob.process_order({'type': 'limit', 'side': 'bid', 'quantity': Decimal('1'), 'price': Decimal('100'), 'trade_id': 'B2'}, False, False)
+        _, quote1 = self.ob.process_order(
+            {
+                'type': 'limit',
+                'side': 'bid',
+                'quantity': Decimal('1'),
+                'price': Decimal('100'),
+                'trade_id': 'B1',
+            },
+            False,
+            False,
+        )
+        _, quote2 = self.ob.process_order(
+            {
+                'type': 'limit',
+                'side': 'bid',
+                'quantity': Decimal('1'),
+                'price': Decimal('100'),
+                'trade_id': 'B2',
+            },
+            False,
+            False,
+        )
         assert quote1['order_id'] != quote2['order_id']
 
 
@@ -223,25 +331,28 @@ class TestMalformedInputRaisesInsteadOfExiting:
     def test_zero_quantity_limit(self):
         with pytest.raises(ValueError, match="quantity must be > 0"):
             self.ob.process_order(
-                {'type': 'limit', 'side': 'bid', 'quantity': 0, 'price': 100,
-                 'trade_id': 1}, False, False)
+                {'type': 'limit', 'side': 'bid', 'quantity': 0, 'price': 100, 'trade_id': 1},
+                False,
+                False,
+            )
 
     def test_negative_quantity_market(self):
         with pytest.raises(ValueError, match="quantity must be > 0"):
             self.ob.process_order(
-                {'type': 'market', 'side': 'ask', 'quantity': -3, 'trade_id': 1},
-                False, False)
+                {'type': 'market', 'side': 'ask', 'quantity': -3, 'trade_id': 1}, False, False
+            )
 
     def test_unknown_order_type(self):
         with pytest.raises(ValueError, match="order type must be"):
             self.ob.process_order(
-                {'type': 'stop', 'side': 'bid', 'quantity': 1, 'price': 100,
-                 'trade_id': 1}, False, False)
+                {'type': 'stop', 'side': 'bid', 'quantity': 1, 'price': 100, 'trade_id': 1},
+                False,
+                False,
+            )
 
     @pytest.mark.parametrize("order_type", ["limit", "market"])
     def test_unknown_side(self, order_type):
-        quote = {'type': order_type, 'side': 'buy', 'quantity': 1, 'price': 100,
-                 'trade_id': 1}
+        quote = {'type': order_type, 'side': 'buy', 'quantity': 1, 'price': 100, 'trade_id': 1}
         with pytest.raises(ValueError, match="side must be 'bid' or 'ask'"):
             self.ob.process_order(quote, False, False)
 
@@ -256,19 +367,24 @@ class TestMalformedInputRaisesInsteadOfExiting:
         """Same price, smaller size is the keep-priority path, which used to
         leave a zero-size order resting; process_order refuses the same size."""
         _, resting = self.ob.process_order(
-            {'type': 'limit', 'side': 'bid', 'quantity': 5, 'price': 100,
-             'trade_id': 1}, False, False)
+            {'type': 'limit', 'side': 'bid', 'quantity': 5, 'price': 100, 'trade_id': 1},
+            False,
+            False,
+        )
         with pytest.raises(ValueError, match="modify_order.*quantity must be > 0"):
-            self.ob.modify_order(resting['order_id'],
-                                 {'side': 'bid', 'price': 100, 'quantity': quantity})
+            self.ob.modify_order(
+                resting['order_id'], {'side': 'bid', 'price': 100, 'quantity': quantity}
+            )
         assert self.ob.bids.get_order(resting['order_id']).quantity == 5
 
     def test_nothing_raises_system_exit(self):
         """The class of the failure is what changed; pin it directly."""
         for bad in (
             lambda: self.ob.process_order(
-                {'type': 'limit', 'side': 'bid', 'quantity': 0, 'price': 100,
-                 'trade_id': 1}, False, False),
+                {'type': 'limit', 'side': 'bid', 'quantity': 0, 'price': 100, 'trade_id': 1},
+                False,
+                False,
+            ),
             lambda: self.ob.cancel_order('buy', 1),
         ):
             try:
@@ -289,12 +405,15 @@ class TestMalformedInputRaisesInsteadOfExiting:
     def test_tape_wipe_keeps_the_deque(self, tmp_path):
         """`tape_dump(..., 'wipe')` used to replace the deque with a list."""
         from collections import deque
+
         self.ob.process_order(
-            {'type': 'limit', 'side': 'ask', 'quantity': 1, 'price': 100,
-             'trade_id': 1}, False, False)
+            {'type': 'limit', 'side': 'ask', 'quantity': 1, 'price': 100, 'trade_id': 1},
+            False,
+            False,
+        )
         self.ob.process_order(
-            {'type': 'market', 'side': 'bid', 'quantity': 1, 'trade_id': 2},
-            False, False)
+            {'type': 'market', 'side': 'bid', 'quantity': 1, 'trade_id': 2}, False, False
+        )
         assert len(self.ob.tape) == 1
         self.ob.tape_dump(str(tmp_path / "tape.txt"), "w", "wipe")
         assert isinstance(self.ob.tape, deque)

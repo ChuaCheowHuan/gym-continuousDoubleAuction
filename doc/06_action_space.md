@@ -81,12 +81,12 @@ Constants, from
 [`action_helper.py`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py):
 
 ```python
-min_size            = 1
-mkt_max_size        = 100
-N                   = 10
-limit_max_size      = mkt_max_size * N          # 1000
-mkt_size_mul        = (mkt_max_size - min_size) / 2      # 49.5
-limit_size_mul      = (limit_max_size - min_size) / 2    # 499.5
+min_size = 1
+mkt_max_size = 100
+N = 10
+limit_max_size = mkt_max_size * N  # 1000
+mkt_size_mul = (mkt_max_size - min_size) / 2  # 49.5
+limit_size_mul = (limit_max_size - min_size) / 2  # 499.5
 ```
 
 The final size is `rint(size × mul)`, then `+ min_size` so it is at least 1. `size` is clipped to

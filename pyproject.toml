@@ -6,6 +6,7 @@
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+extend-exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
 # The same rule family test_lint.py enforces with pyflakes (F = pyflakes), so
@@ -22,6 +23,12 @@ files = ["gym_continuousDoubleAuction/envs"]
 exclude = ["gym_continuousDoubleAuction/envs/orderbook/test/"]
 ignore_missing_imports = true
 follow_imports = "silent"
+
+[tool.ruff.format]
+# One formatter pass over a tree that had never had one (issue #148). Quotes are left as
+# written: switching 18,000 lines to one style would touch every string for no reason a
+# reader benefits from. The CLI notebook is JSON and is not formatted.
+quote-style = "preserve"
 
 [tool.pytest.ini_options]
 testpaths = ["gym_continuousDoubleAuction/test"]

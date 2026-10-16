@@ -36,6 +36,7 @@ close the position, so a bankrupt short stayed open and marked to market for
 the rest of the episode. Its later losses were the survivors' gains, paid by a
 counterparty that could not act and whose policy was never charged for them.
 """
+
 from __future__ import annotations
 
 import math
@@ -53,8 +54,7 @@ logger = get_logger(__name__)
 
 
 def _is_finite_number(value) -> bool:
-    return (isinstance(value, numbers.Real) and not isinstance(value, bool)
-            and math.isfinite(value))
+    return isinstance(value, numbers.Real) and not isinstance(value, bool) and math.isfinite(value)
 
 
 class LiquidationEngine(object):
@@ -72,8 +72,9 @@ class LiquidationEngine(object):
     #: reads none/null as None.
     LIQUIDATION_MODES = ("market_adl", "gradual_adl", "off")
 
-    def __init__(self, venue: Venue, liquidation=UNSET, maintenance_margin=UNSET,
-                 liquidation_horizon=UNSET):
+    def __init__(
+        self, venue: Venue, liquidation=UNSET, maintenance_margin=UNSET, liquidation_horizon=UNSET
+    ):
         """
         Arguments:
             venue: The exchange this engine liquidates on.
@@ -101,12 +102,13 @@ class LiquidationEngine(object):
         # key=null` produces; both, and NaN, are refused here by name rather
         # than surfacing as a TypeError or a decimal.InvalidOperation.
         if not _is_finite_number(maintenance_margin) or not 0 <= maintenance_margin < 1:
-            raise ValueError(
-                f"maintenance_margin must be in [0, 1); got {maintenance_margin!r}."
-            )
+            raise ValueError(f"maintenance_margin must be in [0, 1); got {maintenance_margin!r}.")
         margin = Decimal(str(maintenance_margin))
-        if (not _is_finite_number(liquidation_horizon)
-                or int(liquidation_horizon) != liquidation_horizon or liquidation_horizon < 1):
+        if (
+            not _is_finite_number(liquidation_horizon)
+            or int(liquidation_horizon) != liquidation_horizon
+            or liquidation_horizon < 1
+        ):
             raise ValueError(
                 f"liquidation_horizon must be a whole number of steps >= 1; got "
                 f"{liquidation_horizon!r}."
@@ -162,7 +164,9 @@ class LiquidationEngine(object):
         events = []
         if self.liquidation == "gradual_adl":
             mark = self.venue.mark_price()
-            under_way = [t for t in self.venue.traders if self.venue.is_live(t) and self._liquidating(t)]
+            under_way = [
+                t for t in self.venue.traders if self.venue.is_live(t) and self._liquidating(t)
+            ]
             for trader in sorted(under_way, key=lambda t: (self.margin_ratio(t, mark) or 0, t.ID)):
                 if trader.acc.net_position == 0:
                     # Flattened meanwhile - by another liquidation's ADL.
@@ -175,9 +179,15 @@ class LiquidationEngine(object):
 
         for _ in range(2 * len(self.venue.traders)):
             mark = self.venue.mark_price()
-            due = [t for t in self.venue.traders if self.venue.is_live(t) and (
-                (self._liquidating(t) and t.acc.net_position != 0 and t.acc.nav <= 0)
-                or (not self._liquidating(t) and self.in_breach(t, mark)))]
+            due = [
+                t
+                for t in self.venue.traders
+                if self.venue.is_live(t)
+                and (
+                    (self._liquidating(t) and t.acc.net_position != 0 and t.acc.nav <= 0)
+                    or (not self._liquidating(t) and self.in_breach(t, mark))
+                )
+            ]
             if not due:
                 break
             trader = min(due, key=lambda t: (self.margin_ratio(t, mark), t.ID))
@@ -282,8 +292,16 @@ class LiquidationEngine(object):
         logger.info(
             "liquidation (%s) of agent_%s at t_step %s: position %s, NAV %s, mark %s; "
             "%s closed in the book (band %s), %s by ADL, %s steps left",
-            kind, trader.ID, self.venue.t_step, position, nav_before,
-            mark, book_qty, band, adl_qty, trader.acc.liquidation_steps_left,
+            kind,
+            trader.ID,
+            self.venue.t_step,
+            position,
+            nav_before,
+            mark,
+            book_qty,
+            band,
+            adl_qty,
+            trader.acc.liquidation_steps_left,
         )
         return event
 
@@ -313,10 +331,12 @@ class LiquidationEngine(object):
         cushion = max(acc.nav, Decimal(0)) / abs(acc.net_position)
         if acc.net_position < 0:  # closing a short: buy, at most this
             price = ((mark + cushion) / (1 + rate) / tick).to_integral_value(
-                rounding=ROUND_FLOOR) * tick
+                rounding=ROUND_FLOOR
+            ) * tick
         else:  # closing a long: sell, at least this
             price = ((mark - cushion) / (1 - rate) / tick).to_integral_value(
-                rounding=ROUND_CEILING) * tick
+                rounding=ROUND_CEILING
+            ) * tick
         return max(price, tick)
 
     def _close_in_book(self, trader, side, quantity, band) -> int:
@@ -339,8 +359,13 @@ class LiquidationEngine(object):
         own_step_trades = trader.acc.num_trades_step
         own_fill = (trader.acc.fill_qty_step, trader.acc.fill_value_step)
         before = abs(trader.acc.net_position)
-        quote = {'type': 'limit', 'side': side, 'quantity': int(quantity),
-                 'price': band, 'trade_id': trader.ID}
+        quote = {
+            'type': 'limit',
+            'side': side,
+            'quantity': int(quantity),
+            'price': band,
+            'trade_id': trader.ID,
+        }
         trades, order_in_book = self.venue.LOB.process_order(quote, False, False)
         if order_in_book:
             self.venue.LOB.cancel_order(side, order_in_book['order_id'])
@@ -369,9 +394,13 @@ class LiquidationEngine(object):
         `last_price`.
         """
         buying = trader.acc.net_position < 0
-        opposite = [t for t in self.venue.traders
-                    if t is not trader and self.venue.is_live(t)
-                    and (t.acc.net_position > 0 if buying else t.acc.net_position < 0)]
+        opposite = [
+            t
+            for t in self.venue.traders
+            if t is not trader
+            and self.venue.is_live(t)
+            and (t.acc.net_position > 0 if buying else t.acc.net_position < 0)
+        ]
         available = sum(abs(t.acc.net_position) for t in opposite)
         if available < quantity:
             # Positions sum to zero and a terminated trader is always flat
@@ -391,10 +420,9 @@ class LiquidationEngine(object):
                 steps = party.acc.num_trades_step
                 fill = (party.acc.fill_qty_step, party.acc.fill_value_step)
                 party.acc.process_acc(
-                    {'price': mark, 'quantity': qty,
-                     'init_party': {'ID': party.ID, 'side': side}},
+                    {'price': mark, 'quantity': qty, 'init_party': {'ID': party.ID, 'side': side}},
                     'init_party',
-                    fee_role='none',    # a transfer at the mark, not an exchange fill
+                    fee_role='none',  # a transfer at the mark, not an exchange fill
                 )
                 party.acc.num_trades_step = steps
                 # A transfer at the mark is no execution: nothing to mark out.

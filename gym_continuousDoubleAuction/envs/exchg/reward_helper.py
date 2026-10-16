@@ -11,8 +11,15 @@ class RewardModel(object):
     account and its own coefficients, so it is a plain class and the exchange calls it.
     """
 
-    def __init__(self, order_penalty=UNSET, trade_penalty=UNSET, drawdown_penalty=UNSET,
-                 passive_bonus=UNSET, loss_multiplier=UNSET, dead_action_penalty=UNSET):
+    def __init__(
+        self,
+        order_penalty=UNSET,
+        trade_penalty=UNSET,
+        drawdown_penalty=UNSET,
+        passive_bonus=UNSET,
+        loss_multiplier=UNSET,
+        dead_action_penalty=UNSET,
+    ):
         """
         Coefficients of the reward formula in `set_reward`.
 

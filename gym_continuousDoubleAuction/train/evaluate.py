@@ -24,6 +24,7 @@ directly (the random baselines) is taken as is; one that emits distribution
 inputs is sampled, or made deterministic with `--deterministic`, through the
 module's own inference distribution class - the same path the env runner takes.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -44,8 +45,13 @@ from gym_continuousDoubleAuction.logging_setup import get_logger, merge_runtime_
 logger = get_logger("gym_continuousDoubleAuction.train.evaluate")
 
 #: The per-agent activity counters summed over an episode.
-ACTIVITY_FIELDS = ("is_pass_action", "num_rejected_step", "num_unmatched_step",
-                   "num_trades_step", "num_passive_fills_step")
+ACTIVITY_FIELDS = (
+    "is_pass_action",
+    "num_rejected_step",
+    "num_unmatched_step",
+    "num_trades_step",
+    "num_passive_fills_step",
+)
 
 
 def _cli(key):
@@ -119,8 +125,13 @@ def seed_sampling(modules: Dict[str, Any], seed: int) -> None:
     for module_id in sorted(modules):
         space = getattr(modules[module_id], "action_space", None)
         if space is not None:
-            space.seed(int(np.random.SeedSequence(
-                [seed, zlib.crc32(module_id.encode())]).generate_state(1)[0]))
+            space.seed(
+                int(
+                    np.random.SeedSequence([seed, zlib.crc32(module_id.encode())]).generate_state(
+                        1
+                    )[0]
+                )
+            )
 
 
 def apply_max_step(env_config: Dict[str, Any], max_step: Optional[int]) -> Dict[str, Any]:
@@ -140,8 +151,9 @@ def apply_max_step(env_config: Dict[str, Any], max_step: Optional[int]) -> Dict[
     return config
 
 
-def roll_episode(algo, env, mapping_fn, episode_index: int, seed: Optional[int],
-                 deterministic: bool) -> Dict[str, Any]:
+def roll_episode(
+    algo, env, mapping_fn, episode_index: int, seed: Optional[int], deterministic: bool
+) -> Dict[str, Any]:
     """Play one episode to termination or truncation; return its per-agent record."""
     obs, _ = env.reset(seed=None if seed is None else seed + episode_index)
     normalize = bool(getattr(algo.config, "normalize_actions", True))
@@ -149,6 +161,7 @@ def roll_episode(algo, env, mapping_fn, episode_index: int, seed: Optional[int],
 
     class _Episode:
         """What the mapping fn reads: an id. The league fn seeds its draw from it."""
+
         id_ = f"eval-{seed}-{episode_index}"
 
     assignment = {agent: str(mapping_fn(agent, _Episode())) for agent in env.possible_agents}
@@ -169,8 +182,7 @@ def roll_episode(algo, env, mapping_fn, episode_index: int, seed: Optional[int],
     terminated = set()
     while True:
         actions = {
-            agent: act(modules[assignment[agent]], obs[agent], deterministic,
-                       normalize, clip)
+            agent: act(modules[assignment[agent]], obs[agent], deterministic, normalize, clip)
             for agent in env.agents
         }
         obs, rewards, terminateds, truncateds, infos = env.step(actions)
@@ -183,8 +195,11 @@ def roll_episode(algo, env, mapping_fn, episode_index: int, seed: Optional[int],
         for agent, info in infos.items():
             last_info[agent] = info
             for field in ACTIVITY_FIELDS:
-                totals[agent][field] += int(bool(info.get(field, 0))) if field == "is_pass_action" \
+                totals[agent][field] += (
+                    int(bool(info.get(field, 0)))
+                    if field == "is_pass_action"
                     else int(info.get(field, 0) or 0)
+                )
         if terminateds.get("__all__") or truncateds.get("__all__"):
             break
 
@@ -193,20 +208,27 @@ def roll_episode(algo, env, mapping_fn, episode_index: int, seed: Optional[int],
         info = last_info.get(agent, {})
         nav = float(info["NAV"]) if "NAV" in info else None
         played = agent_steps[agent] or 1
-        agents.append({
-            "agent": agent,
-            "module": assignment[agent],
-            "return": totals[agent]["return"],
-            "final_nav": nav,
-            "nav_change_frac": (None if nav is None else (nav - float(env.init_cash)) / float(env.init_cash)),
-            "num_trades": int(info.get("num_trades", 0) or 0),
-            "pass_fraction": totals[agent]["is_pass_action"] / played,
-            "rejection_fraction": totals[agent]["num_rejected_step"] / played,
-            "unmatched_fraction": totals[agent]["num_unmatched_step"] / played,
-            "passive_fill_share": (totals[agent]["num_passive_fills_step"] / totals[agent]["num_trades_step"]
-                                   if totals[agent]["num_trades_step"] else None),
-            "terminated": agent in terminated,
-        })
+        agents.append(
+            {
+                "agent": agent,
+                "module": assignment[agent],
+                "return": totals[agent]["return"],
+                "final_nav": nav,
+                "nav_change_frac": (
+                    None if nav is None else (nav - float(env.init_cash)) / float(env.init_cash)
+                ),
+                "num_trades": int(info.get("num_trades", 0) or 0),
+                "pass_fraction": totals[agent]["is_pass_action"] / played,
+                "rejection_fraction": totals[agent]["num_rejected_step"] / played,
+                "unmatched_fraction": totals[agent]["num_unmatched_step"] / played,
+                "passive_fill_share": (
+                    totals[agent]["num_passive_fills_step"] / totals[agent]["num_trades_step"]
+                    if totals[agent]["num_trades_step"]
+                    else None
+                ),
+                "terminated": agent in terminated,
+            }
+        )
     return {"episode": episode_index, "steps": steps, "agents": agents}
 
 
@@ -219,8 +241,15 @@ def summarise(episodes: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     out = {}
     for module, rows in sorted(by_module.items()):
         out[module] = {"agent_episodes": len(rows)}
-        for key in ("return", "nav_change_frac", "num_trades", "pass_fraction",
-                    "rejection_fraction", "unmatched_fraction", "passive_fill_share"):
+        for key in (
+            "return",
+            "nav_change_frac",
+            "num_trades",
+            "pass_fraction",
+            "rejection_fraction",
+            "unmatched_fraction",
+            "passive_fill_share",
+        ):
             values = [r[key] for r in rows if r[key] is not None]
             out[module][key] = float(np.mean(values)) if values else None
         out[module]["terminated"] = sum(1 for r in rows if r["terminated"])
@@ -228,24 +257,52 @@ def summarise(episodes: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
 
 
 def render(summary: Dict[str, Dict[str, Any]]) -> str:
-    headers = ["module", "agent-eps", "return", "nav change", "trades", "pass", "rejected",
-               "unmatched", "passive share", "bankrupt"]
+    headers = [
+        "module",
+        "agent-eps",
+        "return",
+        "nav change",
+        "trades",
+        "pass",
+        "rejected",
+        "unmatched",
+        "passive share",
+        "bankrupt",
+    ]
     lines = ["| " + " | ".join(headers) + " |", "|" + "---|" * len(headers)]
 
     def f(v, spec=".3g"):
         return "-" if v is None else format(v, spec)
 
     for module, s in summary.items():
-        lines.append("| " + " | ".join([
-            module, str(s["agent_episodes"]), f(s["return"]), f(s["nav_change_frac"], ".2%"),
-            f(s["num_trades"], ".1f"), f(s["pass_fraction"]), f(s["rejection_fraction"]),
-            f(s["unmatched_fraction"]), f(s["passive_fill_share"]), str(s["terminated"]),
-        ]) + " |")
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    module,
+                    str(s["agent_episodes"]),
+                    f(s["return"]),
+                    f(s["nav_change_frac"], ".2%"),
+                    f(s["num_trades"], ".1f"),
+                    f(s["pass_fraction"]),
+                    f(s["rejection_fraction"]),
+                    f(s["unmatched_fraction"]),
+                    f(s["passive_fill_share"]),
+                    str(s["terminated"]),
+                ]
+            )
+            + " |"
+        )
     return "\n".join(lines)
 
 
-def evaluate(checkpoint: str, episodes: int, seed: Optional[int], deterministic: bool,
-             env_overrides: Optional[dict] = None) -> Dict[str, Any]:
+def evaluate(
+    checkpoint: str,
+    episodes: int,
+    seed: Optional[int],
+    deterministic: bool,
+    env_overrides: Optional[dict] = None,
+) -> Dict[str, Any]:
     """Restore `checkpoint`, roll `episodes`, return the full record."""
     from ray.rllib.algorithms.algorithm import Algorithm
 
@@ -288,19 +345,28 @@ def evaluate(checkpoint: str, episodes: int, seed: Optional[int], deterministic:
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(
         description="Roll episodes with a trained checkpoint's policies and report what "
-                    "they do. See doc/26 section 26.10.",
+        "they do. See doc/26 section 26.10.",
     )
     p.add_argument("--checkpoint", required=True, help="One iter_<n> directory.")
     p.add_argument("--episodes", type=int, default=_cli("episodes"))
-    p.add_argument("--seed", type=int, default=_cli("seed"),
-                   help="Episode i is reset with seed + i, and torch and every module's action "
-                        "space are seeded from it too, so two checkpoints evaluated with the "
-                        "same seed see the same price anchors and opponent draws, and one "
-                        "checkpoint's sampled actions repeat.")
-    p.add_argument("--deterministic", action="store_true",
-                   help="Take each distribution's mode instead of sampling it.")
+    p.add_argument(
+        "--seed",
+        type=int,
+        default=_cli("seed"),
+        help="Episode i is reset with seed + i, and torch and every module's action "
+        "space are seeded from it too, so two checkpoints evaluated with the "
+        "same seed see the same price anchors and opponent draws, and one "
+        "checkpoint's sampled actions repeat.",
+    )
+    p.add_argument(
+        "--deterministic",
+        action="store_true",
+        help="Take each distribution's mode instead of sampling it.",
+    )
     p.add_argument("--max-step", type=int, default=None, help="Override the checkpoint's max_step.")
-    p.add_argument("--out", type=str, default=_cli("out"), help="Write the full record here as JSON.")
+    p.add_argument(
+        "--out", type=str, default=_cli("out"), help="Write the full record here as JSON."
+    )
     p.add_argument("--log-level", type=str, default=_cli("log_level"))
     args = p.parse_args(argv)
 
@@ -314,14 +380,22 @@ def main(argv=None) -> int:
     ray.init(ignore_reinit_error=True, include_dashboard=False, runtime_env=merge_runtime_env())
     try:
         record = evaluate(
-            args.checkpoint, args.episodes, args.seed, args.deterministic,
+            args.checkpoint,
+            args.episodes,
+            args.seed,
+            args.deterministic,
             env_overrides={"max_step": args.max_step} if args.max_step else None,
         )
     finally:
         ray.shutdown()
 
-    logger.info("evaluation of %s (iteration %s), %s episode(s)\n%s",
-                record["checkpoint"], record["iteration"], args.episodes, render(record["summary"]))
+    logger.info(
+        "evaluation of %s (iteration %s), %s episode(s)\n%s",
+        record["checkpoint"],
+        record["iteration"],
+        args.episodes,
+        render(record["summary"]),
+    )
     if args.out:
         with open(args.out, "w") as fh:
             json.dump(record, fh, indent=2, default=str)

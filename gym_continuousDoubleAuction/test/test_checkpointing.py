@@ -8,6 +8,7 @@ holding an empty champion pool. These tests pin the fixes.
 
 See doc/20_colab.md 20.5 and doc/15_findings_and_recommendations.md S3-8/S3-11.
 """
+
 import json
 import logging
 import os
@@ -91,15 +92,12 @@ def cfg(tmp_path):
 
 
 class TestCheckpointDiscovery:
-
     def test_orders_oldest_first_and_ignores_partial_saves(self, tmp_path):
         root = str(tmp_path)
         _write_checkpoint(os.path.join(root, f"{CHECKPOINT_PREFIX}00010"))
         _write_checkpoint(os.path.join(root, f"{CHECKPOINT_PREFIX}00002"))
         # A save killed partway through: staged, never renamed into place.
-        _write_checkpoint(
-            os.path.join(root, f"{CHECKPOINT_PREFIX}00011{CHECKPOINT_TMP_SUFFIX}")
-        )
+        _write_checkpoint(os.path.join(root, f"{CHECKPOINT_PREFIX}00011{CHECKPOINT_TMP_SUFFIX}"))
         # A directory that is not a checkpoint at all.
         os.makedirs(os.path.join(root, f"{CHECKPOINT_PREFIX}00003"))
 
@@ -119,7 +117,6 @@ class TestCheckpointDiscovery:
 
 
 class TestRetention:
-
     def test_each_save_is_its_own_directory(self, cfg):
         algo = FakeAlgo()
         for iteration in (1, 2):
@@ -169,8 +166,7 @@ class TestRetention:
 
         surviving = [i for i, _ in list_checkpoints(cfg.checkpoint_dir)]
         assert 2 in surviving, (
-            "the checkpoint this run just wrote was pruned in favour of an "
-            "earlier run's"
+            "the checkpoint this run just wrote was pruned in favour of an earlier run's"
         )
         # Retention is still `keep`, and the one dropped is the least recently
         # written of the strangers.
@@ -211,12 +207,10 @@ class TestRetention:
 
 
 class TestLeagueSidecar:
-
     def test_written_beside_every_checkpoint(self, cfg):
         callback = SelfPlayCallback(num_trainable_policies=2, num_random_policies=2)
         callback.champion_history = [
-            {"id": "champion_1", "source_policy": "policy_0",
-             "iteration": 3, "return": 12.5},
+            {"id": "champion_1", "source_policy": "policy_0", "iteration": 3, "return": 12.5},
         ]
         callback.champion_count = 1
         callback.champion_id_counter = 1
@@ -244,8 +238,7 @@ class TestLeagueStateReconciliation:
 
     def _with_champions(self, callback, ids):
         callback.champion_history = [
-            {"id": i, "source_policy": "policy_0", "iteration": 1, "return": 1.0}
-            for i in ids
+            {"id": i, "source_policy": "policy_0", "iteration": 1, "return": 1.0} for i in ids
         ]
         callback.champion_count = len(ids)
         callback.champion_id_counter = len(ids)
@@ -291,9 +284,7 @@ class TestLeagueStateReconciliation:
         callback = self._with_champions(self._callback(), ["champion_1", "champion_2"])
         state = callback.league_state()
 
-        repairs = callback.restore_league_state(
-            state, present_modules={"policy_0", "champion_1"}
-        )
+        repairs = callback.restore_league_state(state, present_modules={"policy_0", "champion_1"})
 
         assert any("champion_2" in r for r in repairs)
         assert [c["id"] for c in callback.champion_history] == ["champion_1"]
@@ -304,9 +295,7 @@ class TestLeagueStateReconciliation:
         callback = self._with_champions(self._callback(), ["champion_1"])
         state = callback.league_state()
 
-        repairs = callback.restore_league_state(
-            state, present_modules={"champion_1", "champion_5"}
-        )
+        repairs = callback.restore_league_state(state, present_modules={"champion_1", "champion_5"})
 
         assert any("champion_5" in r for r in repairs)
         assert "champion_5" in callback.available_modules
@@ -383,9 +372,7 @@ class TestRestoredConfigCheck:
 
     def test_champions_are_not_a_config_change(self, capsys):
         """The league grows `policies` during a run; that is not an edit."""
-        restored = self._config(
-            policies=["policy_0", "policy_1", "champion_1", "champion_2"]
-        )
+        restored = self._config(policies=["policy_0", "policy_1", "champion_1", "champion_2"])
 
         _check_restored_config(restored, self._config())
 
@@ -425,9 +412,7 @@ class TestRestoreCandidates:
         pinned = os.path.join(cfg.checkpoint_dir, f"{CHECKPOINT_PREFIX}00001")
 
         with pytest.raises(ValueError, match="is_restore is false"):
-            restore_candidates(
-                dataclasses_replace(cfg, is_restore=False, restore_path=pinned)
-            )
+            restore_candidates(dataclasses_replace(cfg, is_restore=False, restore_path=pinned))
 
     def test_a_path_that_is_not_a_checkpoint_lists_the_ones_that_are(self, cfg):
         for iteration in (1, 2):
@@ -435,9 +420,7 @@ class TestRestoreCandidates:
 
         with pytest.raises(ValueError) as excinfo:
             restore_candidates(
-                dataclasses_replace(
-                    cfg, is_restore=True, restore_path=cfg.checkpoint_dir
-                )
+                dataclasses_replace(cfg, is_restore=True, restore_path=cfg.checkpoint_dir)
             )
 
         message = str(excinfo.value)
@@ -449,13 +432,10 @@ class TestRestoreCandidates:
 
     def test_a_missing_path_says_so_even_with_no_checkpoints(self, cfg):
         with pytest.raises(ValueError, match="none under"):
-            restore_candidates(
-                dataclasses_replace(cfg, is_restore=True, restore_path="/nope")
-            )
+            restore_candidates(dataclasses_replace(cfg, is_restore=True, restore_path="/nope"))
 
 
 class TestCommandLine:
-
     def test_from_checkpoint_implies_restore(self):
         cfg = train_mod._parse_args(["--from-checkpoint", "results/chkpt/iter_00008"])
 
@@ -506,9 +486,7 @@ class TestForeignCheckpoints:
         _write_stale_checkpoint(cfg.checkpoint_dir, 16)
 
         with caplog.at_level(logging.WARNING, logger=LOGGER):
-            stale = warn_about_foreign_checkpoints(
-                dataclasses_replace(cfg, is_restore=True)
-            )
+            stale = warn_about_foreign_checkpoints(dataclasses_replace(cfg, is_restore=True))
 
         assert stale == []
         assert caplog.text == ""
@@ -516,7 +494,8 @@ class TestForeignCheckpoints:
     def test_build_algo_warns_on_the_scratch_path(self, cfg, monkeypatch, caplog):
         _write_stale_checkpoint(cfg.checkpoint_dir, 16)
         monkeypatch.setattr(
-            build_mod, "build_config",
+            build_mod,
+            "build_config",
             lambda _cfg: (SimpleNamespace(build_algo=FakeAlgo), None),
         )
 
@@ -563,9 +542,7 @@ class TestRestoreSelection:
             unreadable = broken
             return loaded
 
-        return SimpleNamespace(
-            cfg=cfg, callback=callback, fresh=fresh, configure=configure
-        )
+        return SimpleNamespace(cfg=cfg, callback=callback, fresh=fresh, configure=configure)
 
     def test_restores_the_newest(self, restorable):
         cfg = restorable.cfg
@@ -577,7 +554,9 @@ class TestRestoreSelection:
 
         assert loaded[-1].endswith(f"{CHECKPOINT_PREFIX}00003")
 
-    def test_a_restore_its_checks_refuse_stops_the_restored_algorithm(self, restorable, monkeypatch):
+    def test_a_restore_its_checks_refuse_stops_the_restored_algorithm(
+        self, restorable, monkeypatch
+    ):
         """`Algorithm.from_checkpoint` has already started the restored run's
         env-runner and learner actors when the structural check refuses it. The
         algorithm used to be dropped without `stop()`, so in a notebook those
@@ -613,7 +592,8 @@ class TestRestoreSelection:
 
         assert algo is not None
         assert [os.path.basename(p) for p in loaded] == [
-            f"{CHECKPOINT_PREFIX}00003", f"{CHECKPOINT_PREFIX}00002"
+            f"{CHECKPOINT_PREFIX}00003",
+            f"{CHECKPOINT_PREFIX}00002",
         ]
 
     def test_returns_the_algorithms_own_callback(self, restorable):
@@ -634,9 +614,7 @@ class TestRestoreSelection:
         loaded = restorable.configure()
         pinned = os.path.join(cfg.checkpoint_dir, f"{CHECKPOINT_PREFIX}00001")
 
-        train_mod.build_algo(
-            dataclasses_replace(cfg, is_restore=True, restore_path=pinned)
-        )
+        train_mod.build_algo(dataclasses_replace(cfg, is_restore=True, restore_path=pinned))
 
         assert loaded == [pinned]
 
@@ -649,9 +627,7 @@ class TestRestoreSelection:
         pinned = os.path.join(cfg.checkpoint_dir, f"{CHECKPOINT_PREFIX}00002")
 
         with pytest.raises(RuntimeError, match="truncated checkpoint"):
-            train_mod.build_algo(
-                dataclasses_replace(cfg, is_restore=True, restore_path=pinned)
-            )
+            train_mod.build_algo(dataclasses_replace(cfg, is_restore=True, restore_path=pinned))
 
     def test_no_checkpoint_starts_from_scratch(self, restorable, caplog):
         restorable.configure()
@@ -667,7 +643,6 @@ class TestRestoreSelection:
 
 
 class TestIterationAccounting:
-
     def _run(self, cfg, monkeypatch, start_iteration=0, callback=None):
         algo = FakeAlgo(callback=callback, start_iteration=start_iteration)
         monkeypatch.setattr(train_mod, "build_algo", lambda _cfg: (algo, callback))
@@ -701,18 +676,14 @@ class TestIterationAccounting:
         assert "nothing to do" in caplog.text
 
     def test_checkpoints_land_on_true_iteration_numbers(self, cfg, monkeypatch):
-        cfg = TrainConfig(
-            log_base_dir=cfg.log_base_dir, num_iters=8, chkpt_freq=2, chkpt_keep=0
-        )
+        cfg = TrainConfig(log_base_dir=cfg.log_base_dir, num_iters=8, chkpt_freq=2, chkpt_keep=0)
         self._run(cfg, monkeypatch, start_iteration=3)
 
         # 3 -> 8, saving on the even iterations, plus the final one.
         assert [i for i, _ in list_checkpoints(cfg.checkpoint_dir)] == [4, 6, 8]
 
     def test_final_save_is_not_duplicated(self, cfg, monkeypatch):
-        cfg = TrainConfig(
-            log_base_dir=cfg.log_base_dir, num_iters=4, chkpt_freq=2, chkpt_keep=0
-        )
+        cfg = TrainConfig(log_base_dir=cfg.log_base_dir, num_iters=4, chkpt_freq=2, chkpt_keep=0)
         algo = self._run(cfg, monkeypatch)
 
         assert len(algo.saved) == 2  # iters 2 and 4, not 4 again at the end
@@ -755,9 +726,7 @@ class TestEmptyIterationIsReported:
     """
 
     def _train(self, cfg, monkeypatch):
-        monkeypatch.setattr(
-            train_mod, "build_algo", lambda _cfg: (FakeAlgo(), None)
-        )
+        monkeypatch.setattr(train_mod, "build_algo", lambda _cfg: (FakeAlgo(), None))
         return train(cfg)
 
     def test_warns_and_names_the_timeout(self, cfg, monkeypatch, caplog):

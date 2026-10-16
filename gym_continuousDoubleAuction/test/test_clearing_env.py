@@ -8,6 +8,7 @@ within the same step trade at the reference inside their interval rather than
 at whichever price the shuffle reached first, and the render path, the tape,
 the per-step counters and NAV conservation are all unchanged in shape.
 """
+
 from decimal import Decimal
 
 import numpy as np
@@ -19,8 +20,13 @@ from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
 
 
 def _env(**overrides):
-    config = {"num_of_agents": 2, "is_render": False, "max_step": 40,
-              "initial_price_min": 100, "initial_price_max": 100}
+    config = {
+        "num_of_agents": 2,
+        "is_render": False,
+        "max_step": 40,
+        "initial_price_min": 100,
+        "initial_price_max": 100,
+    }
     config.update(overrides)
     env = continuousDoubleAuctionEnv(config)
     env.reset(seed=1)
@@ -28,16 +34,25 @@ def _env(**overrides):
 
 
 def _limit(category, price_code=0, offset=1, mean=0.02):
-    return {"category": category, "order_slot": 0, "price": price_code, "price_offset": offset,
-            "size": np.array([mean], dtype=np.float32)}
+    return {
+        "category": category,
+        "order_slot": 0,
+        "price": price_code,
+        "price_offset": offset,
+        "size": np.array([mean], dtype=np.float32),
+    }
 
 
-_PASS = {"category": 0, "order_slot": 0, "price": 0, "price_offset": 1,
-         "size": np.zeros(1, dtype=np.float32)}
+_PASS = {
+    "category": 0,
+    "order_slot": 0,
+    "price": 0,
+    "price_offset": 1,
+    "size": np.zeros(1, dtype=np.float32),
+}
 
 
 class TestConfig:
-
     def test_defaults_are_the_continuous_double_auction(self):
         env = _env()
         assert env.step_clearing == "sequential" and env.matching_rule == "fifo"
@@ -59,13 +74,15 @@ class TestConfig:
         import dataclasses
         from gym_continuousDoubleAuction.train.train import TrainConfig
         from gym_continuousDoubleAuction.train.compare import parse_overrides
-        cfg = dataclasses.replace(TrainConfig(), **parse_overrides(["matching_rule=pro_rata", "step_clearing=batch"]))
+
+        cfg = dataclasses.replace(
+            TrainConfig(), **parse_overrides(["matching_rule=pro_rata", "step_clearing=batch"])
+        )
         assert cfg.env_config["matching_rule"] == "pro_rata"
         assert cfg.env_config["step_clearing"] == "batch"
 
 
 class TestBatchThroughTheEnv:
-
     def test_crossing_orders_in_one_step_clear_at_the_reference(self):
         """agent_0 bids 2 ticks above R, agent_1 asks 2 ticks below: sequentially
         the second arrival trades at the first's price; in a batch both trade
@@ -81,8 +98,8 @@ class TestBatchThroughTheEnv:
         seq_prices = {str(t["price"]) for t in seq.LOB.tape}
         bat_prices = {str(t["price"]) for t in bat.LOB.tape}
         assert len(seq.LOB.tape) == 1 and len(bat.LOB.tape) == 1
-        assert seq_prices <= {"99", "101", "99.0", "101.0"}   # whoever arrived first set it
-        assert bat_prices <= {"100", "100.0"}                  # the reference inside the interval
+        assert seq_prices <= {"99", "101", "99.0", "101.0"}  # whoever arrived first set it
+        assert bat_prices <= {"100", "100.0"}  # the reference inside the interval
 
     def test_the_result_is_the_same_whatever_the_shuffle(self):
         """Two agents, both quoting through R on opposite sides, in a batch: the
@@ -103,10 +120,12 @@ class TestBatchThroughTheEnv:
     def test_a_batch_fill_against_a_resting_order_is_a_passive_fill_for_the_rester(self):
         env = _env(step_clearing="batch")
         a, b = env.traders
-        b.place_order('limit', 'ask', 10, 101.0, env.LOB, env.traders)   # rests before the step
+        b.place_order('limit', 'ask', 10, 101.0, env.LOB, env.traders)  # rests before the step
         env.set_agg_LOB()
         _, _, _, _, infos = env.step({"agent_0": _limit(2, 0, 2, mean=0.02), "agent_1": _PASS})
-        assert infos["agent_1"]["num_passive_fills_step"] == infos["agent_1"]["num_trades_step"] >= 1
+        assert (
+            infos["agent_1"]["num_passive_fills_step"] == infos["agent_1"]["num_trades_step"] >= 1
+        )
         assert infos["agent_0"]["num_passive_fills_step"] == 0
         assert infos["agent_0"]["num_trades_step"] >= 1
 
@@ -125,12 +144,20 @@ class TestBatchThroughTheEnv:
         env.step({"agent_0": _limit(2, 0, 2), "agent_1": _limit(6, 0, 2)})
         assert len(env.seq_trades) == 2 == len(env.shuffled_actions)
         attached = [len(t) for t in env.seq_trades]
-        assert sorted(attached) == [0, 1]   # attached to the init party, once
+        assert sorted(attached) == [0, 1]  # attached to the init party, once
 
-    @pytest.mark.parametrize("clearing,rule", [("batch", "fifo"), ("batch", "pro_rata"), ("sequential", "pro_rata")])
+    @pytest.mark.parametrize(
+        "clearing,rule", [("batch", "fifo"), ("batch", "pro_rata"), ("sequential", "pro_rata")]
+    )
     def test_random_play_conserves_nav_and_stays_in_the_space(self, clearing, rule):
-        env = _env(num_of_agents=4, max_step=60, step_clearing=clearing, matching_rule=rule,
-                   initial_price_min=10, initial_price_max=100)
+        env = _env(
+            num_of_agents=4,
+            max_step=60,
+            step_clearing=clearing,
+            matching_rule=rule,
+            initial_price_min=10,
+            initial_price_max=100,
+        )
         env.reset(seed=7)
         space = env.observation_spaces["agent_0"]
         while True:
@@ -154,9 +181,16 @@ class TestBatchThroughTheEnv:
         b.place_order('limit', 'ask', 5, 102.0, env.LOB, env.traders)
         env.set_agg_LOB()
         # agent_0 re-prices its bid aggressively (modify, slot 1, code 0, aggressive).
-        act = {"agent_0": {"category": 3, "order_slot": 1, "price": 0, "price_offset": 2,
-                           "size": np.array([0.01], dtype=np.float32)},
-               "agent_1": _PASS}
+        act = {
+            "agent_0": {
+                "category": 3,
+                "order_slot": 1,
+                "price": 0,
+                "price_offset": 2,
+                "size": np.array([0.01], dtype=np.float32),
+            },
+            "agent_1": _PASS,
+        }
         _, _, _, _, infos = env.step(act)
         assert infos["agent_0"]["num_unmatched_step"] == 0
         # Whether it crossed depends on the drawn size vs the ask; either way

@@ -18,6 +18,7 @@ The claims that only hold once a real `Algorithm` exists:
 `TestOtherEncodersAreUnaffectedByJEPA` in `test_encoder_wiring.py` is the model
 for the isolation tests here.
 """
+
 import shutil
 import tempfile
 
@@ -81,9 +82,7 @@ class TestCompositionPreservesTheEncodersLearner:
         cfg.encoder_type = "jepa"
         assert _learner_class(cfg) is CDAJEPALearner
 
-    @pytest.mark.parametrize(
-        "base", [CDAPPOTorchLearner, CDAJEPALearner], ids=["moe", "jepa"]
-    )
+    @pytest.mark.parametrize("base", [CDAPPOTorchLearner, CDAJEPALearner], ids=["moe", "jepa"])
     def test_the_loss_still_comes_from_the_base(self, base):
         """The MoE and JEPA terms must survive the composition.
 
@@ -100,8 +99,7 @@ class TestCompositionPreservesTheEncodersLearner:
         cfg.encoder_type = "jepa"
         composed = _learner_class(cfg)
         assert CDAJEPALearner in composed.__mro__
-        assert (composed.compute_loss_for_module
-                is CDAJEPALearner.compute_loss_for_module)
+        assert composed.compute_loss_for_module is CDAJEPALearner.compute_loss_for_module
 
 
 class TestTunedAdamIsIndependentOfCBP:
@@ -117,15 +115,13 @@ class TestTunedAdamIsIndependentOfCBP:
         assert _learner_class(TrainConfig(**TEST_CFG)) is CDAPPOTorchLearner
 
     def test_tuned_adam_alone_composes_only_the_optimiser_mixin(self):
-        cfg = TrainConfig(**TEST_CFG, adam_betas=[0.99, 0.99],
-                          adam_weight_decay=1e-4)
+        cfg = TrainConfig(**TEST_CFG, adam_betas=[0.99, 0.99], adam_weight_decay=1e-4)
         composed = _learner_class(cfg)
         assert TunedAdamMixin in composed.__mro__
         assert CBPLearnerMixin not in composed.__mro__
 
     def test_both_compose_together(self):
-        cfg = TrainConfig(**TEST_CFG, **FIRING_CFG,
-                          adam_betas=[0.99, 0.99], adam_weight_decay=1e-4)
+        cfg = TrainConfig(**TEST_CFG, **FIRING_CFG, adam_betas=[0.99, 0.99], adam_weight_decay=1e-4)
         composed = _learner_class(cfg)
         assert CBPLearnerMixin in composed.__mro__
         assert TunedAdamMixin in composed.__mro__
@@ -146,10 +142,8 @@ class TestTunedAdamReachesTheOptimiser:
 
     @classmethod
     def setup_class(cls):
-        ray.init(ignore_reinit_error=True, include_dashboard=False,
-                 log_to_driver=False, num_cpus=2)
-        cfg = TrainConfig(**TEST_CFG, adam_betas=[0.99, 0.99],
-                          adam_weight_decay=1e-4)
+        ray.init(ignore_reinit_error=True, include_dashboard=False, log_to_driver=False, num_cpus=2)
+        cfg = TrainConfig(**TEST_CFG, adam_betas=[0.99, 0.99], adam_weight_decay=1e-4)
         ppo_config, _cb = build_config(cfg)
         cls.algo = ppo_config.build_algo()
 
@@ -171,8 +165,7 @@ class TestCBPRunsInsideARealUpdate:
 
     @classmethod
     def setup_class(cls):
-        ray.init(ignore_reinit_error=True, include_dashboard=False,
-                 log_to_driver=False, num_cpus=2)
+        ray.init(ignore_reinit_error=True, include_dashboard=False, log_to_driver=False, num_cpus=2)
         cls.cfg = TrainConfig(**TEST_CFG, **FIRING_CFG)
         ppo_config, _cb = build_config(cls.cfg)
         cls.algo = ppo_config.build_algo()
@@ -235,8 +228,7 @@ class TestCBPRunsInsideARealUpdate:
         learners = self.result["learners"]
         for module_id in ("policy_0", "policy_1"):
             metrics = {
-                key: value for key, value in learners[module_id].items()
-                if key.startswith("cbp_")
+                key: value for key, value in learners[module_id].items() if key.startswith("cbp_")
             }
             assert {
                 "cbp_dead_unit_frac",
@@ -271,10 +263,8 @@ class TestCBPOnTheLSTMCore:
 
     @classmethod
     def setup_class(cls):
-        ray.init(ignore_reinit_error=True, include_dashboard=False,
-                 log_to_driver=False, num_cpus=2)
-        cls.cfg = TrainConfig(**TEST_CFG, **FIRING_CFG, encoder_type="lstm",
-                              cbp_scope="recurrent")
+        ray.init(ignore_reinit_error=True, include_dashboard=False, log_to_driver=False, num_cpus=2)
+        cls.cfg = TrainConfig(**TEST_CFG, **FIRING_CFG, encoder_type="lstm", cbp_scope="recurrent")
         ppo_config, _cb = build_config(cls.cfg)
         cls.algo = ppo_config.build_algo()
         cls.result = cls.algo.train()
@@ -289,7 +279,9 @@ class TestCBPOnTheLSTMCore:
         assert set(self.learner._cbp_layers) == {"policy_0", "policy_1"}
         for layers in self.learner._cbp_layers.values():
             assert [layer.name for layer in layers] == [
-                "encoder.actor_encoder.lstm", "encoder.critic_encoder.lstm"]
+                "encoder.actor_encoder.lstm",
+                "encoder.critic_encoder.lstm",
+            ]
 
     def test_units_of_the_lstm_were_actually_replaced(self):
         total = sum(
@@ -314,7 +306,9 @@ class TestCBPOnTheLSTMCore:
         state = self.learner.get_state()
         for module_id in ("policy_0", "policy_1"):
             assert set(state[CBP_STATE][module_id]) == {
-                "encoder.actor_encoder.lstm", "encoder.critic_encoder.lstm"}
+                "encoder.actor_encoder.lstm",
+                "encoder.critic_encoder.lstm",
+            }
 
         ages = {
             (module_id, name): layer_state.age.clone()
@@ -329,8 +323,7 @@ class TestCBPOnTheLSTMCore:
         self.learner.set_state(state)
 
         for (module_id, name), age in ages.items():
-            torch.testing.assert_close(
-                self.learner._cbp_state[module_id][name].age, age)
+            torch.testing.assert_close(self.learner._cbp_state[module_id][name].age, age)
 
 
 class TestMetricsOnlyChangesNothing:
@@ -338,11 +331,13 @@ class TestMetricsOnlyChangesNothing:
 
     @classmethod
     def setup_class(cls):
-        ray.init(ignore_reinit_error=True, include_dashboard=False,
-                 log_to_driver=False, num_cpus=2)
+        ray.init(ignore_reinit_error=True, include_dashboard=False, log_to_driver=False, num_cpus=2)
         cfg = TrainConfig(
-            **TEST_CFG, cbp_enabled=True, cbp_metrics_only=True,
-            cbp_replacement_rate=0.5, cbp_maturity_threshold=0,
+            **TEST_CFG,
+            cbp_enabled=True,
+            cbp_metrics_only=True,
+            cbp_replacement_rate=0.5,
+            cbp_maturity_threshold=0,
             cbp_metrics_every_n_updates=1,
         )
         ppo_config, _cb = build_config(cfg)
@@ -386,8 +381,7 @@ class TestCBPStateSurvivesACheckpoint:
 
     @classmethod
     def setup_class(cls):
-        ray.init(ignore_reinit_error=True, include_dashboard=False,
-                 log_to_driver=False, num_cpus=2)
+        ray.init(ignore_reinit_error=True, include_dashboard=False, log_to_driver=False, num_cpus=2)
         cls.tmp = tempfile.mkdtemp()
         cfg = TrainConfig(**TEST_CFG, **FIRING_CFG)
         ppo_config, _cb = build_config(cfg)
@@ -410,8 +404,12 @@ class TestCBPStateSurvivesACheckpoint:
         state = self.learner.get_state()
         saved = {
             module_id: {
-                name: (layer.utility.clone(), layer.age.clone(),
-                       layer.accumulator, layer.replacements)
+                name: (
+                    layer.utility.clone(),
+                    layer.age.clone(),
+                    layer.accumulator,
+                    layer.replacements,
+                )
                 for name, layer in layers.items()
             }
             for module_id, layers in self.learner._cbp_state.items()
@@ -467,12 +465,9 @@ class TestCBPSurvivesARealSaveAndRestore:
 
         from gym_continuousDoubleAuction.train.train import build_algo, save_checkpoint
 
-        ray.init(ignore_reinit_error=True, include_dashboard=False,
-                 log_to_driver=False, num_cpus=2)
+        ray.init(ignore_reinit_error=True, include_dashboard=False, log_to_driver=False, num_cpus=2)
         cls.tmpdir = tempfile.mkdtemp(prefix="cda_cbp_ckpt_")
-        cls.cfg = TrainConfig(
-            log_base_dir=cls.tmpdir, chkpt_keep=0, **TEST_CFG, **FIRING_CFG
-        )
+        cls.cfg = TrainConfig(log_base_dir=cls.tmpdir, chkpt_keep=0, **TEST_CFG, **FIRING_CFG)
 
         ppo_config, callback = build_config(cls.cfg)
         original = ppo_config.build_algo()
@@ -491,8 +486,7 @@ class TestCBPSurvivesARealSaveAndRestore:
         learner = original.learner_group._learner
         cls.saved = {
             module_id: {
-                name: (state.utility.clone(), state.age.clone(),
-                       state.replacements)
+                name: (state.utility.clone(), state.age.clone(), state.replacements)
                 for name, state in layers.items()
             }
             for module_id, layers in learner._cbp_state.items()
@@ -500,9 +494,7 @@ class TestCBPSurvivesARealSaveAndRestore:
         save_checkpoint(original, cls.cfg, int(original.iteration))
         original.stop()
 
-        cls.restored, _cb2 = build_algo(
-            dataclasses.replace(cls.cfg, is_restore=True)
-        )
+        cls.restored, _cb2 = build_algo(dataclasses.replace(cls.cfg, is_restore=True))
 
     @classmethod
     def teardown_class(cls):
@@ -525,9 +517,7 @@ class TestCBPSurvivesARealSaveAndRestore:
         assert any(m.startswith("champion") for m in learner.module.keys()), (
             "the restored league should carry a champion, or this proves nothing"
         )
-        assert not any(
-            module_id.startswith("champion") for module_id in learner._cbp_layers
-        )
+        assert not any(module_id.startswith("champion") for module_id in learner._cbp_layers)
 
     def test_utility_and_ages_come_back(self):
         """Without this, every unit restarts at age 0 and utility 0.
@@ -580,17 +570,13 @@ class TestRestoreCannotChangeCBP:
         from gym_continuousDoubleAuction.train.train import _check_restored_config
 
         with pytest.raises(ValueError, match="cbp_metrics_only"):
-            _check_restored_config(
-                self._config(), self._config(cbp_metrics_only=True)
-            )
+            _check_restored_config(self._config(), self._config(cbp_metrics_only=True))
 
     def test_retuning_adam_on_a_restore_raises(self):
         from gym_continuousDoubleAuction.train.train import _check_restored_config
 
         with pytest.raises(ValueError, match="adam_betas"):
-            _check_restored_config(
-                self._config(), self._config(adam_betas=[0.99, 0.99])
-            )
+            _check_restored_config(self._config(), self._config(adam_betas=[0.99, 0.99]))
 
     def test_the_error_says_the_weights_are_fine(self):
         """The distinction from a structural mismatch has to survive the message.
@@ -621,17 +607,13 @@ class TestRestoreCannotChangeCBP:
         """
         from gym_continuousDoubleAuction.train.train import _check_restored_config
 
-        _check_restored_config(
-            self._config(), self._config(cbp_replacement_rate=0.5)
-        )
+        _check_restored_config(self._config(), self._config(cbp_replacement_rate=0.5))
 
     def test_an_unchanged_config_restores_cleanly(self):
         from gym_continuousDoubleAuction.train.train import _check_restored_config
 
         _check_restored_config(self._config(), self._config())
-        _check_restored_config(
-            self._config(cbp_enabled=True), self._config(cbp_enabled=True)
-        )
+        _check_restored_config(self._config(cbp_enabled=True), self._config(cbp_enabled=True))
 
     def test_a_checkpoint_predating_the_groups_still_raises(self):
         """The case that made the naive fix hollow.

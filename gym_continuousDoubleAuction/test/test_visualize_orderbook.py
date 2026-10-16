@@ -15,6 +15,7 @@ this file was missed, because nothing in `visualize/` was tested at all.
 
 So these tests pin the slice, not the plot.
 """
+
 import numpy as np
 import pytest
 

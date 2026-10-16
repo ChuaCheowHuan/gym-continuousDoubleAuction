@@ -9,6 +9,7 @@ reads, so that a missing or renamed shared attribute is a type error rather than
 
 The declarations are for the checker only; nothing here exists at runtime.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, List
@@ -27,7 +28,7 @@ class SharedState:
         traders: List[Trader]
         t_step: int
         np_random: np.random.Generator
-        agg_LOB_raw: Any    # the raw snapshot array; `{}` before the first one
+        agg_LOB_raw: Any  # the raw snapshot array; `{}` before the first one
         # The price grid and last print, set by `Action_Helper`.
         min_tick: Any
         last_price: float

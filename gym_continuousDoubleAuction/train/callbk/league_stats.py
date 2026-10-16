@@ -5,6 +5,7 @@ result, deciding whether to promote, and changing the league. The first is pure 
 here, so the rules for NaN returns, idle modules and the does-it-trade guard's input can be
 tested without an algorithm.
 """
+
 import math
 from typing import Dict, List, NamedTuple, Optional, Sequence
 
@@ -16,8 +17,9 @@ from gym_continuousDoubleAuction.train.returns import usable_return
 
 class Returns(NamedTuple):
     """The modules' mean returns this iteration, split by whether they played."""
-    valid: List[float]          # the returns that are numbers
-    idle: List[str]             # modules that played no episodes (None or NaN), sorted
+
+    valid: List[float]  # the returns that are numbers
+    idle: List[str]  # modules that played no episodes (None or NaN), sorted
 
 
 def split_returns(policy_returns: Dict[str, Optional[float]]) -> Returns:
@@ -29,8 +31,9 @@ def split_returns(policy_returns: Dict[str, Optional[float]]) -> Returns:
     candidate - the champion trigger stops firing, silently and permanently (the GPU runs
     of 2026-08-15 died this way).
     """
-    idle = sorted(module_id for module_id, value in policy_returns.items()
-                  if value is None or np.isnan(value))
+    idle = sorted(
+        module_id for module_id, value in policy_returns.items() if value is None or np.isnan(value)
+    )
     valid = [v for v in policy_returns.values() if v is not None and not np.isnan(v)]
     return Returns(valid, idle)
 
@@ -40,8 +43,9 @@ class Candidate(NamedTuple):
     value: float
 
 
-def best_trainable(policy_returns: Dict[str, Optional[float]],
-                   trainable_ids: Sequence[str]) -> Candidate:
+def best_trainable(
+    policy_returns: Dict[str, Optional[float]], trainable_ids: Sequence[str]
+) -> Candidate:
     """The trainable module with the highest usable return; `(None, -inf)` when none has one."""
     best, best_return = None, -float("inf")
     for module_id in trainable_ids:

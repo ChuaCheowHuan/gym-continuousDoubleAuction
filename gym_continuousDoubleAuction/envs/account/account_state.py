@@ -5,6 +5,7 @@ fields are created by `Account.reset_acc`; this names the ones the mixins use, s
 checker can see them and a reader can find out what the mixins depend on without reading
 every method. The declarations exist for the checker only (nothing is created at runtime).
 """
+
 from __future__ import annotations
 
 from decimal import Decimal

@@ -48,6 +48,7 @@ the level tokens were zero-padded to the scalars' width anyway. Older
 snapshots' level tokens carry zeros there - the env records own orders only
 for now.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -60,8 +61,7 @@ from gym_continuousDoubleAuction.config_loader import group
 #: Field order within a snapshot's book block, matching the `np.concatenate` in
 #: `State_Helper.set_agg_LOB`. Named here so a token's channels can be
 #: identified in a test or a debugger without counting offsets by hand.
-BOOK_FIELDS = ("bid_price", "bid_size", "ask_price", "ask_size",
-               "bid_occupied", "ask_occupied")
+BOOK_FIELDS = ("bid_price", "bid_size", "ask_price", "ask_size", "bid_occupied", "ask_occupied")
 
 #: The two rows of the `grid` book mode (State_Helper.GRID_ROWS).
 GRID_FIELDS = ("bid_size", "ask_size")
@@ -69,8 +69,12 @@ GRID_FIELDS = ("bid_size", "ask_size")
 #: Scalar order within a snapshot's trailing block, same source
 #: (`State_Helper.EXTRA_FIELDS`).
 EXTRA_FIELDS = (
-    "log_mid", "log1p_spread_ticks", "mid_return", "signed_volume",
-    "log1p_trade_count", "trade_direction",
+    "log_mid",
+    "log1p_spread_ticks",
+    "mid_return",
+    "signed_volume",
+    "log1p_trade_count",
+    "trade_direction",
 )
 
 

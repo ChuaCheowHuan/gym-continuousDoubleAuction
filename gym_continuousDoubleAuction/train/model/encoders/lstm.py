@@ -47,6 +47,7 @@ Read by RLlib's connectors, not by this encoder, so it lives on the top-level
 model config rather than in the encoder config. `build_trainable_module_spec`
 lifts it out of this spec block for that reason - see the note there.
 """
+
 from __future__ import annotations
 
 from typing import Any, Dict, List
@@ -84,9 +85,7 @@ def build_lstm_config(
 ) -> RecurrentEncoderConfig:
     settings = encoder_settings("lstm", spec)
     if settings["num_layers"] < 1:
-        raise ValueError(
-            f"lstm num_layers must be >= 1; got {settings['num_layers']}."
-        )
+        raise ValueError(f"lstm num_layers must be >= 1; got {settings['num_layers']}.")
 
     return RecurrentEncoderConfig(
         input_dims=input_dims,

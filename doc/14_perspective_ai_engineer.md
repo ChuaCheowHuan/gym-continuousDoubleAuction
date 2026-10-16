@@ -88,8 +88,13 @@ codebase most needs.
 [`setup.py`](../setup.py) declares:
 
 ```python
-install_requires = ["gymnasium==1.2.2", "numpy>=2.5,<3", "pandas>=3.0,<4",
-                    "sortedcontainers>=2.4", "tabulate>=0.10"]
+install_requires = [
+    "gymnasium==1.2.2",
+    "numpy>=2.5,<3",
+    "pandas>=3.0,<4",
+    "sortedcontainers>=2.4",
+    "tabulate>=0.10",
+]
 ```
 
 with the comment *"Kept deliberately narrow: these are what the environment needs to import… so
@@ -358,12 +363,12 @@ called `build_config(cfg)` unconditionally, then on the restore branch discarded
 algorithm:
 
 ```python
-ppo, callback_instance = build_config(cfg)          # builds a NEW callback
+ppo, callback_instance = build_config(cfg)  # builds a NEW callback
 if cfg.is_restore and os.path.exists(...):
-    algo = Algorithm.from_checkpoint(...)           # uses the RESTORED callback
+    algo = Algorithm.from_checkpoint(...)  # uses the RESTORED callback
 else:
     algo = ppo.build_algo()
-return algo, callback_instance                      # ...but returns the new one
+return algo, callback_instance  # ...but returns the new one
 ```
 
 `train()` ignores the returned callback, so training is unaffected. But any caller that *uses* it

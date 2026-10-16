@@ -12,6 +12,7 @@ Every scenario below is built by hand on a 4-agent book with 10,000 each, so
 the numbers can be checked with a pencil. agent_0 goes short 90 @ 100 against
 agent_1's bid; agents 2 and 3 then quote where the test needs the mid.
 """
+
 import dataclasses
 from decimal import Decimal
 
@@ -28,8 +29,14 @@ TOTAL = Decimal(4 * CASH)
 
 
 def _env(**overrides):
-    config = {"num_of_agents": 4, "init_cash": CASH, "max_step": 50, "is_render": False,
-              "initial_price_min": 100, "initial_price_max": 100}
+    config = {
+        "num_of_agents": 4,
+        "init_cash": CASH,
+        "max_step": 50,
+        "is_render": False,
+        "initial_price_min": 100,
+        "initial_price_max": 100,
+    }
     config.update(overrides)
     env = continuousDoubleAuctionEnv(config)
     env.reset(seed=1)
@@ -50,9 +57,16 @@ def _short_90(env):
 
 
 def _pass(env):
-    return {agent: {"category": 0, "order_slot": 0, "price": 0, "price_offset": 1,
-                    "size": np.zeros(1, dtype=np.float32)}
-            for agent in env.agents}
+    return {
+        agent: {
+            "category": 0,
+            "order_slot": 0,
+            "price": 0,
+            "price_offset": 1,
+            "size": np.zeros(1, dtype=np.float32),
+        }
+        for agent in env.agents
+    }
 
 
 def _total_nav(env):
@@ -60,7 +74,6 @@ def _total_nav(env):
 
 
 class TestTheTrigger:
-
     def test_a_squeezed_short_breaches_before_it_is_bankrupt(self):
         env = _env()
         _short_90(env)
@@ -88,7 +101,6 @@ class TestTheTrigger:
 
 
 class TestBookThenADL:
-
     def _squeeze(self, env):
         _short_90(env)
         _order(env, 2, "limit", "bid", 1, 170.0)
@@ -120,8 +132,11 @@ class TestBookThenADL:
         # agent_0's own setup sale is already in its step count.
         own = a0.num_trades_step
         env.liquidate()
-        assert (a0.num_liquidations_step, a0.liquidated_book_qty_step,
-                a0.liquidated_adl_qty_step) == (1, 50, 40)
+        assert (
+            a0.num_liquidations_step,
+            a0.liquidated_book_qty_step,
+            a0.liquidated_adl_qty_step,
+        ) == (1, 50, 40)
         assert a1.adl_qty_step == 40
         # Forced fills are not the agent's trades: trade_penalty must not see them.
         assert a0.num_trades_step == own
@@ -159,7 +174,6 @@ class TestBookThenADL:
 
 
 class TestThroughAStep:
-
     def test_a_liquidated_trader_with_equity_left_keeps_trading(self):
         env = _env()
         _short_90(env)
@@ -195,7 +209,6 @@ class TestThroughAStep:
 
 
 class TestADLSplit:
-
     class _T:
         def __init__(self, ID, pos):
             self.ID = ID
@@ -216,7 +229,6 @@ class TestADLSplit:
 
 
 class TestConfig:
-
     def test_defaults(self):
         env = _env()
         assert env.liquidation == "market_adl"
@@ -265,9 +277,14 @@ class TestGradual:
             _order(env, 3, "limit", "ask", 50, 180.0)
             env.mark_to_mkt()
             (event,) = env.liquidate()
-            results.append((event["book_qty"], event["adl_qty"],
-                            [t.acc.nav for t in env.traders],
-                            [t.acc.net_position for t in env.traders]))
+            results.append(
+                (
+                    event["book_qty"],
+                    event["adl_qty"],
+                    [t.acc.nav for t in env.traders],
+                    [t.acc.net_position for t in env.traders],
+                )
+            )
         assert results[0] == results[1]
 
     def test_it_closes_in_slices_and_adl_takes_the_rest_on_the_last_step(self):
@@ -297,7 +314,8 @@ class TestGradual:
         assert not trader._order_approved("bid", 1, 100.0, env.LOB, "limit")
         assert not trader._order_approved("ask", 1, 100.0, env.LOB, "market")
         from gym_continuousDoubleAuction.envs.exchg.state_helper import MASK_FIELDS
-        mask = obs["agent_0"][-len(MASK_FIELDS):]
+
+        mask = obs["agent_0"][-len(MASK_FIELDS) :]
         assert mask[0] == 1.0 and not any(mask[1:])
 
     def test_the_freeze_lifts_when_the_position_is_closed(self):
@@ -411,7 +429,9 @@ class TestTheBandAllowsForTheTakerFee:
         _order(env, 2, "limit", "bid", 1, 209.0)
         _order(env, 1, "limit", "ask", 90, 211.0)
         env.mark_to_mkt()
-        assert env.liquidation_engine._bankruptcy_price(env.traders[0], env.mark_price()) == Decimal(211)
+        assert env.liquidation_engine._bankruptcy_price(
+            env.traders[0], env.mark_price()
+        ) == Decimal(211)
 
     def test_closing_a_long_sells_no_lower_than_the_fee_adjusted_price(self):
         """A fully paid long cannot reach the breach in a real run, so the

@@ -78,9 +78,9 @@ output paths, not the trained policy. See [§8](#8-runtime-profiles).
 ```python
 from gym_continuousDoubleAuction.config_loader import constant, env_default, group, value
 
-k_rows   = constant("observation_layout", "k_rows")     # tunable_constants.json
-init_cash = env_default("init_cash")                    # env_defaults.json
-ppo      = group("train_config.json", "ppo")
+k_rows = constant("observation_layout", "k_rows")  # tunable_constants.json
+init_cash = env_default("init_cash")  # env_defaults.json
+ppo = group("train_config.json", "ppo")
 ```
 
 Three rules it enforces:
@@ -143,7 +143,7 @@ python -m gym_continuousDoubleAuction.train.train --config sweeps/wide_book.json
 ```
 
 ```python
-cfg = TrainConfig()                      # values from config/train_config.json
+cfg = TrainConfig()  # values from config/train_config.json
 env = continuousDoubleAuctionEnv(cfg.env_config)
 ```
 

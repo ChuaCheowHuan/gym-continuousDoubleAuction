@@ -1,18 +1,16 @@
-
 from decimal import Decimal
 
 from .account_state import AccountState
 
 
 class Calculate(AccountState):
-
     def cal_nav(self) -> Decimal:
         """
         The trader's cash, cash_on_hold & his holding's value (position_val) at
         this current t step.
         """
 
-        self.nav =  self.cash + self.cash_on_hold + self.position_val
+        self.nav = self.cash + self.cash_on_hold + self.position_val
         if self.nav > self.max_nav:
             self.max_nav = self.nav
         return self.nav

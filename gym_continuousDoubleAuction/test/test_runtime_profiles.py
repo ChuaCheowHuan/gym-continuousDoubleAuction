@@ -9,6 +9,7 @@ comes out the other end.
 The hardware sets are also checked against the stated ceiling and floor: at
 most 2 CPUs with 1 GPU, at least 1 CPU with 0 GPUs.
 """
+
 import dataclasses
 import json
 import shutil
@@ -59,7 +60,6 @@ def with_cuda(monkeypatch):
 
 
 class TestHardwareProfiles:
-
     def test_both_sets_exist(self):
         profiles = config_loader.group(runtime.PROFILES_FILE, "hardware")
         assert set(profiles) == {"gpu", "cpu"}
@@ -103,7 +103,6 @@ class TestHardwareProfiles:
 
 
 class TestResolution:
-
     def test_gpu_toggle_off_selects_the_cpu_set(self, with_cuda):
         assert runtime.resolve(platform="local", use_gpu=False).hardware == "cpu"
 
@@ -150,7 +149,6 @@ class TestResolution:
 
 
 class TestApply:
-
     def test_profile_fields_land_on_the_config(self, no_cuda):
         rt = runtime.resolve(platform="local", use_gpu=False)
         cfg = runtime.apply(TrainConfig(), rt)
@@ -163,10 +161,19 @@ class TestApply:
         cfg = runtime.apply(base, runtime.resolve(platform="local", use_gpu=False))
         moved = set(runtime.changed_fields(base, cfg))
         assert not moved & {
-            "num_agents", "num_trained_agents", "max_step", "num_iters", "lr",
-            "num_epochs", "minibatch_size",
-            "order_penalty", "trade_penalty", "drawdown_penalty",
-            "passive_bonus", "loss_multiplier", "seed",
+            "num_agents",
+            "num_trained_agents",
+            "max_step",
+            "num_iters",
+            "lr",
+            "num_epochs",
+            "minibatch_size",
+            "order_penalty",
+            "trade_penalty",
+            "drawdown_penalty",
+            "passive_bonus",
+            "loss_multiplier",
+            "seed",
         }
 
     def test_output_roots_are_applied(self, config_tree, no_cuda):
@@ -188,9 +195,7 @@ class TestApply:
         assert cfg.log_base_dir == base.log_base_dir
         assert cfg.episode_data_dir == base.episode_data_dir
 
-    def test_disabled_episode_data_is_not_re_enabled_by_a_root(
-        self, config_tree, no_cuda
-    ):
+    def test_disabled_episode_data_is_not_re_enabled_by_a_root(self, config_tree, no_cuda):
         """Relocating a disabled output would silently turn it back on."""
         config_tree(
             "runtime_profiles.json",
@@ -202,7 +207,6 @@ class TestApply:
 
 
 class TestEnvVars:
-
     def test_exports_the_configured_names(self, monkeypatch):
         monkeypatch.delenv("RAY_DEBUG_DISABLE_MEMORY_MONITOR", raising=False)
         assert runtime.apply_env_vars()["RAY_DEBUG_DISABLE_MEMORY_MONITOR"] == "True"
@@ -249,7 +253,7 @@ class TestRayInitKwargsCarryTheLogging:
         assert "logging_config" not in runtime.ray_init_kwargs(self._rt())
 
     def test_an_empty_encoding_leaves_rays_logging_alone(self):
-        """"Off" has to be expressible - passing a LoggingConfig is not a
+        """ "Off" has to be expressible - passing a LoggingConfig is not a
         no-op, so an empty encoding must omit the key entirely."""
         cfg = TrainConfig(episode_data_dir=None, ray_log_encoding="")
 

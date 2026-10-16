@@ -29,6 +29,7 @@ shows up there first. It is split by episode, reusing `probe.probe.split_masks`
 - consecutive observations share three of their four snapshots, so a row-level
 split puts near-duplicates of a validation row in training.
 """
+
 from __future__ import annotations
 
 import json
@@ -143,8 +144,7 @@ class PretrainReport:
         return f"{values[0]:.5f} -> {values[-1]:.5f}"
 
 
-def resolve_spec(encoder_type: str,
-                 encoder_spec: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def resolve_spec(encoder_type: str, encoder_spec: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """`encoder_spec`, with None meaning "the config file's block".
 
     One definition because `pretrain` and `save` must agree: the fingerprint
@@ -158,9 +158,7 @@ def resolve_spec(encoder_type: str,
     """
     if encoder_spec is not None:
         return encoder_spec
-    return group("train_config.json", "encoder")["encoder_specs"].get(
-        encoder_type, {}
-    )
+    return group("train_config.json", "encoder")["encoder_specs"].get(encoder_type, {})
 
 
 def _jepa_encoder(module):
@@ -182,8 +180,9 @@ def _jepa_encoder(module):
     )
 
 
-def _batches(rows: np.ndarray, corpus: ProbeCorpus, batch_size: int,
-             generator: np.random.Generator):
+def _batches(
+    rows: np.ndarray, corpus: ProbeCorpus, batch_size: int, generator: np.random.Generator
+):
     """Shuffled minibatches of observation rows.
 
     Shuffling is safe here and is *not* safe in the probe: there the split
@@ -193,7 +192,7 @@ def _batches(rows: np.ndarray, corpus: ProbeCorpus, batch_size: int,
     """
     order = generator.permutation(len(rows))
     for start in range(0, len(order), batch_size):
-        chunk = rows[order[start:start + batch_size]]
+        chunk = rows[order[start : start + batch_size]]
         yield torch.from_numpy(corpus.obs[chunk])
 
 
@@ -207,7 +206,7 @@ def _evaluate(encoder, module, rows, corpus, batch_size) -> Dict[str, float]:
     """
     losses, stds = [], []
     for start in range(0, len(rows), batch_size):
-        chunk = rows[start:start + batch_size]
+        chunk = rows[start : start + batch_size]
         encoder({Columns.OBS: torch.from_numpy(corpus.obs[chunk])})
         stats = encoder.take_jepa_stats()
         if stats is None:
@@ -279,9 +278,7 @@ def pretrain(
     torch.manual_seed(seed)
     generator = np.random.default_rng(seed)
 
-    module = features_module.build_module(
-        obs_space, act_space, encoder_type, encoder_spec
-    )
+    module = features_module.build_module(obs_space, act_space, encoder_type, encoder_spec)
     encoder = _jepa_encoder(module)
 
     # The world model has no optimiser here and no data to train on: the loop
@@ -343,23 +340,23 @@ def pretrain(
             step += 1
 
             if step % log_every == 0 or step == steps:
-                evaluated = _evaluate(
-                    encoder, module, validation_rows, corpus, batch_size
-                )
+                evaluated = _evaluate(encoder, module, validation_rows, corpus, batch_size)
                 report.train_loss.append(float(stats["predict_loss"]))
                 report.validation_loss.append(evaluated["loss"])
                 report.latent_std.append(evaluated["latent_std"])
                 logger.info(
                     "step %s/%s  train %.5f  val %.5f  latent_std %.4f",
-                    step, steps, report.train_loss[-1],
-                    report.validation_loss[-1], report.latent_std[-1],
+                    step,
+                    steps,
+                    report.train_loss[-1],
+                    report.validation_loss[-1],
+                    report.latent_std[-1],
                 )
 
     return module, report
 
 
-def save(module, path: str, encoder_type: str,
-         encoder_spec: Optional[Dict[str, Any]]) -> None:
+def save(module, path: str, encoder_type: str, encoder_spec: Optional[Dict[str, Any]]) -> None:
     """Write the trained encoder's weights and the fingerprint that guards them.
 
     The fingerprint is the whole point of the format. `train.py` already refuses
@@ -378,16 +375,19 @@ def save(module, path: str, encoder_type: str,
         # The tuple of pairs becomes a list of lists here; `fingerprints_match`
         # normalises both sides rather than relying on the round trip.
         json.dump(
-            {"encoder_type": fingerprint["encoder_type"],
-             "encoder_spec": dict(fingerprint["encoder_spec"])},
+            {
+                "encoder_type": fingerprint["encoder_type"],
+                "encoder_spec": dict(fingerprint["encoder_spec"]),
+            },
             handle,
             indent=2,
         )
     logger.info("wrote %s and %s to %s", WEIGHTS_FILE, FINGERPRINT_FILE, path)
 
 
-def verify_fingerprint(path: str, encoder_type: str,
-                      encoder_spec: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def verify_fingerprint(
+    path: str, encoder_type: str, encoder_spec: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
     """Check a pretrain checkpoint describes the encoder about to be built.
 
     Extracted so it can run at *spec-build* time, before any weights are handed
@@ -434,8 +434,7 @@ def verify_fingerprint(path: str, encoder_type: str,
     return stored
 
 
-def module_state_path(path: str, encoder_type: str,
-                      encoder_spec: Optional[Dict[str, Any]]) -> str:
+def module_state_path(path: str, encoder_type: str, encoder_spec: Optional[Dict[str, Any]]) -> str:
     """The `RLModuleSpec.load_state_path` for a verified pretrain checkpoint.
 
     The fingerprint is checked first, so a mismatched checkpoint never reaches
@@ -453,8 +452,9 @@ def module_state_path(path: str, encoder_type: str,
     return module_path
 
 
-def load_into(module, path: str, encoder_type: str,
-              encoder_spec: Optional[Dict[str, Any]]) -> List[str]:
+def load_into(
+    module, path: str, encoder_type: str, encoder_spec: Optional[Dict[str, Any]]
+) -> List[str]:
     """Load pretrained weights into every encoder of `module`.
 
     Both the actor's encoder and, when `vf_share_layers` is false, the critic's
@@ -472,9 +472,7 @@ def load_into(module, path: str, encoder_type: str,
             shape mismatch several frames away, or worse, a partial load.
     """
     verify_fingerprint(path, encoder_type, encoder_spec)
-    state = torch.load(
-        os.path.join(path, WEIGHTS_FILE), map_location="cpu", weights_only=True
-    )
+    state = torch.load(os.path.join(path, WEIGHTS_FILE), map_location="cpu", weights_only=True)
 
     loaded = []
     for name in ("encoder", "actor_encoder", "critic_encoder"):

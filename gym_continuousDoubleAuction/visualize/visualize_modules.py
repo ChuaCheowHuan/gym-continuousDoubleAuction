@@ -23,9 +23,9 @@ from gym_continuousDoubleAuction.visualize.visualize_execution import (
 #: "did the champion beat the random baseline" is a question about families.
 FAMILIES = ("trainable", "baseline", "champion")
 _FAMILY_COLORS = {
-    "trainable": "#2a78d6",   # blue
-    "baseline": "#898781",    # muted gray - the do-nothing reference
-    "champion": "#eb6834",    # orange
+    "trainable": "#2a78d6",  # blue
+    "baseline": "#898781",  # muted gray - the do-nothing reference
+    "champion": "#eb6834",  # orange
 }
 
 
@@ -43,7 +43,7 @@ def module_family(module_id, num_trained_agents):
     if module_id.startswith(CHAMPION_PREFIX):
         return "champion"
     if module_id.startswith(POLICY_PREFIX):
-        suffix = module_id[len(POLICY_PREFIX):]
+        suffix = module_id[len(POLICY_PREFIX) :]
         if suffix.isdigit() and int(suffix) < num_trained_agents:
             return "trainable"
         return "baseline"
@@ -79,7 +79,9 @@ def per_agent_episode(frame):
     rows["pass_rate"] = rows["passes"] / rows["steps"]
     rows["rejection_rate"] = rows["rejections"] / rows["steps"]
     rows["maker_share"] = np.where(
-        rows["trades"] > 0, rows["passive"] / rows["trades"], np.nan,
+        rows["trades"] > 0,
+        rows["passive"] / rows["trades"],
+        np.nan,
     )
     return rows
 
@@ -113,7 +115,10 @@ def _plot_return_distribution(ax, rows, modules):
     positions = np.arange(len(modules))
 
     boxes = ax.boxplot(
-        data, positions=positions, widths=0.6, patch_artist=True,
+        data,
+        positions=positions,
+        widths=0.6,
+        patch_artist=True,
         medianprops={"color": "#0b0b0b", "linewidth": 1.5},
         flierprops={"marker": "o", "markersize": 3, "alpha": 0.5},
     )
@@ -128,8 +133,13 @@ def _plot_return_distribution(ax, rows, modules):
     ax.set_ylim(bottom, top + 0.12 * (top - bottom))
     for position, values in zip(positions, data):
         ax.text(
-            position, top, f"n={len(values)}", ha="center", va="bottom",
-            fontsize=8, color="#52514e",
+            position,
+            top,
+            f"n={len(values)}",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+            color="#52514e",
         )
 
     ax.axhline(y=0, color='black', linestyle='-', alpha=0.3)
@@ -162,12 +172,16 @@ def _plot_behaviour_rates(ax, rows, modules):
     for i, (column, label, color) in enumerate(series):
         means = [
             np.nanmean(rows.loc[rows["module_id"] == m, column].to_numpy())
-            if rows.loc[rows["module_id"] == m, column].notna().any() else np.nan
+            if rows.loc[rows["module_id"] == m, column].notna().any()
+            else np.nan
             for m in modules
         ]
         ax.bar(
-            positions + (i - 1) * width, means, width=width * 0.92,
-            color=color, label=label,
+            positions + (i - 1) * width,
+            means,
+            width=width * 0.92,
+            color=color,
+            label=label,
         )
 
     ax.set_ylim(0, 1)
@@ -209,8 +223,14 @@ def visualize_modules(run_dir=None, num_trained_agents=None):
         num_trained_agents = flat("train_config.json")["num_trained_agents"]
 
     columns = [
-        "agent_id", "module_id", "reward", "nav", "is_pass_action",
-        "num_rejected_step", "num_trades_step", "num_passive_fills_step",
+        "agent_id",
+        "module_id",
+        "reward",
+        "nav",
+        "is_pass_action",
+        "num_rejected_step",
+        "num_trades_step",
+        "num_passive_fills_step",
     ]
     frame = load_run(run_dir, columns=columns)
 
@@ -259,6 +279,7 @@ def visualize_modules(run_dir=None, num_trained_agents=None):
     plt.savefig(output_file)
     print(f"Visualization saved to {output_file}")
     plt.show()
+
 
 if __name__ == "__main__":
     visualize_modules()

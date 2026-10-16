@@ -41,8 +41,11 @@ def validate_fee_rates(maker_fee_bps, taker_fee_bps) -> None:
         # stores its rates as, so a rate read back from one account has to be
         # accepted by another (issue #230). A bool is an int to Python and is
         # still refused.
-        if (not isinstance(value, (Real, Decimal)) or isinstance(value, bool)
-                or not math.isfinite(value)):
+        if (
+            not isinstance(value, (Real, Decimal))
+            or isinstance(value, bool)
+            or not math.isfinite(value)
+        ):
             raise ValueError(f"{key} must be a finite number; got {value!r}.")
         if abs(value) > MAX_FEE_BPS:  # type: ignore[operator]  # Real or Decimal; exact compare
             raise ValueError(
@@ -127,14 +130,18 @@ class Account(Calculate, Cash_Processor):
         self.fill_qty_step = 0
         self.fill_value_step = Decimal(0)
         # nav is used to calculate P&L & r per t step
-        self.cash_on_hold = Decimal(0) # cash deducted for placing order = cash - value of live order in LOB
-        self.position_val = Decimal(0) # value of net_position
+        self.cash_on_hold = Decimal(
+            0
+        )  # cash deducted for placing order = cash - value of live order in LOB
+        self.position_val = Decimal(0)  # value of net_position
         # nav is used to calculate P&L & r per t step
-        self.init_nav = Decimal(cash) # starting nav @t = 0
-        self.nav = Decimal(cash) # nav @t (nav @ end of a single t-step)
-        self.prev_nav = Decimal(cash) # nav @t-1
+        self.init_nav = Decimal(cash)  # starting nav @t = 0
+        self.nav = Decimal(cash)  # nav @t (nav @ end of a single t-step)
+        self.prev_nav = Decimal(cash)  # nav @t-1
         # assuming only one ticker (1 type of contract)
-        self.net_position = 0 # number of contracts currently holding long (positive) or short (negative)
+        self.net_position = (
+            0  # number of contracts currently holding long (positive) or short (negative)
+        )
         # The carrying basis of the open position, as the EXACT Decimal sum of
         # the trade values that built it: buys minus sells for a long, sells
         # minus buys for a short (so it is positive on both sides). This is
@@ -169,8 +176,8 @@ class Account(Calculate, Cash_Processor):
         # maintained by the three methods that open or reset a position and
         # deliberately untouched by `_size_decrease`, so it stays a price.
         self.entry_vwap = Decimal(0)
-        self.profit = Decimal(0) # profit @ each trade(tick) within a single t step
-        self.total_profit = Decimal(0) # profit at the end of a single t-step
+        self.profit = Decimal(0)  # profit @ each trade(tick) within a single t step
+        self.total_profit = Decimal(0)  # profit at the end of a single t-step
         self.num_trades = 0
         # float, not int: set_reward assigns a float, and RLlib requires float
         # rewards. Reward is a learning signal, not money - it is the one thing
@@ -178,10 +185,10 @@ class Account(Calculate, Cash_Processor):
         self.reward = 0.0
 
         # New metrics for improved reward function
-        self.max_nav = Decimal(cash) # peak nav seen so far
-        self.num_trades_step = 0 # trades in current environment step
-        self.num_passive_fills_step = 0 # passive executions in current step
-        self.order_step_placed = 0 # 1 if a Market/Limit order was placed this step
+        self.max_nav = Decimal(cash)  # peak nav seen so far
+        self.num_trades_step = 0  # trades in current environment step
+        self.num_passive_fills_step = 0  # passive executions in current step
+        self.order_step_placed = 0  # 1 if a Market/Limit order was placed this step
         # Orders refused by _order_approved this step. order_step_placed cannot
         # stand in for this: it is 0 both for an agent that never tried and for
         # one whose order was refused, and those are opposite behaviours - the
@@ -222,8 +229,8 @@ class Account(Calculate, Cash_Processor):
         # float, not Decimal(0): set_reward stores float(max(0, max_nav - nav)),
         # so initialising this as a Decimal would make the field change type on
         # the first step - the same defect net_position and VWAP already have.
-        self.drawdown = 0.0 # max_nav - nav, the level the penalty uses
-        self.reward_terms: Dict[str, float] = {} # signed contributions, summing to self.reward
+        self.drawdown = 0.0  # max_nav - nav, the level the penalty uses
+        self.reward_terms: Dict[str, float] = {}  # signed contributions, summing to self.reward
 
     def clear_step_counters(self) -> None:
         """Zero the per-step counters (`STEP_COUNTERS`) once the step's outputs are built."""
@@ -299,10 +306,8 @@ class Account(Calculate, Cash_Processor):
         # The real cost basis per contract, rolled from its own previous
         # value, so a prior partial close cannot leak into it. Observation
         # only; its rounding never reaches NAV.
-        self.entry_vwap = (
-            abs(self.net_position) * self.entry_vwap + trade_val
-        ) / total_size
-        raw_val = self.cost_basis # value acquired, exactly
+        self.entry_vwap = (abs(self.net_position) * self.entry_vwap + trade_val) / total_size
+        raw_val = self.cost_basis  # value acquired, exactly
         mkt_val = total_size * trade.get('price')
         self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
         self.size_increase_cash_transfer(party, trade_val)
@@ -313,7 +318,7 @@ class Account(Calculate, Cash_Processor):
         Entire position covered, net position = 0
         """
 
-        raw_val = self.cost_basis # value acquired, exactly
+        raw_val = self.cost_basis  # value acquired, exactly
         mkt_val = abs(self.net_position) * trade.get('price')
         self._book_realised(position, abs(self.net_position), trade.get('price'))
         self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
@@ -351,10 +356,10 @@ class Account(Calculate, Cash_Processor):
             # realised P&L stays in the basis of the remaining lots. See
             # cost_basis in __init__ for why that is load-bearing.
             self.cost_basis -= trade_val
-            raw_val = self.cost_basis # value acquired, exactly
+            raw_val = self.cost_basis  # value acquired, exactly
             mkt_val = size_left * trade.get('price')
             self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
-        else: # size_left == 0
+        else:  # size_left == 0
             self._covered(trade, position)
         self.size_decrease_cash_transfer(party, trade_val)
         return 0
@@ -364,7 +369,7 @@ class Account(Calculate, Cash_Processor):
         self.size_decrease_cash_transfer(party, mkt_val)
         # deal with remaining size that cause position change
         new_size = int(trade.get('quantity')) - abs(self.net_position)
-        self.position_val = new_size * trade.get('price') # traded value
+        self.position_val = new_size * trade.get('price')  # traded value
         # The flip opened a fresh position at this price, so the basis is it.
         self.cost_basis = self.position_val
         self.entry_vwap = trade.get('price')
@@ -380,19 +385,19 @@ class Account(Calculate, Cash_Processor):
     def _net_long(self, trade_val, trade, party):
         if trade.get(party).get('side') == 'bid':
             self._size_increase(trade, 'long', party, trade_val)
-        else: # ask
-            if self.net_position >= trade.get('quantity'): # still long or neutral
+        else:  # ask
+            if self.net_position >= trade.get('quantity'):  # still long or neutral
                 self._size_decrease(trade, 'long', party, trade_val)
-            else: # net_position changed to short
+            else:  # net_position changed to short
                 self._covered_side_chg(trade, 'long', party)
 
     def _net_short(self, trade_val, trade, party):
         if trade.get(party).get('side') == 'ask':
             self._size_increase(trade, 'short', party, trade_val)
-        else: # bid
-            if abs(self.net_position) >= trade.get('quantity'): # still short or neutral
+        else:  # bid
+            if abs(self.net_position) >= trade.get('quantity'):  # still short or neutral
                 self._size_decrease(trade, 'short', party, trade_val)
-            else: # net_position changed to long
+            else:  # net_position changed to long
                 self._covered_side_chg(trade, 'short', party)
 
     def _update_net_position(self, side, trade_quantity):
@@ -402,12 +407,12 @@ class Account(Calculate, Cash_Processor):
         # (trader._normalise_trade_sizes) the arithmetic is exact in int, and
         # the field no longer changes type on the first fill.
         trade_quantity = int(trade_quantity)
-        if self.net_position >= 0: # long or neutral
+        if self.net_position >= 0:  # long or neutral
             if side == 'bid':
                 self.net_position += trade_quantity
             else:
                 self.net_position -= trade_quantity
-        else: # short
+        else:  # short
             if side == 'ask':
                 self.net_position -= trade_quantity
             else:
@@ -439,8 +444,7 @@ class Account(Calculate, Cash_Processor):
         self.cash -= fee
         self.fees_paid += fee
 
-    def process_acc(self, trade: Dict[str, Any], party: str,
-                    fee_role: Optional[str] = None) -> int:
+    def process_acc(self, trade: Dict[str, Any], party: str, fee_role: Optional[str] = None) -> int:
         """Book one fill for this account.
 
         Args:
@@ -456,7 +460,7 @@ class Account(Calculate, Cash_Processor):
             fee_role = 'maker' if party == 'counter_party' else 'taker'
         self.num_trades += 1
         self.num_trades_step += 1
-        
+
         # Track passive fills for reward bonus
         if party == 'counter_party':
             self.num_passive_fills_step += 1
@@ -465,11 +469,11 @@ class Account(Calculate, Cash_Processor):
         sign = 1 if trade[party]['side'] == 'bid' else -1
         self.fill_qty_step += sign * int(trade['quantity'])
         self.fill_value_step += sign * trade_val
-        if self.net_position > 0: #long
+        if self.net_position > 0:  # long
             self._net_long(trade_val, trade, party)
-        elif self.net_position < 0: # short
+        elif self.net_position < 0:  # short
             self._net_short(trade_val, trade, party)
-        else: # neutral
+        else:  # neutral
             self._neutral(trade_val, trade, party)
         self._update_net_position(trade[party]['side'], trade['quantity'])
         self._charge_fee(trade_val, fee_role)

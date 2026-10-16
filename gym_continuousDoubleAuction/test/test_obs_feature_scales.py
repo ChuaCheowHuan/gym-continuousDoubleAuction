@@ -15,6 +15,7 @@ are comparable and bounded - so a future change to how a feature is computed
 is free as long as it keeps them so. The formulas themselves are pinned in
 `test_obs_normalization.py` and `test_obs_market_features.py`.
 """
+
 import numpy as np
 import pytest
 
@@ -27,8 +28,12 @@ from gym_continuousDoubleAuction.envs.exchg.state_helper import PRIVATE_FIELDS
 def _rollout(steps=400, seed=7, agents=4):
     """Random play, returning the last snapshot of each step and the privates."""
     env = continuousDoubleAuctionEnv(
-        {"num_of_agents": agents, "max_step": steps, "is_render": False,
-         "book_mode": "levels"}  # the block slices below are the levels layout's
+        {
+            "num_of_agents": agents,
+            "max_step": steps,
+            "is_render": False,
+            "book_mode": "levels",
+        }  # the block slices below are the levels layout's
     )
     obs, _ = env.reset(seed=seed)
     # `reset(seed=)` seeds the env's own generator, not the action spaces -
@@ -55,10 +60,10 @@ def _rollout(steps=400, seed=7, agents=4):
         actions = {a: env.action_spaces[a].sample() for a in env.agents}
         obs, _rew, terminateds, truncateds, _infos = env.step(actions)
         vector = obs["agent_0"]
-        newest = vector[(n_hist - 1) * snap_dim: n_hist * snap_dim]
+        newest = vector[(n_hist - 1) * snap_dim : n_hist * snap_dim]
         for name, (lo, hi) in blocks.items():
             collected[name].append(newest[lo:hi])
-        privates.append(vector[n_hist * snap_dim:])
+        privates.append(vector[n_hist * snap_dim :])
         for trader in env.traders:
             agent_steps += 1
             if abs(trader.acc.net_position) > env.position_scale:
@@ -149,8 +154,12 @@ class TestTheScalesAreConfigured:
             )
 
     def test_log_mid_centre_follows_the_anchor_range(self):
-        env = continuousDoubleAuctionEnv({
-            "num_of_agents": 2, "is_render": False,
-            "initial_price_min": 100, "initial_price_max": 100,
-        })
+        env = continuousDoubleAuctionEnv(
+            {
+                "num_of_agents": 2,
+                "is_render": False,
+                "initial_price_min": 100,
+                "initial_price_max": 100,
+            }
+        )
         assert env.log_mid_centre == pytest.approx(float(np.log(100.0)))

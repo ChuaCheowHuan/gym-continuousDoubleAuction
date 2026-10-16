@@ -54,6 +54,7 @@ This module imports the shared primitives and subclasses none of them.
 existed. The ~15 lines of "project, norm, add positions, attend, pool" that this
 duplicates from `transformer` are the deliberate price of that.
 """
+
 from __future__ import annotations
 
 import copy
@@ -167,9 +168,7 @@ def sample_mask(
         ValueError: on an unknown `mask_axis`.
     """
     if mask_axis not in MASK_AXES:
-        raise ValueError(
-            f"Unknown mask_axis {mask_axis!r}. Available: {', '.join(MASK_AXES)}."
-        )
+        raise ValueError(f"Unknown mask_axis {mask_axis!r}. Available: {', '.join(MASK_AXES)}.")
 
     count = int(round(num_tokens * mask_ratio))
     count = max(1, min(count, num_tokens - 1))
@@ -185,8 +184,10 @@ def sample_mask(
     # and an ablation sweeping (tokenization x mask_axis) should not have to
     # special-case the combinations that collapse.
     axis_exists = (
-        mask_axis == "time" and tokenization in ("time", "both")
-        or mask_axis == "level" and tokenization in ("level", "both")
+        mask_axis == "time"
+        and tokenization in ("time", "both")
+        or mask_axis == "level"
+        and tokenization in ("level", "both")
     )
     if mask_axis == "random" or not axis_exists or tokenization != "both":
         return draw(num_tokens, count)
@@ -201,9 +202,7 @@ def sample_mask(
         # the context encoder no input at all, silently. `n_hist: 1` is a
         # configuration the lstm block explicitly recommends, so this is
         # reachable rather than theoretical.
-        snapshots = max(1, min(
-            int(round(layout.n_hist * mask_ratio)), layout.n_hist - 1
-        ))
+        snapshots = max(1, min(int(round(layout.n_hist * mask_ratio)), layout.n_hist - 1))
         chosen = draw(layout.n_hist, snapshots)
         offsets = torch.arange(stride)
         masked = (chosen.unsqueeze(1) * stride + offsets).reshape(-1)
@@ -217,8 +216,7 @@ def sample_mask(
     # snapshot, so the question is "what depth is consistent with this touch"
     # rather than "what happened at t=2".
     levels = max(1, min(int(round(layout.k_rows * mask_ratio)), layout.k_rows - 1))
-    start = int(torch.randint(0, layout.k_rows - levels + 1, (1,),
-                              generator=generator).item())
+    start = int(torch.randint(0, layout.k_rows - levels + 1, (1,), generator=generator).item())
     band = torch.arange(start, start + levels)
     times = torch.arange(layout.n_hist)
     masked = (times.unsqueeze(1) * stride + band).reshape(-1)
@@ -238,8 +236,9 @@ class _Trunk(nn.Module):
     recursive.
     """
 
-    def __init__(self, config: "JEPAEncoderConfig", token_dim: int,
-                 time_size: int, level_size: int) -> None:
+    def __init__(
+        self, config: "JEPAEncoderConfig", token_dim: int, time_size: int, level_size: int
+    ) -> None:
         super().__init__()
         self.project = nn.Linear(token_dim, config.d_model)
         # Not a knob, for the reason in the module docstring: the size channels
@@ -258,15 +257,20 @@ class _Trunk(nn.Module):
         )
         self.norm_out = nn.LayerNorm(config.d_model)
 
-    def embed(self, tokens: torch.Tensor, time_idx: torch.Tensor,
-              level_idx: torch.Tensor) -> torch.Tensor:
+    def embed(
+        self, tokens: torch.Tensor, time_idx: torch.Tensor, level_idx: torch.Tensor
+    ) -> torch.Tensor:
         """Tokens plus their positions, before any attention."""
         x = self.norm_in(self.project(tokens))
         return x + self.time_embedding(time_idx) + self.level_embedding(level_idx)
 
-    def forward(self, tokens: torch.Tensor, time_idx: torch.Tensor,
-                level_idx: torch.Tensor,
-                extra: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(
+        self,
+        tokens: torch.Tensor,
+        time_idx: torch.Tensor,
+        level_idx: torch.Tensor,
+        extra: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         """`(B, T, token_dim)` -> `(B, T [+ extra], d_model)`.
 
         `extra` is appended after the positional embeddings and before the
@@ -290,8 +294,7 @@ class _Predictor(nn.Module):
     anything at all, including a constant.
     """
 
-    def __init__(self, config: "JEPAEncoderConfig", time_size: int,
-                 level_size: int) -> None:
+    def __init__(self, config: "JEPAEncoderConfig", time_size: int, level_size: int) -> None:
         super().__init__()
         self.enter = nn.Linear(config.d_model, config.predictor_dim)
         #: Stands in for a hidden token; its position says which one.
@@ -311,16 +314,15 @@ class _Predictor(nn.Module):
         self.norm = nn.LayerNorm(config.predictor_dim)
         self.leave = nn.Linear(config.predictor_dim, config.d_model)
 
-    def forward(self, context: torch.Tensor, masked_time: torch.Tensor,
-                masked_level: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, context: torch.Tensor, masked_time: torch.Tensor, masked_level: torch.Tensor
+    ) -> torch.Tensor:
         """`(B, C, d_model)` context -> `(B, M, d_model)` at the masked slots."""
         batch, num_masked = context.shape[0], masked_time.shape[0]
 
         x = self.enter(context)
         slots = self.mask_token.expand(batch, num_masked, -1)
-        slots = slots + self.time_embedding(masked_time) + self.level_embedding(
-            masked_level
-        )
+        slots = slots + self.time_embedding(masked_time) + self.level_embedding(masked_level)
 
         x = torch.cat([x, slots], dim=-2)
         for block in self.blocks:
@@ -339,8 +341,7 @@ class _ActionEmbed(nn.Module):
     def __init__(self, action_space, d_model: int) -> None:
         super().__init__()
         missing = [
-            name for name in DISCRETE_ACTIONS + BOX_ACTIONS
-            if name not in action_space.spaces
+            name for name in DISCRETE_ACTIONS + BOX_ACTIONS if name not in action_space.spaces
         ]
         if missing:
             raise ValueError(
@@ -349,13 +350,10 @@ class _ActionEmbed(nn.Module):
                 "`jepa` must match the space `Action_Helper.act_space` builds."
             )
 
-        self.discrete = nn.ModuleDict({
-            name: nn.Embedding(int(action_space[name].n), d_model)
-            for name in DISCRETE_ACTIONS
-        })
-        box_width = sum(
-            int(np.prod(action_space[name].shape)) for name in BOX_ACTIONS
+        self.discrete = nn.ModuleDict(
+            {name: nn.Embedding(int(action_space[name].n), d_model) for name in DISCRETE_ACTIONS}
         )
+        box_width = sum(int(np.prod(action_space[name].shape)) for name in BOX_ACTIONS)
         self.box = nn.Linear(box_width, d_model)
         self.norm = nn.LayerNorm(d_model)
 
@@ -366,8 +364,7 @@ class _ActionEmbed(nn.Module):
             embedded = part if embedded is None else embedded + part
 
         box = torch.cat(
-            [actions[name].float().reshape(actions[name].shape[0], -1)
-             for name in BOX_ACTIONS],
+            [actions[name].float().reshape(actions[name].shape[0], -1) for name in BOX_ACTIONS],
             dim=-1,
         )
         return self.norm(embedded + self.box(box))
@@ -389,8 +386,7 @@ class _WorldModel(nn.Module):
     underfitting and should not be tuned away.
     """
 
-    def __init__(self, action_space, d_model: int, hidden: int,
-                 dropout: float) -> None:
+    def __init__(self, action_space, d_model: int, hidden: int, dropout: float) -> None:
         super().__init__()
         self.action_embed = _ActionEmbed(action_space, d_model)
         self.predict = nn.Sequential(
@@ -400,8 +396,7 @@ class _WorldModel(nn.Module):
             nn.Linear(hidden, d_model),
         )
 
-    def forward(self, latent: torch.Tensor,
-                actions: Dict[str, torch.Tensor]) -> torch.Tensor:
+    def forward(self, latent: torch.Tensor, actions: Dict[str, torch.Tensor]) -> torch.Tensor:
         action = self.action_embed(actions)
         return self.predict(torch.cat([latent, action], dim=-1))
 
@@ -454,9 +449,7 @@ class JEPAEncoderConfig(ModelConfig):
 
     def build(self, framework: str = "torch") -> Encoder:
         if framework != "torch":
-            raise ValueError(
-                f"{type(self).__name__} is torch-only; got framework={framework!r}."
-            )
+            raise ValueError(f"{type(self).__name__} is torch-only; got framework={framework!r}.")
         return TorchJEPAEncoder(self)
 
 
@@ -468,20 +461,15 @@ class TorchJEPAEncoder(TorchModel, Encoder):
         Encoder.__init__(self, config)
 
         if config.pool not in POOLINGS:
-            raise ValueError(
-                f"Unknown pool {config.pool!r}. Available: {', '.join(POOLINGS)}."
-            )
+            raise ValueError(f"Unknown pool {config.pool!r}. Available: {', '.join(POOLINGS)}.")
         if config.mask_axis not in MASK_AXES:
             raise ValueError(
-                f"Unknown mask_axis {config.mask_axis!r}. "
-                f"Available: {', '.join(MASK_AXES)}."
+                f"Unknown mask_axis {config.mask_axis!r}. Available: {', '.join(MASK_AXES)}."
             )
         if config.num_layers < 1:
             raise ValueError(f"num_layers must be >= 1; got {config.num_layers}.")
         if config.predictor_layers < 1:
-            raise ValueError(
-                f"predictor_layers must be >= 1; got {config.predictor_layers}."
-            )
+            raise ValueError(f"predictor_layers must be >= 1; got {config.predictor_layers}.")
         if not 0.0 < config.mask_ratio < 1.0:
             raise ValueError(
                 f"mask_ratio must be in (0, 1); got {config.mask_ratio}. "
@@ -518,7 +506,8 @@ class TorchJEPAEncoder(TorchModel, Encoder):
         self.trunk = _Trunk(config, token_dim, time_size, level_size)
         self.private_token = (
             PrivateToken(self.layout.private_dim, config.d_model)
-            if self.layout.private_dim else None
+            if self.layout.private_dim
+            else None
         )
         self.pool = (
             AttentionPool(config.d_model, config.num_heads, config.dropout)
@@ -553,8 +542,10 @@ class TorchJEPAEncoder(TorchModel, Encoder):
                     "built by hand."
                 )
             self.world_model = _WorldModel(
-                config.action_space, config.d_model,
-                config.predictor_dim * 2, config.dropout,
+                config.action_space,
+                config.d_model,
+                config.predictor_dim * 2,
+                config.dropout,
             )
         self.world_model_coeff = config.world_model_coeff
 
@@ -628,18 +619,19 @@ class TorchJEPAEncoder(TorchModel, Encoder):
         happened to run.
         """
         decay = self.ema_decay
-        for target, online in zip(self.target_trunk.parameters(),
-                                  self.trunk.parameters()):
+        for target, online in zip(self.target_trunk.parameters(), self.trunk.parameters()):
             target.mul_(decay).add_(online.detach(), alpha=1.0 - decay)
-        for target, online in zip(self.target_trunk.buffers(),
-                                  self.trunk.buffers()):
+        for target, online in zip(self.target_trunk.buffers(), self.trunk.buffers()):
             target.copy_(online)
 
     def _jepa_loss(self, tokens: torch.Tensor) -> Dict[str, torch.Tensor]:
         """Mask, predict, score. Returns the loss and the collapse metrics."""
         masked = sample_mask(
-            self._num_tokens, self.layout, self.tokenization,
-            self.mask_axis, self.mask_ratio,
+            self._num_tokens,
+            self.layout,
+            self.tokenization,
+            self.mask_axis,
+            self.mask_ratio,
         ).to(tokens.device)
 
         keep = torch.ones(self._num_tokens, dtype=torch.bool, device=tokens.device)
@@ -663,9 +655,7 @@ class TorchJEPAEncoder(TorchModel, Encoder):
             # collapse by a slower route.
             target = F.layer_norm(target, target.shape[-1:])
 
-        predicted = self.predictor(
-            context, self.time_idx[masked], self.level_idx[masked]
-        )
+        predicted = self.predictor(context, self.time_idx[masked], self.level_idx[masked])
 
         loss = F.smooth_l1_loss(predicted, target)
 
@@ -778,17 +768,18 @@ class TorchJEPAEncoder(TorchModel, Encoder):
             # test that built a batch by hand. Reading it defensively is what
             # keeps those paths working rather than raising on a key PPO never
             # promised.
-            if (self.world_model is not None
-                    and Columns.NEXT_OBS in inputs
-                    and Columns.ACTIONS in inputs):
+            if (
+                self.world_model is not None
+                and Columns.NEXT_OBS in inputs
+                and Columns.ACTIONS in inputs
+            ):
                 stats.update(self._world_model_loss(inputs, x))
 
             self._jepa_stats = stats
 
         return {ENCODER_OUT: latent}
 
-    def _world_model_loss(self, inputs: dict,
-                          encoded: torch.Tensor) -> Dict[str, torch.Tensor]:
+    def _world_model_loss(self, inputs: dict, encoded: torch.Tensor) -> Dict[str, torch.Tensor]:
         """`z_hat_{t+1} = P(z_t, a_t)` against the target encoder's `o_{t+1}`.
 
         `encoded` is the online trunk's output for `o_t`, already computed for
@@ -800,14 +791,10 @@ class TorchJEPAEncoder(TorchModel, Encoder):
         the world model's target move for reasons that have nothing to do with
         the market.
         """
-        next_tokens = tokenize(
-            inputs[Columns.NEXT_OBS], self.layout, self.tokenization
-        )
+        next_tokens = tokenize(inputs[Columns.NEXT_OBS], self.layout, self.tokenization)
 
         with torch.no_grad():
-            target = self.target_trunk(
-                next_tokens, self.time_idx, self.level_idx
-            ).mean(dim=-2)
+            target = self.target_trunk(next_tokens, self.time_idx, self.level_idx).mean(dim=-2)
             target = F.layer_norm(target, target.shape[-1:])
 
         predicted = self.world_model(encoded.mean(dim=-2), inputs[Columns.ACTIONS])
@@ -818,10 +805,12 @@ class TorchJEPAEncoder(TorchModel, Encoder):
     "jepa",
     defaults=JEPA_DEFAULTS,
     module_class_path=(
-        "gym_continuousDoubleAuction.train.model.jepa_learner", "JEPARLModule",
+        "gym_continuousDoubleAuction.train.model.jepa_learner",
+        "JEPARLModule",
     ),
     learner_class_path=(
-        "gym_continuousDoubleAuction.train.model.jepa_learner", "CDAJEPALearner",
+        "gym_continuousDoubleAuction.train.model.jepa_learner",
+        "CDAJEPALearner",
     ),
 )
 def build_jepa_config(

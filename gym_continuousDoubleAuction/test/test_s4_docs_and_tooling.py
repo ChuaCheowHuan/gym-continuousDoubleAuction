@@ -3,6 +3,7 @@
 Where an issue is a pointer or a statement in prose, the test pins it against the thing it
 points at, so it fails when either side moves.
 """
+
 import re
 
 from gym_continuousDoubleAuction.envs.layout_version import check_layout_stamp, layout_stamp
@@ -78,14 +79,17 @@ class TestDoc27DoesNotDescribeBuiltThingsAsMissing:
 
     @staticmethod
     def _built_skills():
-        return sorted(d for d in os.listdir(".claude/skills")
-                      if os.path.isfile(f".claude/skills/{d}/SKILL.md"))
+        return sorted(
+            d
+            for d in os.listdir(".claude/skills")
+            if os.path.isfile(f".claude/skills/{d}/SKILL.md")
+        )
 
     @staticmethod
     def _entry(text, name):
         start = text.index(f"### `{name}`")
         end = text.find("\n### ", start + 1)
-        return text[start:end if end != -1 else None]
+        return text[start : end if end != -1 else None]
 
     def test_a_built_skill_links_to_its_skill_file(self):
         text = open(self.DOC).read()
@@ -106,6 +110,7 @@ class TestStaleCommentsAndNotes:
     def test_the_cbp_comment_says_the_bias_is_zeroed_not_redrawn(self):
         import inspect
         from gym_continuousDoubleAuction.train.model import cbp
+
         source = inspect.getsource(cbp._reinitialise)
         assert "for weight and bias" not in source
         assert "bias is NOT drawn" in source
@@ -113,11 +118,13 @@ class TestStaleCommentsAndNotes:
     def test_and_the_code_does_zero_it(self):
         import torch
         from gym_continuousDoubleAuction.train.model import cbp
+
         incoming, outgoing = torch.nn.Linear(4, 3), torch.nn.Linear(3, 2)
         with torch.no_grad():
             incoming.bias.fill_(7.0)
-        layer = cbp.ReplaceableLayer(name="x", incoming=incoming, outgoing=[outgoing],
-                                     activation=torch.nn.Tanh())
+        layer = cbp.ReplaceableLayer(
+            name="x", incoming=incoming, outgoing=[outgoing], activation=torch.nn.Tanh()
+        )
         state = cbp.CBPLayerState.zeros(3)
         cbp._reinitialise(state, layer, 1, None, None, cbp.CBPConfig())
         assert float(incoming.bias[1]) == 0.0 and float(incoming.bias[0]) == 7.0
@@ -126,6 +133,7 @@ class TestStaleCommentsAndNotes:
         import json
         from gym_continuousDoubleAuction.config_loader import config_dir
         from gym_continuousDoubleAuction.train.probe.probe import MIN_GROUPS_TO_SPLIT_BY_GROUP
+
         note = json.load(open(config_dir() / "cli_defaults.json"))["cda_probe"]["_note_corpus"]
         assert "the split is contiguous, so" not in note
         assert "by episode" in note and "contiguous" in note
@@ -134,6 +142,7 @@ class TestStaleCommentsAndNotes:
     def test_the_file_source_names_every_command_it_drives(self):
         import json
         from gym_continuousDoubleAuction.config_loader import config_dir
+
         data = json.load(open(config_dir() / "cli_defaults.json"))
         for block in data.values():
             if isinstance(block, dict) and "_module" in block:
@@ -147,14 +156,21 @@ import json  # noqa: E402
 #: Documents that describe the present. The history files are excluded on purpose.
 _HISTORY = {"16_verification_log.md", "17_changelog.md", "README_v1.md", "27_agent_skills.md"}
 _ENTRY_POINTS = (
-    "CDA_rand.py", "train/train.py", "train/probe/__main__.py", "train/pretrain/__main__.py",
-    "train/compare.py", "train/evaluate.py", "train/export.py", "visualize/run_all.py",
+    "CDA_rand.py",
+    "train/train.py",
+    "train/probe/__main__.py",
+    "train/pretrain/__main__.py",
+    "train/compare.py",
+    "train/evaluate.py",
+    "train/export.py",
+    "visualize/run_all.py",
 )
 
 
 def _docs_text():
     paths = ["README.md"] + sorted(
-        p for p in glob.glob("doc/*.md") if os.path.basename(p) not in _HISTORY)
+        p for p in glob.glob("doc/*.md") if os.path.basename(p) not in _HISTORY
+    )
     return "\n".join(open(p, encoding="utf-8").read() for p in paths)
 
 
@@ -182,7 +198,8 @@ class TestEveryConfigKeyAndFlagIsDocumented:
                     missing.append(f"{os.path.basename(path)}:{key}")
         assert not missing, (
             "config keys no document mentions (add them to doc/18 or the doc that owns "
-            f"them): {missing}")
+            f"them): {missing}"
+        )
 
     def test_every_cli_flag_is_mentioned_in_some_document(self):
         text = _docs_text()
@@ -190,7 +207,9 @@ class TestEveryConfigKeyAndFlagIsDocumented:
         missing = []
         for relative in _ENTRY_POINTS:
             source = open(os.path.join(package, relative), encoding="utf-8").read()
-            for flag in re.findall(r"add_argument\(\s*(?:\"-\w\",\s*)?\"(--[a-z][a-z0-9-]*)\"", source):
+            for flag in re.findall(
+                r"add_argument\(\s*(?:\"-\w\",\s*)?\"(--[a-z][a-z0-9-]*)\"", source
+            ):
                 if not re.search(re.escape(flag) + r"(?![\w-])", text):
                     missing.append(f"{relative}:{flag}")
         assert not missing, f"CLI flags no document mentions (add them to doc/26): {missing}"

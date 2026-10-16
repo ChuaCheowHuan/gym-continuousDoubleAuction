@@ -9,6 +9,7 @@ from itertools import islice
 
 from ...config_loader import constant, constants, env_default
 
+
 # Layout of a single observation snapshot, from
 # `config/tunable_constants.json` -> observation_layout.
 #
@@ -25,8 +26,7 @@ from ...config_loader import constant, constants, env_default
 def _layout():
     """(k_rows, book_rows, extra_dim, private_dim) from config."""
     layout = constants("observation_layout")
-    return (layout["k_rows"], layout["book_rows"], layout["extra_dim"],
-            layout["private_dim"])
+    return (layout["k_rows"], layout["book_rows"], layout["extra_dim"], layout["private_dim"])
 
 
 K_ROWS, BOOK_ROWS, EXTRA_DIM, PRIVATE_DIM = _layout()
@@ -46,8 +46,7 @@ BOOK_DIM = BOOK_ROWS * K_ROWS
 #: at the shipped config and 22% at a thin-book stress config (doc/16 section
 #: 16.23). They ride in the raw frame so that every frame in the history keeps
 #: its own occupancy, and pass through normalisation unchanged.
-BOOK_ROW_ORDER = ("bid_price", "bid_size", "ask_price", "ask_size",
-                  "bid_occupied", "ask_occupied")
+BOOK_ROW_ORDER = ("bid_price", "bid_size", "ask_price", "ask_size", "bid_occupied", "ask_occupied")
 
 #: How the public book is laid out in an EMITTED snapshot (doc/15 S3-15).
 #:
@@ -127,12 +126,12 @@ SNAPSHOT_DIM = OBS_BOOK_DIM + EXTRA_DIM
 #: in the very quantity every price in the frame is divided by, so an agent can
 #: tell a book that moved from a midpoint that moved.
 EXTRA_FIELDS = (
-    "log_mid",             # log(M_frame) - log_mid_centre
+    "log_mid",  # log(M_frame) - log_mid_centre
     "log1p_spread_ticks",  # log1p(spread / min_tick), 0.0 if not two-sided
-    "mid_return",          # M_frame / M_previous_frame - 1
-    "signed_volume",       # (buy-initiated - sell-initiated) qty / limit_max_size
-    "log1p_trade_count",   # log1p(trades since the previous frame)
-    "trade_direction",     # initiator side of the last trade: +1 buy, -1 sell, 0 none
+    "mid_return",  # M_frame / M_previous_frame - 1
+    "signed_volume",  # (buy-initiated - sell-initiated) qty / limit_max_size
+    "log1p_trade_count",  # log1p(trades since the previous frame)
+    "trade_direction",  # initiator side of the last trade: +1 buy, -1 sell, 0 none
 )
 
 #: Offsets of the frame-local values a raw frame carries after its book block.
@@ -164,22 +163,22 @@ _FRAME_EXTRAS = 6
 #: vector as the book block and feed the same `tanh` MLP - an unbounded private
 #: field would saturate it exactly as the raw sizes do (S2-2).
 BASE_PRIVATE_FIELDS = (
-    "position",        # tanh(net_position / position_scale), signed, in (-1, 1)
-    "position_val",    # mark-to-market exposure / init_nav, signed
-    "cash",            # free cash / init_nav
-    "cash_on_hold",    # cash escrowed against live orders / init_nav
-    "nav",             # nav / init_nav, so 1.0 at reset
-    "drawdown",        # (nav - max_nav) / init_nav, <= 0
-    "vwap_vs_mid",     # (M - VWAP) / M when a position is open, else 0
-    "realised_pnl",    # total_profit / init_nav
-    "time_left",       # 1 - t_step / time_left_horizon (the latest possible end), in [0, 1]
+    "position",  # tanh(net_position / position_scale), signed, in (-1, 1)
+    "position_val",  # mark-to-market exposure / init_nav, signed
+    "cash",  # free cash / init_nav
+    "cash_on_hold",  # cash escrowed against live orders / init_nav
+    "nav",  # nav / init_nav, so 1.0 at reset
+    "drawdown",  # (nav - max_nav) / init_nav, <= 0
+    "vwap_vs_mid",  # (M - VWAP) / M when a position is open, else 0
+    "realised_pnl",  # total_profit / init_nav
+    "time_left",  # 1 - t_step / time_left_horizon (the latest possible end), in [0, 1]
 )
 
 #: The two own-order counts that follow the own-book sizes, and the feedback
 #: flag that follows them. See `private_fields`.
 OWN_COUNT_FIELDS = (
-    "own_bid_count",   # this agent's resting bids / max_own_orders, clipped to 1
-    "own_ask_count",   # this agent's resting asks / max_own_orders, clipped to 1
+    "own_bid_count",  # this agent's resting bids / max_own_orders, clipped to 1
+    "own_ask_count",  # this agent's resting asks / max_own_orders, clipped to 1
 )
 FEEDBACK_FIELDS = (
     "unmatched_last_step",  # 1.0 if the agent's last modify/cancel named no order
@@ -196,16 +195,21 @@ FEEDBACK_FIELDS = (
 #: emits all ones, so the layout does not change between the two.
 MASK_FIELDS = (
     "can_pass",
-    "can_bid_market", "can_bid_limit", "can_bid_modify", "can_bid_cancel",
-    "can_ask_market", "can_ask_limit", "can_ask_modify", "can_ask_cancel",
+    "can_bid_market",
+    "can_bid_limit",
+    "can_bid_modify",
+    "can_bid_cancel",
+    "can_ask_market",
+    "can_ask_limit",
+    "can_ask_modify",
+    "can_ask_cancel",
 )
 
 
 def own_book_fields(k_rows):
     """Names of the own-book sizes: bids at levels 0..k-1, then asks."""
-    return (
-        tuple(f"own_bid_size_{k}" for k in range(k_rows))
-        + tuple(f"own_ask_size_{k}" for k in range(k_rows))
+    return tuple(f"own_bid_size_{k}" for k in range(k_rows)) + tuple(
+        f"own_ask_size_{k}" for k in range(k_rows)
     )
 
 
@@ -228,8 +232,13 @@ def private_fields(k_rows):
     `observation_layout.private_dim` in tunable_constants.json must equal
     `len(private_fields(k_rows))`; `State_Helper.__init__` checks that.
     """
-    return (BASE_PRIVATE_FIELDS + own_book_fields(k_rows) + OWN_COUNT_FIELDS
-            + FEEDBACK_FIELDS + MASK_FIELDS)
+    return (
+        BASE_PRIVATE_FIELDS
+        + own_book_fields(k_rows)
+        + OWN_COUNT_FIELDS
+        + FEEDBACK_FIELDS
+        + MASK_FIELDS
+    )
 
 
 def own_book_offset():
@@ -269,13 +278,15 @@ OBSERVATION_LAYOUT_VERSION = 6
 
 
 class State_Helper(SharedState):
-
-    def __init__(self, n_hist=env_default("n_hist"),
-                 initial_price_min=env_default("initial_price_min"),
-                 initial_price_max=env_default("initial_price_max"),
-                 position_scale=env_default("position_scale"),
-                 book_mode=None,
-                 **kwargs):
+    def __init__(
+        self,
+        n_hist=env_default("n_hist"),
+        initial_price_min=env_default("initial_price_min"),
+        initial_price_max=env_default("initial_price_max"),
+        position_scale=env_default("position_scale"),
+        book_mode=None,
+        **kwargs,
+    ):
         self.n_hist = n_hist
         # How the public book is emitted (BOOK_MODES above). Per instance, so a
         # test or a `train.compare` run can build the other mode beside the
@@ -311,9 +322,7 @@ class State_Helper(SharedState):
         # `limit_max_size` of 1,000 put 13.2% of steps into `tanh` saturation.
         self.position_scale = float(position_scale)
         if self.position_scale <= 0:
-            raise ValueError(
-                f"position_scale must be > 0; got {position_scale!r}."
-            )
+            raise ValueError(f"position_scale must be > 0; got {position_scale!r}.")
 
         # Observation layout as instance state. book_dim and snapshot_dim are
         # derived here and nowhere else - they are not config keys, because a
@@ -380,9 +389,7 @@ class State_Helper(SharedState):
         self._snapshot_stale = True
 
         # Used when the book has no two-sided market and last_price is unusable.
-        self.midpoint_fallback = float(
-            constant("price_anchor_fallbacks", "state_helper_midpoint")
-        )
+        self.midpoint_fallback = float(constant("price_anchor_fallbacks", "state_helper_midpoint"))
 
         # kwargs is forwarded, not swallowed: the sizing and reward knobs are
         # consumed further along the MRO (Action_Helper, Reward_Helper).
@@ -415,11 +422,10 @@ class State_Helper(SharedState):
         states: Dict[str, Any] = {}
         for trader in self.traders:
             # No step has completed at reset, so `time_left` is a full 1.0.
-            states = self.set_next_state(states, trader, stacked_obs,
-                                         elapsed_steps=0)
+            states = self.set_next_state(states, trader, stacked_obs, elapsed_steps=0)
 
         return states
-        
+
     def prep_next_state(self) -> np.ndarray:
         """
         Return:
@@ -441,7 +447,7 @@ class State_Helper(SharedState):
         simply no longer smeared through every price in the book.
         """
 
-        self.agg_LOB_aft = self.set_agg_LOB() # LOB state at t+1 after processing LOB
+        self.agg_LOB_aft = self.set_agg_LOB()  # LOB state at t+1 after processing LOB
 
         self.obs_history.append(self.agg_LOB_frame)
 
@@ -500,9 +506,15 @@ class State_Helper(SharedState):
         tick = float(self.min_tick)
         size_scale = float(self.limit_max_size)
         rows = np.zeros((2, cells))
-        for r, (price_row, size_row) in enumerate((("bid_price", "bid_size"), ("ask_price", "ask_size"))):
-            prices = book[BOOK_ROW_ORDER.index(price_row) * k:(BOOK_ROW_ORDER.index(price_row) + 1) * k]
-            sizes = book[BOOK_ROW_ORDER.index(size_row) * k:(BOOK_ROW_ORDER.index(size_row) + 1) * k]
+        for r, (price_row, size_row) in enumerate(
+            (("bid_price", "bid_size"), ("ask_price", "ask_size"))
+        ):
+            prices = book[
+                BOOK_ROW_ORDER.index(price_row) * k : (BOOK_ROW_ORDER.index(price_row) + 1) * k
+            ]
+            sizes = book[
+                BOOK_ROW_ORDER.index(size_row) * k : (BOOK_ROW_ORDER.index(size_row) + 1) * k
+            ]
             for price, size in zip(prices, sizes):
                 if price <= 0 or size <= 0:
                     continue
@@ -525,31 +537,33 @@ class State_Helper(SharedState):
         moved sits in the same cell of every frame.
         """
         k = self.k_rows
-        book = frame[:self.book_dim]
-        extras = frame[self.book_dim:]
+        book = frame[: self.book_dim]
+        extras = frame[self.book_dim :]
 
         M_frame = float(extras[_FRAME_M])
         spread_ticks = float(extras[_FRAME_SPREAD_TICKS])
 
-        scalars = np.array([
-            np.log(M_frame) - self.log_mid_centre,
-            np.log1p(max(0.0, spread_ticks)) if spread_ticks > 0 else 0.0,
-            extras[_FRAME_MID_RETURN],
-            extras[_FRAME_SIGNED_VOLUME],
-            np.log1p(max(0.0, float(extras[_FRAME_TRADE_COUNT]))),
-            extras[_FRAME_TRADE_DIRECTION],
-        ])
+        scalars = np.array(
+            [
+                np.log(M_frame) - self.log_mid_centre,
+                np.log1p(max(0.0, spread_ticks)) if spread_ticks > 0 else 0.0,
+                extras[_FRAME_MID_RETURN],
+                extras[_FRAME_SIGNED_VOLUME],
+                np.log1p(max(0.0, float(extras[_FRAME_TRADE_COUNT]))),
+                extras[_FRAME_TRADE_DIRECTION],
+            ]
+        )
 
         if self.book_mode == "grid":
             bid_grid, ask_grid = self._grid_rows(book, R_t)
             return np.concatenate([bid_grid, ask_grid, scalars]).astype(np.float32)
 
         bid_price = book[0:k]
-        bid_size = book[k:2 * k]
-        ask_price = book[2 * k:3 * k]
-        ask_size = book[3 * k:4 * k]
+        bid_size = book[k : 2 * k]
+        ask_price = book[2 * k : 3 * k]
+        ask_size = book[3 * k : 4 * k]
         # Already 0/1; the frame they were taken with decides them, not M_t.
-        occupancy = book[4 * k:6 * k]
+        occupancy = book[4 * k : 6 * k]
 
         norm_bid_price = np.where(bid_price > 0, (M_t - bid_price) / M_t, 0.0)
         # Asks are positive, like bids (doc/15 S4-17): the block's position
@@ -561,15 +575,19 @@ class State_Helper(SharedState):
         # Sizes carry no dependence on the midpoint, so they normalise the same
         # way in every frame. See set_agg_LOB for why they are divided.
         size_scale = float(self.limit_max_size)
-        norm_bid_size = np.where(
-            bid_size > 0, np.sqrt(bid_size / size_scale), 0.0)
-        norm_ask_size = np.where(
-            ask_size > 0, np.sqrt(ask_size / size_scale), 0.0)
+        norm_bid_size = np.where(bid_size > 0, np.sqrt(bid_size / size_scale), 0.0)
+        norm_ask_size = np.where(ask_size > 0, np.sqrt(ask_size / size_scale), 0.0)
 
-        return np.concatenate([
-            norm_bid_price, norm_bid_size, norm_ask_price, norm_ask_size,
-            occupancy, scalars,
-        ]).astype(np.float32)
+        return np.concatenate(
+            [
+                norm_bid_price,
+                norm_bid_size,
+                norm_ask_price,
+                norm_ask_size,
+                occupancy,
+                scalars,
+            ]
+        ).astype(np.float32)
 
     def _trade_flow(self):
         """Execution flow since the last frame entered the history.
@@ -733,31 +751,38 @@ class State_Helper(SharedState):
         # policy (a horizon it could read would hand the end-game back).
         # It can be 0 in a degenerate config; treat that as "no time left"
         # rather than dividing by it.
-        elapsed = (float(elapsed_steps) / float(self.time_left_horizon)
-                   if self.time_left_horizon else 1.0)
+        elapsed = (
+            float(elapsed_steps) / float(self.time_left_horizon) if self.time_left_horizon else 1.0
+        )
 
-        base = np.array([
-            position,
-            float(acc.position_val) / scale,
-            float(acc.cash) / scale,
-            float(acc.cash_on_hold) / scale,
-            float(acc.nav) / scale,
-            # <= 0 by construction: max_nav is the running peak.
-            (float(acc.nav) - float(acc.max_nav)) / scale,
-            vwap_vs_mid,
-            float(acc.total_profit) / scale,
-            max(0.0, 1.0 - elapsed),
-        ], dtype=np.float32)
+        base = np.array(
+            [
+                position,
+                float(acc.position_val) / scale,
+                float(acc.cash) / scale,
+                float(acc.cash_on_hold) / scale,
+                float(acc.nav) / scale,
+                # <= 0 by construction: max_nav is the running peak.
+                (float(acc.nav) - float(acc.max_nav)) / scale,
+                vwap_vs_mid,
+                float(acc.total_profit) / scale,
+                max(0.0, 1.0 - elapsed),
+            ],
+            dtype=np.float32,
+        )
 
         own_bid, own_ask, n_bid, n_ask = self.own_book(trader)
         cap = float(self.max_own_orders)
-        tail = np.array([
-            min(1.0, n_bid / cap),
-            min(1.0, n_ask / cap),
-            # Read before `set_step_outputs` zeroes the counter, so this is the
-            # step just finished: did this agent's modify/cancel name nothing?
-            1.0 if acc.num_unmatched_step > 0 else 0.0,
-        ], dtype=np.float32)
+        tail = np.array(
+            [
+                min(1.0, n_bid / cap),
+                min(1.0, n_ask / cap),
+                # Read before `set_step_outputs` zeroes the counter, so this is the
+                # step just finished: did this agent's modify/cancel name nothing?
+                1.0 if acc.num_unmatched_step > 0 else 0.0,
+            ],
+            dtype=np.float32,
+        )
 
         # Which categories are possible on the coming step (Action_Helper).
         mask = self.action_mask_for(trader, n_bid, n_ask)
@@ -887,8 +912,9 @@ class State_Helper(SharedState):
         high = np.concatenate([np.tile(snap_high, self.n_hist), [hi for _, hi in private]])
         return low.astype(np.float32), high.astype(np.float32)
 
-    def set_next_state(self, next_states: Dict[str, np.ndarray], trader, state_input,
-                       elapsed_steps=None) -> Dict[str, np.ndarray]:
+    def set_next_state(
+        self, next_states: Dict[str, np.ndarray], trader, state_input, elapsed_steps=None
+    ) -> Dict[str, np.ndarray]:
         """
         Set next state.
 
@@ -913,9 +939,9 @@ class State_Helper(SharedState):
         Returns:
             next_states: Dictionary of states for each trader.
         """
-        obs = np.concatenate(
-            [state_input, self.set_private_state(trader, elapsed_steps)]
-        ).astype(np.float32)
+        obs = np.concatenate([state_input, self.set_private_state(trader, elapsed_steps)]).astype(
+            np.float32
+        )
         clipped = np.clip(obs, self.obs_low, self.obs_high)
         trader.acc.num_obs_clipped_step = int(np.count_nonzero(clipped != obs))
         next_states[f'agent_{trader.ID}'] = clipped
@@ -950,8 +976,10 @@ class State_Helper(SharedState):
             # reversed because we want the highest bid as the first entry in the np.array
             for k, set in enumerate(reversed(self.LOB.bids.price_map.items())):
                 if k < k_rows:
-                    bid_price_list[k] = set[0] # set[0] is price (key)
-                    bid_size_list[k] = set[1].volume # set[1] is an OrderList object (value) & volume is total volume of the OrderList object
+                    bid_price_list[k] = set[0]  # set[0] is price (key)
+                    bid_size_list[k] = set[
+                        1
+                    ].volume  # set[1] is an OrderList object (value) & volume is total volume of the OrderList object
                     bid_occupied[k] = 1.0
                 else:
                     break
@@ -972,10 +1000,16 @@ class State_Helper(SharedState):
         # float32 cannot hold 100.1 (it reads back 100.0999984741211). The
         # emitted observation is cast to float32 at emission, in `_stack`; the
         # raw array is the one consumer that needs the price exact.
-        flattened_raw = np.concatenate([
-            bid_price_list, bid_size_list, ask_price_list, ask_size_list,
-            bid_occupied, ask_occupied,
-        ]).astype(np.float64)
+        flattened_raw = np.concatenate(
+            [
+                bid_price_list,
+                bid_size_list,
+                ask_price_list,
+                ask_size_list,
+                bid_occupied,
+                ask_occupied,
+            ]
+        ).astype(np.float64)
         self.agg_LOB_raw = flattened_raw
 
         # Calculate Level 1 midpoint price M. Both this and `mid_price` read
@@ -1021,17 +1055,21 @@ class State_Helper(SharedState):
         # the grid (any one-tick spread) could round to the other side, so the
         # action's price codes and the own-book cells sat one tick off the
         # grid the agent saw. The emitted observation is still float32.
-        self.agg_LOB_frame = np.concatenate([
-            flattened_raw,
-            np.array([
-                M,
-                spread_ticks,
-                mid_return,
-                signed_volume / float(self.limit_max_size),
-                float(trade_count),
-                trade_direction,
-            ]),
-        ]).astype(np.float64)
+        self.agg_LOB_frame = np.concatenate(
+            [
+                flattened_raw,
+                np.array(
+                    [
+                        M,
+                        spread_ticks,
+                        mid_return,
+                        signed_volume / float(self.limit_max_size),
+                        float(trade_count),
+                        trade_direction,
+                    ]
+                ),
+            ]
+        ).astype(np.float64)
 
         # The current frame, normalised against its own midpoint. At emission
         # time that is `M_t`, so the newest frame of a stack is identical
@@ -1039,4 +1077,3 @@ class State_Helper(SharedState):
         # normalised snapshot" - for the render path and its callers.
         R = self._snap_to_tick(M) if self.book_mode == "grid" else None
         return self._normalise_frame(self.agg_LOB_frame, M, R)
-    

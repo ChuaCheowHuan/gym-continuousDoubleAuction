@@ -19,6 +19,7 @@ tests in `test_encoder_registry.py` cannot make:
 config file, which is why these build a `TrainConfig` and then override the
 field directly.
 """
+
 import shutil
 import tempfile
 
@@ -83,6 +84,7 @@ def _learner_module_state(algo, module_id):
     return algo.learner_group.get_state(
         components=f"{COMPONENT_LEARNER}/{COMPONENT_RL_MODULE}/{module_id}",
     )[COMPONENT_LEARNER][COMPONENT_RL_MODULE][module_id]
+
 
 TEST_CFG = dict(
     num_agents=4,
@@ -253,8 +255,7 @@ class TestRecurrentEncoderTrainsEndToEnd:
         cls.algo = ppo_config.build_algo()
         cls.pid = trainable_policy_ids(cls.cfg.num_trained_agents)[0]
         cls.before = {
-            k: v.detach().clone()
-            for k, v in cls.algo.env_runner.module[cls.pid].named_parameters()
+            k: v.detach().clone() for k, v in cls.algo.env_runner.module[cls.pid].named_parameters()
         }
         cls.result = cls.algo.train()
 
@@ -272,9 +273,7 @@ class TestRecurrentEncoderTrainsEndToEnd:
 
     def test_the_recurrent_weights_are_trained(self):
         after = dict(self.algo.env_runner.module[self.pid].named_parameters())
-        changed = {
-            k for k, v in after.items() if not torch.equal(self.before[k], v)
-        }
+        changed = {k for k, v in after.items() if not torch.equal(self.before[k], v)}
 
         assert any("lstm" in k for k in changed), "the LSTM itself did not update"
         assert any("tokenizer" in k for k in changed), "the tokenizer did not update"
@@ -315,8 +314,7 @@ class TestMoEAuxLossReachesTheOptimiser:
         cls.algo = ppo_config.build_algo()
         cls.pid = trainable_policy_ids(cls.cfg.num_trained_agents)[0]
         cls.before = {
-            k: v.detach().clone()
-            for k, v in cls.algo.env_runner.module[cls.pid].named_parameters()
+            k: v.detach().clone() for k, v in cls.algo.env_runner.module[cls.pid].named_parameters()
         }
         cls.result = cls.algo.train()
 
@@ -344,16 +342,13 @@ class TestMoEAuxLossReachesTheOptimiser:
         assert MOE_MAX_EXPERT_SHARE_KEY in learner_results
         assert MOE_MIN_EXPERT_SHARE_KEY in learner_results
         assert (
-            learner_results[MOE_MIN_EXPERT_SHARE_KEY]
-            <= learner_results[MOE_MAX_EXPERT_SHARE_KEY]
+            learner_results[MOE_MIN_EXPERT_SHARE_KEY] <= learner_results[MOE_MAX_EXPERT_SHARE_KEY]
         )
 
     def test_the_gates_are_trained(self):
         """Nothing but the auxiliary loss trains a gate towards balance."""
         after = dict(self.algo.env_runner.module[self.pid].named_parameters())
-        changed = {
-            k for k, v in after.items() if not torch.equal(self.before[k], v)
-        }
+        changed = {k for k, v in after.items() if not torch.equal(self.before[k], v)}
 
         assert any(".gate." in k for k in changed), "no gate was updated"
         assert any(".experts." in k for k in changed), "no expert was updated"
@@ -412,16 +407,12 @@ class TestCustomEncoderCheckpointRoundTrip:
         restored = self.restored.env_runner.module[self.pid]
 
         assert type(restored) is type(self.algo.env_runner.module[self.pid])
-        assert isinstance(
-            restored.encoder.actor_encoder, TorchTransformerEncoder
-        )
+        assert isinstance(restored.encoder.actor_encoder, TorchTransformerEncoder)
 
     def test_the_encoder_spec_survives(self):
         spec = self.restored.config.rl_module_spec.rl_module_specs[self.pid]
 
-        assert _model_config_get(spec.model_config, "encoder_type", None) == (
-            self.ENCODER
-        )
+        assert _model_config_get(spec.model_config, "encoder_type", None) == (self.ENCODER)
 
     def test_the_weights_are_identical(self):
         """Compared on the Learner, which is where the authoritative weights
@@ -437,9 +428,9 @@ class TestCustomEncoderCheckpointRoundTrip:
 
         assert set(original) == set(restored)
         for name, tensor in original.items():
-            assert torch.equal(
-                torch.as_tensor(tensor), torch.as_tensor(restored[name])
-            ), f"{name} differs"
+            assert torch.equal(torch.as_tensor(tensor), torch.as_tensor(restored[name])), (
+                f"{name} differs"
+            )
 
     def test_the_actor_side_weights_reach_the_env_runner(self):
         """What actually acts in the environment after a restore."""
@@ -454,9 +445,7 @@ class TestCustomEncoderCheckpointRoundTrip:
     def test_the_restore_guard_accepts_its_own_checkpoint(self):
         """The structural check must not fire on an unchanged config - that
         would make every custom-encoder run unresumable."""
-        desired, _ = build_config(
-            config_with_encoder(self.ENCODER, run_id="ckpt-roundtrip-2")
-        )
+        desired, _ = build_config(config_with_encoder(self.ENCODER, run_id="ckpt-roundtrip-2"))
 
         _check_restored_config(self.restored.config, desired)
 
@@ -488,8 +477,7 @@ class TestJEPAAuxLossReachesTheOptimiser:
         cls.algo = ppo_config.build_algo()
         cls.pid = trainable_policy_ids(cls.cfg.num_trained_agents)[0]
         cls.before = {
-            k: v.detach().clone()
-            for k, v in cls.algo.env_runner.module[cls.pid].named_parameters()
+            k: v.detach().clone() for k, v in cls.algo.env_runner.module[cls.pid].named_parameters()
         }
         cls.result = cls.algo.train()
 
@@ -527,9 +515,7 @@ class TestJEPAAuxLossReachesTheOptimiser:
 
     def test_the_encoder_is_trained(self):
         after = dict(self.algo.env_runner.module[self.pid].named_parameters())
-        changed = {
-            k for k, v in after.items() if not torch.equal(self.before[k], v)
-        }
+        changed = {k for k, v in after.items() if not torch.equal(self.before[k], v)}
         assert any("actor_encoder.trunk" in k for k in changed), (
             "the online trunk took no gradient at all"
         )
@@ -560,21 +546,13 @@ class TestOtherEncodersAreUnaffectedByJEPA:
     the defaults - this is the mechanical form of the isolation claim.
     """
 
-    @pytest.mark.parametrize(
-        "encoder_type", ["mlp", "transformer", "lstm", "moe_transformer"]
-    )
+    @pytest.mark.parametrize("encoder_type", ["mlp", "transformer", "lstm", "moe_transformer"])
     def test_the_learner_is_still_the_default(self, encoder_type):
-        assert learner_class_for(encoder_type, CDAPPOTorchLearner) is (
-            CDAPPOTorchLearner
-        )
+        assert learner_class_for(encoder_type, CDAPPOTorchLearner) is (CDAPPOTorchLearner)
 
-    @pytest.mark.parametrize(
-        "encoder_type", ["transformer", "lstm", "moe_transformer"]
-    )
+    @pytest.mark.parametrize("encoder_type", ["transformer", "lstm", "moe_transformer"])
     def test_the_module_class_is_still_the_default(self, encoder_type):
-        assert module_class_for(encoder_type, CDAPPOTorchRLModule) is (
-            CDAPPOTorchRLModule
-        )
+        assert module_class_for(encoder_type, CDAPPOTorchRLModule) is (CDAPPOTorchRLModule)
 
     def test_jepa_is_the_only_encoder_that_overrides_either(self):
         assert set(ENCODER_MODULE_CLASSES) == {"jepa"}
@@ -598,9 +576,7 @@ class TestJEPAWorldModelReachesTheOptimiser:
             log_to_driver=False,
             num_cpus=2,
         )
-        cls.cfg = config_with_encoder(
-            "jepa", encoder_specs={"jepa": {"world_model": True}}
-        )
+        cls.cfg = config_with_encoder("jepa", encoder_specs={"jepa": {"world_model": True}})
         ppo_config, cls.callback = build_config(cls.cfg)
         cls.algo = ppo_config.build_algo()
         cls.pid = trainable_policy_ids(cls.cfg.num_trained_agents)[0]
@@ -641,9 +617,7 @@ class TestTheNextObsConnectorIsConditional:
     an extra observation-sized tensor per row of every train batch.
     """
 
-    @pytest.mark.parametrize(
-        "encoder_type", ["mlp", "transformer", "lstm", "moe_transformer"]
-    )
+    @pytest.mark.parametrize("encoder_type", ["mlp", "transformer", "lstm", "moe_transformer"])
     def test_other_encoders_do_not_ask_for_it(self, encoder_type):
         assert not needs_next_obs(encoder_type, None)
 

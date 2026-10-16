@@ -3,6 +3,7 @@ built the shared probe corpus in the default layout, so a comparison across
 observation-layout variants probed modules with observations they were not
 trained on.
 """
+
 import pytest
 
 from gym_continuousDoubleAuction.config_loader import group
@@ -17,7 +18,6 @@ def _width(**kwargs):
 
 
 class TestTheCorpusFollowsTheEnvConfig:
-
     def test_the_default_layout_is_unchanged(self):
         assert _width() == 233
 
@@ -29,7 +29,10 @@ class TestTheCorpusFollowsTheEnvConfig:
 
     def test_explicit_arguments_beat_the_config(self):
         corpus = corpus_module.from_rollouts(
-            num_episodes=1, max_step=5, num_agents=2, seed=0,
+            num_episodes=1,
+            max_step=5,
+            num_agents=2,
+            seed=0,
             env_config={"num_of_agents": 4, "max_step": 99},
         )
         assert len(corpus) == 6
@@ -41,7 +44,6 @@ class TestTheCorpusFollowsTheEnvConfig:
 
 
 class TestCompareHandsItsConfigToTheCorpus:
-
     @pytest.fixture
     def seen(self, monkeypatch, tmp_path):
         import ray
@@ -54,19 +56,23 @@ class TestCompareHandsItsConfigToTheCorpus:
             class Stub:
                 def describe(self):
                     return "stub"
+
             return Stub()
 
         monkeypatch.setattr(corpus_module, "from_rollouts", fake_corpus)
         monkeypatch.setattr(ray, "init", lambda **kw: None)
         monkeypatch.setattr(ray, "shutdown", lambda: None)
-        monkeypatch.setattr(compare, "run_one", lambda *a, **kw: {
-            "encoder": "mlp", "seed": 0, "return": 0.0})
+        monkeypatch.setattr(
+            compare, "run_one", lambda *a, **kw: {"encoder": "mlp", "seed": 0, "return": 0.0}
+        )
         monkeypatch.setattr(compare, "probe_checkpoint", lambda *a, **kw: None)
 
         def run(*extra):
-            compare.main(["--encoders", "mlp", "--seeds", "0", "--out",
-                          str(tmp_path / "out"), *extra])
+            compare.main(
+                ["--encoders", "mlp", "--seeds", "0", "--out", str(tmp_path / "out"), *extra]
+            )
             return captured
+
         return run
 
     def test_a_layout_override_reaches_the_corpus(self, seen):
@@ -76,5 +82,7 @@ class TestCompareHandsItsConfigToTheCorpus:
         assert seen("--set", "taker_fee_bps=7")["env_config"]["taker_fee_bps"] == 7
 
     def test_without_an_override_it_is_the_default_config(self, seen):
-        assert seen()["env_config"]["book_mode"] == \
-            group("env_defaults.json", "environment")["book_mode"]
+        assert (
+            seen()["env_config"]["book_mode"]
+            == group("env_defaults.json", "environment")["book_mode"]
+        )

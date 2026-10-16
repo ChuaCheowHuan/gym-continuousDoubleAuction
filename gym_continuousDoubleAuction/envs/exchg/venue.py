@@ -7,6 +7,7 @@ now, and the exchange hands them what they need. A component that works on the e
 state at all (the liquidation engine, the episode status) takes a `Venue`, and this is the
 whole of what it may use. `Exchg_Helper` implements it; a test can supply a small fake.
 """
+
 from __future__ import annotations
 
 from typing import Any, List, Protocol

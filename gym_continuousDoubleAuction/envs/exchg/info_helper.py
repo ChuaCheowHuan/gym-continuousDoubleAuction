@@ -56,9 +56,19 @@ class InfoBuilder(object):
     and the model actions off the env. It holds nothing; the exchange passes them in.
     """
 
-    def set_info(self, infos: Dict[str, Dict[str, Any]], trader, *, mark, pass_agents,
-                 last_price, best_bid, best_ask, spread, model_actions
-                 ) -> Dict[str, Dict[str, Any]]:
+    def set_info(
+        self,
+        infos: Dict[str, Dict[str, Any]],
+        trader,
+        *,
+        mark,
+        pass_agents,
+        last_price,
+        best_bid,
+        best_ask,
+        spread,
+        model_actions,
+    ) -> Dict[str, Dict[str, Any]]:
         """
         Update the infos dictionary with the latest data from the trader.
 
@@ -92,51 +102,53 @@ class InfoBuilder(object):
 
         # Account state (doc/11 2.3). Read before set_step_outputs zeroes the
         # per-step counters, which happens after this call.
-        info.update({
-            # int, straight through: net_position is a count of contracts and
-            # the account now holds it as one for the whole episode, so there
-            # is nothing left here to paper over.
-            "net_position": acc.net_position,
-            # The cost basis, not `acc.VWAP`, which carries realised P&L
-            # rolled in by `_size_decrease` and is not a price at all
-            # once a position has been partly closed - it can be
-            # negative. Anyone reading this column out of the episode
-            # Parquet wants the price actually paid.
-            "VWAP": float(acc.entry_vwap),
-            # The rolled basis the ledger uses, kept under its own name
-            # so the two are distinguishable rather than conflated.
-            "carrying_vwap": float(acc.VWAP),
-            "cash": float(acc.cash),
-            "cash_on_hold": float(acc.cash_on_hold),
-            "position_val": float(acc.position_val),
-            "drawdown": float(acc.drawdown),
-            "max_nav": float(acc.max_nav),
-            "num_trades_step": acc.num_trades_step,
-            "num_passive_fills_step": acc.num_passive_fills_step,
-            "order_step_placed": acc.order_step_placed,
-            "num_rejected_step": acc.num_rejected_step,
-            # modify/cancel actions that named no resting order this step -
-            # the third way an action can silently do nothing (doc/15 S4-14).
-            "num_unmatched_step": acc.num_unmatched_step,
-            # Observation elements clipped to the declared Box bounds this
-            # step (doc/15 S4-15). Zero unless a bound is wrong for the market.
-            "num_obs_clipped_step": acc.num_obs_clipped_step,
-            "num_liquidations_step": acc.num_liquidations_step,
-            "liquidated_book_qty_step": acc.liquidated_book_qty_step,
-            "liquidated_adl_qty_step": acc.liquidated_adl_qty_step,
-            "adl_qty_step": acc.adl_qty_step,
-            "liquidation_steps_left": acc.liquidation_steps_left,
-            # Realised and unrealised P&L, gross of fees (issue #286). Exact in the
-            # ledger and converted here, like every diagnostic: `nav - init_nav ==
-            # realised + unrealised - fees_paid` holds on the Decimals, to the
-            # last digit the ledger keeps.
-            "realised_pnl": float(acc.realised_pnl),
-            "unrealised_pnl": float(acc.unrealised_pnl(mark)),
-            # This step's fills, signed (buys +): contracts and price x contracts.
-            # A mark-out at horizon h is `qty x mid_{t+h} - value`.
-            "fill_qty_step": acc.fill_qty_step,
-            "fill_value_step": float(acc.fill_value_step),
-        })
+        info.update(
+            {
+                # int, straight through: net_position is a count of contracts and
+                # the account now holds it as one for the whole episode, so there
+                # is nothing left here to paper over.
+                "net_position": acc.net_position,
+                # The cost basis, not `acc.VWAP`, which carries realised P&L
+                # rolled in by `_size_decrease` and is not a price at all
+                # once a position has been partly closed - it can be
+                # negative. Anyone reading this column out of the episode
+                # Parquet wants the price actually paid.
+                "VWAP": float(acc.entry_vwap),
+                # The rolled basis the ledger uses, kept under its own name
+                # so the two are distinguishable rather than conflated.
+                "carrying_vwap": float(acc.VWAP),
+                "cash": float(acc.cash),
+                "cash_on_hold": float(acc.cash_on_hold),
+                "position_val": float(acc.position_val),
+                "drawdown": float(acc.drawdown),
+                "max_nav": float(acc.max_nav),
+                "num_trades_step": acc.num_trades_step,
+                "num_passive_fills_step": acc.num_passive_fills_step,
+                "order_step_placed": acc.order_step_placed,
+                "num_rejected_step": acc.num_rejected_step,
+                # modify/cancel actions that named no resting order this step -
+                # the third way an action can silently do nothing (doc/15 S4-14).
+                "num_unmatched_step": acc.num_unmatched_step,
+                # Observation elements clipped to the declared Box bounds this
+                # step (doc/15 S4-15). Zero unless a bound is wrong for the market.
+                "num_obs_clipped_step": acc.num_obs_clipped_step,
+                "num_liquidations_step": acc.num_liquidations_step,
+                "liquidated_book_qty_step": acc.liquidated_book_qty_step,
+                "liquidated_adl_qty_step": acc.liquidated_adl_qty_step,
+                "adl_qty_step": acc.adl_qty_step,
+                "liquidation_steps_left": acc.liquidation_steps_left,
+                # Realised and unrealised P&L, gross of fees (issue #286). Exact in the
+                # ledger and converted here, like every diagnostic: `nav - init_nav ==
+                # realised + unrealised - fees_paid` holds on the Decimals, to the
+                # last digit the ledger keeps.
+                "realised_pnl": float(acc.realised_pnl),
+                "unrealised_pnl": float(acc.unrealised_pnl(mark)),
+                # This step's fills, signed (buys +): contracts and price x contracts.
+                # A mark-out at horizon h is `qty x mid_{t+h} - value`.
+                "fill_qty_step": acc.fill_qty_step,
+                "fill_value_step": float(acc.fill_value_step),
+            }
+        )
 
         # Did this agent choose to do nothing this step? The two behaviours a
         # return series cannot tell apart: passing, and quoting past your cash
@@ -156,12 +168,14 @@ class InfoBuilder(object):
         # that pays the string cost to stay exact, because the conservation
         # check depends on it; these are read for plots and diagnostics, where a
         # float is both sufficient and directly usable. None stays None.
-        info.update({
-            "last_price": _as_float(last_price),
-            "best_bid": _as_float(best_bid),
-            "best_ask": _as_float(best_ask),
-            "spread": _as_float(spread),
-        })
+        info.update(
+            {
+                "last_price": _as_float(last_price),
+                "best_bid": _as_float(best_bid),
+                "best_ask": _as_float(best_ask),
+                "spread": _as_float(spread),
+            }
+        )
 
         # The action this agent actually submitted, as the model emitted it -
         # before set_actions reshapes it for the LOB. Set at the top of step()

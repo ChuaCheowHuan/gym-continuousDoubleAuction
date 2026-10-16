@@ -3,6 +3,7 @@
 Zero by default, so the reward is bit for bit what it was before the term
 existed; when set, it charges per modify/cancel that named no resting order.
 """
+
 import numpy as np
 
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
@@ -13,15 +14,18 @@ from gym_continuousDoubleAuction.train.episode_record import REWARD_TERMS
 
 def _act(category, slot=0):
     return {
-        "category": category, "size": np.array([0.0], dtype=np.float32),
+        "category": category,
+        "size": np.array([0.0], dtype=np.float32),
         "price": 0,
-        "price_offset": 1, "order_slot": slot,
+        "price_offset": 1,
+        "order_slot": slot,
     }
 
 
 def _env(**cfg):
-    env = continuousDoubleAuctionEnv({"num_of_agents": 2, "is_render": False,
-                                      "max_step": 16, **cfg})
+    env = continuousDoubleAuctionEnv(
+        {"num_of_agents": 2, "is_render": False, "max_step": 16, **cfg}
+    )
     env.reset(seed=0)
     return env
 
@@ -51,6 +55,7 @@ def test_penalty_charges_per_miss_when_set():
 
 def test_train_config_forwards_it():
     from gym_continuousDoubleAuction.train.train import TrainConfig
+
     cfg = TrainConfig()
     assert cfg.dead_action_penalty == 0.0
     assert cfg.env_config["dead_action_penalty"] == 0.0

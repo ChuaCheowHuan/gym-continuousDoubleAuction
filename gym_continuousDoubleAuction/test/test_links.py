@@ -6,6 +6,7 @@ workflow cannot be edited from the sessions that maintain this repository (no
 `workflow` scope, doc/17 §37.6), so it runs here, in the job that already runs the
 suite - the same arrangement as `test_lint.py`.
 """
+
 import pathlib
 import subprocess
 import sys
@@ -18,12 +19,12 @@ REPO_ROOT = pathlib.Path(gym_continuousDoubleAuction.__file__).resolve().parent.
 CHECKER = REPO_ROOT / "tools" / "check_links.py"
 
 pytestmark = pytest.mark.skipif(
-    not CHECKER.is_file(), reason="tools/check_links.py is not part of an installed package")
+    not CHECKER.is_file(), reason="tools/check_links.py is not part of an installed package"
+)
 
 
 def _run(root):
-    return subprocess.run([sys.executable, str(CHECKER), str(root)],
-                          capture_output=True, text=True)
+    return subprocess.run([sys.executable, str(CHECKER), str(root)], capture_output=True, text=True)
 
 
 def test_the_repository_has_no_broken_links():
@@ -68,7 +69,9 @@ class TestTheCheckerItself:
         assert "CONTRIBUTING.md" in _run(root).stdout
 
     def test_a_skill_file_is_checked(self, tmp_path):
-        root = self._tree(tmp_path, "ok\n", **{".claude__skills__demo__SKILL.md": "[x](../../../doc/nope.md)\n"})
+        root = self._tree(
+            tmp_path, "ok\n", **{".claude__skills__demo__SKILL.md": "[x](../../../doc/nope.md)\n"}
+        )
         out = _run(root)
         assert out.returncode == 1 and "SKILL.md" in out.stdout
 

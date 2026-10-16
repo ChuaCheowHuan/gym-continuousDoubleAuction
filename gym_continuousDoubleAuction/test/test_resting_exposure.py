@@ -15,6 +15,7 @@ notional even for an order that only closes, so `cash` can dip negative while
 convention and is asserted here rather than fixed, so a change to it is a
 deliberate one.
 """
+
 import sys
 from decimal import Decimal
 

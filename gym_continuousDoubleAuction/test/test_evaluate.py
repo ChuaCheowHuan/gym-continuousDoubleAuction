@@ -1,4 +1,5 @@
 """The pure half of `train.evaluate`: unbatching, summarising, rendering."""
+
 import numpy as np
 import pytest
 import torch
@@ -8,23 +9,47 @@ from gym_continuousDoubleAuction.train import evaluate
 
 
 def _row(agent, module, ret, nav, trades=3, passf=0.1, rej=0.0, unm=0.2, share=0.5, term=False):
-    return {"agent": agent, "module": module, "return": ret, "final_nav": nav,
-            "nav_change_frac": None if nav is None else nav / 1e6 - 1, "num_trades": trades,
-            "pass_fraction": passf, "rejection_fraction": rej, "unmatched_fraction": unm,
-            "passive_fill_share": share, "terminated": term}
+    return {
+        "agent": agent,
+        "module": module,
+        "return": ret,
+        "final_nav": nav,
+        "nav_change_frac": None if nav is None else nav / 1e6 - 1,
+        "num_trades": trades,
+        "pass_fraction": passf,
+        "rejection_fraction": rej,
+        "unmatched_fraction": unm,
+        "passive_fill_share": share,
+        "terminated": term,
+    }
 
 
 EPISODES = [
-    {"episode": 0, "steps": 10, "agents": [_row("agent_0", "policy_0", 1.0, 1_010_000),
-                                           _row("agent_1", "policy_2", -1.0, 990_000, share=None)]},
-    {"episode": 1, "steps": 10, "agents": [_row("agent_0", "policy_0", 3.0, 1_030_000, term=True),
-                                           _row("agent_1", "policy_2", -3.0, 970_000, share=None)]},
+    {
+        "episode": 0,
+        "steps": 10,
+        "agents": [
+            _row("agent_0", "policy_0", 1.0, 1_010_000),
+            _row("agent_1", "policy_2", -1.0, 990_000, share=None),
+        ],
+    },
+    {
+        "episode": 1,
+        "steps": 10,
+        "agents": [
+            _row("agent_0", "policy_0", 3.0, 1_030_000, term=True),
+            _row("agent_1", "policy_2", -3.0, 970_000, share=None),
+        ],
+    },
 ]
 
 
 def test_unbatch_handles_dicts_tensors_and_discrete():
-    batched = {"category": torch.tensor([4]), "size": torch.tensor([[0.25]]),
-               "order_slot": np.array([2])}
+    batched = {
+        "category": torch.tensor([4]),
+        "size": torch.tensor([[0.25]]),
+        "order_slot": np.array([2]),
+    }
     out = evaluate._unbatch(batched)
     assert out["category"] == 4 and isinstance(out["category"], int)
     assert out["order_slot"] == 2
@@ -58,6 +83,7 @@ class _ScriptedEnv:
     """Two agents; agent_1 goes bankrupt on step 2 and leaves, agent_0 runs to
     the truncation at step 4 - the shape the real env gives a mid-episode
     bankruptcy: the terminated agent is absent from every later step."""
+
     possible_agents = ["agent_0", "agent_1"]
     init_cash = 100
 
@@ -69,9 +95,18 @@ class _ScriptedEnv:
     def step(self, actions):
         self.t += 1
         acting = list(self.agents)
-        infos = {a: {"NAV": "100", "is_pass_action": 1, "num_rejected_step": 0,
-                     "num_unmatched_step": 0, "num_passive_fills_step": 0,
-                     "num_trades_step": 0, "num_trades": 0} for a in acting}
+        infos = {
+            a: {
+                "NAV": "100",
+                "is_pass_action": 1,
+                "num_rejected_step": 0,
+                "num_unmatched_step": 0,
+                "num_passive_fills_step": 0,
+                "num_trades_step": 0,
+                "num_trades": 0,
+            }
+            for a in acting
+        }
         terminateds = {a: False for a in acting}
         if self.t == 2:
             terminateds["agent_1"] = True
@@ -79,8 +114,7 @@ class _ScriptedEnv:
             self.agents = ["agent_0"]
         terminateds["__all__"] = False
         truncateds = {"__all__": self.t >= 4}
-        return ({a: None for a in acting}, {a: 0.0 for a in acting},
-                terminateds, truncateds, infos)
+        return ({a: None for a in acting}, {a: 0.0 for a in acting}, terminateds, truncateds, infos)
 
 
 class TestMidEpisodeBankruptcy:
@@ -97,8 +131,14 @@ class TestMidEpisodeBankruptcy:
                 return None
 
         monkeypatch.setattr(evaluate, "act", lambda *args, **kwargs: {})
-        record = evaluate.roll_episode(_Algo(), _ScriptedEnv(), lambda agent, ep: "policy_0",
-                                       episode_index=0, seed=0, deterministic=True)
+        record = evaluate.roll_episode(
+            _Algo(),
+            _ScriptedEnv(),
+            lambda agent, ep: "policy_0",
+            episode_index=0,
+            seed=0,
+            deterministic=True,
+        )
         return {row["agent"]: row for row in record["agents"]}
 
     def test_it_is_reported_terminated(self, monkeypatch):

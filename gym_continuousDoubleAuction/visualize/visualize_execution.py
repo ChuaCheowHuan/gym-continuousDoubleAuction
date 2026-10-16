@@ -16,11 +16,11 @@ from gym_continuousDoubleAuction.visualize.episode_data import load_episode
 #: `visualize_modules.py` plots these same three fractions aggregated per
 #: module, and a rate that changes color between the per-episode view and the
 #: per-module one reads as a different quantity.
-_PLACED_COLOR = "#008300"    # green - a successful, non-rejected order
-REJECTED_COLOR = "#eb6834"   # orange
-_TRADES_COLOR = "#4a3aa7"    # violet - the "total fills" line, no rate counterpart
-MAKER_COLOR = "#1baf7a"      # aqua
-PASS_COLOR = "#2a78d6"       # blue - only appears in the rates panel
+_PLACED_COLOR = "#008300"  # green - a successful, non-rejected order
+REJECTED_COLOR = "#eb6834"  # orange
+_TRADES_COLOR = "#4a3aa7"  # violet - the "total fills" line, no rate counterpart
+MAKER_COLOR = "#1baf7a"  # aqua
+PASS_COLOR = "#2a78d6"  # blue - only appears in the rates panel
 
 
 def visualize_execution_quality(run_dir=None, episode_id=None, agent_id=None, window=50):
@@ -65,8 +65,12 @@ def visualize_execution_quality(run_dir=None, episode_id=None, agent_id=None, wi
         agent_id = constant("visualize_paths", "default_agent_id")
 
     columns = [
-        "agent_id", "order_step_placed", "num_rejected_step",
-        "num_trades_step", "num_passive_fills_step", "is_pass_action",
+        "agent_id",
+        "order_step_placed",
+        "num_rejected_step",
+        "num_trades_step",
+        "num_passive_fills_step",
+        "is_pass_action",
     ]
     episode = load_episode(run_dir, episode_id, columns=columns)
     episode = episode[episode["agent_id"] == agent_id]
@@ -86,9 +90,15 @@ def visualize_execution_quality(run_dir=None, episode_id=None, agent_id=None, wi
 
     # --- Panel 1: cumulative counts ---
     ax_counts.plot(np.cumsum(placed), color=_PLACED_COLOR, linewidth=1.5, label="Orders placed")
-    ax_counts.plot(np.cumsum(rejected), color=REJECTED_COLOR, linewidth=1.5, label="Orders rejected")
-    ax_counts.plot(np.cumsum(trades), color=_TRADES_COLOR, linewidth=1.5, label="Trades (both sides)")
-    ax_counts.plot(np.cumsum(passive), color=MAKER_COLOR, linewidth=1.5, label="Passive (maker) fills")
+    ax_counts.plot(
+        np.cumsum(rejected), color=REJECTED_COLOR, linewidth=1.5, label="Orders rejected"
+    )
+    ax_counts.plot(
+        np.cumsum(trades), color=_TRADES_COLOR, linewidth=1.5, label="Trades (both sides)"
+    )
+    ax_counts.plot(
+        np.cumsum(passive), color=MAKER_COLOR, linewidth=1.5, label="Passive (maker) fills"
+    )
     ax_counts.set_ylabel('Cumulative count')
     ax_counts.set_title(f'Order & Fill Activity ({agent_id})')
     ax_counts.grid(True, linestyle='--', alpha=0.5)
@@ -127,6 +137,7 @@ def visualize_execution_quality(run_dir=None, episode_id=None, agent_id=None, wi
     plt.savefig(output_file)
     print(f"Visualization saved to {output_file}")
     plt.show()
+
 
 if __name__ == "__main__":
     visualize_execution_quality()

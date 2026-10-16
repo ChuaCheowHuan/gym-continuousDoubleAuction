@@ -7,6 +7,7 @@ below: the agent kept emitting transitions, it kept accruing reward terms, and
 its resting orders stayed live and executable in a book it had no capital to
 stand behind.
 """
+
 from decimal import Decimal
 
 
@@ -134,7 +135,10 @@ class TestBankruptAgentIsTerminated:
 
         assert env.agents == ["agent_1", "agent_2", "agent_3"]
         assert env.possible_agents == [
-            "agent_0", "agent_1", "agent_2", "agent_3",
+            "agent_0",
+            "agent_1",
+            "agent_2",
+            "agent_3",
         ], "possible_agents is the fixed roster"
 
     def test_reset_restores_the_full_roster(self):

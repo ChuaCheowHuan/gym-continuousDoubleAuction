@@ -12,6 +12,7 @@ reference price (the "rejected" dead action). Pass is always possible. With
 `action_mask` off the env emits all ones, so the layout is one and the
 unmasked baseline is a config flag.
 """
+
 import numpy as np
 import torch
 from ray.rllib.core.columns import Columns
@@ -40,8 +41,13 @@ from gym_continuousDoubleAuction.train.model.model_handler import (
 
 
 def _env(**overrides):
-    config = {"num_of_agents": 2, "is_render": False, "max_step": 40,
-              "initial_price_min": 100, "initial_price_max": 100}
+    config = {
+        "num_of_agents": 2,
+        "is_render": False,
+        "max_step": 40,
+        "initial_price_min": 100,
+        "initial_price_max": 100,
+    }
     config.update(overrides)
     env = continuousDoubleAuctionEnv(config)
     env.reset(seed=1)
@@ -49,17 +55,23 @@ def _env(**overrides):
 
 
 def _pass(env):
-    return {agent: {"category": 0, "order_slot": 0, "price": 0, "price_offset": 1,
-                    "size": np.zeros(1, dtype=np.float32)}
-            for agent in env.agents}
+    return {
+        agent: {
+            "category": 0,
+            "order_slot": 0,
+            "price": 0,
+            "price_offset": 1,
+            "size": np.zeros(1, dtype=np.float32),
+        }
+        for agent in env.agents
+    }
 
 
 def _mask(env, obs, agent="agent_0"):
-    return dict(zip(MASK_FIELDS, obs[agent][-len(MASK_FIELDS):]))
+    return dict(zip(MASK_FIELDS, obs[agent][-len(MASK_FIELDS) :]))
 
 
 class TestLayout:
-
     def test_the_mask_closes_the_private_block(self):
         assert PRIVATE_FIELDS[-9:] == MASK_FIELDS
         assert ACTION_MASK_OFFSET == len(PRIVATE_FIELDS) - 9 == action_mask_offset(10)
@@ -81,12 +93,12 @@ class TestLayout:
 
     def test_a_space_without_the_block_has_no_mask(self):
         import gymnasium as gym
+
         space = gym.spaces.Box(-1, 1, shape=(4 * 48 + 9,), dtype=np.float32)
         assert mask_slice(space) is None
 
 
 class TestWhatIsMasked:
-
     def test_nothing_resting_masks_modify_and_cancel(self):
         env = _env()
         obs, _ = env.reset(seed=1)
@@ -115,7 +127,7 @@ class TestWhatIsMasked:
         env = _env()
         a, b = env.traders
         env.last_price = 100.0
-        a.acc.cash = a.acc.cash.__class__(0)   # Decimal(0)
+        a.acc.cash = a.acc.cash.__class__(0)  # Decimal(0)
         obs, *_ = env.step(_pass(env))
         m = _mask(env, obs)
         assert m["can_pass"] == 1.0
@@ -129,13 +141,13 @@ class TestWhatIsMasked:
         env = _env()
         a, b = env.traders
         a.place_order('limit', 'bid', 10, 100.0, env.LOB, env.traders)
-        b.place_order('limit', 'ask', 10, 100.0, env.LOB, env.traders)   # a is long 10
+        b.place_order('limit', 'ask', 10, 100.0, env.LOB, env.traders)  # a is long 10
         a.acc.cash = a.acc.cash.__class__(0)
         obs, *_ = env.step(_pass(env))
         m = _mask(env, obs)
         assert a.acc.net_position == 10
         assert m["can_ask_limit"] == 1.0 and m["can_ask_market"] == 1.0  # closing
-        assert m["can_bid_limit"] == 0.0                                  # opening
+        assert m["can_bid_limit"] == 0.0  # opening
 
     def test_the_mask_agrees_with_the_cash_check(self):
         """Random play: every step, a category the mask allows for a limit
@@ -165,10 +177,10 @@ class TestWhatIsMasked:
 
 
 class TestModulesHonourIt:
-
     def _module(self, env):
-        return build_trainable_module_spec(env.observation_space, env.action_space,
-                                           encoder_type="mlp").build()
+        return build_trainable_module_spec(
+            env.observation_space, env.action_space, encoder_type="mlp"
+        ).build()
 
     def test_masked_categories_get_the_penalty(self):
         env = _env()
@@ -202,8 +214,11 @@ class TestModulesHonourIt:
     def test_the_random_baseline_redraws_masked_categories(self):
         env = _env()
         obs, _ = env.reset(seed=1)
-        rnd = RLModuleSpec(module_class=RandomRLModule, observation_space=env.observation_space,
-                           action_space=env.action_space).build()
+        rnd = RLModuleSpec(
+            module_class=RandomRLModule,
+            observation_space=env.observation_space,
+            action_space=env.action_space,
+        ).build()
         rnd.action_space.seed(3)
         o = torch.as_tensor(np.stack([obs["agent_0"]] * 200), dtype=torch.float32)
         cats = rnd._forward({Columns.OBS: o})[Columns.ACTIONS]["category"]
@@ -238,8 +253,11 @@ class TestMaskedRandomPlay:
         the actions are about to be drawn from.
         """
         env = _env(num_of_agents=4, max_step=50, **config)
-        rnd = RLModuleSpec(module_class=RandomRLModule, observation_space=env.observation_space,
-                           action_space=env.action_space).build()
+        rnd = RLModuleSpec(
+            module_class=RandomRLModule,
+            observation_space=env.observation_space,
+            action_space=env.action_space,
+        ).build()
         # The generator the random baseline actually draws from - torch's is
         # never touched by it.
         rnd.action_space.seed(action_seed)
@@ -250,8 +268,10 @@ class TestMaskedRandomPlay:
                 on_step(env, obs)
             o = torch.as_tensor(np.stack([obs[a] for a in env.agents]), dtype=torch.float32)
             acts = rnd._forward({Columns.OBS: o})[Columns.ACTIONS]
-            actions = {a: {k: (np.asarray(v[i]) if k == "size" else int(v[i]))
-                           for k, v in acts.items()} for i, a in enumerate(env.agents)}
+            actions = {
+                a: {k: (np.asarray(v[i]) if k == "size" else int(v[i])) for k, v in acts.items()}
+                for i, a in enumerate(env.agents)
+            }
             obs, _, dones, truncs, infos = env.step(actions)
             unmatched += sum(i["num_unmatched_step"] for i in infos.values())
             if dones["__all__"] or truncs["__all__"]:
@@ -264,7 +284,7 @@ class TestMaskedRandomPlay:
         def check(env, obs):
             for agent in env.agents:
                 trader = env.traders[int(agent.split("_")[1])]
-                mask = obs[agent][-len(MASK_FIELDS):]
+                mask = obs[agent][-len(MASK_FIELDS) :]
                 for side, (modify, cancel) in (("bid", (3, 4)), ("ask", (7, 8))):
                     resting = bool(trader._own_orders_from_touch(env.LOB, side))
                     assert mask[modify] == mask[cancel] == float(resting), (env.t_step, agent, side)
@@ -295,8 +315,9 @@ class TestMaskedRandomPlay:
 
         def spy(self, type, side, size, price, LOB, agents, slot=0):
             if type in ("modify", "cancel"):
-                at_exec.append((at_start[self.ID, side],
-                                len(self._own_orders_from_touch(LOB, side))))
+                at_exec.append(
+                    (at_start[self.ID, side], len(self._own_orders_from_touch(LOB, side)))
+                )
             return place_order(self, type, side, size, price, LOB, agents, slot)
 
         monkeypatch.setattr(Trader, "place_order", spy)
@@ -311,5 +332,6 @@ class TestMaskedRandomPlay:
 
 def test_compare_can_switch_it():
     from gym_continuousDoubleAuction.train.compare import parse_overrides
+
     assert parse_overrides(["action_mask=false"]) == {"action_mask": False}
     assert parse_overrides(["action_mask=true"]) == {"action_mask": True}

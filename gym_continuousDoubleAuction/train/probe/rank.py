@@ -47,6 +47,7 @@ Absolute values are not comparable across widths, and a latent's rank is
 bounded by `min(rows, width)` - so a corpus shorter than the latent is wide
 measures the corpus, not the encoder.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -153,8 +154,7 @@ def render(table: Mapping[str, RankRow], feature_names: Sequence[str]) -> str:
     width = max(len("feature set"), *(len(n) for n in feature_names)) + 2
     threshold = next(iter(table.values())).threshold
     lines = [
-        "Effective rank of each feature set, on this corpus "
-        f"({threshold:.0%} of singular mass)",
+        f"Effective rank of each feature set, on this corpus ({threshold:.0%} of singular mass)",
         f"{'feature set':<{width}}{'rank':>7}{'width':>8}{'used':>8}",
     ]
     flagged = False
@@ -166,27 +166,19 @@ def render(table: Mapping[str, RankRow], feature_names: Sequence[str]) -> str:
         flagged = flagged or row.row_limited
         # `used` is 8 wide to match its header; the `*` hangs off the end of
         # the column rather than inside it, so a flagged row still lines up.
-        lines.append(
-            f"{name:<{width}}{row.rank:>7}{row.width:>8}"
-            f"{row.fraction:>8.0%}{mark}"
-        )
+        lines.append(f"{name:<{width}}{row.rank:>7}{row.width:>8}{row.fraction:>8.0%}{mark}")
 
     if flagged:
         lines += [
             "",
-            "  * bounded by the corpus, not the encoder: rank cannot exceed "
-            "min(rows, width),",
-            "    so this set needs a longer corpus before its number says "
-            "anything about it.",
+            "  * bounded by the corpus, not the encoder: rank cannot exceed min(rows, width),",
+            "    so this set needs a longer corpus before its number says anything about it.",
         ]
     lines += [
         "",
-        "  Measured on a corpus that does not change while the encoder does, "
-        "which is what",
-        "  makes it comparable across checkpoints. The Learner's own "
-        "`cbp_batch_effective_rank`",
-        "  is computed on the training minibatch and moves with the policy's "
-        "input distribution",
+        "  Measured on a corpus that does not change while the encoder does, which is what",
+        "  makes it comparable across checkpoints. The Learner's own `cbp_batch_effective_rank`",
+        "  is computed on the training minibatch and moves with the policy's input distribution",
         "  as well as with the network - see doc/23 and doc/16 §16.16.",
     ]
     return "\n".join(lines)

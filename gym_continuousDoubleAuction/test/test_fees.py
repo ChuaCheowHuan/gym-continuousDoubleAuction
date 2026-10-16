@@ -13,6 +13,7 @@ sum of them, so money is still conserved:
 
 The shipped rates are 0, which leaves every other test in the suite untouched.
 """
+
 from decimal import Decimal
 from unittest.mock import MagicMock
 
@@ -32,7 +33,8 @@ from gym_continuousDoubleAuction.train.train import TrainConfig
 
 def _trade(price=100, quantity=10):
     return {
-        "price": Decimal(price), "quantity": quantity,
+        "price": Decimal(price),
+        "quantity": quantity,
         "init_party": {"ID": 0, "side": "bid"},
         "counter_party": {"ID": 1, "side": "ask"},
     }
@@ -82,8 +84,9 @@ class TestTheLedger:
         for t in (taker, maker):
             t.acc.mark_to_mkt(t.ID, Decimal(100))
         assert maker.acc.nav == Decimal(100_000) + Decimal("0.2")
-        assert taker.acc.nav + maker.acc.nav + taker.acc.fees_paid + maker.acc.fees_paid \
-            == Decimal(200_000)
+        assert taker.acc.nav + maker.acc.nav + taker.acc.fees_paid + maker.acc.fees_paid == Decimal(
+            200_000
+        )
 
     def test_a_self_trade_pays_nothing(self):
         t = Trader(0, 100_000, maker_fee_bps=5, taker_fee_bps=10)
@@ -123,8 +126,13 @@ class TestTheCashCheck:
 
 
 def _env(**cfg):
-    base = {"num_of_agents": 4, "init_cash": 100_000, "max_step": 60,
-            "initial_price_min": 10, "initial_price_max": 100}
+    base = {
+        "num_of_agents": 4,
+        "init_cash": 100_000,
+        "max_step": 60,
+        "initial_price_min": 10,
+        "initial_price_max": 100,
+    }
     base.update(cfg)
     return continuousDoubleAuctionEnv(base)
 
@@ -140,32 +148,44 @@ class TestTheEnv:
         env.reset(seed=11)
         while True:
             _, _, dones, truncs, _ = env.step(
-                {a: env.action_spaces[a].sample() for a in env.agents})
-            assert env.fees_collected + sum(t.acc.nav for t in env.traders) \
-                == Decimal(4) * Decimal(env.init_cash)
+                {a: env.action_spaces[a].sample() for a in env.agents}
+            )
+            assert env.fees_collected + sum(t.acc.nav for t in env.traders) == Decimal(4) * Decimal(
+                env.init_cash
+            )
             if dones["__all__"] or truncs["__all__"]:
                 break
         assert env.fees_collected != 0
 
     def test_liquidation_conserves_money_with_the_fees(self):
-        env = _env(maker_fee_bps=0, taker_fee_bps=30, maintenance_margin=0.9,
-                   initial_price_min=10, initial_price_max=12)
+        env = _env(
+            maker_fee_bps=0,
+            taker_fee_bps=30,
+            maintenance_margin=0.9,
+            initial_price_min=10,
+            initial_price_max=12,
+        )
         env.reset(seed=3)
         for _ in range(60):
             _, _, dones, truncs, _ = env.step(
-                {a: env.action_spaces[a].sample() for a in env.agents})
-            assert env.fees_collected + sum(t.acc.nav for t in env.traders) \
-                == Decimal(4) * Decimal(env.init_cash)
+                {a: env.action_spaces[a].sample() for a in env.agents}
+            )
+            assert env.fees_collected + sum(t.acc.nav for t in env.traders) == Decimal(4) * Decimal(
+                env.init_cash
+            )
             if dones["__all__"] or truncs["__all__"]:
                 break
 
-    @pytest.mark.parametrize("bad", [
-        {"taker_fee_bps": -1},
-        {"maker_fee_bps": -6, "taker_fee_bps": 5},   # a rebate larger than the fee
-        {"taker_fee_bps": None},
-        {"taker_fee_bps": True},
-        {"maker_fee_bps": float("nan")},
-    ])
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            {"taker_fee_bps": -1},
+            {"maker_fee_bps": -6, "taker_fee_bps": 5},  # a rebate larger than the fee
+            {"taker_fee_bps": None},
+            {"taker_fee_bps": True},
+            {"maker_fee_bps": float("nan")},
+        ],
+    )
     def test_a_bad_rate_is_refused_naming_the_key(self, bad):
         with pytest.raises(ValueError, match="fee_bps"):
             _env(**bad)
@@ -213,17 +233,26 @@ class TestTheEpisodeEndCheck:
 
     def _end(self, navs, fees):
         from gym_continuousDoubleAuction.test.test_nav_callback import (
-            NAV_VIOLATIONS_METRIC, MockEpisode, _emitted,
+            NAV_VIOLATIONS_METRIC,
+            MockEpisode,
+            _emitted,
         )
+
         runner = MagicMock()
         runner.config.env_config = {"init_cash": 1_000_000, "num_of_agents": 4}
-        cb = SelfPlayCallback(num_trainable_policies=2, num_random_policies=2,
-                              episode_data_dir=None)
+        cb = SelfPlayCallback(
+            num_trainable_policies=2, num_random_policies=2, episode_data_dir=None
+        )
         metrics = MagicMock()
         info = {f"agent_{i}": {"NAV": str(n)} for i, n in enumerate(navs)}
-        cb.on_episode_end(episode=MockEpisode("ep", info), env_runner=runner,
-                          metrics_logger=metrics, env=_LedgerEnv(navs, fees),
-                          env_index=0, rl_module=None)
+        cb.on_episode_end(
+            episode=MockEpisode("ep", info),
+            env_runner=runner,
+            metrics_logger=metrics,
+            env=_LedgerEnv(navs, fees),
+            env_index=0,
+            rl_module=None,
+        )
         return _emitted(metrics, NAV_VIOLATIONS_METRIC).args[1]
 
     def test_navs_short_by_exactly_the_fees_are_conserved(self):
@@ -244,7 +273,7 @@ class TestARestingOrderOwesItsMakerFee:
 
     def test_a_second_order_may_not_spend_the_first_orders_fee(self):
         lob = OrderBook()
-        a, b = Trader(0, 1000, **self.KW), Trader(1, 10 ** 6, **self.KW)
+        a, b = Trader(0, 1000, **self.KW), Trader(1, 10**6, **self.KW)
         a.place_order("limit", "bid", 9, 100, lob, [a, b])
         # 9 @ 100 rests: 100 free, and 0.9 of it is owed as the maker fee.
         # 1 @ 99.9 needs 99.9 + 0.0999 and leaves 0.0001 for that 0.9.
@@ -254,7 +283,7 @@ class TestARestingOrderOwesItsMakerFee:
 
     def test_cash_stays_whole_when_every_resting_order_fills(self):
         lob = OrderBook()
-        a, b = Trader(0, 1000, **self.KW), Trader(1, 10 ** 6, **self.KW)
+        a, b = Trader(0, 1000, **self.KW), Trader(1, 10**6, **self.KW)
         a.place_order("limit", "bid", 9, 100, lob, [a, b])
         a.place_order("limit", "bid", 1, 99, lob, [a, b])
         b.place_order("market", "ask", 10, -1.0, lob, [a, b])
@@ -263,9 +292,9 @@ class TestARestingOrderOwesItsMakerFee:
     def test_the_order_being_replaced_owes_nothing_to_its_replacement(self):
         """A re-price releases the old order, so its fee is not counted twice."""
         lob = OrderBook()
-        a, b = Trader(0, 1000, **self.KW), Trader(1, 10 ** 6, **self.KW)
+        a, b = Trader(0, 1000, **self.KW), Trader(1, 10**6, **self.KW)
         a.place_order("limit", "bid", 9, 100, lob, [a, b])
-        assert a._order_approved("bid", 9, 100, lob, "limit")      # upsert at the same price
+        assert a._order_approved("bid", 9, 100, lob, "limit")  # upsert at the same price
         # A modify of that same order to a lower price is a cancel-and-reprocess.
         assert a._order_approved("bid", 9, 99, lob, "modify", slot=1)
 
@@ -274,7 +303,8 @@ class TestARestingOrderOwesItsMakerFee:
         a = Trader(0, 1000, maker_fee_bps=-2, taker_fee_bps=5)
         a.place_order("limit", "bid", 9, 100, lob, [a])
         assert a._order_approved("bid", 1, 99.9, lob, "limit") == (
-            a.acc.cash >= Decimal("99.9") * Decimal("1.0005"))
+            a.acc.cash >= Decimal("99.9") * Decimal("1.0005")
+        )
 
     @pytest.mark.parametrize("clearing", ["sequential", "batch"])
     def test_random_play_never_overdraws_cash(self, clearing):
@@ -282,7 +312,8 @@ class TestARestingOrderOwesItsMakerFee:
         env.reset(seed=5)
         for _ in range(60):
             _, _, dones, truncs, _ = env.step(
-                {a: env.action_spaces[a].sample() for a in env.agents})
+                {a: env.action_spaces[a].sample() for a in env.agents}
+            )
             for t in env.traders:
                 assert t.acc.cash + t.acc.cash_on_hold >= 0, t.ID
             if dones["__all__"] or truncs["__all__"]:
@@ -306,25 +337,37 @@ class TestWhenTheFeesCannotBeRead:
 
     def _end(self, env_config, env):
         from gym_continuousDoubleAuction.test.test_nav_callback import (
-            NAV_VIOLATIONS_METRIC, MockEpisode, _emitted,
+            NAV_VIOLATIONS_METRIC,
+            MockEpisode,
+            _emitted,
         )
+
         runner = MagicMock()
         runner.config.env_config = env_config
-        cb = SelfPlayCallback(num_trainable_policies=2, num_random_policies=2,
-                              episode_data_dir=None)
+        cb = SelfPlayCallback(
+            num_trainable_policies=2, num_random_policies=2, episode_data_dir=None
+        )
         metrics = MagicMock()
-        info = {f"agent_{i}": {"NAV": "999999"} for i in range(4)}   # short by 1 each
-        cb.on_episode_end(episode=MockEpisode("ep", info), env_runner=runner,
-                          metrics_logger=metrics, env=env, env_index=0, rl_module=None)
+        info = {f"agent_{i}": {"NAV": "999999"} for i in range(4)}  # short by 1 each
+        cb.on_episode_end(
+            episode=MockEpisode("ep", info),
+            env_runner=runner,
+            metrics_logger=metrics,
+            env=env,
+            env_index=0,
+            rl_module=None,
+        )
         return _emitted(metrics, NAV_VIOLATIONS_METRIC).args[1]
 
     def test_a_shortfall_is_not_called_a_violation_when_fees_are_on(self):
         from gym_continuousDoubleAuction.test.test_nav_callback import MockEnv
+
         cfg = {"init_cash": 1_000_000, "num_of_agents": 4, "taker_fee_bps": 5}
         assert self._end(cfg, MockEnv(1_000_000, 4)) == 0.0
 
     def test_the_same_shortfall_with_no_fees_still_is(self):
         from gym_continuousDoubleAuction.test.test_nav_callback import MockEnv
+
         cfg = {"init_cash": 1_000_000, "num_of_agents": 4}
         assert self._end(cfg, MockEnv(1_000_000, 4)) == 1.0
 
@@ -332,15 +375,18 @@ class TestWhenTheFeesCannotBeRead:
 class TestTheAccountRefusesBadRatesItself:
     """The env validates, but `Account` and `Trader` are built directly too."""
 
-    @pytest.mark.parametrize("kw", [
-        {"taker_fee_bps": -5},
-        {"maker_fee_bps": -6, "taker_fee_bps": 5},
-        {"taker_fee_bps": float("nan")},
-        {"maker_fee_bps": float("inf")},
-        {"taker_fee_bps": None},
-        {"taker_fee_bps": True},
-        {"taker_fee_bps": 1001},
-    ])
+    @pytest.mark.parametrize(
+        "kw",
+        [
+            {"taker_fee_bps": -5},
+            {"maker_fee_bps": -6, "taker_fee_bps": 5},
+            {"taker_fee_bps": float("nan")},
+            {"maker_fee_bps": float("inf")},
+            {"taker_fee_bps": None},
+            {"taker_fee_bps": True},
+            {"taker_fee_bps": 1001},
+        ],
+    )
     def test_an_account_refuses_them(self, kw):
         with pytest.raises(ValueError, match="fee_bps"):
             Account(0, 1000, **kw)
@@ -353,30 +399,43 @@ class TestTheAccountRefusesBadRatesItself:
 class TestAnUncheckedEpisodeIsNotACleanOne:
     def _run(self, env_config):
         from gym_continuousDoubleAuction.test.test_nav_callback import (
-            MockEnv, MockEpisode, _emitted,
+            MockEnv,
+            MockEpisode,
+            _emitted,
         )
+
         runner = MagicMock()
         runner.config.env_config = env_config
-        cb = SelfPlayCallback(num_trainable_policies=2, num_random_policies=2,
-                              episode_data_dir=None)
+        cb = SelfPlayCallback(
+            num_trainable_policies=2, num_random_policies=2, episode_data_dir=None
+        )
         metrics = MagicMock()
         info = {f"agent_{i}": {"NAV": "999999"} for i in range(4)}
-        cb.on_episode_end(episode=MockEpisode("ep", info), env_runner=runner,
-                          metrics_logger=metrics, env=MockEnv(1_000_000, 4),
-                          env_index=0, rl_module=None)
+        cb.on_episode_end(
+            episode=MockEpisode("ep", info),
+            env_runner=runner,
+            metrics_logger=metrics,
+            env=MockEnv(1_000_000, 4),
+            env_index=0,
+            rl_module=None,
+        )
         return metrics, _emitted
 
     def test_the_skip_says_so_in_its_own_metric(self):
         from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
             NAV_UNCHECKED_METRIC,
         )
-        metrics, emitted = self._run({"init_cash": 1_000_000, "num_of_agents": 4, "taker_fee_bps": 5})
+
+        metrics, emitted = self._run(
+            {"init_cash": 1_000_000, "num_of_agents": 4, "taker_fee_bps": 5}
+        )
         assert emitted(metrics, NAV_UNCHECKED_METRIC).args[1] == 1.0
 
     def test_a_checked_episode_reports_none_unchecked(self):
         from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
             NAV_UNCHECKED_METRIC,
         )
+
         metrics, emitted = self._run({"init_cash": 1_000_000, "num_of_agents": 4})
         found = emitted(metrics, NAV_UNCHECKED_METRIC)
         assert found is None or found.args[1] == 0.0

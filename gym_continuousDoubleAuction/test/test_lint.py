@@ -14,6 +14,7 @@ a formatting pass over 18,000 lines. Every message it emits is a failure here;
 there is no allowlist, because an allowlist is where the next real finding goes
 to be ignored.
 """
+
 import pathlib
 
 from pyflakes import api as pyflakes_api
@@ -46,9 +47,7 @@ def test_package_is_pyflakes_clean():
     # methods above, so the collector stands in for it.
     assert isinstance(pyflakes_reporter.Reporter, type)
     count = pyflakes_api.checkRecursive([str(PACKAGE_DIR)], collector)
-    assert count == 0, (
-        f"pyflakes reported {count} finding(s):\n" + "\n".join(collector.messages)
-    )
+    assert count == 0, f"pyflakes reported {count} finding(s):\n" + "\n".join(collector.messages)
 
 
 REPO_ROOT = PACKAGE_DIR.parent
@@ -59,18 +58,21 @@ def test_tools_and_skill_scripts_are_pyflakes_clean():
     and agents, and an unused import there failed nothing (issue #268). Skipped where
     they are absent, as in an installed wheel."""
     import pytest
-    targets = [str(p) for p in (REPO_ROOT / "tools", REPO_ROOT / ".claude" / "skills") if p.is_dir()]
+
+    targets = [
+        str(p) for p in (REPO_ROOT / "tools", REPO_ROOT / ".claude" / "skills") if p.is_dir()
+    ]
     if not targets:
         pytest.skip("tools/ and .claude/skills are not part of an installed package")
     collector = _Collect()
     count = pyflakes_api.checkRecursive(targets, collector)
-    assert count == 0, (
-        f"pyflakes reported {count} finding(s):\n" + "\n".join(collector.messages)
-    )
+    assert count == 0, f"pyflakes reported {count} finding(s):\n" + "\n".join(collector.messages)
 
 
 def test_the_lint_reaches_the_directories_it_claims_to():
     """A target list that silently resolved to nothing would make the test above pass."""
     assert (REPO_ROOT / "tools" / "check_links.py").is_file() or not (REPO_ROOT / "tools").exists()
-    assert list((REPO_ROOT / ".claude" / "skills").glob("*/scripts/*.py")) or not (
-        REPO_ROOT / ".claude" / "skills").exists()
+    assert (
+        list((REPO_ROOT / ".claude" / "skills").glob("*/scripts/*.py"))
+        or not (REPO_ROOT / ".claude" / "skills").exists()
+    )

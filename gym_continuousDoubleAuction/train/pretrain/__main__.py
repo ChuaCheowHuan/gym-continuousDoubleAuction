@@ -3,6 +3,7 @@
 Defaults come from `config/cli_defaults.json` -> `cda_pretrain`; this module
 holds no literal default, on the same rule as `CDA_rand` and the probe.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -11,6 +12,7 @@ import sys
 from gym_continuousDoubleAuction.config_loader import cli_default, group
 from gym_continuousDoubleAuction.logging_setup import configure as configure_logging
 from gym_continuousDoubleAuction.logging_setup import get_logger
+
 # Named imports, not `import pretrain as pretrain_module`: the package
 # re-exports a *function* called `pretrain`, so that spelling binds the
 # function and every attribute lookup on it fails.
@@ -29,28 +31,42 @@ def _cli(key):
 
 def main(argv=None):
     p = argparse.ArgumentParser(
-        description="Pretrain a JEPA encoder on observations alone. "
-                    "See doc/24_pretraining.md.",
+        description="Pretrain a JEPA encoder on observations alone. See doc/24_pretraining.md.",
     )
-    p.add_argument("--out", type=str, default=_cli("out_dir"),
-                   help="Directory to write the encoder and its fingerprint to.")
-    p.add_argument("--encoder", type=str, default=_cli("encoder_type"),
-                   help=f"Available: {', '.join(PRETRAINABLE)}.")
+    p.add_argument(
+        "--out",
+        type=str,
+        default=_cli("out_dir"),
+        help="Directory to write the encoder and its fingerprint to.",
+    )
+    p.add_argument(
+        "--encoder",
+        type=str,
+        default=_cli("encoder_type"),
+        help=f"Available: {', '.join(PRETRAINABLE)}.",
+    )
     p.add_argument("--steps", type=int, default=_cli("steps"))
     p.add_argument("--batch-size", type=int, default=_cli("batch_size"))
     p.add_argument("--lr", type=float, default=_cli("lr"))
     p.add_argument("--seed", type=int, default=_cli("seed"))
     p.add_argument("--log-every", type=int, default=_cli("log_every"))
-    p.add_argument("--episodes", type=int, default=_cli("num_episodes"),
-                   help="Random-agent rollout episodes, when --parquet is unset.")
-    p.add_argument("--env-steps", type=int, default=_cli("max_step"),
-                   help="Steps per rollout episode.")
+    p.add_argument(
+        "--episodes",
+        type=int,
+        default=_cli("num_episodes"),
+        help="Random-agent rollout episodes, when --parquet is unset.",
+    )
+    p.add_argument(
+        "--env-steps", type=int, default=_cli("max_step"), help="Steps per rollout episode."
+    )
     p.add_argument("--agents", type=int, default=_cli("num_agents"))
     p.add_argument(
-        "--parquet", type=str, default=None,
+        "--parquet",
+        type=str,
+        default=None,
         help="Read the corpus from episode_record output instead of running "
-             "rollouts. A trained league's books look nothing like a random "
-             "agent's, so prefer this once a run exists.",
+        "rollouts. A trained league's books look nothing like a random "
+        "agent's, so prefer this once a run exists.",
     )
     p.add_argument("--max-rows", type=int, default=None)
     p.add_argument("--log-level", type=str, default=_cli("log_level"))
@@ -76,9 +92,7 @@ def main(argv=None):
 
     env = continuousDoubleAuctionEnv({})
     agent_id = env.agents[0]
-    encoder_spec = group("train_config.json", "encoder")["encoder_specs"].get(
-        args.encoder, {}
-    )
+    encoder_spec = group("train_config.json", "encoder")["encoder_specs"].get(args.encoder, {})
 
     module, report = pretrain(
         corpus,

@@ -10,6 +10,7 @@ rather than silently re-initialised.
 Kept deliberately small - a handful of steps, no training - because none of
 these questions needs a long run to answer.
 """
+
 import os
 
 import numpy as np
@@ -29,9 +30,7 @@ from gym_continuousDoubleAuction.train.probe import report as report_module
 
 #: Every encoder a config file may select, plus the mlp pass-through. Fixtures
 #: are excluded: they are not architectures anyone would probe.
-SHIPPED = [MLP_ENCODER_TYPE] + sorted(
-    name for name in ENCODER_REGISTRY if not name.startswith("_")
-)
+SHIPPED = [MLP_ENCODER_TYPE] + sorted(name for name in ENCODER_REGISTRY if not name.startswith("_"))
 
 EPISODES = 3
 STEPS = 40
@@ -47,7 +46,10 @@ def spaces():
 @pytest.fixture(scope="module")
 def corpus():
     return corpus_module.from_rollouts(
-        num_episodes=EPISODES, max_step=STEPS, num_agents=3, seed=0,
+        num_episodes=EPISODES,
+        max_step=STEPS,
+        num_agents=3,
+        seed=0,
     )
 
 
@@ -67,31 +69,33 @@ class TestRolloutCorpus:
         says nothing. `init_cash` at 0 produces exactly that (S1-4), so this
         is the check that the corpus is worth probing at all."""
         layout = corpus.layout
-        sizes = corpus.snapshots[:, layout.k_rows:2 * layout.k_rows]
+        sizes = corpus.snapshots[:, layout.k_rows : 2 * layout.k_rows]
         assert (sizes > 0).any()
 
     def test_a_seed_reproduces_the_corpus(self):
         first = corpus_module.from_rollouts(
-            num_episodes=1, max_step=STEPS, num_agents=3, seed=7,
+            num_episodes=1,
+            max_step=STEPS,
+            num_agents=3,
+            seed=7,
         )
         second = corpus_module.from_rollouts(
-            num_episodes=1, max_step=STEPS, num_agents=3, seed=7,
+            num_episodes=1,
+            max_step=STEPS,
+            num_agents=3,
+            seed=7,
         )
         assert np.array_equal(first.obs, second.obs)
 
     def test_episodes_are_marked_and_ordered(self, corpus):
         boundaries = np.flatnonzero(np.diff(corpus.episode_index))
         assert len(boundaries) == EPISODES - 1
-        assert np.array_equal(
-            corpus.episode_index, np.sort(corpus.episode_index)
-        )
+        assert np.array_equal(corpus.episode_index, np.sort(corpus.episode_index))
 
 
 @pytest.mark.parametrize("encoder_type", SHIPPED)
 class TestEveryEncoderIsProbeable:
-    def test_latents_have_one_row_per_observation(
-        self, spaces, corpus, encoder_type
-    ):
+    def test_latents_have_one_row_per_observation(self, spaces, corpus, encoder_type):
         obs_space, act_space = spaces
         module = features_module.build_module(obs_space, act_space, encoder_type)
         latents = features_module.latents(module, corpus)
@@ -111,9 +115,7 @@ class TestEveryEncoderIsProbeable:
             features_module.latents(module, corpus),
         )
 
-    def test_probing_does_not_train_the_encoder(
-        self, spaces, corpus, encoder_type
-    ):
+    def test_probing_does_not_train_the_encoder(self, spaces, corpus, encoder_type):
         """The harness freezes what it scores. A probe that nudged the weights
         would make the score depend on how many times it had been run."""
         obs_space, act_space = spaces
@@ -170,9 +172,7 @@ def checkpoint(spaces, tmp_path_factory):
     obs_space, act_space = spaces
     module = features_module.build_module(obs_space, act_space, "transformer")
     root = tmp_path_factory.mktemp("iter_1")
-    path = os.path.join(
-        str(root), "learner_group", "learner", "rl_module", "policy_0"
-    )
+    path = os.path.join(str(root), "learner_group", "learner", "rl_module", "policy_0")
     os.makedirs(path, exist_ok=True)
     module.save_to_path(path)
     return str(root), module
@@ -183,9 +183,7 @@ class TestCheckpointRestore:
         root, _ = checkpoint
         assert features_module.load_module(root, "policy_0") is not None
 
-    def test_restores_the_weights_not_a_fresh_initialisation(
-        self, checkpoint, corpus
-    ):
+    def test_restores_the_weights_not_a_fresh_initialisation(self, checkpoint, corpus):
         """The failure this rules out is silent: a re-initialised encoder
         produces perfectly good latents and a perfectly plausible score, and
         the report would credit the run's training with its initialisation."""
@@ -209,9 +207,7 @@ class TestCheckpointRestore:
 
     def test_a_module_directory_may_be_passed_directly(self, checkpoint):
         root, _ = checkpoint
-        module_dir = os.path.join(
-            root, "learner_group", "learner", "rl_module", "policy_0"
-        )
+        module_dir = os.path.join(root, "learner_group", "learner", "rl_module", "policy_0")
         assert features_module.load_module(module_dir, "policy_0") is not None
 
     def test_a_directory_that_is_not_a_checkpoint_raises(self, tmp_path):
@@ -223,16 +219,12 @@ class TestCheckpointRestore:
 class TestEndToEnd:
     def test_the_matrix_scores_raw_against_a_real_encoder(self, spaces, corpus):
         obs_space, act_space = spaces
-        module = features_module.build_module(
-            obs_space, act_space, "transformer"
-        )
+        module = features_module.build_module(obs_space, act_space, "transformer")
         features = {
             features_module.RAW_FEATURES: features_module.raw(corpus),
             "transformer": features_module.latents(module, corpus),
         }
-        rows = report_module.run(
-            corpus, features, ["mid_return", "spread_change"], [1, 5]
-        )
+        rows = report_module.run(corpus, features, ["mid_return", "spread_change"], [1, 5])
         assert rows
         for row in rows:
             scored = [r for r in row.results.values() if r is not None]

@@ -14,7 +14,7 @@ from .state_helper import BOOK_ROW_ORDER
 # definition: `category_n` in config/tunable_constants.json is checked against
 # it at construction, so the two cannot silently disagree.
 _CATEGORY_MAP = {
-    0: (None, 'market'),   # no action ('market' is inert, nothing is placed)
+    0: (None, 'market'),  # no action ('market' is inert, nothing is placed)
     1: ('bid', 'market'),
     2: ('bid', 'limit'),
     3: ('bid', 'modify'),
@@ -47,11 +47,15 @@ SIZE_FRACTION_AT_MAX = 2.0
 
 
 class Action_Helper(SharedState):
-    def __init__(self, min_size=env_default("min_size"),
-                 mkt_max_size=env_default("mkt_max_size"),
-                 limit_size_multiple=env_default("limit_size_multiple"),
-                 tick_size=env_default("tick_size"),
-                 action_mask=None, **kwargs):
+    def __init__(
+        self,
+        min_size=env_default("min_size"),
+        mkt_max_size=env_default("mkt_max_size"),
+        limit_size_multiple=env_default("limit_size_multiple"),
+        tick_size=env_default("tick_size"),
+        action_mask=None,
+        **kwargs,
+    ):
         """
         Arguments:
             min_size: Smallest order size; also the offset added to every
@@ -74,8 +78,12 @@ class Action_Helper(SharedState):
         self.mkt_max_size = mkt_max_size
         self.limit_size_multiple = limit_size_multiple
         self.limit_max_size = self.mkt_max_size * self.limit_size_multiple
-        self.mkt_size_mul = (self.mkt_max_size - self.min_size) / 2 # contracts at size 1.0, market orders
-        self.limit_size_mul = (self.limit_max_size - self.min_size) / 2 # contracts at size 1.0, other orders
+        self.mkt_size_mul = (
+            self.mkt_max_size - self.min_size
+        ) / 2  # contracts at size 1.0, market orders
+        self.limit_size_mul = (
+            self.limit_max_size - self.min_size
+        ) / 2  # contracts at size 1.0, other orders
 
         # Action space shape, from config/tunable_constants.json.
         self._act = constants("action_space")
@@ -86,11 +94,9 @@ class Action_Helper(SharedState):
         # `min_tick` is the `tick_size` env config key. It used to be a second,
         # hardcoded 1 that happened to agree with the configured tick_size, so
         # setting tick_size had no effect on the prices agents can quote.
-        self.min_tick = tick_size # price tick
+        self.min_tick = tick_size  # price tick
         # Default anchor, overwritten by env.reset.
-        self.last_price = float(
-            constant("price_anchor_fallbacks", "action_helper_last_price")
-        )
+        self.last_price = float(constant("price_anchor_fallbacks", "action_helper_last_price"))
         # Which agents passed this step; set_actions rebuilds it every step.
         self.pass_agents = set()
 
@@ -168,21 +174,26 @@ class Action_Helper(SharedState):
             dict: Dictionary mapping agent IDs to their action spaces.
         '''
 
-        agent_space = spaces.Dict({
-            "category": spaces.Discrete(self._act["category_n"]),
-            "size": spaces.Box(
-                low=self._act["size_low"], high=self._act["size_high"],
-                shape=(1,), dtype=np.float32),
-            # One code per book level, so this is k_rows - the same depth the
-            # observation exposes and the same depth _set_price indexes into.
-            "price": spaces.Discrete(self.k_rows),
-            "price_offset": spaces.Discrete(self._act["price_offset_n"]),
-            # Aims a modify or cancel at one of this agent's own orders - see
-            # Trader._get_order_ID. Before this head existed a cancel had to
-            # name its order's exact price out of thirty codes and landed 7%
-            # of the time under random play (doc/15 S3-24).
-            "order_slot": spaces.Discrete(int(self._act["max_own_orders"]) + 1),
-        })
+        agent_space = spaces.Dict(
+            {
+                "category": spaces.Discrete(self._act["category_n"]),
+                "size": spaces.Box(
+                    low=self._act["size_low"],
+                    high=self._act["size_high"],
+                    shape=(1,),
+                    dtype=np.float32,
+                ),
+                # One code per book level, so this is k_rows - the same depth the
+                # observation exposes and the same depth _set_price indexes into.
+                "price": spaces.Discrete(self.k_rows),
+                "price_offset": spaces.Discrete(self._act["price_offset_n"]),
+                # Aims a modify or cancel at one of this agent's own orders - see
+                # Trader._get_order_ID. Before this head existed a cancel had to
+                # name its order's exact price out of thirty codes and landed 7%
+                # of the time under random play (doc/15 S3-24).
+                "order_slot": spaces.Discrete(int(self._act["max_own_orders"]) + 1),
+            }
+        )
 
         # Create a dictionary mapping for all agents
         space_dict = {f'agent_{i}': agent_space for i in range(num_agents)}
@@ -218,7 +229,9 @@ class Action_Helper(SharedState):
 
         return acts
 
-    def rand_exec_seq(self, actions: List[Dict[str, Any]], seed: Optional[int] = None) -> List[Dict[str, Any]]:
+    def rand_exec_seq(
+        self, actions: List[Dict[str, Any]], seed: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
         """
         Shuffle actions execution sequence.
 
@@ -259,9 +272,7 @@ class Action_Helper(SharedState):
                                of unfilled limit orders leftover by the actions.
         """
 
-
         # print(f'do_actions -> actions: {actions}')
-
 
         seq_trades = []
         seq_order_in_book = []
@@ -272,14 +283,13 @@ class Action_Helper(SharedState):
             size = action["size"]
             price = action["price"]
 
-
-
             ID = int(ID_str.split('_')[1])
             slot = action.get("slot", 0)
 
             trader = self.traders[ID]
             self.trades, self.order_in_book = trader.place_order(
-                type, side, size, price, self.LOB, self.traders, slot=slot)
+                type, side, size, price, self.LOB, self.traders, slot=slot
+            )
             seq_trades.append(self.trades)
             seq_order_in_book.append(self.order_in_book)
 
@@ -323,10 +333,10 @@ class Action_Helper(SharedState):
         # Decimal * float raises TypeError - which is the error the orderbook
         # already carries two local workarounds for, and the one
         # cash_processor's modify path would hit. See doc/11 1.8.
-        act["size"] = int(size + self.min_size) # +self.min_size as size can't be 0
+        act["size"] = int(size + self.min_size)  # +self.min_size as size can't be 0
 
         if act["type"] == 'market':
-            act["price"] = -1.0 # -1.0 to indicate market price
+            act["price"] = -1.0  # -1.0 to indicate market price
         else:
             act["price"] = self._set_price(self.min_tick, act["side"], price_code, price_offset)
 
@@ -394,17 +404,22 @@ class Action_Helper(SharedState):
         # a Gaussian the policy only parameterised, which put the realised size
         # outside the log-probability in the importance ratio, and S3-2 was the
         # sigma that did it: <= 1 on sizes of 25 to 500 moved nothing.
-        fraction = float(np.clip(
-            np.asarray(size_fraction, dtype=np.float64).reshape(-1)[0],
-            self._act["size_low"], self._act["size_high"]))
+        fraction = float(
+            np.clip(
+                np.asarray(size_fraction, dtype=np.float64).reshape(-1)[0],
+                self._act["size_low"],
+                self._act["size_high"],
+            )
+        )
         mul = self.mkt_size_mul if type == 'market' else self.limit_size_mul
         # int(): np.rint already rounds to a whole number, but float(...) is a
         # Python float (40.0), and np.int64 is not an int subclass, so neither
         # is usable as a size without a further conversion.
         return int(np.rint(fraction * mul))
 
-    def _set_price(self, min_tick: float, side: str, price_code: int,
-                   price_offset: Optional[int] = None) -> float:
+    def _set_price(
+        self, min_tick: float, side: str, price_code: int, price_offset: Optional[int] = None
+    ) -> float:
         """
         Set price according to price_code (a book level, 0 to k_rows - 1) and
         price_offset (0 to price_offset_n - 1).
@@ -452,23 +467,23 @@ class Action_Helper(SharedState):
         book = np.array(self.agg_LOB_raw).reshape(self.book_rows, self.k_rows)
 
         if side == 'bid':
-            price_array = book[BOOK_ROW_ORDER.index("bid_price")] # raw bid prices
+            price_array = book[BOOK_ROW_ORDER.index("bid_price")]  # raw bid prices
             p = price_array[level_idx]
-            
+
             # If level is empty, use ghost logic relative to ref_price
             base_price = (ref_price - (level_idx + 1) * min_tick) if p == 0 else p
-            
+
             # Apply offset: Bid +1 is aggressive, Bid -1 is passive
             set_price = base_price + (offset_multiplier * min_tick)
 
-        else: # 'ask'
-            price_array = book[BOOK_ROW_ORDER.index("ask_price")] # raw ask prices
+        else:  # 'ask'
+            price_array = book[BOOK_ROW_ORDER.index("ask_price")]  # raw ask prices
             # Positive, like the bid row; the sign convention is gone (S4-17).
             p = price_array[level_idx]
-            
+
             # If level is empty, use ghost logic relative to ref_price
             base_price = (ref_price + (level_idx + 1) * min_tick) if p == 0 else p
-            
+
             # Apply offset: Ask -1 is aggressive, Ask +1 is passive
             set_price = base_price - (offset_multiplier * min_tick)
 
@@ -497,7 +512,5 @@ class Action_Helper(SharedState):
         # same conversion the book applies, and float(Decimal('100.2')) round
         # trips through str() as '100.2'.
         tick = Decimal(str(min_tick))
-        snapped = (
-            Decimal(str(set_price)) / tick
-        ).to_integral_value(rounding=ROUND_HALF_UP) * tick
+        snapped = (Decimal(str(set_price)) / tick).to_integral_value(rounding=ROUND_HALF_UP) * tick
         return float(snapped)
