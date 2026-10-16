@@ -15,7 +15,7 @@ production-deployable as a service, but as a research codebase it is above avera
 
 > **This section is the original audit and is no longer accurate.** It was measured against a
 > tree of 7,478 Python lines with 90 unit tests and no logging module. The repository is now
-> 49,399 lines across 183 Python files, with 1,800 unit and 185 integration tests, a 523-line
+> 52,193 lines across 188 Python files, with 1,827 unit and 185 integration tests, a 523-line
 > `logging_setup` and a test that fails the build on a bare `print` in `envs/` or `train/`. The
 > `sklearn.utils.shuffle` import it names was removed (`action_helper.py:182` records that), and
 > the `install_requires` block it quotes no longer exists - `ray[rllib]` and `six` are in it and
@@ -68,6 +68,12 @@ action / reward / done / info into files makes each concern easy to find.
   happens to lack an `__init__`, and a stray kwarg reaching `object.__init__` raises `TypeError`
   — which is how a real bug once surfaced as
   `AttributeError: … has no attribute 'min_tick'`.
+
+> **Update (issue #152).** Reward, done, info and liquidation are composed objects now
+> (`RewardModel`, `EpisodeStatus`, `InfoBuilder`, `LiquidationEngine`); the state/action pair still
+> shares one `self`, with the shared attributes declared in `SharedState` and checked by `mypy`.
+> The costs above describe the six-mixin design this section audited. See
+> [02_architecture.md](02_architecture.md) §2.4.
 
 A composition refactor (`self.state = StateBuilder(book, cfg)`, `self.reward = RewardFn(cfg)`)
 would be mechanical and would make reward/obs variants swappable — which is what a research

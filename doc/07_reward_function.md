@@ -105,7 +105,7 @@ agent (**S1-3**).
 
 The five coefficients **are** configuration now. They were function-local literals with a code
 comment acknowledging they "can be moved to config"; they are `env_config` keys, set on
-`Reward_Helper.__init__`, defaulting from `config/env_defaults.json` and supplied by
+`RewardModel.__init__`, defaulting from `config/env_defaults.json` and supplied by
 `TrainConfig.env_config` from the `environment` group of `config/train_config.json`. They are
 therefore captured in the checkpoint's config and sweepable — which matters, because for a
 research repository reward shaping is the primary experimental axis.

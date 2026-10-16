@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (1,985 tests: 1,800 unit + 185 integration)
+# everything (2,012 tests: 1,827 unit + 185 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -106,7 +106,7 @@ Counts re-measured with `--collect-only`.
 | `test_doc_sync_claims.py` | 13 | `cda-doc-sync`'s `claims.py` checking the inventory table, the code size and that every config key and CLI flag is mentioned in some doc, each in both directions (#264) |
 | `test_open_bug_fixes.py` | 14 | The last three open `bug` issues: run logging turns propagation back on without a Ray encoding (#238), the byte cap never deletes the newest episode file and warns once (#246), and `apply_env_vars()` is pinned to run before `ray.init` in every entry point, with the fact that the configured variable is not read at Ray's import checked against the installed Ray (#244) |
 | `test_s4_minor_fixes.py` | 76 | The fourteen S4-minor bugs, one class each (#230 #232 #234 #235 #236 #237 #240 #241 #242 #243 #262 #263 #265 #275): a `Decimal` fee rate, order book bookkeeping, the layout-stamp order message, a `None` module return, `--set` booleans, `$CDA_PLATFORM` case, the plots on bad records, a foreign `config/`, a single-row JEPA batch, `evaluate`'s `--max-step`, the compare table's failed run, the `size_high` bound and the doc-sync `TMPDIR` default |
-| `test_episode_record.py` | 40 | The Parquet per-step record: declared schema and its drift guard against `Info_Helper`, identity columns, sampling rate, byte cap, eviction of episodes that never end, the ways it must fail without raising, and the end-of-sample flush that gets finished episodes to disk without waiting for exit (#245) |
+| `test_episode_record.py` | 40 | The Parquet per-step record: declared schema and its drift guard against `InfoBuilder`, identity columns, sampling rate, byte cap, eviction of episodes that never end, the ways it must fail without raising, and the end-of-sample flush that gets finished episodes to disk without waiting for exit (#245) |
 | `test_encoder_registry.py` | 46 | The selectable-encoder seam: registry, `CDACatalog`, the `mlp` pass-through staying byte-for-byte what it was, `ObsLayout`, tokenisation |
 | `test_encoder_architectures.py` | 170 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
 | `test_pretrain.py` | 36 | Offline JEPA pretraining: the loop trains only the trunk and predictor, a collapse is reported rather than hidden, a NaN or unmeasured run counts as unusable and is never saved (#239), and the checkpoint's fingerprint refuses a mismatched architecture |
@@ -129,8 +129,10 @@ Counts re-measured with `--collect-only`.
 | `test_s4_docs_and_tooling.py` | 17 | The documentation-and-tooling S4 fixes: the layout-version pointer, the CI command quoted in CLAUDE.md and doc/27, the built skills, stale texts, and every config key and flag being documented (#273, #266, #267, #251, #249) |
 | `test_s4_hardening.py` | 59 | The hardening and speed fixes: call-time account defaults, `settle_batch`'s pre-check, `flat_view`, the `info` fast path and the cached reference price (#247, #248) |
 | `test_pnl_split_and_markouts.py` | 39 | Realised and unrealised P&L against the NAV identity in random play, fill counters, forced fills excluded, mark-outs, and the callback and config wiring (#286) |
+| `test_composition.py` | 24 | Reward, episode status, info and liquidation as composed components: out of the MRO, usable alone with explicit inputs, the env's old attributes still forwarded, and `SharedState` / `AccountState` naming real attributes (#152) |
+| `test_types.py` | 3 | `mypy` finds nothing in `envs/`, `ruff format --check` finds nothing to change, and the coverage floor stays configured (#148) |
 | `test_refactors.py` | 97 | The refactoring review's issues: `Account` initialised in one place and its step counters listed once, `_plain`'s call count, one order-book routine per operation, `place_order` and `parse_overrides` flat, `clear_batch` as four steps, `EnvSettings` and the generated `env_config`, the `train/` module split with its re-exports and import order, and the NAV audit, league statistics and tally helpers apart from the callback (#252-#258) |
-| **unit total** | **1,800** | |
+| **unit total** | **1,827** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -160,7 +162,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((1,985 tests))
+  root((2,012 tests))
     Simulator
       orderbook 57
         components, matching, invariants
@@ -627,8 +629,9 @@ on stochastic size sampling.
 | `test_reward_formula_components` | The full multi-factor formula against a known scenario |
 | `test_asymmetric_loss_reward` | Losses are penalised more heavily than equivalent gains |
 
-The suite instantiates a bare `Reward_Helper()` with a `MockTrader`, which works only because
-`set_reward` touches nothing else on `self` — a symptom of the mixin design, not a property of it.
+The suite instantiates a bare `RewardModel()` with a `MockTrader`. It used to work only because
+`set_reward` touched nothing else on `self`; the reward is a composed object now (issue #152), so it is
+the design, not a coincidence.
 
 ---
 
@@ -1113,7 +1116,7 @@ Honest accounting of what the suite does **not** cover.
 | **No encoder is tested for whether it *learns*** ([#206](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/206)) | **Still the largest gap, now with the tool to close it and one dry run of it.** §6.4 proves only mechanics, and `train/probe/` routes around the reward entirely ([23](23_probe_harness.md)). The protocol in [18](18_configuration.md) §5.5 is one command, `python -m gym_continuousDoubleAuction.train.compare`, run once at smoke scale to prove the path and once more, before and after the S3-24 layout change, at three seeds × 8 iterations of the scaled-down protocol ([16](16_verification_log.md) §16.18, §16.20). Both runs are at a scale where the policies are still near random, so they prove plumbing. **The run at scale - 16 iterations, three seeds, every registered encoder, `jepa` included - has not been done.** Until it is, no claim that one encoder trades better than another, or that agents learn to use the new order-management heads, is supported by anything in this repository. |
 | **Edge cases in league matchmaking** ([#207](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/207)) | Empty pools and zero weights are untested. |
 | ~~**No property-based tests**~~ | **Closed.** `test_orderbook_properties.py` (§2.5). Its first run found two defects the example suite had not, which is the argument for it. |
-| ~~**No coverage measurement**~~ ([#208](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/208)) | **Measured, not yet thresholded.** `pytest --cov` (pytest-cov in the `dev` extra, scoped by `pyproject.toml`) on the unit suite: **79.1%** line-and-branch over `envs/` and `train/`. Least covered: the two CLI `__main__` modules (0%, exercised only by hand), `cbp_learner` (13.5%, its tests are in the integration suite), `CDA_rand` (20%, the CI smoke run), `evaluate` (27% from the unit half; the integration test covers the rest), `policy_handler` (41%), `compare` (51%), `exchg_helper` (52%, the render path). A threshold at 79% would ratchet the CLI mains first, which is the wrong thing to spend a failing build on; set one once those are either tested or accepted as untested. |
+| ~~**No coverage measurement**~~ ([#208](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/208)) | **Measured and thresholded.** `pytest --cov` (pytest-cov in the `dev` extra, scoped by `pyproject.toml`) on the unit suite: **86.4%** line-and-branch over `envs/` and `train/` (79.1% when first measured), with `fail_under = 84` so the run fails below it and `__main__` guards excluded. Least covered: `probe/__main__` (0%, run by hand), `cbp_learner` (32%, its tests are in the integration suite), `CDA_rand` (18%, the CI smoke run), `evaluate` (64% from the unit half; the integration test covers the rest). The floor applies where `--cov` is run; CI does not run it (the workflow cannot be edited from here). |
 | **No performance regression test** ([#209](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/209)) | Nothing catches a 10× slowdown in the matching engine. |
 | **`envs/orderbook/test/example.py` and `genOrders.py`** ([#210](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/210)) | 353 LOC of standalone scripts not collected by pytest and not run by CI. |
 | **`visualize/` is almost entirely untested** ([#211](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/211)) | `test_visualize_orderbook.py` covers the one slice that can be silently wrong; the other eight modules in the package have no tests. That gap is what let the private-block layout change reach a plotting path unnoticed for three commits ([17](17_changelog.md) §36.1) — every one of those modules reads recorded data and renders it, so a wrong read looks like a plausible chart rather than an error. |

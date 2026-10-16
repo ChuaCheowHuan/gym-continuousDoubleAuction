@@ -102,7 +102,7 @@ things changed, and each was a defect ([21 §2.2–2.4, §5–6](21_logging_revi
   installed, and `pickle`'s arbitrary-code-execution-on-load is gone. The schema is *declared*, not
   inferred — inference would let two files of one run disagree about a column's type whenever an
   episode happened to hold only nulls in it. An `info` key with no column is preserved as JSON in
-  `info_extra` rather than dropped, and `test_episode_record.py` fails if `Info_Helper` grows a
+  `info_extra` rather than dropped, and `test_episode_record.py` fails if `InfoBuilder` grows a
   field the schema does not cover.
 * **Off the hot path.** A bounded queue hands rows to one background thread, so the env runner's
   step loop pays a buffer append. A full queue drops a batch with a warning rather than blocking —
@@ -403,7 +403,7 @@ survive as numbers, awkward values, and a write failure that must not stop the l
 
 ### 1.7 Per-step `info` (account, market and reward decomposition)
 
-`Info_Helper.set_info` reported three fields — `reward`, `NAV`, `num_trades`. Everything else a
+`InfoBuilder.set_info` (then `Info_Helper`) reported three fields — `reward`, `NAV`, `num_trades`. Everything else a
 step knew about itself was computed, consumed and dropped: the position, the drawdown the penalty
 had just been charged on, the spread, and the five reward components. §2.2–2.4 below were that
 gap; what follows is what closes it.
@@ -818,7 +818,7 @@ missing field.
 
 ### 2.6 The `info["NAV"]` string round-trip
 
-`Info_Helper` serialises NAV as a **string**
+`InfoBuilder` serialises NAV as a **string**
 ([`info_helper.py`](../gym_continuousDoubleAuction/envs/exchg/info_helper.py)) —
 presumably to survive `Decimal` JSON encoding — and every consumer parses it back with `float()`
 (the league callback, `visualize_nav.py`). That round trip discards the exactness `Decimal` was

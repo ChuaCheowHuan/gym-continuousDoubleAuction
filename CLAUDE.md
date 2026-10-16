@@ -15,7 +15,7 @@ register is `doc/15_findings_and_recommendations.md`.
 3. **Run `pytest`, never `python test_x.py`.** `python -m pytest gym_continuousDoubleAuction/test -q`
    (unit, then `test/integration/`, about four minutes in all). CI's smoke run is
    `python gym_continuousDoubleAuction/CDA_rand.py` (no arguments); `CDA_rand --steps 200 --agents 4`
-   is the manual runbook check. `test_lint` runs pyflakes over the package, `tools/` and the skill scripts, so unused imports fail the suite.
+   is the manual runbook check. `test_lint` runs pyflakes over the package, `tools/` and the skill scripts, so unused imports fail the suite; `test_types` runs `mypy` over `envs/` (zero errors) and `ruff format --check .`, so run `ruff format .` before committing (dev extra: `pip install -e '.[dev]'`). `pytest --cov` fails below the floor in `pyproject.toml`.
 4. **Test first, and show it failing.** A fix lands with a regression test that fails on the previous
    source (`git stash push -- gym_continuousDoubleAuction/envs`, run, `git stash pop`).
 5. **Atomic commits**, one fix per commit: code, then tests, then docs. After a PR merges, restart
@@ -31,8 +31,9 @@ register is `doc/15_findings_and_recommendations.md`.
 
 ## Facts worth not re-deriving
 
-- Mixin chain: `Exchg_Helper -> State_Helper -> Action_Helper -> Reward_Helper`, plus
-  `Liquidation_Helper`. Accounts: `cash`, `cash_on_hold`, `position_val`, `cost_basis`.
+- The env is `Exchg_Helper -> State_Helper -> Action_Helper` (two mixins; `SharedState` declares what they share)
+  plus four composed components on `Exchg_Helper`: `reward_model`, `episode_status`, `info_builder`,
+  `liquidation_engine`. Accounts: `cash`, `cash_on_hold`, `position_val`, `cost_basis`.
 - Observation: 233 floats in `grid` mode (4 x 48 + 41), 305 in `levels` mode; the private block is
   41. Five action heads, six reward terms, five encoders. Skill `cda-doc-sync` recomputes these.
 - NAV conservation: `sum(NAV) + env.fees_collected == starting cash`.

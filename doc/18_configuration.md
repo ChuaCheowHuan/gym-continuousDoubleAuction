@@ -297,35 +297,34 @@ a step that moves NAV at all moves it by a median 1.9e-03 of starting capital, s
 0.5–1% of that. `passive_bonus` equals `trade_penalty`, making a passive fill net-free while an
 aggressive one costs 0.2 bps.
 
-These were literals inside `Reward_Helper.set_reward` until they were promoted to config — the
+These were literals inside `RewardModel.set_reward` until they were promoted to config — the
 parameters most worth sweeping were the least reachable in the project. The formula they feed is
 documented in [07_reward_function.md](07_reward_function.md) §2.
 
 ### 3.3 How the keys reach their consumers
 
-The env is assembled from cooperative mixins
-([02_architecture.md](02_architecture.md) §2.2), so the keys are forwarded along the MRO rather
-than read directly by the classes that use them:
+The env reads every key once, through `EnvSettings` (issue #257), and hands each consumer its
+share:
 
 ```
-continuousDoubleAuctionEnv.__init__      self._cfg(key) -> env_config, else env_defaults.json
-  └── Exchg_Helper.__init__              **kwargs  (consumes init_cash, tick_size,
-        │                                           tape_display_length)
+continuousDoubleAuctionEnv.__init__      EnvSettings.from_config(config) -> env_config, else env_defaults.json
+  ├── RewardModel(**settings.reward_kwargs())          the six coefficients
+  └── Exchg_Helper.__init__              **kwargs  (init_cash, tick_size, tape_display_length,
+        │                                           matching_rule, step_clearing, mark_price_source,
+        │                                           liquidation, maintenance_margin, liquidation_horizon)
         └── State_Helper.__init__        **kwargs  (consumes n_hist; sets the
               │                                     observation layout on the instance)
               └── Action_Helper.__init__ consumes min_size, mkt_max_size,
-                  │                      limit_size_multiple, tick_size
-                  └── Reward_Helper.__init__ consumes the five coefficients
+                                         limit_size_multiple, tick_size
 ```
 
-Every mixin consumes its own arguments and forwards the rest, so `kwargs` is empty by the time the
-chain reaches `Done_Helper` / `Info_Helper`, which define no `__init__`. Each mixin's argument
-defaults are `env_default(...)` calls, so a mixin constructed directly gets the same values the env
-would have given it.
+`Exchg_Helper` builds the reward model's partner components itself (`EpisodeStatus`, `InfoBuilder`,
+`LiquidationEngine`). The two remaining mixins each consume their own arguments and forward the
+rest, so `kwargs` is empty by the time the chain reaches `object`. Argument defaults on the mixins
+and `Exchg_Helper` are `env_default(...)` calls, so one constructed directly gets the same values
+the env would have given it; the components read theirs when they are built.
 
----
-
-### 3.4 Episode horizon: fixed or random
+## 3.4 Episode horizon: fixed or random
 
 | Key | Default | Meaning |
 |---|---|---|
