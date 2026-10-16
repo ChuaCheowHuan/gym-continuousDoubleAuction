@@ -17,9 +17,7 @@ import torch
 from gym_continuousDoubleAuction.config_loader import flat_view, flatten
 from gym_continuousDoubleAuction.envs.settings import EnvSettings
 from gym_continuousDoubleAuction.logging_setup import get_logger
-from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
-    PROMOTION_REFERENCES,
-)
+from gym_continuousDoubleAuction.train.callbk.league import PROMOTION_REFERENCES
 from gym_continuousDoubleAuction.train.model.encoders import validate_encoder_type
 
 logger = get_logger("gym_continuousDoubleAuction.train.train")

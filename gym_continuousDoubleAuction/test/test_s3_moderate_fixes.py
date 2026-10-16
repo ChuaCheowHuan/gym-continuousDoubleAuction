@@ -230,8 +230,8 @@ class TestSeveralOrdersPerLevel:
 # --------------------------------------------------------------------------- #124
 from unittest.mock import MagicMock  # noqa: E402
 
+from gym_continuousDoubleAuction.train.callbk.league import PROMOTION_REFERENCES  # noqa: E402
 from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (  # noqa: E402
-    PROMOTION_REFERENCES,
     SelfPlayCallback,
 )
 
@@ -256,7 +256,7 @@ def _returns(trainable, champions, baseline):
 
 def _check(cb, returns, monkeypatch=None):
     made = []
-    cb._create_champion_snapshot_from_policy = lambda algo, pid, value, it: made.append(pid)
+    cb.league.create_snapshot = lambda algo, pid, value, it: made.append(pid)
     result = {"training_iteration": 1, "env_runners": {"module_episode_returns_mean": returns}}
     cb.on_train_result(algorithm=MagicMock(), result=result)
     return made, result["league"]
@@ -336,6 +336,7 @@ class TestPromotionReference:
     def test_a_callback_saved_before_the_key_runs_pooled(self):
         cb = _league("pooled")
         state = cb.__getstate__()
+        state.update(vars(state.pop("league")))  # as an older checkpoint held it: flat
         del state["promotion_reference"]
         del state["_warned_reference_fallback"]
         old = SelfPlayCallback.__new__(SelfPlayCallback)
