@@ -47,9 +47,11 @@ from __future__ import annotations
 import logging
 import logging.handlers
 import os
+import re
+import shutil
 import sys
 import threading
-from typing import Optional
+from typing import List, Optional
 
 from gym_continuousDoubleAuction.config_loader import constants
 
@@ -60,6 +62,10 @@ ROOT_NAME = "gym_continuousDoubleAuction"
 _configured = False
 _log_file_path: Optional[str] = None
 _excepthooks_installed = False
+
+#: `(logger name, handler)` pairs this module mirrored onto Ray's own loggers, so a reconfigure
+#: can take them off again (issue #218).
+_ray_mirrored: List[tuple] = []
 
 #: Guards the handler swap in `configure`. The individual `addHandler` calls are
 #: already atomic under logging's own module lock, but the sequence here is
@@ -250,12 +256,25 @@ def configure(
             stream.addFilter(iteration_filter)
             root.addHandler(stream)
 
+            file_handler = None
             if log_dir:
                 file_handler = _build_file_handler(log_dir, settings, own_file)
                 if file_handler is not None:
                     file_handler.setFormatter(formatter)
                     file_handler.addFilter(iteration_filter)
                     root.addHandler(file_handler)
+
+            # A worker that is writing its own file does not also echo the whole
+            # narrative to stdout, which Ray forwards to the driver console: the NAV
+            # table appeared once in the file and once there (issue #221). It still
+            # echoes warnings and errors. The driver, and a worker with no file,
+            # echo everything.
+            if file_handler is not None and not own_file:
+                echo = _console_level(settings)
+                if echo is not None:
+                    stream.setLevel(echo)
+
+            _mirror_onto_ray(file_handler, settings)
 
             _configured = True
 
@@ -290,6 +309,76 @@ def configure(
     if log_dir:
         os.environ[log_dir_env_var()] = os.path.abspath(log_dir)
     return resolved
+
+
+def _console_level(settings: dict) -> Optional[int]:
+    """The level a worker echoes to stdout when it has a file, or None for "the run's level"."""
+    name = settings["worker_console_level"]
+    if not name:
+        return None
+    level = logging.getLevelName(str(name).upper())
+    if not isinstance(level, int):
+        raise ValueError(
+            f"logging.worker_console_level must be a level name such as WARNING, or empty; "
+            f"got {name!r} (config/tunable_constants.json)."
+        )
+    return level
+
+
+class _OncePerRecord(logging.Filter):
+    """Pass a record to a handler once, however many loggers on its path carry the handler.
+
+    The run-log file handler hangs off several Ray loggers (`_ray_targets`); where one of
+    them still propagates to another, a record would otherwise be written once per logger.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if getattr(record, "_cda_written", False):
+            return False
+        record._cda_written = True
+        return True
+
+
+_ONCE_PER_RECORD = _OncePerRecord()
+
+
+def _ray_targets() -> List[str]:
+    """The Ray loggers a record can end at, which are the ones to attach a handler to.
+
+    `ray` itself, and `ray.rllib`, whose records stop there: RLlib gives it its own handler
+    and turns propagation off, so a handler on `ray` alone never sees them. Any other Ray
+    logger that has done the same is found by looking, since which ones do is Ray's business.
+    """
+    names = {"ray", "ray.rllib"}
+    for name, candidate in list(logging.root.manager.loggerDict.items()):
+        if (
+            name.startswith("ray.")
+            and isinstance(candidate, logging.Logger)
+            and candidate.propagate is False
+        ):
+            names.add(name)
+    return sorted(names)
+
+
+def _mirror_onto_ray(file_handler, settings: dict) -> None:
+    """Send Ray's own log records to this process's run log too (issue #218).
+
+    RLlib's diagnostics - "No samples returned from remote workers", the traceback that
+    `EnvRunnerGroup` swallows when a runner dies, restart notices - come from loggers under
+    `ray`, whose handlers go elsewhere, so they sat in a different stream from the narrative
+    they explain. The file handler is added to the Ray loggers records end at (`_ray_targets`);
+    the stream handler is not, because Ray prints its own records to the console already.
+
+    Replaces what an earlier `configure()` mirrored, so a reconfigure does not stack copies.
+    """
+    for name, handler in _ray_mirrored:
+        logging.getLogger(name).removeHandler(handler)
+    _ray_mirrored.clear()
+    if file_handler is not None and settings["capture_ray_logs"]:
+        file_handler.addFilter(_ONCE_PER_RECORD)
+        for name in _ray_targets():
+            logging.getLogger(name).addHandler(file_handler)
+            _ray_mirrored.append((name, file_handler))
 
 
 def _capture_warnings(root: logging.Logger) -> None:
@@ -351,6 +440,84 @@ def worker_file_tag() -> str:
     return str(pid)
 
 
+class _HeadKeepingRotatingFileHandler(logging.handlers.RotatingFileHandler):
+    """A rotating file that keeps its first file for good (issue #216).
+
+    Rotation deletes the oldest backup, so the start of a long run - where a divergence
+    begins - is what a worker's log loses first. At the first rollover the file about to be
+    rotated is copied to `<name>.head`, once, and never rotated again.
+    """
+
+    def doRollover(self):
+        head = self.baseFilename + ".head"
+        if not os.path.exists(head) and os.path.exists(self.baseFilename):
+            try:
+                if self.stream:
+                    self.stream.flush()
+                shutil.copyfile(self.baseFilename, head)
+            except OSError:
+                pass  # instrumentation must not stop the rollover itself
+        super().doRollover()
+
+
+def _worker_log_groups(log_dir: str, file_name: str):
+    """`{worker log path: [its files]}` for the worker logs of this run in `log_dir`.
+
+    A worker log is `<stem>.<pid>[.<worker tag>]<suffix>`; its rotated backups end in
+    `.1`, `.2`, ... and its kept start in `.head`. The driver's own `<file_name>` is not one.
+    """
+    stem, suffix = os.path.splitext(file_name)
+    pattern = re.compile(
+        rf"^{re.escape(stem)}\.\d+(\.[0-9A-Za-z]+)?{re.escape(suffix)}(\.\d+|\.head)?$"
+    )
+    groups = {}
+    try:
+        names = os.listdir(log_dir)
+    except OSError:
+        return groups
+    for name in names:
+        match = pattern.match(name)
+        if not match:
+            continue
+        base = name[: match.start(2)] if match.group(2) else name
+        groups.setdefault(os.path.join(log_dir, base), []).append(os.path.join(log_dir, name))
+    return groups
+
+
+def prune_worker_logs(log_dir: str, file_name: str, keep: int, protect: str = "") -> int:
+    """Remove all but the newest `keep` worker logs under `log_dir`; returns how many went.
+
+    Each restarted env runner opens a new file set, and `file_backup_count` bounds a set, not
+    the number of them (issue #216). The newest by modification time are kept, so the files
+    of the processes that are alive and writing survive; `protect` is never removed.
+    """
+    if keep <= 0:
+        return 0
+    groups = _worker_log_groups(log_dir, file_name)
+
+    def newest(files):
+        times = []
+        for path in files:
+            try:
+                times.append(os.path.getmtime(path))
+            except OSError:
+                pass
+        return max(times, default=0.0)
+
+    ordered = sorted(groups.items(), key=lambda item: newest(item[1]), reverse=True)
+    removed = 0
+    for base, files in ordered[keep:]:
+        if base == protect:
+            continue
+        for path in files:
+            try:
+                os.remove(path)
+            except OSError:
+                pass  # another worker pruned it first, or it is gone
+        removed += 1
+    return removed
+
+
 def _build_file_handler(log_dir: str, settings: dict, own_file: bool):
     """A rotating handler under `log_dir`, or None if file logging is off.
 
@@ -373,9 +540,21 @@ def _build_file_handler(log_dir: str, settings: dict, own_file: bool):
         file_name = f"{stem}.{worker_file_tag()}{suffix}"
 
     path = os.path.join(os.path.abspath(log_dir), file_name)
+    handler_class = (
+        _HeadKeepingRotatingFileHandler
+        if settings["file_keep_head"]
+        else logging.handlers.RotatingFileHandler
+    )
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        handler = logging.handlers.RotatingFileHandler(
+        if not own_file:
+            prune_worker_logs(
+                os.path.dirname(path),
+                settings["file_name"],
+                settings["file_max_worker_files"],
+                protect=path,
+            )
+        handler = handler_class(
             path,
             maxBytes=settings["file_max_bytes"],
             backupCount=settings["file_backup_count"],

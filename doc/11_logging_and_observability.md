@@ -831,7 +831,7 @@ chosen for, and it makes the info dict awkward for RLlib metric aggregation.
 | Issue | Impact |
 |---|---|
 | `progress.jsonl` grows without rotation | One line per iteration is small, but nothing bounds it across a run that pins its `run_id` and resumes repeatedly |
-| Rotation discards the *earliest* output first | `file_backup_count` × `file_max_bytes` caps the run log at 60 MB, which at DEBUG is reached quickly — and it is the start of a run, where divergence usually begins, that is dropped. A time-based handler, or archiving the run directory, keeps it |
+| ~~Rotation discards the *earliest* output first~~ (fixed: `file_keep_head`, [21](21_logging_review.md) §2.5) | `file_backup_count` × `file_max_bytes` caps the run log at 60 MB, which at DEBUG is reached quickly — and it is the start of a run, where divergence usually begins, that is dropped. A time-based handler, or archiving the run directory, keeps it |
 
 Seven things are no longer in this table.
 
