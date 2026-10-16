@@ -336,6 +336,8 @@ class TrainConfig:
     # Which modules the promotion threshold is computed over (doc/15 S3-12):
     # "pooled" or "excluding_baselines".
     promotion_reference: str = _default("promotion_reference")
+    # Steps ahead at which fills are marked out (doc/15 S3-9).
+    markout_horizons: List[int] = _default("markout_horizons")
     original_opponent_weight: float = _default("original_opponent_weight")
     champion_weight: float = _default("champion_weight")
     # null disables the per-step episode record entirely. See episode_data_path
@@ -444,6 +446,10 @@ class TrainConfig:
             raise ValueError(
                 f"promotion_reference must be one of {PROMOTION_REFERENCES}; "
                 f"got {self.promotion_reference!r}."
+            )
+        if any(int(h) < 1 for h in self.markout_horizons):
+            raise ValueError(
+                f"markout_horizons must be positive step counts; got {self.markout_horizons}."
             )
         if self.min_champion_trades < 0:
             raise ValueError(
@@ -791,6 +797,7 @@ def build_config(cfg: TrainConfig):
         strict_nav_check=cfg.strict_nav_check,
         min_champion_trades=cfg.min_champion_trades,
         promotion_reference=cfg.promotion_reference,
+        markout_horizons=cfg.markout_horizons,
         episode_sample_every=cfg.episode_sample_every,
         episode_max_bytes=cfg.episode_max_bytes,
         episode_rows_per_file=cfg.episode_rows_per_file,

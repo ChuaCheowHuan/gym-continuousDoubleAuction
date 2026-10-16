@@ -84,6 +84,19 @@ class Account(Calculate, Cash_Processor):
         # over all accounts, which is what keeps money conserved:
         # sum(nav) + sum(fees_paid) == starting cash.
         self.fees_paid = Decimal(0)
+        # Profit and loss realised by closing lots, gross of fees (issue #286):
+        # on every fill that reduces or flips a position, the closed contracts
+        # times (exit price - average entry price), signed for a short. It never
+        # touches cash or NAV, which already hold it; it only names how much of
+        # the change in NAV was banked. With `unrealised_pnl(mark)` and the fees
+        # it accounts for NAV exactly: NAV - init_nav == realised + unrealised - fees_paid.
+        self.realised_pnl = Decimal(0)
+        # This step's fills, signed (buys +, sells -): contracts, and price x
+        # contracts. Linear, so a mark-out needs nothing else:
+        # markout = fill_qty x later_mid - fill_value, per step, for any horizon.
+        # Zeroed each step by `set_step_outputs`.
+        self.fill_qty_step = 0
+        self.fill_value_step = Decimal(0)
         # nav is used to calculate P&L & r per t step
         self.cash_on_hold = Decimal(0) # cash deducted for placing order = cash - value of live order in LOB
         self.position_val = Decimal(0) # value of net_position
@@ -194,6 +207,9 @@ class Account(Calculate, Cash_Processor):
         self.nav = Decimal(cash) # nav @t (nav @ end of a single t-step)
         self.prev_nav = Decimal(cash) # nav @t-1
         self.fees_paid = Decimal(0) # the rates stay; what was paid does not
+        self.realised_pnl = Decimal(0)
+        self.fill_qty_step = 0
+        self.fill_value_step = Decimal(0)
         # assuming only one ticker (1 type of contract)
         self.net_position = 0 # number of contracts currently holding long (positive) or short (negative)
         self.cost_basis = Decimal(0) # exact sum of trade values; see __init__
@@ -307,6 +323,7 @@ class Account(Calculate, Cash_Processor):
 
         raw_val = self.cost_basis # value acquired, exactly
         mkt_val = abs(self.net_position) * trade.get('price')
+        self._book_realised(position, abs(self.net_position), trade.get('price'))
         self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
         self.size_zero_cash_transfer(mkt_val)
         # reset to 0 - as Decimal, not int. position_val and cost_basis are
@@ -317,9 +334,27 @@ class Account(Calculate, Cash_Processor):
         self.entry_vwap = Decimal(0)
         return mkt_val
 
+    def _book_realised(self, position, closed, price) -> None:
+        """Add the P&L of closing `closed` contracts at `price` to `realised_pnl`.
+
+        Against the average price actually paid for the lots held (`entry_vwap`),
+        which a partial close leaves unchanged. Called before the position is
+        updated, so `entry_vwap` is still the one for the lots being closed.
+        """
+        move = Decimal(price) - self.entry_vwap
+        self.realised_pnl += (move if position == 'long' else -move) * closed
+
+    def unrealised_pnl(self, mark) -> Decimal:
+        """The open position's profit or loss at `mark`, against its average entry price."""
+        if self.net_position == 0:
+            return Decimal(0)
+        move = Decimal(mark) - self.entry_vwap
+        return self.net_position * move
+
     def _size_decrease(self, trade, position, party, trade_val):
         size_left = abs(self.net_position) - int(trade.get('quantity'))
         if size_left > 0:
+            self._book_realised(position, int(trade.get('quantity')), trade.get('price'))
             # The trade VALUE comes off the basis, not VWAP x quantity: the
             # realised P&L stays in the basis of the remaining lots. See
             # cost_basis in __init__ for why that is load-bearing.
@@ -435,6 +470,9 @@ class Account(Calculate, Cash_Processor):
             self.num_passive_fills_step += 1
 
         trade_val = Decimal(trade.get('quantity')) * trade.get('price')
+        sign = 1 if trade.get(party).get('side') == 'bid' else -1
+        self.fill_qty_step += sign * int(trade.get('quantity'))
+        self.fill_value_step += sign * trade_val
         if self.net_position > 0: #long
             self._net_long(trade_val, trade, party)
         elif self.net_position < 0: # short

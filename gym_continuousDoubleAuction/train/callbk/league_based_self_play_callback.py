@@ -126,6 +126,15 @@ def _new_tally() -> dict:
     }
 
 
+def _market_mid(info):
+    """The midpoint of the best quotes in an agent's `info`, else the last price, else None."""
+    bid, ask = _as_float(info.get("best_bid")), _as_float(info.get("best_ask"))
+    if bid and ask and bid > 0 and ask > 0:
+        return (bid + ask) / 2.0
+    last = _as_float(info.get("last_price"))
+    return last if last and last > 0 else None
+
+
 def _as_float(value):
     """float(value), or None if it is absent or not a number.
 
@@ -157,6 +166,7 @@ class SelfPlayCallback(RLlibCallback):
         strict_nav_check=None,
         min_champion_trades=None,
         promotion_reference=None,
+        markout_horizons=None,
         episode_sample_every=None,
         episode_max_bytes=None,
         episode_rows_per_file=None,
@@ -196,6 +206,9 @@ class SelfPlayCallback(RLlibCallback):
                 over: "pooled" (all of them, baselines included) or
                 "excluding_baselines" (trainable modules and champions). See
                 `_threshold_returns` and doc/15 S3-12.
+            markout_horizons: Steps ahead at which a fill's adverse-selection
+                mark-out is measured, one `module_markout_<h>` metric each (see
+                `train/performance.py`). Empty switches mark-outs off.
             episode_sample_every: Record one episode in N. 1 records every one.
             episode_max_bytes: Cap on the episode record each process keeps.
                 0 disables the cap.
@@ -249,6 +262,11 @@ class SelfPlayCallback(RLlibCallback):
                 f"promotion_reference must be one of {PROMOTION_REFERENCES}; "
                 f"got {promotion_reference!r}."
             )
+        if markout_horizons is None:
+            markout_horizons = league["markout_horizons"]
+        markout_horizons = tuple(int(h) for h in markout_horizons)
+        if any(h < 1 for h in markout_horizons):
+            raise ValueError(f"markout_horizons must be positive step counts; got {markout_horizons}.")
         if episode_sample_every is None:
             episode_sample_every = league["episode_sample_every"]
         if episode_max_bytes is None:
@@ -261,6 +279,7 @@ class SelfPlayCallback(RLlibCallback):
         self.strict_nav_check = strict_nav_check
         self.min_champion_trades = min_champion_trades
         self.promotion_reference = promotion_reference
+        self.markout_horizons = markout_horizons
         self._warned_reference_fallback = False
         self.episode_sample_every = episode_sample_every
         self.episode_max_bytes = episode_max_bytes
@@ -366,6 +385,8 @@ class SelfPlayCallback(RLlibCallback):
         # Quiet, because nothing changes for it.
         if "promotion_reference" not in state:
             self.promotion_reference = "pooled"
+        if "markout_horizons" not in state:
+            self.markout_horizons = ()
         if "_warned_reference_fallback" not in state:
             self._warned_reference_fallback = False
         if "min_champion_trades" not in state:
@@ -804,8 +825,16 @@ class SelfPlayCallback(RLlibCallback):
             nav = agent_info.get("NAV")
             if nav is not None:
                 tally["last_nav"][agent_id] = nav
-                tally["performance"].setdefault(agent_id, PerformanceTally()).update(
-                    nav, agent_info.get("net_position"))
+                tally["performance"].setdefault(
+                    agent_id, PerformanceTally(self.markout_horizons)
+                ).update(
+                    nav, agent_info.get("net_position"),
+                    realised=agent_info.get("realised_pnl"),
+                    unrealised=agent_info.get("unrealised_pnl"),
+                    fill_qty=agent_info.get("fill_qty_step"),
+                    fill_value=agent_info.get("fill_value_step"),
+                    mid=_market_mid(agent_info),
+                )
             if agent_info.get("is_pass_action"):
                 tally["passes"] += 1
             tally["rejections"] += int(agent_info.get("num_rejected_step", 0) or 0)

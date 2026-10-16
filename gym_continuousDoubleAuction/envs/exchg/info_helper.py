@@ -111,6 +111,16 @@ class Info_Helper(object):
             "liquidated_adl_qty_step": acc.liquidated_adl_qty_step,
             "adl_qty_step": acc.adl_qty_step,
             "liquidation_steps_left": acc.liquidation_steps_left,
+            # Realised and unrealised P&L, gross of fees (issue #286). Exact in the
+            # ledger and converted here, like every diagnostic: `nav - init_nav ==
+            # realised + unrealised - fees_paid` holds on the Decimals, to the
+            # last digit the ledger keeps.
+            "realised_pnl": float(acc.realised_pnl),
+            "unrealised_pnl": float(acc.unrealised_pnl(self.mark_price())),
+            # This step's fills, signed (buys +): contracts and price x contracts.
+            # A mark-out at horizon h is `qty x mid_{t+h} - value`.
+            "fill_qty_step": acc.fill_qty_step,
+            "fill_value_step": float(acc.fill_value_step),
         })
 
         # Did this agent choose to do nothing this step? The two behaviours a
