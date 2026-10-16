@@ -573,7 +573,7 @@ class OrderBook(object):
         return trades, order_in_book
 
     def cancel_order(self, side, order_id, time=None):
-        if time:
+        if time is not None:  # a supplied 0 is a time, not "unset"
             self.time = time
         else:
             self.update_time()
@@ -590,7 +590,7 @@ class OrderBook(object):
 
     def modify_order(self, order_id, order_update, time=None):
 
-        if time:
+        if time is not None:  # a supplied 0 is a time, not "unset"
             self.time = time
         else:
             self.update_time()
