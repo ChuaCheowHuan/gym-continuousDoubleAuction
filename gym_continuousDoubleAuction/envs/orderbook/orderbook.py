@@ -21,6 +21,7 @@ from io import StringIO
 from itertools import chain
 from collections import deque # a faster insert/pop queue
 from decimal import Decimal
+from typing import Any, Callable, NamedTuple
 
 import pandas as pd
 
@@ -28,6 +29,43 @@ from .ordertree import OrderTree
 from ...logging_setup import get_logger
 
 logger = get_logger(__name__)
+
+class _Clearing(NamedTuple):
+    """What one batch auction settled: the price, the volume, and who took part."""
+    p_star: Any                 # the clearing price; None when nothing crosses
+    volume: Any                 # the executable volume
+    live: list                  # queued orders that did not sit out
+    buys: list                  # ... the bids among them
+    sells: list                 # ... and the asks
+    dropped: set                # ids of queued orders that could not pay
+    sit_out: set                # ids of resting orders that could not pay
+
+    @property
+    def disturbed(self) -> bool:
+        """Whether anyone sat out, which changes how leftovers may rest."""
+        return bool(self.dropped or self.sit_out)
+
+
+class _QuantityOnly:
+    """A queued order seen as `allocate` reads it: something with a `.quantity`."""
+
+    def __init__(self, q):
+        self.q = q
+        self.quantity = Decimal(q['quantity'])
+
+
+class _Side(NamedTuple):
+    """One side of the book from the point of view of an order resting or arriving on it."""
+    own: Any                    # the tree the order rests in
+    opposite: Any               # the tree it trades against
+    opposite_name: str          # that tree's side name, as `process_order_list` takes it
+    crosses: Callable[[Any], bool]  # whether a limit price reaches the opposite touch
+
+    def best_opposite_list(self):
+        """The orders at the opposite touch (lowest ask for a bid, highest bid for an ask)."""
+        return (self.opposite.min_price_list() if self.opposite_name == 'ask'
+                else self.opposite.max_price_list())
+
 
 class OrderBook(object):
     #: How the quantity that reaches one price level is split among the orders
@@ -342,98 +380,119 @@ class OrderBook(object):
         if not pending:
             return []
 
-        def limit_of(q):
-            return None if q['type'] == 'market' else Decimal(str(q['price']))
+        clearing = self._clear_round(pending, reference_price, affordable)
+        if clearing.volume <= 0:
+            return self._rest_all(clearing.live, results, order, sat_out=clearing.disturbed)
 
+        buy_fills = self._allocate_side(True, clearing)
+        sell_fills = self._allocate_side(False, clearing)
+        bought, sold = sum(f for *_, f in buy_fills), sum(f for *_, f in sell_fills)
+        if not bought == sold == clearing.volume:
+            # An exception, not an assert: `python -O` removes asserts, and a
+            # mismatch here would go on to pair the two lists into a one-sided trade.
+            raise RuntimeError(
+                f"batch auction filled {bought} on the buy side and {sold} on the sell "
+                f"side against an executable volume of {clearing.volume}; the sides must match"
+            )
+
+        filled_qty = self._pair_fills(buy_fills, sell_fills, clearing.p_star, results)
+        self._rest_leftovers(clearing, filled_qty, results)
+        return [results[k] for k in order]
+
+    @staticmethod
+    def _limit_of(q):
+        """A queued order's limit as a Decimal; None for a market order."""
+        return None if q['type'] == 'market' else Decimal(str(q['price']))
+
+    def _clear_round(self, pending, reference_price, affordable):
+        """Run the auction, dropping whoever cannot pay at its price, until everyone left can.
+
+        Returns the `_Clearing` that settled: the price and volume, the queued orders
+        still live, and who sat out. A `volume` of 0 means nothing crosses.
+        """
         dropped, sit_out = set(), set()     # queued ids / resting order ids that sit out
         while True:
             live = [q for q in pending if id(q) not in dropped]
             buys = [q for q in live if q['side'] == 'bid']
             sells = [q for q in live if q['side'] == 'ask']
-            best = self._auction(buys, sells, limit_of, sit_out, reference_price)
+            best = self._auction(buys, sells, self._limit_of, sit_out, reference_price)
             if best is None or best[2] <= 0:
-                return self._rest_all(live, results, order, sat_out=bool(dropped or sit_out))
+                return _Clearing(None, Decimal(0), live, buys, sells, dropped, sit_out)
             _, p_star, volume = best
             if affordable is None:
                 break
-            out_new, out_resting = self._unaffordable(buys, sells, limit_of, sit_out, p_star, affordable)
+            out_new, out_resting = self._unaffordable(
+                buys, sells, self._limit_of, sit_out, p_star, affordable)
             if not out_new and not out_resting:
                 break
             for q in out_new:
                 dropped.add(id(q))
                 self.batch_unaffordable.append(q)
             sit_out |= out_resting
+        return _Clearing(p_star, volume, live, buys, sells, dropped, sit_out)
 
-        # Priority on each side: strictly better limits and market orders
-        # first (most aggressive price first, then time), then the marginal
-        # level, resting before batch, under `matching_rule`.
-        def side_fills(is_buy):
-            tree = self.bids if is_buy else self.asks
-            batch = buys if is_buy else sells
-            strict, marginal = [], []
-            for price, ol in tree.price_map.items():
-                better = price > p_star if is_buy else price < p_star
-                bucket = strict if better else marginal if price == p_star else None
-                if bucket is not None:
-                    for o in ol:
-                        if o.order_id not in sit_out:
-                            bucket.append((o, True))
-            for q in batch:
-                lim = limit_of(q)
-                if lim is None or (lim > p_star if is_buy else lim < p_star):
-                    strict.append((q, False))
-                elif lim == p_star:
-                    marginal.append((q, False))
+    def _allocate_side(self, is_buy, clearing):
+        """The fills of one side at the clearing price, `(order, resting, quantity)` in priority.
 
-            def aggressiveness(item):
-                o, resting = item
-                lim = o.price if resting else limit_of(o)
-                if lim is None:
-                    lim = Decimal("Infinity") if is_buy else Decimal("-Infinity")
-                # Most aggressive first; earlier timestamp first within a price.
-                return ((-lim) if is_buy else lim, o.timestamp if resting else o['timestamp'])
+        Strictly better limits and market orders first (most aggressive price first,
+        then time), then the marginal level, resting before batch, under `matching_rule`.
+        """
+        p_star, volume, sit_out = clearing.p_star, clearing.volume, clearing.sit_out
+        tree = self.bids if is_buy else self.asks
+        batch = clearing.buys if is_buy else clearing.sells
+        strict, marginal = [], []
+        for price, ol in tree.price_map.items():
+            better = price > p_star if is_buy else price < p_star
+            bucket = strict if better else marginal if price == p_star else None
+            if bucket is not None:
+                for o in ol:
+                    if o.order_id not in sit_out:
+                        bucket.append((o, True))
+        for q in batch:
+            lim = self._limit_of(q)
+            if lim is None or (lim > p_star if is_buy else lim < p_star):
+                strict.append((q, False))
+            elif lim == p_star:
+                marginal.append((q, False))
 
-            strict.sort(key=aggressiveness)
-            fills, left = [], volume
-            for o, resting in strict:
-                qty = Decimal(o.quantity) if resting else Decimal(o['quantity'])
-                fill = min(qty, left)
-                if fill > 0:
-                    fills.append((o, resting, fill))
+        def aggressiveness(item):
+            o, resting = item
+            lim = o.price if resting else self._limit_of(o)
+            if lim is None:
+                lim = Decimal("Infinity") if is_buy else Decimal("-Infinity")
+            # Most aggressive first; earlier timestamp first within a price.
+            return ((-lim) if is_buy else lim, o.timestamp if resting else o['timestamp'])
+
+        strict.sort(key=aggressiveness)
+        fills, left = [], volume
+        for o, resting in strict:
+            qty = Decimal(o.quantity) if resting else Decimal(o['quantity'])
+            fill = min(qty, left)
+            if fill > 0:
+                fills.append((o, resting, fill))
+                left -= fill
+            if left <= 0:
+                break
+        if left > 0 and marginal:
+            # Resting orders at the marginal level keep time priority over
+            # the batch; within each group the matching rule applies.
+            resting_orders = [o for o, r in marginal if r]
+            batch_orders = [o for o, r in marginal if not r]
+            for o, fill in self.allocate(resting_orders, left):
+                fills.append((o, True, fill))
+                left -= fill
+            if left > 0 and batch_orders:
+                wrapped = [_QuantityOnly(q) for q in batch_orders]
+                for w, fill in self.allocate(wrapped, left):
+                    fills.append((w.q, False, fill))
                     left -= fill
-                if left <= 0:
-                    break
-            if left > 0 and marginal:
-                # Resting orders at the marginal level keep time priority over
-                # the batch; within each group the matching rule applies.
-                resting_orders = [o for o, r in marginal if r]
-                batch_orders = [o for o, r in marginal if not r]
-                for o, fill in self.allocate(resting_orders, left):
-                    fills.append((o, True, fill))
-                    left -= fill
-                if left > 0 and batch_orders:
-                    class _Q:  # `allocate` reads `.quantity`
-                        def __init__(self, q):
-                            self.q = q
-                            self.quantity = Decimal(q['quantity'])
-                    wrapped = [_Q(q) for q in batch_orders]
-                    for w, fill in self.allocate(wrapped, left):
-                        fills.append((w.q, False, fill))
-                        left -= fill
-            return fills
+        return fills
 
-        buy_fills = side_fills(True)
-        sell_fills = side_fills(False)
-        bought, sold = sum(f for *_, f in buy_fills), sum(f for *_, f in sell_fills)
-        if not bought == sold == volume:
-            # An exception, not an assert: `python -O` removes asserts, and a
-            # mismatch here would go on to pair the two lists into a one-sided trade.
-            raise RuntimeError(
-                f"batch auction filled {bought} on the buy side and {sold} on the sell "
-                f"side against an executable volume of {volume}; the sides must match"
-            )
+    def _pair_fills(self, buy_fills, sell_fills, p_star, results):
+        """Pair the two fill lists into trade records at `p_star`, on the tape and in `results`.
 
-        # Pair the two fill lists into trade records at p*.
+        Returns how much of each queued order filled, by `id(order)`.
+        """
         self.update_time()
         filled_qty = {}  # id(pending quote) -> filled
         i = j = 0
@@ -484,19 +543,20 @@ class OrderBook(object):
                 i += 1
             if sq[j][2] <= 0:
                 j += 1
+        return filled_qty
 
-        # Leftovers: limit orders rest at their own limit, market orders lapse.
-        for q in live:
+    def _rest_leftovers(self, clearing, filled_qty, results):
+        """Limit orders rest at their own limit, market orders lapse."""
+        for q in clearing.live:
             left = Decimal(q['quantity']) - filled_qty.get(id(q), Decimal(0))
             if left > 0 and q['type'] == 'limit':
-                if (dropped or sit_out) and self._would_cross(q):
+                if clearing.disturbed and self._would_cross(q):
                     continue
                 q['quantity'] = left
                 tree = self.bids if q['side'] == 'bid' else self.asks
                 tree.insert_order(q)
                 tid, trades, _ = results[id(q)]
                 results[id(q)] = (tid, trades, q)
-        return [results[k] for k in order]
 
     def _would_cross(self, q):
         """Whether resting `q` at its limit would cross an order already resting."""
@@ -521,60 +581,47 @@ class OrderBook(object):
                 results[id(q)] = (tid, trades, q)
         return [results[k] for k in order]
 
+    def _side(self, side, caller):
+        """The two trees an order on `side` works with, as a `_Side`.
+
+        Every operation below is the same for a bid and an ask except which tree is
+        the order's own, which is the one it meets, and the direction of one price
+        comparison. Writing each twice meant a fix to one side could miss the other
+        (issue #256); this is the one place the two are told apart.
+        """
+        if side == 'bid':
+            return _Side(self.bids, self.asks, 'ask', lambda price: price >= self.asks.min_price())
+        if side == 'ask':
+            return _Side(self.asks, self.bids, 'bid', lambda price: price <= self.bids.max_price())
+        raise ValueError(f"{caller}(): side must be 'bid' or 'ask', got {side!r}")
+
     def process_market_order(self, quote, verbose):
         trades = []
         quantity_to_trade = quote['quantity']
-        side = quote['side']
-        if side == 'bid':
-            while quantity_to_trade > 0 and self.asks:
-                best_price_asks = self.asks.min_price_list()
-                quantity_to_trade, new_trades = self.process_order_list('ask', best_price_asks, quantity_to_trade, quote, verbose)
-                trades += new_trades
-        elif side == 'ask':
-            while quantity_to_trade > 0 and self.bids:
-                best_price_bids = self.bids.max_price_list()
-                quantity_to_trade, new_trades = self.process_order_list('bid', best_price_bids, quantity_to_trade, quote, verbose)
-                trades += new_trades
-        else:
-            raise ValueError(
-                f"process_market_order(): side must be 'bid' or 'ask', got {side!r}"
-            )
+        side = self._side(quote['side'], 'process_market_order')
+        while quantity_to_trade > 0 and side.opposite:
+            quantity_to_trade, new_trades = self.process_order_list(
+                side.opposite_name, side.best_opposite_list(), quantity_to_trade, quote, verbose)
+            trades += new_trades
         return trades
 
     def process_limit_order(self, quote, from_data, verbose):
         order_in_book = None
         trades = []
         quantity_to_trade = quote['quantity']
-        side = quote['side']
+        side = self._side(quote['side'], 'process_limit_order')
         price = quote['price']
-        if side == 'bid':
-            while (self.asks and price >= self.asks.min_price() and quantity_to_trade > 0):
-                best_price_asks = self.asks.min_price_list()
-                quantity_to_trade, new_trades = self.process_order_list('ask', best_price_asks, quantity_to_trade, quote, verbose)
-                trades += new_trades
-            # If volume remains, need to update the book with new quantity
-            if quantity_to_trade > 0:
-                if not from_data:
-                    quote['order_id'] = self.next_order_id
-                quote['quantity'] = quantity_to_trade
-                self.bids.insert_order(quote)
-                order_in_book = quote
-        elif side == 'ask':
-            while (self.bids and price <= self.bids.max_price() and quantity_to_trade > 0):
-                best_price_bids = self.bids.max_price_list()
-                quantity_to_trade, new_trades = self.process_order_list('bid', best_price_bids, quantity_to_trade, quote, verbose)
-                trades += new_trades
-            # If volume remains, need to update the book with new quantity
-            if quantity_to_trade > 0:
-                if not from_data:
-                    quote['order_id'] = self.next_order_id
-                quote['quantity'] = quantity_to_trade
-                self.asks.insert_order(quote)
-                order_in_book = quote
-        else:
-            raise ValueError(
-                f"process_limit_order(): side must be 'bid' or 'ask', got {side!r}"
-            )
+        while side.opposite and side.crosses(price) and quantity_to_trade > 0:
+            quantity_to_trade, new_trades = self.process_order_list(
+                side.opposite_name, side.best_opposite_list(), quantity_to_trade, quote, verbose)
+            trades += new_trades
+        # If volume remains, need to update the book with new quantity
+        if quantity_to_trade > 0:
+            if not from_data:
+                quote['order_id'] = self.next_order_id
+            quote['quantity'] = quantity_to_trade
+            side.own.insert_order(quote)
+            order_in_book = quote
         return trades, order_in_book
 
     def cancel_order(self, side, order_id, time=None):
@@ -582,16 +629,9 @@ class OrderBook(object):
             self.time = time
         else:
             self.update_time()
-        if side == 'bid':
-            if self.bids.order_exists(order_id):
-                self.bids.remove_order_by_id(order_id)
-        elif side == 'ask':
-            if self.asks.order_exists(order_id):
-                self.asks.remove_order_by_id(order_id)
-        else:
-            raise ValueError(
-                f"cancel_order(): side must be 'bid' or 'ask', got {side!r}"
-            )
+        own = self._side(side, 'cancel_order').own
+        if own.order_exists(order_id):
+            own.remove_order_by_id(order_id)
 
     def modify_order(self, order_id, order_update, time=None):
 
@@ -605,20 +645,10 @@ class OrderBook(object):
         order_update['timestamp'] = self.time
 
         # Find the existing order to compare parameters
-        if side == 'bid':
-            if not self.bids.order_exists(order_id):
-                return [], None
-            original_order = self.bids.get_order(order_id)
-            tree = self.bids
-        elif side == 'ask':
-            if not self.asks.order_exists(order_id):
-                return [], None
-            original_order = self.asks.get_order(order_id)
-            tree = self.asks
-        else:
-            raise ValueError(
-                f"modify_order(): side must be 'bid' or 'ask', got {side!r}"
-            )
+        tree = self._side(side, 'modify_order').own
+        if not tree.order_exists(order_id):
+            return [], None
+        original_order = tree.get_order(order_id)
 
         original_price = original_order.price
         original_quantity = original_order.quantity

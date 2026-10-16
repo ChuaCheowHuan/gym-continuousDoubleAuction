@@ -10,7 +10,7 @@ from ray.rllib.env.multi_agent_env import MultiAgentEnv
 
 from .exchg.exchg_helper import Exchg_Helper
 from .agent.trader import Trader
-from .account.account import validate_fee_rates
+from .settings import EnvSettings
 from ..config_loader import env_default
 from ..logging_setup import get_logger
 
@@ -30,106 +30,34 @@ class continuousDoubleAuctionEnv(
         # Handle config parameter for RLlib compatibility
         self.config = config or {}
 
-        # Every key below falls back to config/env_defaults.json when the
-        # caller omits it. There are no literal defaults here: a training run
-        # supplies all of them from train_config.json via TrainConfig.env_config,
-        # and a bare env picks up the standalone defaults from the JSON.
-        self.num_of_agents = self._cfg("num_of_agents")
-        if self.num_of_agents < 1:
-            raise ValueError(
-                f"num_of_agents must be at least 1; got {self.num_of_agents!r}."
-            )
-        init_cash = self._cfg("init_cash")
-        # Exchange fees in basis points of a fill's notional (doc/15 S2-3).
-        # Validated here so a bad schedule fails at construction, before the
-        # book is built; `Account` validates again for callers that skip the env.
-        self.maker_fee_bps = self._cfg("maker_fee_bps")
-        self.taker_fee_bps = self._cfg("taker_fee_bps")
-        validate_fee_rates(self.maker_fee_bps, self.taker_fee_bps)
-        self.allow_multiple_orders_per_level = self._cfg("allow_multiple_orders_per_level")
-        if not isinstance(self.allow_multiple_orders_per_level, bool):
-            raise ValueError(
-                f"allow_multiple_orders_per_level must be true or false; got "
-                f"{self.allow_multiple_orders_per_level!r}."
-            )
-        tick_size = self._cfg("tick_size")
-        mark_price_source = self._cfg("mark_price_source")
-        tape_display_length = self._cfg("tape_display_length")
-        self.max_step = self._cfg("max_step")
+        # Every key falls back to config/env_defaults.json when the caller omits
+        # it. There are no literal defaults here: a training run supplies all of
+        # them from train_config.json via TrainConfig.env_config, and a bare env
+        # picks up the standalone defaults from the JSON. Read and validated in
+        # one place, `EnvSettings` (issue #257).
+        settings = EnvSettings.from_config(self.config)
+        self.settings = settings
+        self.num_of_agents = settings.num_of_agents
+        init_cash = settings.init_cash
+        self.maker_fee_bps = settings.maker_fee_bps
+        self.taker_fee_bps = settings.taker_fee_bps
+        self.allow_multiple_orders_per_level = settings.allow_multiple_orders_per_level
+        self.max_step = settings.max_step
         # Episode horizon: fixed at max_step, or drawn per episode from
         # [max_step_min, max_step_max] at reset (doc/18 section 3.4). The
         # horizon the agent is shown through `time_left` is the latest
         # possible end, `time_left_horizon`, so a random draw stays unknown.
-        self.episode_length_mode = self._cfg("episode_length_mode")
-        if self.episode_length_mode not in ("fixed", "random"):
-            raise ValueError(
-                f"episode_length_mode must be 'fixed' or 'random'; got "
-                f"{self.episode_length_mode!r}."
-            )
-        self.max_step_min = int(self._cfg("max_step_min"))
-        self.max_step_max = int(self._cfg("max_step_max"))
-        if self.episode_length_mode == "random":
-            if self.max_step_min < 1 or self.max_step_min > self.max_step_max:
-                raise ValueError(
-                    f"episode_length_mode 'random' needs 1 <= max_step_min <= "
-                    f"max_step_max; got {self.max_step_min} and {self.max_step_max}."
-                )
-            self.time_left_horizon = self.max_step_max
-        else:
-            if self.max_step < 1:
-                raise ValueError(
-                    f"episode_length_mode 'fixed' needs max_step >= 1; got "
-                    f"{self.max_step!r}."
-                )
-            self.time_left_horizon = self.max_step
+        self.episode_length_mode = settings.episode_length_mode
+        self.max_step_min = settings.max_step_min
+        self.max_step_max = settings.max_step_max
+        self.time_left_horizon = settings.time_left_horizon
         # The horizon of the episode in progress; `reset` sets it.
         self.episode_horizon = self.time_left_horizon
-        is_render = self._cfg("is_render")
-        self.n_hist = self._cfg("n_hist")
-
-        # Order sizing, consumed by Action_Helper.
-        min_size = self._cfg("min_size")
-        mkt_max_size = self._cfg("mkt_max_size")
-        limit_size_multiple = self._cfg("limit_size_multiple")
-
-        # Observation scales, consumed by State_Helper.
-        position_scale = self._cfg("position_scale")
-
-        # Reward coefficients, consumed by Reward_Helper.
-        order_penalty = self._cfg("order_penalty")
-        trade_penalty = self._cfg("trade_penalty")
-        drawdown_penalty = self._cfg("drawdown_penalty")
-        passive_bonus = self._cfg("passive_bonus")
-        loss_multiplier = self._cfg("loss_multiplier")
-        dead_action_penalty = self._cfg("dead_action_penalty")
+        is_render = settings.is_render
+        self.n_hist = settings.n_hist
 
         # Initialize parent classes
-        super().__init__(
-            init_cash,
-            tick_size,
-            tape_display_length,
-            n_hist=self.n_hist,
-            book_mode=self._cfg("book_mode"),
-            action_mask=self._cfg("action_mask"),
-            matching_rule=self._cfg("matching_rule"),
-            step_clearing=self._cfg("step_clearing"),
-            liquidation=self._cfg("liquidation"),
-            maintenance_margin=self._cfg("maintenance_margin"),
-            liquidation_horizon=self._cfg("liquidation_horizon"),
-            mark_price_source=mark_price_source,
-            min_size=min_size,
-            mkt_max_size=mkt_max_size,
-            limit_size_multiple=limit_size_multiple,
-            initial_price_min=self._cfg("initial_price_min"),
-            initial_price_max=self._cfg("initial_price_max"),
-            position_scale=position_scale,
-            order_penalty=order_penalty,
-            trade_penalty=trade_penalty,
-            drawdown_penalty=drawdown_penalty,
-            passive_bonus=passive_bonus,
-            loss_multiplier=loss_multiplier,
-            dead_action_penalty=dead_action_penalty,
-        )
+        super().__init__(**settings.helper_kwargs())
 
         self.next_states = {}
         self.rewards = {}

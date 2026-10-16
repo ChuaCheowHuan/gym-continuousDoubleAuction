@@ -96,11 +96,8 @@ class Trader:
             there's any unfilled.
         """
 
-        trades, order_in_book = [],[]
-
-        if(side == None): # do nothing to LOB
-            #print('side == None')
-            return trades, order_in_book
+        if side is None:  # do nothing to LOB
+            return [], []
 
         # A modify with nothing to modify is a miss, settled before the cash
         # check and before self-match prevention: the cash check would call it
@@ -111,53 +108,44 @@ class Trader:
         if (type == 'modify' and self._can_act()
                 and self._replaced_order_id(LOB, type, side, price, slot) is None):
             self.acc.num_unmatched_step += 1
-            return trades, order_in_book
+            return [], []
 
-        # normal execution
-        if self._order_approved(side, size, price, LOB, type, slot=slot):
-            # Before the order can reach the matcher. Every regulated venue
-            # runs self-match prevention, and this one needs it more than
-            # most: `Exchg_Helper.mark_to_mkt` marks *every* account off a
-            # single market price, so one self-traded contract at a chosen
-            # price used to re-price the whole market including the
-            # self-trader's own reward (doc/15 S2-5).
-            self._prevent_self_match(LOB, type, side, price)
-
-            order = self._create_order(type, side, size, price, slot=slot)
-
-            # Option B: Flag only Market and Limit orders for entry penalty
-            if order.get('type') in ['market', 'limit']:
-                self.acc.order_step_placed = 1
-
-            if order['type'] == 'market':
-                trades, order_in_book = LOB.process_order(order, False, False)
-            elif order['type'] == 'limit':
-                trades, order_in_book = self._place_limit_order(LOB, order)
-            elif order['type'] == 'modify':
-                trades, order_in_book = self._modify_limit_order(LOB, order)
-            elif order['type'] == 'cancel':
-                trades, order_in_book = self._cancel_limit_order(LOB, order)
-            else: # order == {} do nothing to LOB
-                return trades, order_in_book
-
-            if trades != []: # if trades took placed in this order
-                _normalise_trade_sizes(trades)
-                self._process_trades(trades, agents)
-
-            self.acc.order_in_book_passive_party(order_in_book) # if there's any unfilled
-            return trades, order_in_book
-
-        else: # not enough cash to place order
-            #print('Invalid order: order value > cash available.', self.ID)
-
-            # print("\nOrder NOT approved: -ve NAV for trader_ID {}.\n".format(self.ID))
-
+        if not self._order_approved(side, size, price, LOB, type, slot=slot):
             # A refusal used to leave no trace at all: the agent asked to trade
             # and the book never heard about it. Counted so the rejection rate
             # is measurable - a policy quoting past its cash every step looks
             # identical to a passive one from returns alone (doc/11 2.2).
             self.acc.num_rejected_step += 1
-            return trades, order_in_book
+            return [], []
+
+        # Before the order can reach the matcher. Every regulated venue
+        # runs self-match prevention, and this one needs it more than
+        # most: `Exchg_Helper.mark_to_mkt` marks *every* account off a
+        # single market price, so one self-traded contract at a chosen
+        # price used to re-price the whole market including the
+        # self-trader's own reward (doc/15 S2-5).
+        self._prevent_self_match(LOB, type, side, price)
+
+        order = self._create_order(type, side, size, price, slot=slot)
+
+        # Option B: Flag only Market and Limit orders for entry penalty
+        if order.get('type') in ['market', 'limit']:
+            self.acc.order_step_placed = 1
+
+        placer = self._PLACERS.get(order['type'])
+        if placer is None:  # order == {}: do nothing to LOB
+            return [], []
+        trades, order_in_book = getattr(self, placer)(LOB, order)
+
+        if trades != []:  # if trades took placed in this order
+            _normalise_trade_sizes(trades)
+            self._process_trades(trades, agents)
+
+        self.acc.order_in_book_passive_party(order_in_book)  # if there's any unfilled
+        return trades, order_in_book
+
+    def _place_market_order(self, LOB, order):
+        return LOB.process_order(order, False, False)
 
     def _prevent_self_match(self, LOB, type: str, side: Optional[str], price: float) -> int:
         """Cancel this trader's own resting orders the incoming order would cross.
@@ -853,6 +841,14 @@ class Trader:
             return orderBook.asks.order_map
         else:
             return None
+
+    #: How each order type reaches the book, by method name; `place_order` looks the type up here.
+    _PLACERS = {
+        'market': '_place_market_order',
+        'limit': '_place_limit_order',
+        'modify': '_modify_limit_order',
+        'cancel': '_cancel_limit_order',
+    }
 
     def settle_batch(self, trades: List[dict], order_in_book, agents: Sequence["Trader"]) -> int:
         """Account for what `OrderBook.clear_batch` did with this trader's order.

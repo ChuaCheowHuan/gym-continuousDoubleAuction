@@ -30,13 +30,17 @@ def _plain(value):
     if isinstance(value, np.ndarray):
         if value.ndim == 0:
             return value.item()
-        return [_plain(v) for v in value.tolist()]
+        # `tolist()` already yields Python scalars and lists all the way down, so
+        # there is nothing left to convert (issue #258).
+        return value.tolist()
     if isinstance(value, np.generic):
         return value.item()
     if isinstance(value, dict):
-        return {k: _plain(v) for k, v in value.items()}
+        # The pass-through test is inlined: a call per plain field was most of the
+        # recursion (issue #258), and a dict's values are nearly all plain.
+        return {k: v if type(v) in _PASS_THROUGH else _plain(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
-        return [_plain(v) for v in value]
+        return [v if type(v) in _PASS_THROUGH else _plain(v) for v in value]
     return value
 
 

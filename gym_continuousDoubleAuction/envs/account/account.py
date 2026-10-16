@@ -62,6 +62,27 @@ def validate_fee_rates(maker_fee_bps, taker_fee_bps) -> None:
         )
 
 
+#: The counters that describe one environment step and are zeroed after it (issue #255),
+#: each with its zero. Listed once: `Account.clear_step_counters` zeroes them, and a test
+#: holds the list to the `*_step` attributes `reset_acc` creates, so a new per-step
+#: counter cannot be added to one and forgotten in the other. `liquidation_steps_left`
+#: is not here: it carries across steps.
+STEP_COUNTERS = (
+    ("num_trades_step", 0),
+    ("fill_qty_step", 0),
+    ("fill_value_step", Decimal(0)),
+    ("num_passive_fills_step", 0),
+    ("order_step_placed", 0),
+    ("num_rejected_step", 0),
+    ("num_unmatched_step", 0),
+    ("num_obs_clipped_step", 0),
+    ("num_liquidations_step", 0),
+    ("liquidated_book_qty_step", 0),
+    ("liquidated_adl_qty_step", 0),
+    ("adl_qty_step", 0),
+)
+
+
 class Account(Calculate, Cash_Processor):
     def __init__(self, ID: int, cash=UNSET, maker_fee_bps=UNSET, taker_fee_bps=UNSET) -> None:
         # UNSET means the configured default, read now rather than at import.
@@ -71,14 +92,22 @@ class Account(Calculate, Cash_Processor):
             maker_fee_bps = env_default("maker_fee_bps")
         if taker_fee_bps is UNSET:
             taker_fee_bps = env_default("taker_fee_bps")
-        self.ID = ID
-        self.cash = Decimal(cash)
         # Exchange fees, in basis points of a fill's notional (doc/15 S2-3).
         # Rates belong to the account for its life: `reset_acc` clears what
         # was paid, not what is charged. A negative maker rate is a rebate.
         validate_fee_rates(maker_fee_bps, taker_fee_bps)
         self.maker_fee_bps = Decimal(str(maker_fee_bps))
         self.taker_fee_bps = Decimal(str(taker_fee_bps))
+        self.reset_acc(ID, cash)
+
+    def reset_acc(self, ID: int, cash=UNSET) -> None:
+        """Put the account in its opening state. `__init__` calls this, so a field exists
+        in one place: a field added here is in both the first episode and every later one
+        (issue #255). The fee rates are set once in `__init__` and are not touched."""
+        if cash is UNSET:
+            cash = env_default("init_cash")
+        self.ID = ID
+        self.cash = Decimal(cash)
         # Cumulative fees this account has paid this episode (negative if it
         # has net received rebates). The exchange's ledger is the sum of these
         # over all accounts, which is what keeps money conserved:
@@ -196,47 +225,10 @@ class Account(Calculate, Cash_Processor):
         self.drawdown = 0.0 # max_nav - nav, the level the penalty uses
         self.reward_terms = {} # signed contributions, summing to self.reward
 
-    def reset_acc(self, ID: int, cash=env_default("init_cash")) -> None:
-        self.ID = ID
-        self.cash = Decimal(cash)
-        # nav is used to calculate P&L & r per t step
-        self.cash_on_hold = Decimal(0) # cash deducted for placing order = cash - value of live order in LOB
-        self.position_val = Decimal(0) # value of net_position
-        # nav is used to calculate P&L & r per t step
-        self.init_nav = Decimal(cash) # starting nav @t = 0
-        self.nav = Decimal(cash) # nav @t (nav @ end of a single t-step)
-        self.prev_nav = Decimal(cash) # nav @t-1
-        self.fees_paid = Decimal(0) # the rates stay; what was paid does not
-        self.realised_pnl = Decimal(0)
-        self.fill_qty_step = 0
-        self.fill_value_step = Decimal(0)
-        # assuming only one ticker (1 type of contract)
-        self.net_position = 0 # number of contracts currently holding long (positive) or short (negative)
-        self.cost_basis = Decimal(0) # exact sum of trade values; see __init__
-        # The real cost basis; see __init__ for why it is not VWAP.
-        self.entry_vwap = Decimal(0)
-        self.profit = Decimal(0) # profit @ each trade(tick) within a single t step
-        self.total_profit = Decimal(0) # profit at the end of a single t-step
-        self.num_trades = 0
-        self.reward = 0.0
-
-        # New metrics for improved reward function
-        self.max_nav = Decimal(cash)
-        self.num_trades_step = 0
-        self.num_passive_fills_step = 0
-        self.order_step_placed = 0
-        self.num_rejected_step = 0
-        self.num_unmatched_step = 0
-        self.num_obs_clipped_step = 0
-        self.num_liquidations_step = 0
-        self.liquidated_book_qty_step = 0
-        self.liquidated_adl_qty_step = 0
-        self.adl_qty_step = 0
-        self.liquidation_steps_left = 0
-
-        # See __init__ for what these are and why they exist.
-        self.drawdown = 0.0
-        self.reward_terms = {}
+    def clear_step_counters(self) -> None:
+        """Zero the per-step counters (`STEP_COUNTERS`) once the step's outputs are built."""
+        for name, zero in STEP_COUNTERS:
+            setattr(self, name, zero)
 
     @property
     def VWAP(self) -> Decimal:

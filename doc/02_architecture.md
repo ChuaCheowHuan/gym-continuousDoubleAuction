@@ -172,7 +172,12 @@ gym_continuousDoubleAuction/
 │   └── agent/
 │       └── trader.py                      order lifecycle + trade settlement
 ├── train/
-│   ├── train.py                        TrainConfig, build_algo, checkpointing, progress.jsonl, CLI
+│   ├── train.py                        train(); re-exports the names below, `python -m ...train.train`
+│   ├── config.py                       TrainConfig (every knob, from train_config.json)
+│   ├── build.py                        build_config, build_algo
+│   ├── checkpoint.py                   save/retention, league sidecar, restore checks, optimiser fix
+│   ├── progress.py                     progress.jsonl, the driver-side NAV check, iteration metrics
+│   ├── cli.py                          argument parsing, logging set-up, main
 │   ├── runtime.py                      platform + hardware profile resolution (Colab / docker)
 │   ├── episode_record.py               EpisodeRecorder: the Parquet per-step record
 │   ├── policy/policy_handler.py        MultiRLModuleSpec, module ID conventions
@@ -185,6 +190,9 @@ gym_continuousDoubleAuction/
 │   ├── probe/                          reward-free encoder scoring (doc/23)
 │   ├── pretrain/                       offline JEPA pretraining (doc/24)
 │   ├── callbk/…_self_play_callback.py  league: champions, matchmaking, metrics, the record
+│   ├── callbk/nav_audit.py             the NAV conservation audit: ledger reads, sum, report
+│   ├── callbk/league_stats.py          idle/valid returns, best trainable, candidate trades
+│   ├── callbk/activity.py              the per-episode tally and the info readers
 │   ├── evaluate.py                     roll episodes with a checkpoint's policies (S4-12)
 │   ├── export.py                       one module's weights out of a checkpoint (doc/26 26.9.2)
 │   └── compare.py                      seeded encoder sweep, each run scored by the probe
@@ -193,7 +201,7 @@ gym_continuousDoubleAuction/
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   ├── inspect_latest_episode*.py        print the newest episode as a table or JSON
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               1,703 unit tests
+└── test/                               1,800 unit tests
     └── integration/                    172 tests that build real Algorithms
 ```
 
