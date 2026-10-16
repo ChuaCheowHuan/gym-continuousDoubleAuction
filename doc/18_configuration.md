@@ -512,6 +512,7 @@ differs from what RLlib or the earlier config gave:
 | `entropy_decay_iters` | `ppo` | 16 | Iterations over which it falls, linearly in env steps (one iteration is `train_batch_size` steps). At least 1 |
 | `std_dev_multiplier` | `league_self_play` | 1.5 | A champion must beat `league_mean + multiplier × league_std`. Was 0.1 |
 | `promotion_reference` | `league_self_play` | `pooled` | Which modules the promotion threshold is computed over: `pooled` (all, the frozen random baselines included) or `excluding_baselines` (trainable modules and champions). While the latter set is too small for `std_dev_multiplier` to be clearable (two learners and no champion) the threshold falls back to the pooled one, and `result["league"]["reference"]` says which was used |
+| `markout_horizons` | `league_self_play` | `[1, 10]` | Steps ahead at which each fill is marked against the mid, logged as `module_markout_<h>` (adverse selection: positive when the price moved the agent's way after the fill). Positive integers; `[]` switches them off (#286) |
 | `min_champion_trades` | `league_self_play` | 1.0 | Mean trades per episode, over the iteration, the candidate needs to be promoted. 0 turns the guard off |
 
 `entropy_coeff` and `entropy_coeff_final` both 0 builds the config it always did. They reach RLlib

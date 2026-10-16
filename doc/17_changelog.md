@@ -3922,3 +3922,26 @@ an opt-in flag (#122), exclude the baselines behind a default-off key (#124). On
   #124's `excluding_baselines` still compares returns that depend on the role played; it removes the baselines' contribution, not
   the role dependence of the rest.
 - **Tests.** `test_s3_moderate_fixes.py` (38). Unit 1,540 to 1,578; suite 1,763.
+
+## 80. S4-minor: the twelve open issues (#286, #273, #268, #267, #266, #251, #250, #249, #248, #247)
+
+Ten of the twelve fixed. **#152** (five mixins sharing one `self`) and **#148** (a formatter pass and a coverage threshold) were not
+touched: the first is a redesign of the env, the second a deliberate non-action, and both stay open for the owner to decide.
+
+- **#273, #266, #267, #251.** The layout-version message points at doc/05 "Compatibility"; the CI smoke command quoted in CLAUDE.md and
+  doc/27 is the one in `.github/workflows/tests.yml`; doc/27's built skills are links plus evidence; stale texts corrected. Each has a
+  test comparing the text with its source (`test_s4_docs_and_tooling.py`).
+- **#268.** Config keys and CLI flags that no document mentioned are documented (doc/18, doc/24, doc/26), and a test fails when a key or flag
+  is mentioned nowhere.
+- **#249, #250.** `test_lint` now covers `tools/` and the skill scripts and checks it reaches the directories it claims to;
+  `tools/check_links.py` covers more files and runs as a test (`test_links.py`), since CI cannot be edited.
+- **#247.** Hardening: `Account` defaults resolved at call time through a private `UNSET` sentinel; a `RuntimeError` instead of an assert in
+  the order book; `settle_batch` checks affordability first; `reset` forwards `seed` and `options`; `config_loader.flat_view` serves
+  `TrainConfig` from one cached flattening (23.3 ms to 3.6 ms per instance); one `POOLINGS` for the three encoders.
+- **#248.** Profiled first, then only the hot spots: a fast path for plain scalars in `info_helper._plain` and a reference price cached
+  per book snapshot. 2.20 to 1.82 ms per step on 8 agents. Left alone: the auction (5%), `_order_approved`'s running totals, `run_all`.
+- **#286.** See doc/15 S3-9. Identity checked in 19,200 agent-steps with no violation before it was wired in.
+- **Not claimed.** That mark-outs or the split say anything about learning; they are measurements. The speed-ups are on random play with
+  8 agents, not on a training run.
+- **Tests.** `test_s4_docs_and_tooling.py` (17), `test_links.py` (8), `test_s4_hardening.py` (59), `test_pnl_split_and_markouts.py` (39);
+  `test_lint.py` 1 to 3. Unit 1,578 to 1,703; suite 1,888.

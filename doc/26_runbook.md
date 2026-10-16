@@ -98,19 +98,19 @@ import and reads its config tree relative to the repository root
 Three checks, cheapest first. All three are what CI runs ([10](10_testing.md) §7).
 
 ```bash
-# 1. the simulator and the training-side units: ~1 min, 1,578 tests (incl. pyflakes and Hypothesis)
+# 1. the simulator and the training-side units: ~1 min, 1,703 tests (incl. pyflakes and Hypothesis)
 python -m pytest gym_continuousDoubleAuction/test -q \
     --ignore=gym_continuousDoubleAuction/test/integration
 
 # 2. a random-agent episode through the whole env, no learning: a few seconds
 python -m gym_continuousDoubleAuction.CDA_rand --steps 200 --agents 4
 
-# 3. RLlib wiring, real Algorithm builds, save/restore, evaluate: ~3 min, 172 tests
+# 3. RLlib wiring, real Algorithm builds, save/restore, evaluate: ~3 min, 185 tests
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 ```
 
-Expected: `1363 passed`, a line reading `completed 200 steps with 4 random agents.`, and
-`172 passed`. `pytest` is the only runner that works; `python test_x.py` defines classes and exits
+Expected: `1703 passed`, a line reading `completed 200 steps with 4 random agents.`, and
+`185 passed`. `pytest` is the only runner that works; `python test_x.py` defines classes and exits
 ([10](10_testing.md) §0).
 
 `CDA_rand` also takes `--init-cash` (each trader's starting cash; the default is in
