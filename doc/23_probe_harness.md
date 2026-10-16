@@ -60,7 +60,7 @@ it also lands in `run.log`; `--out` writes it to a file as well.
 | `--encoders` | Architectures scored **untrained** — the inductive-bias baseline |
 | `--checkpoint` / `--module-id` | A trained module, scored alongside them |
 | `--targets` / `--horizons` | Which microstructure quantities, how far ahead |
-| `--episodes` / `--steps` / `--agents` / `--seed` | The random-agent rollout corpus |
+| `--episodes` / `--steps` / `--agents` / `--seed` | The random-agent rollout corpus, always in the default env layout (`train.compare` instead passes its run's config to `from_rollouts(env_config=...)`) |
 | `--parquet` / `--max-rows` | Use `episode_record` output instead of rollouts |
 
 ---

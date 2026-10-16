@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (1,567 tests: 1,388 unit + 179 integration)
+# everything (1,575 tests: 1,396 unit + 179 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -116,6 +116,7 @@ Counts re-measured with `--collect-only`.
 | `test_entry_points.py` | 8 | The two documented entry points work: `gymnasium.make("continuousDoubleAuction-v0")`, and `visualize/` being importable from a wheel |
 | `test_cbp_recurrent.py` | 21 | CBP on an LSTM core: which parameters are a unit, a replacement that leaves the new unit inert and moves the function only by the old unit's contribution, Adam's moments cleared for exactly the reset entries, and discovery on the real encoders under each scope (S3-32) |
 | `test_cbp.py` | 55 | Continual Backprop's algorithm core, with no Ray and no `Algorithm` — §6.6.1 |
+| `test_probe_corpus_config.py` | 8 | The probe corpus follows the run's env config: `book_mode` and `n_hist` change its width, explicit arguments win, the caller's dict is untouched, and `train.compare` hands its overridden config to the corpus (#261) |
 | `test_compare.py` | 18 | The encoder comparison driver's aggregation: means and standard deviations across seeds, the separation rule and its three-seed floor, the rendered table and its caveats |
 | `test_export.py` | 20 | `train.export`'s pure half: which module is the winner, the no-champion and foreign-layout messages, and what the written record carries (doc/26 §26.9.2) |
 | `test_lint.py` | 1 | The package is pyflakes-clean; any message fails the suite (S4-6) |
@@ -148,7 +149,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((1,567 tests))
+  root((1,575 tests))
     Simulator
       orderbook 57
         components, matching, invariants
