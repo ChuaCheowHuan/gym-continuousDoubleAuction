@@ -43,6 +43,27 @@ def _newest_snapshot(obs):
     return flat[(n_hist - 1) * SNAPSHOT_DIM : n_hist * SNAPSHOT_DIM]
 
 
+def _book_sizes(observations):
+    """Total bid and ask size per recorded observation, and how many were empty.
+
+    The recorder writes `[]` when an observation was unavailable. Such a step
+    gets NaN, not a slice: `_newest_snapshot` rightly raises on it, and one
+    empty row used to abort the whole plot (issue #240). NaN keeps the series
+    aligned with the price plot's steps and leaves a gap in the line.
+    """
+    total_bid_size, total_ask_size, skipped = [], [], 0
+    for obs in observations:
+        if np.asarray(obs).size == 0:
+            total_bid_size.append(np.nan)
+            total_ask_size.append(np.nan)
+            skipped += 1
+            continue
+        snapshot = _newest_snapshot(obs)
+        total_bid_size.append(snapshot[obs_row_slice("bid_size")].sum())
+        total_ask_size.append(snapshot[obs_row_slice("ask_size")].sum())
+    return total_bid_size, total_ask_size, skipped
+
+
 def visualize_episode_data(run_dir=None, episode_id=None, agent_id=None):
     """
     Visualizes price and size changes for the orderbook, for one agent, over
@@ -78,14 +99,10 @@ def visualize_episode_data(run_dir=None, episode_id=None, agent_id=None):
     best_bids = episode["best_bid"].to_numpy()
     best_asks = episode["best_ask"].to_numpy()
 
-    total_bid_size = []
-    total_ask_size = []
-    for obs in episode["obs"]:
-        snapshot = _newest_snapshot(obs)
-        b_s = snapshot[obs_row_slice("bid_size")]
-        a_s = snapshot[obs_row_slice("ask_size")]
-        total_bid_size.append(b_s.sum())
-        total_ask_size.append(a_s.sum())
+    total_bid_size, total_ask_size, skipped = _book_sizes(episode["obs"])
+    if skipped:
+        print(f"{skipped} of {len(episode)} steps had no recorded observation "
+              "and are gaps in the size plot.")
 
     # Plotting
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)

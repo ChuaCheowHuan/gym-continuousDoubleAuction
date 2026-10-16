@@ -1,6 +1,7 @@
 import glob
 import json
 import os
+import warnings
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -64,8 +65,28 @@ def load_progress(run_dir=None):
     if not os.path.isfile(path):
         raise FileNotFoundError(f"{path} does not exist")
 
+    rows, skipped = [], 0
     with open(path) as fh:
-        rows = [json.loads(line) for line in fh if line.strip()]
+        for line in fh:
+            if not line.strip():
+                continue
+            # `progress.jsonl` is appended while training runs, so a run still
+            # in progress, or killed mid-write, ends in a partial line. The
+            # completed iterations are worth plotting (issue #240).
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                row = None
+            if not isinstance(row, dict) or "training_iteration" not in row:
+                skipped += 1
+                continue
+            rows.append(row)
+    if skipped:
+        warnings.warn(
+            f"{path}: skipped {skipped} line(s) that are not a complete iteration "
+            "record (a run in progress, or one killed mid-write, ends in one)",
+            stacklevel=2,
+        )
     if not rows:
         raise ValueError(f"{path} contains no rows")
 
