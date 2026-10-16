@@ -21,7 +21,7 @@ import pytest
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
     continuousDoubleAuctionEnv,
 )
-from gym_continuousDoubleAuction.envs.exchg.liquidation_helper import Liquidation_Helper
+from gym_continuousDoubleAuction.envs.exchg.liquidation_helper import LiquidationEngine
 
 CASH = 10000
 TOTAL = Decimal(4 * CASH)
@@ -71,7 +71,7 @@ class TestTheTrigger:
         # 0.3 x 90 x 175 = 4,725 - so margin called, not yet bankrupt.
         assert env.mark_price() == Decimal(175)
         assert env.traders[0].acc.nav == Decimal(3250)
-        assert env._in_breach(env.traders[0], env.mark_price())
+        assert env.liquidation_engine.in_breach(env.traders[0], env.mark_price())
 
     def test_a_fully_paid_long_never_breaches(self):
         """The cash check escrows 100% of an opening order, so a long's
@@ -83,7 +83,7 @@ class TestTheTrigger:
         env.mark_to_mkt()
         assert env.mark_price() == Decimal(2)
         # agent_1: 1,000 cash + 90 x 2 = 1,180 of equity on 180 of value.
-        assert not env._in_breach(env.traders[1], env.mark_price())
+        assert not env.liquidation_engine.in_breach(env.traders[1], env.mark_price())
         assert env.liquidate() == []
 
 
@@ -203,14 +203,14 @@ class TestADLSplit:
 
     def test_pro_rata_is_exact_in_whole_contracts(self):
         ts = [self._T(1, 60), self._T(2, 30)]
-        shares = dict((t.ID, q) for t, q in Liquidation_Helper._pro_rata(ts, 40, 90))
+        shares = dict((t.ID, q) for t, q in LiquidationEngine._pro_rata(ts, 40, 90))
         # 26.67 and 13.33: floors 26 and 13, the residue to the larger remainder.
         assert shares == {1: 27, 2: 13}
 
     def test_nobody_gives_more_than_they_hold(self):
         ts = [self._T(i, p) for i, p in enumerate((1, 1, 1, 97), start=1)]
         for q in range(1, 101):
-            shares = Liquidation_Helper._pro_rata(ts, q, 100)
+            shares = LiquidationEngine._pro_rata(ts, q, 100)
             assert sum(s for _, s in shares) == q
             assert all(s <= abs(t.acc.net_position) for t, s in shares)
 
@@ -382,7 +382,7 @@ class TestTheBandAllowsForTheTakerFee:
     def test_the_band_is_the_price_at_which_nav_after_the_fee_is_zero(self):
         env = self._near_bankrupt()
         trader = env.traders[0]
-        band = env._bankruptcy_price(trader, env.mark_price())
+        band = env.liquidation_engine._bankruptcy_price(trader, env.mark_price())
         # Buying 90 at p costs 90 (p - 210) + 0.001 x 90 p; that equals the NAV
         # of 91 at p = (210 + 91 / 90) / 1.001 = 210.8, snapped down.
         assert band == Decimal(210)
@@ -411,7 +411,7 @@ class TestTheBandAllowsForTheTakerFee:
         _order(env, 2, "limit", "bid", 1, 209.0)
         _order(env, 1, "limit", "ask", 90, 211.0)
         env.mark_to_mkt()
-        assert env._bankruptcy_price(env.traders[0], env.mark_price()) == Decimal(211)
+        assert env.liquidation_engine._bankruptcy_price(env.traders[0], env.mark_price()) == Decimal(211)
 
     def test_closing_a_long_sells_no_lower_than_the_fee_adjusted_price(self):
         """A fully paid long cannot reach the breach in a real run, so the
@@ -423,4 +423,4 @@ class TestTheBandAllowsForTheTakerFee:
         trader = env.traders[0]
         trader.acc.net_position = 90
         trader.acc.nav = Decimal(100)
-        assert env._bankruptcy_price(trader, Decimal(100)) == Decimal(100)
+        assert env.liquidation_engine._bankruptcy_price(trader, Decimal(100)) == Decimal(100)

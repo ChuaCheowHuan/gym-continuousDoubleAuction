@@ -362,7 +362,9 @@ class TestEnvSettings:
         from gym_continuousDoubleAuction.envs.settings import EnvSettings
         kwargs = EnvSettings.from_config({}).helper_kwargs()
         assert not set(kwargs) & EnvSettings.ENV_ONLY
-        assert {"init_cash", "n_hist", "book_mode", "liquidation", "dead_action_penalty"} <= set(kwargs)
+        assert {"init_cash", "n_hist", "book_mode", "liquidation"} <= set(kwargs)
+        assert not set(kwargs) & set(EnvSettings.REWARD_KEYS)
+        assert set(EnvSettings.from_config({}).reward_kwargs()) == set(EnvSettings.REWARD_KEYS)
 
     @pytest.mark.parametrize("override,message", [
         ({"num_of_agents": 0}, "num_of_agents must be at least 1"),

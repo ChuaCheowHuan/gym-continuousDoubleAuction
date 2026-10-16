@@ -49,15 +49,26 @@ def _as_float(value):
     return None if value is None else float(value)
 
 
-class Info_Helper(object):
+class InfoBuilder(object):
+    """Builds an agent's `info` for a step (issue #152).
 
-    def set_info(self, infos: Dict[str, Dict[str, Any]], trader) -> Dict[str, Dict[str, Any]]:
+    Was `Info_Helper`, a mixin that read the mark price, the market snapshot, the pass set
+    and the model actions off the env. It holds nothing; the exchange passes them in.
+    """
+
+    def set_info(self, infos: Dict[str, Dict[str, Any]], trader, *, mark, pass_agents,
+                 last_price, best_bid, best_ask, spread, model_actions
+                 ) -> Dict[str, Dict[str, Any]]:
         """
         Update the infos dictionary with the latest data from the trader.
 
         Args:
             infos (dict): Dictionary of agent information.
             trader (object): A trader object with an account containing reward, nav, and num_trades.
+            mark: The price the accounts were marked at this step.
+            pass_agents: The agents that chose to do nothing this step.
+            last_price, best_bid, best_ask, spread: The market state after the step.
+            model_actions: The actions the models emitted this step, or None.
 
         Returns:
             dict: Updated infos dictionary.
@@ -120,7 +131,7 @@ class Info_Helper(object):
             # realised + unrealised - fees_paid` holds on the Decimals, to the
             # last digit the ledger keeps.
             "realised_pnl": float(acc.realised_pnl),
-            "unrealised_pnl": float(acc.unrealised_pnl(self.mark_price())),
+            "unrealised_pnl": float(acc.unrealised_pnl(mark)),
             # This step's fills, signed (buys +): contracts and price x contracts.
             # A mark-out at horizon h is `qty x mid_{t+h} - value`.
             "fill_qty_step": acc.fill_qty_step,
@@ -130,7 +141,7 @@ class Info_Helper(object):
         # Did this agent choose to do nothing this step? The two behaviours a
         # return series cannot tell apart: passing, and quoting past your cash
         # so that every order is refused.
-        info["is_pass_action"] = agent_key in self.pass_agents
+        info["is_pass_action"] = agent_key in pass_agents
 
         # Reward decomposition (doc/11 2.4). The five signed contributions that
         # sum to `reward`, so the variance split in doc/07 6.4 is measurable
@@ -146,16 +157,16 @@ class Info_Helper(object):
         # check depends on it; these are read for plots and diagnostics, where a
         # float is both sufficient and directly usable. None stays None.
         info.update({
-            "last_price": _as_float(self.last_price),
-            "best_bid": _as_float(self.best_bid),
-            "best_ask": _as_float(self.best_ask),
-            "spread": _as_float(self.spread),
+            "last_price": _as_float(last_price),
+            "best_bid": _as_float(best_bid),
+            "best_ask": _as_float(best_ask),
+            "spread": _as_float(spread),
         })
 
         # The action this agent actually submitted, as the model emitted it -
         # before set_actions reshapes it for the LOB. Set at the top of step()
         # and None before the first one.
-        model_actions = self.model_actions or {}
+        model_actions = model_actions or {}
         if agent_key in model_actions:
             info["model_action"] = _plain(model_actions[agent_key])
 

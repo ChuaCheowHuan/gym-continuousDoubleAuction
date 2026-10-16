@@ -1,5 +1,7 @@
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Dict, Tuple
+from typing import Any, Dict, Tuple
+
+from .shared_state import SharedState
 
 import numpy as np
 from collections import deque
@@ -266,7 +268,7 @@ ACTION_MASK_OFFSET = action_mask_offset(K_ROWS)
 OBSERVATION_LAYOUT_VERSION = 6
 
 
-class State_Helper(object):
+class State_Helper(SharedState):
 
     def __init__(self, n_hist=env_default("n_hist"),
                  initial_price_min=env_default("initial_price_min"),
@@ -373,7 +375,7 @@ class State_Helper(object):
 
         # True when the book has changed since `agg_LOB_raw` was last built,
         # so `step()` knows whether the pre-action snapshot must be rebuilt.
-        # `set_agg_LOB` clears it; `Done_Helper.set_done` sets it when it pulls
+        # `set_agg_LOB` clears it; `EpisodeStatus.set_done` sets it, through `invalidate_snapshot`, when it pulls
         # a bankrupt trader's orders after the post-action snapshot was taken.
         self._snapshot_stale = True
 
@@ -410,7 +412,7 @@ class State_Helper(object):
         # exactly the same code as every later one - a reset that laid the two
         # blocks out differently would be invisible until a policy trained on
         # it behaved oddly at step 0.
-        states = {}
+        states: Dict[str, Any] = {}
         for trader in self.traders:
             # No step has completed at reset, so `time_left` is a full 1.0.
             states = self.set_next_state(states, trader, stacked_obs,
@@ -678,7 +680,7 @@ class State_Helper(object):
             elapsed_steps = self.t_step + 1
         acc = trader.acc
 
-        # Guarded on the same rule as `Reward_Helper.set_reward`: a
+        # Guarded on the same rule as `RewardModel.set_reward`: a
         # non-positive starting NAV makes every ratio here undefined, and
         # silently emitting inf/nan into the observation is worse than failing.
         scale = float(acc.init_nav)
@@ -796,8 +798,8 @@ class State_Helper(object):
         own_bid = np.zeros(k, dtype=np.float32)
         own_ask = np.zeros(k, dtype=np.float32)
 
-        n_bid = sum(1 for o in self.LOB.bids.order_map.values() if o.trade_id == trader.ID)
-        n_ask = sum(1 for o in self.LOB.asks.order_map.values() if o.trade_id == trader.ID)
+        n_bid = len([o for o in self.LOB.bids.order_map.values() if o.trade_id == trader.ID])
+        n_ask = len([o for o in self.LOB.asks.order_map.values() if o.trade_id == trader.ID])
 
         if self.book_mode == "grid":
             R = self.reference_price()
@@ -919,6 +921,10 @@ class State_Helper(object):
         next_states[f'agent_{trader.ID}'] = clipped
 
         return next_states
+
+    def invalidate_snapshot(self) -> None:
+        """Say the book changed since `agg_LOB_raw` was built, so the next step rebuilds it."""
+        self._snapshot_stale = True
 
     def set_agg_LOB(self) -> np.ndarray:
         """

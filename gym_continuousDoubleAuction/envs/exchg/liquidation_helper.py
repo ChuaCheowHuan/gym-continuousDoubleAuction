@@ -26,7 +26,7 @@ NAV reaches zero meanwhile there is nothing left to protect and the remainder
 is closed at once. A horizon of 1 is `market_adl`.
 
 Afterwards the trader is flat. With NAV > 0 it keeps trading on what is left,
-as a margin-called account does; with NAV <= 0 `Done_Helper.set_done`
+as a margin-called account does; with NAV <= 0 `EpisodeStatus.set_done`
 terminates it as before - but now flat, so its NAV is frozen and exact rather
 than drifting with a position it can no longer manage (the trapped short that
 reached -1.9M in CDA_train.ipynb).
@@ -41,11 +41,13 @@ from __future__ import annotations
 import math
 import numbers
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
-from typing import Dict, List
+from typing import Dict, List, Optional
 
+from ..account.account import UNSET
 from ..agent.trader import _normalise_trade_sizes
 from ...config_loader import env_default
 from ...logging_setup import get_logger
+from .venue import Venue
 
 logger = get_logger(__name__)
 
@@ -55,7 +57,13 @@ def _is_finite_number(value) -> bool:
             and math.isfinite(value))
 
 
-class Liquidation_Helper(object):
+class LiquidationEngine(object):
+    """Margin calls, forced closes and auto-deleveraging, for one exchange (issue #152).
+
+    Was `Liquidation_Helper`, a mixin that reached into the env for its traders, book, mark
+    and tick. It is given a `Venue` and uses only that.
+    """
+
     #: `market_adl`: maintenance margin, then the book, then ADL, all in the
     #: step the breach is seen. `gradual_adl`: the same, spread over up to
     #: `liquidation_horizon` steps so the book can refill between slices, ADL
@@ -64,11 +72,11 @@ class Liquidation_Helper(object):
     #: reads none/null as None.
     LIQUIDATION_MODES = ("market_adl", "gradual_adl", "off")
 
-    def __init__(self, liquidation=env_default("liquidation"),
-                 maintenance_margin=env_default("maintenance_margin"),
-                 liquidation_horizon=env_default("liquidation_horizon"), **kwargs):
+    def __init__(self, venue: Venue, liquidation=UNSET, maintenance_margin=UNSET,
+                 liquidation_horizon=UNSET):
         """
         Arguments:
+            venue: The exchange this engine liquidates on.
             liquidation: One of `LIQUIDATION_MODES`.
             maintenance_margin: The equity a position must keep, as a fraction
                 of its value at the mark. A trader is liquidated when
@@ -78,7 +86,13 @@ class Liquidation_Helper(object):
                 liquidation may take before ADL closes the remainder. 1 is
                 `market_adl`.
         """
-        super().__init__(**kwargs)
+        if liquidation is UNSET:
+            liquidation = env_default("liquidation")
+        if maintenance_margin is UNSET:
+            maintenance_margin = env_default("maintenance_margin")
+        if liquidation_horizon is UNSET:
+            liquidation_horizon = env_default("liquidation_horizon")
+        self.venue = venue
         if liquidation not in self.LIQUIDATION_MODES:
             raise ValueError(
                 f"liquidation must be one of {self.LIQUIDATION_MODES}; got {liquidation!r}."
@@ -103,14 +117,14 @@ class Liquidation_Helper(object):
 
     # ------------------------------------------------------------------ trigger
 
-    def margin_ratio(self, trader, mark) -> Decimal:
+    def margin_ratio(self, trader, mark) -> Optional[Decimal]:
         """Equity over position value at `mark`; None when flat."""
         pos = trader.acc.net_position
         if pos == 0 or mark is None or mark <= 0:
             return None
         return trader.acc.nav / (abs(pos) * mark)
 
-    def _in_breach(self, trader, mark) -> bool:
+    def in_breach(self, trader, mark) -> bool:
         pos = trader.acc.net_position
         if pos == 0 or mark is None or mark <= 0:
             return False
@@ -147,8 +161,8 @@ class Liquidation_Helper(object):
 
         events = []
         if self.liquidation == "gradual_adl":
-            mark = self.mark_price()
-            under_way = [t for t in self.traders if self.is_live(t) and self._liquidating(t)]
+            mark = self.venue.mark_price()
+            under_way = [t for t in self.venue.traders if self.venue.is_live(t) and self._liquidating(t)]
             for trader in sorted(under_way, key=lambda t: (self.margin_ratio(t, mark) or 0, t.ID)):
                 if trader.acc.net_position == 0:
                     # Flattened meanwhile - by another liquidation's ADL.
@@ -156,14 +170,14 @@ class Liquidation_Helper(object):
                     continue
                 if trader.acc.nav <= 0:
                     continue  # no equity left: closed in full below
-                events.append(self._close_slice(trader, self.mark_price()))
+                events.append(self._close_slice(trader, self.venue.mark_price()))
                 self._remark_keeping_prev_nav()
 
-        for _ in range(2 * len(self.traders)):
-            mark = self.mark_price()
-            due = [t for t in self.traders if self.is_live(t) and (
+        for _ in range(2 * len(self.venue.traders)):
+            mark = self.venue.mark_price()
+            due = [t for t in self.venue.traders if self.venue.is_live(t) and (
                 (self._liquidating(t) and t.acc.net_position != 0 and t.acc.nav <= 0)
-                or (not self._liquidating(t) and self._in_breach(t, mark)))]
+                or (not self._liquidating(t) and self.in_breach(t, mark)))]
             if not due:
                 break
             trader = min(due, key=lambda t: (self.margin_ratio(t, mark), t.ID))
@@ -179,8 +193,8 @@ class Liquidation_Helper(object):
     def _margin_call(self, trader):
         """Pull every resting order; their escrow returns to cash, and no forced
         order can then meet one of the trader's own."""
-        if trader.cancel_all_orders(self.LOB):
-            self._snapshot_stale = True
+        if trader.cancel_all_orders(self.venue.LOB):
+            self.venue.invalidate_snapshot()
 
     def _liquidate_one(self, trader, mark) -> Dict:
         """Close the whole position now: the book inside the band, ADL the rest."""
@@ -268,7 +282,7 @@ class Liquidation_Helper(object):
         logger.info(
             "liquidation (%s) of agent_%s at t_step %s: position %s, NAV %s, mark %s; "
             "%s closed in the book (band %s), %s by ADL, %s steps left",
-            kind, trader.ID, getattr(self, "t_step", "?"), position, nav_before,
+            kind, trader.ID, self.venue.t_step, position, nav_before,
             mark, book_qty, band, adl_qty, trader.acc.liquidation_steps_left,
         )
         return event
@@ -294,7 +308,7 @@ class Liquidation_Helper(object):
         conservative for it.
         """
         acc = trader.acc
-        tick = Decimal(str(self.min_tick))
+        tick = Decimal(str(self.venue.min_tick))
         rate = acc.taker_fee_bps.scaleb(-4)
         cushion = max(acc.nav, Decimal(0)) / abs(acc.net_position)
         if acc.net_position < 0:  # closing a short: buy, at most this
@@ -327,12 +341,12 @@ class Liquidation_Helper(object):
         before = abs(trader.acc.net_position)
         quote = {'type': 'limit', 'side': side, 'quantity': int(quantity),
                  'price': band, 'trade_id': trader.ID}
-        trades, order_in_book = self.LOB.process_order(quote, False, False)
+        trades, order_in_book = self.venue.LOB.process_order(quote, False, False)
         if order_in_book:
-            self.LOB.cancel_order(side, order_in_book['order_id'])
+            self.venue.LOB.cancel_order(side, order_in_book['order_id'])
         if trades:
             _normalise_trade_sizes(trades)
-            trader._process_trades(trades, self.traders)
+            trader._process_trades(trades, self.venue.traders)
         trader.acc.num_trades_step = own_step_trades
         # Not the agent's execution either, so not a mark-out candidate (issue #286).
         trader.acc.fill_qty_step, trader.acc.fill_value_step = own_fill
@@ -355,8 +369,8 @@ class Liquidation_Helper(object):
         `last_price`.
         """
         buying = trader.acc.net_position < 0
-        opposite = [t for t in self.traders
-                    if t is not trader and self.is_live(t)
+        opposite = [t for t in self.venue.traders
+                    if t is not trader and self.venue.is_live(t)
                     and (t.acc.net_position > 0 if buying else t.acc.net_position < 0)]
         available = sum(abs(t.acc.net_position) for t in opposite)
         if available < quantity:
@@ -408,7 +422,7 @@ class Liquidation_Helper(object):
         slice of the step. `prev_nav` is put back so the reward still spans
         the whole step, including the close-out.
         """
-        prev = [t.acc.prev_nav for t in self.traders]
-        self.mark_to_mkt()
-        for t, p in zip(self.traders, prev):
+        prev = [t.acc.prev_nav for t in self.venue.traders]
+        self.venue.mark_to_mkt()
+        for t, p in zip(self.venue.traders, prev):
             t.acc.prev_nav = p

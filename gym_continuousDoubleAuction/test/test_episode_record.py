@@ -186,7 +186,7 @@ class TestWhatIsWritten:
         assert df["spread"].isna().all()
 
     def test_an_unknown_info_field_is_preserved_as_json(self, tmp_path):
-        """A field added to Info_Helper must not be silently dropped by a
+        """A field added to InfoBuilder must not be silently dropped by a
         schema written before it existed."""
         recorder = EpisodeRecorder(str(tmp_path))
         _run(recorder, something_new=7)
@@ -247,14 +247,14 @@ class TestSchema:
             assert f"reward_term_{term}" in names
 
     def test_it_covers_what_the_env_actually_emits(self):
-        """The drift guard. A field added to `Info_Helper.set_info` should get a
+        """The drift guard. A field added to `InfoBuilder.set_info` should get a
         column; this fails if one is added and forgotten, which is how a
         columnar record quietly turns back into a blob.
         """
-        from gym_continuousDoubleAuction.envs.exchg.info_helper import Info_Helper
+        from gym_continuousDoubleAuction.envs.exchg.info_helper import InfoBuilder
         import inspect
 
-        source = inspect.getsource(Info_Helper.set_info)
+        source = inspect.getsource(InfoBuilder.set_info)
         # The literal keys the helper writes, as they appear in the source.
         emitted = {
             line.split('"')[1]
@@ -266,7 +266,7 @@ class TestSchema:
         }
         # Reward-term names appear in the helper's own dict, not in info.
         assert emitted - known - set(REWARD_TERMS) == set(), (
-            "Info_Helper emits fields the episode record has no column for. Add "
+            "InfoBuilder emits fields the episode record has no column for. Add "
             "them to INFO_COLUMNS, or accept that they land in info_extra."
         )
 

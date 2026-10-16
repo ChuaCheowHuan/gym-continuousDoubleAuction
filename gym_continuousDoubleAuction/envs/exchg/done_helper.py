@@ -1,9 +1,23 @@
-from typing import Dict, Tuple
+from typing import Dict, List, Set, Tuple
+
+from .venue import Venue
 
 
-class Done_Helper(object):
+class EpisodeStatus(object):
+    """Which traders are out of the episode, and whether the episode is over (issue #152).
 
-    def set_done(self, terminateds: Dict[str, bool], trader) -> Dict[str, bool]:
+    Was `Done_Helper`, a mixin that read the env's `LOB`, `agents`, `traders`, `t_step` and
+    `episode_horizon` off `self`. It owns `done_set` now and is handed the rest.
+    """
+
+    def __init__(self) -> None:
+        self.done_set: Set[str] = set()
+
+    def reset(self) -> None:
+        """A new episode: nobody is out."""
+        self.done_set = set()
+
+    def set_done(self, terminateds: Dict[str, bool], trader, venue: Venue) -> Dict[str, bool]:
         """
         When trader is broke (NAV <= 0), he's done ;)
 
@@ -35,10 +49,10 @@ class Done_Helper(object):
             self.done_set.add(agent) # done_set is a set
             terminateds[agent] = True
             # Its orders outlive it otherwise - see the docstring.
-            if trader.cancel_all_orders(self.LOB):
+            if trader.cancel_all_orders(venue.LOB):
                 # The post-action snapshot predates this; the next step must
                 # rebuild its pre-action view rather than reuse it.
-                self._snapshot_stale = True
+                venue.invalidate_snapshot()
 
         return terminateds
 
@@ -51,34 +65,38 @@ class Done_Helper(object):
         """
         return f'agent_{trader.ID}' not in self.done_set
 
-    def set_all_done(self, terminateds: Dict[str, bool]) -> Tuple[Dict[str, bool], Dict[str, bool]]:
+    def set_all_done(self, terminateds: Dict[str, bool], agents: List[str], num_traders: int,
+                     t_step: int, episode_horizon: int
+                     ) -> Tuple[Dict[str, bool], Dict[str, bool], List[str]]:
         """
         Complete the per-agent `terminateds` and derive the two `__all__` keys.
 
         Args:
             terminateds (dict): Per-agent flags, already carrying `True` for
                 any agent `set_done` terminated on this step.
+            agents: The agents active going into this step.
+            num_traders: How many traders there are, live or not.
+            t_step: Index of the step being completed.
+            episode_horizon: Steps in this episode.
 
         Returns:
-            (dict, dict): `terminateds` and `truncateds`.
+            (dict, dict, list): `terminateds`, `truncateds`, and the agents still active.
         """
         # Fill in the agents still live, without disturbing the `True`s
         # `set_done` put here - overwriting them is what made this a no-op.
         # Agents terminated on an *earlier* step are omitted entirely: RLlib
         # expects a terminated agent to stop appearing, and re-reporting it
         # would send a second terminal transition for the same agent.
-        for agent in self.agents:
+        for agent in agents:
             terminateds.setdefault(agent, False)
         truncateds = {agent: False for agent in terminateds}
 
-        # `self.agents` is the *currently active* set, as distinct from
-        # `possible_agents`. RLlib's MultiAgentEnv draws that distinction and
-        # this env never used to update either.
-        self.agents = [agent for agent in self.agents
-                       if agent not in self.done_set]
+        # The *currently active* set, as distinct from `possible_agents`. RLlib's
+        # MultiAgentEnv draws that distinction and this env never used to update either.
+        agents = [agent for agent in agents if agent not in self.done_set]
 
         # Check if all traders are done
-        all_agents_done = len(self.done_set) == len(self.traders)
+        all_agents_done = len(self.done_set) == num_traders
 
         # Check if max step has been reached.
         #
@@ -92,9 +110,9 @@ class Done_Helper(object):
         # understated the batch by one step per episode.
         # `episode_horizon`, not `max_step`: the two agree in the fixed
         # mode and differ when the horizon was drawn at reset.
-        episode_timed_out = self.t_step + 1 >= self.episode_horizon
+        episode_timed_out = t_step + 1 >= episode_horizon
 
         terminateds["__all__"] = True if all_agents_done else False
         truncateds["__all__"] = True if episode_timed_out else False
 
-        return terminateds, truncateds
+        return terminateds, truncateds, agents

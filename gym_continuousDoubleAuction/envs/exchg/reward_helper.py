@@ -1,16 +1,18 @@
 from typing import Dict
 
 from ...config_loader import env_default
+from ..account.account import UNSET
 
-class Reward_Helper(object):
 
-    def __init__(self, order_penalty=env_default("order_penalty"),
-                 trade_penalty=env_default("trade_penalty"),
-                 drawdown_penalty=env_default("drawdown_penalty"),
-                 passive_bonus=env_default("passive_bonus"),
-                 loss_multiplier=env_default("loss_multiplier"),
-                 dead_action_penalty=env_default("dead_action_penalty"),
-                 **kwargs):
+class RewardModel(object):
+    """The reward formula, as an object the exchange owns (issue #152).
+
+    Was `Reward_Helper`, a mixin of the env. Nothing in it used the env: it reads a trader's
+    account and its own coefficients, so it is a plain class and the exchange calls it.
+    """
+
+    def __init__(self, order_penalty=UNSET, trade_penalty=UNSET, drawdown_penalty=UNSET,
+                 passive_bonus=UNSET, loss_multiplier=UNSET, dead_action_penalty=UNSET):
         """
         Coefficients of the reward formula in `set_reward`.
 
@@ -35,9 +37,22 @@ class Reward_Helper(object):
                 the market. That is finding S1-3, and it is why this ships at
                 1.0 rather than the 1.5 it had.
 
-        Defaults come from `config/env_defaults.json`. A training run sets all
-        five from `train_config.json` via `TrainConfig.env_config`.
+        Defaults come from `config/env_defaults.json`, read when the model is built. A
+        training run sets all of them from `train_config.json` via
+        `TrainConfig.env_config`.
         """
+        if order_penalty is UNSET:
+            order_penalty = env_default("order_penalty")
+        if trade_penalty is UNSET:
+            trade_penalty = env_default("trade_penalty")
+        if drawdown_penalty is UNSET:
+            drawdown_penalty = env_default("drawdown_penalty")
+        if passive_bonus is UNSET:
+            passive_bonus = env_default("passive_bonus")
+        if loss_multiplier is UNSET:
+            loss_multiplier = env_default("loss_multiplier")
+        if dead_action_penalty is UNSET:
+            dead_action_penalty = env_default("dead_action_penalty")
         self.order_penalty = order_penalty
         self.trade_penalty = trade_penalty
         self.drawdown_penalty = drawdown_penalty
@@ -48,8 +63,6 @@ class Reward_Helper(object):
         # on is a measured decision. The miss reaches the policy anyway
         # through the `unmatched_last_step` observation field (doc/15 S3-24).
         self.dead_action_penalty = dead_action_penalty
-
-        super().__init__(**kwargs)
 
     def set_reward(self, rewards: Dict[str, float], trader) -> Dict[str, float]:
         """

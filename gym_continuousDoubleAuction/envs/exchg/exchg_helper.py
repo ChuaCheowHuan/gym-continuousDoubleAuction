@@ -3,11 +3,12 @@ import pandas as pd
 
 from .state_helper import State_Helper
 from .action_helper import Action_Helper
-from .reward_helper import Reward_Helper
-from .done_helper import Done_Helper
-from .info_helper import Info_Helper
-from .liquidation_helper import Liquidation_Helper
+from .reward_helper import RewardModel
+from .done_helper import EpisodeStatus
+from .info_helper import InfoBuilder
+from .liquidation_helper import LiquidationEngine
 
+from ..account.account import UNSET
 from ..orderbook.orderbook import OrderBook
 from ...config_loader import env_default
 from ...logging_setup import get_logger
@@ -16,10 +17,43 @@ from tabulate import tabulate
 
 logger = get_logger(__name__)
 
-class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Liquidation_Helper,
-                   Done_Helper, Info_Helper):
+def _delegated(component: str, name: str) -> property:
+    """A read-write property that forwards `name` to `self.<component>`.
+
+    The env's long-standing attributes (`env.order_penalty`, `env.done_set`,
+    `env.maintenance_margin`, ...) now live on the component that owns them; these keep
+    them readable (and settable, as tests do) where callers have always looked.
+    """
+    return property(lambda self: getattr(getattr(self, component), name),
+                    lambda self, value: setattr(getattr(self, component), name, value))
+
+
+class Exchg_Helper(State_Helper, Action_Helper):
+    """The exchange: the book, the traders' step, and the components it composes (issue #152).
+
+    Reward, episode status, info and liquidation used to be mixins sharing this object's
+    `self`. They are `reward_model`, `episode_status`, `info_builder` and
+    `liquidation_engine` now; the methods below are the exchange's own entry points to them.
+    State and action stay mixins: they read and write the same dozens of attributes, and
+    `SharedState` names them.
+    """
+
     #: Accepted values of the `mark_price_source` config key.
     MARK_PRICE_SOURCES = ("mid", "last")
+
+    #: The reward coefficients, forwarded to `reward_model`.
+    order_penalty = _delegated("reward_model", "order_penalty")
+    trade_penalty = _delegated("reward_model", "trade_penalty")
+    drawdown_penalty = _delegated("reward_model", "drawdown_penalty")
+    passive_bonus = _delegated("reward_model", "passive_bonus")
+    loss_multiplier = _delegated("reward_model", "loss_multiplier")
+    dead_action_penalty = _delegated("reward_model", "dead_action_penalty")
+    #: The liquidation settings, forwarded to `liquidation_engine`.
+    liquidation = _delegated("liquidation_engine", "liquidation")
+    maintenance_margin = _delegated("liquidation_engine", "maintenance_margin")
+    liquidation_horizon = _delegated("liquidation_engine", "liquidation_horizon")
+    #: The agents out of the episode, owned by `episode_status`.
+    done_set = _delegated("episode_status", "done_set")
 
     def __init__(self, init_cash=env_default("init_cash"),
                  tick_size=env_default("tick_size"),
@@ -28,6 +62,8 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Liquidation_Helpe
                  mark_price_source=env_default("mark_price_source"),
                  matching_rule=env_default("matching_rule"),
                  step_clearing=env_default("step_clearing"),
+                 reward_model=None,
+                 liquidation=UNSET, maintenance_margin=UNSET, liquidation_horizon=UNSET,
                  **kwargs):
         # tick_size goes on to Action_Helper as well: it is the tick the action
         # space quotes on, not just a property of the book.
@@ -74,6 +110,16 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Liquidation_Helpe
         self.model_actions = None
         self.LOB_actions = None
         self.shuffled_actions = None
+
+        # The composed components (issue #152). The reward model and the info builder
+        # need nothing from this object; the episode status and the liquidation engine are
+        # handed it as their `Venue` and use only that.
+        self.reward_model = reward_model if reward_model is not None else RewardModel()
+        self.episode_status = EpisodeStatus()
+        self.info_builder = InfoBuilder()
+        self.liquidation_engine = LiquidationEngine(
+            self, liquidation=liquidation, maintenance_margin=maintenance_margin,
+            liquidation_horizon=liquidation_horizon)
 
         # Top of book at the last `set_market_snapshot`; None until a step.
         self.best_bid = None
@@ -271,7 +317,7 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Liquidation_Helpe
             # A trader terminated on an earlier step is not scored again. It
             # still holds an account (the NAV-conservation check sums every
             # trader, live or not), it simply stops producing transitions -
-            # see `Done_Helper.set_done` and doc/15 S2-4.
+            # see `EpisodeStatus.set_done` and doc/15 S2-4.
             if not self.is_live(trader):
                 continue
 
@@ -289,6 +335,37 @@ class Exchg_Helper(State_Helper, Action_Helper, Reward_Helper, Liquidation_Helpe
         dones, truncateds = self.set_all_done(dones)
 
         return next_states, rewards, dones, truncateds, infos
+
+    # ---- the components' entry points: what the env and its tests call by name ----
+
+    def set_reward(self, rewards, trader):
+        """Score the trader's step into `rewards` (see `RewardModel.set_reward`)."""
+        return self.reward_model.set_reward(rewards, trader)
+
+    def set_done(self, terminateds, trader):
+        """Terminate the trader if it is broke (see `EpisodeStatus.set_done`)."""
+        return self.episode_status.set_done(terminateds, trader, self)
+
+    def is_live(self, trader) -> bool:
+        """Whether the trader still takes part in the episode."""
+        return self.episode_status.is_live(trader)
+
+    def set_all_done(self, terminateds):
+        """Complete `terminateds`, derive truncation, and narrow `agents` to the live ones."""
+        terminateds, truncateds, self.agents = self.episode_status.set_all_done(
+            terminateds, self.agents, len(self.traders), self.t_step, self.episode_horizon)
+        return terminateds, truncateds
+
+    def set_info(self, infos, trader):
+        """Fill the trader's `info` for the step (see `InfoBuilder.set_info`)."""
+        return self.info_builder.set_info(
+            infos, trader, mark=self.mark_price(), pass_agents=self.pass_agents,
+            last_price=self.last_price, best_bid=self.best_bid, best_ask=self.best_ask,
+            spread=self.spread, model_actions=self.model_actions)
+
+    def liquidate(self):
+        """Run this step's liquidations (see `LiquidationEngine.liquidate`)."""
+        return self.liquidation_engine.liquidate()
 
     # The print_* methods below keep their names - they are the render path,
     # called only from `_render` - but write to the logger at DEBUG rather than

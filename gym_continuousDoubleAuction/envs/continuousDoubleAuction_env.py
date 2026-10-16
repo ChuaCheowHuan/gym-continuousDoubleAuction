@@ -10,6 +10,7 @@ from ray.rllib.env.multi_agent_env import MultiAgentEnv
 
 from .exchg.exchg_helper import Exchg_Helper
 from .agent.trader import Trader
+from .exchg.reward_helper import RewardModel
 from .settings import EnvSettings
 from ..config_loader import env_default
 from ..logging_setup import get_logger
@@ -57,13 +58,14 @@ class continuousDoubleAuctionEnv(
         self.n_hist = settings.n_hist
 
         # Initialize parent classes
-        super().__init__(**settings.helper_kwargs())
+        super().__init__(reward_model=RewardModel(**settings.reward_kwargs()),
+                         **settings.helper_kwargs())
 
         self.next_states = {}
         self.rewards = {}
         self.terminateds = {}  # Changed from dones
         self.truncateds = {}   # New in Ray 2.4
-        self.done_set = set()
+        self.episode_status.reset()
         self.infos = {}
 
         # step when actions by all traders are executed, not tick time
@@ -212,7 +214,7 @@ class continuousDoubleAuctionEnv(
         self.rewards = {}
         self.terminateds = {}  # Changed from dones
         self.truncateds = {}   # New in Ray 2.4
-        self.done_set = set()
+        self.episode_status.reset()
         self.infos = {}
 
         # `set_all_done` narrows this to the agents still live, so a new

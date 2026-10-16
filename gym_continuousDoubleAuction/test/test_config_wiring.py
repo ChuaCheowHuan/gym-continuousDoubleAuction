@@ -1,7 +1,7 @@
 """The `env_config` keys promoted from hardcoded literals actually take effect.
 
 The reward coefficients and the order-sizing knobs were literals inside
-`Reward_Helper.set_reward` and `Action_Helper.__init__` until they became config
+`RewardModel.set_reward` and `Action_Helper.__init__` until they became config
 keys. They reach their consumers through a cooperative `__init__` chain across
 the env mixins, where a single mixin that calls `super().__init__()` without
 forwarding `**kwargs` silently drops every key downstream of it - and the env
