@@ -31,6 +31,7 @@ import json
 import os
 import sys
 import time
+import zlib
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
@@ -101,6 +102,44 @@ def act(module, obs: np.ndarray, deterministic: bool, normalize: bool, clip: boo
     return action
 
 
+def seed_sampling(modules: Dict[str, Any], seed: int) -> None:
+    """Seed everything an action is drawn from, so `--seed` makes sampling repeat.
+
+    `--seed` pinned the env reset and the league's opponent draw, but a module's
+    action comes from `dist.sample()` (torch's global RNG) or, for the random
+    baselines, from `action_space.sample()` (the space's own generator), and
+    neither was seeded: two runs with the same seed on one checkpoint gave
+    different returns, so a comparison of two checkpoints could measure sampling
+    noise (issue #243). Each module's space gets its own stream, derived from the
+    seed and the module id so it does not depend on the order modules are listed.
+    """
+    import torch
+
+    torch.manual_seed(seed)
+    for module_id in sorted(modules):
+        space = getattr(modules[module_id], "action_space", None)
+        if space is not None:
+            space.seed(int(np.random.SeedSequence(
+                [seed, zlib.crc32(module_id.encode())]).generate_state(1)[0]))
+
+
+def apply_max_step(env_config: Dict[str, Any], max_step: Optional[int]) -> Dict[str, Any]:
+    """`env_config` with `max_step` overridden the way the checkpoint's mode reads it.
+
+    In `random` episode-length mode the env draws each episode's horizon from
+    `[max_step_min, max_step_max]` and ignores `max_step`, so overriding
+    `max_step` alone did nothing, silently (issue #263). Both bounds are set to
+    the requested length there, which is what "evaluate for N steps" means.
+    """
+    config = dict(env_config)
+    if not max_step:
+        return config
+    config["max_step"] = max_step
+    if config.get("episode_length_mode") == "random":
+        config["max_step_min"] = config["max_step_max"] = max_step
+    return config
+
+
 def roll_episode(algo, env, mapping_fn, episode_index: int, seed: Optional[int],
                  deterministic: bool) -> Dict[str, Any]:
     """Play one episode to termination or truncation; return its per-agent record."""
@@ -114,6 +153,8 @@ def roll_episode(algo, env, mapping_fn, episode_index: int, seed: Optional[int],
 
     assignment = {agent: str(mapping_fn(agent, _Episode())) for agent in env.possible_agents}
     modules = {mid: algo.get_module(mid) for mid in set(assignment.values())}
+    if seed is not None:
+        seed_sampling(modules, seed + episode_index)
 
     totals: Dict[str, Dict[str, float]] = {
         agent: {"return": 0.0, **{f: 0 for f in ACTIVITY_FIELDS}} for agent in env.possible_agents
@@ -219,8 +260,10 @@ def evaluate(checkpoint: str, episodes: int, seed: Optional[int], deterministic:
     register_env(None)
     algo = Algorithm.from_checkpoint(checkpoint)
     try:
+        env_overrides = dict(env_overrides or {})
         env_config = dict(algo.config.env_config)
-        env_config.update(env_overrides or {})
+        env_config = apply_max_step(env_config, env_overrides.pop("max_step", None))
+        env_config.update(env_overrides)
         env_config["is_render"] = False
         env = continuousDoubleAuctionEnv(env_config)
         mapping_fn = algo.config.policy_mapping_fn
@@ -250,8 +293,10 @@ def main(argv=None) -> int:
     p.add_argument("--checkpoint", required=True, help="One iter_<n> directory.")
     p.add_argument("--episodes", type=int, default=_cli("episodes"))
     p.add_argument("--seed", type=int, default=_cli("seed"),
-                   help="Episode i is reset with seed + i, so two checkpoints evaluated with the "
-                        "same seed see the same price anchors and opponent draws.")
+                   help="Episode i is reset with seed + i, and torch and every module's action "
+                        "space are seeded from it too, so two checkpoints evaluated with the "
+                        "same seed see the same price anchors and opponent draws, and one "
+                        "checkpoint's sampled actions repeat.")
     p.add_argument("--deterministic", action="store_true",
                    help="Take each distribution's mode instead of sampling it.")
     p.add_argument("--max-step", type=int, default=None, help="Override the checkpoint's max_step.")
