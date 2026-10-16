@@ -78,3 +78,38 @@ class TestOrderBookBookkeeping:
         assert len(order_list) == 0
         assert order_list.head_order is None and order_list.tail_order is None
         assert list(order_list) == []
+
+
+class TestLayoutStampSaysWhenOnlyTheOrderDiffers:
+    """#234: a reordering is a mismatch, but the message came from set differences."""
+
+    @staticmethod
+    def _message(**changes):
+        from gym_continuousDoubleAuction.envs.layout_version import (
+            check_layout_stamp, layout_stamp)
+        stamp = layout_stamp()
+        stamp.update(changes)
+        with pytest.raises(ValueError) as caught:
+            check_layout_stamp({"layout": stamp}, "ckpt")
+        return str(caught.value)
+
+    def test_a_reordering_names_the_position(self):
+        from gym_continuousDoubleAuction.envs.layout_version import layout_stamp
+        fields = layout_stamp()["private_fields"]
+        swapped = [fields[1], fields[0]] + fields[2:]
+        message = self._message(private_fields=swapped)
+        assert "lacks nothing" not in message
+        assert "order, not membership" in message and "position 0" in message
+        assert repr(fields[1]) in message and repr(fields[0]) in message
+
+    def test_a_reordered_action_keys_listing_says_so_too(self):
+        from gym_continuousDoubleAuction.envs.layout_version import layout_stamp
+        keys = layout_stamp()["action_keys"]
+        message = self._message(action_keys=list(reversed(keys)))
+        assert "action_keys differ in order" in message
+
+    def test_a_missing_field_is_still_named(self):
+        from gym_continuousDoubleAuction.envs.layout_version import layout_stamp
+        fields = layout_stamp()["private_fields"]
+        message = self._message(private_fields=fields[1:])
+        assert f"checkpoint lacks ['{fields[0]}']" in message
