@@ -6,6 +6,7 @@ cannot quietly drift back.
 """
 import ast
 import inspect
+import os
 from decimal import Decimal
 
 import numpy as np
@@ -15,6 +16,9 @@ from gym_continuousDoubleAuction.envs.account import account as account_module
 from gym_continuousDoubleAuction.envs.account.account import STEP_COUNTERS, Account
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import continuousDoubleAuctionEnv
 from gym_continuousDoubleAuction.envs.exchg import info_helper
+
+
+_REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def _stored(function):
@@ -392,3 +396,87 @@ class TestEnvSettings:
     def test_the_constructor_no_longer_reads_keys_one_by_one(self):
         source = inspect.getsource(continuousDoubleAuctionEnv.__init__)
         assert "self._cfg(" not in source
+
+
+_MOVED = {
+    "config": "generate_run_id _default TrainConfig ENV_NAME TRAIN_CONFIG_FILE PROGRESS_FILE "
+              "_BROADCAST_TIMEOUT_S VF_EXPLAINED_VAR_KEY",
+    "build": "register_env make_spaces _next_obs_connector CBP_CONFIG_KEY OPTIMIZER_CONFIG_KEY "
+             "_learner_class _learner_config_dict build_config build_algo log_module_sizes",
+    "checkpoint": "CHECKPOINT_PREFIX CHECKPOINT_TMP_SUFFIX LEAGUE_STATE_FILE _is_checkpoint "
+                  "list_checkpoints save_checkpoint _prune_checkpoints warn_about_foreign_checkpoints "
+                  "algo_callback _write_league_state _read_league_state _reconcile_league_state "
+                  "STRUCTURAL_CONFIG_KEYS UNRESTORABLE_CONFIG_KEYS UNRESTORABLE_WHEN_ACTIVE_KEYS "
+                  "PRE_FEATURE_BEHAVIOUR _config_fingerprint _check_restored_config restore_candidates "
+                  "_fix_checkpoint_optimizer_betas",
+    "progress": "NavConservationError nav_violations _check_nav_conservation _apply_iteration "
+                "_broadcast_iteration _json_safe _append_progress vf_explained_var _log_iteration",
+    "cli": "_parse_args configure_run_logging ray_logging_config main",
+}
+
+
+class TestTrainModuleIsSplit:
+    """#254: `train/train.py` was 2,224 lines holding config, build, checkpointing, progress and CLI."""
+
+    @pytest.mark.parametrize("module", sorted(_MOVED))
+    def test_every_name_is_still_importable_from_train_train(self, module):
+        import importlib
+        train_mod = importlib.import_module("gym_continuousDoubleAuction.train.train")
+        owner = importlib.import_module(f"gym_continuousDoubleAuction.train.{module}")
+        for name in _MOVED[module].split():
+            assert getattr(train_mod, name) is getattr(owner, name), name
+
+    @pytest.mark.parametrize("module", sorted(set(_MOVED) - {"cli"}))
+    def test_a_moved_definition_lives_in_its_new_module(self, module):
+        import importlib
+        owner = importlib.import_module(f"gym_continuousDoubleAuction.train.{module}")
+        for name in _MOVED[module].split():
+            obj = getattr(owner, name)
+            if inspect.isfunction(obj) or inspect.isclass(obj):
+                assert obj.__module__ == owner.__name__, name
+
+    def test_train_py_holds_the_loop_and_the_re_exports_only(self):
+        from gym_continuousDoubleAuction.train import train as train_mod
+        tree = ast.parse(inspect.getsource(train_mod))
+        defined = {n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.ClassDef))}
+        assert defined == {"train", "__getattr__"}
+        assert len(inspect.getsource(train_mod).splitlines()) < 260
+
+    def test_no_module_is_the_old_monolith(self):
+        from gym_continuousDoubleAuction import train as package
+        folder = os.path.dirname(package.__file__)
+        for name in ("config", "build", "checkpoint", "progress", "cli", "train"):
+            with open(os.path.join(folder, name + ".py")) as fh:
+                assert len(fh.read().splitlines()) < 800, name
+
+    def test_the_command_line_names_resolve_lazily_to_cli(self):
+        from gym_continuousDoubleAuction.train import cli
+        from gym_continuousDoubleAuction.train import train as train_mod
+        assert train_mod.main is cli.main and train_mod._parse_args is cli._parse_args
+        with pytest.raises(AttributeError, match="no attribute 'nope'"):
+            train_mod.nope
+
+    @pytest.mark.parametrize("first", ["cli", "checkpoint", "progress"])
+    def test_any_module_can_be_imported_first(self, first):
+        """No import cycle: a fresh interpreter importing the module alone succeeds."""
+        import subprocess
+        import sys
+        result = subprocess.run(
+            [sys.executable, "-I", "-c", f"import gym_continuousDoubleAuction.train.{first}"],
+            capture_output=True, text=True, timeout=240,
+            cwd=_REPO)
+        assert result.returncode == 0, result.stderr[-600:]
+
+    def test_the_documented_command_still_runs(self):
+        import subprocess
+        import sys
+        result = subprocess.run(
+            [sys.executable, "-m", "gym_continuousDoubleAuction.train.train", "--help"],
+            capture_output=True, text=True, timeout=240,
+            cwd=_REPO)
+        assert result.returncode == 0 and "--iters" in result.stdout
+
+    def test_log_lines_keep_the_logger_name_they_always_had(self):
+        from gym_continuousDoubleAuction.train import build, checkpoint, cli, progress
+        for module in (build, checkpoint, cli, progress):
+            assert module.logger.name == "gym_continuousDoubleAuction.train.train"
