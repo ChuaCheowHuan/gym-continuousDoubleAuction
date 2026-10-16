@@ -89,5 +89,18 @@ for dirpath, dirnames, filenames in os.walk("gym_continuousDoubleAuction"):
     tree += [os.path.join(dirpath, f) for f in filenames if f.endswith((".py", ".ipynb"))]
 facts["files"] = sorted(tree)
 
+# Code size, as doc/14 states it: every tracked Python file in the repository.
+# `git ls-files` rather than a walk, so a gitignored build copy or a virtualenv
+# is not counted; a walk is the fallback outside a checkout.
+try:
+    tracked = subprocess.run(["git", "ls-files", "*.py"], capture_output=True, text=True,
+                             check=True).stdout.split()
+except (OSError, subprocess.CalledProcessError):
+    tracked = [os.path.join(d, f) for d, ds, fs in os.walk(".")
+               for f in fs if f.endswith(".py") and ".venv" not in d]
+facts["code"] = {"files": len(tracked),
+                 "lines": sum(len(open(p, encoding="utf-8", errors="ignore").read().splitlines())
+                              for p in tracked if os.path.isfile(p))}
+
 json.dump(facts, open(OUT, "w"), indent=1, default=str)
 print(json.dumps({k: v for k, v in facts.items() if k not in ("config", "files", "flags")}, default=str)[:3000])
