@@ -84,6 +84,57 @@ _TRUE_SPELLINGS = frozenset({"1", "true", "yes", "on"})
 _FALSE_SPELLINGS = frozenset({"0", "false", "no", "off"})
 
 
+def _annotation(field) -> str:
+    """A TrainConfig field's annotation as text, `Optional[...]` and `typing.` removed."""
+    return str(field.type).replace("typing.", "").replace("Optional[", "").rstrip("]")
+
+
+def _parse_container(name: str, raw: str, want: type):
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(
+            f"--set {name}: expected a JSON {want.__name__}, got {raw!r} ({exc})"
+        ) from exc
+    if not isinstance(parsed, want):
+        raise SystemExit(f"--set {name}: expected a JSON {want.__name__}, got {raw!r}")
+    return parsed
+
+
+def _parse_bool(name: str, raw: str) -> bool:
+    # An explicit set each way, and nothing else: `ture` or `enabled`
+    # used to be silently False, and a typo in `action_mask` or
+    # `cbp_enabled` would run a whole sweep with the wrong setting.
+    spelling = raw.strip().lower()
+    if spelling in _TRUE_SPELLINGS:
+        return True
+    if spelling in _FALSE_SPELLINGS:
+        return False
+    raise SystemExit(
+        f"--set {name}: expected a boolean "
+        f"({' '.join(sorted(_TRUE_SPELLINGS))} / "
+        f"{' '.join(sorted(_FALSE_SPELLINGS))}), got {raw!r}"
+    )
+
+
+def _coerce(name: str, raw: str, annotation: str):
+    """One `--set` value as the type its field's annotation names."""
+    # Before the scalar checks: those match substrings, and "List[int]"
+    # contains "int".
+    container = annotation.split("[", 1)[0].lower()
+    if raw.lower() in ("none", "null"):
+        return None
+    if container in ("list", "tuple", "dict"):
+        return _parse_container(name, raw, dict if container == "dict" else list)
+    if "bool" in annotation:
+        return _parse_bool(name, raw)
+    if "int" in annotation:
+        return int(raw)
+    if "float" in annotation:
+        return float(raw)
+    return raw
+
+
 def parse_overrides(items) -> Dict[str, Any]:
     """`FIELD=VALUE` strings into TrainConfig field values of the right type.
 
@@ -103,45 +154,7 @@ def parse_overrides(items) -> Dict[str, Any]:
         name, raw = item.split("=", 1)
         if name not in fields:
             raise SystemExit(f"--set: TrainConfig has no field {name!r}")
-        annotation = (str(fields[name].type).replace("typing.", "")
-                      .replace("Optional[", "").rstrip("]"))
-        # Before the scalar checks: those match substrings, and "List[int]"
-        # contains "int".
-        container = annotation.split("[", 1)[0].lower()
-        if raw.lower() in ("none", "null"):
-            out[name] = None
-        elif container in ("list", "tuple", "dict"):
-            want = dict if container == "dict" else list
-            try:
-                parsed = json.loads(raw)
-            except json.JSONDecodeError as exc:
-                raise SystemExit(
-                    f"--set {name}: expected a JSON {want.__name__}, got {raw!r} ({exc})"
-                ) from exc
-            if not isinstance(parsed, want):
-                raise SystemExit(f"--set {name}: expected a JSON {want.__name__}, got {raw!r}")
-            out[name] = parsed
-        elif "bool" in annotation:
-            # An explicit set each way, and nothing else: `ture` or `enabled`
-            # used to be silently False, and a typo in `action_mask` or
-            # `cbp_enabled` would run a whole sweep with the wrong setting.
-            spelling = raw.strip().lower()
-            if spelling in _TRUE_SPELLINGS:
-                out[name] = True
-            elif spelling in _FALSE_SPELLINGS:
-                out[name] = False
-            else:
-                raise SystemExit(
-                    f"--set {name}: expected a boolean "
-                    f"({' '.join(sorted(_TRUE_SPELLINGS))} / "
-                    f"{' '.join(sorted(_FALSE_SPELLINGS))}), got {raw!r}"
-                )
-        elif "int" in annotation:
-            out[name] = int(raw)
-        elif "float" in annotation:
-            out[name] = float(raw)
-        else:
-            out[name] = raw
+        out[name] = _coerce(name, raw, _annotation(fields[name]))
     return out
 
 

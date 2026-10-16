@@ -21,6 +21,7 @@ from io import StringIO
 from itertools import chain
 from collections import deque # a faster insert/pop queue
 from decimal import Decimal
+from typing import Any, Callable, NamedTuple
 
 import pandas as pd
 
@@ -28,6 +29,19 @@ from .ordertree import OrderTree
 from ...logging_setup import get_logger
 
 logger = get_logger(__name__)
+
+class _Side(NamedTuple):
+    """One side of the book from the point of view of an order resting or arriving on it."""
+    own: Any                    # the tree the order rests in
+    opposite: Any               # the tree it trades against
+    opposite_name: str          # that tree's side name, as `process_order_list` takes it
+    crosses: Callable[[Any], bool]  # whether a limit price reaches the opposite touch
+
+    def best_opposite_list(self):
+        """The orders at the opposite touch (lowest ask for a bid, highest bid for an ask)."""
+        return (self.opposite.min_price_list() if self.opposite_name == 'ask'
+                else self.opposite.max_price_list())
+
 
 class OrderBook(object):
     #: How the quantity that reaches one price level is split among the orders
@@ -521,60 +535,47 @@ class OrderBook(object):
                 results[id(q)] = (tid, trades, q)
         return [results[k] for k in order]
 
+    def _side(self, side, caller):
+        """The two trees an order on `side` works with, as a `_Side`.
+
+        Every operation below is the same for a bid and an ask except which tree is
+        the order's own, which is the one it meets, and the direction of one price
+        comparison. Writing each twice meant a fix to one side could miss the other
+        (issue #256); this is the one place the two are told apart.
+        """
+        if side == 'bid':
+            return _Side(self.bids, self.asks, 'ask', lambda price: price >= self.asks.min_price())
+        if side == 'ask':
+            return _Side(self.asks, self.bids, 'bid', lambda price: price <= self.bids.max_price())
+        raise ValueError(f"{caller}(): side must be 'bid' or 'ask', got {side!r}")
+
     def process_market_order(self, quote, verbose):
         trades = []
         quantity_to_trade = quote['quantity']
-        side = quote['side']
-        if side == 'bid':
-            while quantity_to_trade > 0 and self.asks:
-                best_price_asks = self.asks.min_price_list()
-                quantity_to_trade, new_trades = self.process_order_list('ask', best_price_asks, quantity_to_trade, quote, verbose)
-                trades += new_trades
-        elif side == 'ask':
-            while quantity_to_trade > 0 and self.bids:
-                best_price_bids = self.bids.max_price_list()
-                quantity_to_trade, new_trades = self.process_order_list('bid', best_price_bids, quantity_to_trade, quote, verbose)
-                trades += new_trades
-        else:
-            raise ValueError(
-                f"process_market_order(): side must be 'bid' or 'ask', got {side!r}"
-            )
+        side = self._side(quote['side'], 'process_market_order')
+        while quantity_to_trade > 0 and side.opposite:
+            quantity_to_trade, new_trades = self.process_order_list(
+                side.opposite_name, side.best_opposite_list(), quantity_to_trade, quote, verbose)
+            trades += new_trades
         return trades
 
     def process_limit_order(self, quote, from_data, verbose):
         order_in_book = None
         trades = []
         quantity_to_trade = quote['quantity']
-        side = quote['side']
+        side = self._side(quote['side'], 'process_limit_order')
         price = quote['price']
-        if side == 'bid':
-            while (self.asks and price >= self.asks.min_price() and quantity_to_trade > 0):
-                best_price_asks = self.asks.min_price_list()
-                quantity_to_trade, new_trades = self.process_order_list('ask', best_price_asks, quantity_to_trade, quote, verbose)
-                trades += new_trades
-            # If volume remains, need to update the book with new quantity
-            if quantity_to_trade > 0:
-                if not from_data:
-                    quote['order_id'] = self.next_order_id
-                quote['quantity'] = quantity_to_trade
-                self.bids.insert_order(quote)
-                order_in_book = quote
-        elif side == 'ask':
-            while (self.bids and price <= self.bids.max_price() and quantity_to_trade > 0):
-                best_price_bids = self.bids.max_price_list()
-                quantity_to_trade, new_trades = self.process_order_list('bid', best_price_bids, quantity_to_trade, quote, verbose)
-                trades += new_trades
-            # If volume remains, need to update the book with new quantity
-            if quantity_to_trade > 0:
-                if not from_data:
-                    quote['order_id'] = self.next_order_id
-                quote['quantity'] = quantity_to_trade
-                self.asks.insert_order(quote)
-                order_in_book = quote
-        else:
-            raise ValueError(
-                f"process_limit_order(): side must be 'bid' or 'ask', got {side!r}"
-            )
+        while side.opposite and side.crosses(price) and quantity_to_trade > 0:
+            quantity_to_trade, new_trades = self.process_order_list(
+                side.opposite_name, side.best_opposite_list(), quantity_to_trade, quote, verbose)
+            trades += new_trades
+        # If volume remains, need to update the book with new quantity
+        if quantity_to_trade > 0:
+            if not from_data:
+                quote['order_id'] = self.next_order_id
+            quote['quantity'] = quantity_to_trade
+            side.own.insert_order(quote)
+            order_in_book = quote
         return trades, order_in_book
 
     def cancel_order(self, side, order_id, time=None):
@@ -582,16 +583,9 @@ class OrderBook(object):
             self.time = time
         else:
             self.update_time()
-        if side == 'bid':
-            if self.bids.order_exists(order_id):
-                self.bids.remove_order_by_id(order_id)
-        elif side == 'ask':
-            if self.asks.order_exists(order_id):
-                self.asks.remove_order_by_id(order_id)
-        else:
-            raise ValueError(
-                f"cancel_order(): side must be 'bid' or 'ask', got {side!r}"
-            )
+        own = self._side(side, 'cancel_order').own
+        if own.order_exists(order_id):
+            own.remove_order_by_id(order_id)
 
     def modify_order(self, order_id, order_update, time=None):
 
@@ -605,20 +599,10 @@ class OrderBook(object):
         order_update['timestamp'] = self.time
 
         # Find the existing order to compare parameters
-        if side == 'bid':
-            if not self.bids.order_exists(order_id):
-                return [], None
-            original_order = self.bids.get_order(order_id)
-            tree = self.bids
-        elif side == 'ask':
-            if not self.asks.order_exists(order_id):
-                return [], None
-            original_order = self.asks.get_order(order_id)
-            tree = self.asks
-        else:
-            raise ValueError(
-                f"modify_order(): side must be 'bid' or 'ask', got {side!r}"
-            )
+        tree = self._side(side, 'modify_order').own
+        if not tree.order_exists(order_id):
+            return [], None
+        original_order = tree.get_order(order_id)
 
         original_price = original_order.price
         original_quantity = original_order.quantity
