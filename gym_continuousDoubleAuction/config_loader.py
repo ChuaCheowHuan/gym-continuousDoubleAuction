@@ -36,7 +36,8 @@ import json
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict
+from types import MappingProxyType
+from typing import Any, Dict, Mapping
 
 #: Overrides where `config/` is looked for. Set this to run against an
 #: alternative config tree without touching the checked-in one.
@@ -179,14 +180,35 @@ def flatten(raw: Dict[str, Any], label: str = "config") -> Dict[str, Any]:
     return result
 
 
+@lru_cache(maxsize=None)
+def _flat_from(directory: str, filename: str) -> Mapping[str, Any]:
+    return MappingProxyType(flatten(_load_from(directory, filename), filename))
+
+
 def flat(filename: str) -> Dict[str, Any]:
-    """A config file's groups flattened one level into a single dict."""
-    return flatten(load(filename), filename)
+    """A config file's groups flattened one level into a single dict.
+
+    A deep copy of the cached flattening, for the same reason as `load`.
+    """
+    return copy.deepcopy(dict(_flat_from(str(config_dir()), filename)))
+
+
+def flat_view(filename: str) -> Mapping[str, Any]:
+    """The cached flattening itself, read-only at the top level and NOT copied.
+
+    For a caller that wants one value out of a file many times in a row.
+    `TrainConfig()` reads ~90 fields, and `flat` re-flattened and deep-copied the
+    whole file for each (about 23 ms an instance; issue #247). The mapping cannot
+    be assigned into, but the values in it are the cache's: `copy.deepcopy` the
+    one you take if it is a list or dict.
+    """
+    return _flat_from(str(config_dir()), filename)
 
 
 def reload() -> None:
     """Forget every cached file. Call after changing `$CDA_CONFIG_DIR`."""
     _load_from.cache_clear()
+    _flat_from.cache_clear()
 
 
 # --- Convenience accessors for the most-read groups -------------------------

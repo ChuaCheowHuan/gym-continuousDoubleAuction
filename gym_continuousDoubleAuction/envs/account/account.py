@@ -14,6 +14,12 @@ from tabulate import tabulate
 
 logger = get_logger(__name__)
 
+#: "Use the configured default", for a constructor argument whose default is read when
+#: the object is built rather than when the module is imported. Not `None`: a rate of
+#: `None` is a mistake (`train.compare --set taker_fee_bps=null` produces one) and is
+#: refused by name, not silently replaced by the default.
+UNSET = object()
+
 #: The largest exchange fee, in basis points, an account accepts: a tenth of
 #: the notional. Real venues charge a few; a rate past this is a unit mistake
 #: (a percentage typed as basis points).
@@ -57,9 +63,14 @@ def validate_fee_rates(maker_fee_bps, taker_fee_bps) -> None:
 
 
 class Account(Calculate, Cash_Processor):
-    def __init__(self, ID: int, cash=env_default("init_cash"),
-                 maker_fee_bps=env_default("maker_fee_bps"),
-                 taker_fee_bps=env_default("taker_fee_bps")) -> None:
+    def __init__(self, ID: int, cash=UNSET, maker_fee_bps=UNSET, taker_fee_bps=UNSET) -> None:
+        # UNSET means the configured default, read now rather than at import.
+        if cash is UNSET:
+            cash = env_default("init_cash")
+        if maker_fee_bps is UNSET:
+            maker_fee_bps = env_default("maker_fee_bps")
+        if taker_fee_bps is UNSET:
+            taker_fee_bps = env_default("taker_fee_bps")
         self.ID = ID
         self.cash = Decimal(cash)
         # Exchange fees, in basis points of a fill's notional (doc/15 S2-3).
@@ -317,7 +328,7 @@ class Account(Calculate, Cash_Processor):
             mkt_val = size_left * trade.get('price')
             self.position_val = raw_val + self.cal_profit(position, mkt_val, raw_val)
         else: # size_left == 0
-            mkt_val = self._covered(trade, position)
+            self._covered(trade, position)
         self.size_decrease_cash_transfer(party, trade_val)
         return 0
 

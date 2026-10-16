@@ -18,6 +18,7 @@ From a notebook:
 from __future__ import annotations
 
 import argparse
+import copy
 import dataclasses
 import json
 import logging
@@ -36,7 +37,7 @@ from ray.rllib.algorithms.algorithm import Algorithm
 from ray.rllib.algorithms.ppo import PPOConfig
 
 from gym_continuousDoubleAuction.config_loader import (
-    flat as flat_config,
+    flat_view,
     flatten,
 )
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
@@ -135,13 +136,16 @@ def _default(key: str, *, compare: bool = True):
     """
 
     def factory():
-        values = flat_config(TRAIN_CONFIG_FILE)
+        # The cached view, not `flat_config`: TrainConfig() reads ~90 fields and
+        # the copying version re-flattened the whole file for each one. Only the
+        # value taken is copied, so a list default is still its own object.
+        values = flat_view(TRAIN_CONFIG_FILE)
         if key not in values:
             raise KeyError(
                 f"{TRAIN_CONFIG_FILE} is missing the key {key!r}, which "
                 f"TrainConfig has no default for. Keys found: {sorted(values)}."
             )
-        return values[key]
+        return copy.deepcopy(values[key])
 
     return field(default_factory=factory, compare=compare)
 

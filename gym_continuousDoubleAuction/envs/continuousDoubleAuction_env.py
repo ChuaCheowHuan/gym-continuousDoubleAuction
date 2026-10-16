@@ -265,8 +265,12 @@ class continuousDoubleAuctionEnv(
         # `seed=None` deliberately does not re-seed - the contract is that an
         # env which already has a generator keeps its stream across resets, so
         # consecutive episodes differ.
-        if hasattr(super(), 'reset'):
-            super().reset(seed=seed)
+        #
+        # Called unconditionally: `hasattr(super(), 'reset')` is always true for
+        # an env deriving from gymnasium's, so the guard only hid a missing parent
+        # if one ever stopped existing. `options` is handed on rather than dropped
+        # (issue #247); this env defines none of its own.
+        super().reset(seed=seed, options=options)
 
         # A fresh book. The tick grid is not the book's concern: it keys
         # prices on whatever Decimal it is handed, and `Action_Helper.min_tick`

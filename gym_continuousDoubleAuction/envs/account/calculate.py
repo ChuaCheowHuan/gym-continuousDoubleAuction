@@ -50,10 +50,7 @@ class Calculate(object):
         # `mkt_val` exactly; for a short `2 x cost_basis - mkt_val`.
         raw_val = self.cost_basis
         mkt_val = abs(self.net_position) * mkt_price
-        if self.net_position >= 0:
-            self.profit = mkt_val - raw_val
-        else:
-            self.profit = raw_val - mkt_val
+        self.cal_profit('long' if self.net_position >= 0 else 'short', mkt_val, raw_val)
         self.position_val = raw_val + self.profit
 
         self.prev_nav = self.nav
