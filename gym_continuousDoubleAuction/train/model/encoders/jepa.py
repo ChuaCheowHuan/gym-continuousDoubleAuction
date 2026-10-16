@@ -706,7 +706,16 @@ class TorchJEPAEncoder(TorchModel, Encoder):
         # batch, and it goes to 0 exactly when every observation maps to the
         # same vector.
         flat = online.reshape(-1, online.shape[-1])
-        std = flat.std(dim=0).mean()
+        if flat.shape[0] < 2:
+            # The spread of one row is undefined: the unbiased std is NaN, and
+            # `relu(1 - nan)` carried it into the aux loss, `total_loss` and every
+            # statistic below (issue #242). Reachable with one observation and
+            # one masked token - a final partial pretraining batch. The hinge is
+            # skipped, and `latent_std` says "not measured" rather than a 0 that
+            # would read as a collapse.
+            std = flat.new_full((), float("nan"))
+        else:
+            std = flat.std(dim=0).mean()
 
         # Dimensional collapse: variance held up while dimensions become
         # redundant. Off-diagonal covariance catches what `std` alone misses.
@@ -717,7 +726,9 @@ class TorchJEPAEncoder(TorchModel, Encoder):
 
         # VICReg-style hinge: inactive on a healthy encoder, and the only thing
         # actively pushing back once a collapse starts. It now actually is.
-        variance_penalty = F.relu(VARIANCE_TARGET - std)
+        variance_penalty = (
+            F.relu(VARIANCE_TARGET - std) if flat.shape[0] >= 2 else flat.new_zeros(())
+        )
 
         return {
             "aux_loss": loss + self.variance_coeff * variance_penalty,
