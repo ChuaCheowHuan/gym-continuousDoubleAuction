@@ -464,3 +464,55 @@ class TestCompareTableShowsAFailedRun:
     def test_the_few_seeds_warning_still_counts_usable_runs(self):
         from gym_continuousDoubleAuction.train.compare import render
         assert "Fewer than three seeds" in render(self._rows([1.0, None, 0.9]))
+
+
+class TestSizeHighCannotExceedTheMaximumOrder:
+    """#275: `size_high` had no upper bound, so a config could ask for orders
+    above `mkt_max_size` / `limit_max_size` (249 contracts against a maximum of
+    100 at `size_high: 5.0`)."""
+
+    @staticmethod
+    def _validate(**changes):
+        import json
+        from gym_continuousDoubleAuction.envs.exchg.action_helper import Action_Helper
+        helper = Action_Helper.__new__(Action_Helper)
+        helper._act = {**json.load(open("config/tunable_constants.json"))["action_space"],
+                       **changes}
+        helper._validate_action_space()
+
+    def test_the_shipped_value_passes(self):
+        self._validate()
+
+    def test_the_boundary_is_allowed(self):
+        self._validate(size_high=2.0)
+
+    @pytest.mark.parametrize("too_high", [2.0001, 5.0, 100.0])
+    def test_anything_above_it_is_refused_naming_the_key(self, too_high):
+        with pytest.raises(ValueError, match="size_high"):
+            self._validate(size_high=too_high)
+
+    def test_the_bound_is_exactly_where_an_order_reaches_the_maximum(self):
+        from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
+            continuousDoubleAuctionEnv)
+        from gym_continuousDoubleAuction.envs.exchg.action_helper import SIZE_FRACTION_AT_MAX
+        env = continuousDoubleAuctionEnv({"num_of_agents": 2, "is_render": False})
+        assert SIZE_FRACTION_AT_MAX * env.mkt_size_mul + env.min_size == env.mkt_max_size
+        assert SIZE_FRACTION_AT_MAX * env.limit_size_mul + env.min_size == env.limit_max_size
+
+
+class TestDocSyncSkillDoesNotWriteToTheFilesystemRoot:
+    """#265: `"$TMPDIR/facts.json"` expands to `/facts.json` when `TMPDIR` is unset."""
+
+    SKILL = ".claude/skills/cda-doc-sync/SKILL.md"
+
+    def test_every_tmpdir_use_has_a_default(self):
+        import re
+        text = open(self.SKILL).read()
+        uses = re.findall(r"\$\{?TMPDIR[^/\s\"`]*", text)
+        assert uses, "the skill no longer mentions TMPDIR; delete this test"
+        assert all(use.startswith("${TMPDIR:-") for use in uses), uses
+
+    def test_the_two_steps_name_the_same_file(self):
+        import re
+        paths = set(re.findall(r'"(\$\{TMPDIR:-[^}]+\}/facts\.json)"', open(self.SKILL).read()))
+        assert len(paths) == 1, paths
