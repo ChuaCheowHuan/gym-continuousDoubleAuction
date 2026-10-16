@@ -30,8 +30,8 @@ from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
 
 from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
     NAV_VIOLATIONS_METRIC,
-    REWARD_TERMS,
 )
+from gym_continuousDoubleAuction.train.episode_record import REWARD_TERMS
 from gym_continuousDoubleAuction.train.train import (
     TrainConfig,
     _check_nav_conservation,

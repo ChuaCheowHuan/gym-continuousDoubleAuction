@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (2,052 tests: 1,867 unit + 185 integration)
+# everything (2,072 tests: 1,887 unit + 185 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -132,8 +132,8 @@ Counts re-measured with `--collect-only`.
 | `test_logging_issues.py` | 40 | The logging review's issues under multiple env runners: the kept start of a run log, pruning of worker logs, Ray's own records in the run log (once per record), the driver learning each process's log path, the iteration broadcast to remote learners, a missed broadcast reading `-`, and a worker's console not repeating its file (#216-#221) |
 | `test_composition.py` | 24 | Reward, episode status, info and liquidation as composed components: out of the MRO, usable alone with explicit inputs, the env's old attributes still forwarded, and `SharedState` / `AccountState` naming real attributes (#152) |
 | `test_types.py` | 3 | `mypy` finds nothing in `envs/`, `ruff format --check` finds nothing to change, and the coverage floor stays configured (#148) |
-| `test_refactors.py` | 97 | The refactoring review's issues: `Account` initialised in one place and its step counters listed once, `_plain`'s call count, one order-book routine per operation, `place_order` and `parse_overrides` flat, `clear_batch` as four steps, `EnvSettings` and the generated `env_config`, the `train/` module split with its re-exports and import order, and the NAV audit, league statistics and tally helpers apart from the callback (#252-#258) |
-| **unit total** | **1,867** | |
+| `test_refactors.py` | 117 | The refactoring review's issues: `Account` initialised in one place and its step counters listed once, `_plain`'s call count, one order-book routine per operation, `place_order` and `parse_overrides` flat, `clear_batch` as four steps, `EnvSettings` and the generated `env_config`, the `train/` module split with its re-exports and import order, the callback as a `League` plus an `ActivityLog` plus the NAV audit and league statistics, a real pickle from before that split still loading, and the league and activity log working alone (#252-#258) |
+| **unit total** | **1,887** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -163,7 +163,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((2,052 tests))
+  root((2,072 tests))
     Simulator
       orderbook 57
         components, matching, invariants

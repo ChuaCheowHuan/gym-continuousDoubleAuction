@@ -11,8 +11,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from gym_continuousDoubleAuction.train.callbk.activity import MODULE_PERFORMANCE_PREFIX
 from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
-    MODULE_PERFORMANCE_PREFIX,
     SelfPlayCallback,
 )
 from gym_continuousDoubleAuction.train.performance import METRICS, PerformanceTally

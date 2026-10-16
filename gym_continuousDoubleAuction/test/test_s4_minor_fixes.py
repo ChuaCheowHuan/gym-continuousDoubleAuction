@@ -150,7 +150,7 @@ class TestANoneModuleReturnIsHandledEverywhere:
             min_champion_trades=0,
         )
         made = []
-        cb._create_champion_snapshot_from_policy = lambda algo, pid, value, it: made.append(pid)
+        cb.league.create_snapshot = lambda algo, pid, value, it: made.append(pid)
         returns = {
             "policy_0": 50.0,
             "policy_1": None,

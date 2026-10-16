@@ -9,7 +9,7 @@ processes), [10_testing.md](10_testing.md) §6,
 
 All of it lives in
 [`league_based_self_play_callback.py`](../gym_continuousDoubleAuction/train/callbk/league_based_self_play_callback.py)
-(~1,340 LOC) and
+(~750 LOC, the RLlib hooks and the NAV audit's orchestration), [`league.py`](../gym_continuousDoubleAuction/train/callbk/league.py) (the champions, the pool, the champion check, restore and the mapping function, as `League`), [`activity.py`](../gym_continuousDoubleAuction/train/callbk/activity.py) (the per-episode tallies and their metrics) and
 [`policy_handler.py`](../gym_continuousDoubleAuction/train/policy/policy_handler.py).
 
 ---

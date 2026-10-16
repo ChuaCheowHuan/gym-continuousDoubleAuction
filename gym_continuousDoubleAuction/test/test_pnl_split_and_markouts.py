@@ -15,10 +15,12 @@ from gym_continuousDoubleAuction.envs.account.account import Account
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
     continuousDoubleAuctionEnv,
 )
-from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
+from gym_continuousDoubleAuction.train.callbk.activity import (
     MODULE_PERFORMANCE_PREFIX,
+    market_mid as _market_mid,
+)
+from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
     SelfPlayCallback,
-    _market_mid,
 )
 from gym_continuousDoubleAuction.train.performance import METRICS, PerformanceTally
 from gym_continuousDoubleAuction.train.train import TrainConfig, build_config
@@ -362,7 +364,7 @@ class TestTheCallbackWiring:
 
     def test_a_callback_saved_before_the_key_has_none(self):
         state = _callback().__getstate__()
-        del state["markout_horizons"]
+        del state["activity"]  # a callback saved before the activity log was an object
         old = SelfPlayCallback.__new__(SelfPlayCallback)
         old.__setstate__(state)
         assert old.markout_horizons == ()

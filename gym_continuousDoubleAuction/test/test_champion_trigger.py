@@ -44,8 +44,8 @@ def snapshots(callback, monkeypatch):
     """Records champion creation instead of touching an Algorithm."""
     created = []
     monkeypatch.setattr(
-        callback,
-        "_create_champion_snapshot_from_policy",
+        callback.league,
+        "create_snapshot",
         lambda algorithm, pid, return_value, iteration: created.append(
             (pid, return_value, iteration)
         ),
@@ -259,8 +259,8 @@ class TestLeagueMetrics:
         itself back has not promoted anything, and
         `_create_champion_snapshot_from_policy` swallows its own exceptions."""
         monkeypatch.setattr(
-            callback,
-            "_create_champion_snapshot_from_policy",
+            callback.league,
+            "create_snapshot",
             self._promoter(callback),
         )
         metrics = self._metrics()
@@ -288,7 +288,7 @@ class TestLeagueMetrics:
             {"id": "champion_1", "source_policy": "policy_0", "iteration": 0, "return": 1.0}
         )
         cb.champion_count = 1
-        monkeypatch.setattr(cb, "_create_champion_snapshot_from_policy", self._promoter(cb))
+        monkeypatch.setattr(cb.league, "create_snapshot", self._promoter(cb))
         metrics = self._metrics()
         result = _result({"policy_0": 10.0, "policy_1": 0.0, "policy_5": 0.0}, iteration=3)
         cb.on_train_result(algorithm=object(), metrics_logger=metrics, result=result)
@@ -352,8 +352,8 @@ class TestLeagueStateInTheResult:
             )
 
         monkeypatch.setattr(
-            callback,
-            "_create_champion_snapshot_from_policy",
+            callback.league,
+            "create_snapshot",
             _promote,
         )
         result = _result(

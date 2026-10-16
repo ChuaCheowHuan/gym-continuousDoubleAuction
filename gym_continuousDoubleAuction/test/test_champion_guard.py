@@ -76,8 +76,8 @@ def snapshots(monkeypatch):
 
     def attach(cb):
         monkeypatch.setattr(
-            cb,
-            "_create_champion_snapshot_from_policy",
+            cb.league,
+            "create_snapshot",
             lambda algorithm, pid, value, iteration: created.append(pid),
         )
         return created
@@ -158,12 +158,20 @@ class TestThePromotionGuard:
         assert "not promoting" not in caplog.text
 
 
+def _old_style_state(cb):
+    """`cb.__getstate__()` as a checkpoint written before the league was an object held it:
+    the league's attributes flat on the callback (issue #253)."""
+    state = cb.__getstate__()
+    state.update(vars(state.pop("league")))
+    return state
+
+
 class TestACallbackSavedBeforeTheGuard:
     """A resume takes its callback from the checkpoint, not from the config."""
 
     def _restored(self):
         cb = _callback(std_dev_multiplier=0.1)
-        state = cb.__getstate__()
+        state = _old_style_state(cb)
         del state["min_champion_trades"]
         old = SelfPlayCallback.__new__(SelfPlayCallback)
         old.__setstate__(state)

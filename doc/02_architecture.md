@@ -194,7 +194,8 @@ gym_continuousDoubleAuction/
 │   ├── callbk/…_self_play_callback.py  league: champions, matchmaking, metrics, the record
 │   ├── callbk/nav_audit.py             the NAV conservation audit: ledger reads, sum, report
 │   ├── callbk/league_stats.py          idle/valid returns, best trainable, candidate trades
-│   ├── callbk/activity.py              the per-episode tally and the info readers
+│   ├── callbk/activity.py              ActivityLog: the per-episode tallies and their metrics
+│   ├── callbk/league.py                League: champions, the pool, the champion check, restore, mapping
 │   ├── evaluate.py                     roll episodes with a checkpoint's policies (S4-12)
 │   ├── export.py                       one module's weights out of a checkpoint (doc/26 26.9.2)
 │   └── compare.py                      seeded encoder sweep, each run scored by the probe
@@ -203,7 +204,7 @@ gym_continuousDoubleAuction/
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   ├── inspect_latest_episode*.py        print the newest episode as a table or JSON
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               1,867 unit tests
+└── test/                               1,887 unit tests
     └── integration/                    172 tests that build real Algorithms
 ```
 

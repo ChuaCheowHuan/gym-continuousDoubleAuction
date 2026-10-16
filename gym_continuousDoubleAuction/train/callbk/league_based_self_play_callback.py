@@ -1,38 +1,21 @@
 from decimal import Decimal
 
 import logging
-import math
-import numpy as np
-import zlib
 
 from ray.rllib.callbacks.callbacks import RLlibCallback
-from ray.rllib.core import (
-    COMPONENT_LEARNER,
-    COMPONENT_LEARNER_GROUP,
-    COMPONENT_RL_MODULE,
-)
-from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
 
 from gym_continuousDoubleAuction.config_loader import env_default, group
 from gym_continuousDoubleAuction.logging_setup import get_logger, set_iteration
 from gym_continuousDoubleAuction.train.episode_record import (
     EpisodeRecorder,
-    REWARD_TERMS,
     SAMPLE_END_DRAIN_S,
 )
 from gym_continuousDoubleAuction.train.callbk import league_stats, nav_audit
+from gym_continuousDoubleAuction.train.callbk.league import League
 from gym_continuousDoubleAuction.train.callbk.activity import (
-    as_float as _as_float,
-    market_mid as _market_mid,
-    new_tally as _new_tally,
-)
-from gym_continuousDoubleAuction.train.performance import PerformanceTally
-from gym_continuousDoubleAuction.train.returns import usable_return
-from gym_continuousDoubleAuction.train.policy.policy_handler import (
-    CHAMPION_PREFIX,
-    POLICY_PREFIX,
-    policy_id,
+    MODULE_TRADES_METRIC,
+    ActivityLog,
 )
 
 logger = get_logger(__name__)
@@ -67,18 +50,35 @@ NAV_VIOLATIONS_METRIC = "nav_conservation_violations"
 #: not a pass) so a run that is never being checked is visible.
 NAV_UNCHECKED_METRIC = "nav_conservation_unchecked"
 
-#: Per-module mean trades per episode, logged by the env runners at episode end
-#: and read by the driver's champion check (doc/15 S3-11). Nested under the
-#: module id: `result["env_runners"][MODULE_TRADES_METRIC]["policy_0"]`.
-MODULE_TRADES_METRIC = "module_trades_per_episode"
-
 #: The modules the promotion threshold can be computed over (doc/15 S3-12).
 PROMOTION_REFERENCES = ("pooled", "excluding_baselines")
 
-#: Prefix of the per-module risk-adjusted metrics (doc/15 S3-9): one metric per
-#: name in `performance.METRICS`, e.g. `module_sharpe`, each nested under the
-#: module id like `MODULE_TRADES_METRIC` and meaned over the iteration's episodes.
-MODULE_PERFORMANCE_PREFIX = "module_"
+
+#: The attributes a callback saved before the league was an object (issue #253) carried.
+_LEAGUE_ATTRIBUTES = (
+    "num_trainable",
+    "num_random",
+    "std_dev_multiplier",
+    "max_champions",
+    "min_iterations_between_champions",
+    "original_opponent_weight",
+    "champion_weight",
+    "min_champion_trades",
+    "promotion_reference",
+    "champion_count",
+    "champion_id_counter",
+    "champion_history",
+    "available_modules",
+    "_warned_reference_fallback",
+)
+
+
+def _delegated(component: str, name: str) -> property:
+    """A read-write property forwarding `name` to `self.<component>`."""
+    return property(
+        lambda self: getattr(getattr(self, component), name),
+        lambda self, value: setattr(getattr(self, component), name, value),
+    )
 
 
 class SelfPlayCallback(RLlibCallback):
@@ -189,11 +189,6 @@ class SelfPlayCallback(RLlibCallback):
             min_champion_trades = league["min_champion_trades"]
         if promotion_reference is None:
             promotion_reference = league["promotion_reference"]
-        if promotion_reference not in PROMOTION_REFERENCES:
-            raise ValueError(
-                f"promotion_reference must be one of {PROMOTION_REFERENCES}; "
-                f"got {promotion_reference!r}."
-            )
         if markout_horizons is None:
             markout_horizons = league["markout_horizons"]
         markout_horizons = tuple(int(h) for h in markout_horizons)
@@ -211,50 +206,24 @@ class SelfPlayCallback(RLlibCallback):
         self.episode_data_dir = episode_data_dir
         self.nav_tolerance = nav_tolerance
         self.strict_nav_check = strict_nav_check
-        self.min_champion_trades = min_champion_trades
-        self.promotion_reference = promotion_reference
-        self.markout_horizons = markout_horizons
-        self._warned_reference_fallback = False
+        self.activity = ActivityLog(markout_horizons)
         self.episode_sample_every = episode_sample_every
         self.episode_max_bytes = episode_max_bytes
         self.episode_rows_per_file = episode_rows_per_file
         self.run_id = run_id
 
-        self.num_trainable = num_trainable_policies
-        self.num_random = num_random_policies
-
-        # Champion snapshotting configuration
-        self.std_dev_multiplier = std_dev_multiplier
-        # With n modules, no module is more than sqrt(n - 1) population standard
-        # deviations above their mean, so a multiplier at or above that can
-        # never be cleared and the league would silently never grow. The pool
-        # only gets bigger after the first champion, so n at the start is the
-        # case that matters.
-        ceiling = math.sqrt(max(num_trainable_policies + num_random_policies - 1, 0))
-        if std_dev_multiplier >= ceiling:
-            logger.warning(
-                "std_dev_multiplier=%g can never be cleared by a league of %d "
-                "modules (the best any module can do is %.2f standard "
-                "deviations above the mean), so no champion will ever be "
-                "promoted. Lower it, or add modules.",
-                std_dev_multiplier,
-                num_trainable_policies + num_random_policies,
-                ceiling,
-            )
-        self.max_champions = max_champions
-        self.min_iterations_between_champions = min_iterations_between_champions
-
-        # Probabilistic selection configuration
-        self.original_opponent_weight = original_opponent_weight
-        self.champion_weight = champion_weight
-
-        # Champion tracking state
-        self.champion_count = 0
-        self.champion_id_counter = 0  # Monotonic counter for unique IDs
-        self.champion_history = []  # List of dicts with champion metadata
-
-        # Initialize available modules: [policy_0...policy_k-1] + [policy_k...policy_n-1]
-        self.available_modules = [policy_id(i) for i in range(self.num_trainable + self.num_random)]
+        # The champions, the matchmaking pool and the champion check (issue #253).
+        self.league = League(
+            num_trainable_policies,
+            num_random_policies,
+            std_dev_multiplier=std_dev_multiplier,
+            max_champions=max_champions,
+            min_iterations_between_champions=min_iterations_between_champions,
+            original_opponent_weight=original_opponent_weight,
+            champion_weight=champion_weight,
+            min_champion_trades=min_champion_trades,
+            promotion_reference=promotion_reference,
+        )
 
         # The per-step episode record, or None when it is switched off.
         #
@@ -271,22 +240,6 @@ class SelfPlayCallback(RLlibCallback):
         # only the I/O and kept the ~34 MB per episode of memory (doc/21 §2.2).
         self._episode_recorder = None
 
-        # Per-episode activity tallies, keyed by episode ID, so concurrent
-        # episodes under a vectorised runner cannot mix.
-        #
-        # A plain dict, not defaultdict(lambda: ...): this callback is
-        # cloudpickled into every checkpoint, and a lambda default_factory is
-        # the kind of thing that survives locally and fails on a restore path
-        # nobody exercised.
-        self._activity = {}
-
-    #: How many unfinished episodes' tallies to keep. `on_episode_end` is not
-    #: called for episodes a force-reset discards (doc/21 §3.2), so a dict keyed
-    #: by episode id and pruned only there grows for the life of the process.
-    #: Generous next to any realistic `num_envs_per_env_runner`, and three ints
-    #: per entry, so the cap costs nothing and closes the leak.
-    _MAX_LIVE_EPISODES = 64
-
     def __getstate__(self):
         """State to pickle: everything except the per-process live objects.
 
@@ -298,37 +251,98 @@ class SelfPlayCallback(RLlibCallback):
         """
         state = dict(self.__dict__)
         state["_episode_recorder"] = None
-        state["_activity"] = {}
+        state["activity"] = ActivityLog(self.activity.markout_horizons)
         return state
 
     def __setstate__(self, state):
         """Restore, filling in knobs a callback pickled before they existed lacks.
 
         A resumed run takes its callback from the checkpoint, not from the
-        config (`Algorithm.from_checkpoint`), so a checkpoint written before the
-        passivity guard (doc/15 S3-11) holds a callback with no
-        `min_champion_trades`, and the first champion check would raise
-        `AttributeError`. It gets the guard off, which is what it had, and the
-        run is told so rather than left to find out. Its `std_dev_multiplier`
-        stays whatever it was pickled with, as it always has.
+        config (`Algorithm.from_checkpoint`), so a checkpoint written before a
+        knob existed holds a callback without it. The league's knobs are filled
+        in by `League.from_flat`; a callback saved before the league was an
+        object (issue #253) has them as attributes of its own.
         """
+        # Saved before the activity log was its own object: its tallies and the mark-out
+        # horizons were attributes of the callback (issue #253).
+        if "league" not in state:
+            # Saved before the league was its own object: its settings and champion
+            # state were attributes of the callback.
+            state = dict(state)
+            league_state = {name: state.pop(name) for name in _LEAGUE_ATTRIBUTES if name in state}
+            state["league"] = League.from_flat(league_state)
+        if "activity" not in state:
+            state = dict(state)
+            state.pop("_activity", None)
+            state["activity"] = ActivityLog(state.pop("markout_horizons", ()))
         self.__dict__.update(state)
-        # Saved before the knob existed: the pooled threshold it always used.
-        # Quiet, because nothing changes for it.
-        if "promotion_reference" not in state:
-            self.promotion_reference = "pooled"
-        if "markout_horizons" not in state:
-            self.markout_horizons = ()
-        if "_warned_reference_fallback" not in state:
-            self._warned_reference_fallback = False
-        if "min_champion_trades" not in state:
-            self.min_champion_trades = 0.0
-            logger.warning(
-                "this league callback was saved before the champion passivity "
-                "guard existed (doc/15 S3-11), so it runs without one: a policy "
-                "that has stopped trading can still be promoted. Start a fresh "
-                "run to get min_champion_trades."
-            )
+
+    # ---- the league: the callback keeps the names its tests, the checkpoint code and the
+    # ---- mapping function reach it by ----
+
+    num_trainable = _delegated("league", "num_trainable")
+    num_random = _delegated("league", "num_random")
+    std_dev_multiplier = _delegated("league", "std_dev_multiplier")
+    max_champions = _delegated("league", "max_champions")
+    min_iterations_between_champions = _delegated("league", "min_iterations_between_champions")
+    original_opponent_weight = _delegated("league", "original_opponent_weight")
+    champion_weight = _delegated("league", "champion_weight")
+    min_champion_trades = _delegated("league", "min_champion_trades")
+    promotion_reference = _delegated("league", "promotion_reference")
+    champion_count = _delegated("league", "champion_count")
+    champion_id_counter = _delegated("league", "champion_id_counter")
+    champion_history = _delegated("league", "champion_history")
+    available_modules = _delegated("league", "available_modules")
+    _warned_reference_fallback = _delegated("league", "_warned_reference_fallback")
+
+    def _threshold_returns(self, policy_returns, valid_returns):
+        return self.league.threshold_returns(policy_returns, valid_returns)
+
+    def _should_create_champion(self, return_value, iteration, algorithm):
+        return self.league.should_create(return_value, iteration, algorithm)
+
+    def _create_champion_snapshot_from_policy(
+        self, algorithm, source_policy_id, return_value, iteration
+    ):
+        return self.league.create_snapshot(algorithm, source_policy_id, return_value, iteration)
+
+    def _remove_oldest_champion(self, algorithm):
+        return self.league.remove_oldest(algorithm)
+
+    def league_state(self):
+        """Champion bookkeeping as plain JSON-able data (see `League.state`)."""
+        return self.league.state()
+
+    def restore_league_state(self, state, present_modules=None):
+        """Reconcile the league with a sidecar and reality (see `League.restore`)."""
+        return self.league.restore(state, present_modules)
+
+    @classmethod
+    def get_mapping_fn(cls, callback_instance):
+        """The agent-to-module mapping for `callback_instance`'s league (see `League`)."""
+        return League.get_mapping_fn(callback_instance.league)
+
+    # ---- the activity log: the callback keeps the names its tests and metrics use ----
+
+    markout_horizons = property(
+        lambda self: self.activity.markout_horizons,
+        lambda self, value: setattr(self.activity, "markout_horizons", tuple(value)),
+    )
+    _activity = property(lambda self: self.activity.tallies)
+    _MAX_LIVE_EPISODES = property(lambda self: self.activity.max_live)
+    _MIN_TRADES_FOR_MAKER_RATIO = property(lambda self: self.activity.MIN_TRADES_FOR_MAKER_RATIO)
+
+    def _log_activity(self, episode, metrics_logger) -> None:
+        self.activity.log_episode(episode, metrics_logger)
+
+    def _log_module_trades(self, episode, tally, metrics_logger) -> None:
+        self.activity.log_module_trades(episode, tally, metrics_logger)
+
+    def _log_module_performance(self, episode, tally, metrics_logger) -> None:
+        self.activity.log_module_performance(episode, tally, metrics_logger)
+
+    def _log_episode_account(self, last_info, metrics_logger) -> None:
+        self.activity.log_episode_account(last_info, metrics_logger)
 
     def _recorder(self):
         """This process's `EpisodeRecorder`, built on first use, or None.
@@ -350,334 +364,6 @@ class SelfPlayCallback(RLlibCallback):
                 rows_per_file=self.episode_rows_per_file,
             )
         return self._episode_recorder
-
-    def _log_activity(self, episode, metrics_logger) -> None:
-        """Emit the episode's pass and rejection fractions, then drop the tally.
-
-        `pass_action_fraction` is the metric S1-3 needs. A league whose policies
-        collapse to always-pass still clears the promotion threshold, because 0
-        beats a negative mean, so the pool fills with snapshots of the
-        do-nothing policy and the returns series looks unremarkable while it
-        happens. A fraction trending to 1.0 says it outright.
-
-        `order_rejection_fraction` separates the other case returns cannot
-        distinguish: an agent that is not trading because it chose not to, from
-        one whose every order is refused for want of cash.
-
-        Fractions rather than counts, so the numbers mean the same thing at any
-        `num_agents` or `max_step`. window=10 matches the league metrics: a
-        single episode's fraction is noisy, and the question is the trend.
-        """
-        tally = self._activity.pop(episode.id_, None)
-        if not tally or not metrics_logger:
-            return
-
-        agent_steps = tally["agent_steps"]
-        if agent_steps <= 0:
-            # An episode reporting no agent infos at all. Emitting 0.0 here
-            # would read as "nothing passed", which is a claim about behaviour
-            # this episode gives no evidence for.
-            return
-
-        pass_fraction = tally["passes"] / agent_steps
-        rejection_fraction = tally["rejections"] / agent_steps
-        unmatched_fraction = tally["unmatched"] / agent_steps
-        clip_fraction = tally["clipped_steps"] / agent_steps
-
-        metrics_logger.log_value("pass_action_fraction", pass_fraction, window=10)
-        metrics_logger.log_value("order_rejection_fraction", rejection_fraction, window=10)
-        # A modify or cancel that named no resting order. Together the three
-        # fractions bound how much of the league's activity is a no-op: an
-        # agent whose policy has drifted to "cancel" at every step scores
-        # exactly like one that passes, and neither the return series nor
-        # pass_action_fraction would say so.
-        metrics_logger.log_value("unmatched_action_fraction", unmatched_fraction, window=10)
-        # Share of agent-steps whose observation hit a declared bound. The
-        # bounds are measured claims (doc/16 section 16.22); this is the
-        # number that says whether the market has since escaped them.
-        metrics_logger.log_value("obs_clip_fraction", clip_fraction, window=10)
-
-        self._log_reward_terms(tally, agent_steps, metrics_logger)
-
-        self._log_maker_ratio(tally, metrics_logger)
-
-        self._log_module_trades(episode, tally, metrics_logger)
-
-        self._log_module_performance(episode, tally, metrics_logger)
-
-        logger.debug(
-            "episode %s activity: %s agent-steps, %.1f%% pass, %.1f%% rejected, %.1f%% unmatched",
-            episode.id_,
-            agent_steps,
-            100 * pass_fraction,
-            100 * rejection_fraction,
-            100 * unmatched_fraction,
-        )
-
-    def _log_module_trades(self, episode, tally, metrics_logger) -> None:
-        """Each module's trades in this episode, for the champion check.
-
-        The check runs on the driver, which sees only the compiled result, so
-        the counts have to travel as a metric. Keyed by module rather than
-        agent because a trainable slot always plays its own module, and the
-        champion check asks about a module. An agent that never traded is
-        logged as 0 rather than left out: absence reads as "not measured", and
-        0 is exactly the measurement the guard is after.
-
-        `reduce="mean"` with no window takes the mean over the episodes of one
-        iteration and starts again, so the number describes the iteration whose
-        policy is being promoted, not a trailing window that spans the last one.
-        """
-        module_for = getattr(episode, "module_for", None)
-        if module_for is None:
-            return
-        for agent_id in set(tally["last_nav"]) | set(tally["per_agent_fills"]):
-            module_id = module_for(agent_id)
-            if module_id is None:
-                continue
-            trades = tally["per_agent_fills"].get(agent_id, {}).get("trades", 0)
-            metrics_logger.log_value(
-                (MODULE_TRADES_METRIC, module_id),
-                float(trades),
-                reduce="mean",
-            )
-
-    def _threshold_returns(self, policy_returns, valid_returns):
-        """The returns the promotion threshold is computed over, and which set that is.
-
-        `pooled` is every module that played, the frozen random baselines
-        included. `excluding_baselines` leaves them out: a baseline's return is
-        what a random agent earns in whatever role it is dealt, which is not
-        comparable with a learner's, and with them in a learner can clear the bar
-        by trading less rather than better (doc/15 S3-12).
-
-        With n modules nobody is more than sqrt(n - 1) standard deviations above
-        the mean, so a set of n <= multiplier^2 + 1 can never promote anyone
-        (n = 2 at the start, two trainables and no champion, for the default 1.5).
-        Rather than stop the league growing, the threshold falls back to the
-        pooled one while the non-baseline set is that small, once warned.
-        """
-        if self.promotion_reference == "pooled":
-            return valid_returns, "pooled"
-        baselines = {
-            policy_id(i) for i in range(self.num_trainable, self.num_trainable + self.num_random)
-        }
-        kept = [
-            v
-            for module_id, v in policy_returns.items()
-            if module_id not in baselines and usable_return(v) is not None
-        ]
-        if math.sqrt(max(len(kept) - 1, 0)) <= self.std_dev_multiplier:
-            if not self._warned_reference_fallback:
-                self._warned_reference_fallback = True
-                logger.warning(
-                    "promotion_reference 'excluding_baselines' has %s module(s) to "
-                    "compare, and with that few nobody can be more than sqrt(n - 1) = "
-                    "%.2f standard deviations above the mean, under the %g needed: "
-                    "using the pooled threshold until there are enough champions.",
-                    len(kept),
-                    math.sqrt(max(len(kept) - 1, 0)),
-                    self.std_dev_multiplier,
-                )
-            return valid_returns, "pooled"
-        return kept, "excluding_baselines"
-
-    def _log_module_performance(self, episode, tally, metrics_logger) -> None:
-        """Each module's risk-adjusted performance in this episode (doc/15 S3-9).
-
-        Per module, like the trade counts, because the question is "how does this
-        policy compare", and meaned over the iteration's episodes. A metric that is
-        undefined for an agent's episode (a Sharpe with no variance: it never
-        traded) is left out rather than logged as 0, which would read as a
-        measurement; the mean is over the episodes where it exists. When two
-        agents played one module in an episode their values are averaged first, so
-        an episode counts once.
-        """
-        module_for = getattr(episode, "module_for", None)
-        if module_for is None:
-            return
-        per_module = {}
-        for agent_id, perf in tally["performance"].items():
-            module_id = module_for(agent_id)
-            if module_id is None:
-                continue
-            for name, value in perf.summary().items():
-                if value is not None and math.isfinite(value):
-                    per_module.setdefault((name, module_id), []).append(value)
-        for (name, module_id), values in per_module.items():
-            metrics_logger.log_value(
-                (MODULE_PERFORMANCE_PREFIX + name, module_id),
-                sum(values) / len(values),
-                reduce="mean",
-            )
-
-    #: Trades an agent needs before its maker share is worth reporting. Below
-    #: this the ratio is quantised to almost nothing - one passive fill out of
-    #: one trade reads as a perfect market maker - so the maximum across agents
-    #: would sit at 1.0 for the whole run on noise alone.
-    _MIN_TRADES_FOR_MAKER_RATIO = 5
-
-    def _log_maker_ratio(self, tally, metrics_logger) -> None:
-        """The most maker-like agent's share of its own fills.
-
-        doc/13 §7's market-making uptake, and the one shape of it that says
-        anything. The *aggregate* maker share is a tautology in a closed double
-        auction: `process_acc` runs once per side of every trade, both sides
-        increment `num_trades_step`, and only the passive side increments
-        `num_passive_fills_step` - so summed over all agents it is exactly 0.5
-        in every episode regardless of behaviour. A real 3-iteration run
-        reported 0.5000 three times, which is what exposed it.
-
-        The maximum across agents does carry information: 0.5 everywhere means
-        nobody is specialising, while one agent at 0.9 against the others'
-        0.3 is a policy that has learnt to quote and wait. It is reported only
-        for agents with enough fills to distinguish that from noise.
-
-        Nothing is emitted when no agent qualifies. 0.0 would read as "everyone
-        crossed the spread", which is a claim about behaviour an episode with no
-        trades gives no evidence for.
-        """
-        ratios = [
-            fills["passive"] / fills["trades"]
-            for fills in tally["per_agent_fills"].values()
-            if fills["trades"] >= self._MIN_TRADES_FOR_MAKER_RATIO
-        ]
-        if not ratios:
-            return
-        metrics_logger.log_value("maker_fill_ratio_max", max(ratios), window=10)
-
-    def _log_reward_terms(self, tally, agent_steps, metrics_logger) -> None:
-        """The reward decomposition, reduced to a mean and a variance share.
-
-        doc/07 §6.4 prescribes watching how the five signed contributions split
-        the reward's variance; doc/11 §2.4 recorded that the terms were captured
-        per step in `info` and never aggregated, so the split could only be
-        computed after the fact from a file. These two metrics are that
-        aggregation, and they are what makes "the drawdown penalty is now 80% of
-        the signal" a thing a run says while it is happening.
-
-        The variance is taken from running sums rather than a retained series:
-        an episode is thousands of agent-steps and holding all of them to
-        compute one number at the end is exactly the memory cost §2.2 was about.
-        `E[x²] - E[x]²` can go slightly negative on a near-constant term through
-        cancellation, so it is clamped - a negative variance is arithmetic, not
-        a finding.
-
-        The shares are normalised across the five terms, so they sum to 1 and
-        answer "which term is driving the reward" rather than "how big is the
-        reward", which the means already answer. An episode where every term is
-        constant has no variance to split and reports no share at all, rather
-        than dividing by zero or claiming an even split.
-        """
-        variances = {}
-        for term in REWARD_TERMS:
-            mean = tally["term_sum"][term] / agent_steps
-            variance = max(0.0, tally["term_sq"][term] / agent_steps - mean * mean)
-            variances[term] = variance
-            metrics_logger.log_value(
-                f"reward_term_mean_{term}",
-                mean,
-                window=10,
-            )
-
-        total = sum(variances.values())
-        if total <= 0.0:
-            return
-        for term, variance in variances.items():
-            metrics_logger.log_value(
-                f"reward_term_var_share_{term}",
-                variance / total,
-                window=10,
-            )
-
-    def _log_episode_account(self, last_info, metrics_logger) -> None:
-        """Per-agent account state at the end of the episode, as metrics.
-
-        doc/11 §2.3 and §4 item 2: every one of these is already in the per-step
-        `info`, and none of it was reduced into anything a run could watch. The
-        end of the episode is the right moment for the state ones - NAV,
-        drawdown, inventory are terminal quantities, not averages over a
-        trajectory - and the two counters are per-episode totals by
-        construction.
-
-        Aggregated across agents rather than emitted per agent, because the
-        league reassigns opponents every episode: a metric named for `agent_3`
-        would be a different policy each time, which is the same mislabelling
-        `module_episode_returns_mean` exists to avoid.
-        """
-        navs, drawdowns, positions, trades = [], [], [], []
-        for info in (last_info or {}).values():
-            if not isinstance(info, dict):
-                continue
-            nav = _as_float(info.get("NAV"))
-            if nav is not None:
-                navs.append(nav)
-            drawdown = _as_float(info.get("drawdown"))
-            if drawdown is not None:
-                drawdowns.append(drawdown)
-            position = _as_float(info.get("net_position"))
-            if position is not None:
-                positions.append(abs(position))
-            # `num_trades` is the episode total. Deliberately not paired here
-            # with `num_passive_fills_step`, which is a *per-step* counter that
-            # `exchg_helper` zeroes every step - `maker_fill_ratio` is computed
-            # from the running tally instead, where both sides span the same
-            # part of the episode.
-            trades.append(float(info.get("num_trades") or 0))
-
-        if navs:
-            metrics_logger.log_value("episode_nav_mean", sum(navs) / len(navs), window=10)
-            metrics_logger.log_value("episode_nav_min", min(navs), window=10)
-            metrics_logger.log_value("episode_nav_max", max(navs), window=10)
-        if drawdowns:
-            metrics_logger.log_value(
-                "mean_agent_drawdown",
-                sum(drawdowns) / len(drawdowns),
-                window=10,
-            )
-        if positions:
-            metrics_logger.log_value(
-                "mean_abs_net_position",
-                sum(positions) / len(positions),
-                window=10,
-            )
-        if trades:
-            metrics_logger.log_value(
-                "mean_num_trades",
-                sum(trades) / len(trades),
-                window=10,
-            )
-
-    def _activity_for(self, episode_id) -> dict:
-        """The tally for this episode, created if the start hook missed it.
-
-        `on_episode_start` is not guaranteed to have run for every episode a
-        worker reports on - a restored run picks up mid-flight - and a counter
-        that raises KeyError would take down training for the sake of a metric.
-        """
-        tally = self._activity.get(episode_id)
-        if tally is None:
-            self._prune_activity()
-            tally = self._activity[episode_id] = _new_tally()
-        return tally
-
-    def _prune_activity(self) -> None:
-        """Drop the oldest tallies once too many episodes are open at once.
-
-        Insertion-ordered, so "oldest" is the episode that started first. An
-        episode discarded by a force-reset never reaches `on_episode_end` and so
-        never has its tally popped (doc/21 §3.2); this is what stops that
-        turning into a dict that grows for the life of the worker.
-        """
-        while len(self._activity) >= self._MAX_LIVE_EPISODES:
-            episode_id = next(iter(self._activity))
-            del self._activity[episode_id]
-            logger.debug(
-                "dropped the activity tally for episode %s, which never ended (%s open, limit %s)",
-                episode_id,
-                len(self._activity) + 1,
-                self._MAX_LIVE_EPISODES,
-            )
 
     def on_episode_start(
         self,
@@ -718,8 +404,7 @@ class SelfPlayCallback(RLlibCallback):
             )
             logger.debug("episode %s started, policy map: %s", episode.id_, mapping)
 
-        self._prune_activity()
-        self._activity[episode.id_] = _new_tally()
+        self.activity.start(episode.id_)
 
     def on_episode_step(
         self,
@@ -757,52 +442,8 @@ class SelfPlayCallback(RLlibCallback):
                 is a MultiRLModule.
             kwargs: Forward compatibility placeholder.
         """
-        last_info = episode.get_infos(-1)
-
-        # Tally activity as the episode runs, before anything that can be
-        # switched off. These metrics must not depend on the episode record
-        # being enabled - that is the whole point of counting here rather than
-        # reading the recorded rows back at episode end.
-        tally = self._activity_for(episode.id_)
-        tally["steps"] += 1
-        for agent_id, agent_info in (last_info or {}).items():
-            if not isinstance(agent_info, dict):
-                continue
-            tally["agent_steps"] += 1
-            nav = agent_info.get("NAV")
-            if nav is not None:
-                tally["last_nav"][agent_id] = nav
-                tally["performance"].setdefault(
-                    agent_id, PerformanceTally(self.markout_horizons)
-                ).update(
-                    nav,
-                    agent_info.get("net_position"),
-                    realised=agent_info.get("realised_pnl"),
-                    unrealised=agent_info.get("unrealised_pnl"),
-                    fill_qty=agent_info.get("fill_qty_step"),
-                    fill_value=agent_info.get("fill_value_step"),
-                    mid=_market_mid(agent_info),
-                )
-            if agent_info.get("is_pass_action"):
-                tally["passes"] += 1
-            tally["rejections"] += int(agent_info.get("num_rejected_step", 0) or 0)
-            tally["unmatched"] += int(agent_info.get("num_unmatched_step", 0) or 0)
-            if int(agent_info.get("num_obs_clipped_step", 0) or 0) > 0:
-                tally["clipped_steps"] += 1
-
-            trades = int(agent_info.get("num_trades_step", 0) or 0)
-            if trades:
-                fills = tally["per_agent_fills"].setdefault(agent_id, {"trades": 0, "passive": 0})
-                fills["trades"] += trades
-                fills["passive"] += int(agent_info.get("num_passive_fills_step", 0) or 0)
-
-            terms = agent_info.get("reward_terms") or {}
-            for term in REWARD_TERMS:
-                value = _as_float(terms.get(term))
-                if value is None:
-                    continue
-                tally["term_sum"][term] += value
-                tally["term_sq"][term] += value * value
+        # Tallied before anything that can be switched off (see `ActivityLog.record_step`).
+        tally = self.activity.record_step(episode.id_, episode.get_infos(-1))
 
         # The per-step record, if it is on. Nothing above this line touches the
         # observations or actions, so a run with `episode_data_dir` unset now
@@ -875,7 +516,7 @@ class SelfPlayCallback(RLlibCallback):
         # Before `_log_activity`, which pops the tally: the NAV check below
         # needs the last NAV of any agent that terminated mid-episode, and
         # asking for it afterwards would silently build a fresh empty tally.
-        carried_nav = dict((self._activity.get(episode.id_) or {}).get("last_nav", {}))
+        carried_nav = dict((self.activity.tallies.get(episode.id_) or {}).get("last_nav", {}))
 
         self._log_activity(episode, metrics_logger)
 
@@ -1037,132 +678,12 @@ class SelfPlayCallback(RLlibCallback):
 
         iteration = result['training_iteration']
 
-        # Filter mostly interesting policies (exclude extremely sparse ones if any)
-        # and calculate league statistics.
-        #
-        # NaN, not just None: a module the mapping fn did not draw this
-        # iteration played no episodes, and RLlib reports its mean return as
-        # NaN. One of those poisons `np.mean`, so the threshold becomes NaN and
-        # `best_return > threshold` is False for every candidate - the champion
-        # trigger stops firing, silently and permanently. It is self-
-        # reinforcing: each champion added to the pool makes it likelier that
-        # some baseline goes undrawn. Both GPU runs of 2026-08-15 died this way,
-        # at iterations 10 and 12 of 16, having reported healthy league stats
-        # right up to the iteration it happened.
-        valid_returns, idle_modules = league_stats.split_returns(policy_returns)
-
-        if not valid_returns:
-            logger.warning("No valid policy returns found this iteration.")
+        assessment = self.league.assess(algorithm, policy_returns, env_runner_results, iteration)
+        if assessment is None:
             return
-
-        if idle_modules:
-            logger.info(
-                "iteration %s: %s played no episodes and are excluded from the league statistics",
-                iteration,
-                ", ".join(idle_modules),
-            )
-
-        reference_returns, reference_used = self._threshold_returns(policy_returns, valid_returns)
-        league_mean = np.mean(reference_returns)
-        league_std = np.std(reference_returns)
-
-        # Determine dynamic threshold
-        # If std is 0 (all same), effectively requires > mean
-        threshold = league_mean + (self.std_dev_multiplier * league_std)
-
-        # Check trainable policies for champion status
-        trainable_policies = [policy_id(i) for i in range(self.num_trainable)]
-
-        best_candidate, best_return = league_stats.best_trainable(
-            policy_returns, trainable_policies
-        )
-
-        logger.info(
-            "iteration %s league stats: mean=%.2f std=%.2f threshold=%.2f best_trainable=%s (%.2f)",
-            iteration,
-            league_mean,
-            league_std,
-            threshold,
-            best_candidate,
-            best_return,
-        )
-        logger.debug("iteration %s policy returns: %s", iteration, policy_returns)
-
-        # Iterations since the last champion snapshot. `_should_create_champion`
-        # has computed this since it was written and thrown it away every time
-        # (doc/11 §2.5); it is the number that says whether the cooldown or the
-        # threshold is what is holding the league still. None before the first
-        # champion, which is a different state from "0 iterations ago" - so no
-        # metric is emitted rather than a misleading zero.
-        # Promotions are champions present after the trigger that were not there
-        # before. Not the change in `champion_count`: a full league evicts its
-        # oldest champion first, so the count is the same either side and a
-        # promotion into a full league read as none. A snapshot that raised and
-        # rolled back adds no id, so it is still not counted.
-        champions_before = {c["id"] for c in self.champion_history}
-
-        # A policy that has stopped trading earns exactly 0, and 0 beats a league
-        # of modules that are losing money, so it clears the return threshold
-        # (doc/15 S3-11). Refuse it. `None` means the trade counts did not reach
-        # the result; that is reported but does not block, because a guard that
-        # blocks on missing data would stop the league growing, silently and
-        # for good, the way the NaN threshold once did.
-        refused_passive = False
-        if best_candidate and best_return > threshold and self.min_champion_trades > 0:
-            trades = self._candidate_trades(env_runner_results, best_candidate)
-            if trades is None:
-                logger.warning(
-                    "iteration %s: no %r for %s in the result, so the "
-                    "does-it-trade guard could not run; promoting on return "
-                    "alone.",
-                    iteration,
-                    MODULE_TRADES_METRIC,
-                    best_candidate,
-                )
-            elif trades < self.min_champion_trades:
-                refused_passive = True
-                logger.warning(
-                    "iteration %s: %s cleared the return threshold (%.2f > %.2f) "
-                    "but traded %.2f times per episode, under the %g required; "
-                    "not promoting a policy that has stopped trading.",
-                    iteration,
-                    best_candidate,
-                    best_return,
-                    threshold,
-                    trades,
-                    self.min_champion_trades,
-                )
-
-        # Check relative performance trigger
-        if best_candidate and best_return > threshold and not refused_passive:
-            # Also check if it's better than previous champion (optional but good for progress)
-            # best_historical = max([c['return'] for c in self.champion_history]) if self.champion_history else -float('inf')
-
-            if self._should_create_champion(best_return, iteration, algorithm):
-                # Pass policy ID directly
-                self._create_champion_snapshot_from_policy(
-                    algorithm, best_candidate, best_return, iteration
-                )
-        promoted = len({c["id"] for c in self.champion_history} - champions_before)
-
-        league_state = {
-            "size": self.num_trainable + self.num_random + self.champion_count,
-            "mean_return": float(league_mean),
-            "std_return": float(league_std),
-            "threshold": float(threshold),
-            "promoted": promoted,
-            "refused_passive": int(refused_passive),
-            # Which set the threshold above was computed over, which is not the
-            # configured one while that set is too small to be cleared.
-            "reference": reference_used,
-            "available_modules": len(self.available_modules),
-            "idle_modules": len(idle_modules),
-            "champions": [c["id"] for c in self.champion_history],
-        }
-        if self.champion_history:
-            league_state["iterations_since_champion"] = (
-                iteration - self.champion_history[-1]["iteration"]
-            )
+        league_state = assessment.state
+        league_mean, league_std = assessment.mean, assessment.std
+        promoted, idle = assessment.promoted, assessment.idle
 
         # Written straight into `result`, and this is the only one of the two
         # channels below that lands in the row for the iteration it describes.
@@ -1213,7 +734,7 @@ class SelfPlayCallback(RLlibCallback):
             )
             metrics_logger.log_value(
                 "idle_modules",
-                float(len(idle_modules)),
+                float(idle),
                 window=1,
             )
             if self.champion_history:
@@ -1227,422 +748,3 @@ class SelfPlayCallback(RLlibCallback):
     def _candidate_trades(env_runner_results, module_id):
         """The module's mean trades per episode this iteration, or None if absent."""
         return league_stats.candidate_trades(env_runner_results, module_id, MODULE_TRADES_METRIC)
-
-    def _should_create_champion(self, return_value, iteration, algorithm):
-        """
-        Decide if we should create a champion snapshot.
-
-        Args:
-            return_value: The return value of the best policy
-            iteration: Current training iteration
-            algorithm: The training algorithm instance (needed to actually drop
-                an evicted champion's module)
-
-        Returns:
-            True if champion should be created, False otherwise
-        """
-        # Don't snapshot too frequently
-        if self.champion_history:
-            last_champion_iter = self.champion_history[-1]['iteration']
-            if iteration - last_champion_iter < self.min_iterations_between_champions:
-                logger.info(
-                    "Skipping champion creation: only %s iterations since the "
-                    "last champion (min: %s)",
-                    iteration - last_champion_iter,
-                    self.min_iterations_between_champions,
-                )
-                return False
-
-        # Check if we need to remove old champion first (rolling window)
-        if self.champion_count >= self.max_champions:
-            logger.info(
-                "Max champions (%s) reached, removing the oldest",
-                self.max_champions,
-            )
-            self._remove_oldest_champion(algorithm)
-
-        return True
-
-    def _create_champion_snapshot_from_policy(
-        self, algorithm, source_policy_id, return_value, iteration
-    ):
-        """
-        Create a frozen champion snapshot of the best policy.
-
-        Args:
-            algorithm: The training algorithm instance
-            source_policy_id: ModuleID of the policy to snapshot
-            return_value: Performance metric that triggered snapshotting
-            iteration: Current training iteration
-        """
-        # Create unique champion name using monotonic counter
-        self.champion_id_counter += 1
-        champion_id = f"{CHAMPION_PREFIX}{self.champion_id_counter}"
-
-        logger.info(
-            "Creating champion snapshot %s from %s (return %.2f, iteration %s)",
-            champion_id,
-            source_policy_id,
-            return_value,
-            iteration,
-        )
-
-        try:
-            # Take the snapshot from the LearnerGroup, not from
-            # `algorithm.get_module()`: the latter returns the EnvRunner's
-            # inference-only copy, which omits the value-function head. We want
-            # the full module state so the snapshot is complete.
-            #
-            # Read it through `get_state` rather than `learner_group._learner`.
-            # That private attribute is only populated when the LearnerGroup is
-            # local (`num_learners=0`); with `num_learners > 0` it is None, so
-            # touching it raised on every snapshot attempt and - swallowed by
-            # the except below - left the league permanently empty while
-            # printing an error per iteration. `get_state` works either way.
-            source_state = algorithm.learner_group.get_state(
-                components=(f"{COMPONENT_LEARNER}/{COMPONENT_RL_MODULE}/{source_policy_id}"),
-            )[COMPONENT_LEARNER][COMPONENT_RL_MODULE][source_policy_id]
-
-            # The spec only needs the module's shape, not its weights, so it can
-            # come from the local EnvRunner copy (always present, even when
-            # sampling happens remotely). `inference_only=False` keeps the
-            # champion's structure identical to the source module on the
-            # Learner, so the state loaded above applies cleanly.
-            champion_spec = RLModuleSpec.from_module(algorithm.env_runner.module[source_policy_id])
-            champion_spec.inference_only = False
-
-            # Put the champion into the matchmaking pool BEFORE add_module.
-            #
-            # Ordering is load-bearing. `new_agent_to_module_mapping_fn` below
-            # closes over `self`, and `add_module` pickles that closure to ship
-            # it to the remote EnvRunners. Pickling snapshots
-            # `self.available_modules` as it is at that moment - so appending
-            # after the call leaves every remote runner's mapping fn exactly one
-            # champion behind, permanently. (With num_env_runners > 0 sampling
-            # happens on the remote runners, so that is the mapping that
-            # actually decides who plays, not the driver's.)
-            self.available_modules.append(champion_id)
-
-            # Add the champion everywhere (Learners + EnvRunners), and update
-            # the agent->module mapping fn at the same time.
-            #
-            # `new_agent_to_module_mapping_fn` matters as soon as
-            # num_env_runners > 0: the mapping fn closes over THIS callback
-            # instance, but remote EnvRunners hold their own pickled copy that
-            # was frozen at worker construction. Without pushing the mapping fn
-            # here, champions would be added to the remote workers as modules
-            # but never actually selected to play.
-            algorithm.add_module(
-                module_id=champion_id,
-                module_spec=champion_spec,
-                new_agent_to_module_mapping_fn=self.get_mapping_fn(self),
-            )
-
-            # Copy the trained weights into the champion on the Learner...
-            algorithm.set_state(
-                {
-                    COMPONENT_LEARNER_GROUP: {
-                        COMPONENT_LEARNER: {
-                            COMPONENT_RL_MODULE: {
-                                champion_id: source_state,
-                            }
-                        }
-                    }
-                }
-            )
-
-            # ...and then push them out to the EnvRunners, which is where the
-            # champion actually acts.
-            #
-            # This step is load-bearing. Without it the champion playing in the
-            # environment stays randomly initialised for the whole run while the
-            # trained snapshot sits unused in the LearnerGroup, because:
-            #   * `add_module` does sync weights to the EnvRunners, but that
-            #     happens before the `set_state` above, so it propagates the
-            #     champion's fresh initialisation; and
-            #   * the per-iteration sync in `PPO.training_step` passes
-            #     `policies=modules_to_update`, i.e. only modules that produced
-            #     losses - which by design never includes a frozen champion.
-            #
-            # Note this deliberately does NOT use
-            # `env_runner_group.sync_weights()`. That path carries the
-            # LearnerGroup's WEIGHTS_SEQ_NO, and `EnvRunner.set_state` applies
-            # incoming module state only when `weights_seq_no == 0` or when the
-            # runner is strictly behind. The sequence number only advances on a
-            # training update, so a sync issued here - between two updates -
-            # arrives with a seq no the runner already has and is dropped
-            # silently. Sending the state without a WEIGHTS_SEQ_NO key takes
-            # the documented "0 means force" branch instead.
-            champion_state = {
-                COMPONENT_RL_MODULE: {champion_id: source_state},
-            }
-            algorithm.env_runner_group.foreach_env_runner(
-                lambda env_runner: env_runner.set_state(champion_state),
-                local_env_runner=True,
-            )
-            if algorithm.eval_env_runner_group is not None:
-                algorithm.eval_env_runner_group.foreach_env_runner(
-                    lambda env_runner: env_runner.set_state(champion_state),
-                    local_env_runner=True,
-                )
-
-            # Record champion metadata. (`available_modules` was updated before
-            # `add_module` above - see the comment there.)
-            champion_info = {
-                'id': champion_id,
-                'source_policy': source_policy_id,
-                'iteration': iteration,
-                'return': return_value,
-            }
-            self.champion_history.append(champion_info)
-            self.champion_count += 1
-
-            logger.info(
-                "Champion %s created. League size now %s (%s trainable + %s "
-                "random + %s champions). Active champions: %s",
-                champion_id,
-                self.num_trainable + self.num_random + self.champion_count,
-                self.num_trainable,
-                self.num_random,
-                self.champion_count,
-                [c['id'] for c in self.champion_history],
-            )
-
-        except Exception as e:
-            # Roll the pool entry back so matchmaking can never select a module
-            # that failed to be created.
-            if champion_id in self.available_modules:
-                self.available_modules.remove(champion_id)
-            # exc_info carries the traceback that the bare `traceback.print_exc`
-            # used to put on stderr, unattached to the message it belonged to.
-            logger.error(
-                "Error creating champion %s: %s",
-                champion_id,
-                e,
-                exc_info=True,
-            )
-
-    def _remove_oldest_champion(self, algorithm):
-        """
-        Remove the oldest champion to maintain the rolling window.
-
-        The module is dropped from the Algorithm entirely, not just from this
-        callback's bookkeeping. (An earlier version only removed it from
-        `available_modules`, on the basis that RLlib had no clean way to delete
-        a module - that is no longer true: `Algorithm.remove_module` exists.
-        Leaving them in place leaked one module plus its Learner-side state per
-        eviction, for the lifetime of the run.)
-        """
-        if not self.champion_history:
-            return
-
-        # Get oldest champion
-        oldest = self.champion_history.pop(0)
-        champion_id = oldest['id']
-
-        logger.info(
-            # %s, not %.2f: a champion adopted on restore has return None.
-            "Removing oldest champion %s (from iteration %s, return %s)",
-            champion_id,
-            oldest['iteration'],
-            oldest['return'],
-        )
-
-        # Remove from available modules (won't be assigned to agents anymore).
-        # Do this BEFORE remove_module so the mapping fn we hand to RLlib below
-        # can no longer return the module we are about to delete.
-        if champion_id in self.available_modules:
-            self.available_modules.remove(champion_id)
-
-        self.champion_count -= 1
-
-        try:
-            algorithm.remove_module(
-                module_id=champion_id,
-                new_agent_to_module_mapping_fn=self.get_mapping_fn(self),
-            )
-        except Exception as e:
-            # Non-fatal: the champion is already out of the matchmaking pool, so
-            # training stays correct - we just keep holding its memory.
-            logger.warning(
-                "Could not remove module %s from the algorithm: %s",
-                champion_id,
-                e,
-            )
-
-        logger.info(
-            "Champion removed. Active champions: %s",
-            [c['id'] for c in self.champion_history],
-        )
-
-    def league_state(self):
-        """Champion bookkeeping as plain JSON-able data.
-
-        `train.save_checkpoint` writes this beside every checkpoint. The
-        champion modules themselves are in the checkpoint proper; everything
-        that indexes them - the history, the monotonic ID counter, the
-        matchmaking pool - exists only inside this object, which survives a
-        restore only as long as it stays unpickle-compatible.
-        """
-        return {
-            'champion_id_counter': self.champion_id_counter,
-            'champion_count': self.champion_count,
-            'champion_history': [dict(c) for c in self.champion_history],
-            'available_modules': list(self.available_modules),
-            'num_trainable': self.num_trainable,
-            'num_random': self.num_random,
-        }
-
-    def restore_league_state(self, state, present_modules=None):
-        """Reconcile this callback's league bookkeeping with a sidecar and reality.
-
-        Called after a restore, where three sources can disagree: this object
-        (RLlib's unpickled copy), `state` (the sidecar `league_state()` wrote at
-        save time), and `present_modules` (the champion modules the restored
-        algorithm actually has). The sidecar wins over this object, because they
-        can only differ if unpickling drifted; the modules win over both, since
-        matchmaking may only return a module that exists.
-
-        Args:
-            state: a dict from `league_state()`.
-            present_modules: ModuleIDs on the restored algorithm, or None when
-                they could not be read - in which case membership is taken on
-                trust and only the counter is protected.
-
-        Returns:
-            A list of human-readable repair descriptions. Empty means the three
-            sources agreed and nothing was changed.
-        """
-        repairs = []
-
-        sidecar_history = [dict(c) for c in state.get('champion_history', [])]
-        if [c['id'] for c in sidecar_history] != [c['id'] for c in self.champion_history]:
-            repairs.append(
-                f"champion history {[c['id'] for c in self.champion_history]} -> "
-                f"{[c['id'] for c in sidecar_history]} (taken from the sidecar; the "
-                f"unpickled callback disagreed)"
-            )
-            self.champion_history = sidecar_history
-
-        if present_modules is not None:
-            present_champions = {m for m in present_modules if m.startswith(CHAMPION_PREFIX)}
-            for champion in list(self.champion_history):
-                if champion['id'] not in present_champions:
-                    self.champion_history.remove(champion)
-                    repairs.append(
-                        f"dropped {champion['id']}: the restored algorithm has no such module"
-                    )
-            known = {c['id'] for c in self.champion_history}
-            for module_id in sorted(present_champions - known):
-                # Ordering within the history decides eviction order, and an
-                # orphan's true position is unknowable - it goes last, so a
-                # rolling window evicts a champion whose iteration is known first.
-                self.champion_history.append(
-                    {
-                        'id': module_id,
-                        'source_policy': None,
-                        'iteration': state.get('training_iteration', 0),
-                        'return': None,
-                    }
-                )
-                repairs.append(
-                    f"adopted {module_id}: present in the checkpoint but missing "
-                    f"from the league state (appended as newest)"
-                )
-
-        # The pool is derived, so rebuild it rather than repairing it in place.
-        pool = [policy_id(i) for i in range(self.num_trainable + self.num_random)] + [
-            c['id'] for c in self.champion_history
-        ]
-        if pool != self.available_modules:
-            repairs.append(f"matchmaking pool {self.available_modules} -> {pool}")
-            self.available_modules = pool
-
-        if self.champion_count != len(self.champion_history):
-            self.champion_count = len(self.champion_history)
-
-        # The counter must never go backwards: a restarted counter re-mints
-        # champion IDs that are already in use, and `add_module` would then
-        # overwrite a live champion with a new snapshot.
-        highest_seen = max(
-            [
-                int(c['id'][len(CHAMPION_PREFIX) :])
-                for c in self.champion_history
-                if c['id'][len(CHAMPION_PREFIX) :].isdigit()
-            ]
-            + [0]
-        )
-        counter = max(
-            self.champion_id_counter,
-            state.get('champion_id_counter', 0),
-            highest_seen,
-        )
-        if counter != self.champion_id_counter:
-            repairs.append(
-                f"champion ID counter {self.champion_id_counter} -> {counter} "
-                f"(a restarted counter would re-mint existing champion IDs)"
-            )
-            self.champion_id_counter = counter
-
-        return repairs
-
-    @classmethod
-    def get_mapping_fn(cls, callback_instance):
-        """
-        Create an agent-to-module mapping function that includes champions.
-
-        Args:
-            callback_instance: Instance of SelfPlayCallback with champion tracking
-
-        Returns:
-            Mapping function for use in multi_agent config
-        """
-
-        def agent_to_module_mapping_fn(agent_id, episode, **kwargs):
-            """Assign agents to modules including dynamic champions."""
-            agent_num = int(agent_id.split("_")[1])
-
-            # Trainable policies always assigned to their respective agents
-            if agent_num < callback_instance.num_trainable:
-                return policy_id(agent_num)
-
-            # For random/league agents, assign from pool (champions + original randoms)
-            # The pool starts AFTER the trainable policies
-            # Pool = available_modules[k:]
-            candidates = callback_instance.available_modules[callback_instance.num_trainable :]
-
-            if not candidates:
-                # Fallback if the pool is somehow empty
-                return policy_id(agent_num)
-
-            # Calculate weights for candidates
-            weights = []
-            for c in candidates:
-                if c.startswith(CHAMPION_PREFIX):
-                    # Dynamic champion snapshots
-                    weights.append(callback_instance.champion_weight)
-                elif c.startswith(POLICY_PREFIX):
-                    # Original fixed/random policies
-                    weights.append(callback_instance.original_opponent_weight)
-                else:
-                    weights.append(1.0)  # Fallback
-
-            # Normalize to probabilities
-            weights = np.array(weights, dtype=np.float64)
-            probs = weights / weights.sum()
-
-            # Seed from the episode ID and agent index so the assignment is
-            # reproducible.
-            #
-            # Uses zlib.crc32 rather than the builtin hash(): hash() on str is
-            # salted by PYTHONHASHSEED, so it differs between processes and
-            # between runs. That made the "deterministic selection" this comment
-            # promised reproducible only within a single process.
-            seed = (zlib.crc32(str(episode.id_).encode("utf-8")) + agent_num) % (2**32)
-            rng = np.random.RandomState(seed)
-            # Cast to plain str: rng.choice returns np.str_, which compares
-            # equal to str but shows up as `np.str_('policy_2')` in logs and
-            # checkpoints.
-            return str(rng.choice(candidates, p=probs))
-
-        return agent_to_module_mapping_fn
