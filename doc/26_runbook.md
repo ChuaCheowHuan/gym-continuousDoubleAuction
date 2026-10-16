@@ -98,7 +98,7 @@ import and reads its config tree relative to the repository root
 Three checks, cheapest first. All three are what CI runs ([10](10_testing.md) §7).
 
 ```bash
-# 1. the simulator and the training-side units: ~1 min, 1,410 tests (incl. pyflakes and Hypothesis)
+# 1. the simulator and the training-side units: ~1 min, 1,486 tests (incl. pyflakes and Hypothesis)
 python -m pytest gym_continuousDoubleAuction/test -q \
     --ignore=gym_continuousDoubleAuction/test/integration
 
@@ -382,8 +382,11 @@ python -m gym_continuousDoubleAuction.train.evaluate --checkpoint results/chkpt/
 
 The log gets a table per module: return, NAV change, trades, and the pass, rejected and unmatched
 fractions, as means over the agent-episodes that module played. `--seed` pins episode seeds
-(episode i uses seed + i), so two checkpoints evaluated with the same seed face the same price
-anchors and opponent draws and the difference is the policies. A checkpoint from another
+(episode i uses seed + i) and seeds torch and every module's action space from it, so two
+checkpoints evaluated with the same seed face the same price anchors and opponent draws, one
+checkpoint's sampled actions repeat, and the difference is the policies. `--max-step` also pins
+`max_step_min` and `max_step_max` when the checkpoint trained with `episode_length_mode: random`,
+which ignores `max_step`. A checkpoint from another
 observation or action layout is refused by name.
 
 

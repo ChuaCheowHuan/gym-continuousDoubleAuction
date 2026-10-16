@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (1,591 tests: 1,410 unit + 181 integration)
+# everything (1,670 tests: 1,486 unit + 184 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -101,6 +101,7 @@ Counts re-measured with `--collect-only`.
 | `test_info_dict.py` | 24 | Per-step `info`: back-compat, reward terms summing exactly, live counters, spread, pass/rejection fields, JSON, and 0-d numpy arrays — which only a *recurrent* module produces |
 | `test_type_policy.py` | 15 | Decimal money/prices, int sizes, no field changing type mid-episode, book boundary |
 | `test_activity_metrics.py` | 34 | `pass_action_fraction` / `order_rejection_fraction` / `obs_clip_fraction`: the S1-3 detector, per-episode tallies, pickling; the reward-term variance split, the maker-ratio metric and the end-of-episode account metrics |
+| `test_s4_minor_fixes.py` | 76 | The fourteen S4-minor bugs, one class each (#230 #232 #234 #235 #236 #237 #240 #241 #242 #243 #262 #263 #265 #275): a `Decimal` fee rate, order book bookkeeping, the layout-stamp order message, a `None` module return, `--set` booleans, `$CDA_PLATFORM` case, the plots on bad records, a foreign `config/`, a single-row JEPA batch, `evaluate`'s `--max-step`, the compare table's failed run, the `size_high` bound and the doc-sync `TMPDIR` default |
 | `test_episode_record.py` | 40 | The Parquet per-step record: declared schema and its drift guard against `Info_Helper`, identity columns, sampling rate, byte cap, eviction of episodes that never end, the ways it must fail without raising, and the end-of-sample flush that gets finished episodes to disk without waiting for exit (#245) |
 | `test_encoder_registry.py` | 46 | The selectable-encoder seam: registry, `CDACatalog`, the `mlp` pass-through staying byte-for-byte what it was, `ObsLayout`, tokenisation |
 | `test_encoder_architectures.py` | 170 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
@@ -126,6 +127,7 @@ Counts re-measured with `--collect-only`.
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
 | `integration/test_export_checkpoint.py` | 7 | Train, force a champion, save, export and reload: the default picks the winner, and the exported tensors are the source policy's rather than a fresh initialisation |
 | `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported, finite, and **above 1e-3** — a live guard since S1-1 was fixed |
+| `integration/test_evaluate_seed.py` | 3 | `train.evaluate --seed` repeats sampled actions on a real module set, a different seed does not, and an unseeded run is not claimed to (#243) |
 | `integration/test_distributed_observability.py` | 13 | A real `num_env_runners=1` iteration: every episode-hook metric arrives on the driver, the episode record is written by the *worker* into the driver's absolute run-scoped path, and at the shipped `episode_rows_per_file` it is on disk when the iteration returns (#245) |
 | `integration/test_encoder_wiring.py` | 48 | Champions inherit the encoder; a restore cannot change it; the recurrent and MoE paths train end to end; a real checkpoint round-trip with a custom encoder |
 | `integration/test_probe_harness.py` | 28 | The probe against the real env: a usable rollout corpus, every registered encoder frozen and read, the LSTM's state reset per episode, a real checkpoint restored with its weights |
@@ -149,7 +151,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((1,591 tests))
+  root((1,670 tests))
     Simulator
       orderbook 57
         components, matching, invariants

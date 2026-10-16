@@ -241,7 +241,7 @@ written before they existed restores with the env defaults, i.e. with liquidatio
 
 | Key | Default | Meaning |
 |---|---|---|
-| `taker_fee_bps` | `0` | Fee the aggressing order pays, in basis points of a fill's notional. In `[0, 1000]` |
+| `taker_fee_bps` | `0` | Fee the aggressing order pays, in basis points of a fill's notional. In `[0, 1000]`. A `Decimal` is accepted, as an account stores its rates that way |
 | `maker_fee_bps` | `0` | Fee the resting order pays; negative is a rebate. In `[-1000, 1000]`, and the pair must sum to >= 0 |
 
 Taken out of the trader's cash at the fill and collected by the exchange: `sum(NAV) + env.fees_collected`
@@ -400,7 +400,7 @@ tighter bound costs before believing a result trained under it.
 | `category_n` | 9 | Side/type codes: none, then bid and ask × {market, limit, modify, cancel} |
 | `price_offset_n` | 3 | Passive / join / aggressive, in ticks |
 | `max_own_orders` | 4 | Cardinality minus one of the `order_slot` head that aims a modify or cancel at one of the agent's own orders; also the normaliser of the two own-order counts in the observation. The measured p90 of resting orders under random play ([06](06_action_space.md) §1.5) |
-| `size_low` / `size_high` | 0.0 / 1.0 | Bounds of the `size` Box, the order size as a fraction of the size ceiling. `size_low` must be `>= 0` and below `size_high`; `Action_Helper` refuses anything else |
+| `size_low` / `size_high` | 0.0 / 1.0 | Bounds of the `size` Box, the order size as a fraction of the size ceiling. `size_low` must be `>= 0` and below `size_high`, and `size_high` may not exceed 2.0 (the fraction at which an order reaches `mkt_max_size` / `limit_max_size`: 1.0 is half the maximum); `Action_Helper` refuses anything else |
 
 The price code's cardinality is not here — it is `observation_layout.k_rows`.
 
@@ -915,7 +915,8 @@ repo's pins over Colab's preinstalled CUDA torch would replace it with a CPU whe
 ### 8.3 Overriding it
 
 `$CDA_PLATFORM` and `$CDA_USE_GPU` pin what detection would otherwise guess, so a headless run can
-be forced onto a given set without editing anything:
+be forced onto a given set without editing anything. Both are read case-insensitively and trimmed
+(`COLAB`, `Auto`); an empty value is unset:
 
 ```bash
 CDA_PLATFORM=docker CDA_USE_GPU=false python -m gym_continuousDoubleAuction.train.train
