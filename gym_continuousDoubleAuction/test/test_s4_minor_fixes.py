@@ -318,3 +318,70 @@ class TestConfigDirIgnoresAForeignConfigDirectory:
     def test_the_real_checkout_resolves(self):
         from gym_continuousDoubleAuction import config_loader
         assert (config_loader.config_dir() / "train_config.json").is_file()
+
+
+class TestJepaVarianceTermWithOneRow:
+    """#242: the unbiased std of a single row is NaN, and the NaN reached the
+    auxiliary loss and every statistic beside it."""
+
+    @staticmethod
+    def _stats(batch):
+        import torch
+        from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
+            continuousDoubleAuctionEnv)
+        from gym_continuousDoubleAuction.test.test_encoder_architectures import (
+            build_module, sample_batch)
+        env = continuousDoubleAuctionEnv({})
+        agent = env.agents[0]
+        spaces = (env.get_observation_space(agent), env.get_action_space(agent))
+        # One token hidden per observation: with a batch of one that is one row.
+        module = build_module(spaces, "jepa",
+                              spec={"mask_ratio": 0.01, "mask_axis": "random"})
+        module.train()
+        torch.manual_seed(0)
+        module.encoder(sample_batch(spaces[0], n=batch, module=module))
+        return module.encoder.actor_encoder.take_jepa_stats()
+
+    def test_one_row_gives_a_finite_aux_loss(self):
+        import torch
+        stats = self._stats(1)
+        for key in ("aux_loss", "predict_loss", "offdiag_cov"):
+            assert torch.isfinite(stats[key]), key
+
+    def test_one_row_reports_the_spread_as_not_measured(self):
+        import torch
+        assert torch.isnan(self._stats(1)["latent_std"])
+
+    def test_one_row_aux_loss_is_just_the_prediction_loss(self):
+        stats = self._stats(1)
+        assert float(stats["aux_loss"]) == pytest.approx(float(stats["predict_loss"]))
+
+    def test_two_rows_are_unchanged(self):
+        import torch
+        stats = self._stats(2)
+        assert all(torch.isfinite(v) for v in stats.values())
+        assert float(stats["latent_std"]) > 0
+
+    def test_a_nan_chunk_does_not_poison_the_pretraining_average(self):
+        import numpy as np
+        import torch
+        from gym_continuousDoubleAuction.train.pretrain.pretrain import _evaluate
+
+        stats = iter([
+            {"predict_loss": torch.tensor(0.5), "latent_std": torch.tensor(0.8)},
+            {"predict_loss": torch.tensor(0.5), "latent_std": torch.tensor(float("nan"))},
+        ])
+
+        class Encoder:
+            def __call__(self, batch):
+                return None
+
+            def take_jepa_stats(self):
+                return next(stats)
+
+        class Corpus:
+            obs = np.zeros((3, 4), dtype=np.float32)
+
+        out = _evaluate(Encoder(), None, np.arange(3), Corpus(), batch_size=2)
+        assert out["latent_std"] == pytest.approx(0.8)
+        assert out["loss"] == pytest.approx(0.5)
