@@ -3771,8 +3771,8 @@ tied to the layout version or finding it describes, the "five-head" checkpoint n
 
 ## 74. The liquidation band allows for the taker fee (issue #233)
 
-- **What was open.** `LiquidationHelper` closes a position through `_process_trades`, which charges the taker fee since §59's
-  fees. `_bankruptcy_price` was sized from the mark and NAV alone, and `_liquidate_one` documented that the final NAV is
+- **What was open.** `LiquidationHelper` closes a position through `_process_trades`, which charges the taker fee since the exchange fees (issue #98,
+  PR #227). `_bankruptcy_price` was sized from the mark and NAV alone, and `_liquidate_one` documented that the final NAV is
   `>= 0` whenever `nav_before` was. A trader closed at its band price therefore paid the fee on top and could end negative,
   with the loss going to nobody (money was conserved; the fee sits on the exchange ledger).
 - **Reproduced first** (the issue said "not reproduced"). With `taker_fee_bps=10`, agent_0 short 90 @ 100 and a mark of 210
