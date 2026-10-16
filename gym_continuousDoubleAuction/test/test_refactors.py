@@ -234,3 +234,75 @@ class TestNestingIsFlat:
     def test_a_list_annotation_is_not_mistaken_for_its_element_type(self):
         from gym_continuousDoubleAuction.train.compare import _coerce
         assert _coerce("f", "[1]", "List[int]") == [1]
+
+
+class TestClearBatchIsFourSteps:
+    """#252: `clear_batch` was 158 lines with a nested closure and a class inside it."""
+
+    @staticmethod
+    def _book():
+        from gym_continuousDoubleAuction.envs.orderbook.orderbook import OrderBook
+        book = OrderBook()
+        book.process_order({"type": "limit", "side": "ask", "quantity": 5, "price": Decimal(100),
+                            "trade_id": 1, "timestamp": 0}, False, False)
+        book.begin_batch()
+        book.process_order({"type": "limit", "side": "bid", "quantity": 8, "price": Decimal(101),
+                            "trade_id": 2, "timestamp": 1}, False, False)
+        book.process_order({"type": "market", "side": "ask", "quantity": 2, "trade_id": 3,
+                            "timestamp": 1}, False, False)
+        return book
+
+    def test_the_function_is_short_and_defines_nothing_inside_itself(self):
+        from gym_continuousDoubleAuction.envs.orderbook import orderbook
+        node = _function(orderbook, "clear_batch")
+        nested = [n for n in ast.walk(node)
+                  if isinstance(n, (ast.FunctionDef, ast.ClassDef, ast.Lambda)) and n is not node]
+        assert not nested
+        body = [n for n in node.body
+                if not (isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant))]
+        assert sum(n.end_lineno - n.lineno + 1 for n in body) <= 30
+
+    def test_each_job_is_a_method(self):
+        from gym_continuousDoubleAuction.envs.orderbook.orderbook import OrderBook
+        for name in ("_clear_round", "_allocate_side", "_pair_fills", "_rest_leftovers", "_limit_of"):
+            assert callable(getattr(OrderBook, name)), name
+
+    def test_a_round_reports_price_volume_and_participants(self):
+        book = self._book()
+        pending, book.pending = book.pending, []
+        clearing = book._clear_round(pending, None, None)
+        assert clearing.volume == 7 and clearing.p_star == Decimal(100)
+        assert len(clearing.live) == 2 and not clearing.disturbed
+
+    def test_nothing_crossing_is_a_zero_volume_round_not_an_exception(self):
+        from gym_continuousDoubleAuction.envs.orderbook.orderbook import OrderBook
+        book = OrderBook()
+        book.begin_batch()
+        book.process_order({"type": "limit", "side": "bid", "quantity": 1, "price": Decimal(90),
+                            "trade_id": 1, "timestamp": 0}, False, False)
+        pending, book.pending = book.pending, []
+        clearing = book._clear_round(pending, None, None)
+        assert clearing.volume == 0 and clearing.p_star is None
+
+    def test_someone_who_cannot_pay_sits_out_and_the_round_says_so(self):
+        book = self._book()
+        pending, book.pending = book.pending, []
+        clearing = book._clear_round(pending, None, lambda tid, *rest: tid != 2)
+        assert clearing.disturbed and len(clearing.dropped) == 1
+
+    def test_the_sides_fill_the_same_volume_in_priority_order(self):
+        book = self._book()
+        pending, book.pending = book.pending, []
+        clearing = book._clear_round(pending, None, None)
+        buys, sells = book._allocate_side(True, clearing), book._allocate_side(False, clearing)
+        assert sum(f for *_, f in buys) == sum(f for *_, f in sells) == clearing.volume
+        # the market ask is the most aggressive, so it fills before the resting one
+        assert [(resting, f) for _o, resting, f in sells] == [(False, 2), (True, 5)]
+
+    def test_clearing_end_to_end_is_unchanged(self):
+        book = self._book()
+        results = book.clear_batch()
+        trades = [t for _tid, trs, _o in results for t in trs]
+        assert sum(t["quantity"] for t in trades) == 7
+        assert {t["price"] for t in trades} == {Decimal(100)}
+        assert len(book.tape) >= 2
