@@ -385,3 +385,51 @@ class TestJepaVarianceTermWithOneRow:
         out = _evaluate(Encoder(), None, np.arange(3), Corpus(), batch_size=2)
         assert out["latent_std"] == pytest.approx(0.8)
         assert out["loss"] == pytest.approx(0.5)
+
+
+class TestEvaluateMaxStepInRandomMode:
+    """#263: `--max-step` set `max_step`, which `episode_length_mode: random` ignores."""
+
+    def test_fixed_mode_sets_only_max_step(self):
+        from gym_continuousDoubleAuction.train.evaluate import apply_max_step
+        config = {"episode_length_mode": "fixed", "max_step": 100,
+                  "max_step_min": 10, "max_step_max": 200}
+        assert apply_max_step(config, 50) == {**config, "max_step": 50}
+
+    def test_random_mode_pins_both_bounds_to_it(self):
+        from gym_continuousDoubleAuction.train.evaluate import apply_max_step
+        config = {"episode_length_mode": "random", "max_step": 100,
+                  "max_step_min": 10, "max_step_max": 200}
+        out = apply_max_step(config, 50)
+        assert (out["max_step"], out["max_step_min"], out["max_step_max"]) == (50, 50, 50)
+
+    def test_no_override_changes_nothing(self):
+        from gym_continuousDoubleAuction.train.evaluate import apply_max_step
+        config = {"episode_length_mode": "random", "max_step_min": 10, "max_step_max": 200}
+        assert apply_max_step(config, None) == config
+
+    def test_the_input_is_not_modified(self):
+        from gym_continuousDoubleAuction.train.evaluate import apply_max_step
+        config = {"episode_length_mode": "random", "max_step_min": 10, "max_step_max": 200}
+        apply_max_step(config, 5)
+        assert config["max_step_min"] == 10
+
+    def test_a_real_random_mode_env_then_runs_the_requested_length(self):
+        from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
+            continuousDoubleAuctionEnv)
+        from gym_continuousDoubleAuction.train.evaluate import apply_max_step
+        base = {"num_of_agents": 2, "is_render": False,
+                "episode_length_mode": "random", "max_step_min": 20, "max_step_max": 60}
+        lengths = set()
+        for seed in range(4):
+            env = continuousDoubleAuctionEnv(apply_max_step(base, 9))
+            env.reset(seed=seed)
+            steps = 0
+            while steps < 200:  # a bound, so a regression fails instead of hanging
+                steps += 1
+                _o, _r, term, trunc, _i = env.step(
+                    {a: env.action_spaces[a].sample() for a in env.agents})
+                if term["__all__"] or trunc["__all__"]:
+                    break
+            lengths.add(steps)
+        assert lengths == {9}
