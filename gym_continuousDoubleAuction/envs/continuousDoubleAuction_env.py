@@ -308,6 +308,9 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
         # Close out anyone below maintenance margin, before the observation,
         # reward and info are built from the accounts (doc/04 section 8).
         self.liquidations = self.liquidate()
+        # The peak is the best NAV a step ENDED on, set once the cascade is over.
+        for trader in self.traders:
+            trader.acc.update_peak()
 
         # after processing LOB
         state_input = self.prep_next_state()
