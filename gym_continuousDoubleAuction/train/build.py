@@ -137,6 +137,7 @@ def _learner_config_dict(cfg: TrainConfig) -> dict:
             "cbp_scope": cfg.cbp_scope,
             "cbp_fire_on": cfg.cbp_fire_on,
             "cbp_reset_optimizer_state": cfg.cbp_reset_optimizer_state,
+            "cbp_compensate_mean": cfg.cbp_compensate_mean,
             "cbp_dead_unit_threshold": cfg.cbp_dead_unit_threshold,
             "cbp_metrics_every_n_updates": cfg.cbp_metrics_every_n_updates,
         },

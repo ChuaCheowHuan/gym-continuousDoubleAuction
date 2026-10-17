@@ -252,6 +252,7 @@ class TrainConfig:
     cbp_scope: str = _default("cbp_scope")
     cbp_fire_on: str = _default("cbp_fire_on")
     cbp_reset_optimizer_state: bool = _default("cbp_reset_optimizer_state")
+    cbp_compensate_mean: bool = _default("cbp_compensate_mean")
     cbp_dead_unit_threshold: float = _default("cbp_dead_unit_threshold")
     cbp_metrics_every_n_updates: int = _default("cbp_metrics_every_n_updates")
 

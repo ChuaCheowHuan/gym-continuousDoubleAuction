@@ -137,6 +137,11 @@ class CBPConfig:
     scope: str = "feedforward"
     fire_on: str = "adam_step"
     reset_optimizer_state: bool = True
+    #: Move a replaced unit's mean contribution into the next layer's bias before its
+    #: outgoing weights are zeroed, so the output does not jump (doc/15 R-13, #183). Off by
+    #: default: the papers' rule zeroes and leaves the bias alone, and `doc/16` section 16.13
+    #: measured CBP that way.
+    compensate_mean: bool = False
     #: Mean |activation| below which a unit counts as dead, for the metric only.
     dead_unit_threshold: float = 0.01
     #: The effective-rank metric runs an SVD, so it is not worth doing on every
@@ -184,6 +189,7 @@ class CBPConfig:
                 "scope",
                 "fire_on",
                 "reset_optimizer_state",
+                "compensate_mean",
                 "dead_unit_threshold",
                 "metrics_every_n_updates",
             )
@@ -910,6 +916,19 @@ def _reinitialise(
         weight[index] = fresh
         if layer.incoming.bias is not None:
             layer.incoming.bias[index] = 0.0
+
+        if config.compensate_mean:
+            # What the unit fed the next layer on average, kept as a constant. The running mean
+            # is bias-corrected like the one the utility uses; a consumer without a bias has
+            # nowhere to put it.
+            mean = bias_corrected(
+                state.mean_act[index : index + 1],
+                state.age[index : index + 1],
+                config.utility_decay,
+            )[0]
+            for out in layer.outgoing:
+                if out.bias is not None:
+                    out.bias += out.weight[:, index] * mean
 
         for out in layer.outgoing:
             out.weight[:, index] = 0.0
