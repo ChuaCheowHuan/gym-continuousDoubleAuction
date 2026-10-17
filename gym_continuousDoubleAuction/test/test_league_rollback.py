@@ -14,7 +14,6 @@ Neither needs Ray: the Algorithm is a stand-in that records the calls made on it
 
 from unittest.mock import MagicMock
 
-import pytest
 
 from gym_continuousDoubleAuction.train.callbk import league as league_module
 from gym_continuousDoubleAuction.train.callbk.league import League
