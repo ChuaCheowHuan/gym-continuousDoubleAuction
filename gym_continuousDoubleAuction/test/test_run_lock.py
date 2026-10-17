@@ -12,6 +12,7 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 
 import pytest
 
@@ -136,3 +137,53 @@ class TestTrainHoldsTheLock:
         with pytest.raises(RuntimeError, match="could not build"):
             train_module.train(cfg)
         assert not os.path.exists(os.path.join(cfg.checkpoint_dir, LOCK_FILE))
+
+
+class TestTwoRunsFindingTheSameStaleLock:
+    """#296: the takeover of a stale lock is one step, so only one of two runs gets it."""
+
+    def test_the_second_run_waits_for_the_first_and_is_then_refused(self, tmp_path):
+        _write_lock(tmp_path, pid=_dead_pid())
+        first, second = RunLock(str(tmp_path), "run_a"), RunLock(str(tmp_path), "run_b")
+        # Both runs live in this process, so the first writes its parent's pid: a live pid that
+        # is not this process's, which is what another running run looks like.
+        real_payload = first._payload
+        first._payload = lambda: {**real_payload(), "pid": os.getppid()}
+        outcome = {}
+
+        def second_acquire():
+            try:
+                second.acquire()
+                outcome["result"] = "held"
+            except RunLockedError:
+                outcome["result"] = "refused"
+
+        worker = threading.Thread(target=second_acquire)
+        seen = {}
+        real_read = first._read
+
+        def read_then_let_the_other_run_try():
+            held = real_read()  # the stale lock, as the first run sees it
+            if "started" not in seen:
+                seen["started"] = True
+                worker.start()
+                worker.join(timeout=0.5)
+                seen["second_finished_early"] = not worker.is_alive()
+            return held
+
+        first._read = read_then_let_the_other_run_try
+        try:
+            first.acquire()
+            worker.join(timeout=5)
+            assert not seen["second_finished_early"], "the second run got in mid-takeover"
+            assert outcome["result"] == "refused"
+            assert first._held and not second._held
+        finally:
+            first.release()
+
+    def test_the_guard_file_is_not_mistaken_for_a_lock(self, tmp_path):
+        with RunLock(str(tmp_path), "run_a"):
+            pass
+        assert not (tmp_path / LOCK_FILE).exists()
+        with RunLock(str(tmp_path), "run_b"):  # the guard left behind blocks nobody
+            assert (tmp_path / LOCK_FILE).exists()
