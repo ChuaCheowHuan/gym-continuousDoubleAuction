@@ -123,7 +123,10 @@ MASK_AXES = ("level", "time", "random")
 #: Matches the env's `Dict` action space; a mismatch raises rather than
 #: embedding the wrong thing, since the space is config-derived
 #: (`tunable_constants.json` -> action_space) and could change under it.
-DISCRETE_ACTIONS = ("category", "price", "price_offset")
+#: `order_slot` is here because it decides which of the agent's own orders a modify or cancel
+#: touches; leaving it out made "cancel my first order" and "cancel my third" embed alike
+#: (#186). `test_world_model_actions` holds this list equal to the env's `ACTION_KEYS`.
+DISCRETE_ACTIONS = ("category", "order_slot", "price", "price_offset")
 BOX_ACTIONS = ("size",)
 
 #: Floor the variance hinge pushes each latent dimension's standard deviation
