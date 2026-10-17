@@ -178,6 +178,9 @@ def _schema():
     fields += [pa.field(name, types[kind]) for name, kind in INFO_COLUMNS]
     fields += [pa.field(f"reward_term_{term}", pa.float64()) for term in REWARD_TERMS]
     fields += [
+        # A row is the step as a transition's second half: `action` is the action taken IN
+        # this step, and `obs` is the observation that step PRODUCED. For (o_t, a_t) pairs,
+        # shift `obs` down one row within an agent's episode (#181).
         pa.field("action", pa.list_(pa.float64())),
         pa.field("obs", pa.list_(pa.float32())),
         pa.field("info_extra", pa.string()),
