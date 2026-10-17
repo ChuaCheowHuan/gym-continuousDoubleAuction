@@ -921,3 +921,37 @@ class TestMeanCompensation:
         ppo = build_config(cfg)
         ppo = ppo[0] if isinstance(ppo, tuple) else ppo
         assert ppo.learner_config_dict["continual_backprop"]["cbp_compensate_mean"] is True
+
+
+class TestContinualBackpropNeedsOneLearner:
+    """doc/15 R-12 (#182): replacements are chosen per learner, outside the gradient.
+
+    Several learners keep one set of weights by averaging gradients. CBP overwrites weights
+    directly, each learner from its own minibatch, so two learners can replace different units
+    and drift apart with nothing to pull them back. Refused until the choice is synchronised.
+    """
+
+    def test_enabled_with_two_learners_is_refused_by_name(self):
+        from gym_continuousDoubleAuction.train.config import TrainConfig
+
+        with pytest.raises(
+            ValueError, match=r"cbp_enabled.*num_learners|num_learners.*cbp_enabled"
+        ):
+            TrainConfig(cbp_enabled=True, num_learners=2)
+
+    @pytest.mark.parametrize("learners", [0, 1])
+    def test_enabled_with_at_most_one_learner_is_fine(self, learners):
+        from gym_continuousDoubleAuction.train.config import TrainConfig
+
+        TrainConfig(cbp_enabled=True, num_learners=learners)
+
+    def test_measuring_only_with_many_learners_is_fine(self):
+        """`cbp_metrics_only` replaces nothing, so the replicas cannot diverge."""
+        from gym_continuousDoubleAuction.train.config import TrainConfig
+
+        TrainConfig(cbp_metrics_only=True, num_learners=2)
+
+    def test_off_with_many_learners_is_fine(self):
+        from gym_continuousDoubleAuction.train.config import TrainConfig
+
+        TrainConfig(num_learners=2)
