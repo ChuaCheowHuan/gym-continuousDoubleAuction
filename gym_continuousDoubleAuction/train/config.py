@@ -297,6 +297,7 @@ class TrainConfig:
     episode_sample_every: int = _default("episode_sample_every")
     episode_max_bytes: int = _default("episode_max_bytes")
     episode_rows_per_file: int = _default("episode_rows_per_file")
+    episode_max_live_episodes: int = _default("episode_max_live_episodes")
     # Episode-end NAV conservation check. The ledger is Decimal throughout, so
     # the sum of every agent's NAV equals the cash the system started with, to
     # the cent; the tolerance only absorbs the float() round trip through the

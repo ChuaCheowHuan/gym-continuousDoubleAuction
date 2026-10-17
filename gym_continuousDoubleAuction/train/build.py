@@ -188,6 +188,8 @@ def build_config(cfg: TrainConfig):
         episode_sample_every=cfg.episode_sample_every,
         episode_max_bytes=cfg.episode_max_bytes,
         episode_rows_per_file=cfg.episode_rows_per_file,
+        episode_max_live_episodes=cfg.episode_max_live_episodes,
+        envs_per_env_runner=cfg.num_envs_per_env_runner,
         run_id=cfg.run_id,
     )
 

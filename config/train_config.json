@@ -205,6 +205,8 @@
     "episode_sample_every": 10,
     "episode_max_bytes": 2147483648,
     "episode_rows_per_file": 65536,
+    "_note_episode_max_live_episodes": "episode_max_live_episodes is the floor for how many unfinished episodes the recorder buffers per process; the run raises it to num_envs_per_env_runner when a runner steps more envs than that, because an episode with no place in the buffer is dropped from the record (doc/15 R-10).",
+    "episode_max_live_episodes": 8,
     "nav_tolerance": 1e-06,
     "strict_nav_check": true
   },
