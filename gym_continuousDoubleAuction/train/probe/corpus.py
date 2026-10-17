@@ -201,7 +201,9 @@ def from_rollouts(
     if init_cash is not None:
         run_config["init_cash"] = init_cash
     env = continuousDoubleAuctionEnv(run_config)
-    layout = ObsLayout.from_obs_space(env.get_observation_space(env.agents[0]))
+    layout = ObsLayout.from_obs_space(
+        env.get_observation_space(env.agents[0]), book_mode=env.book_mode
+    )
 
     rows: List[np.ndarray] = []
     episodes: List[int] = []
@@ -248,6 +250,7 @@ def from_parquet(
     max_rows: Optional[int] = None,
     obs_column: str = "obs",
     per_agent: bool = False,
+    book_mode: Optional[str] = None,
 ) -> ProbeCorpus:
     """Read an observation stream from `episode_record`'s Parquet output.
 
@@ -314,7 +317,7 @@ def from_parquet(
         )
 
     obs = np.stack(rows).astype(np.float32)
-    layout = _layout_for_width(obs.shape[1])
+    layout = _layout_for_width(obs.shape[1], book_mode)
 
     # Group by episode, ordered by step within one. `episode_id` is a string,
     # so episodes are numbered by first appearance rather than sorted.
@@ -342,17 +345,20 @@ def _parquet_files(path: str) -> Sequence[str]:
     return sorted(glob.glob(os.path.join(path, "**", "*.parquet"), recursive=True))
 
 
-def _layout_for_width(flat_dim: int) -> ObsLayout:
+def _layout_for_width(flat_dim: int, book_mode: Optional[str] = None) -> ObsLayout:
     """`ObsLayout` for a bare width, with no observation space to ask.
 
     A Parquet file records the observation but not the space it came from, so
     the layout is rebuilt from the width against the current
     `tunable_constants.json`. A file written under a different `n_hist` still
     reads correctly; one written under a different `k_rows` raises, which is
-    the right answer - its rows are not this encoder's inputs.
+    the right answer - its rows are not this encoder's inputs. A width that fits
+    two book modes raises `AmbiguousObsLayout` unless `book_mode` names the one the
+    run used (#187): the file does not say.
     """
     import gymnasium as gym
 
     return ObsLayout.from_obs_space(
-        gym.spaces.Box(-np.inf, np.inf, shape=(flat_dim,), dtype=np.float32)
+        gym.spaces.Box(-np.inf, np.inf, shape=(flat_dim,), dtype=np.float32),
+        book_mode=book_mode,
     )

@@ -35,11 +35,15 @@ import gymnasium as gym
 import numpy as np
 
 from gym_continuousDoubleAuction.envs.exchg.state_helper import (
+    BOOK_MODE,
     MASK_FIELDS,
     action_mask_offset,
     private_fields,
 )
-from gym_continuousDoubleAuction.train.model.encoders.obs_layout import ObsLayout
+from gym_continuousDoubleAuction.train.model.encoders.obs_layout import (
+    AmbiguousObsLayout,
+    ObsLayout,
+)
 
 #: Added to a masked category's logit. exp(-1e9) underflows to exactly 0.
 MASK_LOGIT = -1.0e9
@@ -74,7 +78,12 @@ def mask_slice(obs_space: gym.Space, book_mode: Optional[str] = None) -> Optiona
     applies no mask.
     """
     try:
-        layout = ObsLayout.from_obs_space(obs_space, book_mode=book_mode)
+        try:
+            layout = ObsLayout.from_obs_space(obs_space, book_mode=book_mode)
+        except AmbiguousObsLayout:
+            # The mask sits at a fixed offset from the END of the vector, which does not
+            # depend on how the book part is cut, so either reading gives the same slice.
+            layout = ObsLayout.from_obs_space(obs_space, book_mode=BOOK_MODE)
     except (TypeError, ValueError):
         return None
     if layout.private_dim != len(private_fields(layout.own_levels)):

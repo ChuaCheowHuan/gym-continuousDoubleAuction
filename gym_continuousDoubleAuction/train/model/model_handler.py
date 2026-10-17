@@ -192,6 +192,7 @@ def build_trainable_module_spec(
     fcnet_activation=None,
     vf_share_layers=None,
     pretrained_path=None,
+    book_mode=None,
 ):
     """The `RLModuleSpec` for one trainable PPO module.
 
@@ -213,6 +214,9 @@ def build_trainable_module_spec(
             reaches RLlib - a mismatch is a hard error rather than a shape
             failure several frames later. Ignored for `mlp`, which has no
             self-supervised objective to have been pretrained on.
+        book_mode: The run's `book_mode`, carried on the model config so a custom
+            encoder reads the observation with the layout it was built in. Without
+            it an observation width that fits two modes cannot be read (#187).
 
     Returns:
         An `RLModuleSpec` with `module_class` left None, so RLlib fills in the
@@ -268,6 +272,7 @@ def build_trainable_module_spec(
         "vf_share_layers": model_config.vf_share_layers,
         "encoder_type": encoder_type,
         "encoder_spec": encoder_spec,
+        "book_mode": book_mode,
     }
 
     if pretrained_path:

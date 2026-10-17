@@ -167,6 +167,7 @@ def build_config(cfg: TrainConfig):
         encoder_type=cfg.encoder_type,
         encoder_specs=cfg.encoder_specs,
         pretrained_path=cfg.pretrained_encoder_path,
+        book_mode=cfg.book_mode,
     )
 
     callback_instance = SelfPlayCallback(

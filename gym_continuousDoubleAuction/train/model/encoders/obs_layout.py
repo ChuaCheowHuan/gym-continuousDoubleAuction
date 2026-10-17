@@ -78,6 +78,10 @@ EXTRA_FIELDS = (
 )
 
 
+class AmbiguousObsLayout(ValueError):
+    """A flat observation width that fits more than one book mode, with no mode given."""
+
+
 @dataclass(frozen=True)
 class ObsLayout:
     """How to read the flat observation vector as a (time, level, field) grid."""
@@ -162,13 +166,14 @@ class ObsLayout:
     def from_obs_space(cls, obs_space: gym.Space, book_mode: Optional[str] = None) -> "ObsLayout":
         """Derive the layout from a single agent's observation space.
 
-        `book_mode` names the mode the env was built in. When it is None the
-        process default (env_defaults.json) is tried first and the other mode
-        second, since the two have different snapshot widths - so a space that
-        fits only one of them is read correctly either way, and a width that
-        fits both (it happens at exactly one `n_hist`) is read as the default.
+        `book_mode` names the mode the env was built in. When it is None
+        every mode is tried: a space that fits only one of them is read
+        correctly, and a width that fits both (it happens at exactly one
+        `n_hist` per pair) raises `AmbiguousObsLayout` rather than being read as
+        the process default.
 
         Raises:
+            AmbiguousObsLayout: if no `book_mode` was given and the width fits more than one.
             TypeError: if the space is not a 1-D Box - the layouts below all
                 assume the flat vector the env declares today, and a nested or
                 multi-dimensional space means the env changed underneath them.
@@ -201,7 +206,7 @@ class ObsLayout:
             candidates = [check_book_mode(book_mode)]
         else:
             candidates = [BOOK_MODE] + [m for m in BOOK_MODES if m != BOOK_MODE]
-        tried = []
+        tried, fits = [], []
         for mode in candidates:
             rows = len(obs_book_rows(mode))
             cells = obs_book_cells(mode, levels)
@@ -209,8 +214,18 @@ class ObsLayout:
             n_hist, remainder = divmod(book_flat_dim, snapshot_dim)
             tried.append(f"{mode}: {rows} rows x {cells} cells + {extra_dim} = {snapshot_dim}")
             if not remainder and n_hist >= 1:
-                book_mode, book_rows, k_rows = mode, rows, cells
-                break
+                fits.append((mode, n_hist, rows, cells))
+        if len(fits) > 1:
+            # Never guessed: the two readings have different `n_hist` and different rows, and
+            # picking the process default silently built a `grid` layout for a `levels` run
+            # (doc/15 R-17, #187).
+            readings = "; ".join(f"{m} with n_hist {n}" for m, n, _r, _c in fits)
+            raise AmbiguousObsLayout(
+                f"An observation of {flat_dim} floats fits more than one book mode "
+                f"({readings}). Pass book_mode - the run's `book_mode` - to say which."
+            )
+        if fits:
+            book_mode, n_hist, book_rows, k_rows = fits[0]
         else:
             raise ValueError(
                 f"Observation space of {flat_dim} floats, less a "

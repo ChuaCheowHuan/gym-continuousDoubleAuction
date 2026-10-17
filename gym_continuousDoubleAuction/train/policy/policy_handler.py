@@ -82,6 +82,7 @@ def build_multi_rl_module_spec(
     encoder_type=None,
     encoder_specs=None,
     pretrained_path=None,
+    book_mode=None,
 ):
     """Build the MultiRLModuleSpec for a league-based self-play run.
 
@@ -131,6 +132,7 @@ def build_multi_rl_module_spec(
             fcnet_activation=fcnet_activation,
             pretrained_path=pretrained_path,
             vf_share_layers=vf_share_layers,
+            book_mode=book_mode,
         )
     for pid in baseline_policy_ids(num_agents, num_trained_agents):
         specs[pid] = RLModuleSpec(
@@ -153,6 +155,7 @@ def create_multi_agent_config(
     encoder_type=None,
     encoder_specs=None,
     pretrained_path=None,
+    book_mode=None,
 ):
     """Everything `AlgorithmConfig.multi_agent(...)` / `.rl_module(...)` needs.
 
@@ -176,6 +179,7 @@ def create_multi_agent_config(
         encoder_type=encoder_type,
         encoder_specs=encoder_specs,
         pretrained_path=pretrained_path,
+        book_mode=book_mode,
     )
     policies = set(spec.rl_module_specs.keys())
     policies_to_train = trainable_policy_ids(num_trained_agents)

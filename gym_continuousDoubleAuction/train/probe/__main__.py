@@ -29,6 +29,16 @@ def _cli(key):
     return cli_default("cda_probe", key)
 
 
+def env_config_for(corpus) -> Dict[str, object]:
+    """The env config that reproduces the corpus's observation layout.
+
+    The encoders are built against an env's observation space, so it has to be the
+    corpus's: building them from the default env made a `levels` corpus, or a different
+    `n_hist`, meet an encoder of the wrong width (#187).
+    """
+    return {"book_mode": corpus.layout.book_mode, "n_hist": corpus.layout.n_hist}
+
+
 def build_features(
     corpus,
     encoders: List[str],
@@ -48,7 +58,7 @@ def build_features(
         continuousDoubleAuctionEnv,
     )
 
-    env = continuousDoubleAuctionEnv({})
+    env = continuousDoubleAuctionEnv(env_config_for(corpus))
     agent_id = env.agents[0]
     obs_space = env.get_observation_space(agent_id)
     act_space = env.get_action_space(agent_id)
@@ -124,6 +134,14 @@ def main(argv=None):
         help="Cap on rows read from --parquet.",
     )
     p.add_argument(
+        "--book-mode",
+        choices=("grid", "levels"),
+        default=None,
+        help="The book_mode the --parquet run used. Needed only when the observation "
+        "width fits both modes (for example 569 floats: grid with n_hist 11 or levels "
+        "with n_hist 8), which the file cannot say.",
+    )
+    p.add_argument(
         "--per-agent",
         action="store_true",
         help="Keep every agent's row from --parquet rather than one per step. "
@@ -166,6 +184,7 @@ def main(argv=None):
             args.parquet,
             max_rows=args.max_rows,
             per_agent=args.per_agent,
+            book_mode=args.book_mode,
         )
     else:
         corpus = corpus_module.from_rollouts(

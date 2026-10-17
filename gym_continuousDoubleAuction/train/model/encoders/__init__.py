@@ -127,6 +127,10 @@ class CDAModelConfig(DefaultModelConfig):
     #: changes where training starts, not what shape anything is.
     pretrained_path: Optional[str] = None
 
+    #: The run's `book_mode`, so the layout is never inferred from a width that fits two
+    #: modes (#187). None for a hand-built config, which then relies on the width alone.
+    book_mode: Optional[str] = None
+
 
 def register(
     name: str,
@@ -463,7 +467,7 @@ def build_encoder_config(
             f"{', '.join(selectable_encoder_types())}."
         )
 
-    layout = ObsLayout.from_obs_space(obs_space)
+    layout = ObsLayout.from_obs_space(obs_space, book_mode=model_config_dict.get("book_mode"))
     spec = model_config_dict.get("encoder_spec") or {}
     config = ENCODER_REGISTRY[encoder_type](layout, spec, [layout.flat_dim])
 
