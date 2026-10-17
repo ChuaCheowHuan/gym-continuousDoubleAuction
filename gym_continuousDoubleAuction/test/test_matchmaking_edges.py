@@ -5,11 +5,12 @@ proportion to its weight. The shipped weights are positive and the pool is never
 the paths below were never run: an all-zero weight vector divided by its own sum.
 """
 
-import logging
 import math
+from unittest.mock import MagicMock
 
 import pytest
 
+from gym_continuousDoubleAuction.train.callbk import league as league_module
 from gym_continuousDoubleAuction.train.callbk.league import League
 
 
@@ -58,12 +59,16 @@ class TestZeroWeights:
         league = _league(champions=("champion_1",), original_opponent_weight=0.0)
         assert set(_picks(league)) == {"champion_1"}
 
-    def test_the_fallback_is_said_once(self, caplog):
+    def test_the_fallback_is_said_once(self, monkeypatch):
+        # A stand-in logger rather than caplog: other suites reconfigure the package's
+        # logging (propagation, levels), and this test is about how often the league
+        # speaks, not about where a handler is attached.
+        said = MagicMock()
+        monkeypatch.setattr(league_module, "logger", said)
         league = _league(champion_weight=0.0, original_opponent_weight=0.0)
-        with caplog.at_level(logging.WARNING):
-            _picks(league, n=20)
-        warnings = [r for r in caplog.records if "weight" in r.getMessage()]
-        assert len(warnings) == 1
+        _picks(league, n=20)
+        assert said.warning.call_count == 1
+        assert "weight 0" in said.warning.call_args.args[0]
 
 
 class TestAnEmptyPool:
