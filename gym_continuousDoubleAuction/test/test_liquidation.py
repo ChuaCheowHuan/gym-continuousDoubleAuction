@@ -444,3 +444,58 @@ class TestTheBandAllowsForTheTakerFee:
         trader.acc.net_position = 90
         trader.acc.nav = Decimal(100)
         assert env.liquidation_engine._bankruptcy_price(trader, Decimal(100)) == Decimal(100)
+
+
+class TestThePeakIsSetAtStepBoundaries:
+    """doc/15 R-4 (#174): `max_nav` is the best NAV a step ended on, not a transient one.
+
+    Every `cal_nav` used to move the peak, including the extra re-marks inside a liquidation
+    cascade, so a NAV that existed for an instant mid-step became the peak and charged
+    drawdown against a level no observation or reward ever saw.
+    """
+
+    def test_a_transient_nav_inside_a_step_does_not_set_the_peak(self):
+        env = _env()
+        trader = env.traders[1]
+        before = trader.acc.max_nav
+        real_liquidate = env.liquidate
+
+        def liquidate_with_a_blip():
+            acc = trader.acc
+            kept = acc.position_val
+            acc.position_val = kept + Decimal(500)  # a re-mark that lifts NAV for an instant
+            acc.cal_nav()
+            acc.position_val = kept  # ...and the next re-mark takes it back
+            acc.cal_nav()
+            return real_liquidate()
+
+        env.liquidate = liquidate_with_a_blip
+        env.step(_pass(env))
+
+        assert trader.acc.nav == before
+        assert trader.acc.max_nav == before, "the 500 that existed for an instant is not a peak"
+
+    def test_a_nav_a_step_ends_on_does_set_the_peak(self):
+        env = _env()
+        trader = env.traders[1]
+        real_liquidate = env.liquidate
+
+        def liquidate_after_a_gain():
+            trader.acc.cash += Decimal(250)
+            trader.acc.cal_nav()
+            return real_liquidate()
+
+        env.liquidate = liquidate_after_a_gain
+        env.step(_pass(env))
+
+        assert trader.acc.max_nav == trader.acc.nav == Decimal(CASH + 250)
+
+    def test_calculating_nav_alone_never_moves_the_peak(self):
+        env = _env()
+        acc = env.traders[1].acc
+        acc.cash += Decimal(700)
+
+        acc.cal_nav()
+
+        assert acc.nav == Decimal(CASH + 700)
+        assert acc.max_nav == Decimal(CASH)
