@@ -791,7 +791,30 @@ def activation_stats(
         "mean": h.mean(dim=0),
         "abs_mean": h.abs().mean(dim=0),
         "dev_abs_mean": (h - f_hat).abs().mean(dim=0),
+        # How many rows these means are over, so calls can be combined exactly (`merge_stats`).
+        "rows": torch.tensor(float(h.shape[0]), device=h.device),
     }
+
+
+def merge_stats(
+    old: Dict[str, torch.Tensor], new: Dict[str, torch.Tensor]
+) -> Dict[str, torch.Tensor]:
+    """Combine two calls' statistics of the same layer within one optimiser step.
+
+    A layer can run more than once per step - each MoE expert once per top-k slot, the JEPA
+    trunk on the masked context and again on the full observation - and the hook used to keep
+    only the last call, so a unit was judged on a partial, order-dependent view (doc/15 R-14,
+    #184). Each statistic is a mean over `rows`, so weighting by rows gives exactly the mean
+    over all rows of both calls, as if they had been one batch.
+    """
+    rows = old["rows"] + new["rows"]
+    merged = {
+        key: (old[key] * old["rows"] + new[key] * new["rows"]) / rows
+        for key in old
+        if key != "rows"
+    }
+    merged["rows"] = rows
+    return merged
 
 
 def select_and_replace(
