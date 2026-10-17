@@ -230,10 +230,25 @@ own private tail, so the eight rows now differ in their last `private_dim` float
 therefore a real choice — it drops seven agents' private state — and it is still the right default
 for the public-book targets this harness scores, none of which read the private tail.
 
-Pass `--per-agent` (or `per_agent=True` to `from_parquet`) to keep every row. Do that when the
-private block is the subject, and be aware of what you are buying: the eight rows at a step share an identical book prefix, so a split
+`--per-agent` (`per_agent=True` to `from_parquet`) keeps every row, and a corpus built that way is **refused for scoring**: targets look `horizon` *rows* ahead, which is `horizon` steps only with one row per step, so with several rows per step "horizon 1" mostly read the same step and "horizon 3" one step ahead ([15](15_findings_and_recommendations.md) R-18, #188). The CLI rejects the flag and `report.run` rejects the corpus. The rest of this paragraph is what a per-agent corpus is, for a reader that does not score targets: the eight rows at a step share an identical book prefix, so a split
 that separates them still leaks the book. Episode-level splitting (§5) is what contains that, and
 it is applied either way.
+
+**The stream is one agent's, until that agent terminates.** The rollout corpus follows the first
+agent still alive and the Parquet corpus keeps the first row it sees at each step. If that agent
+goes bankrupt mid-episode the stream continues with another agent: the same public book, a
+different private block (own position, cash, resting orders). In a measured set of 40 episodes at
+low starting cash it happened in 1 episode and 0.3% of rows. Every target here is a public-book
+quantity, so targets are unaffected; only the private-block columns jump at the switch. Pin the
+stream to one agent and end its rows when it terminates if private-block quantities are ever
+probed ([15](15_findings_and_recommendations.md) R-19, #189).
+
+**A width that fits two book modes needs the mode.** A Parquet file records the observation but
+not the space it came from, and some widths fit both layouts (569 floats: `grid` with `n_hist` 11
+or `levels` with `n_hist` 8). `from_parquet(book_mode=...)` and `--book-mode` name the run's mode;
+without it such a file raises `AmbiguousObsLayout` instead of being read as the default (`train.pretrain` takes the same flag). The
+encoders being scored are built against an env with the corpus's own `book_mode` and `n_hist`
+([15](15_findings_and_recommendations.md) R-17, #187).
 
 This is the sort of thing a comment gets to be quietly wrong about for a long time. It was found by
 the review in [17](17_changelog.md) §34.5 — a regression introduced by the private-state work

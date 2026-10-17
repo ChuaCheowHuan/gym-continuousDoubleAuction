@@ -769,3 +769,189 @@ class TestDDPUnwrapping:
 
         assert wrapped == plain
         assert not any(name.startswith("module.") for name in wrapped)
+
+
+class TestAUnitIsJudgedOnEveryCallOfTheStep:
+    """doc/15 R-14 (#184): the hook combined nothing, so a layer that ran twice in one step
+    (each MoE expert once per top-k slot; the JEPA trunk on the masked and the full input) was
+    judged on its last call alone."""
+
+    @staticmethod
+    def _probe(units=4):
+        import torch.nn as nn
+
+        from gym_continuousDoubleAuction.train.model.cbp import (
+            CBPConfig,
+            CBPLayerState,
+            ReplaceableLayer,
+        )
+        from gym_continuousDoubleAuction.train.model.cbp_learner import CBPLearnerMixin
+
+        mixin = CBPLearnerMixin.__new__(CBPLearnerMixin)
+        mixin._cbp_config = CBPConfig(enabled=True)
+        mixin._cbp_state = {"m": {"t": CBPLayerState.zeros(units)}}
+        mixin._cbp_stats, mixin._cbp_activations, mixin._cbp_updates = {}, {}, 1
+        first, act = nn.Linear(3, units), nn.Tanh()
+        layer = ReplaceableLayer("t", first, [nn.Linear(units, 2)], act)
+        act.register_forward_hook(mixin._cbp_hook("m", layer))
+        return mixin, first, act
+
+    def test_two_calls_in_a_step_equal_one_call_on_both_batches(self):
+        mixin, first, act = self._probe()
+        a, b = torch.randn(32, 3), torch.randn(8, 3) * 5 + 3  # different sizes and scales
+
+        act(first(a))
+        act(first(b))
+        kept = mixin._cbp_stats[("m", "t")]
+
+        mixin2, first2, act2 = self._probe()
+        first2.load_state_dict(first.state_dict())
+        act2(first2(torch.cat([a, b])))
+        whole = mixin2._cbp_stats[("m", "t")]
+
+        for key in ("mean", "abs_mean", "dev_abs_mean"):
+            assert torch.allclose(kept[key], whole[key], atol=1e-6), key
+        assert int(kept["rows"]) == 40
+
+    def test_the_last_call_alone_is_not_what_is_kept(self):
+        mixin, first, act = self._probe()
+        a, b = torch.randn(32, 3), torch.randn(32, 3) * 5 + 3
+
+        act(first(a))
+        act(first(b))
+
+        last_only = act(first(b)).abs().mean(0).detach()
+        assert not torch.allclose(mixin._cbp_stats[("m", "t")]["abs_mean"], last_only)
+
+    def test_a_new_step_starts_from_nothing(self):
+        mixin, first, act = self._probe()
+        act(first(torch.randn(16, 3)))
+        mixin._cbp_stats.pop(("m", "t"))  # what `_cbp_run` does when it consumes a step
+
+        act(first(torch.randn(16, 3)))
+
+        assert int(mixin._cbp_stats[("m", "t")]["rows"]) == 16
+
+    def test_a_single_call_is_unchanged(self):
+        mixin, first, act = self._probe()
+        x = torch.randn(16, 3)
+
+        act(first(x))
+
+        assert torch.allclose(mixin._cbp_stats[("m", "t")]["abs_mean"], act(first(x)).abs().mean(0))
+
+
+class TestMeanCompensation:
+    """doc/15 R-13 (#183): a replaced unit's mean contribution can be moved into the next bias.
+
+    Zeroing a unit's outgoing weights, as the papers do, removes whatever steady glow it fed
+    the next layer. A saturated tanh unit looks useless to `overall` utility (its activation
+    never varies), is replaced first, and its constant contribution disappears: one
+    replacement shifted the outputs by about 8-10 standard deviations. `cbp_compensate_mean`
+    leaves a bias of the same size behind. Default off, so the paper's rule stays the baseline.
+    """
+
+    @staticmethod
+    def _net(compensate):
+        from gym_continuousDoubleAuction.train.model import cbp as cbp_module
+
+        torch.manual_seed(0)
+        l1, act, l2 = nn.Linear(8, 16), nn.Tanh(), nn.Linear(16, 4)
+        with torch.no_grad():
+            l1.bias[0] = 8.0  # unit 0 sits at tanh's ceiling: ~1.0 whatever the input
+            l2.weight[:, 0] = torch.tensor([2.0, -1.5, 1.0, 0.5])
+        net = nn.Sequential(l1, act, l2)
+        layer = cbp_module.ReplaceableLayer("t", l1, [l2], act)
+        config = cbp_module.CBPConfig(
+            enabled=True,
+            replacement_rate=0.5,
+            maturity_threshold=10,
+            utility="overall",
+            utility_decay=0.9,
+            compensate_mean=compensate,
+        )
+        state = cbp_module.CBPLayerState.zeros(16)
+        data = torch.randn(2000, 8)
+        for i in range(60):
+            x = data[i * 32 : i * 32 + 32]
+            stats = cbp_module.activation_stats(act(l1(x)), state, config)
+            cbp_module.update_utility(state, layer, stats, config)
+        return cbp_module, net, layer, state, config
+
+    @pytest.mark.parametrize("compensate, small", [(True, True), (False, False)])
+    def test_the_output_shift_of_replacing_a_saturated_unit(self, compensate, small):
+        cbp_module, net, layer, state, config = self._net(compensate)
+        x = torch.randn(512, 8)
+        before = net(x)
+
+        cbp_module._reinitialise(state, layer, 0, None, None, config)
+
+        shift = (net(x) - before).mean(0).abs().max().item()
+        assert (shift < 0.1) is small, f"max mean output shift {shift:.3f}"
+
+    def test_without_compensation_the_shift_is_the_whole_contribution(self):
+        """Pins the paper-faithful path: `-1.0 x (outgoing weights)` for a unit at ~1.0."""
+        cbp_module, net, layer, state, config = self._net(False)
+        x = torch.randn(512, 8)
+        before = net(x)
+        cbp_module._reinitialise(state, layer, 0, None, None, config)
+        shift = (net(x) - before).mean(0)
+        assert torch.allclose(shift, -torch.tensor([2.0, -1.5, 1.0, 0.5]), atol=0.05)
+
+    def test_a_layer_whose_consumer_has_no_bias_is_left_alone(self):
+        cbp_module, net, layer, state, config = self._net(True)
+        layer.outgoing[0].bias = None
+        cbp_module._reinitialise(state, layer, 0, None, None, config)  # must not raise
+        assert torch.all(layer.outgoing[0].weight[:, 0] == 0)
+
+    def test_it_is_off_by_default_and_read_from_the_group(self):
+        from gym_continuousDoubleAuction.train.model.cbp import CBPConfig
+
+        assert CBPConfig().compensate_mean is False
+        assert CBPConfig.from_dict({"cbp_compensate_mean": True}).compensate_mean is True
+
+    def test_it_reaches_the_learner_and_is_unrestorable_while_active(self):
+        from gym_continuousDoubleAuction.train.checkpoint import UNRESTORABLE_WHEN_ACTIVE_KEYS
+        from gym_continuousDoubleAuction.train.config import TrainConfig
+        from gym_continuousDoubleAuction.train.train import build_config
+
+        assert TrainConfig().cbp_compensate_mean is False
+        assert "cbp_compensate_mean" in UNRESTORABLE_WHEN_ACTIVE_KEYS
+        cfg = TrainConfig(cbp_enabled=True, cbp_compensate_mean=True)
+        ppo = build_config(cfg)
+        ppo = ppo[0] if isinstance(ppo, tuple) else ppo
+        assert ppo.learner_config_dict["continual_backprop"]["cbp_compensate_mean"] is True
+
+
+class TestContinualBackpropNeedsOneLearner:
+    """doc/15 R-12 (#182): replacements are chosen per learner, outside the gradient.
+
+    Several learners keep one set of weights by averaging gradients. CBP overwrites weights
+    directly, each learner from its own minibatch, so two learners can replace different units
+    and drift apart with nothing to pull them back. Refused until the choice is synchronised.
+    """
+
+    def test_enabled_with_two_learners_is_refused_by_name(self):
+        from gym_continuousDoubleAuction.train.config import TrainConfig
+
+        with pytest.raises(
+            ValueError, match=r"cbp_enabled.*num_learners|num_learners.*cbp_enabled"
+        ):
+            TrainConfig(cbp_enabled=True, num_learners=2)
+
+    @pytest.mark.parametrize("learners", [0, 1])
+    def test_enabled_with_at_most_one_learner_is_fine(self, learners):
+        from gym_continuousDoubleAuction.train.config import TrainConfig
+
+        TrainConfig(cbp_enabled=True, num_learners=learners)
+
+    def test_measuring_only_with_many_learners_is_fine(self):
+        """`cbp_metrics_only` replaces nothing, so the replicas cannot diverge."""
+        from gym_continuousDoubleAuction.train.config import TrainConfig
+
+        TrainConfig(cbp_metrics_only=True, num_learners=2)
+
+    def test_off_with_many_learners_is_fine(self):
+        from gym_continuousDoubleAuction.train.config import TrainConfig
+
+        TrainConfig(num_learners=2)

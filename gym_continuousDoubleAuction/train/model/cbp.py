@@ -137,6 +137,11 @@ class CBPConfig:
     scope: str = "feedforward"
     fire_on: str = "adam_step"
     reset_optimizer_state: bool = True
+    #: Move a replaced unit's mean contribution into the next layer's bias before its
+    #: outgoing weights are zeroed, so the output does not jump (doc/15 R-13, #183). Off by
+    #: default: the papers' rule zeroes and leaves the bias alone, and `doc/16` section 16.13
+    #: measured CBP that way.
+    compensate_mean: bool = False
     #: Mean |activation| below which a unit counts as dead, for the metric only.
     dead_unit_threshold: float = 0.01
     #: The effective-rank metric runs an SVD, so it is not worth doing on every
@@ -184,6 +189,7 @@ class CBPConfig:
                 "scope",
                 "fire_on",
                 "reset_optimizer_state",
+                "compensate_mean",
                 "dead_unit_threshold",
                 "metrics_every_n_updates",
             )
@@ -791,7 +797,30 @@ def activation_stats(
         "mean": h.mean(dim=0),
         "abs_mean": h.abs().mean(dim=0),
         "dev_abs_mean": (h - f_hat).abs().mean(dim=0),
+        # How many rows these means are over, so calls can be combined exactly (`merge_stats`).
+        "rows": torch.tensor(float(h.shape[0]), device=h.device),
     }
+
+
+def merge_stats(
+    old: Dict[str, torch.Tensor], new: Dict[str, torch.Tensor]
+) -> Dict[str, torch.Tensor]:
+    """Combine two calls' statistics of the same layer within one optimiser step.
+
+    A layer can run more than once per step - each MoE expert once per top-k slot, the JEPA
+    trunk on the masked context and again on the full observation - and the hook used to keep
+    only the last call, so a unit was judged on a partial, order-dependent view (doc/15 R-14,
+    #184). Each statistic is a mean over `rows`, so weighting by rows gives exactly the mean
+    over all rows of both calls, as if they had been one batch.
+    """
+    rows = old["rows"] + new["rows"]
+    merged = {
+        key: (old[key] * old["rows"] + new[key] * new["rows"]) / rows
+        for key in old
+        if key != "rows"
+    }
+    merged["rows"] = rows
+    return merged
 
 
 def select_and_replace(
@@ -887,6 +916,19 @@ def _reinitialise(
         weight[index] = fresh
         if layer.incoming.bias is not None:
             layer.incoming.bias[index] = 0.0
+
+        if config.compensate_mean:
+            # What the unit fed the next layer on average, kept as a constant. The running mean
+            # is bias-corrected like the one the utility uses; a consumer without a bias has
+            # nowhere to put it.
+            mean = bias_corrected(
+                state.mean_act[index : index + 1],
+                state.age[index : index + 1],
+                config.utility_decay,
+            )[0]
+            for out in layer.outgoing:
+                if out.bias is not None:
+                    out.bias += out.weight[:, index] * mean
 
         for out in layer.outgoing:
             out.weight[:, index] = 0.0

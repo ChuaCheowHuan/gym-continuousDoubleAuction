@@ -252,6 +252,7 @@ class TrainConfig:
     cbp_scope: str = _default("cbp_scope")
     cbp_fire_on: str = _default("cbp_fire_on")
     cbp_reset_optimizer_state: bool = _default("cbp_reset_optimizer_state")
+    cbp_compensate_mean: bool = _default("cbp_compensate_mean")
     cbp_dead_unit_threshold: float = _default("cbp_dead_unit_threshold")
     cbp_metrics_every_n_updates: int = _default("cbp_metrics_every_n_updates")
 
@@ -296,6 +297,7 @@ class TrainConfig:
     episode_sample_every: int = _default("episode_sample_every")
     episode_max_bytes: int = _default("episode_max_bytes")
     episode_rows_per_file: int = _default("episode_rows_per_file")
+    episode_max_live_episodes: int = _default("episode_max_live_episodes")
     # Episode-end NAV conservation check. The ledger is Decimal throughout, so
     # the sum of every agent's NAV equals the cash the system started with, to
     # the cent; the tolerance only absorbs the float() round trip through the
@@ -398,6 +400,15 @@ class TrainConfig:
             )
         if self.min_champion_trades < 0:
             raise ValueError(f"min_champion_trades must be >= 0; got {self.min_champion_trades}.")
+        if self.cbp_enabled and self.num_learners > 1:
+            # Replacements are chosen from each learner's own minibatch and applied outside the
+            # gradient, so the replicas can pick different units and drift apart; nothing in
+            # DDP pulls them back (doc/15 R-12, #182). `cbp_metrics_only` replaces nothing.
+            raise ValueError(
+                f"cbp_enabled with num_learners={self.num_learners}: continual backprop picks "
+                "the unit to replace separately on each learner, so the replicas would diverge. "
+                "Use num_learners 0 or 1, or cbp_metrics_only, until the choice is synchronised."
+            )
 
     @property
     def entropy_setting(self):

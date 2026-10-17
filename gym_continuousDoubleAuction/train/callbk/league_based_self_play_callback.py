@@ -102,6 +102,8 @@ class SelfPlayCallback(RLlibCallback):
         episode_sample_every=None,
         episode_max_bytes=None,
         episode_rows_per_file=None,
+        episode_max_live_episodes=None,
+        envs_per_env_runner=None,
         run_id="",
     ):
         """
@@ -202,6 +204,10 @@ class SelfPlayCallback(RLlibCallback):
             episode_max_bytes = league["episode_max_bytes"]
         if episode_rows_per_file is None:
             episode_rows_per_file = league["episode_rows_per_file"]
+        if episode_max_live_episodes is None:
+            episode_max_live_episodes = league["episode_max_live_episodes"]
+        if envs_per_env_runner is None:
+            envs_per_env_runner = group("train_config.json", "rollouts")["num_envs_per_env_runner"]
 
         self.episode_data_dir = episode_data_dir
         self.nav_tolerance = nav_tolerance
@@ -210,6 +216,8 @@ class SelfPlayCallback(RLlibCallback):
         self.episode_sample_every = episode_sample_every
         self.episode_max_bytes = episode_max_bytes
         self.episode_rows_per_file = episode_rows_per_file
+        self.episode_max_live_episodes = episode_max_live_episodes
+        self.envs_per_env_runner = envs_per_env_runner
         self.run_id = run_id
 
         # The champions, the matchmaking pool and the champion check (issue #253).
@@ -271,6 +279,17 @@ class SelfPlayCallback(RLlibCallback):
             state = dict(state)
             league_state = {name: state.pop(name) for name in _LEAGUE_ATTRIBUTES if name in state}
             state["league"] = League.from_flat(league_state)
+        if "episode_max_live_episodes" not in state or "envs_per_env_runner" not in state:
+            # Saved before the recorder's cap followed the runner's envs (#180).
+            state = dict(state)
+            state.setdefault(
+                "episode_max_live_episodes",
+                group("train_config.json", "league_self_play")["episode_max_live_episodes"],
+            )
+            state.setdefault(
+                "envs_per_env_runner",
+                group("train_config.json", "rollouts")["num_envs_per_env_runner"],
+            )
         if "activity" not in state:
             state = dict(state)
             state.pop("_activity", None)
@@ -362,6 +381,11 @@ class SelfPlayCallback(RLlibCallback):
                 sample_every=self.episode_sample_every,
                 max_bytes=self.episode_max_bytes,
                 rows_per_file=self.episode_rows_per_file,
+                # Never fewer chairs than envs a runner steps at once: an episode with no
+                # place in the buffer is dropped from the record (doc/15 R-10, #180).
+                max_live_episodes=max(
+                    int(self.episode_max_live_episodes), int(self.envs_per_env_runner)
+                ),
             )
         return self._episode_recorder
 

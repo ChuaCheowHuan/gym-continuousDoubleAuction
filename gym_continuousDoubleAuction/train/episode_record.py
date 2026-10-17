@@ -55,6 +55,7 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
+from gym_continuousDoubleAuction.config_loader import group
 from gym_continuousDoubleAuction.logging_setup import (
     current_iteration,
     get_logger,
@@ -177,6 +178,9 @@ def _schema():
     fields += [pa.field(name, types[kind]) for name, kind in INFO_COLUMNS]
     fields += [pa.field(f"reward_term_{term}", pa.float64()) for term in REWARD_TERMS]
     fields += [
+        # A row is the step as a transition's second half: `action` is the action taken IN
+        # this step, and `obs` is the observation that step PRODUCED. For (o_t, a_t) pairs,
+        # shift `obs` down one row within an agent's episode (#181).
         pa.field("action", pa.list_(pa.float64())),
         pa.field("obs", pa.list_(pa.float32())),
         pa.field("info_extra", pa.string()),
@@ -273,7 +277,7 @@ class EpisodeRecorder:
         sample_every: int = 1,
         max_bytes: int = 0,
         rows_per_file: int = 65536,
-        max_live_episodes: int = 8,
+        max_live_episodes: Optional[int] = None,
         queue_size: int = 4,
     ):
         self.output_dir = output_dir
@@ -281,6 +285,10 @@ class EpisodeRecorder:
         self.sample_every = max(1, int(sample_every))
         self.max_bytes = max(0, int(max_bytes))
         self.rows_per_file = max(1, int(rows_per_file))
+        if max_live_episodes is None:
+            max_live_episodes = group("train_config.json", "league_self_play")[
+                "episode_max_live_episodes"
+            ]
         self.max_live_episodes = max(1, int(max_live_episodes))
 
         # Insertion-ordered, which is what makes "evict the oldest" meaningful.

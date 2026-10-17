@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (2,218 tests: 2,033 unit + 185 integration)
+# everything (2,293 tests: 2,108 unit + 185 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -69,7 +69,7 @@ Counts re-measured with `--collect-only`.
 | `test_observation_bounds.py` | 12 | The Box is finite and laid out as the vector is; identity bounds are exact; a missing or inverted bound fails construction by name; every emitted observation is inside the space; ordinary play clips nothing; an older frame's negative price entry is not clipped; a clip is counted per step in `info` and has a record column (S4-15) |
 | `test_order_slot.py` | 17 | `order_slot`: cancel by slot, cancel-all, modify by slot and by FIFO, clamping, the cash check on the slotted order, the head in the action space, and a random-play hit-rate floor (S3-24 phase 2) |
 | `test_dead_action_penalty.py` | 3 | The sixth reward term: zero by default and bit-for-bit neutral, charged per miss when set, forwarded by `TrainConfig` |
-| `test_layout_version.py` | 11 | The layout stamp: written beside every checkpoint, passes for the current layout, refuses a version, field or `book_mode` mismatch by name (S4-19, S3-15) |
+| `test_layout_version.py` | 16 | The layout stamp: written beside every checkpoint, passes for the current layout, refuses a version, field or `book_mode` mismatch by name (S4-19, S3-15) |
 | `test_evaluate.py` | 6 | `train.evaluate`'s pure half: unbatching a Dict action, per-module means, the rendered table, the CLI defaults (S4-12) |
 | `test_tick_grid.py` | 18 | Every action price sits on the `tick_size` grid; upsert and cancel find their order on a fractional tick (S3-4) |
 | `test_modify_order.py` | 7 | The six modify-order accounting scenarios, plus a guard that the dead escrow helper stays deleted |
@@ -97,6 +97,10 @@ Counts re-measured with `--collect-only`.
 | `test_action_dist.py` | 15 | A stateful module's log-probability for two agents in one step: RLlib's `(B, B)` result pinned as the bug, the corrected `(B, 1)`, `(B,)` and `(B, T)` shapes, the old squeeze case, the wrapper cached and idempotent (#278) |
 | `test_champion_guard.py` | 26 | The entropy schedule and its validation; the promotion guard (a passive candidate refused, a trading one promoted, the bar inclusive, off at 0, missing counts warn and do not block); the shipped multiplier; the `sqrt(n - 1)` warning; the per-module trade counts (S3-11) |
 | `test_league_rollback.py` | 10 | A failed champion snapshot undoes `add_module` (the corrected pool reaches the runners; a failing undo only logs) and a full league evicts its oldest only after the new champion exists, so a failure never shrinks it, even an over-limit history (#176, #178) |
+| `test_world_model_actions.py` | 4 | The JEPA world model embeds every head of the action: the embedded heads equal the env's `ACTION_KEYS`, two actions differing only in `order_slot` embed differently (#186) |
+| `test_obs_layout_book_mode.py` | 16 | A width that fits two book modes (569 floats) raises `AmbiguousObsLayout` unless the mode is given; the run's `book_mode` reaches the encoder spec, the policy builder and the probe (`--book-mode`); the action mask is unaffected; the probe and pretraining build their encoders in the corpus's mode (#187) |
+| `test_jepa_value_pass.py` | 10 | JEPA's `compute_values` pass runs no objective and takes no EMA step (restored even on error); mask sampling uses the encoder's own generator, reproducible per seed and distinct per encoder (#185) |
+| `test_run_lock.py` | 13 | One live run per checkpoint folder: the lock's contents, release, refusal of a live or other-machine holder, takeover of a dead one, and `train()` holding it from before the restore until it returns or raises (#179) |
 | `test_matchmaking_edges.py` | 20 | League matchmaking at its edges: an all-zero pool draws uniformly (with one warning), a champions-only pool, an empty pool, reproducibility per episode and agent, the draw share following 3:1 weights, bad weights refused by name (#207) |
 | `test_orderbook_scripts.py` | 31 | The worked example of the retired `example.py` asserted by outcome (who traded with whom, at what price, what rests), and `genOrders.py` as a seeded shadow model over 25 seeds: the book must agree with a picture rebuilt from trade records alone (#210) |
 | `test_champion_trigger.py` | 20 | League statistics with modules that played no episodes; promotion, pool size, idle count and time-since-champion as metrics |
@@ -110,13 +114,13 @@ Counts re-measured with `--collect-only`.
 | `test_doc_sync_claims.py` | 13 | `cda-doc-sync`'s `claims.py` checking the inventory table, the code size and that every config key and CLI flag is mentioned in some doc, each in both directions (#264) |
 | `test_open_bug_fixes.py` | 14 | The last three open `bug` issues: run logging turns propagation back on without a Ray encoding (#238), the byte cap never deletes the newest episode file and warns once (#246), and `apply_env_vars()` is pinned to run before `ray.init` in every entry point, with the fact that the configured variable is not read at Ray's import checked against the installed Ray (#244) |
 | `test_s4_minor_fixes.py` | 76 | The fourteen S4-minor bugs, one class each (#230 #232 #234 #235 #236 #237 #240 #241 #242 #243 #262 #263 #265 #275): a `Decimal` fee rate, order book bookkeeping, the layout-stamp order message, a `None` module return, `--set` booleans, `$CDA_PLATFORM` case, the plots on bad records, a foreign `config/`, a single-row JEPA batch, `evaluate`'s `--max-step`, the compare table's failed run, the `size_high` bound and the doc-sync `TMPDIR` default |
-| `test_episode_record.py` | 40 | The Parquet per-step record: declared schema and its drift guard against `InfoBuilder`, identity columns, sampling rate, byte cap, eviction of episodes that never end, the ways it must fail without raising, and the end-of-sample flush that gets finished episodes to disk without waiting for exit (#245) |
+| `test_episode_record.py` | 47 | The Parquet per-step record: declared schema and its drift guard against `InfoBuilder`, identity columns, sampling rate, byte cap, eviction of episodes that never end, the ways it must fail without raising, and the end-of-sample flush that gets finished episodes to disk without waiting for exit (#245) |
 | `test_encoder_registry.py` | 46 | The selectable-encoder seam: registry, `CDACatalog`, the `mlp` pass-through staying byte-for-byte what it was, `ObsLayout`, tokenisation |
 | `test_encoder_architectures.py` | 170 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
 | `test_pretrain.py` | 36 | Offline JEPA pretraining: the loop trains only the trunk and predictor, a collapse is reported rather than hidden, a NaN or unmeasured run counts as unusable and is never saved (#239), and the checkpoint's fingerprint refuses a mismatched architecture |
 | `test_visualize_scripts.py` | 32 | `visualize/` end to end on small synthetic Parquet and `progress.jsonl` runs: the loader's complete-episode rule, the data in each chart's lines, `run_all`, both inspectors (#211) |
 | `test_visualize_orderbook.py` | 12 | The newest book snapshot is read from the middle of the observation, never off the end — the only arithmetic in `visualize/` that can be wrong without raising |
-| `test_probe.py` | 56 | The reward-free probe harness's arithmetic on synthetic observations: target definitions, episode-boundary masking, the splits, the metrics, unscoreable cells, and that `snapshots` reads the book rather than the private tail |
+| `test_probe.py` | 61 | The reward-free probe harness's arithmetic on synthetic observations: target definitions, episode-boundary masking, the splits, the metrics, unscoreable cells, and that `snapshots` reads the book rather than the private tail |
 | `test_bankrupt_termination.py` | 13 | A trader whose NAV reaches zero is terminated, and the episode ends when too few solvent traders remain |
 | `test_resting_exposure.py` | 8 | Escrow against live orders: what a resting order commits, and the layered-closing-order exploit that used to leave a trader short |
 | `test_self_match.py` | 14 | A trader cannot trade with itself: the crossing leg is withdrawn before the matcher, and the resting leg cannot become the mark (S2-5) |
@@ -126,7 +130,7 @@ Counts re-measured with `--collect-only`.
 | `test_obs_feature_scales.py` | 10 | Every observation block lands on one scale — the size/price ratio and the centred `log_mid` (S2-2) |
 | `test_entry_points.py` | 8 | The two documented entry points work: `gymnasium.make("continuousDoubleAuction-v0")`, and `visualize/` being importable from a wheel |
 | `test_cbp_recurrent.py` | 21 | CBP on an LSTM core: which parameters are a unit, a replacement that leaves the new unit inert and moves the function only by the old unit's contribution, Adam's moments cleared for exactly the reset entries, and discovery on the real encoders under each scope (S3-32) |
-| `test_cbp.py` | 55 | Continual Backprop's algorithm core, with no Ray and no `Algorithm` — §6.6.1 |
+| `test_cbp.py` | 70 | Continual Backprop's algorithm core, with no Ray and no `Algorithm` — §6.6.1 |
 | `test_probe_corpus_config.py` | 8 | The probe corpus follows the run's env config: `book_mode` and `n_hist` change its width, explicit arguments win, the caller's dict is untouched, and `train.compare` hands its overridden config to the corpus (#261) |
 | `test_compare.py` | 18 | The encoder comparison driver's aggregation: means and standard deviations across seeds, the separation rule and its three-seed floor, the rendered table and its caveats |
 | `test_export.py` | 20 | `train.export`'s pure half: which module is the winner, the no-champion and foreign-layout messages, and what the written record carries (doc/26 §26.9.2) |
@@ -169,7 +173,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((2,218 tests))
+  root((2,293 tests))
     Simulator
       orderbook 88
         the demo scripts as tests, a shadow model
@@ -246,7 +250,7 @@ mindmap
         logging, progress log, info dict
         activity metrics, episode record
         NAV conservation, book rendering
-      probe 56
+      probe 61
         targets, episode masking
         splits never shuffled
         unscoreable vs zero
@@ -936,7 +940,7 @@ Two files, added with `train/probe/` ([23](23_probe_harness.md)). The harness pr
 people will cite*, so what these pin is not that it runs but the handful of properties that decide
 whether its numbers mean anything.
 
-#### 6.5.1 `test_probe.py` — 56 tests
+#### 6.5.1 `test_probe.py` — 61 tests
 
 Runs on synthetic observations built by hand, not on env rollouts: the arithmetic is the subject,
 and a target checked against the same expression that computes it checks nothing.
@@ -1003,7 +1007,7 @@ series and a plotted `0.0` would read as total collapse.
 Two files, and the split is the same one `cbp.py` makes: the algorithm is testable without RLlib,
 the wiring is not. See [25_continual_backprop.md](25_continual_backprop.md).
 
-### 6.6.1 `test_cbp.py` — 55 tests
+### 6.6.1 `test_cbp.py` — 70 tests
 
 No Ray, no `Algorithm`. The formulas are checked against hand-computed values rather than against
 the implementation.

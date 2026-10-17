@@ -364,6 +364,7 @@ UNRESTORABLE_WHEN_ACTIVE_KEYS = (
     "cbp_scope",
     "cbp_fire_on",
     "cbp_reset_optimizer_state",
+    "cbp_compensate_mean",
     "cbp_dead_unit_threshold",
     "cbp_metrics_every_n_updates",
 )
@@ -388,6 +389,7 @@ PRE_FEATURE_BEHAVIOUR = {
     "cbp_scope": "feedforward",
     "cbp_fire_on": "adam_step",
     "cbp_reset_optimizer_state": True,
+    "cbp_compensate_mean": False,
     "cbp_dead_unit_threshold": 0.01,
     "cbp_metrics_every_n_updates": 10,
     "adam_betas": (0.9, 0.999),

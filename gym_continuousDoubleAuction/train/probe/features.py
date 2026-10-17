@@ -87,8 +87,12 @@ def build_module(
     act_space,
     encoder_type: str,
     encoder_spec: Optional[Dict] = None,
+    book_mode: Optional[str] = None,
 ) -> RLModule:
     """One trainable module, built exactly as training builds it.
+
+    `book_mode` is the corpus's (or the run's): without it an observation width that fits two
+    modes cannot be read and the build raises `AmbiguousObsLayout` (#187).
 
     Going through `build_trainable_module_spec` rather than instantiating an
     encoder directly is what makes the probe score *the encoder training would
@@ -101,6 +105,7 @@ def build_module(
         act_space,
         encoder_type=encoder_type,
         encoder_specs={encoder_type: encoder_spec} if encoder_spec else {},
+        book_mode=book_mode,
     )
     # Only `mlp` leaves module_class None, for RLlib to fill from the
     # algorithm's default spec; there is no algorithm here to fill it.
@@ -171,7 +176,12 @@ def available_modules(checkpoint: str) -> list:
 
 
 def pretrained_module(
-    obs_space, act_space, encoder_type: str, path: str, encoder_spec: Optional[Dict] = None
+    obs_space,
+    act_space,
+    encoder_type: str,
+    path: str,
+    encoder_spec: Optional[Dict] = None,
+    book_mode: Optional[str] = None,
 ) -> RLModule:
     """A module of the configured architecture, carrying pretrained weights.
 
@@ -191,7 +201,7 @@ def pretrained_module(
     """
     from gym_continuousDoubleAuction.train.pretrain import load_into
 
-    module = build_module(obs_space, act_space, encoder_type, encoder_spec)
+    module = build_module(obs_space, act_space, encoder_type, encoder_spec, book_mode)
     load_into(module, path, encoder_type, encoder_spec)
     return module
 

@@ -421,7 +421,7 @@ describes.
 - `Columns.NEXT_OBS` in the learner batch. PPO does not add it. Ray 2.56.1 ships
   `AddNextObservationsFromEpisodesToTrainBatch`; it is attached via
   `config.learners(learner_connector=…)`. **[verified present in the pinned Ray]**
-- An action embedding for the `Dict` action space: `category` (9) and `price` (10) and
+- An action embedding for the `Dict` action space: `category` (9), `order_slot` (5), `price` (10) and
   `price_offset` (3) as embeddings, `size` as a scalar (it was `size_mean` and `size_sigma`
   before the action layout moved to version 4).
 - Care at episode boundaries: `o_{t+1}` across a `truncated` step is the next episode's reset
@@ -572,3 +572,19 @@ gap, and the other is a refactor the second auxiliary loss makes overdue.
 - [Connecting Joint-Embedding Predictive Architecture with Contrastive Self-Supervised Learning (NeurIPS 2024)](https://proceedings.neurips.cc/paper_files/paper/2024/file/04a80267ad46fc730011f8760f265054-Paper-Conference.pdf)
 - [JEPA: Fundamentals, Mathematics, and Literature Review — University of Tartu](https://kodu.ut.ee/~hadachi/Lecture_Notes/JEPA.html)
 - [awesome-jepa — curated JEPA resources](https://github.com/AbdelStark/awesome-jepa)
+
+## Review fixes (R-15, R-16)
+
+- **`order_slot` is embedded** (R-16, #186). The world model's action embedding listed three of the
+  env's four discrete heads; `order_slot`, which says which of the agent's own orders a modify or
+  cancel touches, was added to the action later and left out, so "cancel my first order" and "cancel
+  my third" embedded alike. `DISCRETE_ACTIONS + BOX_ACTIONS` is now held equal to the env's
+  `ACTION_KEYS` by a test, so the next new head fails loudly. World-model weights saved before this
+  change have no `order_slot` table and will not load into a model built after it.
+- **The value pass runs no objective** (R-15, #185). With `vf_share_layers: true`, PPO's advantage
+  computation (`compute_values`, in the learner connector) goes through the same JEPA encoder as the
+  policy, in training mode with gradients on, and no optimiser step follows it. The encoder used to run
+  the mask-and-predict objective and take an EMA step there: measured over one real iteration, 8 EMA
+  steps against 6 optimiser steps. `JEPARLModule.compute_values` now switches the objective off for its
+  duration, so EMA steps equal optimiser steps (6 and 6). Mask sampling also has its own
+  generator, so passes that train nothing no longer move a seeded run's global torch RNG.

@@ -97,6 +97,7 @@
     "_note_scope": "cbp_scope selects which units are replaceable. 'feedforward' means the hidden units of a two-Linear feed-forward block, plus the trunk's final hidden layer whose outgoing weights live in the pi/vf head rather than the encoder. Attention projections and embeddings are excluded: a unit there has no single well-defined outgoing weight matrix, and zeroing the outgoing weights is the whole reason a replacement does not disturb the function. 'recurrent' adds the hidden units of the top layer of an LSTM core (the lstm encoder has nothing replaceable under 'feedforward', so cbp_enabled there trained exactly like CBP off): a unit's incoming weights are its four gates' rows of weight_ih and weight_hh, and its outgoing ones are its column of weight_hh and of the head Linears (doc/15 S3-32, doc/25 section 3.4). Layers no optimiser trains are also skipped, which is what keeps it off the jepa encoder's EMA target trunk.",
     "_note_utility": "cbp_utility selects the measure ranked against. 'contribution' is Nature equation 1, |h| * sum|w_out|. 'mean_corrected' subtracts the running mean activation, because gradient descent transfers the mean part of a removed unit's contribution to the consumer's bias anyway. 'overall' additionally divides by sum|w_in|, the adaptation utility: under Adam a unit with small incoming weights can change its function faster, so it is worth more than its contribution alone suggests. arXiv Appendix C ablates all three and finds 'overall' best, including on the reinforcement-learning task, which is why it is the default here.",
     "_note_fire_on": "cbp_fire_on selects when generate-and-test runs. 'adam_step' is after every optimiser step, which is what arXiv Algorithm 3 (Continual PPO) specifies. 'iteration' runs it once per training iteration instead, which cannot move the network underneath a log-prob recorded before it and so leaves PPO's exp(logp_new - logp_old) ratio undisturbed between minibatches. The papers use the per-step placement over 100M steps, so it is the default, but the conservative one is kept available.",
+    "_note_compensate_mean": "cbp_compensate_mean adds a replaced unit's mean contribution (its bias-corrected running mean activation times its outgoing weights) to the next layer's bias before the outgoing weights are zeroed, so the output does not jump (doc/15 R-13). Without it a saturated tanh unit, which 'overall' utility ranks lowest because its activation barely varies, is replaced first and takes its constant contribution with it: on a constructed case one replacement moved the outputs by 8-10 standard deviations. Off by default: the papers zero the outgoing weights and leave the bias alone, and doc/16 section 16.13 measured the real run that way, so switching it on is a different experiment. Run train.compare with it on and off before changing the default. Feed-forward layers only; a recurrent layer has no single consumer bias.",
     "cbp_enabled": false,
     "cbp_metrics_only": false,
     "cbp_replacement_rate": 0.0001,
@@ -106,6 +107,7 @@
     "cbp_scope": "feedforward",
     "cbp_fire_on": "adam_step",
     "cbp_reset_optimizer_state": true,
+    "cbp_compensate_mean": false,
     "cbp_dead_unit_threshold": 0.01,
     "cbp_metrics_every_n_updates": 10
   },
@@ -203,6 +205,8 @@
     "episode_sample_every": 10,
     "episode_max_bytes": 2147483648,
     "episode_rows_per_file": 65536,
+    "_note_episode_max_live_episodes": "episode_max_live_episodes is the floor for how many unfinished episodes the recorder buffers per process; the run raises it to num_envs_per_env_runner when a runner steps more envs than that, because an episode with no place in the buffer is dropped from the record (doc/15 R-10).",
+    "episode_max_live_episodes": 8,
     "nav_tolerance": 1e-06,
     "strict_nav_check": true
   },

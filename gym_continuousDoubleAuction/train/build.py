@@ -137,6 +137,7 @@ def _learner_config_dict(cfg: TrainConfig) -> dict:
             "cbp_scope": cfg.cbp_scope,
             "cbp_fire_on": cfg.cbp_fire_on,
             "cbp_reset_optimizer_state": cfg.cbp_reset_optimizer_state,
+            "cbp_compensate_mean": cfg.cbp_compensate_mean,
             "cbp_dead_unit_threshold": cfg.cbp_dead_unit_threshold,
             "cbp_metrics_every_n_updates": cfg.cbp_metrics_every_n_updates,
         },
@@ -167,6 +168,7 @@ def build_config(cfg: TrainConfig):
         encoder_type=cfg.encoder_type,
         encoder_specs=cfg.encoder_specs,
         pretrained_path=cfg.pretrained_encoder_path,
+        book_mode=cfg.book_mode,
     )
 
     callback_instance = SelfPlayCallback(
@@ -186,6 +188,8 @@ def build_config(cfg: TrainConfig):
         episode_sample_every=cfg.episode_sample_every,
         episode_max_bytes=cfg.episode_max_bytes,
         episode_rows_per_file=cfg.episode_rows_per_file,
+        episode_max_live_episodes=cfg.episode_max_live_episodes,
+        envs_per_env_runner=cfg.num_envs_per_env_runner,
         run_id=cfg.run_id,
     )
 

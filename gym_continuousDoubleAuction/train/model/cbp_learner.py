@@ -63,6 +63,7 @@ from gym_continuousDoubleAuction.train.model.cbp import (
     CBPLayerState,
     ReplaceableLayer,
     activation_stats,
+    merge_stats,
     find_replaceable_layers,
     mature_fraction,
     plasticity_metrics,
@@ -236,7 +237,9 @@ class CBPLearnerMixin:
             if not torch.is_tensor(output):
                 return
             state = self._cbp_state[module_id][layer.name]
-            self._cbp_stats[key] = activation_stats(output, state, self._cbp_config)
+            stats = activation_stats(output, state, self._cbp_config)
+            earlier = self._cbp_stats.get(key)
+            self._cbp_stats[key] = stats if earlier is None else merge_stats(earlier, stats)
             if self._cbp_wants_rank_sample():
                 sample = output.detach()
                 if sample.dim() > 2:

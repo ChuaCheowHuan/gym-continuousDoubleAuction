@@ -29,6 +29,16 @@ def _cli(key):
     return cli_default("cda_probe", key)
 
 
+def env_config_for(corpus) -> Dict[str, object]:
+    """The env config that reproduces the corpus's observation layout.
+
+    The encoders are built against an env's observation space, so it has to be the
+    corpus's: building them from the default env made a `levels` corpus, or a different
+    `n_hist`, meet an encoder of the wrong width (#187).
+    """
+    return {"book_mode": corpus.layout.book_mode, "n_hist": corpus.layout.n_hist}
+
+
 def build_features(
     corpus,
     encoders: List[str],
@@ -48,7 +58,7 @@ def build_features(
         continuousDoubleAuctionEnv,
     )
 
-    env = continuousDoubleAuctionEnv({})
+    env = continuousDoubleAuctionEnv(env_config_for(corpus))
     agent_id = env.agents[0]
     obs_space = env.get_observation_space(agent_id)
     act_space = env.get_action_space(agent_id)
@@ -56,7 +66,9 @@ def build_features(
     features = {features_module.RAW_FEATURES: features_module.raw(corpus)}
 
     for encoder_type in encoders:
-        module = features_module.build_module(obs_space, act_space, encoder_type)
+        module = features_module.build_module(
+            obs_space, act_space, encoder_type, book_mode=corpus.layout.book_mode
+        )
         features[encoder_type] = features_module.latents(module, corpus)
         logger.info("%s: untrained latents %s", encoder_type, features[encoder_type].shape)
 
@@ -72,7 +84,12 @@ def build_features(
         # mismatch raises rather than loading partially.
         spec = group("train_config.json", "encoder")["encoder_specs"].get(pretrained_encoder, {})
         module = features_module.pretrained_module(
-            obs_space, act_space, pretrained_encoder, pretrained, spec
+            obs_space,
+            act_space,
+            pretrained_encoder,
+            pretrained,
+            spec,
+            book_mode=corpus.layout.book_mode,
         )
         name = f"{pretrained_encoder}@pretrained"
         features[name] = features_module.latents(module, corpus)
@@ -124,13 +141,18 @@ def main(argv=None):
         help="Cap on rows read from --parquet.",
     )
     p.add_argument(
+        "--book-mode",
+        choices=("grid", "levels"),
+        default=None,
+        help="The book_mode the --parquet run used. Needed only when the observation "
+        "width fits both modes (for example 569 floats: grid with n_hist 11 or levels "
+        "with n_hist 8), which the file cannot say.",
+    )
+    p.add_argument(
         "--per-agent",
         action="store_true",
-        help="Keep every agent's row from --parquet rather than one per step. "
-        "The rows at one step share a book and differ only in their "
-        "private tail, so this multiplies the corpus by the agent count "
-        "while adding only private state - useful when that is the "
-        "subject, misleading otherwise.",
+        help="Refused: per-agent rows are several per step, and probe targets shift by "
+        "rows, so scores would be for the wrong step (#188). Kept so the error explains it.",
     )
     p.add_argument(
         "--checkpoint",
@@ -158,6 +180,13 @@ def main(argv=None):
     p.add_argument("--out", type=str, default=None, help="Write the report here too.")
     p.add_argument("--log-level", type=str, default=_cli("log_level"))
     args = p.parse_args(argv)
+    if args.per_agent:
+        # Before any corpus or encoder is built: the report would refuse it anyway (#188).
+        p.error(
+            "--per-agent keeps several rows per step, and probe targets look a number of "
+            "rows ahead, so the scores would be for the wrong step. Score a corpus with one "
+            "row per step; per-agent rows are for pretraining."
+        )
 
     configure_logging(args.log_level, force=True)
 
@@ -166,6 +195,7 @@ def main(argv=None):
             args.parquet,
             max_rows=args.max_rows,
             per_agent=args.per_agent,
+            book_mode=args.book_mode,
         )
     else:
         corpus = corpus_module.from_rollouts(

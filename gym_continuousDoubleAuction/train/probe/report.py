@@ -91,9 +91,16 @@ def run(
         One `Row` per scored (target, horizon), targets in the order given.
 
     Raises:
-        ValueError: on an unknown target name, or a feature matrix whose row
-            count does not match the corpus.
+        ValueError: on a per-agent corpus, an unknown target name, or a feature
+            matrix whose row count does not match the corpus.
     """
+    if getattr(corpus, "per_agent", False):
+        raise ValueError(
+            "This corpus keeps every agent's row (per_agent), so a step is several rows and a "
+            "target that looks `horizon` rows ahead reads the wrong step - 'horizon 1' is "
+            "mostly the same step. Per-agent corpora are for pretraining; score a corpus "
+            "with one row per step (#188)."
+        )
     for name, matrix in features.items():
         if len(matrix) != len(corpus):
             raise ValueError(

@@ -609,7 +609,7 @@ a changed config. That is the whole envelope the bugs lived outside of.
 |---|---|
 | GPU | CBP state allocated on the CPU while the module had already been moved to CUDA by `super().build()`. `h - f̂` raises on the first forward pass of any GPU run |
 | GPU, later | A CPU `torch.Generator` filling a CUDA tensor. Does not raise at build time — only when the accumulator first crosses 1.0, tens of optimiser steps in |
-| `num_learners > 1` | RLlib wraps each module in `TorchDDPRLModule`, which forwards no attributes, so the trunk-to-head join found nothing and the default network silently got 2 replaceable layers instead of 4. It also prefixes every `named_modules` name with `module.`, which would have made state keys differ between distributed and single-learner runs |
+| `num_learners > 1` | **Now refused** with `cbp_enabled` (config validation, [15](15_findings_and_recommendations.md) R-12): each learner picks the unit to replace from its own minibatch, outside the gradient, so the replicas can drift apart. `cbp_metrics_only` replaces nothing and is allowed. The row below is the earlier, separate wrapping problem. RLlib wraps each module in `TorchDDPRLModule`, which forwards no attributes, so the trunk-to-head join found nothing and the default network silently got 2 replaceable layers instead of 4. It also prefixes every `named_modules` name with `module.`, which would have made state keys differ between distributed and single-learner runs |
 | Restore | §3.5 |
 
 The three code fixes are small — derive the device from `layer.incoming.weight`, build the
@@ -862,3 +862,21 @@ Related work, for the alternatives §1.2 compares against:
 - [The Primacy Bias in Deep Reinforcement Learning — Nikishin et al., ICML 2022](https://arxiv.org/abs/2205.07802)
 - [Loss of Plasticity in Continual Deep Reinforcement Learning — Abbas et al., CoLLAs 2023](https://arxiv.org/abs/2303.07507)
 - [Adaptive Rational Activations / plasticity in RL — background on activation saturation](https://arxiv.org/abs/2102.09407)
+
+## Review fixes (R-12 to R-14)
+
+- **One learner.** `cbp_enabled` with `num_learners > 1` is refused at config time (R-12, #182).
+  Averaged gradients keep several learners identical; a replacement is a direct overwrite chosen
+  per learner, so nothing would pull the copies back together. The proper fix is to synchronise
+  the choice (all-reduce the utilities or broadcast learner 0's index) and test it on a real
+  two-learner run.
+- **Mean compensation.** `cbp_compensate_mean` (off by default) adds a replaced unit's bias-corrected
+  mean activation times its outgoing weights to the next layer's bias before zeroing them (R-13,
+  #183). A saturated tanh unit looks useless to `overall` utility (its activation barely varies) and is
+  replaced first, and on a constructed case one replacement moved the outputs by 8-10 standard
+  deviations; with the flag on the shift is about zero. It is off because §16.13 of the verification log
+  measured the paper's rule, so switching it on is a different experiment.
+- **Every call of a step.** A layer that runs more than once in a step (each MoE expert once per top-k
+  slot; the JEPA trunk on the masked and the full input) is judged on all of them: the hook merges
+  the calls' statistics by row count, exactly, as if they were one batch (R-14, #184). Before, only the
+  last call counted.

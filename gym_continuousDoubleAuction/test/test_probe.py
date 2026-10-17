@@ -736,3 +736,58 @@ class TestEffectiveRank:
         table = rank_module.rank_table({"raw": np.random.default_rng(0).standard_normal((256, 16))})
         text = rank_module.render(table, ["raw"])
         assert "cbp_batch_effective_rank" in text
+
+
+class TestPerAgentCorporaAreNotScored:
+    """doc/15 R-18 (#188): a target shifts by rows, which is a step only with one row per step.
+
+    With `per_agent` every step is several rows, so "horizon 1" read the same step for most
+    rows and "horizon 3" looked one step ahead. The numbers were for a different question and
+    looked like valid R^2s, so a per-agent corpus is refused for scoring.
+    """
+
+    @staticmethod
+    def _parquet(tmp_path, agents=3, steps=5):
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        width = ObsLayout.from_obs_space(
+            __import__("gymnasium").spaces.Box(-np.inf, np.inf, shape=(233,), dtype=np.float32)
+        ).flat_dim
+        rows = [(s, a) for s in range(steps) for a in range(agents)]
+        table = pa.table(
+            {
+                "obs": [list(np.zeros(width, dtype=np.float32)) for _ in rows],
+                "episode_id": ["e"] * len(rows),
+                "step": [s for s, _ in rows],
+                "agent_id": [f"agent_{a}" for _, a in rows],
+            }
+        )
+        pq.write_table(table, tmp_path / "episodes.parquet")
+        return str(tmp_path)
+
+    def test_a_per_agent_corpus_says_so(self, tmp_path):
+        path = self._parquet(tmp_path)
+        assert corpus_module.from_parquet(path, per_agent=True).per_agent is True
+        assert corpus_module.from_parquet(path).per_agent is False
+
+    def test_a_per_agent_corpus_has_several_rows_per_step(self, tmp_path):
+        assert len(corpus_module.from_parquet(self._parquet(tmp_path), per_agent=True)) == 15
+        assert len(corpus_module.from_parquet(self._parquet(tmp_path))) == 5
+
+    def test_scoring_one_is_refused_by_name(self, tmp_path):
+        got = corpus_module.from_parquet(self._parquet(tmp_path), per_agent=True)
+        with pytest.raises(ValueError, match="per_agent"):
+            report_module.run(got, {"raw": np.zeros((len(got), 3))}, ["mid_return"], [1])
+
+    def test_the_cli_refuses_it_before_building_anything(self, tmp_path):
+        from gym_continuousDoubleAuction.train.probe import __main__ as probe_main
+
+        with pytest.raises(SystemExit):
+            probe_main.main(["--parquet", self._parquet(tmp_path), "--per-agent"])
+
+    def test_a_default_corpus_is_still_scored(self, tmp_path):
+        got = corpus_module.from_parquet(self._parquet(tmp_path))
+        report_module.run(
+            got, {"raw": np.random.default_rng(0).normal(size=(len(got), 3))}, ["mid_return"], [1]
+        )

@@ -278,7 +278,9 @@ def pretrain(
     torch.manual_seed(seed)
     generator = np.random.default_rng(seed)
 
-    module = features_module.build_module(obs_space, act_space, encoder_type, encoder_spec)
+    module = features_module.build_module(
+        obs_space, act_space, encoder_type, encoder_spec, book_mode=corpus.layout.book_mode
+    )
     encoder = _jepa_encoder(module)
 
     # The world model has no optimiser here and no data to train on: the loop
