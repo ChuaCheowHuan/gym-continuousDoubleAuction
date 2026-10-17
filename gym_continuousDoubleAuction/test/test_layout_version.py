@@ -96,3 +96,65 @@ def test_save_writes_it(tmp_path, monkeypatch):
     assert written[LAYOUT_KEY] == layout_stamp()
     assert written["training_iteration"] == 3
     check_layout_stamp(written, str(tmp_path))
+
+
+class TestTheStampRecordsHowWideEachActionHeadIs:
+    """doc/15 R-5 (#175): `max_own_orders` sets the `order_slot` head's width, and the stamp
+    listed only the head names. Two checkpoints with the same label could be trained for
+    different heads, and the observation width (which the label's other fields protect) is
+    identical, so only the action head differed."""
+
+    def test_the_recorded_sizes_equal_the_real_action_space(self):
+        """Ties the stamp to the space itself, so the two cannot drift apart."""
+        import numpy as np
+
+        from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
+            continuousDoubleAuctionEnv,
+        )
+
+        env = continuousDoubleAuctionEnv({"num_of_agents": 2, "is_render": False, "max_step": 4})
+        space = env.get_action_space(env.agents[0])
+        real = {
+            name: int(sub.n) if hasattr(sub, "n") else int(np.prod(sub.shape))
+            for name, sub in space.spaces.items()
+        }
+        assert layout_stamp()["action_sizes"] == real
+
+    def test_every_action_key_has_a_size(self):
+        assert sorted(layout_stamp()["action_sizes"]) == sorted(ACTION_KEYS)
+
+    def test_a_different_order_slot_width_is_refused_by_name(self):
+        stamp = layout_stamp()
+        stamp["action_sizes"] = {**stamp["action_sizes"], "order_slot": 8}
+        with pytest.raises(ValueError, match=r"order_slot.*8.*5|action_sizes"):
+            check_layout_stamp({LAYOUT_KEY: stamp}, "/x")
+
+    def test_a_stamp_from_before_the_sizes_were_recorded_is_not_refused(self):
+        stamp = layout_stamp()
+        del stamp["action_sizes"]
+        check_layout_stamp({LAYOUT_KEY: stamp}, "/x")
+
+    def test_the_stamp_changes_with_max_own_orders(self, tmp_path):
+        import json
+        import os
+        import shutil
+        import subprocess
+        import sys
+
+        config = tmp_path / "config"
+        shutil.copytree("config", config)
+        path = config / "tunable_constants.json"
+        constants = json.loads(path.read_text())
+        constants["action_space"]["max_own_orders"] = 7
+        path.write_text(json.dumps(constants))
+        code = (
+            "import json;"
+            "from gym_continuousDoubleAuction.envs.layout_version import layout_stamp;"
+            "print(json.dumps(layout_stamp()['action_sizes']))"
+        )
+        env = {**os.environ, "CDA_CONFIG_DIR": str(config), "PYTHONPATH": os.getcwd()}
+        out = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True, env=env, check=True
+        ).stdout
+        assert json.loads(out.strip().splitlines()[-1])["order_slot"] == 8
+        assert layout_stamp()["action_sizes"]["order_slot"] == 5
