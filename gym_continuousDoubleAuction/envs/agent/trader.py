@@ -229,7 +229,13 @@ class Trader:
 
         return len(doomed)
 
-    def _resting_exposure(self, LOB, side: str, exclude_order_id: Optional[int] = None) -> int:
+    def _resting_exposure(
+        self,
+        LOB,
+        side: str,
+        exclude_order_id: Optional[int] = None,
+        own_orders: Optional[dict] = None,
+    ) -> int:
         """This trader's own live resting quantity on `side`.
 
         Walks the tree's `order_map` for this trader's `trade_id`, the way
@@ -243,14 +249,20 @@ class Trader:
         would otherwise be charged for it. Counting it would refuse orders that
         free more exposure than they take.
         """
-        order_map = self._find_orderTree(LOB, {'side': side})
-        if order_map is None:
-            return 0
+        if own_orders is not None:
+            orders = own_orders[side]
+        else:
+            order_map = self._find_orderTree(LOB, {'side': side})
+            if order_map is None:
+                return 0
+            orders = [
+                (order_ID, order)
+                for order_ID, order in order_map.items()
+                if order.trade_id == self.ID
+            ]
 
         total = 0
-        for order_ID, order in order_map.items():
-            if order.trade_id != self.ID:
-                continue
+        for order_ID, order in orders:
             if exclude_order_id is not None and order_ID == exclude_order_id:
                 continue
             total += int(order.quantity)
@@ -258,7 +270,12 @@ class Trader:
         return total
 
     def _opening_size(
-        self, LOB, side: str, size: int, exclude_order_id: Optional[int] = None
+        self,
+        LOB,
+        side: str,
+        size: int,
+        exclude_order_id: Optional[int] = None,
+        own_orders: Optional[dict] = None,
     ) -> Tuple[int, int]:
         """How much of an order of `size` on `side` opens risk, and how much closes.
 
@@ -277,7 +294,9 @@ class Trader:
         net_pos = float(self.acc.net_position)
         if (side == 'bid' and net_pos >= 0) or (side == 'ask' and net_pos <= 0):
             return size, 0
-        resting = self._resting_exposure(LOB, side, exclude_order_id=exclude_order_id)
+        resting = self._resting_exposure(
+            LOB, side, exclude_order_id=exclude_order_id, own_orders=own_orders
+        )
         closable = max(0, int(abs(net_pos)) - resting)
         return max(0, size - closable), closable
 
@@ -311,7 +330,12 @@ class Trader:
             cost = lots * Decimal(str(price))
         return max(Decimal(0), cost - 2 * self.acc.cost_basis)
 
-    def _resting_cover_loss(self, LOB, exclude_order_id: Optional[int] = None) -> Decimal:
+    def _resting_cover_loss(
+        self,
+        LOB,
+        exclude_order_id: Optional[int] = None,
+        own_orders: Optional[dict] = None,
+    ) -> Decimal:
         """The loss this trader's resting bids will realise if they cover its short.
 
         A resting bid that can take an under-water short flat reserved its loss
@@ -326,9 +350,10 @@ class Trader:
         if position >= 0:
             return Decimal(0)
         lots = -position
+        own_bids = own_orders['bid'] if own_orders is not None else self._own_orders_from_touch(LOB, 'bid')
         bids = [
             o
-            for order_ID, o in self._own_orders_from_touch(LOB, 'bid')
+            for order_ID, o in own_bids
             if exclude_order_id is None or order_ID != exclude_order_id
         ]
         if sum(int(o.quantity) for o in bids) < lots:
@@ -411,7 +436,12 @@ class Trader:
         funds = self.acc.cash + self._closing_escrow(LOB, exclude_order_id=resting_order_id)
         return funds >= need
 
-    def _resting_maker_fees(self, LOB, exclude_order_id: Optional[int] = None) -> Decimal:
+    def _resting_maker_fees(
+        self,
+        LOB,
+        exclude_order_id: Optional[int] = None,
+        own_orders: Optional[dict] = None,
+    ) -> Decimal:
         """The maker fee this trader's resting orders will owe if they all fill.
 
         A resting order escrows its notional but not its fee, so the fee sits
@@ -426,13 +456,19 @@ class Trader:
             return Decimal(0)
         owed = Decimal(0)
         for side in ('bid', 'ask'):
-            for order_ID, order in self._own_orders_from_touch(LOB, side):
+            orders = own_orders[side] if own_orders is not None else self._own_orders_from_touch(LOB, side)
+            for order_ID, order in orders:
                 if exclude_order_id is not None and order_ID == exclude_order_id:
                     continue
                 owed += order.price * order.quantity * rate
         return owed
 
-    def _closing_escrow(self, LOB, exclude_order_id: Optional[int] = None) -> Decimal:
+    def _closing_escrow(
+        self,
+        LOB,
+        exclude_order_id: Optional[int] = None,
+        own_orders: Optional[dict] = None,
+    ) -> Decimal:
         """Escrow held against this trader's resting orders that would only
         flatten its position.
 
@@ -462,7 +498,8 @@ class Trader:
 
         remaining = abs(pos)
         total = Decimal(0)
-        for order_ID, order in self._own_orders_from_touch(LOB, side):
+        orders = own_orders[side] if own_orders is not None else self._own_orders_from_touch(LOB, side)
+        for order_ID, order in orders:
             if order_ID == exclude_order_id:
                 continue
             if remaining <= 0:
@@ -511,7 +548,14 @@ class Trader:
         return self.acc.nav > 0 and self.acc.liquidation_steps_left == 0
 
     def _order_approved(
-        self, side: str, size: int, price: float, LOB, type: Optional[str] = None, slot: int = 0
+        self,
+        side: str,
+        size: int,
+        price: float,
+        LOB,
+        type: Optional[str] = None,
+        slot: int = 0,
+        own_orders: Optional[dict] = None,
     ) -> bool:
         """
         Conditions for order approval. Handles:
@@ -554,7 +598,9 @@ class Trader:
         released = replaced.price * replaced.quantity if replaced is not None else Decimal(0)
 
         # Determine how much of the order is "opening" a new/larger position
-        opening_size, closable = self._opening_size(LOB, side, size, exclude_order_id=replaced_id)
+        opening_size, closable = self._opening_size(
+            LOB, side, size, exclude_order_id=replaced_id, own_orders=own_orders
+        )
 
         # Covering a short past its collateral realises a loss into cash
         # (doc/15 S2-15); zero for every other order.
@@ -583,12 +629,12 @@ class Trader:
         order_val += order_val * self.acc.max_fee_rate
         # ... and the fees the resting orders already owe, which are in cash
         # too (`_resting_maker_fees`).
-        order_val += self._resting_maker_fees(LOB, exclude_order_id=replaced_id)
+        order_val += self._resting_maker_fees(LOB, exclude_order_id=replaced_id, own_orders=own_orders)
         # ... and the loss a cover realises, which is paid out of cash: this
         # order's own, and the standing one of resting bids that will cover.
         order_val += loss
         if opening_size > 0:
-            order_val += self._resting_cover_loss(LOB, exclude_order_id=replaced_id)
+            order_val += self._resting_cover_loss(LOB, exclude_order_id=replaced_id, own_orders=own_orders)
 
         # `released` is the escrow the replaced order gives back on the same
         # call, so it is as spendable as cash for this quote. Without it a
@@ -603,7 +649,7 @@ class Trader:
         # `cash` transiently below zero by at most this amount, while
         # `cash + cash_on_hold` never does, and NAV - which sums both - is
         # untouched. See `_closing_escrow`.
-        closing = self._closing_escrow(LOB, exclude_order_id=replaced_id)
+        closing = self._closing_escrow(LOB, exclude_order_id=replaced_id, own_orders=own_orders)
         if self.acc.cash + released + closing >= order_val:
             return True
 
