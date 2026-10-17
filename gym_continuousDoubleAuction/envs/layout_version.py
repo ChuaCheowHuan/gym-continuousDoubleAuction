@@ -18,8 +18,10 @@ from gym_continuousDoubleAuction.envs.exchg.action_helper import (
     ACTION_KEYS,
     ACTION_LAYOUT_VERSION,
 )
+from gym_continuousDoubleAuction.config_loader import constants
 from gym_continuousDoubleAuction.envs.exchg.state_helper import (
     BOOK_MODE,
+    K_ROWS,
     OBSERVATION_LAYOUT_VERSION,
     PRIVATE_FIELDS,
     check_book_mode,
@@ -27,6 +29,24 @@ from gym_continuousDoubleAuction.envs.exchg.state_helper import (
 
 #: The key the stamp is stored under in `league_state.json`.
 LAYOUT_KEY = "layout"
+
+
+def action_head_sizes() -> dict:
+    """How wide each head of the action Dict is, from the config the space is built from.
+
+    `max_own_orders` sets `order_slot`, `k_rows` sets `price`, and so on: none of them changes
+    the observation width the rest of the stamp protects, but each changes a head of the
+    network. `test_layout_version` holds this equal to a real env's action space, so the two
+    cannot drift apart (doc/15 R-5, #175).
+    """
+    act = constants("action_space")
+    return {
+        "category": int(act["category_n"]),
+        "order_slot": int(act["max_own_orders"]) + 1,
+        "price": int(K_ROWS),
+        "price_offset": int(act["price_offset_n"]),
+        "size": 1,
+    }
 
 
 def layout_stamp(book_mode=None) -> dict:
@@ -42,6 +62,7 @@ def layout_stamp(book_mode=None) -> dict:
         "book_mode": check_book_mode(BOOK_MODE if book_mode is None else book_mode),
         "private_fields": list(PRIVATE_FIELDS),
         "action_keys": list(ACTION_KEYS),
+        "action_sizes": action_head_sizes(),
     }
 
 
@@ -75,6 +96,21 @@ def check_layout_stamp(sidecar, path: str, book_mode=None) -> None:
             "action_keys": None,
         }
     problems = []
+    recorded_sizes = stamp.get("action_sizes")
+    if recorded_sizes is not None and recorded_sizes != current["action_sizes"]:
+        differing = sorted(
+            head
+            for head in set(recorded_sizes) | set(current["action_sizes"])
+            if recorded_sizes.get(head) != current["action_sizes"].get(head)
+        )
+        problems.append(
+            "action_sizes differ: "
+            + ", ".join(
+                f"{head} is {recorded_sizes.get(head)} in the checkpoint and "
+                f"{current['action_sizes'].get(head)} in this code"
+                for head in differing
+            )
+        )
     for axis in ("observation", "action"):
         theirs = stamp.get(f"{axis}_version")
         ours = current[f"{axis}_version"]
