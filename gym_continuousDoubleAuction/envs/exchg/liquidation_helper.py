@@ -101,8 +101,11 @@ class LiquidationEngine(object):
         # A bool is an int to Python, and None is what `train.compare --set
         # key=null` produces; both, and NaN, are refused here by name rather
         # than surfacing as a TypeError or a decimal.InvalidOperation.
-        if not _is_finite_number(maintenance_margin) or not 0 <= maintenance_margin < 1:
-            raise ValueError(f"maintenance_margin must be in [0, 1); got {maintenance_margin!r}.")
+        # Positive: a zero margin liquidates only at NAV <= 0, when there is no equity to
+        # bound the close and nothing left to protect; exchanges always require a margin
+        # above zero for that reason (doc/15 R-3, #173).
+        if not _is_finite_number(maintenance_margin) or not 0 < maintenance_margin < 1:
+            raise ValueError(f"maintenance_margin must be in (0, 1); got {maintenance_margin!r}.")
         margin = Decimal(str(maintenance_margin))
         if (
             not _is_finite_number(liquidation_horizon)
@@ -159,6 +162,7 @@ class LiquidationEngine(object):
         position, so `set_done` only ever terminates a flat account.
         """
         if self.liquidation == "off":
+            self._pull_bankrupt_orders()
             return []
 
         events = []
@@ -196,7 +200,24 @@ class LiquidationEngine(object):
             else:
                 events.append(self._liquidate_one(trader, mark))
             self._remark_keeping_prev_nav()
+        self._pull_bankrupt_orders()
         return events
+
+    def _pull_bankrupt_orders(self) -> None:
+        """Take down the resting orders of every live trader whose NAV has run out.
+
+        On a real venue a defaulted member's orders are mass-cancelled before the next
+        market data goes out, so what participants see is the book that remains.
+        `set_done` used to do this while the step's outputs were assembled, after the shared
+        book snapshot had been taken: on the bankruptcy step every observation still showed
+        orders that no longer existed (doc/15 R-2, #172). Doing it here, before
+        `prep_next_state`, makes the observation and the book agree. The orders a
+        liquidation closes out are already gone (`_margin_call`); this covers a flat
+        account with negative NAV, and every bankrupt account when liquidation is off.
+        """
+        for trader in self.venue.traders:
+            if self.venue.is_live(trader) and trader.acc.nav <= 0:
+                self._margin_call(trader)
 
     # -------------------------------------------------------------- close-out
 
@@ -315,11 +336,18 @@ class LiquidationEngine(object):
         reaches 0 at `(mark + cushion) / (1 + rate)` for a short being bought
         back and `(mark - cushion) / (1 - rate)` for a long being sold, where
         `cushion = NAV / |pos|`; at a rate of 0 both are
-        `mark -/+ NAV / net_position`. With NAV already <= 0 there is no equity
-        to protect, and the band is the mark itself (less the fee, which only
-        tightens it): the book may only improve on it. Snapped to the tick
-        grid on the conservative side - down for a buy, up for a sell - and
-        never below one tick.
+        `mark -/+ NAV / net_position`. Snapped to the tick grid on the
+        conservative side - down for a buy, up for a sell - and never below one
+        tick.
+
+        With NAV already <= 0 there is no equity left to bound the close, and
+        the band that would follow from it is the mark itself, which a mid-price
+        mark can never be filled at: the whole position went to ADL while
+        resting liquidity sat a tick away (doc/15 R-3, #173). Exchanges send an
+        underwater position to the book at market first and use ADL only for
+        what the book cannot take, so the band is the touch - the best opposite
+        price - and only that level is used. With nothing on the opposite side
+        it stays the mark, and everything goes to ADL.
 
         A smaller fill than `|pos|` (a gradual slice, a thin book) pays a
         smaller fee at no worse a price, so the whole-position band is
@@ -327,6 +355,14 @@ class LiquidationEngine(object):
         """
         acc = trader.acc
         tick = Decimal(str(self.venue.min_tick))
+        if acc.nav <= 0:
+            touch = (
+                self.venue.LOB.get_best_ask()
+                if acc.net_position < 0
+                else self.venue.LOB.get_best_bid()
+            )
+            if touch is not None:
+                return max(Decimal(str(touch)), tick)
         rate = acc.taker_fee_bps.scaleb(-4)
         cushion = max(acc.nav, Decimal(0)) / abs(acc.net_position)
         if acc.net_position < 0:  # closing a short: buy, at most this

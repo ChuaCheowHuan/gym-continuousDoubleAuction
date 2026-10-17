@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (2,189 tests: 2,004 unit + 185 integration)
+# everything (2,218 tests: 2,033 unit + 185 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -55,7 +55,7 @@ Counts re-measured with `--collect-only`.
 | File | Tests | Area |
 |---|---|---|
 | `test_orderbook_new.py` | 23 | Matching engine components and integration; malformed input raises `ValueError`, never `SystemExit` (S3-7); the constructor takes no tick (S3-4) |
-| `test_matching_regimes.py` | 19 | The allocation rule (fifo, pro-rata with exact largest-remainder rounding) and batch clearing at the book: the uniform price and its tie-breaks, resting-first rationing, position independence off the margin, deferred modifies, settlement that conserves NAV, and price improvement on a resting order re-basing its escrow so `cash_on_hold` never goes negative (S3-25) |
+| `test_matching_regimes.py` | 24 | The allocation rule (fifo, pro-rata with exact largest-remainder rounding) and batch clearing at the book: the uniform price and its tie-breaks, resting-first rationing, position independence off the margin, deferred modifies, settlement that conserves NAV, and price improvement on a resting order re-basing its escrow so `cash_on_hold` never goes negative (S3-25) |
 | `test_clearing_env.py` | 13 | The regimes through the env config: defaults, validation, the rule on every episode's book, a crossing pair clearing at the reference whatever the shuffle, passive-fill accounting, render alignment, NAV conservation under random play in every combination |
 | `test_orderbook_properties.py` | 4 | Hypothesis: every book, escrow and ledger invariant, for any order sequence and under random env play at three ticks (S4-13) |
 | `test_orderbook_crossed_book.py` | 1 | Crossed-book invariant |
@@ -82,7 +82,7 @@ Counts re-measured with `--collect-only`.
 | `test_grid_book.py` | 14 | The fixed tick-offset grid (S3-15): a quote sits in the cell of its tick offset, the same price lands in the same cell of every frame, out-of-window levels are not shown, price code j is j ticks from the reference whatever rests, own block and tokeniser alignment, `ObsLayout` reads both modes |
 | `test_occupancy_channel.py` | 11 | The two occupancy rows equal `size > 0` on every cell of every step and ride with their frame; an absent level and a quote at the reference price differ; a one-sided book is referenced to the last trade, agreeing with `mark_price`; layout version 4 (S3-14) |
 | `test_reward_logic.py` | 8 | Reward formula components: normalisation by `init_nav`, scale invariance, the signed drawdown telescoping, zero-sum symmetry |
-| `test_liquidation.py` | 30 | Maintenance margin and close-out (04 section 8): the trigger, the book inside the bankruptcy band (priced to include the taker fee, #233) then ADL, the counters, a bankrupt trader terminated flat, the pro-rata ADL split, `gradual_adl` slices and freeze, and refusing a non-numeric margin or horizon by name |
+| `test_liquidation.py` | 41 | Maintenance margin and close-out (04 section 8): the trigger, the book inside the bankruptcy band (priced to include the taker fee, #233) then ADL, the counters, a bankrupt trader terminated flat, the pro-rata ADL split, `gradual_adl` slices and freeze, and refusing a non-numeric margin or horizon by name |
 | `test_visualize_reward_terms.py` | 3 | Every reward term is drawn in the charts, each in its own colour, so the plotted terms still sum to the total |
 | `test_env_lifecycle.py` | 10 | The bare env is tradable (S1-4) and truncation lands exactly on `max_step` (S3-19) |
 | `test_seeding.py` | 11 | `reset(seed=...)` really seeds the episode: anchor, sizes, queueing order; the global NumPy stream is not the source; `sklearn` is not imported (S3-5, S3-6) |
@@ -96,6 +96,7 @@ Counts re-measured with `--collect-only`.
 | `test_checkpointing.py` | 52 | Checkpoint retention, restore selection, league state across a save |
 | `test_action_dist.py` | 15 | A stateful module's log-probability for two agents in one step: RLlib's `(B, B)` result pinned as the bug, the corrected `(B, 1)`, `(B,)` and `(B, T)` shapes, the old squeeze case, the wrapper cached and idempotent (#278) |
 | `test_champion_guard.py` | 26 | The entropy schedule and its validation; the promotion guard (a passive candidate refused, a trading one promoted, the bar inclusive, off at 0, missing counts warn and do not block); the shipped multiplier; the `sqrt(n - 1)` warning; the per-module trade counts (S3-11) |
+| `test_league_rollback.py` | 10 | A failed champion snapshot undoes `add_module` (the corrected pool reaches the runners; a failing undo only logs) and a full league evicts its oldest only after the new champion exists, so a failure never shrinks it, even an over-limit history (#176, #178) |
 | `test_matchmaking_edges.py` | 20 | League matchmaking at its edges: an all-zero pool draws uniformly (with one warning), a champions-only pool, an empty pool, reproducibility per episode and agent, the draw share following 3:1 weights, bad weights refused by name (#207) |
 | `test_orderbook_scripts.py` | 31 | The worked example of the retired `example.py` asserted by outcome (who traded with whom, at what price, what rests), and `genOrders.py` as a seeded shadow model over 25 seeds: the book must agree with a picture rebuilt from trade records alone (#210) |
 | `test_champion_trigger.py` | 20 | League statistics with modules that played no episodes; promotion, pool size, idle count and time-since-champion as metrics |
@@ -116,7 +117,7 @@ Counts re-measured with `--collect-only`.
 | `test_visualize_scripts.py` | 32 | `visualize/` end to end on small synthetic Parquet and `progress.jsonl` runs: the loader's complete-episode rule, the data in each chart's lines, `run_all`, both inspectors (#211) |
 | `test_visualize_orderbook.py` | 12 | The newest book snapshot is read from the middle of the observation, never off the end — the only arithmetic in `visualize/` that can be wrong without raising |
 | `test_probe.py` | 56 | The reward-free probe harness's arithmetic on synthetic observations: target definitions, episode-boundary masking, the splits, the metrics, unscoreable cells, and that `snapshots` reads the book rather than the private tail |
-| `test_bankrupt_termination.py` | 10 | A trader whose NAV reaches zero is terminated, and the episode ends when too few solvent traders remain |
+| `test_bankrupt_termination.py` | 13 | A trader whose NAV reaches zero is terminated, and the episode ends when too few solvent traders remain |
 | `test_resting_exposure.py` | 8 | Escrow against live orders: what a resting order commits, and the layered-closing-order exploit that used to leave a trader short |
 | `test_self_match.py` | 14 | A trader cannot trade with itself: the crossing leg is withdrawn before the matcher, and the resting leg cannot become the mark (S2-5) |
 | `test_entry_vwap.py` | 11 | `entry_vwap` is the price actually paid and stays positive while a position is open, where the rolled `carrying_vwap` can go negative |
@@ -168,7 +169,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((2,189 tests))
+  root((2,218 tests))
     Simulator
       orderbook 88
         the demo scripts as tests, a shadow model
@@ -228,7 +229,8 @@ mindmap
       checkpointing 60
         layout stamp, book mode
         retention, restore, league sidecar
-      league 41
+      league 49
+        a failed snapshot is undone; evict after success
         matchmaking, promotion triggers
         empty pool, zero and bad weights
       encoders 216

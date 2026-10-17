@@ -211,7 +211,7 @@ returns   = result[ENV_RUNNER_RESULTS]["module_episode_returns_mean"]   # keyed 
 threshold = mean(returns) + std_dev_multiplier · std(returns)
 best trainable module with return > threshold  →  snapshot
    subject to: ≥ min_iterations_between_champions since the last one
-               evict the oldest if champion_count == max_champions
+               evict the oldest if champion_count > max_champions, AFTER the snapshot succeeded
 ```
 
 Using `module_episode_returns_mean` rather than the old `agent_episode_returns_mean` with an

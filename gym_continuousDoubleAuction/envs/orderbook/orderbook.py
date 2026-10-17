@@ -96,6 +96,9 @@ class OrderBook(object):
         # the clearing price. Set here as well as in `clear_batch`, so a read on
         # a book that has not cleared yet is an empty list, not an AttributeError.
         self.batch_unaffordable = []
+        # Direction of the last batch price move (+1 up, -1 down, None before any), for the
+        # tick rule that signs a trade with no aggressor (`_auction_initiator`).
+        self.last_batch_sign = None
         self.tape_display_length = tape_display_length
         if matching_rule not in self.MATCHING_RULES:
             raise ValueError(
@@ -395,10 +398,13 @@ class OrderBook(object):
 
         Returns one `(trade_id, trades, order_in_book)` per queued order, in
         queue order, with each trade attached to the order that is its
-        `init_party`: the batch order when the other side rested, the buyer
-        when both arrived in the batch (then `counter_party['resting']` is
-        False, and the caller settles that party without an escrow release).
-        Every record is on the tape.
+        `init_party`: the batch order when the other side rested; when both
+        arrived in the batch nobody is the aggressor, so a tick rule decides -
+        the buyer if the clearing price is above `reference_price`, the seller
+        if below, and the direction of the last move if equal (the buyer before
+        there has been one). Then `counter_party['resting']` is False, and the
+        caller settles that party without an escrow release. Every record is
+        on the tape.
 
         `affordable(trade_id, side, quantity, price, resting_limit, order_id)`
         is asked, once a clearing price is chosen, of every order that would
@@ -441,7 +447,9 @@ class OrderBook(object):
                 f"side against an executable volume of {clearing.volume}; the sides must match"
             )
 
-        filled_qty = self._pair_fills(buy_fills, sell_fills, clearing.p_star, results)
+        filled_qty = self._pair_fills(
+            buy_fills, sell_fills, clearing.p_star, results, reference_price
+        )
         self._rest_leftovers(clearing, filled_qty, results)
         return [results[k] for k in order]
 
@@ -535,12 +543,34 @@ class OrderBook(object):
                     left -= fill
         return fills
 
-    def _pair_fills(self, buy_fills, sell_fills, p_star, results):
+    def _auction_initiator(self, p_star, reference_price):
+        """Which side initiates a trade whose two sides both arrived in the batch.
+
+        A call auction has no aggressor, and the order flow the observation carries
+        (`signed_volume`, `trade_direction`) needs a sign. Always naming the buyer made 53% of
+        batch trades buyer-initiated by construction (doc/15 R-1, #171). A tick rule instead:
+        a clearing price above the reference (the pre-batch mid) was pushed there by buyers, one
+        below it by sellers, and an unchanged price repeats the last direction - the buyer
+        until there has been one, which keeps the old answer where nothing is known.
+        """
+        sign = 0
+        if reference_price is not None:
+            diff = Decimal(str(p_star)) - Decimal(str(reference_price))
+            sign = (diff > 0) - (diff < 0)
+        if sign != 0:
+            self.last_batch_sign = sign
+        elif self.last_batch_sign is not None:
+            sign = self.last_batch_sign
+        return "ask" if sign < 0 else "bid"
+
+    def _pair_fills(self, buy_fills, sell_fills, p_star, results, reference_price=None):
         """Pair the two fill lists into trade records at `p_star`, on the tape and in `results`.
 
         Returns how much of each queued order filled, by `id(order)`.
         """
         self.update_time()
+        # Decided once per clearing, not per pair: one auction, one price, one direction.
+        auction_initiator = self._auction_initiator(p_star, reference_price)
         filled_qty = {}  # id(pending quote) -> filled
         i = j = 0
         bq = [list(x) for x in buy_fills]
@@ -578,12 +608,14 @@ class OrderBook(object):
                 s_party['new_book_quantity'] = self._fill_resting('ask', s, q)
             else:
                 filled_qty[id(s)] = filled_qty.get(id(s), Decimal(0)) + q
-            # The batch order is the init party when the other side rested;
-            # buyer when both arrived in the batch. A resting order is never
-            # the init party.
+            # The batch order is the init party when the other side rested; when both
+            # arrived in the batch the tick rule decides. A resting order is never the
+            # init party.
             if s_rest and not b_rest:
                 init, counter, owner = b_party, s_party, b
             elif b_rest and not s_rest:
+                init, counter, owner = s_party, b_party, s
+            elif auction_initiator == "ask":
                 init, counter, owner = s_party, b_party, s
             else:
                 init, counter, owner = b_party, s_party, b

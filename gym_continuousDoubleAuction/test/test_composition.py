@@ -168,11 +168,13 @@ class TestEachComponentWorksAlone:
     def test_the_liquidation_engine_refuses_a_bad_mode_by_name(self):
         with pytest.raises(ValueError, match="liquidation must be one of"):
             LiquidationEngine(SimpleNamespace(), liquidation="sometimes")
-        with pytest.raises(ValueError, match=r"maintenance_margin must be in \[0, 1\)"):
+        with pytest.raises(ValueError, match=r"maintenance_margin must be in \(0, 1\)"):
             LiquidationEngine(SimpleNamespace(), maintenance_margin=1.5)
 
-    def test_an_engine_with_liquidation_off_touches_nothing(self):
-        engine = LiquidationEngine(SimpleNamespace(), liquidation="off")
+    def test_an_engine_with_liquidation_off_closes_nothing(self):
+        # It still takes a bankrupt trader's orders off the book (#172), so it reads the
+        # traders; with none to read it does nothing and reports no events.
+        engine = LiquidationEngine(SimpleNamespace(traders=[]), liquidation="off")
         assert engine.liquidate() == []
 
 

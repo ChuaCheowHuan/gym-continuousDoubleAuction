@@ -96,6 +96,64 @@ class TestAllocationRule:
             assert int(oib["quantity"]) == 3 and b.asks.volume == 0
 
 
+class TestWhoInitiatesAnAuctionTrade:
+    """doc/15 R-1 (#171): a trade with both sides in the batch is signed by a tick rule.
+
+    Nobody is the aggressor in a call auction, and the order flow the observation carries
+    (`signed_volume`, `trade_direction`) needs a sign. Naming the buyer every time made 53%
+    of batch trades buyer-initiated by construction (519 buyer, 0 seller in a measured run,
+    against a balanced 292 / 305 where one side rested). The clearing price against the
+    reference (the pre-batch mid) decides instead: above it, buyers pushed the price up and
+    initiated; below it, sellers did.
+    """
+
+    @staticmethod
+    def _clear(reference, b=None):
+        b = b or OrderBook(10)
+        b.begin_batch()
+        b.process_order(_q("bid", 10, 105, 0), False, False)
+        b.process_order(_q("ask", 10, 101, 1), False, False)
+        res = b.clear_batch(reference_price=reference)
+        (record,) = [t for _tid, trades, _oib in res for t in trades]
+        owner = [tid for tid, trades, _oib in res if trades]
+        return b, record, owner
+
+    def test_a_clearing_price_above_the_reference_is_buyer_initiated(self):
+        _, record, owner = self._clear(reference=99)
+        assert str(record["price"]) == "101"
+        assert record["init_party"]["side"] == "bid" and record["init_party"]["ID"] == 0
+        assert owner == [0]
+
+    def test_a_clearing_price_below_the_reference_is_seller_initiated(self):
+        _, record, owner = self._clear(reference=110)
+        assert str(record["price"]) == "105"
+        assert record["init_party"]["side"] == "ask" and record["init_party"]["ID"] == 1
+        assert record["counter_party"]["side"] == "bid"
+        assert record["counter_party"]["resting"] is False
+        assert owner == [1], "the record is settled by the order that initiated it"
+
+    def test_a_price_equal_to_the_reference_repeats_the_last_direction(self):
+        b, first, _ = self._clear(reference=110)  # seller-initiated: the price fell
+        assert first["init_party"]["side"] == "ask"
+        _, record, _ = self._clear(reference=103, b=b)  # clears at 103: no move from 103
+        assert str(record["price"]) == "103"
+        assert record["init_party"]["side"] == "ask", "a zero tick keeps the previous sign"
+
+    def test_with_no_direction_yet_a_flat_price_falls_back_to_the_buyer(self):
+        _, record, _ = self._clear(reference=103)
+        assert str(record["price"]) == "103"
+        assert record["init_party"]["side"] == "bid"
+
+    def test_a_resting_counter_party_is_untouched_by_the_rule(self):
+        b = OrderBook(10)
+        b.process_order(_q("bid", 10, 105, 1), False, False)
+        b.begin_batch()
+        b.process_order(_q("ask", 10, 100, 0), False, False)
+        ((tid, trades, _),) = b.clear_batch(reference_price=200)  # far above the price
+        assert tid == 0 and trades[0]["init_party"]["side"] == "ask"
+        assert trades[0]["counter_party"]["resting"] is True
+
+
 class TestBatchClearing:
     def test_a_crossing_pair_clears_at_the_reference_inside_the_interval(self):
         b = OrderBook(10)
@@ -116,7 +174,8 @@ class TestBatchClearing:
         b.process_order(_q("bid", 10, 102, 0), False, False)
         b.process_order(_q("ask", 10, 98, 1), False, False)
         res = b.clear_batch(reference_price=110)
-        assert _fills(res[0][1]) == [("102", 10, 0, 1)]
+        # 102 is below the 110 reference, so the price fell: the seller initiated (#171).
+        assert res[0][1] == [] and _fills(res[1][1]) == [("102", 10, 1, 0)]
 
     def test_a_batch_order_against_the_book_makes_the_resting_order_the_counter_party(self):
         b = OrderBook(10)

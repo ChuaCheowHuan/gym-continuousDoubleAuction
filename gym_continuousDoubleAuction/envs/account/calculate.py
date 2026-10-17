@@ -11,9 +11,21 @@ class Calculate(AccountState):
         """
 
         self.nav = self.cash + self.cash_on_hold + self.position_val
+        return self.nav
+
+    def update_peak(self) -> Decimal:
+        """Raise the running peak (`max_nav`) to the NAV the step ended on.
+
+        Called once per step, after the last re-mark, and not from `cal_nav`: a
+        liquidation cascade re-marks every account several times in one step, and a NAV
+        that existed between two of those re-marks is one no observation or reward ever
+        saw. Letting it set the peak charged drawdown against a level nobody could have
+        held at a step boundary (doc/15 R-4, #174). A fund's high-water mark is set the
+        same way, at valuation points.
+        """
         if self.nav > self.max_nav:
             self.max_nav = self.nav
-        return self.nav
+        return self.max_nav
 
     def cal_total_profit(self) -> Decimal:
         """

@@ -24,18 +24,21 @@ class TestRewardLogic:
         # Simulate a gain
         acc.cash = Decimal(1100)
         acc.cal_nav()
+        acc.update_peak()  # the env calls this once per step (#174)
         assert acc.nav == 1100
         assert acc.max_nav == 1100
 
         # Simulate a loss
         acc.cash = Decimal(900)
         acc.cal_nav()
+        acc.update_peak()
         assert acc.nav == 900
         assert acc.max_nav == 1100  # Should stay at peak
 
         # Recover and exceed peak
         acc.cash = Decimal(1200)
         acc.cal_nav()
+        acc.update_peak()
         assert acc.nav == 1200
         assert acc.max_nav == 1200
 

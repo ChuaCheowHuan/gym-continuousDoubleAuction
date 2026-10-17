@@ -148,10 +148,10 @@ class TestBookThenADL:
         mine = [o for o in env.LOB.bids.order_map.values() if o.trade_id == 0]
         assert mine == []
 
-    def test_a_price_gap_past_bankruptcy_goes_entirely_to_adl(self):
-        """NAV already negative: the band is the mark, the book offers
-        nothing that good, and ADL closes all of it. The shortfall stays on
-        the liquidated account - there is no insurance fund to cover it."""
+    def test_a_price_gap_past_bankruptcy_takes_the_touch_then_adl(self):
+        """NAV already negative: the band is the touch (#173) - only the 1 lot offered
+        at 240 is bought, a tick worse than the 235 mark - and ADL closes the other 89.
+        The shortfall stays on the liquidated account - there is no insurance fund."""
         env = _env()
         _short_90(env)
         _order(env, 2, "limit", "bid", 1, 230.0)
@@ -159,11 +159,12 @@ class TestBookThenADL:
         env.mark_to_mkt()
         assert env.traders[0].acc.nav == Decimal(-2150)  # 10,000 - 90 x 135
         (event,) = env.liquidate()
-        assert event["band"] == Decimal(235) and event["book_qty"] == 0
-        assert event["adl_qty"] == 90
+        assert event["band"] == Decimal(240) and event["book_qty"] == 1
+        assert event["adl_qty"] == 89
         assert env.traders[0].acc.net_position == 0
-        assert env.traders[1].acc.net_position == 0
-        assert env.traders[0].acc.nav == Decimal(-2150)
+        assert env.traders[1].acc.net_position == 1  # long 90 less the 89 ADL took
+        assert env.traders[3].acc.net_position == -1  # the resting ask that was bought
+        assert env.traders[0].acc.nav == Decimal(-2155)  # the one lot cost 5 over the mark
         assert _total_nav(env) == TOTAL
 
     def test_off_is_the_previous_behaviour(self):
@@ -335,7 +336,10 @@ class TestGradual:
         _, _, dones, _, infos = env.step(_pass(env))
         info = infos["agent_0"]
         assert info["net_position"] == 0 and info["liquidation_steps_left"] == 0
-        assert info["liquidated_adl_qty_step"] == 67
+        # The gap leaves NAV <= 0, so the touch is tried first (#173): the 1 lot offered
+        # at 410 is bought in the book and ADL takes the other 66.
+        assert info["liquidated_book_qty_step"] == 1
+        assert info["liquidated_adl_qty_step"] == 66
         assert info["num_liquidations_step"] == 0  # the same liquidation, finished
         assert dones["agent_0"]  # nothing left: terminated, flat
         assert _total_nav(env) == TOTAL
@@ -444,3 +448,137 @@ class TestTheBandAllowsForTheTakerFee:
         trader.acc.net_position = 90
         trader.acc.nav = Decimal(100)
         assert env.liquidation_engine._bankruptcy_price(trader, Decimal(100)) == Decimal(100)
+
+
+class TestThePeakIsSetAtStepBoundaries:
+    """doc/15 R-4 (#174): `max_nav` is the best NAV a step ended on, not a transient one.
+
+    Every `cal_nav` used to move the peak, including the extra re-marks inside a liquidation
+    cascade, so a NAV that existed for an instant mid-step became the peak and charged
+    drawdown against a level no observation or reward ever saw.
+    """
+
+    def test_a_transient_nav_inside_a_step_does_not_set_the_peak(self):
+        env = _env()
+        trader = env.traders[1]
+        before = trader.acc.max_nav
+        real_liquidate = env.liquidate
+
+        def liquidate_with_a_blip():
+            acc = trader.acc
+            kept = acc.position_val
+            acc.position_val = kept + Decimal(500)  # a re-mark that lifts NAV for an instant
+            acc.cal_nav()
+            acc.position_val = kept  # ...and the next re-mark takes it back
+            acc.cal_nav()
+            return real_liquidate()
+
+        env.liquidate = liquidate_with_a_blip
+        env.step(_pass(env))
+
+        assert trader.acc.nav == before
+        assert trader.acc.max_nav == before, "the 500 that existed for an instant is not a peak"
+
+    def test_a_nav_a_step_ends_on_does_set_the_peak(self):
+        env = _env()
+        trader = env.traders[1]
+        real_liquidate = env.liquidate
+
+        def liquidate_after_a_gain():
+            trader.acc.cash += Decimal(250)
+            trader.acc.cal_nav()
+            return real_liquidate()
+
+        env.liquidate = liquidate_after_a_gain
+        env.step(_pass(env))
+
+        assert trader.acc.max_nav == trader.acc.nav == Decimal(CASH + 250)
+
+    def test_calculating_nav_alone_never_moves_the_peak(self):
+        env = _env()
+        acc = env.traders[1].acc
+        acc.cash += Decimal(700)
+
+        acc.cal_nav()
+
+        assert acc.nav == Decimal(CASH + 700)
+        assert acc.max_nav == Decimal(CASH)
+
+
+class TestAClosingTraderWithNoEquityStillUsesTheBook:
+    """doc/15 R-3 (#173): at NAV <= 0 the book is tried at the touch before ADL.
+
+    The bankruptcy band is `mark -/+ NAV / position`, so with no equity it was the mark
+    itself, which a mid-price mark can never be filled at: the whole position went to ADL
+    while resting liquidity sat one tick away. Exchanges send an underwater position to the
+    book at market first and use ADL only for what the book cannot take, so the band at
+    NAV <= 0 is the touch (the best opposite price).
+    """
+
+    @staticmethod
+    def _underwater(nav, extra_ask=None, asks=True):
+        env = _env()
+        _short_90(env)
+        _order(env, 2, "limit", "bid", 50, 99.0)
+        if asks:
+            _order(env, 3, "limit", "ask", 50, 101.0)
+        if extra_ask:
+            _order(env, 1, "limit", "ask", 50, extra_ask)  # agent_1 is long: this closes
+        env.mark_to_mkt()
+        acc = env.traders[0].acc
+        acc.cal_nav()
+        acc.cash += Decimal(nav) - acc.nav
+        acc.cal_nav()
+        return env
+
+    @pytest.mark.parametrize("nav", [0, -200])
+    def test_the_touch_is_filled_and_only_the_rest_is_deleveraged(self, nav):
+        env = self._underwater(nav)
+        total = sum(t.acc.nav for t in env.traders)
+
+        (event,) = env.liquidate()
+
+        assert (event["book_qty"], event["adl_qty"]) == (50, 40)
+        assert event["band"] == Decimal(101), "the band is the touch, worse than the 100 mark"
+        assert env.traders[0].acc.net_position == 0
+        assert sum(t.acc.nav for t in env.traders) == total, "NAV conservation holds"
+
+    def test_only_the_best_level_is_used_not_the_whole_book(self):
+        env = self._underwater(0, extra_ask=102.0)
+
+        (event,) = env.liquidate()
+
+        assert event["book_qty"] == 50 and event["adl_qty"] == 40
+        assert env.LOB.asks.volume == 50, "the 102 level was left alone"
+
+    def test_an_empty_opposite_side_sends_everything_to_adl(self):
+        env = self._underwater(0, asks=False)
+
+        (event,) = env.liquidate()
+
+        assert (event["book_qty"], event["adl_qty"]) == (0, 90)
+
+    def test_a_trader_with_equity_keeps_the_protective_band(self):
+        env = self._underwater(2699)  # below the 0.3 trigger, but NAV > 0
+
+        (event,) = env.liquidate()
+
+        # A short buys back at most `mark + NAV / position`: wider than the touch while
+        # there is equity to spend, and it is the equity that sets it.
+        assert event["band"] > Decimal(101), "equity still sets how far the close may go"
+
+
+class TestMaintenanceMarginMustBePositive:
+    """doc/15 R-3 (#173): a zero margin liquidates only at NAV <= 0, the case with no room."""
+
+    @pytest.mark.parametrize("margin", [0, 0.0])
+    def test_zero_is_refused_by_name(self, margin):
+        from types import SimpleNamespace
+
+        with pytest.raises(ValueError, match=r"maintenance_margin must be in \(0, 1\)"):
+            LiquidationEngine(SimpleNamespace(), maintenance_margin=margin)
+
+    def test_a_small_positive_margin_is_accepted(self):
+        from types import SimpleNamespace
+
+        LiquidationEngine(SimpleNamespace(), maintenance_margin=0.01)

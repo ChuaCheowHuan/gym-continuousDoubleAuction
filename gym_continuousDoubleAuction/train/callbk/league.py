@@ -254,6 +254,10 @@ class League:
             if self.should_create(best_return, iteration, algorithm):
                 # Pass policy ID directly
                 self.create_snapshot(algorithm, best_candidate, best_return, iteration)
+                # Only if a champion was actually added: a failed attempt takes nothing away,
+                # even from a history already over the limit (a lowered `max_champions`).
+                if {c["id"] for c in self.champion_history} - champions_before:
+                    self._evict_over_limit(algorithm)
         promoted = len({c["id"] for c in self.champion_history} - champions_before)
 
         league_state = {
@@ -348,14 +352,10 @@ class League:
                 )
                 return False
 
-        # Check if we need to remove old champion first (rolling window)
-        if self.champion_count >= self.max_champions:
-            logger.info(
-                "Max champions (%s) reached, removing the oldest",
-                self.max_champions,
-            )
-            self.remove_oldest(algorithm)
-
+        # Eviction is NOT done here. It used to be, so a full league lost its oldest champion
+        # before the snapshot that was to replace it was taken, and a failed snapshot shrank
+        # the league for nothing (doc/15 R-8, #178). `assess` evicts once the new champion
+        # exists; `algorithm` is kept in the signature for the callers that pass it.
         return True
 
     def create_snapshot(self, algorithm, source_policy_id, return_value, iteration):
@@ -371,6 +371,7 @@ class League:
         # Create unique champion name using monotonic counter
         self.champion_id_counter += 1
         champion_id = f"{CHAMPION_PREFIX}{self.champion_id_counter}"
+        module_added = False
 
         logger.info(
             "Creating champion snapshot %s from %s (return %.2f, iteration %s)",
@@ -430,6 +431,7 @@ class League:
                 module_spec=champion_spec,
                 new_agent_to_module_mapping_fn=League.get_mapping_fn(self),
             )
+            module_added = True
 
             # Copy the trained weights into the champion on the Learner...
             algorithm.set_state(
@@ -506,6 +508,24 @@ class League:
             # that failed to be created.
             if champion_id in self.available_modules:
                 self.available_modules.remove(champion_id)
+            # `add_module` shipped a frozen copy of the pool, champion included, to every
+            # remote env runner, and the module itself now exists with weights that were
+            # never copied in. Taking it out again also ships the corrected pool; rolling back
+            # the driver's list alone left the runners picking a randomly initialised module
+            # the league believed it did not have (doc/15 R-6, #176).
+            if module_added:
+                try:
+                    algorithm.remove_module(
+                        module_id=champion_id,
+                        new_agent_to_module_mapping_fn=League.get_mapping_fn(self),
+                    )
+                except Exception as undo_error:
+                    logger.warning(
+                        "Could not remove the half-created module %s after a failed "
+                        "snapshot: %s. Remote runners may still offer it.",
+                        champion_id,
+                        undo_error,
+                    )
             # exc_info carries the traceback that the bare `traceback.print_exc`
             # used to put on stderr, unattached to the message it belonged to.
             logger.error(
@@ -514,6 +534,21 @@ class League:
                 e,
                 exc_info=True,
             )
+
+    def _evict_over_limit(self, algorithm):
+        """Drop the oldest champions beyond `max_champions`, after a snapshot succeeded.
+
+        Make-before-break: the new champion is in place first, so the league never has fewer
+        champions than it did because a snapshot failed (doc/15 R-8, #178). The cost is one
+        extra module for the moment between the two. A failed snapshot leaves the history at
+        or under the limit, so this does nothing.
+        """
+        while len(self.champion_history) > self.max_champions:
+            logger.info(
+                "Max champions (%s) exceeded, removing the oldest",
+                self.max_champions,
+            )
+            self.remove_oldest(algorithm)
 
     def remove_oldest(self, algorithm):
         """

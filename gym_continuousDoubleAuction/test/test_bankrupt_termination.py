@@ -11,9 +11,13 @@ stand behind.
 from decimal import Decimal
 
 
+import numpy as np
+import pytest
+
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
     continuousDoubleAuctionEnv,
 )
+from gym_continuousDoubleAuction.envs.exchg.state_helper import obs_row_slice
 
 
 def _env(**overrides):
@@ -215,3 +219,39 @@ class TestTerminationLeavesTheLedgerIntact:
                 break
 
         assert sum(t.acc.nav for t in env.traders) == total_before - moved
+
+
+class TestTheBookTheObservationShowsIsTheBookThatRemains:
+    """doc/15 R-2 (#172): a bankrupt trader's orders leave the book before observations are built.
+
+    `set_done` pulled them while the step's outputs were being assembled, after the shared
+    book snapshot had been taken, so on the bankruptcy step every observation still showed
+    orders that no longer existed. The step after was right.
+    """
+
+    @staticmethod
+    def _bid_cells(env, obs, agent="agent_1"):
+        newest = (env.n_hist - 1) * env.snapshot_dim
+        frame = np.asarray(obs[agent])[newest : newest + env.snapshot_dim]
+        return int(np.count_nonzero(frame[obs_row_slice("bid_size")]))
+
+    @pytest.mark.parametrize("liquidation", ["off", "market_adl"])
+    def test_the_bankruptcy_step_does_not_show_the_cancelled_orders(self, liquidation):
+        env = _env(num_of_agents=3, liquidation=liquidation)
+        env.traders[0].place_order("limit", "bid", 5, 90.0, env.LOB, env.traders)
+        env.traders[1].place_order("limit", "bid", 5, 91.0, env.LOB, env.traders)
+        _bankrupt(env.traders[0])
+
+        obs, *_ = _quiet_step(env)
+
+        assert len(env.LOB.bids.price_map) == 1, "the bankrupt trader's bid is gone"
+        assert self._bid_cells(env, obs) == 1, "and the observation says so on the same step"
+
+    def test_a_trader_who_is_not_bankrupt_keeps_its_orders_in_the_observation(self):
+        env = _env(num_of_agents=3, liquidation="off")
+        env.traders[0].place_order("limit", "bid", 5, 90.0, env.LOB, env.traders)
+        env.traders[1].place_order("limit", "bid", 5, 91.0, env.LOB, env.traders)
+
+        obs, *_ = _quiet_step(env)
+
+        assert self._bid_cells(env, obs) == 2
