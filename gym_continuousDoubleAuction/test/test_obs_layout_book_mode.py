@@ -141,3 +141,63 @@ class TestTheProbe:
 
         got = corpus.from_parquet(self._parquet(tmp_path, AMBIGUOUS), book_mode="levels")
         assert probe_main.env_config_for(got) == {"book_mode": "levels", "n_hist": 8}
+
+
+class TestEncodersAreBuiltInTheCorpusMode:
+    """Review of #187: naming the mode to `from_parquet` is not enough if the module built
+    afterwards is not told it. A `levels` corpus at the ambiguous width must go all the way
+    through the probe and pretraining."""
+
+    @staticmethod
+    def _corpus(rows=24):
+        from gym_continuousDoubleAuction.train.model.encoders.obs_layout import ObsLayout
+        from gym_continuousDoubleAuction.train.probe.corpus import ProbeCorpus
+
+        layout = ObsLayout.from_obs_space(_space(AMBIGUOUS), book_mode="levels")
+        rng = np.random.default_rng(0)
+        return ProbeCorpus(
+            obs=rng.normal(size=(rows, AMBIGUOUS)).astype(np.float32),
+            episode_index=np.repeat(np.arange(rows // 6), 6).astype(np.int32),
+            layout=layout,
+        )
+
+    def test_the_probe_builds_and_runs_an_encoder_on_a_levels_corpus(self):
+        from gym_continuousDoubleAuction.train.probe import __main__ as probe_main
+
+        features = probe_main.build_features(self._corpus(), ["transformer"])
+
+        assert features["transformer"].shape[0] == 24
+
+    def test_pretraining_builds_the_encoder_in_the_corpus_mode(self):
+        from gym_continuousDoubleAuction.train.pretrain import pretrain
+        from gym_continuousDoubleAuction.train.probe import __main__ as probe_main
+
+        corpus = self._corpus()
+        env = continuousDoubleAuctionEnv({**probe_main.env_config_for(corpus), "num_of_agents": 2})
+        agent = env.agents[0]
+
+        module, _report = pretrain(
+            corpus,
+            env.get_observation_space(agent),
+            env.get_action_space(agent),
+            encoder_type="jepa",
+            steps=2,
+            batch_size=8,
+        )
+
+        assert module is not None
+
+    def test_the_helpers_pass_the_mode_to_the_spec(self):
+        from gym_continuousDoubleAuction.train.probe import features
+
+        env = continuousDoubleAuctionEnv(
+            {"num_of_agents": 2, "is_render": False, "book_mode": "levels", "n_hist": 8}
+        )
+        agent = env.agents[0]
+        module = features.build_module(
+            env.get_observation_space(agent),
+            env.get_action_space(agent),
+            "transformer",
+            book_mode="levels",
+        )
+        assert module.encoder.actor_encoder.layout.book_mode == "levels"
