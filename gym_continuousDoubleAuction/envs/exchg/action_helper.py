@@ -367,6 +367,13 @@ class Action_Helper(SharedState):
         if not self.action_mask_enabled:
             return mask
         resting = {"bid": n_bid, "ask": n_ask}
+        # Precompute the trader's resting orders once per mask so each
+        # market/limit category's `_order_approved` reuses them instead of
+        # rescanning the whole book (issue #259).
+        own_orders = {
+            "bid": trader._own_orders_from_touch(self.LOB, "bid"),
+            "ask": trader._own_orders_from_touch(self.LOB, "ask"),
+        }
         reference = None
         for category, (side, kind) in _CATEGORY_MAP.items():
             if side is None:
@@ -378,7 +385,7 @@ class Action_Helper(SharedState):
             if reference is None:
                 reference = self.reference_price()
             price = -1.0 if kind == "market" else reference
-            if not trader._order_approved(side, self.min_size, price, self.LOB, kind):
+            if not trader._order_approved(side, self.min_size, price, self.LOB, kind, own_orders=own_orders):
                 mask[category] = 0.0
         return mask
 
