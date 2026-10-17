@@ -4062,3 +4062,12 @@ The first batch (section 86) was the issues the owner had picked an option for. 
 - **#177, #181, #189, documented.** The restore-repair limit (`doc/08`), what `obs` and `action` mean in a Parquet row (`doc/11`, the schema) and the probe stream's behaviour when its agent terminates (`doc/23`). No code change.
 - **Not claimed.** That the CBP compensation helps training (default off until `train.compare` says so); that a restore across a changed `max_own_orders` now fails loudly (the stamp now names the head, but I did not run a restore); that the lock protects against two runs on a shared network folder from different machines beyond refusing them.
 - **Tests.** New: `test_world_model_actions.py` (4), `test_obs_layout_book_mode.py` (16), `test_jepa_value_pass.py` (10), `test_run_lock.py` (13). Extended: `test_cbp.py` (55 to 70), `test_probe.py` (56 to 61), `test_layout_version.py` (11 to 16), `test_episode_record.py` (40 to 47). Unit 2,033 to 2,108; suite 2,293. Lines of Python 54,702 to 56,046, 194 files to 199.
+
+## 88. The run lock's stale takeover (#296)
+
+Found reviewing the PR for section 87. `RunLock.acquire` read the lock, judged it stale, removed it and retried the create as separate steps, so two runs that read the same stale lock could both end up holding the folder (reproduced: both `_held` true; the inverse, a second run reading after the first had created its lock, was refused).
+
+- **Fix.** The whole acquire runs under an `flock` on `chkpt/.run.lock.guard`, so the second run reads the first run's fresh lock and is refused. The OS drops the flock if its holder dies, so the guard cannot go stale; the file is left in place and carries no state. Without `fcntl` (Windows) the takeover is as before.
+- **Test.** The first run is made to wait inside its read of the stale lock while the second tries; without the guard the second finishes inside it. Fails on the previous source.
+- **Not claimed.** That a lock on a network filesystem without `flock` support is serialised; that the lock is a substitute for giving each run its own `log_base_dir`.
+- **Tests.** `test_run_lock.py` 13 to 15. Unit 2,108 to 2,110; suite 2,295. Lines of Python 56,046 to 56,131.

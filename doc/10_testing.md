@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (2,293 tests: 2,108 unit + 185 integration)
+# everything (2,295 tests: 2,110 unit + 185 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -100,7 +100,7 @@ Counts re-measured with `--collect-only`.
 | `test_world_model_actions.py` | 4 | The JEPA world model embeds every head of the action: the embedded heads equal the env's `ACTION_KEYS`, two actions differing only in `order_slot` embed differently (#186) |
 | `test_obs_layout_book_mode.py` | 16 | A width that fits two book modes (569 floats) raises `AmbiguousObsLayout` unless the mode is given; the run's `book_mode` reaches the encoder spec, the policy builder and the probe (`--book-mode`); the action mask is unaffected; the probe and pretraining build their encoders in the corpus's mode (#187) |
 | `test_jepa_value_pass.py` | 10 | JEPA's `compute_values` pass runs no objective and takes no EMA step (restored even on error); mask sampling uses the encoder's own generator, reproducible per seed and distinct per encoder (#185) |
-| `test_run_lock.py` | 13 | One live run per checkpoint folder: the lock's contents, release, refusal of a live or other-machine holder, takeover of a dead one, and `train()` holding it from before the restore until it returns or raises (#179) |
+| `test_run_lock.py` | 15 | One live run per checkpoint folder: the lock's contents, release, refusal of a live or other-machine holder, takeover of a dead one, and `train()` holding it from before the restore until it returns or raises (#179), and two runs finding one stale lock taking it one after the other (#296) |
 | `test_matchmaking_edges.py` | 20 | League matchmaking at its edges: an all-zero pool draws uniformly (with one warning), a champions-only pool, an empty pool, reproducibility per episode and agent, the draw share following 3:1 weights, bad weights refused by name (#207) |
 | `test_orderbook_scripts.py` | 31 | The worked example of the retired `example.py` asserted by outcome (who traded with whom, at what price, what rests), and `genOrders.py` as a seeded shadow model over 25 seeds: the book must agree with a picture rebuilt from trade records alone (#210) |
 | `test_champion_trigger.py` | 20 | League statistics with modules that played no episodes; promotion, pool size, idle count and time-since-champion as metrics |
@@ -173,7 +173,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((2,293 tests))
+  root((2,295 tests))
     Simulator
       orderbook 88
         the demo scripts as tests, a shadow model

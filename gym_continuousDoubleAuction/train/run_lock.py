@@ -14,11 +14,17 @@ process no longer exists, and so is one left by this very process (a notebook re
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import socket
 import time
-from typing import Optional
+from typing import Iterator, Optional
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows has no fcntl; the takeover is then unserialised
+    fcntl = None  # type: ignore[assignment]
 
 from gym_continuousDoubleAuction.logging_setup import get_logger
 
@@ -27,6 +33,10 @@ logger = get_logger(__name__)
 #: The lock's file name inside the checkpoint folder. The leading dot keeps it out of
 #: `iter_*` listings, which `list_checkpoints` filters by prefix anyway.
 LOCK_FILE = ".run.lock"
+
+#: Held (`flock`) for the length of an `acquire`, so that two runs finding the same stale lock
+#: take it over one after the other (#296). The file is never removed: it carries no state.
+GUARD_FILE = ".run.lock.guard"
 
 
 class RunLockedError(RuntimeError):
@@ -50,6 +60,7 @@ class RunLock:
         self.directory = directory
         self.run_id = run_id
         self.path = os.path.join(directory, LOCK_FILE)
+        self._guard_path = os.path.join(directory, GUARD_FILE)
         self._held = False
 
     # ---- the file ----
@@ -80,10 +91,33 @@ class RunLock:
             return True
         return pid == os.getpid() or not _process_alive(pid)
 
+    @contextlib.contextmanager
+    def _guard(self) -> Iterator[None]:
+        """Serialise "read, judge stale, remove, create" across runs.
+
+        Without it two runs that read the same stale lock both pass the check, the first
+        removes it and creates its own, and the second removes that one and creates its own:
+        both hold the folder. The OS drops the `flock` if its holder dies, so the guard itself
+        cannot go stale.
+        """
+        if fcntl is None:  # pragma: no cover
+            yield
+            return
+        with open(self._guard_path, "a") as fh:
+            fcntl.flock(fh, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(fh, fcntl.LOCK_UN)
+
     # ---- the API ----
 
     def acquire(self) -> "RunLock":
         os.makedirs(self.directory, exist_ok=True)
+        with self._guard():
+            return self._acquire_locked()
+
+    def _acquire_locked(self) -> "RunLock":
         for _attempt in range(2):
             try:
                 fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
