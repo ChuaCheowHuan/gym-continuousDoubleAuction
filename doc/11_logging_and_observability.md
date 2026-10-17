@@ -95,6 +95,19 @@ agent)**, with a declared schema.
 | Reward | `reward`, and `reward_term_*` for each of the five signed contributions |
 | Raw | `obs` (list), `action` (list), `info_extra` (JSON for any `info` key with no column) |
 
+**What `obs` and `action` mean in a row.** A row is the *second half* of a transition: `action` is
+the action taken **in** this step and `obs` is the observation that step **produced**. They are
+not (o_t, a_t). For (o_t, a_t) pairs, shift `obs` down one row within an agent's episode. The
+probe reads only `obs` (with `episode_id`, `step`, `agent_id`), so nothing in the repository pairs
+the two columns today; a world-model or offline-RL reader must do the shift itself
+([15](15_findings_and_recommendations.md) R-11, #181).
+
+**How many unfinished episodes are buffered.** The recorder keeps at most
+`episode_max_live_episodes` (default 8) unfinished episodes per process, and the run raises that
+to `num_envs_per_env_runner` when a runner steps more environments than that: an episode with no
+place in the buffer is dropped from the record ([15](15_findings_and_recommendations.md) R-10,
+#180).
+
 This replaced a `pickle.dump` of the whole episode performed inline in `on_episode_end`. Five
 things changed, and each was a defect ([21 §2.2–2.4, §5–6](21_logging_review.md)):
 

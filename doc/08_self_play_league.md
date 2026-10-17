@@ -288,13 +288,21 @@ state loads cleanly.
 ### 5.3 Failure handling
 
 The whole body is wrapped in a broad `except Exception` that **rolls back the pool entry** so
-matchmaking can never select a half-created module, then prints a traceback. The rollback is
-right. The response to a *repeated* failure is not: it continues silently for hours. This exact
+matchmaking can never select a half-created module, then logs a traceback. If the failure came
+*after* `add_module` (which had already shipped a pool naming the champion to the remote runners),
+the rollback also calls `remove_module` with the corrected mapping function, so the runners stop
+offering a module whose weights were never copied in; a failing undo is only logged
+([15](15_findings_and_recommendations.md) R-6, #176). The rollback is right. The response to a *repeated* failure is not: it continues silently for hours. This exact
 handler once masked the `learner_group._learner is None` bug for an entire training run.
 
 ### 5.4 Eviction
 
-`_remove_oldest_champion` pops the oldest entry, removes it from `available_modules` **before**
+Eviction happens **after** a snapshot has succeeded, in `League.assess`, never before it: a full
+league used to evict first, so a failed snapshot shrank the league for nothing. It also only runs
+when a champion was actually added, so a failed attempt takes nothing away even from a history
+that is over a lowered `max_champions` ([15](15_findings_and_recommendations.md) R-8, #178).
+
+`remove_oldest` pops the oldest entry, removes it from `available_modules` **before**
 calling `Algorithm.remove_module` (so the refreshed mapping function cannot return a module about
 to be deleted), and passes `new_agent_to_module_mapping_fn` so remote runners are updated too.
 
@@ -466,13 +474,17 @@ So `save_checkpoint` writes `league_state.json` beside every checkpoint —
 A champion in the sidecar with no module is dropped; a champion module with no sidecar entry is
 adopted (appended as newest, since its true position is unknowable); the pool is rebuilt from the
 reconciled history; and the ID counter is raised to at least the highest champion number in play,
-never lowered. Each repair is printed. A clean restore prints
+never lowered. Each repair is logged. A clean restore logs
 `league state verified: N champion(s)` instead.
 
 One limit worth knowing: repairs apply to the **driver's** pool. With `num_env_runners > 0` the
 remote runners hold their own pickled mapping fn, frozen at construction, and nothing short of
 `add_module` / `remove_module` updates it — so a checkpoint that needs repairs is a reason to
-prefer an earlier one that verifies clean, not something to train through.
+prefer an earlier one that verifies clean, not something to train through. This is a known and
+deliberate limit, not an oversight: the restore logs it as a warning whenever it repairs
+anything, and repairs are only needed after unpickle drift (a renamed class, a changed `__init__`,
+a Ray upgrade), not after an ordinary save and restore ([15](15_findings_and_recommendations.md)
+R-7, #177).
 
 ---
 

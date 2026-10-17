@@ -508,6 +508,7 @@ The same group carries the four knobs on the per-step episode record:
 | `episode_sample_every` | `--episode-sample-every` | Record one episode in N, chosen by `crc32` of the episode id so every runner picks the same subset |
 | `episode_max_bytes` | `--episode-max-bytes` | Cap on what **each writer** keeps, oldest deleted first but never the newest file (a cap smaller than one file is kept at one file and warned about, once); `0` keeps everything |
 | `episode_rows_per_file` | — | Rows buffered before a file is written. A floor, not a size: rows are handed over a whole episode at a time, so no episode is split across two files. The buffer is also written at the end of every sample, so a file can hold fewer rows than this |
+| `episode_max_live_episodes` | — | Floor for how many unfinished episodes the recorder buffers per process (8). The run raises it to `num_envs_per_env_runner` when a runner steps more environments than that, because an episode with no place in the buffer is dropped from the record ([15](15_findings_and_recommendations.md) R-10) |
 
 `num_learners`, the reward coefficients and the sizing knobs have no CLI flag, so the file is the
 only way to set them outside the Python API.
@@ -597,6 +598,15 @@ nothing. Pass `--run-id` with a previous run's id to write into that directory a
 a restored run extends the progress history it left. See
 [11_logging_and_observability.md](11_logging_and_observability.md) §1.11.
 
+Sharing that tree is only safe when the runs are not simultaneous: two live runs overwrite each
+other's same-numbered save, and `chkpt_keep` pruning keeps the newest N across both. So `train()`
+holds a lock file, `chkpt/.run.lock` (run id, pid, host), from before the restore reads the folder
+until it returns or raises, and a second run on the folder is refused with the way out: give it
+its own `log_base_dir` (which is what `train.compare` does for every run), wait, or delete the
+lock if that run is gone. A lock whose process no longer exists on this machine, or that this
+process left behind, is taken over; one held from another machine cannot be checked and counts as
+live ([15](15_findings_and_recommendations.md) R-9, #179).
+
 **Two log levels, deliberately.** Ray at `INFO` is noise; this package at `INFO` is the per-episode
 NAV table, the per-iteration league statistics and the checkpoint lines — the output a run is meant
 to produce. Set `cda_log_level` to `DEBUG` for the per-step render and account tables, `WARNING`
@@ -681,8 +691,9 @@ and said nothing.
 It is now loud in both directions:
 
 - **A layout change is fatal, by name.** Every checkpoint carries a layout stamp in its
-  `league_state.json` — the observation and action layout versions plus the private-field and
-  action-key lists (`envs/layout_version.py`) — and `build_algo` compares it before restoring.
+  `league_state.json` — the observation and action layout versions, the private-field and
+  action-key lists, and how wide each action head is (`action_sizes`: `order_slot` is
+  `max_own_orders + 1`, `price` is `k_rows`, and so on; `envs/layout_version.py`) — and `build_algo` compares it before restoring.
   A checkpoint from the 193-float / five-head layout (version 1) resumed into this code fails with
   a message naming both versions and the fields that differ, rather than at a tensor shape on the
   first step or, worse, not at all. That is S4-19, closed.
@@ -1201,6 +1212,7 @@ optimiser is bit-for-bit the one every existing run and checkpoint was built wit
 | `cbp_scope` | `"feedforward"` | Which units are replaceable: `feedforward`, or `recurrent` to add the top layer of an LSTM core (the `lstm` encoder has nothing replaceable under `feedforward`) |
 | `cbp_fire_on` | `"adam_step"` | `adam_step` (the papers' placement) or `iteration` |
 | `cbp_reset_optimizer_state` | `true` | Zero Adam's moments for replaced weights |
+| `cbp_compensate_mean` | `false` | Move a replaced unit's mean contribution into the next layer's bias before its outgoing weights are zeroed, so the output does not jump ([15](15_findings_and_recommendations.md) R-13). Off keeps the papers' rule, which `doc/16` §16.13 measured; run `train.compare` with it on and off before changing the default. Feed-forward layers only. Unrestorable while CBP is active |
 | `cbp_dead_unit_threshold` | `0.01` | Mean \|activation\| below which a unit counts as dead, metric only. Cannot fire on a tanh network, which does not die toward zero |
 | `cbp_metrics_every_n_updates` | `10` | How often to compute the metrics; the effective rank runs an SVD |
 
