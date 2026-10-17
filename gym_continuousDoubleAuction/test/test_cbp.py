@@ -769,3 +769,73 @@ class TestDDPUnwrapping:
 
         assert wrapped == plain
         assert not any(name.startswith("module.") for name in wrapped)
+
+
+class TestAUnitIsJudgedOnEveryCallOfTheStep:
+    """doc/15 R-14 (#184): the hook combined nothing, so a layer that ran twice in one step
+    (each MoE expert once per top-k slot; the JEPA trunk on the masked and the full input) was
+    judged on its last call alone."""
+
+    @staticmethod
+    def _probe(units=4):
+        import torch.nn as nn
+
+        from gym_continuousDoubleAuction.train.model.cbp import (
+            CBPConfig,
+            CBPLayerState,
+            ReplaceableLayer,
+        )
+        from gym_continuousDoubleAuction.train.model.cbp_learner import CBPLearnerMixin
+
+        mixin = CBPLearnerMixin.__new__(CBPLearnerMixin)
+        mixin._cbp_config = CBPConfig(enabled=True)
+        mixin._cbp_state = {"m": {"t": CBPLayerState.zeros(units)}}
+        mixin._cbp_stats, mixin._cbp_activations, mixin._cbp_updates = {}, {}, 1
+        first, act = nn.Linear(3, units), nn.Tanh()
+        layer = ReplaceableLayer("t", first, [nn.Linear(units, 2)], act)
+        act.register_forward_hook(mixin._cbp_hook("m", layer))
+        return mixin, first, act
+
+    def test_two_calls_in_a_step_equal_one_call_on_both_batches(self):
+        mixin, first, act = self._probe()
+        a, b = torch.randn(32, 3), torch.randn(8, 3) * 5 + 3  # different sizes and scales
+
+        act(first(a))
+        act(first(b))
+        kept = mixin._cbp_stats[("m", "t")]
+
+        mixin2, first2, act2 = self._probe()
+        first2.load_state_dict(first.state_dict())
+        act2(first2(torch.cat([a, b])))
+        whole = mixin2._cbp_stats[("m", "t")]
+
+        for key in ("mean", "abs_mean", "dev_abs_mean"):
+            assert torch.allclose(kept[key], whole[key], atol=1e-6), key
+        assert int(kept["rows"]) == 40
+
+    def test_the_last_call_alone_is_not_what_is_kept(self):
+        mixin, first, act = self._probe()
+        a, b = torch.randn(32, 3), torch.randn(32, 3) * 5 + 3
+
+        act(first(a))
+        act(first(b))
+
+        last_only = act(first(b)).abs().mean(0).detach()
+        assert not torch.allclose(mixin._cbp_stats[("m", "t")]["abs_mean"], last_only)
+
+    def test_a_new_step_starts_from_nothing(self):
+        mixin, first, act = self._probe()
+        act(first(torch.randn(16, 3)))
+        mixin._cbp_stats.pop(("m", "t"))  # what `_cbp_run` does when it consumes a step
+
+        act(first(torch.randn(16, 3)))
+
+        assert int(mixin._cbp_stats[("m", "t")]["rows"]) == 16
+
+    def test_a_single_call_is_unchanged(self):
+        mixin, first, act = self._probe()
+        x = torch.randn(16, 3)
+
+        act(first(x))
+
+        assert torch.allclose(mixin._cbp_stats[("m", "t")]["abs_mean"], act(first(x)).abs().mean(0))
