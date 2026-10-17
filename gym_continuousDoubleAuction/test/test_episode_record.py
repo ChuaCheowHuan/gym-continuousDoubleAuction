@@ -633,3 +633,75 @@ class TestTheCallbackFlushesAtTheEndOfASample:
         cb._episode_recorder = MagicMock()
         cb._episode_recorder.flush_finished.side_effect = OSError("disk full")
         cb.on_sample_end(env_runner=object(), metrics_logger=MagicMock(), samples=[])
+
+
+class TestTheLiveEpisodeCapFollowsTheRunnersEnvs:
+    """doc/15 R-10 (#180): the recorder buffers at most `max_live_episodes` unfinished episodes
+    (a literal 8 in `EpisodeRecorder.__init__`), and the callback never set it. A runner that
+    plays more envs at once than that had episodes standing in the corridor, dropped from the
+    record. The floor is now a config key, and the recorder is never smaller than the number of
+    envs a runner steps."""
+
+    def _callback(self, tmp_path, **kwargs):
+        from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
+            SelfPlayCallback,
+        )
+
+        return SelfPlayCallback(episode_data_dir=str(tmp_path), episode_sample_every=1, **kwargs)
+
+    def test_the_floor_is_a_config_key_not_a_literal(self):
+        from gym_continuousDoubleAuction.config_loader import group
+        from gym_continuousDoubleAuction.train.config import TrainConfig
+
+        assert group("train_config.json", "league_self_play")["episode_max_live_episodes"] == 8
+        assert TrainConfig().episode_max_live_episodes == 8
+
+    def test_more_envs_than_the_floor_raises_the_cap(self, tmp_path):
+        callback = self._callback(tmp_path, episode_max_live_episodes=8, envs_per_env_runner=12)
+        recorder = callback._recorder()
+        assert recorder.max_live_episodes == 12
+        recorder.close()
+
+    def test_fewer_envs_than_the_floor_keeps_the_floor(self, tmp_path):
+        callback = self._callback(tmp_path, episode_max_live_episodes=8, envs_per_env_runner=1)
+        recorder = callback._recorder()
+        assert recorder.max_live_episodes == 8
+        recorder.close()
+
+    def test_nine_concurrent_episodes_are_all_kept_with_nine_envs(self, tmp_path):
+        callback = self._callback(tmp_path, episode_max_live_episodes=8, envs_per_env_runner=9)
+        recorder = callback._recorder()
+        for i in range(9):
+            recorder.record_step(FakeEpisode(f"ep_{i}"), 0)
+        assert len(recorder._live) == 9
+        recorder.close()
+
+    def test_nine_concurrent_episodes_lose_one_at_the_old_cap(self, tmp_path):
+        recorder = EpisodeRecorder(str(tmp_path), max_live_episodes=8)
+        for i in range(9):
+            recorder.record_step(FakeEpisode(f"ep_{i}"), 0)
+        assert len(recorder._live) == 8
+        recorder.close()
+
+    def test_the_train_config_values_reach_the_callback(self):
+        from gym_continuousDoubleAuction.train.config import TrainConfig
+        from gym_continuousDoubleAuction.train.train import build_config
+
+        cfg = TrainConfig(episode_max_live_episodes=5, num_envs_per_env_runner=3)
+        _, callback = build_config(cfg)
+        assert (callback.episode_max_live_episodes, callback.envs_per_env_runner) == (5, 3)
+
+    def test_a_callback_pickled_before_the_knobs_existed_still_has_them(self):
+        import pickle
+
+        from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
+            SelfPlayCallback,
+        )
+
+        callback = SelfPlayCallback()
+        state = dict(callback.__getstate__())
+        del state["episode_max_live_episodes"], state["envs_per_env_runner"]
+        old = SelfPlayCallback.__new__(SelfPlayCallback)
+        old.__setstate__(state)
+        assert old.episode_max_live_episodes == 8 and old.envs_per_env_runner >= 1
+        assert pickle.loads(pickle.dumps(old)).episode_max_live_episodes == 8
