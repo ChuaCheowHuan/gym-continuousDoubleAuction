@@ -15,7 +15,7 @@ production-deployable as a service, but as a research codebase it is above avera
 
 > **This section is the original audit and is no longer accurate.** It was measured against a
 > tree of 7,478 Python lines with 90 unit tests and no logging module. The repository is now
-> 53,445 lines across 190 Python files, with 1,887 unit and 185 integration tests, a 523-line
+> 54,109 lines across 193 Python files, with 2,004 unit and 185 integration tests, a 523-line
 > `logging_setup` and a test that fails the build on a bare `print` in `envs/` or `train/`. The
 > `sklearn.utils.shuffle` import it names was removed (`action_helper.py:182` records that), and
 > the `install_requires` block it quotes no longer exists - `ray[rllib]` and `six` are in it and
@@ -300,7 +300,7 @@ Full inventory in [10_testing.md](10_testing.md). Engineering-relevant summary:
 | `Action_Helper.max_price` | passed into `_set_price` and never used in its body |
 | ~~`OrderBook.__str__0`, `Order.__str__0`, `OrderList.to_str`~~ | **Deleted** (2026-09-18), with the shadowed `Order.next_order`/`prev_order` methods |
 | ~~`OrderBook.get_volume_at_price`~~ | **Deleted** (2026-09-18), with the commented-out old `modify_order` |
-| `envs/orderbook/test/example.py`, `genOrders.py` (353 LOC) | standalone scripts, not collected by pytest |
+| ~~`envs/orderbook/test/example.py`, `genOrders.py` (353 LOC)~~ | **Deleted** (#210); their scenarios are `test_orderbook_scripts.py` |
 | ~~~200 LOC of commented-out code~~ | **Deleted** (2026-09-18, S4-4) |
 | ~~`CODEOWNER` **and** `CODEOWNERS`~~ | **Fixed**; only `CODEOWNERS` remains |
 

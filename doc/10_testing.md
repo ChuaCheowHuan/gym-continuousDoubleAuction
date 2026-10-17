@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (2,072 tests: 1,887 unit + 185 integration)
+# everything (2,189 tests: 2,004 unit + 185 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -96,12 +96,15 @@ Counts re-measured with `--collect-only`.
 | `test_checkpointing.py` | 52 | Checkpoint retention, restore selection, league state across a save |
 | `test_action_dist.py` | 15 | A stateful module's log-probability for two agents in one step: RLlib's `(B, B)` result pinned as the bug, the corrected `(B, 1)`, `(B,)` and `(B, T)` shapes, the old squeeze case, the wrapper cached and idempotent (#278) |
 | `test_champion_guard.py` | 26 | The entropy schedule and its validation; the promotion guard (a passive candidate refused, a trading one promoted, the bar inclusive, off at 0, missing counts warn and do not block); the shipped multiplier; the `sqrt(n - 1)` warning; the per-module trade counts (S3-11) |
+| `test_matchmaking_edges.py` | 20 | League matchmaking at its edges: an all-zero pool draws uniformly (with one warning), a champions-only pool, an empty pool, reproducibility per episode and agent, the draw share following 3:1 weights, bad weights refused by name (#207) |
+| `test_orderbook_scripts.py` | 31 | The worked example of the retired `example.py` asserted by outcome (who traded with whom, at what price, what rests), and `genOrders.py` as a seeded shadow model over 25 seeds: the book must agree with a picture rebuilt from trade records alone (#210) |
 | `test_champion_trigger.py` | 20 | League statistics with modules that played no episodes; promotion, pool size, idle count and time-since-champion as metrics |
 | `test_progress_log.py` | 35 | `progress.jsonl` writer, numpy/NaN handling, `vf_explained_var` extraction, per-run directory isolation, the iteration broadcast to env runners |
 | `test_info_dict.py` | 24 | Per-step `info`: back-compat, reward terms summing exactly, live counters, spread, pass/rejection fields, JSON, and 0-d numpy arrays — which only a *recurrent* module produces |
 | `test_type_policy.py` | 15 | Decimal money/prices, int sizes, no field changing type mid-episode, book boundary |
 | `test_activity_metrics.py` | 34 | `pass_action_fraction` / `order_rejection_fraction` / `obs_clip_fraction`: the S1-3 detector, per-episode tallies, pickling; the reward-term variance split, the maker-ratio metric and the end-of-episode account metrics |
 | `test_s3_moderate_fixes.py` | 38 | The three design issues: `gamma` / `lambda_` reaching PPO with validation and the restore warning (#125); several resting orders at one price, default replace-in-place, escrow and both clearing modes (#122); and `promotion_reference`, both directions of the pooled-threshold bias, the small-set fallback and the restore default (#124) |
+| `test_speed_regression.py` | 4 | The matching engine and the env step against a same-machine calibration loop (about 10x margin), plus two self-scaling checks that an O(n) scan per order or a quadratic sweep would fail (#209) |
 | `test_performance.py` | 27 | Risk-adjusted performance (S3-9): Sharpe, Sortino, max drawdown, hit rate, turnover and inventory against a hand-worked series, undefined metrics left out rather than logged as 0, bad NAVs skipped, and the callback logging them per module (#121) |
 | `test_doc_sync_claims.py` | 13 | `cda-doc-sync`'s `claims.py` checking the inventory table, the code size and that every config key and CLI flag is mentioned in some doc, each in both directions (#264) |
 | `test_open_bug_fixes.py` | 14 | The last three open `bug` issues: run logging turns propagation back on without a Ray encoding (#238), the byte cap never deletes the newest episode file and warns once (#246), and `apply_env_vars()` is pinned to run before `ray.init` in every entry point, with the fact that the configured variable is not read at Ray's import checked against the installed Ray (#244) |
@@ -110,6 +113,7 @@ Counts re-measured with `--collect-only`.
 | `test_encoder_registry.py` | 46 | The selectable-encoder seam: registry, `CDACatalog`, the `mlp` pass-through staying byte-for-byte what it was, `ObsLayout`, tokenisation |
 | `test_encoder_architectures.py` | 170 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
 | `test_pretrain.py` | 36 | Offline JEPA pretraining: the loop trains only the trunk and predictor, a collapse is reported rather than hidden, a NaN or unmeasured run counts as unusable and is never saved (#239), and the checkpoint's fingerprint refuses a mismatched architecture |
+| `test_visualize_scripts.py` | 32 | `visualize/` end to end on small synthetic Parquet and `progress.jsonl` runs: the loader's complete-episode rule, the data in each chart's lines, `run_all`, both inspectors (#211) |
 | `test_visualize_orderbook.py` | 12 | The newest book snapshot is read from the middle of the observation, never off the end — the only arithmetic in `visualize/` that can be wrong without raising |
 | `test_probe.py` | 56 | The reward-free probe harness's arithmetic on synthetic observations: target definitions, episode-boundary masking, the splits, the metrics, unscoreable cells, and that `snapshots` reads the book rather than the private tail |
 | `test_bankrupt_termination.py` | 10 | A trader whose NAV reaches zero is terminated, and the episode ends when too few solvent traders remain |
@@ -117,6 +121,7 @@ Counts re-measured with `--collect-only`.
 | `test_self_match.py` | 14 | A trader cannot trade with itself: the crossing leg is withdrawn before the matcher, and the resting leg cannot become the mark (S2-5) |
 | `test_entry_vwap.py` | 11 | `entry_vwap` is the price actually paid and stays positive while a position is open, where the rolled `carrying_vwap` can go negative |
 | `test_obs_pipeline.py` | 13 | The raw-frame deque and the one-normaliser-per-stack property: a resting order reads the same in every frame (S2-6) |
+| `test_obs_information.py` | 30 | What the observation can tell apart, in both book modes: different resting prices, sizes and sides give different observations, a trade shows in the flow fields, accounts differ by owner, and every field meant to carry information moves under random play (#205) |
 | `test_obs_feature_scales.py` | 10 | Every observation block lands on one scale — the size/price ratio and the centred `log_mid` (S2-2) |
 | `test_entry_points.py` | 8 | The two documented entry points work: `gymnasium.make("continuousDoubleAuction-v0")`, and `visualize/` being importable from a wheel |
 | `test_cbp_recurrent.py` | 21 | CBP on an LSTM core: which parameters are a unit, a replacement that leaves the new unit inert and moves the function only by the old unit's contribution, Adam's moments cleared for exactly the reset entries, and discovery on the real encoders under each scope (S3-32) |
@@ -163,9 +168,10 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((2,072 tests))
+  root((2,189 tests))
     Simulator
-      orderbook 57
+      orderbook 88
+        the demo scripts as tests, a shadow model
         components, matching, invariants
         crossed book, volume cache
         bad input raises, not exits
@@ -190,7 +196,8 @@ mindmap
       tick grid 18
         on-grid prices for any tick
     Learning problem
-      observation 96
+      observation 126
+        different markets and accounts look different
         normalization, stacking
         one normaliser per stack
         the six market scalars
@@ -221,14 +228,16 @@ mindmap
       checkpointing 60
         layout stamp, book mode
         retention, restore, league sidecar
-      league 21
+      league 41
         matchmaking, promotion triggers
+        empty pool, zero and bad weights
       encoders 216
         registry, catalog, mlp pass-through
         obs layout, tokenisation
         the contract every encoder meets
         transformer, lstm, MoE specifics
-      tooling 45
+      tooling 49
+        speed regression against a calibration loop
         lint enforced, comparison driver
         evaluate a checkpoint, export its weights
       observability 227
@@ -247,6 +256,8 @@ mindmap
       continual backprop 54
         utility, accumulator, one per step
         device and DDP boundaries
+      visualize 32
+        the loader and every chart script on synthetic runs
       packaging 8
         gymnasium.make, visualize importable
     Integration 172
@@ -1111,13 +1122,13 @@ Honest accounting of what the suite does **not** cover.
 |---|---|
 | ~~**The learning-signal assertion is an xfail, not a guard**~~ | **Closed.** S1-1 is fixed and the `vf_explained_var >= 1e-3` threshold in `integration/test_progress_and_vf.py` is a live assertion — see §6.2.2. What is still unchecked is narrower than it was: `vf_loss` saturation, and "returns improve" across iterations. |
 | ~~**`test_accounting.py::test_insufficient_funds` is an empty `pass`**~~ | **Closed.** It asserts the refusal, the untouched ledger and the approved affordable half. |
-| **No information-content tests for the observation** ([#205](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/205)) | The suite would have passed unchanged with the varying-denominator stack, the zero-collision ambiguity and the dead tape loop all present, and all three were present until S2-6, S3-14 and S2-7 fixed them ([05](05_observation_space.md) §7). Each fix brought tests for its own defect; there is still no general test that the observation carries the information a policy needs. |
+| ~~**No information-content tests for the observation**~~ ([#205](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/205)) | **Closed.** `test_obs_information.py` (30 tests, both book modes) asks what the observation can tell apart: different resting prices, sizes and sides, a trade in the flow fields, accounts by owner, and each information-carrying field moving under random play. Reintroducing the dead tape loop (S2-7), dropping the ask row from the grid or zeroing the private block fails 4, 2 and 8 of them. It does not say the observation is *sufficient* to trade well; that is #206. |
 | ~~**`test_shared_history_multi_agent_uniformity` encodes a defect as a requirement**~~ | **Closed.** S1-2 is fixed and the test is replaced by a pair that splits the claim — the book prefix stays shared, the private tail must not be. See §4.2. |
 | ~~**Reproducibility is untested**~~ | **Closed.** `test_seeding.py` (11 tests) asserts two identically-seeded episodes match and two differently-seeded ones do not, across all three randomness sources — and does it while seeding the *global* NumPy stream to different values, so it cannot pass for the wrong reason. What remains untested is reproducibility of a whole multi-worker *training run*, which is a different claim. |
 | **No encoder is tested for whether it *learns*** ([#206](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/206)) | **Still the largest gap, now with the tool to close it and one dry run of it.** §6.4 proves only mechanics, and `train/probe/` routes around the reward entirely ([23](23_probe_harness.md)). The protocol in [18](18_configuration.md) §5.5 is one command, `python -m gym_continuousDoubleAuction.train.compare`, run once at smoke scale to prove the path and once more, before and after the S3-24 layout change, at three seeds × 8 iterations of the scaled-down protocol ([16](16_verification_log.md) §16.18, §16.20). Both runs are at a scale where the policies are still near random, so they prove plumbing. **The run at scale - 16 iterations, three seeds, every registered encoder, `jepa` included - has not been done.** Until it is, no claim that one encoder trades better than another, or that agents learn to use the new order-management heads, is supported by anything in this repository. |
-| **Edge cases in league matchmaking** ([#207](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/207)) | Empty pools and zero weights are untested. |
+| ~~**Edge cases in league matchmaking**~~ ([#207](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/207)) | **Closed.** `test_matchmaking_edges.py` (20 tests). It found one: all-zero weights gave NaN probabilities and a crash at the first episode; the pool now draws uniformly with one warning, and negative, non-finite or non-numeric weights are refused by name at construction. |
 | ~~**No property-based tests**~~ | **Closed.** `test_orderbook_properties.py` (§2.5). Its first run found two defects the example suite had not, which is the argument for it. |
-| ~~**No coverage measurement**~~ ([#208](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/208)) | **Measured and thresholded.** `pytest --cov` (pytest-cov in the `dev` extra, scoped by `pyproject.toml`) on the unit suite: **86.4%** line-and-branch over `envs/` and `train/` (79.1% when first measured), with `fail_under = 84` so the run fails below it and `__main__` guards excluded. Least covered: `probe/__main__` (0%, run by hand), `cbp_learner` (32%, its tests are in the integration suite), `CDA_rand` (18%, the CI smoke run), `evaluate` (64% from the unit half; the integration test covers the rest). The floor applies where `--cov` is run; CI does not run it (the workflow cannot be edited from here). |
-| **No performance regression test** ([#209](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/209)) | Nothing catches a 10× slowdown in the matching engine. |
-| **`envs/orderbook/test/example.py` and `genOrders.py`** ([#210](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/210)) | 353 LOC of standalone scripts not collected by pytest and not run by CI. |
-| **`visualize/` is almost entirely untested** ([#211](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/211)) | `test_visualize_orderbook.py` covers the one slice that can be silently wrong; the other eight modules in the package have no tests. That gap is what let the private-block layout change reach a plotting path unnoticed for three commits ([17](17_changelog.md) §36.1) — every one of those modules reads recorded data and renders it, so a wrong read looks like a plausible chart rather than an error. |
+| ~~**No coverage measurement**~~ ([#208](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/208)) | **Closed: measured and thresholded** (by #148). `pytest --cov` (pytest-cov in the `dev` extra, scoped by `pyproject.toml`) on the unit suite: **86.4%** line-and-branch over `envs/` and `train/` (79.1% when first measured), (**86.9%** once `visualize/`, no longer omitted, is measured too, #211), with `fail_under = 84` so the run fails below it and `__main__` guards excluded. Least covered: `probe/__main__` (0%, run by hand), `cbp_learner` (32%, its tests are in the integration suite), `CDA_rand` (18%, the CI smoke run), `evaluate` (64% from the unit half; the integration test covers the rest). The floor applies where `--cov` is run; CI does not run it (the workflow cannot be edited from here). |
+| ~~**No performance regression test**~~ ([#209](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/209)) | **Closed.** `test_speed_regression.py` (4 tests): budgets are multiples of a calibration loop timed on the same machine (about 10x over today's cost), and two checks compare the code with itself at two sizes. An O(n) scan per insert fails two; a 20 ms slower step fails the third. |
+| ~~**`envs/orderbook/test/example.py` and `genOrders.py`**~~ ([#210](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/210)) | **Closed.** `example.py` had been failing its own string asserts (the printed form had drifted) and `genOrders.py` was Python 2. Both are deleted; `test_orderbook_scripts.py` asserts the example's outcomes and checks a seeded shadow model against the book. |
+| ~~**`visualize/` is almost entirely untested**~~ ([#211](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/211)) | **Closed.** `test_visualize_scripts.py` (32 tests) runs the loader, the six chart scripts, `run_all` and both inspectors on synthetic runs and asserts on the data each plots. Changing the complete-episode filter, a column name, the snapshot slice or an output filename each fails it. `visualize/` is now measured in coverage (it was omitted). |
