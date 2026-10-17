@@ -22,6 +22,7 @@ from typing import Tuple
 from ray.rllib.algorithms.algorithm import Algorithm
 from gym_continuousDoubleAuction.logging_setup import get_logger
 from gym_continuousDoubleAuction.logging_setup import set_iteration
+from gym_continuousDoubleAuction.train.run_lock import RunLock
 
 #: Every name this module defined before the split (issue #254) is still importable from
 #: here; the code is in `config`, `build`, `checkpoint`, `progress` and `cli`.
@@ -109,6 +110,15 @@ def train(cfg: TrainConfig) -> Tuple[Algorithm, dict]:
     how many times it was interrupted. `num_iters_is_delta` opts back into
     counting from wherever the restore landed.
     """
+    # Held from before the restore reads the folder until the run returns or raises, so a second
+    # live run on the same `log_base_dir` is refused instead of overwriting this one's saves
+    # (doc/15 R-9, #179).
+    with RunLock(cfg.checkpoint_dir, cfg.run_id):
+        return _run_training(cfg)
+
+
+def _run_training(cfg: TrainConfig) -> Tuple[Algorithm, dict]:
+    """`train`'s body, run while the checkpoint folder is held."""
     algo, _callback = build_algo(cfg)
 
     start = int(algo.iteration)
