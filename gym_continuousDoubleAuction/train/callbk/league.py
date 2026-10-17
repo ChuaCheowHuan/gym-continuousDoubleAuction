@@ -254,7 +254,10 @@ class League:
             if self.should_create(best_return, iteration, algorithm):
                 # Pass policy ID directly
                 self.create_snapshot(algorithm, best_candidate, best_return, iteration)
-                self._evict_over_limit(algorithm)
+                # Only if a champion was actually added: a failed attempt takes nothing away,
+                # even from a history already over the limit (a lowered `max_champions`).
+                if {c["id"] for c in self.champion_history} - champions_before:
+                    self._evict_over_limit(algorithm)
         promoted = len({c["id"] for c in self.champion_history} - champions_before)
 
         league_state = {
