@@ -69,6 +69,13 @@ def main(argv=None):
         "agent's, so prefer this once a run exists.",
     )
     p.add_argument("--max-rows", type=int, default=None)
+    p.add_argument(
+        "--book-mode",
+        choices=("grid", "levels"),
+        default=None,
+        help="The book_mode the --parquet run used; needed only when the observation width "
+        "fits both modes (for example 569 floats), which the file cannot say.",
+    )
     p.add_argument("--log-level", type=str, default=_cli("log_level"))
     args = p.parse_args(argv)
 
@@ -81,7 +88,9 @@ def main(argv=None):
     from gym_continuousDoubleAuction.train.probe import corpus as corpus_module
 
     if args.parquet:
-        corpus = corpus_module.from_parquet(args.parquet, max_rows=args.max_rows)
+        corpus = corpus_module.from_parquet(
+            args.parquet, max_rows=args.max_rows, book_mode=args.book_mode
+        )
     else:
         corpus = corpus_module.from_rollouts(
             num_episodes=args.episodes,
@@ -90,7 +99,9 @@ def main(argv=None):
             seed=args.seed,
         )
 
-    env = continuousDoubleAuctionEnv({})
+    from gym_continuousDoubleAuction.train.probe.__main__ import env_config_for
+
+    env = continuousDoubleAuctionEnv(env_config_for(corpus))
     agent_id = env.agents[0]
     encoder_spec = group("train_config.json", "encoder")["encoder_specs"].get(args.encoder, {})
 

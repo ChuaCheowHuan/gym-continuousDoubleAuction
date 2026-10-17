@@ -66,7 +66,9 @@ def build_features(
     features = {features_module.RAW_FEATURES: features_module.raw(corpus)}
 
     for encoder_type in encoders:
-        module = features_module.build_module(obs_space, act_space, encoder_type)
+        module = features_module.build_module(
+            obs_space, act_space, encoder_type, book_mode=corpus.layout.book_mode
+        )
         features[encoder_type] = features_module.latents(module, corpus)
         logger.info("%s: untrained latents %s", encoder_type, features[encoder_type].shape)
 
@@ -82,7 +84,12 @@ def build_features(
         # mismatch raises rather than loading partially.
         spec = group("train_config.json", "encoder")["encoder_specs"].get(pretrained_encoder, {})
         module = features_module.pretrained_module(
-            obs_space, act_space, pretrained_encoder, pretrained, spec
+            obs_space,
+            act_space,
+            pretrained_encoder,
+            pretrained,
+            spec,
+            book_mode=corpus.layout.book_mode,
         )
         name = f"{pretrained_encoder}@pretrained"
         features[name] = features_module.latents(module, corpus)
