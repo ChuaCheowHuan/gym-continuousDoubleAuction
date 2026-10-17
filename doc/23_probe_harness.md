@@ -246,7 +246,7 @@ probed ([15](15_findings_and_recommendations.md) R-19, #189).
 **A width that fits two book modes needs the mode.** A Parquet file records the observation but
 not the space it came from, and some widths fit both layouts (569 floats: `grid` with `n_hist` 11
 or `levels` with `n_hist` 8). `from_parquet(book_mode=...)` and `--book-mode` name the run's mode;
-without it such a file raises `AmbiguousObsLayout` instead of being read as the default. The
+without it such a file raises `AmbiguousObsLayout` instead of being read as the default (`train.pretrain` takes the same flag). The
 encoders being scored are built against an env with the corpus's own `book_mode` and `n_hist`
 ([15](15_findings_and_recommendations.md) R-17, #187).
 

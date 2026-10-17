@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (2,290 tests: 2,105 unit + 185 integration)
+# everything (2,293 tests: 2,108 unit + 185 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -98,7 +98,7 @@ Counts re-measured with `--collect-only`.
 | `test_champion_guard.py` | 26 | The entropy schedule and its validation; the promotion guard (a passive candidate refused, a trading one promoted, the bar inclusive, off at 0, missing counts warn and do not block); the shipped multiplier; the `sqrt(n - 1)` warning; the per-module trade counts (S3-11) |
 | `test_league_rollback.py` | 10 | A failed champion snapshot undoes `add_module` (the corrected pool reaches the runners; a failing undo only logs) and a full league evicts its oldest only after the new champion exists, so a failure never shrinks it, even an over-limit history (#176, #178) |
 | `test_world_model_actions.py` | 4 | The JEPA world model embeds every head of the action: the embedded heads equal the env's `ACTION_KEYS`, two actions differing only in `order_slot` embed differently (#186) |
-| `test_obs_layout_book_mode.py` | 13 | A width that fits two book modes (569 floats) raises `AmbiguousObsLayout` unless the mode is given; the run's `book_mode` reaches the encoder spec, the policy builder and the probe (`--book-mode`); the action mask is unaffected (#187) |
+| `test_obs_layout_book_mode.py` | 16 | A width that fits two book modes (569 floats) raises `AmbiguousObsLayout` unless the mode is given; the run's `book_mode` reaches the encoder spec, the policy builder and the probe (`--book-mode`); the action mask is unaffected; the probe and pretraining build their encoders in the corpus's mode (#187) |
 | `test_jepa_value_pass.py` | 10 | JEPA's `compute_values` pass runs no objective and takes no EMA step (restored even on error); mask sampling uses the encoder's own generator, reproducible per seed and distinct per encoder (#185) |
 | `test_run_lock.py` | 13 | One live run per checkpoint folder: the lock's contents, release, refusal of a live or other-machine holder, takeover of a dead one, and `train()` holding it from before the restore until it returns or raises (#179) |
 | `test_matchmaking_edges.py` | 20 | League matchmaking at its edges: an all-zero pool draws uniformly (with one warning), a champions-only pool, an empty pool, reproducibility per episode and agent, the draw share following 3:1 weights, bad weights refused by name (#207) |
@@ -173,7 +173,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((2,290 tests))
+  root((2,293 tests))
     Simulator
       orderbook 88
         the demo scripts as tests, a shadow model
