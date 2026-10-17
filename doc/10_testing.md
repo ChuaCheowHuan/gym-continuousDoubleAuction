@@ -17,7 +17,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# everything (2,216 tests: 2,031 unit + 185 integration)
+# everything (2,218 tests: 2,033 unit + 185 integration)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # unit tests only, skipping the slow RLlib ones
@@ -96,7 +96,7 @@ Counts re-measured with `--collect-only`.
 | `test_checkpointing.py` | 52 | Checkpoint retention, restore selection, league state across a save |
 | `test_action_dist.py` | 15 | A stateful module's log-probability for two agents in one step: RLlib's `(B, B)` result pinned as the bug, the corrected `(B, 1)`, `(B,)` and `(B, T)` shapes, the old squeeze case, the wrapper cached and idempotent (#278) |
 | `test_champion_guard.py` | 26 | The entropy schedule and its validation; the promotion guard (a passive candidate refused, a trading one promoted, the bar inclusive, off at 0, missing counts warn and do not block); the shipped multiplier; the `sqrt(n - 1)` warning; the per-module trade counts (S3-11) |
-| `test_league_rollback.py` | 8 | A failed champion snapshot undoes `add_module` (the corrected pool reaches the runners; a failing undo only logs) and a full league evicts its oldest only after the new champion exists, so a failure never shrinks it (#176, #178) |
+| `test_league_rollback.py` | 10 | A failed champion snapshot undoes `add_module` (the corrected pool reaches the runners; a failing undo only logs) and a full league evicts its oldest only after the new champion exists, so a failure never shrinks it, even an over-limit history (#176, #178) |
 | `test_matchmaking_edges.py` | 20 | League matchmaking at its edges: an all-zero pool draws uniformly (with one warning), a champions-only pool, an empty pool, reproducibility per episode and agent, the draw share following 3:1 weights, bad weights refused by name (#207) |
 | `test_orderbook_scripts.py` | 31 | The worked example of the retired `example.py` asserted by outcome (who traded with whom, at what price, what rests), and `genOrders.py` as a seeded shadow model over 25 seeds: the book must agree with a picture rebuilt from trade records alone (#210) |
 | `test_champion_trigger.py` | 20 | League statistics with modules that played no episodes; promotion, pool size, idle count and time-since-champion as metrics |
@@ -169,7 +169,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((2,216 tests))
+  root((2,218 tests))
     Simulator
       orderbook 88
         the demo scripts as tests, a shadow model
