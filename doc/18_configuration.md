@@ -605,7 +605,7 @@ until it returns or raises, and a second run on the folder is refused with the w
 its own `log_base_dir` (which is what `train.compare` does for every run), wait, or delete the
 lock if that run is gone. A lock whose process no longer exists on this machine, or that this
 process left behind, is taken over; one held from another machine cannot be checked and counts as
-live ([15](15_findings_and_recommendations.md) R-9, #179).
+live; two runs finding the same stale lock take it one after the other, through a `flock` on `.run.lock.guard` ([15](15_findings_and_recommendations.md) R-9, #179, #296).
 
 **Two log levels, deliberately.** Ray at `INFO` is noise; this package at `INFO` is the per-episode
 NAV table, the per-iteration league statistics and the checkpoint lines — the output a run is meant
