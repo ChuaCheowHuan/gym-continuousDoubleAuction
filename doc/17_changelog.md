@@ -4034,3 +4034,15 @@ The test-gap label held six open issues that could be closed without the at-scal
 - **#208.** Closed: `fail_under = 84` since #148. The unit suite now measures **86.9%** with `visualize/` included (86.4% without).
 - **Not claimed.** That the observation is *sufficient* to trade well, or that an encoder learns (#206); that the speed budgets would catch a 2x slowdown (they are built for 10x on a shared runner).
 - **Tests.** `test_matchmaking_edges.py` (20), `test_orderbook_scripts.py` (31), `test_visualize_scripts.py` (32), `test_speed_regression.py` (4), `test_obs_information.py` (30). Unit 1,887 to 2,004; suite 2,189. Lines of Python 53,445 to 54,109, 190 files to 193.
+
+## 86. Six R-issues fixed to their owner's stated preference (#171, #172, #173, #174, #176, #178)
+
+Each issue had options and the owner chose one in its comments. Every fix has a test that fails on the previous source, and the mutation or measurement that motivated it is repeated after the change.
+
+- **#171, auction initiator.** A trade with both sides in the batch is signed by a tick rule: clearing price above the pre-batch mid is buyer-initiated, below is seller-initiated, equal repeats the last direction (buyer before any). Measured on batch-mode random play, both-in-batch trades went from 519 buyer / 0 seller to 294 / 267. **Behaviour change in batch mode:** the taker fee follows the initiator, so the seller now pays it on the trades where the price fell; at the shipped fee of 0 nothing moves.
+- **#172, stale book on the bankruptcy step.** A bankrupt trader's orders are pulled in `liquidate()`, before the observation is built, in every mode. The test also caught the same fault in `market_adl` for a flat account with negative NAV, which the issue did not mention.
+- **#173, no equity.** At NAV <= 0 the close goes to the touch (that level only) before ADL, instead of everything to ADL. `maintenance_margin: 0` is refused. Two existing expectations changed with it: a gap past bankruptcy buys the 1 offered lot before ADL, and a gradual close whose equity runs out does the same.
+- **#174, peak NAV.** `cal_nav` no longer moves `max_nav`; `Account.update_peak` does, once per step after the cascade. **Changes the reward** for episodes with liquidations (the drawdown penalty no longer carries a peak no boundary saw).
+- **#176, #178, league.** A snapshot that fails after `add_module` calls `remove_module` with the corrected mapping function (a failing undo only logs). A full league evicts after the snapshot succeeds, in `assess`; `should_create` no longer evicts.
+- **Not claimed.** That the touch-first rule matches any one exchange's engine; that the tick rule's sign is right on any individual trade (it is a convention, as in trade classification generally); a remote-runner integration test for #176 (the stand-in proves the driver side and the call made).
+- **Tests.** `test_league_rollback.py` (8); additions to `test_liquidation.py` (30 to 41), `test_matching_regimes.py` (19 to 24), `test_bankrupt_termination.py` (10 to 13). Unit 2,004 to 2,031; suite 2,216. Lines of Python 54,109 to 54,667.

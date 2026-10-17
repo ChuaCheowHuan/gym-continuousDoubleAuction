@@ -242,7 +242,7 @@ profit       = mkt_val - raw_val   if long   else   raw_val - mkt_val
 position_val = raw_val + profit    # = mkt_val for a long, 2*cost_basis - mkt_val for a short
 prev_nav     = nav
 nav          = cash + cash_on_hold + position_val      # cal_nav()
-max_nav      = max(max_nav, nav)                       # inside cal_nav()
+max_nav      = max(max_nav, nav)                       # update_peak(): once per step, after the liquidation cascade
 total_profit = nav - init_nav                          # cal_total_profit()
 ```
 
@@ -347,7 +347,9 @@ apply to short stock (FINRA Rule 4210). `maintenance_margin = 0` liquidates at b
    still ≥ 0 *after the taker fee the close pays*: `(mark + nav / |pos|) / (1 + rate)` for a short
    being bought back, `(mark - nav / |pos|) / (1 - rate)` for a long being sold, with `rate` the
    taker fee as a fraction (at 0 it is `mark - nav / net_position`). Snapped to the tick on the
-   conservative side. The fills
+   conservative side. At NAV ≤ 0 there is no equity to bound the close, so the band is the touch
+   (the best opposite price, that level only) and ADL takes the rest ([15](15_findings_and_recommendations.md)
+   R-3); a `maintenance_margin` of 0 is refused. The fills
    are ordinary trades against orders other agents chose to rest, settled by `_process_trades`, and
    they print. Nothing is left resting. With NAV already ≤ 0 (a gap through bankruptcy in one step)
    the limit is the mark itself: the book may only improve on it.
@@ -441,8 +443,9 @@ notional (`price × quantity`). Both ship at **0**, so nothing changes until a r
   Under `step_clearing: "batch"` a counter party that arrived in the same batch is booked as an
   `init_party` but is still the maker. A negative maker rate is a rebate. A batch has no real
   aggressor, so which of two same-batch orders pays the taker rate follows the record's initiator,
-  the buyer ([15](15_findings_and_recommendations.md) R-1): with unequal rates the choice is
-  arbitrary, and equal rates (or `step_clearing: "sequential"`) avoid it.
+  which a tick rule picks ([15](15_findings_and_recommendations.md) R-1): the buyer if the clearing
+  price is above the pre-batch mid, the seller if below, the last direction if equal. With unequal
+  rates the choice is still a convention, and equal rates (or `step_clearing: "sequential"`) avoid it.
 - **How.** `Account.process_acc` takes the fee out of `cash` as the last step of booking a fill, so
   it flows through NAV, the reward's `nav_term` and the drawdown like any other loss. The fee is
   `(trade_val × bps).scaleb(-4)`, a shift of the decimal point, so it is exact and the ledger still

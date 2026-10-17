@@ -189,7 +189,9 @@ The formula needs per-step and high-water-mark state that the account did not or
 - `reward`, `reward_terms`, `drawdown` — what the reward *was*, kept so it can be reported.
 
 **[`calculate.py`](../gym_continuousDoubleAuction/envs/account/calculate.py)** — `cal_nav`
-updates `max_nav` automatically whenever a new peak is reached.
+recomputes NAV and `update_peak` raises `max_nav` to it; the env calls `update_peak` once per step,
+after the liquidation cascade, so a NAV that existed only between two re-marks is never a peak
+([15](15_findings_and_recommendations.md) R-4).
 
 **[`trader.py`](../gym_continuousDoubleAuction/envs/agent/trader.py)** — in `place_order`,
 `order_step_placed` is set **only** for `market` and `limit` types. `modify` and `cancel` are
