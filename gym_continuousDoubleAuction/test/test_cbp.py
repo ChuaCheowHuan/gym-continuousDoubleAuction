@@ -839,3 +839,85 @@ class TestAUnitIsJudgedOnEveryCallOfTheStep:
         act(first(x))
 
         assert torch.allclose(mixin._cbp_stats[("m", "t")]["abs_mean"], act(first(x)).abs().mean(0))
+
+
+class TestMeanCompensation:
+    """doc/15 R-13 (#183): a replaced unit's mean contribution can be moved into the next bias.
+
+    Zeroing a unit's outgoing weights, as the papers do, removes whatever steady glow it fed
+    the next layer. A saturated tanh unit looks useless to `overall` utility (its activation
+    never varies), is replaced first, and its constant contribution disappears: one
+    replacement shifted the outputs by about 8-10 standard deviations. `cbp_compensate_mean`
+    leaves a bias of the same size behind. Default off, so the paper's rule stays the baseline.
+    """
+
+    @staticmethod
+    def _net(compensate):
+        from gym_continuousDoubleAuction.train.model import cbp as cbp_module
+
+        torch.manual_seed(0)
+        l1, act, l2 = nn.Linear(8, 16), nn.Tanh(), nn.Linear(16, 4)
+        with torch.no_grad():
+            l1.bias[0] = 8.0  # unit 0 sits at tanh's ceiling: ~1.0 whatever the input
+            l2.weight[:, 0] = torch.tensor([2.0, -1.5, 1.0, 0.5])
+        net = nn.Sequential(l1, act, l2)
+        layer = cbp_module.ReplaceableLayer("t", l1, [l2], act)
+        config = cbp_module.CBPConfig(
+            enabled=True,
+            replacement_rate=0.5,
+            maturity_threshold=10,
+            utility="overall",
+            utility_decay=0.9,
+            compensate_mean=compensate,
+        )
+        state = cbp_module.CBPLayerState.zeros(16)
+        data = torch.randn(2000, 8)
+        for i in range(60):
+            x = data[i * 32 : i * 32 + 32]
+            stats = cbp_module.activation_stats(act(l1(x)), state, config)
+            cbp_module.update_utility(state, layer, stats, config)
+        return cbp_module, net, layer, state, config
+
+    @pytest.mark.parametrize("compensate, small", [(True, True), (False, False)])
+    def test_the_output_shift_of_replacing_a_saturated_unit(self, compensate, small):
+        cbp_module, net, layer, state, config = self._net(compensate)
+        x = torch.randn(512, 8)
+        before = net(x)
+
+        cbp_module._reinitialise(state, layer, 0, None, None, config)
+
+        shift = (net(x) - before).mean(0).abs().max().item()
+        assert (shift < 0.1) is small, f"max mean output shift {shift:.3f}"
+
+    def test_without_compensation_the_shift_is_the_whole_contribution(self):
+        """Pins the paper-faithful path: `-1.0 x (outgoing weights)` for a unit at ~1.0."""
+        cbp_module, net, layer, state, config = self._net(False)
+        x = torch.randn(512, 8)
+        before = net(x)
+        cbp_module._reinitialise(state, layer, 0, None, None, config)
+        shift = (net(x) - before).mean(0)
+        assert torch.allclose(shift, -torch.tensor([2.0, -1.5, 1.0, 0.5]), atol=0.05)
+
+    def test_a_layer_whose_consumer_has_no_bias_is_left_alone(self):
+        cbp_module, net, layer, state, config = self._net(True)
+        layer.outgoing[0].bias = None
+        cbp_module._reinitialise(state, layer, 0, None, None, config)  # must not raise
+        assert torch.all(layer.outgoing[0].weight[:, 0] == 0)
+
+    def test_it_is_off_by_default_and_read_from_the_group(self):
+        from gym_continuousDoubleAuction.train.model.cbp import CBPConfig
+
+        assert CBPConfig().compensate_mean is False
+        assert CBPConfig.from_dict({"cbp_compensate_mean": True}).compensate_mean is True
+
+    def test_it_reaches_the_learner_and_is_unrestorable_while_active(self):
+        from gym_continuousDoubleAuction.train.checkpoint import UNRESTORABLE_WHEN_ACTIVE_KEYS
+        from gym_continuousDoubleAuction.train.config import TrainConfig
+        from gym_continuousDoubleAuction.train.train import build_config
+
+        assert TrainConfig().cbp_compensate_mean is False
+        assert "cbp_compensate_mean" in UNRESTORABLE_WHEN_ACTIVE_KEYS
+        cfg = TrainConfig(cbp_enabled=True, cbp_compensate_mean=True)
+        ppo = build_config(cfg)
+        ppo = ppo[0] if isinstance(ppo, tuple) else ppo
+        assert ppo.learner_config_dict["continual_backprop"]["cbp_compensate_mean"] is True
