@@ -118,6 +118,27 @@ class JEPARLModule(CDAPPOTorchRLModule):
         return out
 
     @override(CDAPPOTorchRLModule)
+    def compute_values(self, batch, embeddings=None):
+        """The value pass, with the JEPA objective off.
+
+        PPO calls this from the learner connector to compute advantages, in training mode with
+        gradients on, and no optimiser step follows it. With `vf_share_layers: true` it goes
+        through the same JEPA encoder as the policy, which then ran the mask-and-predict
+        objective and took an EMA step of the target trunk it had no business taking: one more
+        EMA step per module per iteration than optimiser steps (doc/15 R-15, #185). The
+        objective is switched off for the duration and restored after, even on an error.
+        """
+        encoders = [m for m in self.encoder.modules() if hasattr(m, "objective_enabled")]
+        saved = [m.objective_enabled for m in encoders]
+        for m in encoders:
+            m.objective_enabled = False
+        try:
+            return super().compute_values(batch, embeddings)
+        finally:
+            for m, was in zip(encoders, saved):
+                m.objective_enabled = was
+
+    @override(CDAPPOTorchRLModule)
     def setup(self):
         """Build the module, then drop the training-only parts if inference-only.
 

@@ -58,6 +58,7 @@ duplicates from `transformer` are the deliberate price of that.
 from __future__ import annotations
 
 import copy
+import itertools
 import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -115,6 +116,9 @@ JEPA_DEFAULTS = {
     "world_model_coeff": 0.1,
 }
 
+
+#: Distinguishes one encoder's mask generator from the next in the same process.
+_MASK_STREAMS = itertools.count(1)
 
 #: What a mask hides. See the module docstring.
 MASK_AXES = ("level", "time", "random")
@@ -610,6 +614,21 @@ class TorchJEPAEncoder(TorchModel, Encoder):
         stats, self._jepa_stats = self._jepa_stats, None
         return stats
 
+    def _mask_rng(self) -> torch.Generator:
+        """This encoder's own generator for mask sampling, made on first use.
+
+        Drawing masks from the global torch RNG meant every forward - including passes that
+        train nothing - moved a seeded run's random stream (#185); CBP keeps a generator of
+        its own for the same reason. Seeded from the process's initial seed plus a counter, so
+        `torch.manual_seed` before building makes the masks reproducible and two encoders in
+        one process do not draw identical ones.
+        """
+        generator = getattr(self, "_mask_generator", None)
+        if generator is None:
+            seed = (torch.initial_seed() + next(_MASK_STREAMS)) % (2**63 - 1)
+            generator = self._mask_generator = torch.Generator().manual_seed(seed)
+        return generator
+
     @torch.no_grad()
     def _update_target(self) -> None:
         """One EMA step of the target trunk toward the online one.
@@ -635,6 +654,7 @@ class TorchJEPAEncoder(TorchModel, Encoder):
             self.tokenization,
             self.mask_axis,
             self.mask_ratio,
+            generator=self._mask_rng(),
         ).to(tokens.device)
 
         keep = torch.ones(self._num_tokens, dtype=torch.bool, device=tokens.device)
