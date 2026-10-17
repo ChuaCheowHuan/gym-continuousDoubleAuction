@@ -84,6 +84,11 @@ class ProbeCorpus:
     #: How to read a row of `obs` as a (time, level, field) grid.
     layout: ObsLayout
 
+    #: True when every agent's row was kept, so a step is several rows. Targets shift by rows,
+    #: which is a step only with one row per step, so such a corpus is refused for scoring
+    #: (`report.run`, #188).
+    per_agent: bool = False
+
     def __post_init__(self):
         if self.obs.ndim != 2:
             raise ValueError(f"obs must be 2-D (N, flat_dim); got {self.obs.shape}.")
@@ -334,6 +339,7 @@ def from_parquet(
         obs=obs[order],
         episode_index=episode_index[order],
         layout=layout,
+        per_agent=per_agent,
     )
     logger.info("parquet corpus from %s file(s): %s", len(files), corpus.describe())
     return corpus

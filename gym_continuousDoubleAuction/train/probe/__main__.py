@@ -144,11 +144,8 @@ def main(argv=None):
     p.add_argument(
         "--per-agent",
         action="store_true",
-        help="Keep every agent's row from --parquet rather than one per step. "
-        "The rows at one step share a book and differ only in their "
-        "private tail, so this multiplies the corpus by the agent count "
-        "while adding only private state - useful when that is the "
-        "subject, misleading otherwise.",
+        help="Refused: per-agent rows are several per step, and probe targets shift by "
+        "rows, so scores would be for the wrong step (#188). Kept so the error explains it.",
     )
     p.add_argument(
         "--checkpoint",
@@ -176,6 +173,13 @@ def main(argv=None):
     p.add_argument("--out", type=str, default=None, help="Write the report here too.")
     p.add_argument("--log-level", type=str, default=_cli("log_level"))
     args = p.parse_args(argv)
+    if args.per_agent:
+        # Before any corpus or encoder is built: the report would refuse it anyway (#188).
+        p.error(
+            "--per-agent keeps several rows per step, and probe targets look a number of "
+            "rows ahead, so the scores would be for the wrong step. Score a corpus with one "
+            "row per step; per-agent rows are for pretraining."
+        )
 
     configure_logging(args.log_level, force=True)
 
