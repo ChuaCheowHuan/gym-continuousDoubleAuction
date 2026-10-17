@@ -172,6 +172,39 @@ class TestAFullLeagueOnlyEvictsAfterASuccessfulSnapshot:
         assert league.champion_count == 2 and out.promoted == 1
         assert "champion_1" not in league.available_modules
 
+    def test_a_failed_snapshot_evicts_nothing_even_if_the_history_is_over_the_limit(self):
+        """`max_champions` lowered between runs leaves the history over the limit; a failed
+        attempt must not be what trims it, or a failure still takes champions away."""
+        league = _league(champions=5, max_champions=2)
+        algo = _algorithm(fail_at="learner_group.get_state")
+
+        league.assess(algo, RETURNS, {}, 10)
+
+        assert len(league.champion_history) == 5
+        algo.remove_module.assert_not_called()
+
+    def test_a_successful_snapshot_trims_an_over_limit_history_to_the_limit(self, monkeypatch):
+        league = _league(champions=4, max_champions=2)
+        algo = _algorithm()
+
+        def snapshot(algorithm, source, value, iteration):
+            league.champion_history.append(
+                {
+                    "id": "champion_5",
+                    "source_policy": source,
+                    "iteration": iteration,
+                    "return": value,
+                }
+            )
+            league.available_modules.append("champion_5")
+            league.champion_count += 1
+
+        monkeypatch.setattr(league, "create_snapshot", snapshot)
+
+        league.assess(algo, RETURNS, {}, 10)
+
+        assert [c["id"] for c in league.champion_history] == ["champion_4", "champion_5"]
+
     def test_a_league_below_its_limit_evicts_nothing(self, monkeypatch):
         league = _league(champions=1, max_champions=3)
         algo = _algorithm()
