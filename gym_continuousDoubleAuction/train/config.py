@@ -399,6 +399,15 @@ class TrainConfig:
             )
         if self.min_champion_trades < 0:
             raise ValueError(f"min_champion_trades must be >= 0; got {self.min_champion_trades}.")
+        if self.cbp_enabled and self.num_learners > 1:
+            # Replacements are chosen from each learner's own minibatch and applied outside the
+            # gradient, so the replicas can pick different units and drift apart; nothing in
+            # DDP pulls them back (doc/15 R-12, #182). `cbp_metrics_only` replaces nothing.
+            raise ValueError(
+                f"cbp_enabled with num_learners={self.num_learners}: continual backprop picks "
+                "the unit to replace separately on each learner, so the replicas would diverge. "
+                "Use num_learners 0 or 1, or cbp_metrics_only, until the choice is synchronised."
+            )
 
     @property
     def entropy_setting(self):
