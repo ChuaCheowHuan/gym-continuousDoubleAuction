@@ -159,6 +159,7 @@ class LiquidationEngine(object):
         position, so `set_done` only ever terminates a flat account.
         """
         if self.liquidation == "off":
+            self._pull_bankrupt_orders()
             return []
 
         events = []
@@ -196,7 +197,24 @@ class LiquidationEngine(object):
             else:
                 events.append(self._liquidate_one(trader, mark))
             self._remark_keeping_prev_nav()
+        self._pull_bankrupt_orders()
         return events
+
+    def _pull_bankrupt_orders(self) -> None:
+        """Take down the resting orders of every live trader whose NAV has run out.
+
+        On a real venue a defaulted member's orders are mass-cancelled before the next
+        market data goes out, so what participants see is the book that remains.
+        `set_done` used to do this while the step's outputs were assembled, after the shared
+        book snapshot had been taken: on the bankruptcy step every observation still showed
+        orders that no longer existed (doc/15 R-2, #172). Doing it here, before
+        `prep_next_state`, makes the observation and the book agree. The orders a
+        liquidation closes out are already gone (`_margin_call`); this covers a flat
+        account with negative NAV, and every bankrupt account when liquidation is off.
+        """
+        for trader in self.venue.traders:
+            if self.venue.is_live(trader) and trader.acc.nav <= 0:
+                self._margin_call(trader)
 
     # -------------------------------------------------------------- close-out
 
