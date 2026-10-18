@@ -1,8 +1,8 @@
 """The package is pyflakes-clean, and stays that way.
 
-doc/15 S4-6 asked for a linter. The CI workflow cannot be changed from the
+docs/15 S4-6 asked for a linter. The CI workflow cannot be changed from the
 sessions that maintain this repository (the push credential has no `workflow`
-scope - doc/17 §37.6), so the linter runs as a test: CI already installs the
+scope - docs/17 §37.6), so the linter runs as a test: CI already installs the
 `dev` extra and runs this directory, and a new unused import or undefined name
 fails the same job a broken test would.
 

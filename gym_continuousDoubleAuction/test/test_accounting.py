@@ -235,7 +235,7 @@ class TestAccounting:
         """Test Case 8: Insufficient Funds
 
         This used to be a bare `pass` under twenty lines of comments arguing
-        with themselves about what `_order_approved` did - doc/15 S4-5, a TODO
+        with themselves about what `_order_approved` did - docs/15 S4-5, a TODO
         shipped as a test. The comments described an older version that checked
         only `nav > 0`; the current one cash-checks the risk-increasing portion,
         so the behaviour is now asserted rather than speculated about.

@@ -24,7 +24,7 @@ class TestObsMarketFeatures:
       - log_mid             = log(M) - log_mid_centre, the Level 1 midpoint
                               anchor, centred on the geometric mean of the
                               price-anchor range so it is not a standing
-                              +4.6 bias into a tanh layer (doc/15 S2-2)
+                              +4.6 bias into a tanh layer (docs/15 S2-2)
       - log1p_spread_ticks  = log1p(spread / min_tick), 0.0 when not two-sided
     """
 

@@ -5,7 +5,7 @@ What this implements
 Continual Backprop (CBP) is backprop plus a *generate-and-test* process that
 continually reinitialises low-utility hidden units. It is not an architecture
 and not a loss term - it is a modification to the update rule, applied after
-the optimiser step. See `doc/25_continual_backprop.md` for why it belongs on
+the optimiser step. See `docs/25_continual_backprop.md` for why it belongs on
 the Learner rather than in the encoder registry.
 
 Two papers define it and they do not agree in every detail. Where they differ,
@@ -38,7 +38,7 @@ steps**, not environment steps or training iterations. This matters more here
 than in the papers: at this repo's defaults a training iteration performs 4
 Adam steps (4 epochs over one full batch, `minibatch_size: null`) against the
 320 of the papers' Continual PPO, so a maturity threshold transplanted from
-the paper would never be reached. See `doc/25` and the `_note_cadence` in
+the paper would never be reached. See `docs/25` and the `_note_cadence` in
 `config/train_config.json`.
 """
 
@@ -77,7 +77,7 @@ UTILITY_MEASURES = ("contribution", "mean_corrected", "overall")
 #:                 weight matrix, and zeroing the outgoing weights is the whole
 #:                 reason a replacement does not disturb the function.
 #: `recurrent`   - everything in `feedforward`, plus the hidden units of the top
-#:                 layer of an `nn.LSTM` core (doc/15 S3-32, doc/25 section 3.4).
+#:                 layer of an `nn.LSTM` core (docs/15 S3-32, docs/25 section 3.4).
 #:                 The `lstm` encoder has nothing replaceable under
 #:                 `feedforward`, which is why this exists. See `RecurrentLayer`
 #:                 for what a unit is and what is zeroed.
@@ -126,7 +126,7 @@ class CBPConfig:
 
     enabled: bool = False
     #: Compute and log the utility and the plasticity correlates, but never
-    #: replace anything. This is doc/25 Proposal A: it cannot change a run's
+    #: replace anything. This is docs/25 Proposal A: it cannot change a run's
     #: trajectory, and it answers whether this system loses plasticity at all -
     #: which is the question the mechanism is only worth enabling *after*.
     metrics_only: bool = False
@@ -138,8 +138,8 @@ class CBPConfig:
     fire_on: str = "adam_step"
     reset_optimizer_state: bool = True
     #: Move a replaced unit's mean contribution into the next layer's bias before its
-    #: outgoing weights are zeroed, so the output does not jump (doc/15 R-13, #183). Off by
-    #: default: the papers' rule zeroes and leaves the bias alone, and `doc/16` section 16.13
+    #: outgoing weights are zeroed, so the output does not jump (docs/15 R-13, #183). Off by
+    #: default: the papers' rule zeroes and leaves the bias alone, and `docs/16` section 16.13
     #: measured CBP that way.
     compensate_mean: bool = False
     #: Mean |activation| below which a unit counts as dead, for the metric only.
@@ -809,7 +809,7 @@ def merge_stats(
 
     A layer can run more than once per step - each MoE expert once per top-k slot, the JEPA
     trunk on the masked context and again on the full observation - and the hook used to keep
-    only the last call, so a unit was judged on a partial, order-dependent view (doc/15 R-14,
+    only the last call, so a unit was judged on a partial, order-dependent view (docs/15 R-14,
     #184). Each statistic is a mean over `rows`, so weighting by rows gives exactly the mean
     over all rows of both calls, as if they had been one batch.
     """
@@ -890,7 +890,7 @@ def _reinitialise(
     instant of replacement - the new random incoming weights are multiplied by
     zero and reach the output not at all. What *does* move the function is
     dropping the old unit's contribution, and nothing makes that zero; it is
-    bounded only by having selected the minimum-utility unit. See doc/16
+    bounded only by having selected the minimum-utility unit. See docs/16
     section 16.13 for the measured decomposition.
     """
     if isinstance(layer, RecurrentLayer):
@@ -1006,7 +1006,7 @@ def effective_rank(activations: torch.Tensor, threshold: float = 0.99) -> float:
     own input distribution - so this falls when the network loses capacity and
     *also* when the agent simply starts visiting a narrower set of book states.
     Measured on this repo, the second effect alone moved it by -24.6% while the
-    network's capacity on a fixed corpus did not move at all (doc/16 §16.16).
+    network's capacity on a fixed corpus did not move at all (docs/16 §16.16).
     `train/probe/rank.py` is the version that holds the inputs still.
 
     `train.probe.rank.effective_rank` is the same definition in numpy;

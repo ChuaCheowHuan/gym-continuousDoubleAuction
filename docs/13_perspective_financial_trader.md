@@ -94,7 +94,7 @@ wrong, with four dedicated tests.
 |---|---|
 | **Latency** | Order-arrival sequence is a uniform shuffle each step. No agent can be systematically faster, so latency arbitrage / queue-jumping is unlearnable and unpunishable. |
 | **Self-match prevention** | **[verified]** an agent can cross its own resting order and print a trade. Wash trading is a legal strategy here. |
-| **Order stacking** | **[verified]** a trader can hold only **one** resting order per price level per side — a second limit at the same price *replaces* the first (level volume 7, not 12). Layering, iceberg and multi-clip quoting are impossible **unless `allow_multiple_orders_per_level` is set** (off by default; doc/15 S3-10). |
+| **Order stacking** | **[verified]** a trader can hold only **one** resting order per price level per side — a second limit at the same price *replaces* the first (level volume 7, not 12). Layering, iceberg and multi-clip quoting are impossible **unless `allow_multiple_orders_per_level` is set** (off by default; docs/15 S3-10). |
 | **Time-in-force / order types** | No IOC, FOK, post-only, stop, or hidden orders. Post-only in particular is fundamental to real market making. |
 | **Market impact beyond the book** | Correct within the visible 10 levels; no permanent-impact or resilience model. |
 | **Bankruptcy handling** | A negative-NAV agent is never terminated (§5). No forced liquidation, no margin call. |

@@ -1,6 +1,6 @@
 """The observation Box has finite, measured bounds, and a clip is counted.
 
-doc/15 S4-15. The space used to be `Box(-inf, inf)`: a true statement about
+docs/15 S4-15. The space used to be `Box(-inf, inf)`: a true statement about
 nothing, which disabled RLlib's space checks and observation filters. Every
 feature is a ratio, a log or a tanh with a known or measured range, so the
 bounds now come from `observation_bounds` in tunable_constants.json, the
@@ -10,10 +10,10 @@ about the market; the counter is what makes a wrong claim visible.
 
 Two things these tests pin that the first smoke test got wrong: an older
 frame's price row can be negative, because the whole stack is normalised by
-the newest frame's midpoint (doc/05 section 2.2), so a bid resting above
+the newest frame's midpoint (docs/05 section 2.2), so a bid resting above
 `M_t` reads `(M_t - P) / M_t < 0` and must not be clipped away; and the
 counter must be 0 on ordinary play, since every measured value sits inside
-the bounds with headroom (doc/16 section 16.22).
+the bounds with headroom (docs/16 section 16.22).
 """
 
 import numpy as np

@@ -1,17 +1,17 @@
 # CLAUDE.md
 
 Multi-agent continuous double auction (Gymnasium / RLlib `MultiAgentEnv`, Ray 2.56 new API stack)
-with league self-play PPO. Documentation is in `doc/` (start at `doc/README.md`); the findings
-register is `doc/15_findings_and_recommendations.md`.
+with league self-play PPO. Documentation is in `docs/` (start at `docs/README.md`); the findings
+register is `docs/15_findings_and_recommendations.md`.
 
 ## Rules
 
 1. **Config is the only source of values.** Values live in `config/*.json` and are read through
-   `config_loader`; no literal defaults in Python (`doc/18_configuration.md`). A new key goes in
+   `config_loader`; no literal defaults in Python (`docs/18_configuration.md`). A new key goes in
    both `env_defaults.json` and `train_config.json`. `gym_continuousDoubleAuction/config/` is a
    gitignored build copy: never edit it.
-2. **History files are not edited to match the code.** `doc/16_verification_log.md` and
-   `doc/17_changelog.md` record what was true when written. New facts get a new section.
+2. **History files are not edited to match the code.** `docs/16_verification_log.md` and
+   `docs/17_changelog.md` record what was true when written. New facts get a new section.
 3. **Run `pytest`, never `python test_x.py`.** `python -m pytest gym_continuousDoubleAuction/test -q`
    (unit, then `test/integration/`, about four minutes in all). CI's smoke run is
    `python gym_continuousDoubleAuction/CDA_rand.py` (no arguments); `CDA_rand --steps 200 --agents 4`
@@ -22,8 +22,8 @@ register is `doc/15_findings_and_recommendations.md`.
    the working branch from `origin/master`.
 6. **Do not rest a claim on a review.** Reproduce it first (skill `cda-verify-finding`).
 7. **Counts move together.** A new test file changes the unit total, the suite total, the code size
-   in `doc/14_perspective_ai_engineer.md` and the inventory in `doc/10_testing.md`
-   (skill `cda-doc-sync`; `tools/check_links.py` must report 0 broken links; `test_links` runs it over README, `doc/`, `CLAUDE.md`, `CONTRIBUTING.md` and the skills).
+   in `docs/14_perspective_ai_engineer.md` and the inventory in `docs/10_testing.md`
+   (skill `cda-doc-sync`; `tools/check_links.py` must report 0 broken links; `test_links` runs it over README, `docs/` (`docs/CONTRIBUTING.md` included), `CLAUDE.md` and the skills).
 8. **Reviews file, they do not fix.** When asked for a review, file each confirmed finding as a
    GitHub issue with a severity label (`S1-blocking` to `S4-minor`) plus `bug`, `enhancement`,
    `documentation`, `test-gap` or `refactor`, and an issue type (Bug, Task or Feature). Do not open
@@ -48,4 +48,4 @@ register is `doc/15_findings_and_recommendations.md`.
 ## Skills
 
 Project skills are in `.claude/skills/`. The full proposal, with the ones not yet built, is
-`doc/27_agent_skills.md`.
+`docs/27_agent_skills.md`.

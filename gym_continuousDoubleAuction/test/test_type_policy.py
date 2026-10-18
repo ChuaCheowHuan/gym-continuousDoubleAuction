@@ -15,7 +15,7 @@ The point is not tidiness. Two concrete failures motivated it:
     that checks it. `net_position` was int until the first fill and Decimal
     after; `VWAP` was Decimal until a position went flat and int after.
 
-Code in `envs/orderbook/` is deliberately not changed (doc/11 1.8). It stores
+Code in `envs/orderbook/` is deliberately not changed (docs/11 1.8). It stores
 sizes as Decimal internally, so the boundary is normalised on the way out by
 `trader._normalise_trade_sizes` - these tests pin that boundary, since it is
 what makes the policy hold everywhere else.

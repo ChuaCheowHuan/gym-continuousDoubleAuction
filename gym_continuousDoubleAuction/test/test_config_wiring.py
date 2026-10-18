@@ -8,7 +8,7 @@ forwarding `**kwargs` silently drops every key downstream of it - and the env
 still constructs and runs, just with the defaults. These tests pin that the
 values arrive, not merely that the keys are accepted.
 
-See doc/18_configuration.md sections 2.1-2.3.
+See docs/18_configuration.md sections 2.1-2.3.
 """
 
 import os
@@ -164,11 +164,11 @@ class TestTrainConfigRoundTrip:
 class TestEpisodeRecordPath:
     """Where the per-step episode record is resolved to.
 
-    doc/21 §2.3: this was the one output path with no protection at all. It was
+    docs/21 §2.3: this was the one output path with no protection at all. It was
     a bare relative string, pickled into every env runner and resolved there
     against whatever working directory that worker inherited - which today is
     usually the driver's, by accident rather than by guarantee. The run log has
-    had `abspath` and a per-run directory since doc/11 §1.11; this had not.
+    had `abspath` and a per-run directory since docs/11 §1.11; this had not.
     """
 
     def test_it_is_absolute(self):

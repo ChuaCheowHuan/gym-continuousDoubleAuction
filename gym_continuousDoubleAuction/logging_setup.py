@@ -214,7 +214,7 @@ def configure(
     passes False, because it is about to hand `ray.init` a `LoggingConfig`, and
     that configures the root logger of this process and every worker Ray starts
     for the job: with propagation on, every line this package emits would be
-    printed once by the handler attached here and once by Ray's (doc/21 §6
+    printed once by the handler attached here and once by Ray's (docs/21 §6
     item 7). It is a parameter rather than a constant precisely because the
     duplication only exists once Ray has configured the root logger.
     """
@@ -624,7 +624,7 @@ def install_excepthooks() -> None:
     never reaches the run log. Python's default hook writes the traceback
     straight to `sys.stderr`, outside logging entirely, so `run.log` ends
     mid-narrative and the reason is only in scrollback - which is the exact
-    failure the run log was added to fix (doc/11 1.9). It matters most for the
+    failure the run log was added to fix (docs/11 1.9). It matters most for the
     `strict_nav_check` AssertionError, whose whole purpose is to stop a run
     loudly enough to be diagnosed afterwards.
 

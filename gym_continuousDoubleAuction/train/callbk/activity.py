@@ -14,11 +14,11 @@ from gym_continuousDoubleAuction.train.performance import PerformanceTally
 logger = get_logger(__name__)
 
 #: Per-module mean trades per episode, logged by the env runners at episode end
-#: and read by the driver's champion check (doc/15 S3-11). Nested under the
+#: and read by the driver's champion check (docs/15 S3-11). Nested under the
 #: module id: `result["env_runners"][MODULE_TRADES_METRIC]["policy_0"]`.
 MODULE_TRADES_METRIC = "module_trades_per_episode"
 
-#: Prefix of the per-module risk-adjusted metrics (doc/15 S3-9): one metric per
+#: Prefix of the per-module risk-adjusted metrics (docs/15 S3-9): one metric per
 #: name in `performance.METRICS`, e.g. `module_sharpe`, each nested under the
 #: module id like `MODULE_TRADES_METRIC` and meaned over the iteration's episodes.
 MODULE_PERFORMANCE_PREFIX = "module_"
@@ -30,7 +30,7 @@ def new_tally() -> dict:
     Running sums rather than a retained series: the variance share in
     `_log_reward_terms` needs only the first two moments, and an episode is
     `max_step` x `num_agents` agent-steps - keeping them all to compute five
-    numbers at the end is the memory cost doc/21 §2.2 is about.
+    numbers at the end is the memory cost docs/21 §2.2 is about.
     """
     return {
         # Env steps and agent-steps are different denominators: the fractions
@@ -40,10 +40,10 @@ def new_tally() -> dict:
         "passes": 0,
         "rejections": 0,
         # modify/cancel actions that found no order to act on. The third
-        # silent no-op beside a pass and a refusal (doc/15 S4-14).
+        # silent no-op beside a pass and a refusal (docs/15 S4-14).
         "unmatched": 0,
         # Agent-steps on which at least one observation element was clipped to
-        # the declared bounds (doc/15 S4-15). A bound that is wrong for the
+        # the declared bounds (docs/15 S4-15). A bound that is wrong for the
         # market shows here, not as a silent saturation.
         "clipped_steps": 0,
         # Per agent, because the maker share summed over *all* agents is a
@@ -62,7 +62,7 @@ def new_tally() -> dict:
         # The last NAV string each agent reported, carried forward so the
         # conservation check can still add up after an agent stops reporting.
         # A bankrupt agent is terminated and drops out of `info` from its
-        # terminal step onward (doc/15 S2-4), and the check used to read only
+        # terminal step onward (docs/15 S2-4), and the check used to read only
         # `get_infos(-1)` - so a terminated agent's NAV silently vanished from
         # the total and the ledger looked broken when it was not. Kept as the
         # exact `str()` of the Decimal, which is the whole reason `info["NAV"]`
@@ -87,7 +87,7 @@ def market_mid(info):
 def as_float(value):
     """float(value), or None if it is absent or not a number.
 
-    `info["NAV"]` is a string by design (doc/11 §2.6) and `spread` is None on a
+    `info["NAV"]` is a string by design (docs/11 §2.6) and `spread` is None on a
     one-sided book, so both cases are ordinary here rather than exceptional.
     """
     if value is None:
@@ -102,7 +102,7 @@ class ActivityLog:
     """The tallies of the episodes in flight on this process, and the metrics they become."""
 
     #: How many unfinished episodes' tallies to keep. `on_episode_end` is not
-    #: called for episodes a force-reset discards (doc/21 §3.2), so a dict keyed
+    #: called for episodes a force-reset discards (docs/21 §3.2), so a dict keyed
     #: by episode id and pruned only there grows for the life of the process.
     #: Generous next to any realistic `num_envs_per_env_runner`, and three ints
     #: per entry, so the cap costs nothing and closes the leak.
@@ -218,7 +218,7 @@ class ActivityLog:
         # pass_action_fraction would say so.
         metrics_logger.log_value("unmatched_action_fraction", unmatched_fraction, window=10)
         # Share of agent-steps whose observation hit a declared bound. The
-        # bounds are measured claims (doc/16 section 16.22); this is the
+        # bounds are measured claims (docs/16 section 16.22); this is the
         # number that says whether the market has since escaped them.
         metrics_logger.log_value("obs_clip_fraction", clip_fraction, window=10)
 
@@ -268,7 +268,7 @@ class ActivityLog:
             )
 
     def log_module_performance(self, episode, tally, metrics_logger) -> None:
-        """Each module's risk-adjusted performance in this episode (doc/15 S3-9).
+        """Each module's risk-adjusted performance in this episode (docs/15 S3-9).
 
         Per module, like the trade counts, because the question is "how does this
         policy compare", and meaned over the iteration's episodes. A metric that is
@@ -299,7 +299,7 @@ class ActivityLog:
     def log_maker_ratio(self, tally, metrics_logger) -> None:
         """The most maker-like agent's share of its own fills.
 
-        doc/13 §7's market-making uptake, and the one shape of it that says
+        docs/13 §7's market-making uptake, and the one shape of it that says
         anything. The *aggregate* maker share is a tautology in a closed double
         auction: `process_acc` runs once per side of every trade, both sides
         increment `num_trades_step`, and only the passive side increments
@@ -328,8 +328,8 @@ class ActivityLog:
     def log_reward_terms(self, tally, agent_steps, metrics_logger) -> None:
         """The reward decomposition, reduced to a mean and a variance share.
 
-        doc/07 §6.4 prescribes watching how the five signed contributions split
-        the reward's variance; doc/11 §2.4 recorded that the terms were captured
+        docs/07 §6.4 prescribes watching how the five signed contributions split
+        the reward's variance; docs/11 §2.4 recorded that the terms were captured
         per step in `info` and never aggregated, so the split could only be
         computed after the fact from a file. These two metrics are that
         aggregation, and they are what makes "the drawdown penalty is now 80% of
@@ -372,7 +372,7 @@ class ActivityLog:
     def log_episode_account(self, last_info, metrics_logger) -> None:
         """Per-agent account state at the end of the episode, as metrics.
 
-        doc/11 §2.3 and §4 item 2: every one of these is already in the per-step
+        docs/11 §2.3 and §4 item 2: every one of these is already in the per-step
         `info`, and none of it was reduced into anything a run could watch. The
         end of the episode is the right moment for the state ones - NAV,
         drawdown, inventory are terminal quantities, not averages over a
@@ -445,7 +445,7 @@ class ActivityLog:
 
         Insertion-ordered, so "oldest" is the episode that started first. An
         episode discarded by a force-reset never reaches `on_episode_end` and so
-        never has its tally popped (doc/21 §3.2); this is what stops that
+        never has its tally popped (docs/21 §3.2); this is what stops that
         turning into a dict that grows for the life of the worker.
         """
         while len(self.tallies) >= self.max_live:

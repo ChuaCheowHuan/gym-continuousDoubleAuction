@@ -123,7 +123,7 @@ class ProbeCorpus:
         An observation ends with the per-agent private block, so `[-snapshot_dim:]`
         would return the private tail plus a truncated final snapshot - every
         target then silently reading misaligned fields. That is the same failure
-        mode as the `[-40:]` slicing [05](../../../doc/05_observation_space.md) §1
+        mode as the `[-40:]` slicing [05](../../../docs/05_observation_space.md) §1
         records, which returned 38 book values and 2 scalars and still passed
         several assertions.
         """

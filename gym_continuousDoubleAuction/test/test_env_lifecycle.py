@@ -7,7 +7,7 @@ shape of a whole default episode.
 **R1.** `config/env_defaults.json` shipped `init_cash: 0`, and
 `Trader._order_approved` refuses on `nav <= 0` before it inspects anything
 else. So `continuousDoubleAuctionEnv({})` - the form `gymnasium.make(
-"continuousDoubleAuction-v0")` produces and the one doc/01 documents - placed
+"continuousDoubleAuction-v0")` produces and the one docs/01 documents - placed
 no order ever, put every agent in `done_set` on the first pass, and reported
 `terminateds["__all__"]` after a single step. CI missed it because its only
 bare-env job is `CDA_rand.py`, which supplies its own `init_cash` from

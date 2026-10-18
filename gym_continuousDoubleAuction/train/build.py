@@ -264,7 +264,7 @@ def build_config(cfg: TrainConfig):
             # encoder: registering it here would make it mutually exclusive
             # with `jepa` and unavailable for `mlp`, which never reaches the
             # catalog at all. When it is off the composition is skipped and
-            # this resolves to exactly the class it did before. See doc/25 2.5.
+            # this resolves to exactly the class it did before. See docs/25 2.5.
             learner_class=_learner_class(cfg),
             # Custom settings the Learner reads for itself. RLlib passes this
             # through untouched, which is what lets a composed-in mixin be

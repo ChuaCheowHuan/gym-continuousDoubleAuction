@@ -1,6 +1,6 @@
 """The action mask: what is impossible is never chosen; what is unwise is learnt.
 
-doc/06 section 7. The env writes nine floats into each agent's private block -
+docs/06 section 7. The env writes nine floats into each agent's private block -
 one per action category, 1.0 where the category is possible on the coming
 step - and the modules honour them: the PPO module adds a large negative
 number to a masked category's logit, the random baseline redraws a masked
@@ -240,7 +240,7 @@ class TestMaskedRandomPlay:
     clearing, where nothing fills until every action has been applied, the
     same 200 seeds give 0 misses.
 
-    So the mask is exact and the residue is the race doc/16 section 16.25
+    So the mask is exact and the residue is the race docs/16 section 16.25
     measures at 0.2%: a mask built from the observation cannot see a fill that
     happens earlier in the next step's random order. The three tests below pin
     each half of that, with the action stream seeded.

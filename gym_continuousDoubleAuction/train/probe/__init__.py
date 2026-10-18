@@ -2,7 +2,7 @@
 
 Why this exists
 ---------------
-[10](../../../doc/10_testing.md) §7 records the gap plainly: *"No encoder is
+[10](../../../docs/10_testing.md) §7 records the gap plainly: *"No encoder is
 tested for whether it learns... Nothing runs long enough to say whether the
 transformer or the LSTM beats the MLP, which is the question the `encoder`
 group exists to answer."*

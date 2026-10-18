@@ -276,7 +276,7 @@ def visualize_training(run_dir=None):
     """
     Plots training-health metrics across iterations, from `progress.jsonl`
     (`train._append_progress` writes the whole RLlib result dict, one line per
-    iteration) - the one source with all 27 of doc/11's custom metrics, and
+    iteration) - the one source with all 27 of docs/11's custom metrics, and
     the one thing in `visualize/` that reads training progress rather than a
     single recorded episode.
 

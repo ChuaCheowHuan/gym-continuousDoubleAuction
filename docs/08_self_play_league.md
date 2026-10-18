@@ -129,7 +129,7 @@ explicitly, so the config lookup is what a direct instantiation gets.
 | `num_trainable_policies` | `num_trained_agents` = 2 | Trainable policies (agents 0 … k−1) |
 | `num_random_policies` | `num_agents - num_trained_agents` = 6 | Frozen baselines (agents k … n−1) |
 | `std_dev_multiplier` | **1.5** | Threshold multiplier for `mean + N × std` (was 0.1) |
-| `promotion_reference` | `pooled` | `excluding_baselines` computes the threshold over the trainable modules and champions only (doc/15 S3-12); falls back to pooled while that set is too small to clear |
+| `promotion_reference` | `pooled` | `excluding_baselines` computes the threshold over the trainable modules and champions only (docs/15 S3-12); falls back to pooled while that set is too small to clear |
 | `min_champion_trades` | 1.0 | Mean trades per episode, over the iteration, a candidate needs to be promoted; 0 disables the guard |
 | `max_champions` | 8 | Maximum champions in the league (rolling window) |
 | `min_iterations_between_champions` | 2 | Cooldown between snapshots |
@@ -210,7 +210,8 @@ play. **Recommended 3:1 to 5:1.**
 returns   = result[ENV_RUNNER_RESULTS]["module_episode_returns_mean"]   # keyed by real ModuleID
 threshold = mean(returns) + std_dev_multiplier · std(returns)
 best trainable module with return > threshold  →  snapshot
-   subject to: ≥ min_iterations_between_champions since the last one
+   subject to: ≥ min_champion_trades trades per episode (the passivity guard)
+               ≥ min_iterations_between_champions since the last one
                evict the oldest if champion_count > max_champions, AFTER the snapshot succeeded
 ```
 
@@ -228,14 +229,14 @@ flowchart TD
     A["on_train_result"] --> B["returns = result[env_runners]<br/>module_episode_returns_mean<br/>(keyed by real ModuleID)"]
     B --> C{"key present?"}
     C -->|"no"| SKIP["log the available keys, skip"]
-    C -->|"yes"| D["threshold = mean + std_dev_multiplier * std<br/>over the whole league"]
+    C -->|"yes"| IDLE["drop idle modules<br/>(None or NaN: played no episode)"]
+    IDLE --> D["threshold = mean + std_dev_multiplier * std<br/>over promotion_reference: pooled, or<br/>excluding_baselines once enough champions exist"]
     D --> E["best trainable module above the threshold"]
-    E --> F{"cooldown satisfied?<br/>>= min_iterations_between_champions"}
+    E --> PG{"trades per episode >=<br/>min_champion_trades?"}
+    PG -->|"no"| SKIP3["refused: a policy that stopped trading<br/>(league.refused_passive = 1)"]
+    PG -->|"yes, or trade count missing (warned)"| F{"cooldown satisfied?<br/>>= min_iterations_between_champions"}
     F -->|"no"| SKIP2["no promotion this iteration"]
-    F -->|"yes"| G{"champion_count == max_champions?"}
-    G -->|"yes"| H["_remove_oldest_champion:<br/>drop from available_modules FIRST,<br/>then Algorithm.remove_module"]
-    G -->|"no"| I
-    H --> I["_create_champion_snapshot_from_policy"]
+    F -->|"yes"| I["League.create_snapshot"]
 
     subgraph ORD["The four load-bearing steps, in this order"]
         I1["1. read weights from learner_group.get_state<br/>NOT algorithm.get_module, NOT _learner"]
@@ -246,14 +247,17 @@ flowchart TD
     end
     I --> ORD
     ORD --> J["champion_N is now playing"]
-    ORD -.->|"any exception"| RB["roll back the pool entry,<br/>log the traceback, continue"]
+    J --> EV{"more than max_champions?"}
+    EV -->|"yes"| H["evict the oldest AFTER the snapshot succeeded:<br/>drop from available_modules,<br/>then Algorithm.remove_module"]
+    EV -->|"no"| DONE["done"]
+    ORD -.->|"any exception"| RB["roll back the pool entry and the module,<br/>log the traceback, evict nothing"]
 ```
 
 ### 5.2 The four ordering constraints
 
-`_create_champion_snapshot_from_policy`
-([`league_based_self_play_callback.py`](../gym_continuousDoubleAuction/train/callbk/league_based_self_play_callback.py))
-is the most subtle code in the repository. Its four ordering constraints are **all** load-bearing,
+`League.create_snapshot`
+([`league.py`](../gym_continuousDoubleAuction/train/callbk/league.py), reached through the
+callback's `_create_champion_snapshot_from_policy`) is the most subtle code in the repository. Its four ordering constraints are **all** load-bearing,
 each was a real bug, and each now has a dedicated integration test:
 
 1. **Read weights from `learner_group.get_state(...)`** — not `algorithm.get_module()`, which
@@ -306,7 +310,7 @@ that is over a lowered `max_champions` ([15](15_findings_and_recommendations.md)
 calling `Algorithm.remove_module` (so the refreshed mapping function cannot return a module about
 to be deleted), and passes `new_agent_to_module_mapping_fn` so remote runners are updated too.
 
-> **Correction to the older documentation.** `doc/known_issues.md` §3.9 stated that removed
+> **Correction to the older documentation.** `docs/known_issues.md` §3.9 stated that removed
 > modules are never freed and league memory grows monotonically. That was fixed: the callback now
 > calls `Algorithm.remove_module`, with the previous behaviour described in a code comment.
 > Failure to remove is caught and reported as non-fatal — training stays correct, the memory is

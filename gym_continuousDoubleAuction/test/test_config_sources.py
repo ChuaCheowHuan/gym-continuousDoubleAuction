@@ -7,7 +7,7 @@ no module holds a literal copy of a configured value. The method is to build a
 comes out the other end. A literal left behind in Python would keep the old
 value and fail the assertion.
 
-See doc/18_configuration.md.
+See docs/18_configuration.md.
 """
 
 import importlib
@@ -158,7 +158,7 @@ class TestEnvFallbacksComeFromTheFile:
         """The tick the env quotes on is the configured one, before and after reset.
 
         The book no longer takes a tick at all - it stored one it never read
-        (doc/15 S3-4) - so the two places that carry the value are the env's
+        (docs/15 S3-4) - so the two places that carry the value are the env's
         own attribute and `Action_Helper.min_tick`, which builds every price.
         """
         env = continuousDoubleAuctionEnv({"num_of_agents": 2, "tick_size": 5})
@@ -176,7 +176,7 @@ class TestStructuralConstantsComeFromTheFile:
     def test_book_depth_drives_observation_and_action_spaces(self, config_tree):
         """k_rows is one definition, read by both spaces and by _set_price."""
         # private_dim follows k_rows since the own-book block exists: 9 base
-        # + 2 x k_rows own sizes + 2 counts + 1 flag (doc/15 S3-24 phase 1).
+        # + 2 x k_rows own sizes + 2 counts + 1 flag (docs/15 S3-24 phase 1).
         config_tree(
             "tunable_constants.json",
             lambda raw: raw["observation_layout"].update(k_rows=6, private_dim=33),

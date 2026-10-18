@@ -39,23 +39,23 @@ BOOK_DIM = BOOK_ROWS * K_ROWS
 #: against - it lets consumers name a row instead of indexing a magic number.
 #:
 #: The two occupancy rows are 1.0 where the level holds an order and 0.0 where
-#: it does not (doc/15 S3-14). Without them a price entry of 0.0 meant three
+#: it does not (docs/15 S3-14). Without them a price entry of 0.0 meant three
 #: things - an absent level, a quote sitting exactly at the reference price,
 #: and the lone best quote of a one-sided book - and a policy could not tell
 #: which. Measured under random play: 1.2% of occupied price cells read 0.0
-#: at the shipped config and 22% at a thin-book stress config (doc/16 section
+#: at the shipped config and 22% at a thin-book stress config (docs/16 section
 #: 16.23). They ride in the raw frame so that every frame in the history keeps
 #: its own occupancy, and pass through normalisation unchanged.
 BOOK_ROW_ORDER = ("bid_price", "bid_size", "ask_price", "ask_size", "bid_occupied", "ask_occupied")
 
-#: How the public book is laid out in an EMITTED snapshot (doc/15 S3-15).
+#: How the public book is laid out in an EMITTED snapshot (docs/15 S3-15).
 #:
 #: ``"levels"``: the raw rows above, normalised - the `k_rows` best occupied
 #: prices per side. Slot k of that layout means "the k-th occupied price",
 #: whose distance from the market wanders: measured under random play, the
 #: best level sat 3.8 +- 2.5 ticks from the reference and its price changed on
 #: 35-54% of steps, and the action's price code j landed anywhere from 0 to 20
-#: ticks out, codes 1-6 indistinguishable (doc/16 section 16.24).
+#: ticks out, codes 1-6 indistinguishable (docs/16 section 16.24).
 #:
 #: ``"grid"``: two rows, bid sizes and ask sizes, over a window of
 #: `2 * k_rows + 1` tick offsets centred on the reference price `R`
@@ -114,7 +114,7 @@ SNAPSHOT_DIM = OBS_BOOK_DIM + EXTRA_DIM
 #: must equal its length, and __init__ checks that.
 #:
 #: The last four exist because the observation used to carry **no information
-#: about executions at all** (doc/15 S2-7): `set_agg_LOB` iterated the tape,
+#: about executions at all** (docs/15 S2-7): `set_agg_LOB` iterated the tape,
 #: incremented a counter and threw it away, the loop body being a commented-out
 #: `write` copy-pasted from `OrderBook.__str__`. In a continuous double auction
 #: aggressive order flow is the most predictive public signal there is - more so
@@ -184,7 +184,7 @@ FEEDBACK_FIELDS = (
     "unmatched_last_step",  # 1.0 if the agent's last modify/cancel named no order
 )
 
-#: The action mask (doc/06 section 7): one entry per action category, in the
+#: The action mask (docs/06 section 7): one entry per action category, in the
 #: category's order (`Action_Helper._CATEGORY_MAP`), 1.0 where the category is
 #: possible for this agent on the coming step. "Possible" is exact, not
 #: advisory: a modify or cancel needs a resting order on that side, a market
@@ -218,7 +218,7 @@ def private_fields(k_rows):
 
     `[base (9) | own bid sizes (k) | own ask sizes (k) | own counts (2) |
     unmatched_last_step (1) | action mask (9)]`. The own-book block is the S1-2 tail closed
-    (doc/15 S3-24 phase 1): the agent used to see how much cash it had
+    (docs/15 S3-24 phase 1): the agent used to see how much cash it had
     escrowed but not where, so a cancel was a guess about state the policy
     was never shown - measured at a 7% hit rate under random play. Level k of
     the own book is level k of the public book in the same snapshot, on the
@@ -261,7 +261,7 @@ ACTION_MASK_OFFSET = action_mask_offset(K_ROWS)
 #: Bumped whenever the observation vector's layout changes shape or meaning,
 #: so a checkpoint records which layout its weights were trained against and a
 #: restore into a different one fails by name rather than by tensor shape
-#: (doc/15 S4-19). 1 was the 193-float layout with a 9-field private block;
+#: (docs/15 S4-19). 1 was the 193-float layout with a 9-field private block;
 #: 2 added the own-book block and the feedback flag (216 floats at defaults);
 #: 3 kept the shape and changed the meaning: ask blocks are positive rather
 #: than negated (S4-17) and the space has finite, measured bounds that the
@@ -437,7 +437,7 @@ class State_Helper(SharedState):
         here, by `M_t`. It used to hold frames that had each already been
         normalised by their own midpoint, so frames t-3..t carried denominators
         M_{t-3}..M_t and could not meaningfully be differenced - which is the
-        entire purpose of stacking them. That is doc/15 S2-6.
+        entire purpose of stacking them. That is docs/15 S2-6.
 
         Concretely: a bid resting at 90 while the midpoint moves 100 -> 96 used
         to read 0.100 in one frame and 0.063 in the next. The order had not
@@ -566,7 +566,7 @@ class State_Helper(SharedState):
         occupancy = book[4 * k : 6 * k]
 
         norm_bid_price = np.where(bid_price > 0, (M_t - bid_price) / M_t, 0.0)
-        # Asks are positive, like bids (doc/15 S4-17): the block's position
+        # Asks are positive, like bids (docs/15 S4-17): the block's position
         # says which side it is, so the sign carried nothing, and it stopped an
         # encoder from sharing weights between the two sides. Both price rows
         # are now the fractional distance from the midpoint, >= 0.
@@ -598,7 +598,7 @@ class State_Helper(SharedState):
         what makes it order flow rather than volume: a trade whose aggressor
         bought is +q, one whose aggressor sold is -q. That is the quantity
         microstructure research finds most predictive of short-horizon returns,
-        and the observation carried nothing of it at all (doc/15 S2-7).
+        and the observation carried nothing of it at all (docs/15 S2-7).
 
         Does not advance `_tape_cursor` - `prep_next_state` does, because
         `set_agg_LOB` runs twice per step and only one of those commits a frame.
@@ -647,14 +647,14 @@ class State_Helper(SharedState):
         the other way round). With the lone quote as the reference, the best
         quote of every one-sided book read exactly 0.0 - the same number as
         an absent level - on 7.8% of steps under random play at the shipped
-        config and 32% at a thin-book stress config (doc/16 section 16.23);
+        config and 32% at a thin-book stress config (docs/16 section 16.23);
         against the last trade it reads its distance from the price that
         actually printed, which is information. It also puts the observation
         on the same chain as `Exchg_Helper.mark_price`, which never marked off
-        a lone quote when a trade existed (doc/15 S2-5), so what the agent is
+        a lone quote when a trade existed (docs/15 S2-5), so what the agent is
         shown and what its NAV is marked at agree on a one-sided book.
 
-        See doc/05 2.1.
+        See docs/05 2.1.
         """
         l1_bid, l1_ask = self._l1_prices()
 
@@ -683,7 +683,7 @@ class State_Helper(SharedState):
         computes the same quantities for logging, but it runs *after* this in
         `set_step_outputs` and formats for JSON. Sharing the values would make
         the observation depend on the logging path, which is exactly the
-        coupling doc/11 warns about.
+        coupling docs/11 warns about.
 
         Args:
             trader: The trader whose private state to encode.
@@ -866,7 +866,7 @@ class State_Helper(SharedState):
         sizes through the `own_size` alias and the two counts through
         `own_count` - and a field without a bound raises here, at
         construction, rather than emitting an unbounded float into a Box that
-        claims otherwise (doc/15 S4-15).
+        claims otherwise (docs/15 S4-15).
         """
         cfg = constants("observation_bounds")
 
@@ -928,7 +928,7 @@ class State_Helper(SharedState):
         `trader.acc.num_obs_clipped_step`, so a bound the market escapes is a
         counted event in `info` and the training metrics rather than a
         silent saturation. Under the shipped bounds the count is 0 on every
-        step measured (doc/16 section 16.22).
+        step measured (docs/16 section 16.22).
 
         Argument:
             next_states: Dictionary.
@@ -1044,7 +1044,7 @@ class State_Helper(SharedState):
         # loop was supposed to produce: it iterated `reversed(self.LOB.tape)`,
         # incremented a counter and discarded it, its body a commented-out
         # `write` copy-pasted from `OrderBook.__str__`, so the observation
-        # carried zero information about trades (doc/15 S2-7).
+        # carried zero information about trades (docs/15 S2-7).
         signed_volume, trade_count, trade_direction = self._trade_flow()
 
         # The raw frame, which is what `obs_history` stores. Normalisation is

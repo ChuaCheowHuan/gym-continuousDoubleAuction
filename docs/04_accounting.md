@@ -352,12 +352,32 @@ apply to short stock (FINRA Rule 4210). `maintenance_margin = 0` liquidates at b
    R-3); a `maintenance_margin` of 0 is refused. The fills
    are ordinary trades against orders other agents chose to rest, settled by `_process_trades`, and
    they print. Nothing is left resting. With NAV already ≤ 0 (a gap through bankruptcy in one step)
-   the limit is the mark itself: the book may only improve on it.
+   and nothing resting on the opposite side, the limit is the mark itself and everything goes to ADL.
 3. **Auto-deleveraging (B).** What the book could not absorb inside that band is transferred **at
    the trigger mark** to the live traders on the opposite side, pro rata to their positions, whole
    contracts, largest remainder first. Positions sum to zero, so the opposite side always holds
    enough; at the mark the breach was measured at, the transfer moves nobody's NAV — it only
    shortens positions. It is not printed: it is a transfer, not a trade anyone chose.
+
+```mermaid
+flowchart TD
+    A["after mark_to_mkt"] --> B{"any live trader with<br/>NAV <= maintenance_margin x |position| x mark?"}
+    B -->|"no"| Z["done: build the observation and reward"]
+    B -->|"yes"| W["take the most distressed<br/>(lowest NAV / position value)"]
+    W --> MC["1 · margin call:<br/>cancel every resting order, escrow back to cash"]
+    MC --> G{"liquidation mode"}
+    G -->|"market_adl"| BK["2 · the book: IOC order for the whole position,<br/>no worse than the bankruptcy price"]
+    G -->|"gradual_adl"| FR["freeze the account; close one slice of<br/>ceil(remaining / steps_left) in the book now,<br/>the next slices on later steps"]
+    BK --> R{"anything left?"}
+    R -->|"yes"| ADL["3 · ADL: transfer the rest at the mark<br/>to opposite-side traders, pro rata"]
+    R -->|"no"| RM
+    ADL --> RM["re-mark: the forced fills may have<br/>moved the mark and put others in breach"]
+    FR --> RM
+    RM --> B
+```
+
+Under `gradual_adl`, a slice the book cannot absorb rolls into the next one, and ADL closes what is
+left on the last step of `liquidation_horizon` (§8.5).
 
 The trader is then flat. With `nav > 0` it keeps trading on what is left, as a margin-called
 account does. With `nav <= 0` the solvency gate terminates it as before — but flat, so its NAV is
@@ -366,8 +386,8 @@ insurance fund, and none is needed for the ledger, which conserves regardless.
 
 A liquidation can put another trader in breach — its forced order fills others' resting orders and
 moves the mark — so the check repeats, most distressed first, until nobody is: the cascade a short
-squeeze produces. A liquidated trader is flat with nothing resting, so the loop ends within
-`num_of_agents` rounds.
+squeeze produces. Each round either starts a liquidation (once per trader) or leaves a trader flat, so the loop ends
+within `2 × num_of_agents` rounds.
 
 ### 8.3 What the rest of the env sees
 

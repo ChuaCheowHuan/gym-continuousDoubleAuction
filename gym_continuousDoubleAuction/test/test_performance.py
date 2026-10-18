@@ -1,4 +1,4 @@
-"""doc/15 S3-9: risk-adjusted metrics from running sums.
+"""docs/15 S3-9: risk-adjusted metrics from running sums.
 
 The arithmetic is checked against a four-step series worked by hand, so a change to a
 definition (annualising, a different denominator, counting passes in the hit rate) fails

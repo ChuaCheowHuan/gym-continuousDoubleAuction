@@ -3,7 +3,7 @@
     python -m gym_continuousDoubleAuction.train.export \\
         --checkpoint results/chkpt/iter_00016 --out champion.pt
 
-doc/14 section 5.9 lists "no inference/serving path" as a production gap.
+docs/14 section 5.9 lists "no inference/serving path" as a production gap.
 `evaluate.py` closed half of it - a checkpoint can be *run* - and this closes
 the other half: a checkpoint's weights can be taken out of it. Until now the
 only way to read a trained network was to restore the whole `Algorithm`, or to
@@ -14,7 +14,7 @@ Which module is the winner
 --------------------------
 The league promotes a trainable policy to a frozen `champion_N` when it beats
 the league mean by `std_dev_multiplier` standard deviations
-([08](../../doc/08_self_play_league.md) section 5). `train.save_checkpoint`
+([08](../../docs/08_self_play_league.md) section 5). `train.save_checkpoint`
 writes the bookkeeping - which champion came from which policy, at which
 iteration, on what return - to `league_state.json` beside every checkpoint, so
 the winner can be named without unpickling anything. With no `--module-id`
@@ -33,7 +33,7 @@ What the file holds
 whether these weights mean anything - the module id and class, the checkpoint
 and iteration they came from, the promotion record, and the observation/action
 layout stamp. Weights without that stamp are a tensor of the right shape and
-the wrong meaning as soon as the layout moves ([47.5](../../doc/17_changelog.md)).
+the wrong meaning as soon as the layout moves ([47.5](../../docs/17_changelog.md)).
 
 Deliberately not TorchScript or ONNX. Reloading this file still needs
 `ray[rllib]` and this package importable, because the architecture is rebuilt
@@ -136,7 +136,7 @@ def resolve_module(state: Dict[str, Any], module_id: Optional[str]) -> Tuple[str
             "winning module to export. The trainable modules are policy_0 .. "
             "policy_<num_trained_agents-1>; name one with --module-id, or pass "
             "--list to see what the checkpoint holds. A run that never promotes "
-            "is usually a std_dev_multiplier that is too high - see doc/08 "
+            "is usually a std_dev_multiplier that is too high - see docs/08 "
             "section 4."
         )
     return champion["id"], champion
@@ -159,7 +159,7 @@ def build_record(
         "training_iteration": state.get("training_iteration"),
         "promotion": record,
         # Without this a reader cannot tell whether these weights read an
-        # observation the way the env writes one. doc/17 section 47.5.
+        # observation the way the env writes one. docs/17 section 47.5.
         LAYOUT_KEY: state.get(LAYOUT_KEY),
         "state_dict": weights,
     }
@@ -267,7 +267,7 @@ def export(
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(
         description="Export one module's weights from a training checkpoint. "
-        "See doc/26 section 26.9.2.",
+        "See docs/26 section 26.9.2.",
     )
     p.add_argument("--checkpoint", required=True, help="One iter_<n> directory.")
     p.add_argument(

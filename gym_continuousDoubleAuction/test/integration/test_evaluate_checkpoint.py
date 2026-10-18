@@ -1,6 +1,6 @@
 """`train.evaluate` against a real checkpoint: train one iteration, save, roll.
 
-doc/15 S4-12. The point of the test is the seam nobody else exercises: the
+docs/15 S4-12. The point of the test is the seam nobody else exercises: the
 checkpoint's own mapping fn assigning modules, `forward_inference` on both a
 trainable PPO module (distribution inputs) and a `RandomRLModule` (actions
 emitted directly), the Dict action unbatched into what `env.step` accepts, and

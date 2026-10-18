@@ -19,7 +19,7 @@ economically meaningful quantity in the observation.
 Predicting in *representation* space removes that by construction. The target is
 produced by an encoder that is itself being trained, so anything genuinely
 unpredictable is free to be dropped from the representation and the loss stops
-paying attention to it. See doc/22 2.2.
+paying attention to it. See docs/22 2.2.
 
 What is masked
 --------------
@@ -684,7 +684,7 @@ class TorchJEPAEncoder(TorchModel, Encoder):
 
         # Collapse metrics and the hinge, both computed on the ONLINE side.
         #
-        # This is the whole of doc/15 S2-9. They used to be derived from
+        # This is the whole of docs/15 S2-9. They used to be derived from
         # `target`, which is produced inside `torch.no_grad()` by a trunk whose
         # parameters are additionally `requires_grad_(False)`. So `std` had
         # `grad_fn is None`, `variance_penalty` had `requires_grad False`, and

@@ -627,7 +627,7 @@ class TestEffectiveRank:
     The reason this lives in the probe harness rather than on the Learner is a
     measured one, not a stylistic one: on the training minibatch the same
     quantity fell 24.6% over ~18,000 optimiser steps while the network's
-    capacity on a fixed corpus did not move (doc/16 §16.16). The corpus is what
+    capacity on a fixed corpus did not move (docs/16 §16.16). The corpus is what
     makes it a statement about the encoder.
     """
 
@@ -739,7 +739,7 @@ class TestEffectiveRank:
 
 
 class TestPerAgentCorporaAreNotScored:
-    """doc/15 R-18 (#188): a target shifts by rows, which is a step only with one row per step.
+    """docs/15 R-18 (#188): a target shifts by rows, which is a step only with one row per step.
 
     With `per_agent` every step is several rows, so "horizon 1" read the same step for most
     rows and "horizon 3" looked one step ahead. The numbers were for a different question and

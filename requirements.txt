@@ -34,7 +34,7 @@ numpy>=2.2,<3
 pandas>=3.0,<4
 # Imported directly by train/episode_record.py and train/probe/corpus.py.
 # It arrives transitively with ray[rllib], which is exactly the reasoning that
-# produced the six/scikit-learn bug (doc/15 S3-6) - so it is declared.
+# produced the six/scikit-learn bug (docs/15 S3-6) - so it is declared.
 pyarrow>=15
 # scipy is imported nowhere in the project. Kept because the [plot] extra
 # declares it and some matplotlib workflows want it, but it is NOT a direct
@@ -44,7 +44,7 @@ scipy>=1.18,<2
 # --- Env internals ------------------------------------------------------------
 sortedcontainers>=2.4      # order book price-level trees
 # six is no longer imported anywhere: the orderbook package's `six.moves.cStringIO`
-# was replaced by `io.StringIO` in the 2026-09-18 pass (doc/17 §45). It still
+# was replaced by `io.StringIO` in the 2026-09-18 pass (docs/17 §45). It still
 # arrives transitively via python-dateutil, which is why it stays in the lock.
 tabulate>=0.10             # env render()
 

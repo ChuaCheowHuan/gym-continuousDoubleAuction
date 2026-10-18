@@ -25,7 +25,7 @@ python -m pytest gym_continuousDoubleAuction/test -q \
     --ignore=gym_continuousDoubleAuction/test/integration
 
 # RLlib wiring, the real save/restore, the progress log and a real remote
-# runner (172 tests, builds real Algorithms)
+# runner (185 tests, builds real Algorithms)
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 
 # a single file
@@ -46,7 +46,7 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `1363 passed` on the unit half, `172 passed` on the integration half. There is no xfail: the one that pinned S1-1 XPASSed when S1-1 was fixed and was deleted (see §6.2.2).
+**[verified]** — `1363 passed` on the unit half, `172 passed` on the integration half, when this was first measured; the current totals are 2,110 and 185 (§ "File inventory" below). There is no xfail: the one that pinned S1-1 XPASSed when S1-1 was fixed and was deleted (see §6.2.2).
 
 ### File inventory
 
@@ -133,17 +133,17 @@ Counts re-measured with `--collect-only`.
 | `test_cbp.py` | 70 | Continual Backprop's algorithm core, with no Ray and no `Algorithm` — §6.6.1 |
 | `test_probe_corpus_config.py` | 8 | The probe corpus follows the run's env config: `book_mode` and `n_hist` change its width, explicit arguments win, the caller's dict is untouched, and `train.compare` hands its overridden config to the corpus (#261) |
 | `test_compare.py` | 18 | The encoder comparison driver's aggregation: means and standard deviations across seeds, the separation rule and its three-seed floor, the rendered table and its caveats |
-| `test_export.py` | 20 | `train.export`'s pure half: which module is the winner, the no-champion and foreign-layout messages, and what the written record carries (doc/26 §26.9.2) |
+| `test_export.py` | 20 | `train.export`'s pure half: which module is the winner, the no-champion and foreign-layout messages, and what the written record carries (docs/26 §26.9.2) |
 | `test_lint.py` | 3 | The package, `tools/` and the skill scripts are pyflakes-clean, and the lint reaches the directories it claims to; any message fails the suite (S4-6, #249) |
 | `test_links.py` | 8 | `tools/check_links.py` reports no broken link in the docs, the skills and the repo files they name (#250) |
-| `test_s4_docs_and_tooling.py` | 17 | The documentation-and-tooling S4 fixes: the layout-version pointer, the CI command quoted in CLAUDE.md and doc/27, the built skills, stale texts, and every config key and flag being documented (#273, #266, #267, #251, #249) |
+| `test_s4_docs_and_tooling.py` | 17 | The documentation-and-tooling S4 fixes: the layout-version pointer, the CI command quoted in CLAUDE.md and docs/27, the built skills, stale texts, and every config key and flag being documented (#273, #266, #267, #251, #249) |
 | `test_s4_hardening.py` | 59 | The hardening and speed fixes: call-time account defaults, `settle_batch`'s pre-check, `flat_view`, the `info` fast path and the cached reference price (#247, #248) |
 | `test_pnl_split_and_markouts.py` | 39 | Realised and unrealised P&L against the NAV identity in random play, fill counters, forced fills excluded, mark-outs, and the callback and config wiring (#286) |
 | `test_logging_issues.py` | 40 | The logging review's issues under multiple env runners: the kept start of a run log, pruning of worker logs, Ray's own records in the run log (once per record), the driver learning each process's log path, the iteration broadcast to remote learners, a missed broadcast reading `-`, and a worker's console not repeating its file (#216-#221) |
 | `test_composition.py` | 24 | Reward, episode status, info and liquidation as composed components: out of the MRO, usable alone with explicit inputs, the env's old attributes still forwarded, and `SharedState` / `AccountState` naming real attributes (#152) |
 | `test_types.py` | 3 | `mypy` finds nothing in `envs/`, `ruff format --check` finds nothing to change, and the coverage floor stays configured (#148) |
 | `test_refactors.py` | 117 | The refactoring review's issues: `Account` initialised in one place and its step counters listed once, `_plain`'s call count, one order-book routine per operation, `place_order` and `parse_overrides` flat, `clear_batch` as four steps, `EnvSettings` and the generated `env_config`, the `train/` module split with its re-exports and import order, the callback as a `League` plus an `ActivityLog` plus the NAV audit and league statistics, a real pickle from before that split still loading, and the league and activity log working alone (#252-#258) |
-| **unit total** | **1,887** | |
+| **unit total** | **2,110** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -156,7 +156,7 @@ Counts re-measured with `--collect-only`.
 | `integration/test_cbp_wiring.py` | 46 | Continual Backprop inside a real `Algorithm`: composition over the encoder's Learner, a real save and restore, and the restore guard — §6.6.2 |
 | `integration/test_stateful_logp.py` | 7 | The real `lstm` and `mlp` modules: log-probability shape for 1, 2 and 3 agents, and every distribution getter returns the corrected class (#278) |
 | `integration/test_champion_guard_wiring.py` | 3 | A real run: every trainable module's trade count reaches the driver, the league state says whether a candidate was refused, and RLlib applies the decaying entropy bonus (S3-11) |
-| **integration total** | **172** | |
+| **integration total** | **185** | |
 
 > **Stale references in older docs.** `test_orderbook.py`, `repro_orderbook_crossed_book.py`,
 > `test_OrderBook.py`, `test_cda_nsp.py` and `test_orderbook_double_delete_order.py` do not exist.
@@ -266,7 +266,7 @@ mindmap
         the loader and every chart script on synthetic runs
       packaging 8
         gymnasium.make, visualize importable
-    Integration 172
+    Integration 185
       league wiring, 3 topologies
       real save and restore
       real progress.jsonl, live vf_explained_var guard
@@ -303,7 +303,7 @@ mindmap
 | `test_modify_order_quantity_decrease` | Reducing 10 → 5 updates book volume without losing priority |
 | `test_modify_order_price_change` | Moving an order from 100 to 101 leaves `get_best_bid() == 101` — the order is correctly removed from one level and inserted into the other |
 
-> **Correction.** `doc/testing.md` described `test_modify_order_price_change` as
+> **Correction.** `docs/testing.md` described `test_modify_order_price_change` as
 > `@unittest.expectedFailure`, "documenting a known limitation rather than asserting
 > correctness". There is no `expectedFailure` anywhere in the repository; the test asserts and
 > passes.
@@ -1115,7 +1115,7 @@ raised `FileNotFoundError` on import while CI stayed green. The job builds the w
 carries `config/*.json`, installs it into a clean venv, and — from a directory with no checkout in
 it, so the import cannot resolve to the source tree — constructs an env and steps it.
 
-> **Correction.** `doc/known_issues.md` §4 and `doc/testing.md` §7 stated that "nothing enforces
+> **Correction.** `docs/known_issues.md` §4 and `docs/testing.md` §7 stated that "nothing enforces
 > the test suite — there is no CI". That has not been true since the Ray 2.56 migration.
 
 ---

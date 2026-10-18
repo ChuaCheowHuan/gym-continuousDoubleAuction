@@ -11,7 +11,7 @@ def _plain(value):
 
     Actions arrive from the model as a tuple mixing `np.int32` with
     single-element `float32` arrays. `json.dumps` handles none of that, and the
-    per-iteration progress log (doc/11 1.6) is only useful if what goes into
+    per-iteration progress log (docs/11 1.6) is only useful if what goes into
     `info` can actually be written out.
 
     The 0-d case is not hypothetical: `tolist()` on a 0-d array returns a bare
@@ -89,7 +89,7 @@ class InfoBuilder(object):
         # `reward`, `NAV` and `num_trades` keep their names, types and order.
         # NAV stays a string: it is the exact str() of a Decimal, which is what
         # lets the conservation check parse it back without loss, and both
-        # consumers already handle it (doc/11 2.6 tracks the round trip itself).
+        # consumers already handle it (docs/11 2.6 tracks the round trip itself).
         #
         # The fields below are diagnostics rather than invariants, so they go
         # out as plain numbers - float is what the metrics stack and json
@@ -100,7 +100,7 @@ class InfoBuilder(object):
             "num_trades": acc.num_trades,
         }
 
-        # Account state (doc/11 2.3). Read before set_step_outputs zeroes the
+        # Account state (docs/11 2.3). Read before set_step_outputs zeroes the
         # per-step counters, which happens after this call.
         info.update(
             {
@@ -127,10 +127,10 @@ class InfoBuilder(object):
                 "order_step_placed": acc.order_step_placed,
                 "num_rejected_step": acc.num_rejected_step,
                 # modify/cancel actions that named no resting order this step -
-                # the third way an action can silently do nothing (doc/15 S4-14).
+                # the third way an action can silently do nothing (docs/15 S4-14).
                 "num_unmatched_step": acc.num_unmatched_step,
                 # Observation elements clipped to the declared Box bounds this
-                # step (doc/15 S4-15). Zero unless a bound is wrong for the market.
+                # step (docs/15 S4-15). Zero unless a bound is wrong for the market.
                 "num_obs_clipped_step": acc.num_obs_clipped_step,
                 "num_liquidations_step": acc.num_liquidations_step,
                 "liquidated_book_qty_step": acc.liquidated_book_qty_step,
@@ -155,12 +155,12 @@ class InfoBuilder(object):
         # so that every order is refused.
         info["is_pass_action"] = agent_key in pass_agents
 
-        # Reward decomposition (doc/11 2.4). The five signed contributions that
-        # sum to `reward`, so the variance split in doc/07 6.4 is measurable
+        # Reward decomposition (docs/11 2.4). The five signed contributions that
+        # sum to `reward`, so the variance split in docs/07 6.4 is measurable
         # without re-deriving anything.
         info["reward_terms"] = dict(acc.reward_terms)
 
-        # Market state (doc/11 2.2). Identical for every agent this step; it is
+        # Market state (docs/11 2.2). Identical for every agent this step; it is
         # repeated per agent because that is the shape RLlib gives `info`.
         #
         # These are Decimal on the env and float here: `info` is a

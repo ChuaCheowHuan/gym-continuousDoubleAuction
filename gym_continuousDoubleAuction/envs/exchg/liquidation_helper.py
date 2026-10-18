@@ -1,4 +1,4 @@
-"""Maintenance margin and liquidation (doc/04 section 8).
+"""Maintenance margin and liquidation (docs/04 section 8).
 
 A trader whose equity falls to `maintenance_margin` of its position's value is
 closed out at the end of the step, in the order a real venue would do it:
@@ -103,7 +103,7 @@ class LiquidationEngine(object):
         # than surfacing as a TypeError or a decimal.InvalidOperation.
         # Positive: a zero margin liquidates only at NAV <= 0, when there is no equity to
         # bound the close and nothing left to protect; exchanges always require a margin
-        # above zero for that reason (doc/15 R-3, #173).
+        # above zero for that reason (docs/15 R-3, #173).
         if not _is_finite_number(maintenance_margin) or not 0 < maintenance_margin < 1:
             raise ValueError(f"maintenance_margin must be in (0, 1); got {maintenance_margin!r}.")
         margin = Decimal(str(maintenance_margin))
@@ -210,7 +210,7 @@ class LiquidationEngine(object):
         market data goes out, so what participants see is the book that remains.
         `set_done` used to do this while the step's outputs were assembled, after the shared
         book snapshot had been taken: on the bankruptcy step every observation still showed
-        orders that no longer existed (doc/15 R-2, #172). Doing it here, before
+        orders that no longer existed (docs/15 R-2, #172). Doing it here, before
         `prep_next_state`, makes the observation and the book agree. The orders a
         liquidation closes out are already gone (`_margin_call`); this covers a flat
         account with negative NAV, and every bankrupt account when liquidation is off.
@@ -343,7 +343,7 @@ class LiquidationEngine(object):
         With NAV already <= 0 there is no equity left to bound the close, and
         the band that would follow from it is the mark itself, which a mid-price
         mark can never be filled at: the whole position went to ADL while
-        resting liquidity sat a tick away (doc/15 R-3, #173). Exchanges send an
+        resting liquidity sat a tick away (docs/15 R-3, #173). Exchanges send an
         underwater position to the book at market first and use ADL only for
         what the book cannot take, so the band is the touch - the best opposite
         price - and only that level is used. With nothing on the opposite side

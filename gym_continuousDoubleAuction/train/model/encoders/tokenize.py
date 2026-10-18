@@ -183,7 +183,7 @@ def positional_index(layout: ObsLayout, tokenization: str):
     it is a statement about the token order this module defines - and every
     tokenising encoder needs it, not just the attention stacks. `token_embed`
     went without one, which made the shipped `lstm` encoder invariant to the
-    order of the very grid it exists to preserve (doc/15 S2-10).
+    order of the very grid it exists to preserve (docs/15 S2-10).
     """
     num_tokens, _ = token_shape(layout, tokenization)
 

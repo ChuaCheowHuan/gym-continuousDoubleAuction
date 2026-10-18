@@ -1,4 +1,4 @@
-"""Phase 1 of doc/15 S3-24: the agent can see its own resting orders.
+"""Phase 1 of docs/15 S3-24: the agent can see its own resting orders.
 
 The private block gains an own-book block - this agent's resting size at each
 of the k_rows public levels on each side, on the public book's scale and sign
@@ -72,7 +72,7 @@ class TestLayout:
             "own_ask_count",
             "unmatched_last_step",
         )
-        assert fields[-9:] == MASK_FIELDS  # the action mask closes the block (doc/06 section 7)
+        assert fields[-9:] == MASK_FIELDS  # the action mask closes the block (docs/06 section 7)
         assert len(fields) == 41 == len(PRIVATE_FIELDS)
         assert OWN_BOOK_OFFSET == 9
         assert fields[OWN_BOOK_OFFSET] == "own_bid_size_0"

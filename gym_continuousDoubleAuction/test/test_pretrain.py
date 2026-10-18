@@ -181,7 +181,7 @@ def saved(spaces, corpus, spec_block, tmp_path_factory):
 
 
 class TestTheFingerprintIdentifiesTheArchitecture:
-    """doc/15 S3-22, in both directions.
+    """docs/15 S3-22, in both directions.
 
     `encoder_fingerprint` hashed the spec *as written*, not merged against the
     encoder's registered defaults. That was wrong twice over, and the two

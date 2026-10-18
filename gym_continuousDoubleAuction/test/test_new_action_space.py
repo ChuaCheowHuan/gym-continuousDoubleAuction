@@ -178,7 +178,7 @@ class TestTickGrid:
     `min_tick` was a hardcoded 1 that made the configured `tick_size` a no-op;
     it now comes from the config key. `OrderBook` still accepts and stores a
     `tick_size` it never reads - that copy is retained deliberately, because the
-    orderbook package is off-limits. See doc/15 S3-4; these tests cover the
+    orderbook package is off-limits. See docs/15 S3-4; these tests cover the
     action-layer half only.
     """
 
@@ -210,7 +210,7 @@ class TestTickGrid:
     # There is deliberately no "prices stay on grid" test here. `_set_price`
     # performs no quantization, so that property is not enforced and does not
     # hold in general - `anchor=10, tick=0.3` puts bid level 8 at
-    # 7.300000000000001. See doc/18 section 3.1.
+    # 7.300000000000001. See docs/18 section 3.1.
 
     def test_action_price_levels_match_book_depth(self):
         """price codes index book levels, so the two depths cannot drift apart."""

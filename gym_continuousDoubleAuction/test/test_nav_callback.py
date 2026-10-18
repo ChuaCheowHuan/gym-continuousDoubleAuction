@@ -14,7 +14,7 @@ and restarts the actor, and `algo.train()` returns normally - the run carries on
 training on the ledger the check just condemned. The raise also destroyed the
 evidence: `synchronous_parallel_sample` asks each runner for
 `(sample(), get_metrics())` in one call, so a throwing `sample()` means the
-metrics for that runner are discarded with the error. See doc/21 §2.1.
+metrics for that runner are discarded with the error. See docs/21 §2.1.
 
 So now the callback *reports* - the ERROR, `nav_conservation_error`, and a
 `nav_conservation_violations` count - and `train._check_nav_conservation` acts
@@ -187,7 +187,7 @@ class TestNAVCallback:
         0.5, so a real quarter-dollar of destroyed cash rounds to exactly 0.0 -
         the old float() round trip reported perfect conservation and the run
         continued on a corrupt ledger. Decimal sees the 0.25. The cliff is at
-        roughly init_cash 1e10; see doc/16 §16.10.
+        roughly init_cash 1e10; see docs/16 §16.10.
         """
         self.init_cash = 10**15
         self.mock_env = MockEnv(self.init_cash, self.num_agents)
@@ -274,7 +274,7 @@ class TestNAVCallback:
 class TestATerminatedAgentStillCounts:
     """A bankrupt agent drops out of `info`; its NAV must not drop out too.
 
-    doc/15 S2-4. Once a bankrupt agent is terminated it stops appearing in
+    docs/15 S2-4. Once a bankrupt agent is terminated it stops appearing in
     `info` from its terminal step onward, and the check reads the *final*
     step's info. Summing only what is there leaves the total short by exactly
     that agent's NAV, so every episode containing a bankruptcy would read as a
@@ -525,7 +525,7 @@ class TestDriverCheck:
             _check_nav_conservation(7, self._result(2.0), cfg)
 
     def test_it_is_still_an_assertion_error(self):
-        """doc/11 §1.5 has always documented this as an AssertionError, and any
+        """docs/11 §1.5 has always documented this as an AssertionError, and any
         `except AssertionError` written around a training call still works."""
         assert issubclass(NavConservationError, AssertionError)
 

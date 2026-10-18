@@ -1,5 +1,5 @@
-"""Check relative links and heading anchors in README.md, doc/*.md, CLAUDE.md,
-CONTRIBUTING.md and .claude/skills/*/SKILL.md.
+"""Check relative links and heading anchors in README.md, docs/*.md (CONTRIBUTING.md included),
+CLAUDE.md and .claude/skills/*/SKILL.md.
 
 Usage: python tools/check_links.py [repo_root]   (default: the repository root)
 Prints one `file:line problem target` per broken link; exits 1 if any.
@@ -38,17 +38,15 @@ def anchors(path):
 
 
 def main():
-    docs = os.path.join(ROOT, "doc")
+    docs = os.path.join(ROOT, "docs")
     files = [os.path.join(ROOT, "README.md")] + [
         os.path.join(docs, f) for f in sorted(os.listdir(docs)) if f.endswith(".md")
     ]
-    # The project's instruction files and the skills link into doc/ too (issue #268);
+    # The project's instruction file and the skills link into docs/ too (issue #268);
     # each is optional, so a tree without them (a test fixture) is not an error.
-    files += [
-        p
-        for p in (os.path.join(ROOT, "CLAUDE.md"), os.path.join(ROOT, "CONTRIBUTING.md"))
-        if os.path.isfile(p)
-    ]
+    claude_md = os.path.join(ROOT, "CLAUDE.md")
+    if os.path.isfile(claude_md):
+        files.append(claude_md)
     skills = os.path.join(ROOT, ".claude", "skills")
     if os.path.isdir(skills):
         files += [

@@ -11,7 +11,7 @@ manual version cost or got wrong; **Steps** are the procedure; **Ships with** ar
 needs checked into the repo (the helper scripts used in those passes lived in a throwaway scratch
 directory and were rewritten each time); **Guardrails** are the mistakes already made once.
 
-**Where things live.** This proposal stays here, in `doc/`, because it is read and linked like the
+**Where things live.** This proposal stays here, in `docs/`, because it is read and linked like the
 other documents. A skill, once built, goes in `.claude/skills/<name>/SKILL.md`, the project-level
 location Claude Code loads from, and carries its own scripts in `.claude/skills/<name>/scripts/`.
 Only a script that several skills run lives outside them, in a top-level `tools/`: today that is
@@ -60,7 +60,7 @@ here. Each point came from something that went wrong once:
    `CDA_rand --steps 200 --agents 4` is the manual check in [26](26_runbook.md).
 4. **Test first, and show it failing.** A fix lands with a regression test that fails on the
    previous source (`git stash push -- gym_continuousDoubleAuction/envs` is the quick way to check).
-5. **Atomic commits**, one fix per commit ([CONTRIBUTING](../CONTRIBUTING.md)): code, then tests,
+5. **Atomic commits**, one fix per commit ([CONTRIBUTING](CONTRIBUTING.md)): code, then tests,
    then docs. After a PR merges, restart the working branch from `master`.
 6. **Do not rest an unverified claim on a review.** Reproduce it first (skill 2).
 7. **Counts move together.** Any new test file changes the unit total, the suite total, the
@@ -298,9 +298,9 @@ read them against a CBP-off run on the same seed.
 ```markdown
 ---
 name: cda-doc-sync
-description: Bring README.md and doc/*.md in line with the code after a change to tests, layouts,
+description: Bring README.md and docs/*.md in line with the code after a change to tests, layouts,
   reward terms, config keys, CLI flags or the package tree. Use when asked to update, sync or audit
-  the docs, or after adding a test file or a config key. Does not edit doc/16 or doc/17 history.
+  the docs, or after adding a test file or a config key. Does not edit docs/16 or docs/17 history.
 ---
 
 1. Run `python scripts/facts.py > /tmp/facts.json` (collects tests, widths, terms, keys, flags, tree).
@@ -308,7 +308,7 @@ description: Bring README.md and doc/*.md in line with the code after a change t
    as current (fix) or historical (leave). Never edit docs 16 and 17 except to append a section.
 3. Recompute the dependent figures in doc 10 (inventory, mindmap), doc 14 (code size), doc 26.
 4. Run `python tools/check_links.py .`; fix every broken link, including anchors after heading edits.
-5. Append a numbered section to doc/17_changelog.md listing each correction by file.
+5. Append a numbered section to docs/17_changelog.md listing each correction by file.
 6. Report counts before and after, and anything left as historical, with the reason.
 ```
 

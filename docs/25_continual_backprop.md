@@ -188,7 +188,7 @@ book dynamics, and the reward-generating process all shift with it. [12](12_pers
 these grounds.
 
 What the docs do not yet consider is the cumulative effect on the network's ability to keep
-learning. Before this note, grepping the whole `doc/` tree for *plasticity*, *dormant* or
+learning. Before this note, grepping the whole `docs/` tree for *plasticity*, *dormant* or
 *dead unit* returned nothing at all. Non-stationarity is discussed repeatedly; plasticity loss,
 which is its long-run consequence, is not discussed anywhere. **That is a genuine gap, and it is the one this note fills.**
 
@@ -494,7 +494,7 @@ under `cbp_scope: "feedforward"`: that encoder's tokenizer is `token_mlp` and it
 fixes it, rather than running a no-op. Attention is explicitly excluded and should be documented as
 excluded, not silently skipped.
 
-**`cbp_scope: "recurrent"` adds the LSTM core** (doc/15 S3-32), and finds 2 layers per trainable
+**`cbp_scope: "recurrent"` adds the LSTM core** (docs/15 S3-32), and finds 2 layers per trainable
 module in `lstm` (the actor's and the critic's; 1 under `vf_share_layers`) and exactly what
 `feedforward` finds everywhere else. PyTorch stacks an LSTM's four gates, so a unit's parameters are
 scattered, and the split that makes a replacement safe is:
@@ -615,8 +615,8 @@ a changed config. That is the whole envelope the bugs lived outside of.
 The three code fixes are small — derive the device from `layer.incoming.weight`, build the
 generator on the learner's device, call `unwrapped()` before discovery. What is worth keeping is
 the shape of the mistake: the mechanism was tested thoroughly against the specification it was
-written from, and not at all against the configurations it would actually run in. `doc/19` and
-`doc/09` describe those configurations; neither was consulted while writing the tests.
+written from, and not at all against the configurations it would actually run in. `docs/19` and
+`docs/09` describe those configurations; neither was consulted while writing the tests.
 
 The device and DDP fixes are covered by tests that assert the *property* rather than executing it,
 since a CPU-only box cannot do the latter — a `meta`-device tensor stands in for CUDA, and a stub

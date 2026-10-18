@@ -29,7 +29,7 @@ class NavConservationError(AssertionError):
     """A run stopped because the NAV conservation invariant broke.
 
     Subclasses AssertionError rather than replacing it: that is what this
-    failure has always been raised as, what doc/11 §1.5 documents, and what any
+    failure has always been raised as, what docs/11 §1.5 documents, and what any
     existing `except` around a training call is written for.
     """
 
@@ -151,7 +151,7 @@ def _broadcast_iteration(algo, iteration: int) -> None:
     conservation ERROR are emitted *only* there, and none of them could be
     joined to a `progress.jsonl` row except by wall-clock order.
 
-    doc/11 1.9 described recovering that association as "a change to what RLlib
+    docs/11 1.9 described recovering that association as "a change to what RLlib
     hands the callbacks". It is not - the driver already knows the number, and
     `foreach_env_runner` already reaches every runner. It only had to be sent.
 

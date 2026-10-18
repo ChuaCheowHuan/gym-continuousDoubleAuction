@@ -10,7 +10,7 @@ workers), [14_perspective_ai_engineer.md](14_perspective_ai_engineer.md) §5.4.
 **Status.** This used to be the weakest engineering area in the repository: no logging framework
 at all, ~86 `print()` calls, and a conservation check that reported a corrupt ledger by printing
 `FAILED`. Both are fixed - see §1.3 and §1.5. Coverage was the next gap and is largely closed:
-27 custom metrics (§1.2) and a typed, queryable per-step record (§1.1). What is left in §2 now needs
+the custom metrics of §1.2 and a typed, queryable per-step record (§1.1). What is left in §2 now needs
 new computation rather than aggregation of something already in hand.
 
 **Concurrency.** §1.10 is the answer to "is this thread safe or process safe", which is a separate
@@ -39,7 +39,7 @@ flowchart LR
 
     subgraph CH["Channels"]
         PARQ[("episode_data/run_id/<br/>episodes.pid.worker.n.parquet<br/>one row per episode-step-agent")]
-        MET["metrics_logger<br/>27 custom metrics"]
+        MET["metrics_logger<br/>custom metrics, §1.2"]
         LOGF[("run_dir/run.log<br/>+ run.pid.worker.log")]
         PROG[("run_dir/progress.jsonl<br/>one line per iteration")]
         CHK[("chkpt/iter_NNNNN<br/>+ league_state.json")]
@@ -174,16 +174,16 @@ in the repository writes a pickle any more.
 | `obs_clip_fraction` | Share of agent-steps whose observation had at least one element clipped to the declared Box bounds (S4-15); 0 unless a bound is wrong for the market | 10 | `on_episode_end` |
 | `nav_conservation_violations` | Episodes that failed the check | `reduce="sum"` | `on_episode_end` |
 | `nav_conservation_unchecked` | Episodes the check could not run on: exchange fees are on and the finished env's accounts were unreadable. A skip, not a pass; absent when every episode was checked | `reduce="sum"` | `on_episode_end` |
-| `reward_term_mean_<term>` × 5 | Mean of each signed reward contribution | 10 | `on_episode_end` |
-| `reward_term_var_share_<term>` × 5 | That term's share of the reward's variance | 10 | `on_episode_end` |
+| `reward_term_mean_<term>` × 6 | Mean of each signed reward contribution | 10 | `on_episode_end` |
+| `reward_term_var_share_<term>` × 6 | That term's share of the reward's variance | 10 | `on_episode_end` |
 | `episode_nav_mean` / `_min` / `_max` | Per-agent NAV at episode end | 10 | `on_episode_end` |
 | `mean_agent_drawdown` | Mean per-agent drawdown at episode end | 10 | `on_episode_end` |
 | `mean_abs_net_position` | Mean absolute inventory at episode end | 10 | `on_episode_end` |
 | `mean_num_trades` | Mean trades per agent over the episode | 10 | `on_episode_end` |
 | `maker_fill_ratio_max` | The most maker-like agent's share of its own fills | 10 | `on_episode_end` |
-| `module_sharpe`, `module_sortino`, `module_max_drawdown`, `module_hit_rate`, `module_position_turnover`, `module_mean_abs_position`, `module_max_abs_position` | Each module's risk-adjusted performance in the episode (doc/15 S3-9), nested under the module id. Per-step returns from the exact NAV, not annualised; a metric undefined for the episode (a Sharpe with no variance) is left out, not logged as 0. Definitions in `train/performance.py` | `reduce="mean"` over the iteration | `on_episode_end` |
-| `module_realised_pnl`, `module_unrealised_pnl`, `module_markout_<h>` | Each module's realised and unrealised P&L at episode end (they sum, less fees, to NAV minus the starting NAV) and the mark-out per contract filled at each `markout_horizons` step count (doc/15 S3-9, #286) | `reduce="mean"` over the iteration | `on_episode_end` |
-| `module_trades_per_episode` | Each module's trades per episode, nested under the module id; read by the champion guard (doc/15 S3-11) | `reduce="mean"` over the iteration | `on_episode_end` |
+| `module_sharpe`, `module_sortino`, `module_max_drawdown`, `module_hit_rate`, `module_position_turnover`, `module_mean_abs_position`, `module_max_abs_position` | Each module's risk-adjusted performance in the episode (docs/15 S3-9), nested under the module id. Per-step returns from the exact NAV, not annualised; a metric undefined for the episode (a Sharpe with no variance) is left out, not logged as 0. Definitions in `train/performance.py` | `reduce="mean"` over the iteration | `on_episode_end` |
+| `module_realised_pnl`, `module_unrealised_pnl`, `module_markout_<h>` | Each module's realised and unrealised P&L at episode end (they sum, less fees, to NAV minus the starting NAV) and the mark-out per contract filled at each `markout_horizons` step count (docs/15 S3-9, #286) | `reduce="mean"` over the iteration | `on_episode_end` |
+| `module_trades_per_episode` | Each module's trades per episode, nested under the module id; read by the champion guard (docs/15 S3-11) | `reduce="mean"` over the iteration | `on_episode_end` |
 | `league_size` | `num_trainable + num_random + champion_count` | 1 | `on_train_result` |
 | `league_mean_return` | Mean module return across the league | 10 | `on_train_result` |
 | `league_std_return` | Std dev of module returns | 10 | `on_train_result` |
@@ -236,7 +236,7 @@ one passive fill out of one trade would pin the maximum at 1.0 for the whole run
 ledger reaches the driver at all (§1.5), and `idle_modules` is the S3-12 signature — a league
 quietly shrinking to whichever modules the mapping fn happens to draw.
 
-**The variance shares are the doc/07 §6.4 split, live.** Measured on a real 2-iteration run:
+**The variance shares are the docs/07 §6.4 split, live.** Measured on a real 2-iteration run:
 `nav_term` 0.95, `drawdown_penalty` 0.05, the other three below 1e-8. That is the answer to "which
 term is actually driving the signal", and it previously required reading a file back afterwards. A
 term that is large but constant contributes no variance and correctly reports no share — which is

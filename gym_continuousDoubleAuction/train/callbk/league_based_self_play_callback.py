@@ -33,7 +33,7 @@ MODULE_EPISODE_RETURNS_MEAN = "module_episode_returns_mean"
 #: `RayTaskError` from `sample()`, and `restart_failed_env_runners` - True by
 #: default - makes `EnvRunnerGroup` log it through Ray's own logger and restart
 #: the actor: `algo.train()` returns normally and the run carries on training on
-#: the ledger the check just condemned (doc/21 §2.1). Worse, the raise loses the
+#: the ledger the check just condemned (docs/21 §2.1). Worse, the raise loses the
 #: evidence: `synchronous_parallel_sample` asks each runner for
 #: `(sample(), get_metrics())` in one call, so a `sample()` that throws means
 #: `get_metrics()` never runs and that runner's metrics - including this one -
@@ -50,7 +50,7 @@ NAV_VIOLATIONS_METRIC = "nav_conservation_violations"
 #: not a pass) so a run that is never being checked is visible.
 NAV_UNCHECKED_METRIC = "nav_conservation_unchecked"
 
-#: The modules the promotion threshold can be computed over (doc/15 S3-12).
+#: The modules the promotion threshold can be computed over (docs/15 S3-12).
 PROMOTION_REFERENCES = ("pooled", "excluding_baselines")
 
 
@@ -121,9 +121,9 @@ class SelfPlayCallback(RLlibCallback):
                 Parquet. Must be an absolute path: this object is pickled into
                 every env runner, and a relative one would be resolved against
                 whatever working directory that worker happened to inherit
-                (doc/21 §2.3). None disables the record entirely - and now
+                (docs/21 §2.3). None disables the record entirely - and now
                 disables the *accumulation* too, which the flag previously did
-                not (doc/21 §2.2).
+                not (docs/21 §2.2).
             nav_tolerance: Absolute cash tolerance for the episode-end NAV
                 conservation check.
             strict_nav_check: Stop the run on a conservation violation. Acted on
@@ -135,11 +135,11 @@ class SelfPlayCallback(RLlibCallback):
                 a trainable policy needs to be promoted. A policy that has
                 collapsed to always-pass earns exactly 0, which beats a league of
                 money-losing modules, so it would otherwise clear the return
-                threshold (doc/15 S3-11). 0 disables the guard.
+                threshold (docs/15 S3-11). 0 disables the guard.
             promotion_reference: Which modules the promotion threshold is computed
                 over: "pooled" (all of them, baselines included) or
                 "excluding_baselines" (trainable modules and champions). See
-                `_threshold_returns` and doc/15 S3-12.
+                `_threshold_returns` and docs/15 S3-12.
             markout_horizons: Steps ahead at which a fill's adverse-selection
                 mark-out is measured, one `module_markout_<h>` metric each (see
                 `train/performance.py`). Empty switches mark-outs off.
@@ -245,7 +245,7 @@ class SelfPlayCallback(RLlibCallback):
         #
         # This used to be `self.store`, a dict of every step of every live
         # episode, appended to unconditionally - so `--no-episode-data` bought
-        # only the I/O and kept the ~34 MB per episode of memory (doc/21 §2.2).
+        # only the I/O and kept the ~34 MB per episode of memory (docs/21 §2.2).
         self._episode_recorder = None
 
     def __getstate__(self):
@@ -382,7 +382,7 @@ class SelfPlayCallback(RLlibCallback):
                 max_bytes=self.episode_max_bytes,
                 rows_per_file=self.episode_rows_per_file,
                 # Never fewer chairs than envs a runner steps at once: an episode with no
-                # place in the buffer is dropped from the record (doc/15 R-10, #180).
+                # place in the buffer is dropped from the record (docs/15 R-10, #180).
                 max_live_episodes=max(
                     int(self.episode_max_live_episodes), int(self.envs_per_env_runner)
                 ),
@@ -472,7 +472,7 @@ class SelfPlayCallback(RLlibCallback):
         # The per-step record, if it is on. Nothing above this line touches the
         # observations or actions, so a run with `episode_data_dir` unset now
         # pays neither the I/O nor the memory - which is what the flag always
-        # claimed and never did (doc/21 §2.2).
+        # claimed and never did (docs/21 §2.2).
         recorder = self._recorder()
         if recorder is not None:
             # RLlib's own env timestep where it exists, because it is the
@@ -532,7 +532,7 @@ class SelfPlayCallback(RLlibCallback):
         # itself happens off this thread and every failure inside it is a
         # warning, so a full disk can no longer raise into a hook that runs on
         # an env runner - which, with restart_failed_env_runners on, would have
-        # meant a killed and restarted worker (doc/21 §2.4).
+        # meant a killed and restarted worker (docs/21 §2.4).
         recorder = self._recorder()
         if recorder is not None:
             recorder.finish_episode(episode.id_)
@@ -741,7 +741,7 @@ class SelfPlayCallback(RLlibCallback):
             metrics_logger.log_value("league_mean_return", league_mean, window=10)
             metrics_logger.log_value("league_std_return", league_std, window=10)
 
-            # Promotion as a metric rather than only a log banner (doc/11 §2.5,
+            # Promotion as a metric rather than only a log banner (docs/11 §2.5,
             # §4 item 1). Counted from the league's champions either side of
             # the trigger rather than from the branch above, so a snapshot that
             # raised and rolled itself back is correctly reported as *not*

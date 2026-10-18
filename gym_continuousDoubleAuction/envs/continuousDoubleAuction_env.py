@@ -43,7 +43,7 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
         self.allow_multiple_orders_per_level = settings.allow_multiple_orders_per_level
         self.max_step = settings.max_step
         # Episode horizon: fixed at max_step, or drawn per episode from
-        # [max_step_min, max_step_max] at reset (doc/18 section 3.4). The
+        # [max_step_min, max_step_max] at reset (docs/18 section 3.4). The
         # horizon the agent is shown through `time_left` is the latest
         # possible end, `time_left_horizon`, so a random draw stays unknown.
         self.episode_length_mode = settings.episode_length_mode
@@ -116,7 +116,7 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
         # single agent, not a per-agent dict).
         #
         # Finite bounds, from `observation_bounds` in tunable_constants.json
-        # via State_Helper (doc/15 S4-15): every feature is a ratio, a log or
+        # via State_Helper (docs/15 S4-15): every feature is a ratio, a log or
         # a tanh with a known or measured range, and `set_next_state` clips to
         # these and counts what it clipped, so the Box is a true statement
         # about what the env emits rather than the `(-inf, inf)` it used to
@@ -150,7 +150,7 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
         # `PassiveEnvChecker` reads the singular attributes and refuses None.
         # Nothing in the test suite or the CI packaging job exercised `make` -
         # both construct the class directly - so it stayed broken while every
-        # job was green. See doc/15 S2-12.
+        # job was green. See docs/15 S2-12.
         first_agent = agent_ids[0]
         self.observation_space = self.observation_spaces[first_agent]
         self.action_space = self.action_spaces[first_agent]
@@ -193,7 +193,7 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
         # global `np.random` instead: the price anchor here, order sizes in
         # `_set_size`, and the queueing order in `rand_exec_seq`. All three now
         # read `self.np_random`, so `reset(seed=...)` means what the Gymnasium
-        # API says it means (doc/15 S3-5).
+        # API says it means (docs/15 S3-5).
         #
         # `seed=None` deliberately does not re-seed - the contract is that an
         # env which already has a generator keeps its stream across resets, so
@@ -283,7 +283,7 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
         # except `set_done` pulling a bankrupt trader's orders - which marks
         # the snapshot stale. So it is rebuilt only then, or when the render
         # wants the "@ t-1" table; measured at 5.9% of a step otherwise
-        # (doc/15 S4-11).
+        # (docs/15 S4-11).
         if self._snapshot_stale or (self.is_render and logger.isEnabledFor(logging.DEBUG)):
             self.agg_LOB = self.set_agg_LOB()  # LOB state at t before processing LOB
 
@@ -306,7 +306,7 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
         self.seq_trades, self.seq_order_in_book = self.do_actions(actions)  # Begin processing LOB
         self.mark_to_mkt()  # mark to market
         # Close out anyone below maintenance margin, before the observation,
-        # reward and info are built from the accounts (doc/04 section 8).
+        # reward and info are built from the accounts (docs/04 section 8).
         self.liquidations = self.liquidate()
         # The peak is the best NAV a step ENDED on, set once the cascade is over.
         for trader in self.traders:
@@ -366,7 +366,7 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
 
         # Read-only. This used to null `model_actions`, `LOB_actions` and
         # `shuffled_actions` and clear `seq_trades` / `seq_order_in_book`, so
-        # toggling the render changed what the *next* step's info saw (doc/15
+        # toggling the render changed what the *next* step's info saw (docs/15
         # S4-7). Every one of those is reassigned at the top of `step()` and in
         # `do_actions`, so the clearing bought nothing but the side effect.
         self.print_trades_all_seq(self.seq_trades)

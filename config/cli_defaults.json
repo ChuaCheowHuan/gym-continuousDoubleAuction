@@ -14,7 +14,7 @@
   },
   "cda_probe": {
     "_module": "python -m gym_continuousDoubleAuction.train.probe",
-    "_note": "Reward-free encoder scoring - see doc/23_probe_harness.md. Independent of TrainConfig on purpose: the harness exists because the reward cannot currently settle an encoder comparison (S1-1, S1-3), so it must not read the same group whose defaults were chosen for training. log_level null defers to the logging group of tunable_constants.json.",
+    "_note": "Reward-free encoder scoring - see docs/23_probe_harness.md. Independent of TrainConfig on purpose: the harness exists because the reward cannot currently settle an encoder comparison (S1-1, S1-3), so it must not read the same group whose defaults were chosen for training. log_level null defers to the logging group of tunable_constants.json.",
     "_note_corpus": "num_episodes / max_step / num_agents describe the random-agent rollouts used when --parquet is not given. The product is the corpus size. With three or more episodes the split is by episode (train, validation and test hold whole episodes, the test the latest), so more EPISODES buys more independent price anchors in each split while more STEPS only lengthens each one - three short episodes generalise better than one long one; below three it falls back to contiguous rows (probe.split_masks).",
     "_note_encoders": "Scored untrained, i.e. at initialisation. That is the inductive-bias baseline a trained encoder from --checkpoint has to beat; reporting a trained encoder without it credits the architecture with whatever its initialisation was already worth.",
     "_note_horizons": "Steps ahead. realized_vol declares min_horizon 2 and is skipped at horizon 1 rather than reporting a column of zeros.",
@@ -44,7 +44,7 @@
   },
   "cda_pretrain": {
     "_module": "python -m gym_continuousDoubleAuction.train.pretrain",
-    "_note": "Offline JEPA pretraining - see doc/24_pretraining.md. Trains an encoder's self-supervised objective on observations alone, with no reward, policy or opponents, then writes the weights beside an encoder fingerprint that a mismatched load refuses. log_level null defers to the logging group of tunable_constants.json.",
+    "_note": "Offline JEPA pretraining - see docs/24_pretraining.md. Trains an encoder's self-supervised objective on observations alone, with no reward, policy or opponents, then writes the weights beside an encoder fingerprint that a mismatched load refuses. log_level null defers to the logging group of tunable_constants.json.",
     "_note_corpus": "num_episodes / max_step / num_agents describe the random-agent rollouts used when --parquet is not given. A book made by random agents does not look like one made by a trained league, so prefer --parquet over a real run's episode record once one exists; these defaults are a warm start, not a training corpus.",
     "_note_collapse": "Watch latent_std in the report, not the loss. A collapsed JEPA maps every observation to the same vector, which makes its prediction perfect - the loss goes to zero and reads as success. The CLI exits non-zero when it detects one.",
     "_note_spec": "The encoder's hyperparameters are NOT duplicated here: they come from the encoder_specs block of train_config.json, so a pretrained encoder is built from the same numbers the training run will build it from, and the fingerprint written beside the weights is comparable with the one train.py computes.",
@@ -62,7 +62,7 @@
   },
   "cda_compare": {
     "_module": "python -m gym_continuousDoubleAuction.train.compare",
-    "_note": "The encoder comparison protocol of doc/18 section 5.5 as one command: every (encoder, seed) is a separate training run with the seed pinned and its own log_base_dir, then the final checkpoint is scored on the probe harness against one shared corpus. Everything not listed here comes from train_config.json, overridden per run only for encoder_type, seed, num_iters and the output paths. log_level null defers to the logging group of tunable_constants.json.",
+    "_note": "The encoder comparison protocol of docs/18 section 5.5 as one command: every (encoder, seed) is a separate training run with the seed pinned and its own log_base_dir, then the final checkpoint is scored on the probe harness against one shared corpus. Everything not listed here comes from train_config.json, overridden per run only for encoder_type, seed, num_iters and the output paths. log_level null defers to the logging group of tunable_constants.json.",
     "_note_seeds": "Three seeds is the floor at which the 'separated on' column can say anything; below it every row is a smoke test of the protocol. The defaults here are deliberately that floor, not a recommendation of sufficiency.",
     "encoders": [
       "mlp",
@@ -96,7 +96,7 @@
   },
   "cda_export": {
     "_module": "python -m gym_continuousDoubleAuction.train.export",
-    "_note": "Take one module's weights out of a checkpoint as a plain torch file - doc/14 section 5.9, doc/26 section 26.9.2. module_id null exports the champion with the best return recorded in league_state.json; out null writes <module_id>.pt in the working directory. log_level null defers to the logging group of tunable_constants.json.",
+    "_note": "Take one module's weights out of a checkpoint as a plain torch file - docs/14 section 5.9, docs/26 section 26.9.2. module_id null exports the champion with the best return recorded in league_state.json; out null writes <module_id>.pt in the working directory. log_level null defers to the logging group of tunable_constants.json.",
     "_note_module_id": "Left null on purpose rather than defaulting to policy_0 the way cda_probe does. The probe scores an encoder, where any trainable module is a fair sample; this exports the winner, and silently handing back policy_0 when a league full of champions exists would be the wrong module with no warning.",
     "module_id": null,
     "out": null,
@@ -104,7 +104,7 @@
   },
   "cda_evaluate": {
     "_module": "python -m gym_continuousDoubleAuction.train.evaluate",
-    "_note": "Roll episodes with a trained checkpoint's policies, no learning, and report per module what they did - doc/15 S4-12, doc/26 section 26.10. The env config comes from the checkpoint itself; only max_step can be overridden. seed pins the episode seeds (episode i uses seed + i) so two checkpoints evaluated with the same seed face the same anchors and opponent draws. out null writes no JSON; the table always goes to the log.",
+    "_note": "Roll episodes with a trained checkpoint's policies, no learning, and report per module what they did - docs/15 S4-12, docs/26 section 26.10. The env config comes from the checkpoint itself; only max_step can be overridden. seed pins the episode seeds (episode i uses seed + i) so two checkpoints evaluated with the same seed face the same anchors and opponent draws. out null writes no JSON; the table always goes to the log.",
     "episodes": 4,
     "seed": 0,
     "out": null,

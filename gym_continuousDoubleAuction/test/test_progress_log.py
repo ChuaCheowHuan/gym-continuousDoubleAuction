@@ -10,7 +10,7 @@ through a Tuner. These tests pin the record.
 The awkward values matter as much as the happy path. RLlib results carry numpy
 scalars and arrays, occasionally an object with no JSON form, and NaNs early in
 a run; a logger that raised on any of those would take down a training run that
-was otherwise fine. See doc/11 2.1.
+was otherwise fine. See docs/11 2.1.
 """
 
 import dataclasses
@@ -300,7 +300,7 @@ class TestVfExplainedVar:
     def test_the_log_line_does_not_round_a_dead_critic_to_zero(self, cfg, caplog, looped):
         """3 significant figures, not 3 decimals.
 
-        The values this metric takes on a broken run are ~1e-5 (see doc/17
+        The values this metric takes on a broken run are ~1e-5 (see docs/17
         17.3), and `round(3.8e-05, 3)` is `0.0` - which prints identically to a
         module that reported nothing, losing the distinction the metric exists
         to draw.

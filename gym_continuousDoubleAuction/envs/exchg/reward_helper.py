@@ -68,7 +68,7 @@ class RewardModel(object):
         # Per modify/cancel that named no resting order. 0.0 by default: any
         # positive value makes the game negative-sum (S1-3), so switching it
         # on is a measured decision. The miss reaches the policy anyway
-        # through the `unmatched_last_step` observation field (doc/15 S3-24).
+        # through the `unmatched_last_step` observation field (docs/15 S3-24).
         self.dead_action_penalty = dead_action_penalty
 
     def set_reward(self, rewards: Dict[str, float], trader) -> Dict[str, float]:
@@ -150,7 +150,7 @@ class RewardModel(object):
         # 3. Comprehensive Reward Formula
         #
         # Kept as the signed contribution of each term rather than a single
-        # expression, so the decomposition doc/07 6.4 asks to monitor is the
+        # expression, so the decomposition docs/07 6.4 asks to monitor is the
         # same arithmetic the agent is actually trained on: accumulating the
         # terms *is* the reward, and there is no second expression that could
         # drift out of step with the logged split.
@@ -182,7 +182,7 @@ class RewardModel(object):
         trader.acc.reward = reward
         trader.acc.reward_terms = terms
         # Load-bearing twice over, so do not move or fold this away. It is the
-        # drawdown level doc/11 2.3 wanted recorded, AND it is what the *next*
+        # drawdown level docs/11 2.3 wanted recorded, AND it is what the *next*
         # step reads back as `previous_drawdown` to form its signed change.
         # Dropping it would silently turn the drawdown term back into the level
         # penalty S2-1 is about, since `previous_drawdown` would then be 0.0 on

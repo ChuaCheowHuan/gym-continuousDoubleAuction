@@ -95,7 +95,7 @@ class Account(Calculate, Cash_Processor):
             maker_fee_bps = env_default("maker_fee_bps")
         if taker_fee_bps is UNSET:
             taker_fee_bps = env_default("taker_fee_bps")
-        # Exchange fees, in basis points of a fill's notional (doc/15 S2-3).
+        # Exchange fees, in basis points of a fill's notional (docs/15 S2-3).
         # Rates belong to the account for its life: `reset_acc` clears what
         # was paid, not what is charged. A negative maker rate is a rebate.
         validate_fee_rates(maker_fee_bps, taker_fee_bps)
@@ -156,7 +156,7 @@ class Account(Calculate, Cash_Processor):
         # independently rounded products. Every trade moves the same exact
         # value between two accounts' cash and basis, so with the basis held
         # as that sum the conservation identity is exact by construction
-        # (doc/15 S3-23, doc/16 16.19).
+        # (docs/15 S3-23, docs/16 16.19).
         #
         # Realised P&L is deliberately rolled into it on a partial close:
         # `_size_decrease` subtracts the trade VALUE, not `VWAP x quantity`.
@@ -192,21 +192,21 @@ class Account(Calculate, Cash_Processor):
         # Orders refused by _order_approved this step. order_step_placed cannot
         # stand in for this: it is 0 both for an agent that never tried and for
         # one whose order was refused, and those are opposite behaviours - the
-        # second is an agent repeatedly quoting past its cash (doc/11 2.2).
+        # second is an agent repeatedly quoting past its cash (docs/11 2.2).
         self.num_rejected_step = 0
         # `modify` / `cancel` actions this step that named no resting order to
-        # act on. The other half of doc/15 S4-14: `num_rejected_step` counts an
+        # act on. The other half of docs/15 S4-14: `num_rejected_step` counts an
         # order the cash check refused, `is_pass_action` a deliberate pass, and
         # until this existed the third silent outcome - an order-management
         # action with nothing to manage - left no trace at all. From the
         # policy's side all three look identical: nothing happened.
         self.num_unmatched_step = 0
         # Observation elements `set_next_state` clipped to the declared bounds
-        # this step (doc/15 S4-15). Assigned, not incremented: one observation
+        # this step (docs/15 S4-15). Assigned, not incremented: one observation
         # is built per agent per step. Non-zero means a bound in
         # `observation_bounds` is tighter than the market it is describing.
         self.num_obs_clipped_step = 0
-        # Liquidation this step (doc/04 section 8): whether this trader was
+        # Liquidation this step (docs/04 section 8): whether this trader was
         # closed out for breaching maintenance margin, how many contracts of
         # its position the book absorbed and how many ADL transferred, and -
         # for a trader on the other side - how many contracts ADL took from
@@ -225,7 +225,7 @@ class Account(Calculate, Cash_Processor):
         # Written by Reward_Helper.set_reward each step, read by Info_Helper.
         # The reward used to be a single number with its five components
         # discarded the moment it was summed, which is what made the variance
-        # split in doc/07 6.4 unmeasurable. See doc/11 2.4.
+        # split in docs/07 6.4 unmeasurable. See docs/11 2.4.
         # float, not Decimal(0): set_reward stores float(max(0, max_nav - nav)),
         # so initialising this as a Decimal would make the field change type on
         # the first step - the same defect net_position and VWAP already have.
@@ -433,7 +433,7 @@ class Account(Calculate, Cash_Processor):
 
         `scaleb` shifts the decimal point, so the fee is exact and the
         exchange's ledger balances to the last digit: there is no quotient
-        here to round (doc/15 S3-23).
+        here to round (docs/15 S3-23).
         """
         if fee_role == 'none':
             return

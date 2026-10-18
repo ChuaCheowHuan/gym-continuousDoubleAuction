@@ -10,7 +10,7 @@ undrawn.
 
 Both GPU runs of 2026-08-15 died this way, at iterations 10 and 12 of 16,
 reporting healthy league stats right up to the iteration it happened. See
-doc/15_findings_and_recommendations.md S3-12.
+docs/15_findings_and_recommendations.md S3-12.
 """
 
 import logging
@@ -144,7 +144,7 @@ class TestIdleModulesDoNotPoisonTheLeague:
 class TestLeagueMetrics:
     """League state as metrics, not only as log banners.
 
-    doc/11 §2.5 listed four things the callback computes and discards, and §4
+    docs/11 §2.5 listed four things the callback computes and discards, and §4
     item 4 asked for them as metrics: promotion events, the matchmaking pool
     size, and the time since the last snapshot - the last of which
     `_should_create_champion` has computed since it was written and thrown away

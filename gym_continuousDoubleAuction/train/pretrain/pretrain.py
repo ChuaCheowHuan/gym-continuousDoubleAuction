@@ -154,7 +154,7 @@ def resolve_spec(encoder_type: str, encoder_spec: Optional[Dict[str, Any]]) -> D
     `encoder_fingerprint(encoder_type, None)` - so a pretrained encoder was
     built from whatever the code shipped rather than from what the run would be
     configured with, and the weights would not load into a training run built
-    from the config block. See doc/15 S3-22.
+    from the config block. See docs/15 S3-22.
     """
     if encoder_spec is not None:
         return encoder_spec
@@ -272,7 +272,7 @@ def pretrain(
     # from what the run would be configured with. `save` then wrote
     # `encoder_fingerprint(encoder_type, None)` beside the weights, and a
     # training run built from the config block could not load them. See
-    # doc/15 S3-22.
+    # docs/15 S3-22.
     encoder_spec = resolve_spec(encoder_type, encoder_spec)
 
     torch.manual_seed(seed)
@@ -299,7 +299,7 @@ def pretrain(
 
     # The test fifth is held out deliberately, not wasted. The probe scores a
     # pretrained encoder "on identical rows with an identical split"
-    # (doc/24 section 6), so these are exactly the episodes its test score is
+    # (docs/24 section 6), so these are exactly the episodes its test score is
     # read on; training on them here would leak them into that score.
     train_mask, validation_mask, _test_mask = probe_module.split_masks(
         corpus.episode_index, len(corpus)

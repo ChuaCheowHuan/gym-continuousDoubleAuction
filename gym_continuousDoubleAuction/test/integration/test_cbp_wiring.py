@@ -59,7 +59,7 @@ TEST_CFG = dict(
 #: The shipped replacement rate fires roughly once per 39 optimiser steps over
 #: 256 units, and a test-length run performs a handful - so at the real value
 #: nothing would be replaced and every assertion below would pass vacuously.
-#: Forced high here, which is exactly the manoeuvre doc/25's Finding 2 warns a
+#: Forced high here, which is exactly the manoeuvre docs/25's Finding 2 warns a
 #: real run cannot make.
 FIRING_CFG = dict(
     cbp_enabled=True,
@@ -254,7 +254,7 @@ class TestCBPRunsInsideARealUpdate:
 
 
 class TestCBPOnTheLSTMCore:
-    """doc/15 S3-32: under scope `recurrent` the lstm encoder is no longer a no-op.
+    """docs/15 S3-32: under scope `recurrent` the lstm encoder is no longer a no-op.
 
     Before, `cbp_enabled` on `lstm` found no replaceable layer and trained
     exactly like CBP off. Here the mechanism fires inside a real PPO update on
@@ -327,7 +327,7 @@ class TestCBPOnTheLSTMCore:
 
 
 class TestMetricsOnlyChangesNothing:
-    """doc/25 Proposal A: measure without touching the trajectory."""
+    """docs/25 Proposal A: measure without touching the trajectory."""
 
     @classmethod
     def setup_class(cls):

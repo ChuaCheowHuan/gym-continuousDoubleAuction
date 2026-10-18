@@ -282,7 +282,7 @@ The per-step charges telescope: over an episode they sum to `-drawdown_penalty �
 regardless of path. A round trip is free, ending in drawdown is still penalised, and the term
 cannot be farmed — the sum is bounded above by zero because drawdown itself is.
 
-`trader.acc.drawdown` is now load-bearing twice: it is the diagnostic doc/11 §2.3 wanted recorded,
+`trader.acc.drawdown` is now load-bearing twice: it is the diagnostic docs/11 §2.3 wanted recorded,
 **and** it is what the next step reads back as `previous_drawdown`. Dropping it would silently
 restore the level penalty, since the "change" would then equal the level on every step.
 

@@ -10,7 +10,7 @@ alone, so they stay valid however the reward is eventually fixed.
 Reading a snapshot
 ------------------
 The layout is `State_Helper`'s, via `ObsLayout`, which knows both book modes
-(doc/15 S3-15). Rows are addressed by name through `layout.row_slice`; the
+(docs/15 S3-15). Rows are addressed by name through `layout.row_slice`; the
 listing below is the `levels` mode, and in `grid` mode the book block is the
 two size rows over `2k + 1` tick offsets with the scalars following:
 

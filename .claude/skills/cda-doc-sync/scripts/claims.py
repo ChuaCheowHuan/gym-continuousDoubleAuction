@@ -3,8 +3,8 @@
 Usage: python claims.py <repo_root> <facts.json>      (facts.json comes from facts.py)
 
 Each hit is `category  file:line  claimed -> actual  | line`. History files are skipped.
-Beyond the number categories it checks the per-file inventory table in doc/10 (a wrong
-count, a stale row, a test file with no row), the code size in doc/14, and whether every
+Beyond the number categories it checks the per-file inventory table in docs/10 (a wrong
+count, a stale row, a test file with no row), the code size in docs/14, and whether every
 config key and CLI flag in facts.json is mentioned in some doc at all.
 A hit is a candidate, not a verdict: a historical line ("193 to 216 with the own-book block")
 is left alone, and so is a number that merely sits near a noun (a "1,000-unit drawdown").
@@ -52,7 +52,7 @@ CHECKS = {
     "encoders": (rf"{NUM}[- ]encoders?\b", {len(f["encoders"])}),
 }
 files = [os.path.join(ROOT, "README.md")] + sorted(
-    p for p in glob.glob(os.path.join(ROOT, "doc", "*.md")) if os.path.basename(p) not in SKIP
+    p for p in glob.glob(os.path.join(ROOT, "docs", "*.md")) if os.path.basename(p) not in SKIP
 )
 MIN = {
     "suite total": 1000,
@@ -122,7 +122,7 @@ for path in files:
 
 for name in sorted(set(per_file) - mentioned_in_inventory):
     hits += 1
-    print(f"{'inventory':12s} doc/{INVENTORY_DOC}  {name} ({per_file[name]} tests) has no row")
+    print(f"{'inventory':12s} docs/{INVENTORY_DOC}  {name} ({per_file[name]} tests) has no row")
 
 corpus = "\n".join(open(p, encoding="utf-8").read() for p in files)
 

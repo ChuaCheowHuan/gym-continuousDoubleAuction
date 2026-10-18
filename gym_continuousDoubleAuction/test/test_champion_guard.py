@@ -1,4 +1,4 @@
-"""doc/15 S3-11: a league that can promote a policy that has stopped trading.
+"""docs/15 S3-11: a league that can promote a policy that has stopped trading.
 
 Three things made it possible, and each is pinned here.
 

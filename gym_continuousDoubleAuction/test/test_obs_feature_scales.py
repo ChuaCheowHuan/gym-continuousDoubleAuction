@@ -1,6 +1,6 @@
 """Every observation block is on a scale a bounded activation can use.
 
-doc/15 S2-2. The network's first layer is `tanh` and there is no
+docs/15 S2-2. The network's first layer is `tanh` and there is no
 `MeanStdFilter` or normalisation connector anywhere in the pipeline, so the
 relative scale of the feature blocks *is* their relative influence. Measured
 before this: `sqrt(V)` sizes reached +-47 with a standard deviation of 9.0

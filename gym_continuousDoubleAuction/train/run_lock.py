@@ -1,8 +1,8 @@
-"""One live run per checkpoint folder (doc/15 R-9, #179).
+"""One live run per checkpoint folder (docs/15 R-9, #179).
 
 Every run under a `log_base_dir` saves into the same `chkpt/` folder. That is deliberate: a
 new run resumes from an earlier run's newest save, so scoping saves per run would make every
-resumed run start from nothing (doc/18). It is only safe when the runs are not simultaneous:
+resumed run start from nothing (docs/18). It is only safe when the runs are not simultaneous:
 two live runs overwrite each other's same-numbered save, and `chkpt_keep` pruning keeps the
 newest N across both. A lock file in the folder names the run holding it, and a second run on
 the folder is refused with the way out.

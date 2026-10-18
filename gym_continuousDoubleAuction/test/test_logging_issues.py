@@ -1,6 +1,6 @@
 """The logging review's open issues under multiple env runners (#216 to #221).
 
-Each test pins one behaviour of the fix; the shape of the problem is in doc/21.
+Each test pins one behaviour of the fix; the shape of the problem is in docs/21.
 """
 
 import itertools
