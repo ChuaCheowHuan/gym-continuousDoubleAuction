@@ -98,9 +98,9 @@ import and reads its config tree relative to the repository root
 Three checks, cheapest first. All three are what CI runs ([10](10_testing.md) §7).
 
 ```bash
-# 1. the simulator and the training-side units: ~1 min, 2,110 tests (incl. pyflakes and Hypothesis)
-python -m pytest gym_continuousDoubleAuction/test -q \
-    --ignore=gym_continuousDoubleAuction/test/integration
+# 1. the simulator and the training-side units: ~1 min, 2,112 tests (incl. pyflakes and Hypothesis);
+#    test/integration is left out by default (pyproject.toml addopts)
+python -m pytest gym_continuousDoubleAuction/test -q
 
 # 2. a random-agent episode through the whole env, no learning: a few seconds
 python -m gym_continuousDoubleAuction.CDA_rand --steps 200 --agents 4
@@ -109,7 +109,7 @@ python -m gym_continuousDoubleAuction.CDA_rand --steps 200 --agents 4
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 ```
 
-Expected: `2110 passed`, a line reading `completed 200 steps with 4 random agents.`, and
+Expected: `2112 passed`, a line reading `completed 200 steps with 4 random agents.`, and
 `185 passed`. `pytest` is the only runner that works; `python test_x.py` defines classes and exits
 ([10](10_testing.md) §0).
 
@@ -500,7 +500,7 @@ applied inside the module, so nothing extra is needed for it.
 What CI runs, so run it first ([10](10_testing.md) §7):
 
 ```bash
-python -m pytest gym_continuousDoubleAuction/test -q --ignore=gym_continuousDoubleAuction/test/integration
+python -m pytest gym_continuousDoubleAuction/test -q
 python gym_continuousDoubleAuction/CDA_rand.py
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 ```

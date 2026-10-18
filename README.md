@@ -64,7 +64,7 @@ environment:
 
 ```bash
 python -m gym_continuousDoubleAuction.CDA_rand --steps 200 --agents 4   # the exchange, random agents
-python -m pytest gym_continuousDoubleAuction/test -q                     # the test suite
+python -m pytest gym_continuousDoubleAuction/test -q                     # the unit tests
 python -m gym_continuousDoubleAuction.train.train                        # league self-play PPO
 ```
 
