@@ -156,6 +156,10 @@ driver advertising a *newer* CUDA than 12.8 runs the cu128 wheels fine. `nvidia-
 
 ## 19.4 GPU prerequisites
 
+The GPU is optional: it speeds up only the PPO update, and sampling stays on the CPU. Host CPU, RAM
+and disk needs are in [00](00_getting_started.md) §0.2. For this image, allow 10 GB of disk for
+the CUDA build of torch and the image layers.
+
 Verify passthrough before building anything — it isolates driver problems from build problems:
 
 ```bash

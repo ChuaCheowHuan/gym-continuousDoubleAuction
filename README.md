@@ -59,8 +59,9 @@ Each layer builds on the one below it. One environment step, end to end, is draw
 
 ## Quick start
 
-Python 3.12, after `pip install -r requirements.txt && pip install -e ".[dev]"` in a virtual
-environment:
+Python 3.12 on 64-bit Linux. Two CPU cores, 8 GB of RAM and 10 GB of disk are plenty, and no GPU
+is needed ([requirements](docs/00_getting_started.md)). After
+`pip install -r requirements.txt && pip install -e ".[dev]"` in a virtual environment:
 
 ```bash
 python -m gym_continuousDoubleAuction.CDA_rand --steps 200 --agents 4   # the exchange, random agents

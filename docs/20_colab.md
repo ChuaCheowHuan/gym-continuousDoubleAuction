@@ -122,20 +122,23 @@ A free Colab VM is **2 vCPUs** with a T4, which is exactly the ceiling the `gpu`
 written for: 2 env runners sampling in parallel, one in-process learner on the GPU.
 
 **The GPU is not the bottleneck, and you should not expect it to be.** The environment matches
-orders in Python; measured throughput is **~516 env-steps/sec on one core**, against a 256×256 MLP
+orders in Python and every agent's action comes from a policy forward pass, against a 256×256 MLP
 update a T4 finishes in seconds. At the configured `max_step=4096` and 4 episodes per iteration:
 
 | | Per iteration | 16 iterations (the configured run) |
 |---|---|---|
 | Env steps | 16,384 | 262,144 |
-| Sampling, 1 core (`cpu` set) | ~32 s | ~9 min |
-| Sampling, 2 runners (`gpu` set) | ~16 s | ~4 min |
+| Sampling, 1 core (`cpu` set) | ~146 s, measured (~112 steps/s) | ~40 min |
+| Sampling, 2 runners (`gpu` set) | ~75 s, estimated | ~20 min |
 
-Plus the PPO update and Ray overhead per iteration. **Budget 20–40 minutes** for the default
-16-iteration run — dominated by CPU sampling either way. The GPU buys the update, not the run.
+Plus the PPO update (12.5 s per iteration on a CPU, measured; seconds on a T4) and Ray start-up.
+**Budget 25–50 minutes** for the default 16-iteration run, dominated by CPU sampling either way.
+The GPU buys the update, not the run.
 
-> Those are extrapolations from a measured single-core rate on a 2-CPU box, not a timing taken on
-> Colab. Treat them as an order of magnitude.
+> The 1-core row was measured on a 4-vCPU Intel Xeon at 2.1 GHz with policy inference included
+> ([00](00_getting_started.md) §0.2). It replaces an earlier extrapolation of ~516 steps/s, which
+> was the environment alone with random actions and no policy. The 2-runner row halves it and has
+> not been timed on Colab; a Colab vCPU may be slower.
 
 **Session limits:** free Colab disconnects after ~90 minutes idle and caps sessions at ~12 hours.
 The default run fits comfortably; a longer one may not — see §20.5.

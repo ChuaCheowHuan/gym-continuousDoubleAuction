@@ -69,7 +69,8 @@ flowchart LR
 ## 26.1 Install
 
 Python **3.12** only. `setup.py` says `>=3.12`; CI tests 3.12 and nothing else, and scipy's pin
-has no 3.11 wheels ([10](10_testing.md) §7).
+has no 3.11 wheels ([10](10_testing.md) §7). For the minimum and recommended hardware (CPU, RAM,
+disk, GPU) and measured run times, see [00](00_getting_started.md) §0.2.
 
 ```bash
 git clone https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction.git
@@ -98,14 +99,14 @@ import and reads its config tree relative to the repository root
 Three checks, cheapest first. All three are what CI runs ([10](10_testing.md) §7).
 
 ```bash
-# 1. the simulator and the training-side units: ~1 min, 2,112 tests (incl. pyflakes and Hypothesis);
+# 1. the simulator and the training-side units: ~3 min, 2,112 tests (incl. pyflakes and Hypothesis);
 #    test/integration is left out by default (pyproject.toml addopts)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # 2. a random-agent episode through the whole env, no learning: a few seconds
 python -m gym_continuousDoubleAuction.CDA_rand --steps 200 --agents 4
 
-# 3. RLlib wiring, real Algorithm builds, save/restore, evaluate: ~3 min, 185 tests
+# 3. RLlib wiring, real Algorithm builds, save/restore, evaluate: ~3.5 min, 185 tests
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 ```
 

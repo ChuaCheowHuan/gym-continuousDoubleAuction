@@ -35,9 +35,9 @@ On a CPU-only machine, install the CPU torch wheel first ([26_runbook.md](26_run
 
 ```bash
 ruff format .                                                      # the suite fails on unformatted code
-python -m pytest gym_continuousDoubleAuction/test -q               # unit tests, ~1-2 minutes
+python -m pytest gym_continuousDoubleAuction/test -q               # unit tests, ~3 minutes
 python gym_continuousDoubleAuction/CDA_rand.py                      # CI's random-agent smoke run
-python -m pytest gym_continuousDoubleAuction/test/integration -q   # real RLlib builds, ~3-4 minutes
+python -m pytest gym_continuousDoubleAuction/test/integration -q   # real RLlib builds, ~3.5 minutes
 python tools/check_links.py                            # must report 0 broken links
 ```
 
