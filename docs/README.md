@@ -10,8 +10,10 @@ is, in depth, starts at [01_overview.md](01_overview.md).
 mindmap
   root(("gym-continuousDoubleAuction"))
     Orientation
+      00 Getting started
       01 Overview
       02 Architecture
+      28 Glossary
       17 Changelog
     Simulator
       03 Matching engine
@@ -32,6 +34,7 @@ mindmap
       19 Docker
       20 Colab
       10 Testing
+      Contributing
     Assessment
       12 RL researcher
       13 Financial trader
@@ -49,9 +52,11 @@ mindmap
 
 | # | Document | What it answers |
 |---|---|---|
+| 0 | [00_getting_started.md](00_getting_started.md) | From a clone to a first trained policy in four steps, and where to go next |
 | 1 | [01_overview.md](01_overview.md) | What this project is, the market it models, the research question, what an episode looks like |
 | 26 | [26_runbook.md](26_runbook.md) | Install, check, train, resume, inspect, probe and pretrain, step by step, with what to watch and a troubleshooting table |
 | 2 | [02_architecture.md](02_architecture.md) | The system at a glance, layer map, package tree, the mixin/MRO chain, the step lifecycle, config keys, data flow, tech stack |
+| 28 | [28_glossary.md](28_glossary.md) | The market, account, learning and project terms the documents use, each linked to the document that owns it |
 
 ### Core mechanisms (reference)
 
@@ -98,6 +103,12 @@ mindmap
 | 19 | [19_docker.md](19_docker.md) | The GPU training image: build and run, what each flag is for, GPU prerequisites, where artefacts land in an ephemeral container, troubleshooting |
 | 20 | [20_colab.md](20_colab.md) | Running the notebook on a free Colab VM: setup, the forced restart, what the free tier gives you, where output goes, resuming after a disconnect |
 
+### Contributing
+
+| Document | What it answers |
+|---|---|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to set up for development, the rules every change follows, the checks to run before pushing, how reviews file issues |
+
 ### Version 1
 
 | Document | What it is |
@@ -108,8 +119,11 @@ mindmap
 
 ## Reading paths
 
+**First run**
+[00](00_getting_started.md) → [26](26_runbook.md) → [18](18_configuration.md)
+
 **New to the codebase**
-[01](01_overview.md) → [02](02_architecture.md) → [03](03_matching_engine.md) →
+[01](01_overview.md) → [28](28_glossary.md) (keep it open) → [02](02_architecture.md) → [03](03_matching_engine.md) →
 [04](04_accounting.md) → [05](05_observation_space.md) → [06](06_action_space.md)
 
 **Deciding whether to build on this**
@@ -152,7 +166,8 @@ the cadence caveat that decides whether a result means anything) →
 [09](09_distributed_training.md) §5
 
 **Modifying the engine or accounts**
-[03](03_matching_engine.md) §4 (invariants) → [04](04_accounting.md) → [10](10_testing.md) §1–2
+[CONTRIBUTING](CONTRIBUTING.md) → [03](03_matching_engine.md) §4 (invariants) → [04](04_accounting.md) →
+[10](10_testing.md) §1–2
 
 **Trading / microstructure review**
 [13](13_perspective_financial_trader.md) → [03](03_matching_engine.md) → [04](04_accounting.md)
