@@ -4077,8 +4077,10 @@ Found reviewing the PR for section 87. `RunLock.acquire` read the lock, judged i
 Asked for: all documentation in one folder except `README.md`, a README that only gives the
 overview, and the diagrams revised.
 
-- **`doc/` is now `docs/`.** Every reference followed: code comments, configs, CI, the Docker
-  file, the notebook, `CLAUDE.md`, the skills, `tools/check_links.py` and its tests. The history
+- **`doc/` is now `docs/`.** Every reference followed: code comments, configs, the Docker file,
+  the notebook, `CLAUDE.md`, the skills, `tools/check_links.py` and its tests. Not
+  `.github/workflows/tests.yml`: two comments there still say `doc/15`, because the session's
+  GitHub token could not change workflow files. The history
   in this file and `docs/16` keeps its wording; `docs/README_v1.md` only had its absolute URLs
   updated so its images still resolve on master.
 - **`CONTRIBUTING.md` moved to `docs/`** and grew from a paragraph into the development guide:
