@@ -28,7 +28,7 @@ self-play PPO training pipeline on RLlib 2.56's new API stack.
 - **Research tooling.** Five selectable observation encoders, JEPA pretraining, a reward-free
   probe harness, Continual Backprop, evaluation and weight export.
 - **Reproducible and tested.** Every value lives in `config/*.json`. Runs can be seeded and
-  resumed from checkpoints. About 2,300 tests run in CI.
+  resumed from checkpoints. Over 2,000 tests run in CI.
 
 ## How it fits together
 

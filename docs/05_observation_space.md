@@ -661,7 +661,7 @@ mindmap
         S3-15 closed by 17 section 51
     Scaling
       7.5 size block was 80-250x the price block - fixed
-        sqrt(V / limit_max_size), ratio now 3.7x
+        square root of V / limit_max_size, ratio now 3.7x
         S2-2 closed by 17 section 37.4
       7.6 infinite observation bounds - fixed
         measured Box, every clip counted

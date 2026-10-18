@@ -138,26 +138,31 @@ flowchart TD
     B --> C["fill obs history with n_hist copies<br/>of the first snapshot"]
     C --> S
 
-    S{"step t"} --> S1["all N agents act on the same observation"]
+    S{"step t"} --> S1["every live agent acts on its own observation:<br/>the shared book + its private block"]
     S1 --> S2["shuffle arrival order"]
-    S2 --> S3["apply orders to the book one at a time"]
+    S2 --> S3["apply orders to the book:<br/>one at a time (sequential)<br/>or at one price (batch)"]
     S3 --> S4["settle fills on both sides"]
-    S4 --> S5["mark to market at the last tape price"]
-    S5 --> S6["build the next snapshot, reward, info"]
-    S6 --> D{"done?"}
+    S4 --> S5["mark to market:<br/>mid of a two-sided book, else last trade"]
+    S5 --> S5b["liquidate any account below<br/>maintenance margin"]
+    S5b --> S6["build the next snapshot, reward, info"]
+    S6 --> B1{"agent NAV <= 0?"}
+    B1 -->|"yes"| B2["that agent terminated,<br/>its orders pulled"]
+    B1 -->|"no"| D
+    B2 --> D{"episode over?"}
 
-    D -->|"every agent NAV <= 0"| T["terminated __all__"]
-    D -->|"t + 1 >= max_step"| U["truncated __all__"]
+    D -->|"every agent bankrupt"| T["terminated __all__"]
+    D -->|"t + 1 >= episode horizon"| U["truncated __all__"]
     D -->|"otherwise"| S
 
     T --> E["on_episode_end:<br/>NAV conservation check + metrics"]
     U --> E
 ```
 
-Note what the two exits mean. Truncation at `max_step` is the normal ending; termination needs
-**every** agent bankrupt, and per-agent flags are rebuilt as all-`False` each step, so a single
-bust agent keeps being stepped (§S2-4 in
-[15_findings_and_recommendations.md](15_findings_and_recommendations.md)).
+Note what the exits mean. Truncation at the horizon is the normal ending. The horizon is
+`max_step`, or a length drawn at reset when `episode_length_mode` is `random`. A bankrupt agent
+is terminated on the step its NAV reaches zero and stops being stepped; the episode as a whole
+terminates only when every agent is bankrupt ([02](02_architecture.md) §2.5,
+[15](15_findings_and_recommendations.md) S2-4).
 
 ---
 

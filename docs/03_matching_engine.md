@@ -58,24 +58,28 @@ empty book returns zero trades rather than raising.
 
 ```mermaid
 flowchart TD
-    A["Trader.place_order(type, side, size, price)"] --> B{"side is None?"}
-    B -->|"yes"| Z["no-op, empty trades"]
-    B -->|"no"| C{"_order_approved?"}
-    C -->|"NAV <= 0, or opening portion<br/>exceeds free cash"| REJ["num_rejected_step += 1<br/>return ([], [])"]
-    C -->|"yes"| D["order_step_placed = 1<br/>(market and limit only)"]
+    A["Trader.place_order(type, side, size, price, slot)"] --> B{"side is None?"}
+    B -->|"yes (pass)"| Z["no-op, empty trades"]
+    B -->|"no"| MM{"modify with no own<br/>order on that side?"}
+    MM -->|"yes"| UM["num_unmatched_step += 1<br/>return ([], [])"]
+    MM -->|"no"| C{"_order_approved?<br/>(a cancel is never cash-checked)"}
+    C -->|"NAV <= 0, frozen by a liquidation,<br/>or the opening portion exceeds free cash"| REJ["num_rejected_step += 1<br/>return ([], [])"]
+    C -->|"yes"| SMP["_prevent_self_match:<br/>cancel own orders the new one would cross"]
+    SMP --> D["order_step_placed = 1<br/>(market and limit only)"]
     D --> E{"type"}
 
     E -->|"market"| M["OrderBook.process_order<br/>sweep the opposite side"]
     E -->|"limit"| L{"already resting<br/>at this exact price?"}
-    E -->|"modify"| MO{"any resting order<br/>on this side?"}
-    E -->|"cancel"| CA{"order at this price?"}
+    E -->|"modify"| MO["the own order order_slot names<br/>(0 = oldest, k = k-th from the touch)"]
+    E -->|"cancel"| CA{"order_slot"}
 
     L -->|"no"| LP["process_limit_order<br/>cross, then rest the residue"]
     L -->|"yes"| UPS["upsert: treat as a modify<br/>of that order"]
-    MO -->|"no"| NOOP["silent no-op"]
-    MO -->|"yes, take the oldest (FIFO)"| UPS
-    CA -->|"no"| NOOP
-    CA -->|"yes"| CX["cancel_order + release the escrow"]
+    MO --> UPS
+    CA -->|"0"| CXA["cancel every own order on that side<br/>+ release their escrow"]
+    CA -->|"k"| CX["cancel the k-th own order from the touch<br/>+ release its escrow"]
+    CXA -.->|"none resting"| UM
+    CX -.->|"none resting"| UM
 
     UPS --> UNDO["cancel_cash_transfer:<br/>release 100% of the old order"]
     UNDO --> MOD["OrderBook.modify_order"]
@@ -89,6 +93,10 @@ flowchart TD
     LP --> R
     MOD --> R
 ```
+
+This is the sequential path, the default. Under `step_clearing: "batch"` the new market and limit
+orders are queued instead and clear together at one uniform price once every agent has acted;
+cancels and the cash check run as above ([06](06_action_space.md) §8).
 
 `market` never rests: `process_order` is called with the market path, so an unfilled remainder is
 simply not entered. Only `limit` and `modify` can leave a residue for the escrow step.

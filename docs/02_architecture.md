@@ -26,7 +26,7 @@ flowchart LR
         LOB["OrderBook<br/>price-time priority"]
         TRD["Trader<br/>approve, route, settle"]
         ACC["Account<br/>cash / position / NAV"]
-        MTM["mark_to_mkt<br/>last tape price"]
+        MTM["mark_to_mkt + liquidate<br/>mid, else last trade"]
         OBS["State_Helper<br/>snapshot + history"]
         REW["RewardModel<br/>six signed terms"]
     end
@@ -60,9 +60,12 @@ flowchart LR
 | red | `envs/agent/` and `envs/account/` — clearing. `mark_to_mkt` is called from `Exchg_Helper` and computed in `account/calculate.py` |
 
 The observation is `n_hist` 4 × a 48-float grid snapshot + a 41-float private block
-([05](05_observation_space.md) §1). All N agents act on the same observation, the arrival order is
-reshuffled every step, an episode terminates only when every agent is bankrupt and truncates at
-`max_step`, and the callback asserts total NAV equals total initial cash at every episode end.
+([05](05_observation_space.md) §1): every agent sees the same book and its own account. The arrival
+order is reshuffled every step. Accounts are marked at the mid of a two-sided book, else the last
+trade, and any account below maintenance margin is liquidated before the reward is computed. A
+bankrupt agent is terminated on its own; the episode terminates only when every agent is bankrupt
+and truncates at its horizon. The callback checks that total NAV plus fees equals total initial
+cash at every episode end.
 
 Full detail: §2.5 for the step lifecycle, §2.9 for the same picture with the distributed boundaries
 drawn in. This is the only copy of the diagram; the top-level [README](../README.md) shows only the
@@ -205,7 +208,7 @@ gym_continuousDoubleAuction/
 │   ├── inspect_latest_episode*.py        print the newest episode as a table or JSON
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
 └── test/                               2,110 unit tests
-    └── integration/                    172 tests that build real Algorithms
+    └── integration/                    185 tests that build real Algorithms
 ```
 
 `train/logger/`, `train/plotter/` and `train/storage/` — the legacy Ray-actor telemetry an earlier
@@ -340,6 +343,8 @@ share the observation layout and the book snapshot on every call. See
  4. seq_trades, seq_order_in_book = do_actions() # apply to book, settle fills - on arrival,
                                                  # or as one uniform-price batch (step_clearing)
  5. mark_to_mkt()                                # prev_nav ← nav; re-mark all accounts
+5b. liquidations = liquidate()                   # close out accounts below maintenance margin,
+                                                 # then record each account's peak NAV
  6. state_input = prep_next_state()              # post-action snapshot, push into history
  7. set_step_outputs(state_input)                # market snapshot, then obs / reward /
                                                  # terminated / truncated / info per trader,
@@ -364,21 +369,22 @@ sequenceDiagram
     E->>A: set_actions
     A-->>A: category 0 -> pass_agents, dropped
     A->>A: rand_exec_seq (self.np_random)
-    loop one order at a time
+    loop one order at a time (batch clearing queues them and clears once)
         A->>T: place_order
         T->>T: _order_approved (NAV > 0, opening portion cash-backed)
         alt refused
             T-->>C: num_rejected_step += 1
         else accepted
-            T->>B: market / limit / modify / cancel
+            T->>B: self-match prevention, then<br/>market / limit / modify / cancel
             B-->>T: trades + residue
             T->>C: settle both parties, escrow the residue
         end
     end
-    E->>C: mark_to_mkt (last tape price)
+    E->>C: mark_to_mkt (mid of a two-sided book, else last trade)
+    E->>C: liquidate (margin breach: book, then ADL)
     E->>S: prep_next_state (snapshot -> history deque)
-    E->>R: set_market_snapshot, then per trader:<br/>obs, reward, done, info
-    R-->>C: zero num_trades_step / num_passive_fills_step /<br/>order_step_placed / num_rejected_step
+    E->>R: set_market_snapshot, then per live trader:<br/>obs, reward, done, info
+    R-->>C: clear_step_counters (every *_step counter)
     E-->>M: obs, rewards, terminateds, truncateds, infos
 ```
 
@@ -392,13 +398,15 @@ turns the neural-network `Dict` output into an order dict:
 |---|---|
 | `category ∈ [0,8]` | `0` = pass; `1-4` = bid {market, limit, modify, cancel}; `5-8` = ask {…} |
 | `size ∈ [0,1]` | the order size as a fraction of the size ceiling; the **policy** samples it, the environment draws nothing |
-| `price ∈ [0,9]` | book depth level 1–10 to quote at |
+| `price ∈ [0,9]` | where to quote: ticks away from the reference price in `grid` mode, book depth level 1–10 in `levels` mode |
 | `price_offset ∈ {0,1,2}` | passive (−1 tick) / join / aggressive (+1 tick) |
+| `order_slot ∈ [0,4]` | which of the agent's own resting orders a `modify` or `cancel` targets, counted from the touch; 0 is "all on that side" for a cancel and "the oldest" for a modify |
 
 Size is `rint(size · mul)`, then `+ min_size` so it is at least 1, where `mul` is 49.5 for market
-orders and 499.5 for limit orders. Price is resolved
-against the **raw, unnormalised** book (`agg_LOB_raw`), falling back to "ghost" levels stepped off
-`last_price` when the requested depth level is empty. This raw/normalised split is deliberate and
+orders and 499.5 for limit orders. In `grid` mode the price is counted in ticks from the reference
+price, the same coordinate the observation's grid uses. In `levels` mode it is resolved against the
+**raw, unnormalised** book (`agg_LOB_raw`), falling back to "ghost" levels stepped off `last_price`
+when the requested depth level is empty. This raw/normalised split is deliberate and
 correct: observations are normalised for the network, actions are priced in absolute currency.
 
 Actions with `side is None` (category 0) are dropped before reaching the book. Full detail in
@@ -411,12 +419,17 @@ Actions with `side is None` (category 0) are dropped before reaching the book. F
 
 ```
 _order_approved()  ── reject if NAV ≤ 0, or if the *opening* portion of the
-                      order exceeds free cash (closing/covering is always free)
+                      order exceeds free cash (closing is free, except the loss
+                      realised by covering a short past its collateral)
+       │
+_prevent_self_match() ── cancel this trader's own orders the new one would cross
        │
        ├─ market → LOB.process_order
        ├─ limit  → _place_limit_order   (upsert: modifies an existing same-price order)
-       ├─ modify → _modify_limit_order  (oldest resting order on that side, FIFO)
-       └─ cancel → _cancel_limit_order  (+ release cash_on_hold)
+       ├─ modify → _modify_limit_order  (the own order order_slot names; a miss counts
+       │                                 num_unmatched_step)
+       └─ cancel → _cancel_limit_order  (by order_slot, 0 = all on that side;
+                                         + release cash_on_hold)
        │
        ├─ _process_trades(trades, agents)      settle both sides of each fill
        └─ order_in_book_passive_party(...)     reserve cash for any resting residue
@@ -453,8 +466,11 @@ order moves cash into `cash_on_hold` rather than out of the account, so
 
 `Exchg_Helper.mark_to_mkt`
 ([`exchg_helper.py`](../gym_continuousDoubleAuction/envs/exchg/exchg_helper.py))
-takes the **last trade price on the tape** as the mark, updates `self.last_price` (which is also
-the action-space price anchor), and re-marks every account. Per account
+marks every account at `mark_price()`: by default (`mark_price_source: "mid"`) the midpoint of a
+two-sided book, else the last trade on the tape, else a one-sided quote before anything has
+traded. A mark that needs a two-sided book cannot be moved by printing one trade at a chosen price
+([15](15_findings_and_recommendations.md) S2-5); `"last"` restores the old last-trade mark.
+`self.last_price` keeps tracking the last traded price, because it is the ghost-level anchor. Per account
 ([`calculate.py`](../gym_continuousDoubleAuction/envs/account/calculate.py)):
 
 ```
@@ -466,10 +482,8 @@ max_nav      = max(max_nav, nav)          # high-water mark, monotone within an 
 ```
 
 Note the ordering: `prev_nav ← nav` happens **inside** `mark_to_mkt`, so `nav − prev_nav` in the
-reward is a genuine one-step delta — but only on steps where the tape is non-empty. On a step
-with no trades the previous mark persists and `prev_nav` is not updated, so `nav_change` covers a
-multi-step gap. Before the first ever trade in an episode, NAV is never re-derived and rewards
-are exactly 0.
+reward is a genuine one-step delta. Only an empty book with nothing ever traded has no mark; then
+nothing is re-marked, and since nobody can hold a position yet, NAV cannot have moved.
 
 ### Step 6 — observation construction
 

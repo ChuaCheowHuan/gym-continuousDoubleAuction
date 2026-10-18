@@ -25,7 +25,7 @@ python -m pytest gym_continuousDoubleAuction/test -q \
     --ignore=gym_continuousDoubleAuction/test/integration
 
 # RLlib wiring, the real save/restore, the progress log and a real remote
-# runner (172 tests, builds real Algorithms)
+# runner (185 tests, builds real Algorithms)
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 
 # a single file
@@ -46,7 +46,7 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `1363 passed` on the unit half, `172 passed` on the integration half. There is no xfail: the one that pinned S1-1 XPASSed when S1-1 was fixed and was deleted (see §6.2.2).
+**[verified]** — `1363 passed` on the unit half, `172 passed` on the integration half, when this was first measured; the current totals are 2,110 and 185 (§ "File inventory" below). There is no xfail: the one that pinned S1-1 XPASSed when S1-1 was fixed and was deleted (see §6.2.2).
 
 ### File inventory
 
@@ -143,7 +143,7 @@ Counts re-measured with `--collect-only`.
 | `test_composition.py` | 24 | Reward, episode status, info and liquidation as composed components: out of the MRO, usable alone with explicit inputs, the env's old attributes still forwarded, and `SharedState` / `AccountState` naming real attributes (#152) |
 | `test_types.py` | 3 | `mypy` finds nothing in `envs/`, `ruff format --check` finds nothing to change, and the coverage floor stays configured (#148) |
 | `test_refactors.py` | 117 | The refactoring review's issues: `Account` initialised in one place and its step counters listed once, `_plain`'s call count, one order-book routine per operation, `place_order` and `parse_overrides` flat, `clear_batch` as four steps, `EnvSettings` and the generated `env_config`, the `train/` module split with its re-exports and import order, the callback as a `League` plus an `ActivityLog` plus the NAV audit and league statistics, a real pickle from before that split still loading, and the league and activity log working alone (#252-#258) |
-| **unit total** | **1,887** | |
+| **unit total** | **2,110** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -156,7 +156,7 @@ Counts re-measured with `--collect-only`.
 | `integration/test_cbp_wiring.py` | 46 | Continual Backprop inside a real `Algorithm`: composition over the encoder's Learner, a real save and restore, and the restore guard — §6.6.2 |
 | `integration/test_stateful_logp.py` | 7 | The real `lstm` and `mlp` modules: log-probability shape for 1, 2 and 3 agents, and every distribution getter returns the corrected class (#278) |
 | `integration/test_champion_guard_wiring.py` | 3 | A real run: every trainable module's trade count reaches the driver, the league state says whether a candidate was refused, and RLlib applies the decaying entropy bonus (S3-11) |
-| **integration total** | **172** | |
+| **integration total** | **185** | |
 
 > **Stale references in older docs.** `test_orderbook.py`, `repro_orderbook_crossed_book.py`,
 > `test_OrderBook.py`, `test_cda_nsp.py` and `test_orderbook_double_delete_order.py` do not exist.
@@ -266,7 +266,7 @@ mindmap
         the loader and every chart script on synthetic runs
       packaging 8
         gymnasium.make, visualize importable
-    Integration 172
+    Integration 185
       league wiring, 3 topologies
       real save and restore
       real progress.jsonl, live vf_explained_var guard

@@ -10,7 +10,7 @@ workers), [14_perspective_ai_engineer.md](14_perspective_ai_engineer.md) §5.4.
 **Status.** This used to be the weakest engineering area in the repository: no logging framework
 at all, ~86 `print()` calls, and a conservation check that reported a corrupt ledger by printing
 `FAILED`. Both are fixed - see §1.3 and §1.5. Coverage was the next gap and is largely closed:
-27 custom metrics (§1.2) and a typed, queryable per-step record (§1.1). What is left in §2 now needs
+the custom metrics of §1.2 and a typed, queryable per-step record (§1.1). What is left in §2 now needs
 new computation rather than aggregation of something already in hand.
 
 **Concurrency.** §1.10 is the answer to "is this thread safe or process safe", which is a separate
@@ -39,7 +39,7 @@ flowchart LR
 
     subgraph CH["Channels"]
         PARQ[("episode_data/run_id/<br/>episodes.pid.worker.n.parquet<br/>one row per episode-step-agent")]
-        MET["metrics_logger<br/>27 custom metrics"]
+        MET["metrics_logger<br/>custom metrics, §1.2"]
         LOGF[("run_dir/run.log<br/>+ run.pid.worker.log")]
         PROG[("run_dir/progress.jsonl<br/>one line per iteration")]
         CHK[("chkpt/iter_NNNNN<br/>+ league_state.json")]
@@ -174,8 +174,8 @@ in the repository writes a pickle any more.
 | `obs_clip_fraction` | Share of agent-steps whose observation had at least one element clipped to the declared Box bounds (S4-15); 0 unless a bound is wrong for the market | 10 | `on_episode_end` |
 | `nav_conservation_violations` | Episodes that failed the check | `reduce="sum"` | `on_episode_end` |
 | `nav_conservation_unchecked` | Episodes the check could not run on: exchange fees are on and the finished env's accounts were unreadable. A skip, not a pass; absent when every episode was checked | `reduce="sum"` | `on_episode_end` |
-| `reward_term_mean_<term>` × 5 | Mean of each signed reward contribution | 10 | `on_episode_end` |
-| `reward_term_var_share_<term>` × 5 | That term's share of the reward's variance | 10 | `on_episode_end` |
+| `reward_term_mean_<term>` × 6 | Mean of each signed reward contribution | 10 | `on_episode_end` |
+| `reward_term_var_share_<term>` × 6 | That term's share of the reward's variance | 10 | `on_episode_end` |
 | `episode_nav_mean` / `_min` / `_max` | Per-agent NAV at episode end | 10 | `on_episode_end` |
 | `mean_agent_drawdown` | Mean per-agent drawdown at episode end | 10 | `on_episode_end` |
 | `mean_abs_net_position` | Mean absolute inventory at episode end | 10 | `on_episode_end` |

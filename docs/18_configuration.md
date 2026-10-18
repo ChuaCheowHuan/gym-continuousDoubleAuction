@@ -60,7 +60,8 @@ mindmap
       logging
       visualize_paths
     cli_defaults.json
-      CDA_rand flags only
+      flag defaults for CDA_rand, probe,
+      pretrain, compare, evaluate, export
       train.py deliberately absent
     runtime_profiles.json
       where the run executes

@@ -109,7 +109,7 @@ python -m gym_continuousDoubleAuction.CDA_rand --steps 200 --agents 4
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 ```
 
-Expected: `1887 passed`, a line reading `completed 200 steps with 4 random agents.`, and
+Expected: `2110 passed`, a line reading `completed 200 steps with 4 random agents.`, and
 `185 passed`. `pytest` is the only runner that works; `python test_x.py` defines classes and exits
 ([10](10_testing.md) §0).
 
@@ -287,6 +287,33 @@ python -m gym_continuousDoubleAuction.train.train --restore --run-id run_runbook
 # a specific save, e.g. to roll back past a league that collapsed
 python -m gym_continuousDoubleAuction.train.train \
     --from-checkpoint results/chkpt/iter_00001 --run-id run_runbook --iters 4
+```
+
+How a save is written and how a restore picks one:
+
+```mermaid
+flowchart TD
+    subgraph SAVE["Every chkpt_freq iterations, and at the end"]
+        direction LR
+        S1["algo.save to iter_NNNNN.tmp"] --> S2["write league_state.json beside it<br/>(champions, layout stamp)"]
+        S2 --> S3["rename to iter_NNNNN<br/>(an interrupted save never looks complete)"]
+        S3 --> S4["prune to the chkpt_keep newest, by mtime"]
+    end
+    subgraph LOAD["train.train --restore / --from-checkpoint"]
+        L0["take the run lock on chkpt/<br/>(a second live run is refused)"] --> L1{"--from-checkpoint given?"}
+        L1 -->|"yes"| L2["exactly that save"]
+        L1 -->|"no"| L3["every iter_* save, newest first"]
+        L2 --> L4{"layout stamp matches<br/>this code?"}
+        L3 --> L4
+        L4 -->|"no"| X["refuse"]
+        L4 -->|"yes"| L5{"readable?"}
+        L5 -->|"no, pinned"| X
+        L5 -->|"no, newest-first"| L3b["fall back to the previous save"]
+        L3b --> L4
+        L5 -->|"yes"| L6["check config fits the weights,<br/>reconcile the league sidecar"]
+        L6 --> L7["continue to num_iters"]
+    end
+    SAVE ~~~ LOAD
 ```
 
 A restore rebuilds the algorithm from the checkpoint's own config and **ignores** most of
