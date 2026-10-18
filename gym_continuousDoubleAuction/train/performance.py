@@ -1,13 +1,13 @@
 """Risk-adjusted performance of one agent over one episode, from running sums.
 
-doc/15 S3-9: NAV, trade count and reward were recorded, and nothing a trader would
+docs/15 S3-9: NAV, trade count and reward were recorded, and nothing a trader would
 judge a strategy by was: no Sharpe or Sortino, no drawdown over the path (only the
 last step's), no hit rate, no turnover, no inventory statistics. The counters were
 discarded after the reward consumed them.
 
 `PerformanceTally` keeps O(1) state per agent - the same rule as the rest of the
 callback's tally (an episode is `max_step` x `num_agents` agent-steps and keeping them
-all to compute a handful of numbers is the memory cost doc/21 §2.2 is about) - and is
+all to compute a handful of numbers is the memory cost docs/21 §2.2 is about) - and is
 fed one `(nav, net_position)` per step.
 
 Definitions, so a number is not mistaken for a different one:

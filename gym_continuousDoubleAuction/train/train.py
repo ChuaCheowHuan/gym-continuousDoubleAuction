@@ -112,7 +112,7 @@ def train(cfg: TrainConfig) -> Tuple[Algorithm, dict]:
     """
     # Held from before the restore reads the folder until the run returns or raises, so a second
     # live run on the same `log_base_dir` is refused instead of overwriting this one's saves
-    # (doc/15 R-9, #179).
+    # (docs/15 R-9, #179).
     with RunLock(cfg.checkpoint_dir, cfg.run_id):
         algo, _callback = build_algo(cfg)
 

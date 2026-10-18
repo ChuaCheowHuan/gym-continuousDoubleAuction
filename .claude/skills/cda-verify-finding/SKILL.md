@@ -25,7 +25,7 @@ positives, unreachable, or already tracked. Never rest a fix or an issue on an u
    also counts traders who are legitimately under water; scope it before trusting it.
 6. **Classify:** confirmed, false positive, unreachable, real but already tracked, or cannot
    reproduce.
-   - Search first: `doc/15_findings_and_recommendations.md` and the open issues
+   - Search first: `docs/15_findings_and_recommendations.md` and the open issues
      (`search_issues` with the repo and a keyword).
    - Already tracked: add a comment to the existing issue, do not file a duplicate.
    - Cannot reproduce: file with the `question` label and say so.
@@ -45,4 +45,4 @@ positives, unreachable, or already tracked. Never rest a fix or an issue on an u
 ## Guardrails
 
 - Report false positives to the user, with the reason; do not drop them silently.
-- Do not edit `doc/16` or `doc/17` history to record a dropped finding. New facts get a new section.
+- Do not edit `docs/16` or `docs/17` history to record a dropped finding. New facts get a new section.

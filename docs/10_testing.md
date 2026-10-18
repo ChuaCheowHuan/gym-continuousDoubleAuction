@@ -133,10 +133,10 @@ Counts re-measured with `--collect-only`.
 | `test_cbp.py` | 70 | Continual Backprop's algorithm core, with no Ray and no `Algorithm` — §6.6.1 |
 | `test_probe_corpus_config.py` | 8 | The probe corpus follows the run's env config: `book_mode` and `n_hist` change its width, explicit arguments win, the caller's dict is untouched, and `train.compare` hands its overridden config to the corpus (#261) |
 | `test_compare.py` | 18 | The encoder comparison driver's aggregation: means and standard deviations across seeds, the separation rule and its three-seed floor, the rendered table and its caveats |
-| `test_export.py` | 20 | `train.export`'s pure half: which module is the winner, the no-champion and foreign-layout messages, and what the written record carries (doc/26 §26.9.2) |
+| `test_export.py` | 20 | `train.export`'s pure half: which module is the winner, the no-champion and foreign-layout messages, and what the written record carries (docs/26 §26.9.2) |
 | `test_lint.py` | 3 | The package, `tools/` and the skill scripts are pyflakes-clean, and the lint reaches the directories it claims to; any message fails the suite (S4-6, #249) |
 | `test_links.py` | 8 | `tools/check_links.py` reports no broken link in the docs, the skills and the repo files they name (#250) |
-| `test_s4_docs_and_tooling.py` | 17 | The documentation-and-tooling S4 fixes: the layout-version pointer, the CI command quoted in CLAUDE.md and doc/27, the built skills, stale texts, and every config key and flag being documented (#273, #266, #267, #251, #249) |
+| `test_s4_docs_and_tooling.py` | 17 | The documentation-and-tooling S4 fixes: the layout-version pointer, the CI command quoted in CLAUDE.md and docs/27, the built skills, stale texts, and every config key and flag being documented (#273, #266, #267, #251, #249) |
 | `test_s4_hardening.py` | 59 | The hardening and speed fixes: call-time account defaults, `settle_batch`'s pre-check, `flat_view`, the `info` fast path and the cached reference price (#247, #248) |
 | `test_pnl_split_and_markouts.py` | 39 | Realised and unrealised P&L against the NAV identity in random play, fill counters, forced fills excluded, mark-outs, and the callback and config wiring (#286) |
 | `test_logging_issues.py` | 40 | The logging review's issues under multiple env runners: the kept start of a run log, pruning of worker logs, Ray's own records in the run log (once per record), the driver learning each process's log path, the iteration broadcast to remote learners, a missed broadcast reading `-`, and a worker's console not repeating its file (#216-#221) |
@@ -303,7 +303,7 @@ mindmap
 | `test_modify_order_quantity_decrease` | Reducing 10 → 5 updates book volume without losing priority |
 | `test_modify_order_price_change` | Moving an order from 100 to 101 leaves `get_best_bid() == 101` — the order is correctly removed from one level and inserted into the other |
 
-> **Correction.** `doc/testing.md` described `test_modify_order_price_change` as
+> **Correction.** `docs/testing.md` described `test_modify_order_price_change` as
 > `@unittest.expectedFailure`, "documenting a known limitation rather than asserting
 > correctness". There is no `expectedFailure` anywhere in the repository; the test asserts and
 > passes.
@@ -1115,7 +1115,7 @@ raised `FileNotFoundError` on import while CI stayed green. The job builds the w
 carries `config/*.json`, installs it into a clean venv, and — from a directory with no checkout in
 it, so the import cannot resolve to the source tree — constructs an env and steps it.
 
-> **Correction.** `doc/known_issues.md` §4 and `doc/testing.md` §7 stated that "nothing enforces
+> **Correction.** `docs/known_issues.md` §4 and `docs/testing.md` §7 stated that "nothing enforces
 > the test suite — there is no CI". That has not been true since the Ray 2.56 migration.
 
 ---

@@ -13,7 +13,7 @@ Three kinds, and the comparison only means something with all three present:
                  Trained minus untrained is what training actually taught it.
 
 Reporting a trained encoder without its untrained twin is the mistake this
-module is shaped to prevent. `doc/18` §5.5 already warns that comparing
+module is shaped to prevent. `docs/18` §5.5 already warns that comparing
 architectures at one learning rate measures the learning rate; comparing a
 trained encoder against only `raw` has the same shape, and credits the
 architecture with whatever its initialisation was already worth.

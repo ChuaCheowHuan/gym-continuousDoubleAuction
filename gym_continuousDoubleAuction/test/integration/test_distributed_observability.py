@@ -5,7 +5,7 @@ on an **env runner** whenever `num_env_runners > 0` - which is the shape the GPU
 profile in `runtime_profiles.json` actually runs. The unit tests drive those
 hooks in-process, where a returned value is simply a returned value; none of
 them can tell whether the value reaches the driver, and two of the defects in
-doc/21 were exactly that it did not:
+docs/21 were exactly that it did not:
 
 * `strict_nav_check` raised inside the hook. On a remote runner RLlib's fault
   tolerance swallowed the raise and restarted the actor, so the run continued -
@@ -119,7 +119,7 @@ class TestMetricsCrossTheRunnerBoundary:
             assert pid in reported and reported[pid] >= 0.0
 
     def test_the_risk_adjusted_metrics_reach_the_driver(self):
-        """doc/15 S3-9, logged per module on the runner and compiled on the driver.
+        """docs/15 S3-9, logged per module on the runner and compiled on the driver.
         Max drawdown and the inventory statistics are defined for any agent that
         reported a NAV, so they must be present for the trainable modules; Sharpe
         and Sortino are left out when undefined, so they are not required."""
@@ -130,14 +130,14 @@ class TestMetricsCrossTheRunnerBoundary:
                 assert pid in reported and reported[pid] >= 0.0, (name, reported)
 
     def test_the_reward_decomposition_reaches_the_driver(self):
-        """doc/11 §2.4: the five terms were captured per step and never
-        aggregated, so the variance split doc/07 §6.4 prescribes could only be
+        """docs/11 §2.4: the five terms were captured per step and never
+        aggregated, so the variance split docs/07 §6.4 prescribes could only be
         computed after the fact from a file."""
         for term in REWARD_TERMS:
             assert f"reward_term_mean_{term}" in self.env_runners
 
     def test_the_account_state_reaches_the_driver(self):
-        """doc/11 §2.3 and §4 item 2."""
+        """docs/11 §2.3 and §4 item 2."""
         for key in (
             "episode_nav_mean",
             "episode_nav_min",

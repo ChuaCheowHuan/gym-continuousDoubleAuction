@@ -1,6 +1,6 @@
 """Which observation and action layout a checkpoint's weights belong to.
 
-doc/15 S4-19: nothing recorded the layout an observation was laid out in, so a
+docs/15 S4-19: nothing recorded the layout an observation was laid out in, so a
 change to it invalidated every existing checkpoint silently - the restore went
 through and the first `env.step` died on a tensor shape, or worse did not die
 and fed a network floats it had learned to read as something else. The stamp
@@ -37,7 +37,7 @@ def action_head_sizes() -> dict:
     `max_own_orders` sets `order_slot`, `k_rows` sets `price`, and so on: none of them changes
     the observation width the rest of the stamp protects, but each changes a head of the
     network. `test_layout_version` holds this equal to a real env's action space, so the two
-    cannot drift apart (doc/15 R-5, #175).
+    cannot drift apart (docs/15 R-5, #175).
     """
     act = constants("action_space")
     return {
@@ -52,7 +52,7 @@ def action_head_sizes() -> dict:
 def layout_stamp(book_mode=None) -> dict:
     """The current layout, as plain JSON-able data.
 
-    `book_mode` is the run's (doc/15 S3-15); None means the process default.
+    `book_mode` is the run's (docs/15 S3-15); None means the process default.
     It travels in the stamp because the two modes have different widths and
     meanings under the same version number.
     """
@@ -147,5 +147,5 @@ def check_layout_stamp(sidecar, path: str, book_mode=None) -> None:
             + "\nWeights trained on one layout do not fit another - the input "
             "and output widths changed, and even where they did not the "
             "floats mean something else. Start a fresh run (is_restore false, "
-            "or a new log_base_dir). See doc/15 S4-19 and doc/05 section 10."
+            "or a new log_base_dir). See docs/15 S4-19 and docs/05 section 10."
         )

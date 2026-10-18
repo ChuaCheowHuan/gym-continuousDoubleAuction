@@ -1,4 +1,4 @@
-"""doc/15 S3-11 against a real run, not a hand-built result.
+"""docs/15 S3-11 against a real run, not a hand-built result.
 
 The unit tests feed the champion check a dict shaped like RLlib's. That leaves
 two assumptions untested, and either breaking would leave the guard looking

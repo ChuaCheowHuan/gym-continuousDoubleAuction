@@ -1,6 +1,6 @@
 """The matching regime through the env: `matching_rule` and `step_clearing`.
 
-doc/06 section 8. The knobs are env-config keys (and TrainConfig fields), so
+docs/06 section 8. The knobs are env-config keys (and TrainConfig fields), so
 the regimes can be compared under identical seeds. `sequential` / `fifo` is the
 default and the behaviour to date. Under `batch` a step's new orders clear
 against the resting book at one uniform price: two agents whose orders cross

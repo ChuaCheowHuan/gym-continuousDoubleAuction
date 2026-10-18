@@ -104,7 +104,7 @@ class TestLayerDiscovery:
 
         29 = 9 category + 5 order_slot + 10 price + 3 price_offset + 2 for
         the one Box head's mean and log-std. It was 31 with the two size
-        heads (doc/15 S3-2, S3-3) and 26 before `order_slot` existed (S3-24).
+        heads (docs/15 S3-2, S3-3) and 26 before `order_slot` existed (S3-24).
         """
         by_name = {l.name: l for l in find_replaceable_layers(build_module(spaces))}
 
@@ -325,7 +325,7 @@ class TestReplacement:
         are multiplied by zero and reach the output not at all. What *does* move
         the function is dropping the old unit's contribution, which nothing
         makes zero - it is bounded only by selecting minimum utility. See
-        doc/16 section 16.13.
+        docs/16 section 16.13.
         """
         self._mature()
         x = torch.randn(16, self.layer.incoming.in_features)
@@ -772,7 +772,7 @@ class TestDDPUnwrapping:
 
 
 class TestAUnitIsJudgedOnEveryCallOfTheStep:
-    """doc/15 R-14 (#184): the hook combined nothing, so a layer that ran twice in one step
+    """docs/15 R-14 (#184): the hook combined nothing, so a layer that ran twice in one step
     (each MoE expert once per top-k slot; the JEPA trunk on the masked and the full input) was
     judged on its last call alone."""
 
@@ -842,7 +842,7 @@ class TestAUnitIsJudgedOnEveryCallOfTheStep:
 
 
 class TestMeanCompensation:
-    """doc/15 R-13 (#183): a replaced unit's mean contribution can be moved into the next bias.
+    """docs/15 R-13 (#183): a replaced unit's mean contribution can be moved into the next bias.
 
     Zeroing a unit's outgoing weights, as the papers do, removes whatever steady glow it fed
     the next layer. A saturated tanh unit looks useless to `overall` utility (its activation
@@ -924,7 +924,7 @@ class TestMeanCompensation:
 
 
 class TestContinualBackpropNeedsOneLearner:
-    """doc/15 R-12 (#182): replacements are chosen per learner, outside the gradient.
+    """docs/15 R-12 (#182): replacements are chosen per learner, outside the gradient.
 
     Several learners keep one set of weights by averaging gradients. CBP overwrites weights
     directly, each learner from its own minibatch, so two learners can replace different units

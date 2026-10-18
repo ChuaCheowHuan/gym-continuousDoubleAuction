@@ -1,4 +1,4 @@
-"""Check relative links and heading anchors in README.md, doc/*.md, CLAUDE.md,
+"""Check relative links and heading anchors in README.md, docs/*.md, CLAUDE.md,
 CONTRIBUTING.md and .claude/skills/*/SKILL.md.
 
 Usage: python tools/check_links.py [repo_root]   (default: the repository root)
@@ -38,11 +38,11 @@ def anchors(path):
 
 
 def main():
-    docs = os.path.join(ROOT, "doc")
+    docs = os.path.join(ROOT, "docs")
     files = [os.path.join(ROOT, "README.md")] + [
         os.path.join(docs, f) for f in sorted(os.listdir(docs)) if f.endswith(".md")
     ]
-    # The project's instruction files and the skills link into doc/ too (issue #268);
+    # The project's instruction files and the skills link into docs/ too (issue #268);
     # each is optional, so a tree without them (a test fixture) is not an error.
     files += [
         p

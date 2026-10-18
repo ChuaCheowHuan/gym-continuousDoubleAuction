@@ -2,7 +2,7 @@
 
 This replaced a `pickle.dump` of every step of every episode, performed inline
 in `on_episode_end` on the env runner. Four properties are under test here, and
-each of them is a defect that shipped (doc/21 §2.2-2.4, §6):
+each of them is a defect that shipped (docs/21 §2.2-2.4, §6):
 
 * it writes a **typed, declared schema** rather than a pickle whose only reader
   is Python with this package importable;
@@ -119,7 +119,7 @@ class TestWhatIsWritten:
         assert sorted(df["agent_id"].unique()) == ["agent_0", "agent_1", "agent_2"]
 
     def test_the_row_carries_the_run_and_the_iteration(self, tmp_path):
-        """doc/11 §3 listed "the files carry no timestamp or iteration
+        """docs/11 §3 listed "the files carry no timestamp or iteration
         metadata" as a persistence problem: correlating an episode with
         training progress meant sorting filenames by mtime."""
         from gym_continuousDoubleAuction.logging_setup import set_iteration
@@ -149,7 +149,7 @@ class TestWhatIsWritten:
 
     def test_nav_is_kept_both_exactly_and_numerically(self, tmp_path):
         """`info["NAV"]` is a string so the conservation check can parse it back
-        with Decimal (doc/11 §2.6). Keeping only the float would discard that;
+        with Decimal (docs/11 §2.6). Keeping only the float would discard that;
         keeping only the string would make the column need a cast to be usable.
         """
         recorder = EpisodeRecorder(str(tmp_path))
@@ -325,7 +325,7 @@ class TestBounds:
     def test_an_episode_that_never_ends_is_evicted(self, tmp_path):
         """A force-reset discards in-flight episodes without calling
         `on_episode_end`, so rows keyed by episode id and released only there
-        are held for the life of the worker (doc/21 §3.2)."""
+        are held for the life of the worker (docs/21 §3.2)."""
         recorder = EpisodeRecorder(str(tmp_path), max_live_episodes=3)
         for i in range(10):
             recorder.record_step(FakeEpisode(f"ep_{i}"), 0)
@@ -636,7 +636,7 @@ class TestTheCallbackFlushesAtTheEndOfASample:
 
 
 class TestTheLiveEpisodeCapFollowsTheRunnersEnvs:
-    """doc/15 R-10 (#180): the recorder buffers at most `max_live_episodes` unfinished episodes
+    """docs/15 R-10 (#180): the recorder buffers at most `max_live_episodes` unfinished episodes
     (a literal 8 in `EpisodeRecorder.__init__`), and the callback never set it. A runner that
     plays more envs at once than that had episodes standing in the corridor, dropped from the
     record. The floor is now a config key, and the recorder is never smaller than the number of

@@ -20,7 +20,7 @@ permuting the book levels moved the latent by 1.8e-07 and reversing time by
 discarded exactly what it exists to preserve and an lstm-vs-transformer
 comparison measured something other than the architecture. It now carries the
 transformer's two positional embeddings *and* a token-wise nonlinearity, which
-is what makes them count - see doc/15 S2-10 and the note in `token_embed`.
+is what makes them count - see docs/15 S2-10 and the note in `token_embed`.
 
 Why there is no custom Encoder class here
 -----------------------------------------

@@ -263,7 +263,7 @@ mindmap
   root(("JEPA here"))
     A · Probe
       reward-free encoder metric
-      answers doc/10's open gap
+      answers docs/10's open gap
       no training changes
     B · Masked-latent aux loss
       new `jepa` encoder_type

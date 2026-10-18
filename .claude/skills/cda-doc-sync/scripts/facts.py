@@ -127,7 +127,7 @@ for dirpath, dirnames, filenames in os.walk("gym_continuousDoubleAuction"):
     tree += [os.path.join(dirpath, f) for f in filenames if f.endswith((".py", ".ipynb"))]
 facts["files"] = sorted(tree)
 
-# Code size, as doc/14 states it: every tracked Python file in the repository.
+# Code size, as docs/14 states it: every tracked Python file in the repository.
 # `git ls-files` rather than a walk, so a gitignored build copy or a virtualenv
 # is not counted; a walk is the fallback outside a checkout.
 try:

@@ -6,7 +6,7 @@ always) or `"random"` (each reset draws the horizon from
 horizon is reported once, in the reset infos, and never shown to the policy:
 `time_left` counts against `time_left_horizon`, the latest possible end, so an
 agent cannot learn the exact end of the game - the end-game is where a known
-horizon lets inventory be dumped for free. doc/18 section 3.4.
+horizon lets inventory be dumped for free. docs/18 section 3.4.
 """
 
 import dataclasses

@@ -6,7 +6,7 @@ checkpoint's own config while silently discarding config edits, restarted the
 driver's iteration count at zero, and handed the caller a freshly built callback
 holding an empty champion pool. These tests pin the fixes.
 
-See doc/20_colab.md 20.5 and doc/15_findings_and_recommendations.md S3-8/S3-11.
+See docs/20_colab.md 20.5 and docs/15_findings_and_recommendations.md S3-8/S3-11.
 """
 
 import json

@@ -129,7 +129,7 @@ explicitly, so the config lookup is what a direct instantiation gets.
 | `num_trainable_policies` | `num_trained_agents` = 2 | Trainable policies (agents 0 … k−1) |
 | `num_random_policies` | `num_agents - num_trained_agents` = 6 | Frozen baselines (agents k … n−1) |
 | `std_dev_multiplier` | **1.5** | Threshold multiplier for `mean + N × std` (was 0.1) |
-| `promotion_reference` | `pooled` | `excluding_baselines` computes the threshold over the trainable modules and champions only (doc/15 S3-12); falls back to pooled while that set is too small to clear |
+| `promotion_reference` | `pooled` | `excluding_baselines` computes the threshold over the trainable modules and champions only (docs/15 S3-12); falls back to pooled while that set is too small to clear |
 | `min_champion_trades` | 1.0 | Mean trades per episode, over the iteration, a candidate needs to be promoted; 0 disables the guard |
 | `max_champions` | 8 | Maximum champions in the league (rolling window) |
 | `min_iterations_between_champions` | 2 | Cooldown between snapshots |
@@ -306,7 +306,7 @@ that is over a lowered `max_champions` ([15](15_findings_and_recommendations.md)
 calling `Algorithm.remove_module` (so the refreshed mapping function cannot return a module about
 to be deleted), and passes `new_agent_to_module_mapping_fn` so remote runners are updated too.
 
-> **Correction to the older documentation.** `doc/known_issues.md` §3.9 stated that removed
+> **Correction to the older documentation.** `docs/known_issues.md` §3.9 stated that removed
 > modules are never freed and league memory grows monotonically. That was fixed: the callback now
 > calls `Algorithm.remove_module`, with the previous behaviour described in a code comment.
 > Failure to remove is caught and reported as non-fatal — training stays correct, the memory is

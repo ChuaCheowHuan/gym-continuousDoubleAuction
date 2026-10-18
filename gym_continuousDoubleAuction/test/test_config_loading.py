@@ -6,7 +6,7 @@ merge could get wrong: the one key that changes name across the env boundary
 (`num_agents` -> `num_of_agents`), and the two keys that had no `TrainConfig`
 field at all (`initial_price_min` / `initial_price_max`).
 
-See doc/18_configuration.md section 1.
+See docs/18_configuration.md section 1.
 """
 
 import dataclasses

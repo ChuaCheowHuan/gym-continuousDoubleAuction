@@ -933,7 +933,7 @@ Two choices in there are worth stating outright:
 - **`num_env_runners=2` under the gpu set.** Sampling is the bottleneck here, not the update — the
   environment matches orders in Python, measured at ~500 env-steps/sec on one core, against a PPO
   update the GPU finishes in seconds. This is the `num_env_runners=N, num_learners=0` shape
-  [doc/09 §5](09_distributed_training.md) recommends for exactly this case. A test asserts
+  [docs/09 §5](09_distributed_training.md) recommends for exactly this case. A test asserts
   `num_env_runners × num_cpus_per_env_runner ≤ num_cpus`, because runners are actors: ask for more
   CPUs than `ray.init()` was given and they stay pending forever rather than failing.
 
@@ -1212,7 +1212,7 @@ optimiser is bit-for-bit the one every existing run and checkpoint was built wit
 | `cbp_scope` | `"feedforward"` | Which units are replaceable: `feedforward`, or `recurrent` to add the top layer of an LSTM core (the `lstm` encoder has nothing replaceable under `feedforward`) |
 | `cbp_fire_on` | `"adam_step"` | `adam_step` (the papers' placement) or `iteration` |
 | `cbp_reset_optimizer_state` | `true` | Zero Adam's moments for replaced weights |
-| `cbp_compensate_mean` | `false` | Move a replaced unit's mean contribution into the next layer's bias before its outgoing weights are zeroed, so the output does not jump ([15](15_findings_and_recommendations.md) R-13). Off keeps the papers' rule, which `doc/16` §16.13 measured; run `train.compare` with it on and off before changing the default. Feed-forward layers only. Unrestorable while CBP is active |
+| `cbp_compensate_mean` | `false` | Move a replaced unit's mean contribution into the next layer's bias before its outgoing weights are zeroed, so the output does not jump ([15](15_findings_and_recommendations.md) R-13). Off keeps the papers' rule, which `docs/16` §16.13 measured; run `train.compare` with it on and off before changing the default. Feed-forward layers only. Unrestorable while CBP is active |
 | `cbp_dead_unit_threshold` | `0.01` | Mean \|activation\| below which a unit counts as dead, metric only. Cannot fire on a tanh network, which does not die toward zero |
 | `cbp_metrics_every_n_updates` | `10` | How often to compute the metrics; the effective rank runs an SVD |
 

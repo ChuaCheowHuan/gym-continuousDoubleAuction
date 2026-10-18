@@ -90,7 +90,7 @@ def _collect(encoder) -> Dict[str, Any]:
 class CDAPPOTorchRLModule(DefaultPPOTorchRLModule):
     """The stock PPO module, plus the action mask and MoE stats.
 
-    Two additions to its base. The observation's action mask (doc/06 section
+    Two additions to its base. The observation's action mask (docs/06 section
     6) is applied to the category logits on every forward pass - inference,
     exploration and training alike, so the distribution the sampler draws from
     and the one the loss is computed on are the same masked distribution. And

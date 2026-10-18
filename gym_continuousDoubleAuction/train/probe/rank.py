@@ -22,7 +22,7 @@ passivity the joint optimum - so an agent converging on doing nothing visits an
 ever narrower set of book states, and the rank of its activations falls for
 reasons that have nothing to do with the network.
 
-That is not a hypothetical. Measured on this repo (doc/16 §16.16), over ~18,000
+That is not a hypothetical. Measured on this repo (docs/16 §16.16), over ~18,000
 optimiser steps:
 
     rank on the training minibatch      97.1 -> 73.2      -24.6%
@@ -179,6 +179,6 @@ def render(table: Mapping[str, RankRow], feature_names: Sequence[str]) -> str:
         "  Measured on a corpus that does not change while the encoder does, which is what",
         "  makes it comparable across checkpoints. The Learner's own `cbp_batch_effective_rank`",
         "  is computed on the training minibatch and moves with the policy's input distribution",
-        "  as well as with the network - see doc/23 and doc/16 §16.16.",
+        "  as well as with the network - see docs/23 and docs/16 §16.16.",
     ]
     return "\n".join(lines)

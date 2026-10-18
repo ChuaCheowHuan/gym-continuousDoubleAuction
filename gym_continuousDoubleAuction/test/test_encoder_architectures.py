@@ -283,7 +283,7 @@ def test_config_block_keys_are_all_recognised(spaces, encoder_type):
 class TestEncodersReadTheGridAsAGrid:
     """No selectable encoder may be blind to the order of the book grid.
 
-    doc/15 S2-10. The shipped `lstm` encoder was `tokenize -> Linear ->
+    docs/15 S2-10. The shipped `lstm` encoder was `tokenize -> Linear ->
     LayerNorm -> mean`, and a mean of per-token linear projections is a linear
     function of the token *sum*: permutation-invariant across both axes.
     Measured on the real observation space, permuting the book levels moved its
@@ -970,7 +970,7 @@ class TestJEPA:
 
         The collapse is forced on the ONLINE path, because that is what the
         statistic now measures. It used to be read off the no-grad `target`,
-        which is doc/15 S2-9: a zeroed *target* trunk made the number fall
+        which is docs/15 S2-9: a zeroed *target* trunk made the number fall
         while the thing being trained was perfectly healthy, and - worse - the
         hinge built from it carried no gradient at all.
         """
@@ -996,7 +996,7 @@ class TestJEPA:
         assert float(stats["aux_loss"].detach()) > float(stats["predict_loss"])
 
     def test_the_variance_hinge_actually_carries_a_gradient(self, monkeypatch, spaces):
-        """doc/15 S2-9, isolated so only the hinge can explain the result.
+        """docs/15 S2-9, isolated so only the hinge can explain the result.
 
         The hinge was computed from `target`, built under `torch.no_grad()` by
         a trunk with `requires_grad_(False)`. `loss + coeff * penalty` still

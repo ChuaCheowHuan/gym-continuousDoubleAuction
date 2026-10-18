@@ -101,7 +101,7 @@ def build_features(
 def main(argv=None):
     p = argparse.ArgumentParser(
         description="Score observation encoders on reward-free microstructure "
-        "targets. See doc/23_probe_harness.md.",
+        "targets. See docs/23_probe_harness.md.",
     )
     p.add_argument(
         "--encoders",

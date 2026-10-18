@@ -14,7 +14,7 @@ The second is a policy quoting past its cash every step. `order_step_placed`
 cannot express it: that flag is 0 both for an agent that never tried and for
 one whose order was rejected.
 
-See doc/11 2.2 and 4.
+See docs/11 2.2 and 4.
 """
 
 import os
@@ -306,7 +306,7 @@ class TestBookkeeping:
     def test_a_tally_for_an_episode_that_never_ends_is_dropped(self):
         """A force-reset discards in-flight episodes without calling
         on_episode_end, so a dict pruned only there grows for the life of the
-        worker (doc/21 §3.2)."""
+        worker (docs/21 §3.2)."""
         h = ActivityHarness()
         limit = h.callback._MAX_LIVE_EPISODES
 
@@ -323,10 +323,10 @@ class TestBookkeeping:
 class TestRewardDecomposition:
     """The five signed contributions, reduced to something a run can watch.
 
-    doc/11 §2.4 closed the capture half of this - the terms are in `info` and
+    docs/11 §2.4 closed the capture half of this - the terms are in `info` and
     sum exactly to `reward` - and left the aggregation open: "the terms are per
     step and per agent, so a per-episode variance share is a reduction a
-    consumer still has to perform". doc/07 §6.4 is the reason it is a variance
+    consumer still has to perform". docs/07 §6.4 is the reason it is a variance
     share and not just a mean: what matters is which term is *driving* the
     signal, and a term with a large constant offset drives nothing.
     """
@@ -462,7 +462,7 @@ class TestRewardDecomposition:
 
 
 class TestEndOfEpisodeAccountState:
-    """doc/11 §2.3 and §4 item 2: captured per step, never reduced."""
+    """docs/11 §2.3 and §4 item 2: captured per step, never reduced."""
 
     def _end(self, h, navs, **fields):
         last_info = {}
@@ -510,7 +510,7 @@ class TestEndOfEpisodeAccountState:
 
 
 class TestMakerFillRatio:
-    """The maker share of fills — doc/13 §7's market-making uptake.
+    """The maker share of fills — docs/13 §7's market-making uptake.
 
     Two things had to be got right, and the first version got neither.
 
@@ -603,7 +603,7 @@ class TestMakerFillRatio:
 
 
 class TestUnmatchedActionFraction:
-    """doc/15 S4-14, the other half: a modify or cancel with nothing to act on.
+    """docs/15 S4-14, the other half: a modify or cancel with nothing to act on.
 
     The third silent no-op. Its fraction is emitted beside the pass and
     rejection fractions so the three together bound how much of an episode's

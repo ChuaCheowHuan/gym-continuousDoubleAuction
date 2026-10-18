@@ -1,4 +1,4 @@
-"""doc/15 S4-19: a checkpoint records the layout its weights were trained on.
+"""docs/15 S4-19: a checkpoint records the layout its weights were trained on.
 
 `train.save_checkpoint` writes `layout_stamp()` into `league_state.json`, and
 `train.build_algo` runs `check_layout_stamp` before handing a candidate to
@@ -99,7 +99,7 @@ def test_save_writes_it(tmp_path, monkeypatch):
 
 
 class TestTheStampRecordsHowWideEachActionHeadIs:
-    """doc/15 R-5 (#175): `max_own_orders` sets the `order_slot` head's width, and the stamp
+    """docs/15 R-5 (#175): `max_own_orders` sets the `order_slot` head's width, and the stamp
     listed only the head names. Two checkpoints with the same label could be trained for
     different heads, and the observation width (which the label's other fields protect) is
     identical, so only the action head differed."""

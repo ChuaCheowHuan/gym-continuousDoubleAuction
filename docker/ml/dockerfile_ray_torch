@@ -65,7 +65,7 @@ RUN pip install \
 
 # The project's own dependency list, copied in on its own so this layer is
 # cached until requirements.txt changes rather than on every source edit. It
-# used to be a second, hand-maintained copy of that list here (doc/15 S4-8),
+# used to be a second, hand-maintained copy of that list here (docs/15 S4-8),
 # which is how a pin drifts. torch is already satisfied by the CUDA wheel
 # above, so `torch>=2.13.0,<3` in the file resolves to it and pulls no CPU
 # build. Ray 2.56.x hard-pins gymnasium==1.2.2 - do not bump it independently.

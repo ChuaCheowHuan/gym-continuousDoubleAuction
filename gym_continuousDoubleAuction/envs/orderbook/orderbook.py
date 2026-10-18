@@ -76,7 +76,7 @@ class _Side(NamedTuple):
 
 class OrderBook(object):
     #: How the quantity that reaches one price level is split among the orders
-    #: resting there (doc/06 section 8). `fifo` is price-time priority: the
+    #: resting there (docs/06 section 8). `fifo` is price-time priority: the
     #: oldest order fills first, the default and what every continuous double
     #: auction this simulates runs. `pro_rata` splits it in proportion to
     #: resting size, largest-remainder rounded to whole contracts, with the
@@ -105,7 +105,7 @@ class OrderBook(object):
                 f"matching_rule must be one of {self.MATCHING_RULES}; got {matching_rule!r}"
             )
         self.matching_rule = matching_rule
-        # Batch clearing (doc/06 section 8): while `batching`, a new market or
+        # Batch clearing (docs/06 section 8): while `batching`, a new market or
         # limit order is queued instead of matched, and `clear_batch` clears
         # the queue against the book at one uniform price.
         self.batching = False
@@ -266,7 +266,7 @@ class OrderBook(object):
         return quantity_to_trade, trades
 
     # ------------------------------------------------------------------
-    # Batch clearing (doc/06 section 8)
+    # Batch clearing (docs/06 section 8)
     # ------------------------------------------------------------------
 
     def begin_batch(self):
@@ -548,7 +548,7 @@ class OrderBook(object):
 
         A call auction has no aggressor, and the order flow the observation carries
         (`signed_volume`, `trade_direction`) needs a sign. Always naming the buyer made 53% of
-        batch trades buyer-initiated by construction (doc/15 R-1, #171). A tick rule instead:
+        batch trades buyer-initiated by construction (docs/15 R-1, #171). A tick rule instead:
         a clearing price above the reference (the pre-batch mid) was pushed there by buyers, one
         below it by sellers, and an unchanged price repeats the last direction - the buyer
         until there has been one, which keeps the old answer where nothing is known.

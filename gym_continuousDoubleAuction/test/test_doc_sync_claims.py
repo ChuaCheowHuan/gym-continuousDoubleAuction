@@ -46,13 +46,13 @@ INVENTORY = (
 
 
 def _run(tmp_path, *, inventory=INVENTORY, facts=None, prose=""):
-    (tmp_path / "doc").mkdir()
+    (tmp_path / "docs").mkdir()
     (tmp_path / "README.md").write_text("readme\n")
-    (tmp_path / "doc" / "10_testing.md").write_text(inventory)
-    (tmp_path / "doc" / "14_x.md").write_text(
+    (tmp_path / "docs" / "10_testing.md").write_text(inventory)
+    (tmp_path / "docs" / "14_x.md").write_text(
         "> 1,234 lines across 12 Python files, with 10 unit tests\n" + prose
     )
-    (tmp_path / "doc" / "18_config.md").write_text("`alpha` `beta` `--gamma`\n")
+    (tmp_path / "docs" / "18_config.md").write_text("`alpha` `beta` `--gamma`\n")
     path = tmp_path / "facts.json"
     path.write_text(json.dumps(facts or FACTS))
     out = subprocess.run(
@@ -121,7 +121,7 @@ class TestConfigKeysAndFlags:
     def test_a_flag_that_is_a_prefix_of_a_documented_one_is_not_covered_by_it(self, tmp_path):
         facts = {**FACTS, "flags": {"train.train": ["--gamma"]}}
         _run(tmp_path, facts=facts, prose="uses `--gamma-ray` only\n")
-        (tmp_path / "doc" / "18_config.md").write_text("`alpha` `beta`\n")
+        (tmp_path / "docs" / "18_config.md").write_text("`alpha` `beta`\n")
         out = subprocess.run(
             [
                 sys.executable,

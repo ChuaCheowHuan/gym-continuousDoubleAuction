@@ -382,7 +382,7 @@ def encoder_fingerprint(
     form of both sides rather than the raw values.
 
     **The spec is merged against the registry's defaults before it is hashed**,
-    which is doc/15 S3-22. Hashing the raw spec got it wrong in both
+    which is docs/15 S3-22. Hashing the raw spec got it wrong in both
     directions, and the two failures are opposites:
 
     * A false mismatch. A config that states a value equal to its registered

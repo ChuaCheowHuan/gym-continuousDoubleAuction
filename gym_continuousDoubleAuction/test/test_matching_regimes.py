@@ -1,6 +1,6 @@
 """Pluggable matching in the book: the allocation rule and batch clearing.
 
-doc/06 section 8. Two knobs on `OrderBook`. `matching_rule` decides how the
+docs/06 section 8. Two knobs on `OrderBook`. `matching_rule` decides how the
 quantity reaching one price level is split among the orders resting there:
 `fifo` (price-time priority, the default) or `pro_rata` (in proportion to
 size, largest-remainder rounded, residue in time order). Batch clearing
@@ -97,7 +97,7 @@ class TestAllocationRule:
 
 
 class TestWhoInitiatesAnAuctionTrade:
-    """doc/15 R-1 (#171): a trade with both sides in the batch is signed by a tick rule.
+    """docs/15 R-1 (#171): a trade with both sides in the batch is signed by a tick rule.
 
     Nobody is the aggressor in a call auction, and the order flow the observation carries
     (`signed_volume`, `trade_direction`) needs a sign. Naming the buyer every time made 53%
@@ -284,7 +284,7 @@ class TestPriceImprovementEscrow:
     the escrow has to be re-based to the trade price before the release, or
     `cash_on_hold` drifts - it went a few contracts negative on 3.4% of
     agent-steps under batch random play, which the observation bounds' clip
-    counter caught (doc/16 section 16.26).
+    counter caught (docs/16 section 16.26).
     """
 
     def _cleared(self, side, limit, size=5):

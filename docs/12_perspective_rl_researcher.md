@@ -449,7 +449,7 @@ whose trade count is ~0. **Done (S3-11):** entropy 0.01 falling to 0.001, the mu
 | `minibatch_size` | `None` → RLlib default 128 | [`train.py`](../gym_continuousDoubleAuction/train/train.py) |
 | Gradient steps / iteration | ≈ 16384/128 × 4 = **512** | derived |
 | `lr` | 5e-5, constant | [`train.py`](../gym_continuousDoubleAuction/train/train.py) |
-| `gamma` | 0.99 (RLlib default) → effective horizon ~100 steps; **now 0.999** (config key, doc/15 S3-13) | **[verified]** |
+| `gamma` | 0.99 (RLlib default) → effective horizon ~100 steps; **now 0.999** (config key, docs/15 S3-13) | **[verified]** |
 | `lambda_` | 1.0 (RLlib default) → Monte-Carlo advantages; **now 0.95** (config key) | **[verified]** |
 | Default run length | 16 iterations ≈ **262k env steps** | [`train.py`](../gym_continuousDoubleAuction/train/train.py) |
 

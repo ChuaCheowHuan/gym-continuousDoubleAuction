@@ -3,7 +3,7 @@
 CLAUDE.md rule 7 says `tools/check_links.py` must report 0 broken links, and nothing
 ran it: a broken link or a renamed heading was caught by whoever remembered. The CI
 workflow cannot be edited from the sessions that maintain this repository (no
-`workflow` scope, doc/17 §37.6), so it runs here, in the job that already runs the
+`workflow` scope, docs/17 §37.6), so it runs here, in the job that already runs the
 suite - the same arrangement as `test_lint.py`.
 """
 
@@ -39,38 +39,38 @@ class TestTheCheckerItself:
 
     @staticmethod
     def _tree(tmp_path, readme, **extra):
-        (tmp_path / "doc").mkdir()
+        (tmp_path / "docs").mkdir()
         (tmp_path / "README.md").write_text(readme)
-        (tmp_path / "doc" / "a.md").write_text("# Alpha\n\n## Beta section\n")
+        (tmp_path / "docs" / "a.md").write_text("# Alpha\n\n## Beta section\n")
         for name, text in extra.items():
             (tmp_path / name.replace("__", "/")).parent.mkdir(parents=True, exist_ok=True)
             (tmp_path / name.replace("__", "/")).write_text(text)
         return tmp_path
 
     def test_a_good_link_and_anchor_pass(self, tmp_path):
-        root = self._tree(tmp_path, "[a](doc/a.md) [b](doc/a.md#beta-section)\n")
+        root = self._tree(tmp_path, "[a](docs/a.md) [b](docs/a.md#beta-section)\n")
         assert _run(root).returncode == 0
 
     def test_a_missing_file_is_reported(self, tmp_path):
-        out = _run(self._tree(tmp_path, "[x](doc/nope.md)\n"))
-        assert out.returncode == 1 and "missing doc/nope.md" in out.stdout
+        out = _run(self._tree(tmp_path, "[x](docs/nope.md)\n"))
+        assert out.returncode == 1 and "missing docs/nope.md" in out.stdout
 
     def test_a_missing_anchor_is_reported(self, tmp_path):
-        out = _run(self._tree(tmp_path, "[x](doc/a.md#gone)\n"))
-        assert out.returncode == 1 and "anchor doc/a.md#gone" in out.stdout
+        out = _run(self._tree(tmp_path, "[x](docs/a.md#gone)\n"))
+        assert out.returncode == 1 and "anchor docs/a.md#gone" in out.stdout
 
     def test_claude_md_is_checked(self, tmp_path):
-        root = self._tree(tmp_path, "ok\n", **{"CLAUDE.md": "[x](doc/nope.md)\n"})
+        root = self._tree(tmp_path, "ok\n", **{"CLAUDE.md": "[x](docs/nope.md)\n"})
         out = _run(root)
         assert out.returncode == 1 and "CLAUDE.md" in out.stdout
 
     def test_contributing_md_is_checked(self, tmp_path):
-        root = self._tree(tmp_path, "ok\n", **{"CONTRIBUTING.md": "[x](doc/nope.md)\n"})
+        root = self._tree(tmp_path, "ok\n", **{"CONTRIBUTING.md": "[x](docs/nope.md)\n"})
         assert "CONTRIBUTING.md" in _run(root).stdout
 
     def test_a_skill_file_is_checked(self, tmp_path):
         root = self._tree(
-            tmp_path, "ok\n", **{".claude__skills__demo__SKILL.md": "[x](../../../doc/nope.md)\n"}
+            tmp_path, "ok\n", **{".claude__skills__demo__SKILL.md": "[x](../../../docs/nope.md)\n"}
         )
         out = _run(root)
         assert out.returncode == 1 and "SKILL.md" in out.stdout

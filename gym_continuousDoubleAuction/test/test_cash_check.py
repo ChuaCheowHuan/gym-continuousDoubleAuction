@@ -161,7 +161,7 @@ class TestCashCheck:
 
 
 class TestCancelAndModifyNeverTrapCash:
-    """doc/15 S2-13: a cancel, or a modify that frees escrow, is not a new order.
+    """docs/15 S2-13: a cancel, or a modify that frees escrow, is not a new order.
 
     `_order_approved` used to cash-check every order type against `cash`
     alone. A trader with all its cash escrowed in resting orders could then
@@ -236,14 +236,14 @@ class TestCancelAndModifyNeverTrapCash:
 
 
 class TestClosingEscrowIsSpendable:
-    """doc/15 S1-5's open tail: escrow against a closing order is not spent cash.
+    """docs/15 S1-5's open tail: escrow against a closing order is not spent cash.
 
     A trader long 10 @ 100 with 1,000 cash rests an ask for all 10 - the order
     that would flatten it. The ledger escrows 1,000 against that ask, which is
     margin against a fill that can only reduce risk. The cash check used to
     treat it as gone, so the trader could not open anything else while its
     exit order rested; measured at init_cash 100,000 under random play, two
-    thirds of all refusals were this (doc/16 §16.18).
+    thirds of all refusals were this (docs/16 §16.18).
     """
 
     def _long_trader_with_exit_resting(self, cash=1000):

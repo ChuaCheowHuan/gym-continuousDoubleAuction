@@ -18,7 +18,7 @@ def _section_title(doc, number):
 
 
 class TestTheLayoutMismatchPointer:
-    """#273: the refusal pointed at doc/05 section 1 ("Shape at a glance"); the text about
+    """#273: the refusal pointed at docs/05 section 1 ("Shape at a glance"); the text about
     checkpoints and layout stamps is section 10."""
 
     @staticmethod
@@ -32,11 +32,11 @@ class TestTheLayoutMismatchPointer:
         raise AssertionError("a v1 stamp was accepted")
 
     def test_it_names_section_10(self):
-        assert "doc/05 section 10" in self._message()
+        assert "docs/05 section 10" in self._message()
 
     def test_that_section_is_the_compatibility_one(self):
-        number = re.search(r"doc/05 section (\d+)", self._message()).group(1)
-        assert _section_title("doc/05_observation_space.md", number) == "Compatibility"
+        number = re.search(r"docs/05 section (\d+)", self._message()).group(1)
+        assert _section_title("docs/05_observation_space.md", number) == "Compatibility"
 
 
 import os  # noqa: E402
@@ -59,10 +59,10 @@ class TestCiSmokeRunIsDescribedAsCiRunsIt:
         assert self._ci_command() in open("CLAUDE.md").read()
 
     def test_doc_27_quotes_it_too(self):
-        assert self._ci_command() in open("doc/27_agent_skills.md").read()
+        assert self._ci_command() in open("docs/27_agent_skills.md").read()
 
     def test_neither_calls_the_flagged_form_the_ci_run(self):
-        for path in ("CLAUDE.md", "doc/27_agent_skills.md"):
+        for path in ("CLAUDE.md", "docs/27_agent_skills.md"):
             text = " ".join(open(path).read().split())
             assert "--steps 200 --agents 4` is the CI" not in text, path
 
@@ -71,7 +71,7 @@ class TestDoc27DoesNotDescribeBuiltThingsAsMissing:
     """#267: doc 27 said the repository has no CLAUDE.md and kept full entries, with steps
     that differ from the skill, for skills that are built."""
 
-    DOC = "doc/27_agent_skills.md"
+    DOC = "docs/27_agent_skills.md"
 
     def test_it_does_not_say_there_is_no_claude_md(self):
         assert "The repository has none" not in open(self.DOC).read()
@@ -169,7 +169,7 @@ _ENTRY_POINTS = (
 
 def _docs_text():
     paths = ["README.md"] + sorted(
-        p for p in glob.glob("doc/*.md") if os.path.basename(p) not in _HISTORY
+        p for p in glob.glob("docs/*.md") if os.path.basename(p) not in _HISTORY
     )
     return "\n".join(open(p, encoding="utf-8").read() for p in paths)
 
@@ -197,7 +197,7 @@ class TestEveryConfigKeyAndFlagIsDocumented:
                 if not re.search(r"(?<![\w-])" + re.escape(leaf) + r"(?![\w])", text):
                     missing.append(f"{os.path.basename(path)}:{key}")
         assert not missing, (
-            "config keys no document mentions (add them to doc/18 or the doc that owns "
+            "config keys no document mentions (add them to docs/18 or the doc that owns "
             f"them): {missing}"
         )
 
@@ -212,7 +212,7 @@ class TestEveryConfigKeyAndFlagIsDocumented:
             ):
                 if not re.search(re.escape(flag) + r"(?![\w-])", text):
                     missing.append(f"{relative}:{flag}")
-        assert not missing, f"CLI flags no document mentions (add them to doc/26): {missing}"
+        assert not missing, f"CLI flags no document mentions (add them to docs/26): {missing}"
 
     def test_the_flag_scan_finds_flags_at_all(self):
         """A regex that silently matched nothing would make the check above vacuous."""

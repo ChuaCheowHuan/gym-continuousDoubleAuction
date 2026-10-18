@@ -1,4 +1,4 @@
-"""The encoder comparison protocol of doc/18 §5.5, as one command.
+"""The encoder comparison protocol of docs/18 §5.5, as one command.
 
     python -m gym_continuousDoubleAuction.train.compare \\
         --encoders mlp transformer --seeds 0 1 2 --iters 16 --out compare_out
@@ -6,13 +6,13 @@
 For every (encoder, seed) it runs a **separate** training run - its own
 `log_base_dir`, so checkpoints never mix, and its own `run_id` - with the seed
 pinned, then scores the final checkpoint's trainable module on the reward-free
-probe harness ([23](../../doc/23_probe_harness.md)) against one corpus shared by
+probe harness ([23](../../docs/23_probe_harness.md)) against one corpus shared by
 every run. It writes a JSON file with every per-run number and a Markdown table
 of per-encoder means and standard deviations across seeds.
 
-Why this exists. [10](../../doc/10_testing.md) §8 has called "no encoder is
+Why this exists. [10](../../docs/10_testing.md) §8 has called "no encoder is
 tested for whether it learns" the suite's largest gap for three review passes,
-and [18](../../doc/18_configuration.md) §5.5 wrote the protocol down - pinned
+and [18](../../docs/18_configuration.md) §5.5 wrote the protocol down - pinned
 seeds, several seeds per architecture, separate runs, parameter counts - without
 anything that executes it. Run by hand, the protocol is a dozen shell
 invocations and a spreadsheet, and the spreadsheet is where the seed pinning
@@ -24,7 +24,7 @@ of their standard deviations across seeds; at fewer than three seeds that
 column always reads "not separated", and it is right to. The numbers from a
 short run at scaled-down settings - the shape the tests run it at - say nothing
 about the architectures and everything about the settings, exactly as
-[25](../../doc/25_continual_backprop.md) §3.6 warns for continual backprop.
+[25](../../docs/25_continual_backprop.md) §3.6 warns for continual backprop.
 
 Metrics collected per run, all from the final iteration's result dict and the
 final checkpoint:
@@ -217,12 +217,12 @@ def run_one(base_cfg, encoder: str, seed: int, out_dir: str, iters: int) -> Dict
             # The two other no-op fractions and the maker ratio, because the
             # claim an order-management change makes is about *activity*, not
             # returns: "agents that can aim cancels quote more and hold fewer
-            # stale orders" shows up here first (doc/15 S3-24, phase 4).
+            # stale orders" shows up here first (docs/15 S3-24, phase 4).
             "order_rejection_fraction": _as_float(env_runners.get("order_rejection_fraction")),
             "unmatched_action_fraction": _as_float(env_runners.get("unmatched_action_fraction")),
             "maker_fill_ratio_max": _as_float(env_runners.get("maker_fill_ratio_max")),
             # Agent-steps whose observation was clipped to the declared Box
-            # bounds (doc/15 S4-15); should be 0 unless the bounds are wrong.
+            # bounds (docs/15 S4-15); should be 0 unless the bounds are wrong.
             "obs_clip_fraction": _as_float(env_runners.get("obs_clip_fraction")),
             "parameters": _parameter_count(algo, trainable[0]),
         }
@@ -416,7 +416,7 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(
         description="Train each encoder at several seeds, in separate runs, and "
         "tabulate returns, critic quality, passivity and probe scores. "
-        "See doc/18 §5.5.",
+        "See docs/18 §5.5.",
     )
     p.add_argument("--encoders", nargs="+", default=_cli("encoders"))
     p.add_argument("--seeds", nargs="+", type=int, default=_cli("seeds"))

@@ -16,7 +16,7 @@ def _normalise_trade_sizes(trades):
     (Decimal) when the incoming order is the larger one. Measured over a 120
     step run that is 84 int against 10 Decimal on the same tape.
 
-    The orderbook is deliberately left untouched (see doc/11 1.8), so the mixing
+    The orderbook is deliberately left untouched (see docs/11 1.8), so the mixing
     is absorbed here instead - at the one point every trade passes through,
     before any account arithmetic sees it. This is the *only* place env code
     should have to think about it.
@@ -71,7 +71,7 @@ class Trader:
             allow_multiple_orders_per_level = env_default("allow_multiple_orders_per_level")
         self.ID = ID  # trader unique ID
         # False: a limit at a price this trader already rests at replaces that
-        # order. True: it rests beside it (doc/15 S3-10).
+        # order. True: it rests beside it (docs/15 S3-10).
         self.allow_multiple_orders_per_level = allow_multiple_orders_per_level
         self.acc = Account(ID, cash, maker_fee_bps, taker_fee_bps)
 
@@ -97,7 +97,7 @@ class Trader:
                 order" for a modify - the pre-slot rule, so callers that pass
                 nothing get the old behaviour. Ignored by market and limit.
                 A miss - counted in `num_unmatched_step` - is now only
-                "nothing resting on that side". See doc/15 S3-24.
+                "nothing resting on that side". See docs/15 S3-24.
 
         Return:
             trades: list
@@ -131,7 +131,7 @@ class Trader:
             # A refusal used to leave no trace at all: the agent asked to trade
             # and the book never heard about it. Counted so the rejection rate
             # is measurable - a policy quoting past its cash every step looks
-            # identical to a passive one from returns alone (doc/11 2.2).
+            # identical to a passive one from returns alone (docs/11 2.2).
             self.acc.num_rejected_step += 1
             return [], []
 
@@ -140,7 +140,7 @@ class Trader:
         # most: `Exchg_Helper.mark_to_mkt` marks *every* account off a
         # single market price, so one self-traded contract at a chosen
         # price used to re-price the whole market including the
-        # self-trader's own reward (doc/15 S2-5).
+        # self-trader's own reward (docs/15 S2-5).
         self._prevent_self_match(LOB, type, side, price)
 
         order = self._create_order(type, side, size, price, slot=slot)
@@ -171,7 +171,7 @@ class Trader:
         gives way and the aggressor proceeds. Done here rather than in
         `OrderBook.process_order_list`, where a `head_order.trade_id !=
         quote['trade_id']` skip would be the natural place for it, because
-        `envs/orderbook/` is off-limits to changes (doc/15 S3-4). The effect on
+        `envs/orderbook/` is off-limits to changes (docs/15 S3-4). The effect on
         what can reach the tape is the same; what differs is that the resting
         order is withdrawn rather than stepped over, which is also the more
         common venue behaviour.
@@ -272,7 +272,7 @@ class Trader:
         against one position and the cash check could be bypassed entirely by
         layering them across price levels. Measured before this: a trader long
         10 with `cash == 0` rested ten 10-lot asks - all approved - and filled
-        into a 90-lot short having never been refused. That is doc/15 S1-5.
+        into a 90-lot short having never been refused. That is docs/15 S1-5.
         """
         net_pos = float(self.acc.net_position)
         if (side == 'bid' and net_pos >= 0) or (side == 'ask' and net_pos <= 0):
@@ -292,7 +292,7 @@ class Trader:
         and is worth `2 x cost_basis - |position| x price`, which turns negative
         once the price passes twice the entry - and then covering it takes that
         much out of cash, cash that an opening order in the same quote (a flip)
-        or a resting bid's escrow was counting on (doc/15 S2-15).
+        or a resting bid's escrow was counting on (docs/15 S2-15).
 
         `price` is the order's limit, -1.0 for a market order (the sweep over
         the contracts that cover, from the touch), or a clearing price. Zero
@@ -442,7 +442,7 @@ class Trader:
         fill that can only *reduce* risk - it is margin against nothing - yet
         the cash check treated it as spent, so an opening order elsewhere was
         refused while the trader held inventory the resting order would merely
-        close. That is the tail of doc/15 S1-5, measured in doc/16 §16.18:
+        close. That is the tail of docs/15 S1-5, measured in docs/16 §16.18:
         under random play at init_cash 100,000, 84% of refusals happened while
         such escrow existed and 67% of all refusals would have passed had it
         counted.
@@ -504,7 +504,7 @@ class Trader:
         """Whether this account may place any order at all.
 
         Not at NAV <= 0, and not while it is being liquidated gradually: that
-        account is frozen until the close-out is done (doc/04 section 8.5). It
+        account is frozen until the close-out is done (docs/04 section 8.5). It
         has nothing resting - the margin call pulled it - and the liquidation
         engine, not the agent, decides what it trades.
         """
@@ -540,7 +540,7 @@ class Trader:
         # one bid, `cancel` -> `num_rejected_step` 1 and the order still
         # resting. The same trap caught a size-reducing `modify`. That is the
         # one action an over-committed agent needs, and it was the one it could
-        # not take. See doc/15 S2-13.
+        # not take. See docs/15 S2-13.
         if type == 'cancel':
             return True
 
@@ -557,7 +557,7 @@ class Trader:
         opening_size, closable = self._opening_size(LOB, side, size, exclude_order_id=replaced_id)
 
         # Covering a short past its collateral realises a loss into cash
-        # (doc/15 S2-15); zero for every other order.
+        # (docs/15 S2-15); zero for every other order.
         loss = self._loss_on_cover(LOB, side, size, price)
 
         # If we are only closing/decreasing a position, and that costs no cash
@@ -566,7 +566,7 @@ class Trader:
             return True
 
         # Opening/Increasing portion requires cash check. A market order pays
-        # every level it sweeps, not the touch (doc/15 S2-14): walk the book
+        # every level it sweeps, not the touch (docs/15 S2-14): walk the book
         # for the contracts that open, after the ones that only close.
         if opening_size <= 0:
             order_val = Decimal(0)
@@ -708,7 +708,7 @@ class Trader:
 
         A cancel used to match by exact price, which needed the agent to name
         the one code in thirty that its order sat at, and landed 7% of the
-        time under random play (doc/15 S3-24). Both slot forms release each
+        time under random play (docs/15 S3-24). Both slot forms release each
         cancelled order's escrow through `cancel_cash_transfer`, the same call
         `cancel_all_orders` uses.
         """
@@ -718,7 +718,7 @@ class Trader:
         if slot == 0:
             mine = self._own_orders_from_touch(orderBook, qoute['side'])
             if not mine:
-                # Nothing to cancel: the third silent outcome doc/15 S4-14 lists.
+                # Nothing to cancel: the third silent outcome docs/15 S4-14 lists.
                 self.acc.num_unmatched_step += 1
                 return trades, order_in_book
             for order_id, order in mine:
@@ -762,7 +762,7 @@ class Trader:
         Used when a trader is terminated: a bankrupt agent stops acting, but
         its resting orders stay live and executable unless something takes
         them down, so the rest of the market would keep trading against a
-        participant that no longer exists (doc/15 S2-4).
+        participant that no longer exists (docs/15 S2-4).
 
         Cancels through the same two calls `_cancel_limit_order` uses -
         `OrderBook.cancel_order` and `cancel_cash_transfer` - so the escrow is
@@ -816,11 +816,11 @@ class Trader:
         if qoute.get('type') in ('modify', 'cancel'):
             slot = int(qoute.get('slot', 0) or 0)
             if slot > 0:
-                # Slot k is the k-th own order from the touch (doc/15 S3-24,
+                # Slot k is the k-th own order from the touch (docs/15 S3-24,
                 # phase 2), clamped to the deepest one when the agent has
                 # fewer than k. Clamped rather than missed: a slot past the
                 # count would be a dead action, and measured under random
-                # play (doc/16 16.20) a head with dead slots made modify
+                # play (docs/16 16.20) a head with dead slots made modify
                 # WORSE than the FIFO rule it replaced (48% -> 23% hits) while
                 # a learned policy gains nothing from them - it can read its
                 # own-order counts and aim exactly. With the clamp the only
@@ -890,7 +890,7 @@ class Trader:
         The batch engine defers a new order past `place_order`, so the
         settlement `place_order` does inline for the sequential engine -
         normalise the fills, book them for both parties, escrow the leftover -
-        runs here once the batch has cleared (doc/06 section 8). One difference
+        runs here once the batch has cleared (docs/06 section 8). One difference
         from `_process_trades`: a counter party whose order arrived in the same
         batch has no escrow to release, so it is booked as an `init_party`
         (cash settled directly) rather than a `counter_party`; the record's
@@ -907,7 +907,7 @@ class Trader:
         held. Without this a resting ask filled above its limit released more
         escrow than it had posted: measured as `cash_on_hold` dipping a few
         contracts negative on 3.4% of agent-steps, caught by the observation
-        bounds' clip counter (doc/16 section 16.26).
+        bounds' clip counter (docs/16 section 16.26).
         """
         if trades:
             # Before any booking: raised from inside the loop, this left the trades
@@ -988,7 +988,7 @@ class Trader:
         # In the env the roster is indexed by trader ID (agent_i is
         # traders[i]), so the counter-party is one lookup. The scan is kept as
         # the fallback for callers that pass an arbitrary list - the tests do -
-        # and for a roster whose IDs are not its indices (doc/15 S4-11).
+        # and for a roster whose IDs are not its indices (docs/15 S4-11).
         agent = self._find_agent(agents, wanted)
         if agent is not None:
             agent.acc.process_acc(trade, 'counter_party')

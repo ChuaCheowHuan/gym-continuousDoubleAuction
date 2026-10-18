@@ -1,4 +1,4 @@
-"""Phase 2 of doc/15 S3-24: a modify or cancel is aimed by slot.
+"""Phase 2 of docs/15 S3-24: a modify or cancel is aimed by slot.
 
 Slot k names the agent's k-th own resting order on the named side, counted
 from the touch - best price first, oldest first within a level, the order the
@@ -199,7 +199,7 @@ class TestActionSpace:
 class TestRandomPlayHitRate:
     def test_slot_aiming_beats_price_aiming(self):
         """Under uniformly random play a cancel used to land 7% of the time it
-        was issued (doc/16 16.19). Aimed by a clamped slot it lands whenever
+        was issued (docs/16 16.19). Aimed by a clamped slot it lands whenever
         the agent has an order on that side - about a third of issued cancels,
         against 7% before, since random play often has nothing resting;
         pin a floor well below that so the test is about the mechanism, not

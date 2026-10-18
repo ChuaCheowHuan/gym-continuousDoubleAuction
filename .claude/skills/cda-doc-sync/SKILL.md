@@ -1,6 +1,6 @@
 ---
 name: cda-doc-sync
-description: Bring README.md and doc/*.md back in line with the code after a change to tests, the observation or action layout, reward terms, config keys, CLI flags or the file tree, or when asked to "update the docs". Computes the facts from the code, lists every doc line that disagrees, then fixes the current-tense ones.
+description: Bring README.md and docs/*.md back in line with the code after a change to tests, the observation or action layout, reward terms, config keys, CLI flags or the file tree, or when asked to "update the docs". Computes the facts from the code, lists every doc line that disagrees, then fixes the current-tense ones.
 ---
 
 # Keep the docs saying what the code does
@@ -19,21 +19,21 @@ They drift. Work from the code, not from the docs.
    `python .claude/skills/cda-doc-sync/scripts/claims.py . "${TMPDIR:-/tmp}/facts.json"`
    Output is `category  file:line  claimed -> actual  | line`. `16_verification_log.md`,
    `17_changelog.md` and `27_agent_skills.md` are skipped on purpose. Besides the number
-   categories it checks the per-file inventory in `doc/10` (a wrong count, a stale row, a test file
-   with no row), the code size in `doc/14`, and that every config key and CLI flag is mentioned in
+   categories it checks the per-file inventory in `docs/10` (a wrong count, a stale row, a test file
+   with no row), the code size in `docs/14`, and that every config key and CLI flag is mentioned in
    some doc (`config key`, `cli flag`: a key or flag nothing documents).
 3. **Triage every hit.** Current tense is corrected. Historical ("193 to 216 with the own-book
    block", "was 168 floats") is left alone. A measured figure that reads as current gets the
    current value added beside it. A hit may be a number that only sits near a noun; ignore those.
 4. **Recompute the dependent figures** that the scanner still cannot see: the coverage mindmap in
-   `doc/10_testing.md` and the expected lines in `doc/26_runbook.md` (§26.2). Take them from
+   `docs/10_testing.md` and the expected lines in `docs/26_runbook.md` (§26.2). Take them from
    `facts.json`. (The inventory rows and the code size are checked in step 2; `facts.code` counts
    `git ls-files '*.py'`.)
 5. **Check links:** `python tools/check_links.py`. It must print `TOTAL 0`. Re-run it after any
    heading edit: renaming a heading breaks anchors in other files.
 6. **Render any changed Mermaid block** with `@mermaid-js/mermaid-cli` before committing.
-7. **Record the pass** as a new section in `doc/17_changelog.md`. Never edit an old section, and
-   never edit `doc/16` to match the code: both are history.
+7. **Record the pass** as a new section in `docs/17_changelog.md`. Never edit an old section, and
+   never edit `docs/16` to match the code: both are history.
 
 ## Guardrails
 

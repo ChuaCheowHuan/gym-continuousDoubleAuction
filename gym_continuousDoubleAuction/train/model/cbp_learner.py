@@ -18,7 +18,7 @@ Why a mixin, and not another registry entry
 Every previous extension to the learning stack - the MoE load-balancing loss,
 the JEPA latent-prediction loss - went through `encoders/`, whose `@register`
 takes a `learner_class_path`. Continual Backprop must not, for three reasons
-developed in `doc/25_continual_backprop.md` section 2.5:
+developed in `docs/25_continual_backprop.md` section 2.5:
 
   * `encoder_type: "mlp"` is a pass-through that never reaches `CDACatalog`, so
     an encoder-registry mechanism would be unavailable for the shipped default
@@ -187,7 +187,7 @@ class CBPLearnerMixin:
             # Not silent: a run that asked for continual backprop on a network
             # it cannot touch would otherwise train exactly like one without it,
             # with no replacements and no metrics to show the difference. The
-            # `lstm` encoder is the case under scope "feedforward" (doc/25
+            # `lstm` encoder is the case under scope "feedforward" (docs/25
             # section 3.4); "recurrent" covers its core.
             logger.warning(
                 "continual backprop is on, but %s has no layer it can replace "
@@ -333,7 +333,7 @@ class CBPLearnerMixin:
                 `batch_effective_rank`, `mature_unit_frac` - where an average
                 is what a reader comparing runs would take anyway.
 
-        doc/11 lists the same table from the reader's side; the two have to
+        docs/11 lists the same table from the reader's side; the two have to
         agree, because that table is what someone plots against.
         """
         summed = {"replacements"}

@@ -14,7 +14,7 @@ learning.
 What it asserts about the *value* of vf_explained_var is split in two, and the
 split is the point. `!= 0.0` looks like the obvious guard against a critic that
 never received a gradient, and it is worthless here: a run of this suite reports
-values around 1e-5 - the S1-1 signature doc/17 17.3 records from two real GPU
+values around 1e-5 - the S1-1 signature docs/17 17.3 records from two real GPU
 runs as "0.0 to 1.8e-07" - and every one of them is nonzero, so the assertion
 passes on a critic that is comprehensively dead. Floating-point noise is not
 evidence of learning.
@@ -161,7 +161,7 @@ class TestProgressAndCriticHealth:
             f"{VF_EXPLAINED_VAR_KEY} is in the noise floor for {sorted(noise)} "
             f"after {NUM_ITERS} iterations ({noise}): the critic took no useful "
             f"gradient, PPO degenerates to REINFORCE, and every advantage this "
-            f"run computes is noise. See doc/15 S1-1."
+            f"run computes is noise. See docs/15 S1-1."
         )
 
     def test_the_file_carries_it_too(self):

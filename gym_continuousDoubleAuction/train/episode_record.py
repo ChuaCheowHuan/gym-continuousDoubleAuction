@@ -2,7 +2,7 @@
 
 This replaces the per-episode `pickle.dump` the league callback used to do
 inline. Four things were wrong with that, and each maps onto a property of this
-module (doc/21 §2.2-2.4, §5, §6):
+module (docs/21 §2.2-2.4, §5, §6):
 
 * **`pickle` executes arbitrary code on load**, has no schema, and is queryable
   only by loading a whole episode into Python. Parquet is columnar, typed, safe
@@ -22,7 +22,7 @@ module (doc/21 §2.2-2.4, §5, §6):
   caps what this process keeps, so "on" is no longer a synonym for "until the
   disk fills".
 
-**Why pyarrow rather than `ray.data`.** doc/21 §6 item 5 said "Parquet via Ray
+**Why pyarrow rather than `ray.data`.** docs/21 §6 item 5 said "Parquet via Ray
 Data"; this writes Parquet with `pyarrow.parquet` directly, and the reason is
 the objection §5 raised against RLlib's own offline recording:
 `OfflineSingleAgentEnvRunner` clamps Ray Data's execution resources to
@@ -68,7 +68,7 @@ logger = get_logger(__name__)
 #: name). The names match `Info_Helper.set_info` one for one except `NAV`, which
 #: is split: `nav` for arithmetic and `nav_str` for the exact `Decimal` string
 #: the conservation check parses. Keeping only the float would discard the
-#: exactness `info["NAV"]` pays a string for (doc/11 §2.6); keeping only the
+#: exactness `info["NAV"]` pays a string for (docs/11 §2.6); keeping only the
 #: string would make the column unusable in a query without a cast.
 INFO_COLUMNS = (
     ("reward", "float64"),
@@ -90,7 +90,7 @@ INFO_COLUMNS = (
     ("num_rejected_step", "int64"),
     ("num_unmatched_step", "int64"),
     ("num_obs_clipped_step", "int64"),
-    # Maintenance-margin close-outs (doc/04 section 8): the liquidated
+    # Maintenance-margin close-outs (docs/04 section 8): the liquidated
     # trader's own row says how its position was closed; `adl_qty_step` is on
     # the rows of the traders ADL took contracts from.
     ("num_liquidations_step", "int64"),
@@ -98,7 +98,7 @@ INFO_COLUMNS = (
     ("liquidated_adl_qty_step", "int64"),
     ("adl_qty_step", "int64"),
     ("liquidation_steps_left", "int64"),
-    # The P&L split and this step's signed fills (issue #286; doc/11 §2). With the
+    # The P&L split and this step's signed fills (issue #286; docs/11 §2). With the
     # mark, `nav - init_nav == realised + unrealised - fees`; `fill_value_step` and
     # `fill_qty_step` give a mark-out at any horizon: qty x later_mid - value.
     ("realised_pnl", "float64"),
@@ -114,8 +114,8 @@ INFO_COLUMNS = (
 
 #: The five signed reward contributions, each its own column, prefixed so a
 #: `SELECT reward_term_*` gets the whole decomposition. They sum to `reward` by
-#: construction (doc/11 §1.7), which is what makes the variance split in
-#: doc/07 §6.4 computable from this file alone.
+#: construction (docs/11 §1.7), which is what makes the variance split in
+#: docs/07 §6.4 computable from this file alone.
 REWARD_TERMS = (
     "nav_term",
     "order_penalty",
@@ -241,7 +241,7 @@ class EpisodeRecorder:
         output_dir: Where the files go. Absolute by the time it reaches here;
             the callback is pickled into every env runner, and a relative path
             would be resolved against whatever cwd that worker happened to have
-            (doc/21 §2.3).
+            (docs/21 §2.3).
         run_id: Written into every row, so files from two runs sharing a
             directory can still be told apart.
         sample_every: Record one episode in N, chosen by a hash of the episode
@@ -262,7 +262,7 @@ class EpisodeRecorder:
             aggregate a two-file join.
         max_live_episodes: How many unfinished episodes to buffer. An episode
             that is discarded without ending - which happens on any force-reset
-            (doc/21 §3.2) - never reaches `finish_episode`, so without this the
+            (docs/21 §3.2) - never reaches `finish_episode`, so without this the
             buffer keeps up to `max_step` rows per lost episode for the life of
             the process.
         queue_size: Depth of the hand-off to the writer thread. When it is full
@@ -437,7 +437,7 @@ class EpisodeRecorder:
         reliably run when it stops an env runner (`ray.shutdown()`, an actor
         kill). Left to those two, a run with fewer rows than `rows_per_file`
         wrote nothing at all, and a long one lost up to `rows_per_file - 1`
-        rows per runner (doc/15, issue #245).
+        rows per runner (docs/15, issue #245).
 
         Unlike `flush` this does not touch `_live`: a sample boundary is not an
         episode boundary, and writing a running episode out now would label it
@@ -487,7 +487,7 @@ class EpisodeRecorder:
         """Drop the oldest live episode once too many are open at once.
 
         `on_episode_end` is not called for episodes a force-reset throws away
-        (doc/21 §3.2), so without a cap those rows are held until the process
+        (docs/21 §3.2), so without a cap those rows are held until the process
         dies. Evicting rather than writing them: a partial episode with no end
         is not a record anyone would trust, and writing it would make the file's
         episode boundaries a lie.

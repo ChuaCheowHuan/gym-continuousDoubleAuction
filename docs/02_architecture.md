@@ -184,20 +184,20 @@ gym_continuousDoubleAuction/
 │   ├── episode_record.py               EpisodeRecorder: the Parquet per-step record
 │   ├── policy/policy_handler.py        MultiRLModuleSpec, module ID conventions
 │   ├── model/model_handler.py          RandomRLModule + DefaultModelConfig + CDACatalog
-│   ├── model/action_mask.py            reads the mask out of the private block (doc/06 §7)
+│   ├── model/action_mask.py            reads the mask out of the private block (docs/06 §7)
 │   ├── model/encoders/                 selectable observation encoders for the trainable modules
-│   ├── model/jepa_learner.py           JEPA module + learner (doc/22 4.2)
+│   ├── model/jepa_learner.py           JEPA module + learner (docs/22 4.2)
 │   ├── model/moe_learner.py            CDAPPOTorchRLModule (masking) + CDAPPOTorchLearner (MoE aux loss)
-│   ├── model/cbp.py, cbp_learner.py    Continual Backprop and its Learner mixin (doc/25)
-│   ├── probe/                          reward-free encoder scoring (doc/23)
-│   ├── pretrain/                       offline JEPA pretraining (doc/24)
+│   ├── model/cbp.py, cbp_learner.py    Continual Backprop and its Learner mixin (docs/25)
+│   ├── probe/                          reward-free encoder scoring (docs/23)
+│   ├── pretrain/                       offline JEPA pretraining (docs/24)
 │   ├── callbk/…_self_play_callback.py  league: champions, matchmaking, metrics, the record
 │   ├── callbk/nav_audit.py             the NAV conservation audit: ledger reads, sum, report
 │   ├── callbk/league_stats.py          idle/valid returns, best trainable, candidate trades
 │   ├── callbk/activity.py              ActivityLog: the per-episode tallies and their metrics
 │   ├── callbk/league.py                League: champions, the pool, the champion check, restore, mapping
 │   ├── evaluate.py                     roll episodes with a checkpoint's policies (S4-12)
-│   ├── export.py                       one module's weights out of a checkpoint (doc/26 26.9.2)
+│   ├── export.py                       one module's weights out of a checkpoint (docs/26 26.9.2)
 │   └── compare.py                      seeded encoder sweep, each run scored by the probe
 ├── visualize/                          offline charts from the episode Parquet + progress.jsonl
 │   ├── run_all.py                        regenerates every chart

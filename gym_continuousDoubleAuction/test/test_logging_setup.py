@@ -10,7 +10,7 @@ but the three properties this package needs from it:
 * no module holds a literal - the format, the default level and the variable
   name all come out of `config/tunable_constants.json`.
 
-See doc/11_logging_and_observability.md.
+See docs/11_logging_and_observability.md.
 """
 
 import json
@@ -182,7 +182,7 @@ class TestRunLogFile:
     Until this existed the package logged only to stdout, so the narrative a
     run is diagnosed from - the per-episode NAV tables, the ERROR preceding a
     strict_nav_check raise - lived in scrollback, while progress.jsonl kept the
-    numbers. doc/17 17 records two GPU runs diagnosed exactly that way.
+    numbers. docs/17 17 records two GPU runs diagnosed exactly that way.
     """
 
     def test_a_run_log_is_written_beside_the_metrics(self, tmp_path):
@@ -211,7 +211,7 @@ class TestRunLogFile:
         assert not list(tmp_path.glob("*.log*"))
 
     def test_rotation_bounds_the_file(self, tmp_path, config_tree):
-        """doc/11 3 lists unbounded growth as a persistence problem; a run log
+        """docs/11 3 lists unbounded growth as a persistence problem; a run log
         that fills the disk would be a new instance of it."""
         config_tree(
             "tunable_constants.json",
@@ -251,7 +251,7 @@ class TestRunLogFile:
         logging_setup.get_logger("gym_continuousDoubleAuction.t").info("still up")
 
     def test_the_file_name_and_bounds_come_from_the_file(self, tmp_path, config_tree):
-        """No literal copy in Python - the property doc/18 claims."""
+        """No literal copy in Python - the property docs/18 claims."""
         config_tree(
             "tunable_constants.json",
             lambda raw: raw["logging"].update({"file_name": "renamed.log"}),
@@ -857,7 +857,7 @@ class TestPropagation:
     `ray.init` a `LoggingConfig`: that configures the *root* logger of this
     process and of every worker Ray starts for the job, so a record travelling
     on to root would be printed once by the handler attached here and once by
-    Ray's (doc/21 §6 item 7).
+    Ray's (docs/21 §6 item 7).
     """
 
     def teardown_method(self):
@@ -905,7 +905,7 @@ class TestRayLoggingConfig:
     This package's own logging crosses to the runners already, through
     `$CDA_LOG_LEVEL`, `$CDA_LOG_DIR` and the `runtime_env`. Ray's does not: the
     env-runner restart notices, and the traceback `EnvRunnerGroup` swallows when
-    a runner dies with `restart_failed_env_runners` on (doc/21 §2.1), are
+    a runner dies with `restart_failed_env_runners` on (docs/21 §2.1), are
     emitted by Ray's loggers in processes this package never configures. A
     `LoggingConfig` is applied by Ray to the driver and to every process it
     starts for the job.

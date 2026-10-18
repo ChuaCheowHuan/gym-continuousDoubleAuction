@@ -332,7 +332,7 @@ observation rather than dropping (see [13](13_perspective_financial_trader.md) �
 |---|---|
 | ~~**`build_algo` returns a detached callback on the restore path**~~ | Fixed — see §5.9.1, along with four adjacent checkpoint defects. |
 | ~~**The Docker image `pip install`s a hardcoded dependency list**~~ | **Fixed** (S4-8): it `COPY`s `requirements.txt` and installs from it |
-| ~~**No inference/serving path**~~ | **Partly closed.** `train/evaluate.py` rolls episodes with a checkpoint's policies (S4-12) and `train/export.py` writes one module's weights to a torch file (doc/26 §26.9.2). What remains: no Ray Serve deployment, and no TorchScript/ONNX — the exported file still needs `ray[rllib]` and this package to rebuild the architecture. |
+| ~~**No inference/serving path**~~ | **Partly closed.** `train/evaluate.py` rolls episodes with a checkpoint's policies (S4-12) and `train/export.py` writes one module's weights to a torch file (docs/26 §26.9.2). What remains: no Ray Serve deployment, and no TorchScript/ONNX — the exported file still needs `ray[rllib]` and this package to rebuild the architecture. |
 | **No config validation** | `TrainConfig` accepts `num_trained_agents > num_agents` (caught later, in `build_multi_rl_module_spec`), negative `max_step`, etc. |
 | **No experiment tracking** | No MLflow / W&B; results are TensorBoard + stdout. |
 | **No Ray Tune integration** | `train()` is a hand-rolled loop; using `tune.Tuner` would bring scheduling, fault tolerance and sweeps essentially for free. |

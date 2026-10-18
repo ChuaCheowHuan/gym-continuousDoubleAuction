@@ -1,6 +1,6 @@
 """Self-match prevention, and a mark that a single participant cannot set.
 
-doc/15 S2-5. Two mechanisms, and it takes both:
+docs/15 S2-5. Two mechanisms, and it takes both:
 
 * A trader could cross its own resting order. The fill printed to the tape,
   and `mark_to_mkt` marked *every* account off the last print - so one
@@ -17,7 +17,7 @@ doc/15 S2-5. Two mechanisms, and it takes both:
 
 Prevention lives in `Trader`, not in `OrderBook.process_order_list` where a
 `trade_id` skip would be the natural place for it, because `envs/orderbook/` is
-off-limits to changes (doc/15 S3-4).
+off-limits to changes (docs/15 S3-4).
 """
 
 from decimal import Decimal

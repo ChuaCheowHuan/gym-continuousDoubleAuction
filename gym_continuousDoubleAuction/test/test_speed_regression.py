@@ -1,6 +1,6 @@
 """Performance regression tests for the matching engine and the env step (issue #209).
 
-`doc/15` S2-12 and S3-30 were both slowdowns that no test caught: they showed up as a
+`docs/15` S2-12 and S3-30 were both slowdowns that no test caught: they showed up as a
 training run that took longer. A wall-clock assertion on a shared CI runner is a flaky
 test, so these are built to fail on an order-of-magnitude regression (an O(n) scan that
 should be O(log n), a rebuild per step) and not on noise:

@@ -251,7 +251,7 @@ These are asserted by the test suite and should be preserved by any change to th
 4. Order IDs are unique and monotonically increasing.
 5. A market order against an empty book is a no-op, not an exception.
 
-> **Correction to the older documentation.** `doc/matching_engine.md` §4 stated that invariant 1
+> **Correction to the older documentation.** `docs/matching_engine.md` §4 stated that invariant 1
 > was "only partially satisfied" because `test_modify_order_price_change` was marked
 > `@unittest.expectedFailure`. That is no longer true — there is no `expectedFailure` anywhere in
 > the repository, and the test asserts `get_best_bid() == Decimal('101')` and passes. Invariant 1

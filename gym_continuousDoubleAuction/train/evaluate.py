@@ -3,7 +3,7 @@
     python -m gym_continuousDoubleAuction.train.evaluate \\
         --checkpoint results/chkpt/iter_00016 --episodes 4 --out eval.json
 
-doc/15 S4-12: the repository could train a policy and could not *use* one.
+docs/15 S4-12: the repository could train a policy and could not *use* one.
 Every consumer of a checkpoint was another training run (`--restore`) or the
 probe harness, which reads latents. This rolls episodes the way the training
 sampler does - the checkpoint's own `policy_mapping_fn` assigns modules to
@@ -345,7 +345,7 @@ def evaluate(
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(
         description="Roll episodes with a trained checkpoint's policies and report what "
-        "they do. See doc/26 section 26.10.",
+        "they do. See docs/26 section 26.10.",
     )
     p.add_argument("--checkpoint", required=True, help="One iter_<n> directory.")
     p.add_argument("--episodes", type=int, default=_cli("episodes"))

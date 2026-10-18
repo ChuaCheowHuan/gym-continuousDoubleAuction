@@ -1,10 +1,10 @@
 """The fixed tick-offset grid shared by observation and action (S3-15).
 
-doc/15 S3-15. In the `levels` layout slot k meant "the k-th occupied price",
+docs/15 S3-15. In the `levels` layout slot k meant "the k-th occupied price",
 whose distance from the market wandered - measured under random play the best
 level sat 3.8 +- 2.5 ticks from the reference and its price changed on 35-54%
 of steps, and the action's price code j landed anywhere from 0 to 20 ticks out
-(doc/16 section 16.24). In the `grid` layout, the default since 2026-09-18,
+(docs/16 section 16.24). In the `grid` layout, the default since 2026-09-18,
 cell c of each size row is the price `R + (c - k_rows) * tick` where `R` is
 the reference price snapped to the tick, and the action's price code j quotes
 exactly j ticks from `R` on the passive side. Same cell, same distance, on

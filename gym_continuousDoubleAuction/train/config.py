@@ -34,7 +34,7 @@ TRAIN_CONFIG_FILE = "train_config.json"
 #: `algo.train()` returns a full metrics dict every iteration and the loop used
 #: to read two keys out of it for a log line and drop the rest, so a finished
 #: run left behind checkpoints and no record of how it got there. This is the
-#: record. See doc/11 1.6.
+#: record. See docs/11 1.6.
 PROGRESS_FILE = "progress.jsonl"
 
 
@@ -116,7 +116,7 @@ class TrainConfig:
     tape_display_length: int = _default("tape_display_length")
     max_step: int = _default("max_step")
     # "fixed" truncates every episode at max_step; "random" draws the horizon
-    # per episode from [max_step_min, max_step_max] (doc/18 section 3.4).
+    # per episode from [max_step_min, max_step_max] (docs/18 section 3.4).
     episode_length_mode: str = _default("episode_length_mode")
     max_step_min: int = _default("max_step_min")
     max_step_max: int = _default("max_step_max")
@@ -127,16 +127,16 @@ class TrainConfig:
     # k_rows best occupied prices). A layout choice, recorded in the stamp.
     book_mode: str = _default("book_mode")
     # The observation's action mask says what each agent can do this step and
-    # the modules refuse the rest; False emits all ones (doc/06 section 7).
+    # the modules refuse the rest; False emits all ones (docs/06 section 7).
     action_mask: bool = _default("action_mask")
-    # The matching regime (doc/06 section 8): how a price level is shared out
+    # The matching regime (docs/06 section 8): how a price level is shared out
     # ("fifo" / "pro_rata") and whether a step's crossing orders clear on
     # arrival or at one uniform price ("sequential" / "batch").
     matching_rule: str = _default("matching_rule")
     step_clearing: str = _default("step_clearing")
-    # Whether a trader may rest several orders at one price (doc/15 S3-10).
+    # Whether a trader may rest several orders at one price (docs/15 S3-10).
     allow_multiple_orders_per_level: bool = _default("allow_multiple_orders_per_level")
-    # What happens when equity runs out (doc/04 section 8): "market_adl"
+    # What happens when equity runs out (docs/04 section 8): "market_adl"
     # closes a trader out below maintenance_margin - book first, then ADL for
     # the remainder, "gradual_adl" the same spread over up to
     # liquidation_horizon steps - and "off" leaves a bankrupt trader holding its position.
@@ -145,7 +145,7 @@ class TrainConfig:
     # "gradual_adl" only: the most steps a close-out may take before ADL
     # takes the remainder.
     liquidation_horizon: int = _default("liquidation_horizon")
-    # Exchange fees in basis points of a fill's notional (doc/04 section 9): the
+    # Exchange fees in basis points of a fill's notional (docs/04 section 9): the
     # taker pays taker_fee_bps, the maker maker_fee_bps (negative is a rebate).
     # Both 0 by default.
     maker_fee_bps: float = _default("maker_fee_bps")
@@ -154,7 +154,7 @@ class TrainConfig:
     # Bounds of the per-episode price anchor, drawn as randint(min, max) in
     # reset(). These were readable by the env but had no TrainConfig field, so
     # training runs could not narrow the range - the relative tick therefore
-    # varied 10x across episodes with no way to control it. See doc/15 S3-4.
+    # varied 10x across episodes with no way to control it. See docs/15 S3-4.
     initial_price_min: int = _default("initial_price_min")
     initial_price_max: int = _default("initial_price_max")
 
@@ -210,9 +210,9 @@ class TrainConfig:
     # run, so this is exposed rather than left implicit.
     minibatch_size: Optional[int] = _default("minibatch_size")
     # The PPO entropy bonus, falling linearly from `entropy_coeff` to
-    # `entropy_coeff_final` over `entropy_decay_iters` iterations (doc/15
+    # `entropy_coeff_final` over `entropy_decay_iters` iterations (docs/15
     # S3-11). RLlib's own default is 0.0.
-    # The discount and the GAE parameter (doc/15 S3-13). RLlib's own defaults are
+    # The discount and the GAE parameter (docs/15 S3-13). RLlib's own defaults are
     # 0.99 and 1.0.
     gamma: float = _default("gamma")
     lambda_: float = _default("lambda_")
@@ -279,12 +279,12 @@ class TrainConfig:
     max_champions: int = _default("max_champions")
     min_iterations_between_champions: int = _default("min_iterations_between_champions")
     # Mean trades per episode a trainable policy needs over the iteration to be
-    # promoted (doc/15 S3-11). 0 disables the guard.
+    # promoted (docs/15 S3-11). 0 disables the guard.
     min_champion_trades: float = _default("min_champion_trades")
-    # Which modules the promotion threshold is computed over (doc/15 S3-12):
+    # Which modules the promotion threshold is computed over (docs/15 S3-12):
     # "pooled" or "excluding_baselines".
     promotion_reference: str = _default("promotion_reference")
-    # Steps ahead at which fills are marked out (doc/15 S3-9).
+    # Steps ahead at which fills are marked out (docs/15 S3-9).
     markout_horizons: List[int] = _default("markout_horizons")
     original_opponent_weight: float = _default("original_opponent_weight")
     champion_weight: float = _default("champion_weight")
@@ -293,7 +293,7 @@ class TrainConfig:
     episode_data_dir: Optional[str] = _default("episode_data_dir")
     # Record one episode in N. The record is ~34MB per 4096-step episode, so
     # "on" used to mean "until the disk fills"; this and episode_max_bytes are
-    # what bound it (doc/21 §6 item 6).
+    # what bound it (docs/21 §6 item 6).
     episode_sample_every: int = _default("episode_sample_every")
     episode_max_bytes: int = _default("episode_max_bytes")
     episode_rows_per_file: int = _default("episode_rows_per_file")
@@ -347,7 +347,7 @@ class TrainConfig:
     # How Ray formats its own logging, in the driver and in every process it
     # starts for this job: "TEXT" or "JSON". Handed to `ray.LoggingConfig`,
     # which is the only lever that reaches a worker's Ray-side output at all -
-    # including the traceback RLlib swallows when an env runner dies (doc/21
+    # including the traceback RLlib swallows when an env runner dies (docs/21
     # §2.1, §6 item 7). "" leaves Ray's logging alone.
     ray_log_encoding: str = _default("ray_log_encoding")
     # This package's own log level, applied by logging_setup and exported so
@@ -403,7 +403,7 @@ class TrainConfig:
         if self.cbp_enabled and self.num_learners > 1:
             # Replacements are chosen from each learner's own minibatch and applied outside the
             # gradient, so the replicas can pick different units and drift apart; nothing in
-            # DDP pulls them back (doc/15 R-12, #182). `cbp_metrics_only` replaces nothing.
+            # DDP pulls them back (docs/15 R-12, #182). `cbp_metrics_only` replaces nothing.
             raise ValueError(
                 f"cbp_enabled with num_learners={self.num_learners}: continual backprop picks "
                 "the unit to replace separately on each learner, so the replicas would diverge. "
@@ -528,7 +528,7 @@ class TrainConfig:
         """Where this run's per-step episode record goes, or None if it is off.
 
         Two things this does that the raw `episode_data_dir` did not, and both
-        are the reasons doc/21 §2.3 called it the one output path with no
+        are the reasons docs/21 §2.3 called it the one output path with no
         protection at all:
 
         * **Absolute.** The callback carrying this string is pickled into every

@@ -87,7 +87,7 @@ class Cash_Processor(AccountState):
     # ask at 101 moves cash_on_hold by -394 on the live path and would have
     # moved it by +10 here. Re-processing is not an implementation detail of
     # modify - it is what lets a modify cross the spread, which this function
-    # assumes never happens. See doc/15 S3-20.
+    # assumes never happens. See docs/15 S3-20.
 
     def cancel_cash_transfer(self, order) -> int:
         """

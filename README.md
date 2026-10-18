@@ -5,7 +5,7 @@ This repository implements a multi-agent continuous double auction system, struc
 In this environment, agents act as traders who can submit market, limit, modify, and cancel orders to a shared order book. They are marked to market based on the trade tape, and receive rewards derived from a multi-term NAV-based function. The codebase also includes a matching engine, supports `Decimal`-based accounting, includes the necessary RLlib league wiring, and comes with CI unit tests.
 
 Where the project stands — what was wrong with the learning problem and what has been fixed — is in
-[15_findings_and_recommendations.md](doc/15_findings_and_recommendations.md#status-in-brief).
+[15_findings_and_recommendations.md](docs/15_findings_and_recommendations.md#status-in-brief).
 
 ---
 
@@ -14,7 +14,7 @@ Where the project stands — what was wrong with the learning problem and what h
 One environment step, end to end. Every box is a real function; the labels on the arrows are what
 actually crosses between them.
 
-<!-- canonical: doc/02_architecture.md §2.0 — change both together -->
+<!-- canonical: docs/02_architecture.md §2.0 — change both together -->
 ```mermaid
 flowchart LR
     subgraph RL["RLlib training stack (train/)"]
@@ -57,7 +57,7 @@ flowchart LR
 ```
 
 Blue is `envs/exchg/` and `train/`, green is `envs/orderbook/`, red is `envs/agent/` and
-`envs/account/`. Full detail: [02_architecture.md](doc/02_architecture.md) §2.0 for this picture,
+`envs/account/`. Full detail: [02_architecture.md](docs/02_architecture.md) §2.0 for this picture,
 §2.2 for the four layers, §2.5 for the step lifecycle, §2.9 for the same picture with the
 distributed boundaries drawn in.
 
@@ -82,31 +82,31 @@ python -m gym_continuousDoubleAuction.train.train
 python -m pytest gym_continuousDoubleAuction/test -q --ignore=gym_continuousDoubleAuction/test/integration
 ```
 
-On a CPU-only box install the CPU torch wheel first ([26_runbook.md](doc/26_runbook.md) §26.1). For a
-GPU box use the Docker image ([19](doc/19_docker.md)); for Colab, the notebook
-([20](doc/20_colab.md)). Everything after the first run — configuring, resuming, inspecting,
-evaluating, probing — is in the [runbook](doc/26_runbook.md).
+On a CPU-only box install the CPU torch wheel first ([26_runbook.md](docs/26_runbook.md) §26.1). For a
+GPU box use the Docker image ([19](docs/19_docker.md)); for Colab, the notebook
+([20](docs/20_colab.md)). Everything after the first run — configuring, resuming, inspecting,
+evaluating, probing — is in the [runbook](docs/26_runbook.md).
 
 ---
 
 ## Documentation
 
-All documentation lives in [`doc/`](doc/README.md), whose index has a map of every document, what
+All documentation lives in [`docs/`](docs/README.md), whose index has a map of every document, what
 each one answers, and reading paths for common goals. Start with:
 
 | # | Document | What it answers |
 |---|---|---|
-| 1 | [01_overview.md](doc/01_overview.md) | What this project is, the market it models, the research question, what an episode looks like |
-| 26 | [26_runbook.md](doc/26_runbook.md) | Install, check, train, resume, inspect, probe and pretrain, step by step, with what to watch and a troubleshooting table |
-| 2 | [02_architecture.md](doc/02_architecture.md) | The system at a glance, layer map, package tree, the mixin/MRO chain, the step lifecycle, config keys, data flow, tech stack |
+| 1 | [01_overview.md](docs/01_overview.md) | What this project is, the market it models, the research question, what an episode looks like |
+| 26 | [26_runbook.md](docs/26_runbook.md) | Install, check, train, resume, inspect, probe and pretrain, step by step, with what to watch and a troubleshooting table |
+| 2 | [02_architecture.md](docs/02_architecture.md) | The system at a glance, layer map, package tree, the mixin/MRO chain, the step lifecycle, config keys, data flow, tech stack |
 
 ---
 
 ## What changed since version 1 (update 20251224)
 
-This repository has undergone significant modernization since the `original_v1` branch (the original release from 2020, [README_v1.md](doc/README_v1.md)).
+This repository has undergone significant modernization since the `original_v1` branch (the original release from 2020, [README_v1.md](docs/README_v1.md)).
 
-For a detailed breakdown of codebase modernizations, please refer to the [17_changelog.md](doc/17_changelog.md) document.
+For a detailed breakdown of codebase modernizations, please refer to the [17_changelog.md](docs/17_changelog.md) document.
 
 ---
 

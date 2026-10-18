@@ -6,7 +6,7 @@ detect a bad one: every index still resolves, every sum is a float, and the
 chart renders. It just plots the wrong numbers.
 
 That is not hypothetical. The private-state block appended in
-[17](../../doc/17_changelog.md) section 30 moved the end of the vector, and the
+[17](../../docs/17_changelog.md) section 30 moved the end of the vector, and the
 `obs[-SNAPSHOT_DIM:]` this module used went on working while returning the
 private block plus a truncated final snapshot - shifted by exactly
 PRIVATE_DIM, so the "ask sizes" it plotted were an agent's own position and

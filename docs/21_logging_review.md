@@ -345,7 +345,7 @@ Insertion-ordered, so "oldest" means the episode that started first.
 
 **5. Parquet instead of `pickle`.** ✅ One row per (episode, step, agent), a declared schema, and
 `run_id` / `iteration` / `wall_time` / `module_id` columns — which also closes "the files carry no
-timestamp or iteration metadata" from doc/11 §3 and makes champion matchups a group-by. An `info`
+timestamp or iteration metadata" from docs/11 §3 and makes champion matchups a group-by. An `info`
 key with no column is preserved as JSON in `info_extra`, and a test fails if `InfoBuilder` grows a
 field the schema does not cover.
 
@@ -376,7 +376,7 @@ argument rather than a constant.
 
 The variance shares are computed from running sums, not a retained series, which matters for the
 same reason item 2 does. On a real 2-iteration run they read `nav_term` 0.95, `drawdown_penalty`
-0.05, and the other three below 1e-8 — the doc/07 §6.4 split, live, from a run rather than from a
+0.05, and the other three below 1e-8 — the docs/07 §6.4 split, live, from a run rather than from a
 post mortem.
 
 ---
@@ -451,7 +451,7 @@ happened.
 6 NAV tables in the per-worker log files and 2 on the console. Ray forwards worker stdout to the
 driver on a best-effort basis and stops when the worker is killed, so the tail is lost. This is
 pre-existing Ray behaviour rather than anything this work introduced — and it is exactly the reason
-doc/11 §1.9 gives for the per-process files existing. Worth stating because it makes the console
+docs/11 §1.9 gives for the per-process files existing. Worth stating because it makes the console
 misleading as a record: the files are complete, the terminal is a sample.
 
 **Two channels disagreed about how many episodes there were.** The same run recorded 8 distinct

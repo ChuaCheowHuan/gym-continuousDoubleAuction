@@ -228,7 +228,7 @@ def _write_league_state(path: str, algo, iteration: int) -> None:
     state = callback.league_state()
     state["training_iteration"] = iteration
     # Which observation and action layout the weights in this checkpoint were
-    # trained against (doc/15 S4-19). A restore into a different layout fails
+    # trained against (docs/15 S4-19). A restore into a different layout fails
     # by name at `build_algo`, before RLlib gets as far as a tensor shape.
     env_config = getattr(getattr(algo, "config", None), "env_config", None) or {}
     state[LAYOUT_KEY] = layout_stamp(env_config.get("book_mode"))

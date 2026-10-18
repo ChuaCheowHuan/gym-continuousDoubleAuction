@@ -3,7 +3,7 @@
 `info` used to carry three fields - reward, NAV, num_trades - so the state a
 run's behaviour is diagnosed from (position, drawdown, the spread, which of the
 five reward terms actually moved) existed for one step and was discarded. See
-doc/11 2.2-2.4.
+docs/11 2.2-2.4.
 
 Two things here are invariants rather than descriptions, and they are the
 reason this file exists:
@@ -11,7 +11,7 @@ reason this file exists:
   * the five reward terms sum to the reward, exactly. A decomposition that does
     not add up is worse than none, because it looks authoritative.
   * everything in `info` survives `json.dumps`. The per-iteration progress log
-    (doc/11 1.6) is the durable record, and a numpy scalar in `info` breaks it.
+    (docs/11 1.6) is the durable record, and a numpy scalar in `info` breaks it.
 """
 
 import json
@@ -100,7 +100,7 @@ class TestBackCompat:
 
 
 class TestRewardDecomposition:
-    """doc/11 2.4: the five terms, individually, and they must add up."""
+    """docs/11 2.4: the five terms, individually, and they must add up."""
 
     def test_all_six_terms_are_reported(self, stepped_env):
         _, infos, _, _ = stepped_env
@@ -124,7 +124,7 @@ class TestRewardDecomposition:
             assert _naive_sum(info["reward_terms"].values()) == info["reward"]
 
     def test_the_terms_match_the_documented_formula(self, stepped_env):
-        """Reward = nav_term - order - trade - drawdown + passive (doc/07 §2).
+        """Reward = nav_term - order - trade - drawdown + passive (docs/07 §2).
 
         Rebuilt from the env's own coefficients and counters, so this catches a
         term being recorded with the wrong sign or against the wrong counter -
@@ -187,7 +187,7 @@ class TestRewardDecomposition:
         assert closing > 0, (
             "closing a drawdown must be refunded. A term charged on the *level* "
             "can never be positive, so this is the assertion that fails if the "
-            "level comes back. See doc/07 §4.1."
+            "level comes back. See docs/07 §4.1."
         )
 
     def test_signs_follow_the_penalty_coefficients(self, stepped_env):
@@ -208,7 +208,7 @@ class TestRewardDecomposition:
 
 
 class TestAccountState:
-    """doc/11 2.3."""
+    """docs/11 2.3."""
 
     def test_the_account_fields_are_present(self, stepped_env):
         _, infos, _, _ = stepped_env
@@ -246,7 +246,7 @@ class TestAccountState:
         """`info["drawdown"]` is the level `max_nav - nav`, floored at 0.
 
         The *penalty* multiplies the signed change in this level, not the level
-        itself (doc/07 4.1), but the level is what is worth recording - and
+        itself (docs/07 4.1), but the level is what is worth recording - and
         `acc.drawdown` is also what the next step reads back to form that
         change, so this assertion doubles as a check that it is being kept
         current.
@@ -280,7 +280,7 @@ class TestAccountState:
 
 
 class TestMarketState:
-    """doc/11 2.2."""
+    """docs/11 2.2."""
 
     def test_market_fields_are_present_and_shared(self, stepped_env):
         """Same book for everyone, so every agent must report the same view."""
@@ -299,7 +299,7 @@ class TestMarketState:
 
     def test_a_one_sided_book_reports_none_not_zero(self):
         """0.0 would be indistinguishable from a book whose touch is touching.
-        The observation needs a finite sentinel; a log does not (doc/15 S3-14).
+        The observation needs a finite sentinel; a log does not (docs/15 S3-14).
         """
 
         class FakeTree:
@@ -394,7 +394,7 @@ class TestSerialisation:
 
 
 class TestActivityFields:
-    """doc/11 2.2: the two things a return series cannot distinguish."""
+    """docs/11 2.2: the two things a return series cannot distinguish."""
 
     def test_both_fields_are_present(self, stepped_env):
         _, infos, _, _ = stepped_env
@@ -454,7 +454,7 @@ class TestActivityFields:
             # Over the agents that reported, not over `range(NUM_AGENTS)`: at
             # this cash level an agent can go bankrupt, and a terminated agent
             # stops appearing in `info` from its terminal step onward
-            # (doc/15 S2-4).
+            # (docs/15 S2-4).
             rejections += sum(agent_info["num_rejected_step"] for agent_info in infos.values())
             if terminateds.get("__all__") or truncateds.get("__all__"):
                 break
