@@ -67,6 +67,36 @@ class TestCiSmokeRunIsDescribedAsCiRunsIt:
             assert "--steps 200 --agents 4` is the CI" not in text, path
 
 
+class TestCiRunsTheIntegrationSuiteOnce:
+    """CI's first step runs `pytest gym_continuousDoubleAuction/test` and its third runs
+    `pytest gym_continuousDoubleAuction/test/integration`. Without a default ignore the first
+    step collected the integration suite as well, so CI built every real Algorithm twice."""
+
+    INTEGRATION = "gym_continuousDoubleAuction/test/integration"
+
+    @staticmethod
+    def _collected(*args):
+        import subprocess
+        import sys
+
+        out = subprocess.run(
+            [sys.executable, "-m", "pytest", "--collect-only", "-q", *args],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        ).stdout
+        return [line for line in out.splitlines() if "::" in line]
+
+    def test_the_default_run_leaves_the_integration_suite_out(self):
+        collected = self._collected("gym_continuousDoubleAuction/test")
+        assert collected, "nothing collected"
+        assert not [t for t in collected if t.startswith(self.INTEGRATION)]
+
+    def test_naming_the_integration_suite_still_runs_it(self):
+        collected = self._collected(self.INTEGRATION)
+        assert collected and all(t.startswith(self.INTEGRATION) for t in collected)
+
+
 class TestDoc27DoesNotDescribeBuiltThingsAsMissing:
     """#267: doc 27 said the repository has no CLAUDE.md and kept full entries, with steps
     that differ from the skill, for skills that are built."""
