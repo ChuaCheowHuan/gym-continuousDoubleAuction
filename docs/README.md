@@ -52,7 +52,7 @@ mindmap
 
 | # | Document | What it answers |
 |---|---|---|
-| 0 | [00_getting_started.md](00_getting_started.md) | From a clone to a first trained policy in four steps, and where to go next |
+| 0 | [00_getting_started.md](00_getting_started.md) | Minimum and recommended hardware with measured run times, then a clone to a first trained policy in four steps |
 | 1 | [01_overview.md](01_overview.md) | What this project is, the market it models, the research question, what an episode looks like |
 | 26 | [26_runbook.md](26_runbook.md) | Install, check, train, resume, inspect, probe and pretrain, step by step, with what to watch and a troubleshooting table |
 | 2 | [02_architecture.md](02_architecture.md) | The system at a glance, layer map, package tree, the mixin/MRO chain, the step lifecycle, config keys, data flow, tech stack |

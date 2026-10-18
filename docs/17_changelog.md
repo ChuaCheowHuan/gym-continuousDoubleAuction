@@ -4127,3 +4127,34 @@ workflow, which the session's token could not change.
   [01](01_overview.md), [CONTRIBUTING](CONTRIBUTING.md), the README and `CLAUDE.md`.
 - **Not changed.** The smoke run (`CDA_rand.py`) is not duplicated by any unit test and a test
   pins it, so it stays. The packaging job tests an installed wheel, which nothing else does.
+
+## 91. Minimum and recommended hardware, measured
+
+The documentation said which Python and which Docker flags, but never what machine the project
+needs. [00](00_getting_started.md) §0.2 now has a minimum and a recommended column (OS, Python, CPU,
+RAM, GPU, disk, shared memory, network), and a table of measured wall times and peak RAM.
+
+- **Measured** on a 4-vCPU Intel Xeon at 2.1 GHz with 15 GB of RAM and no GPU, at the shipped config
+  and the `cpu` profile:
+  - the smoke run: 8 s, 0.6 GB;
+  - unit tests: 3 min, 2.9 GB;
+  - integration tests: 3.5 min, 3.3 GB;
+  - one training iteration: 159 s, of which 146 s sampling 16,384 steps (about 112 steps/s) and 12.5 s
+    for the update, at 2.2 GB peak;
+  - a checkpoint: 6.5 MB;
+  - the CUDA install: 6.2 GB.
+
+  Peak RAM is the whole process tree's resident memory, sampled every 0.5 s.
+- **Estimated, and labelled so:**
+  - the CPU-only install (about 2 GB), from the CUDA install less its NVIDIA and Triton packages,
+    because the CPU wheel index was unreachable from the measuring machine;
+  - the 2-runner iteration time;
+  - the full 16-iteration run (extrapolated from one iteration).
+- **Corrected.**
+  - [20](20_colab.md) §20.4 put sampling at ~32 s per iteration on one core, from ~516 steps/s. That
+    rate was the environment alone with random actions; with policy inference it is about 112 steps/s
+    and 146 s. The run budget there moves from 20–40 to 25–50 minutes.
+  - The unit suite was "about a minute" in [00](00_getting_started.md), [26](26_runbook.md) §26.2 and
+    [CONTRIBUTING](CONTRIBUTING.md); it is about three.
+- **Cross-links.** The README's quick start, [19](19_docker.md) §19.4 and [26](26_runbook.md) §26.1
+  point at the table.
