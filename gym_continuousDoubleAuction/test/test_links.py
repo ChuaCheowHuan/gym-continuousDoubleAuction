@@ -65,8 +65,8 @@ class TestTheCheckerItself:
         assert out.returncode == 1 and "CLAUDE.md" in out.stdout
 
     def test_contributing_md_is_checked(self, tmp_path):
-        root = self._tree(tmp_path, "ok\n", **{"CONTRIBUTING.md": "[x](docs/nope.md)\n"})
-        assert "CONTRIBUTING.md" in _run(root).stdout
+        root = self._tree(tmp_path, "ok\n", **{"docs__CONTRIBUTING.md": "[x](nope.md)\n"})
+        assert "docs/CONTRIBUTING.md" in _run(root).stdout
 
     def test_a_skill_file_is_checked(self, tmp_path):
         root = self._tree(

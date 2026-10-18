@@ -60,7 +60,7 @@ here. Each point came from something that went wrong once:
    `CDA_rand --steps 200 --agents 4` is the manual check in [26](26_runbook.md).
 4. **Test first, and show it failing.** A fix lands with a regression test that fails on the
    previous source (`git stash push -- gym_continuousDoubleAuction/envs` is the quick way to check).
-5. **Atomic commits**, one fix per commit ([CONTRIBUTING](../CONTRIBUTING.md)): code, then tests,
+5. **Atomic commits**, one fix per commit ([CONTRIBUTING](CONTRIBUTING.md)): code, then tests,
    then docs. After a PR merges, restart the working branch from `master`.
 6. **Do not rest an unverified claim on a review.** Reproduce it first (skill 2).
 7. **Counts move together.** Any new test file changes the unit total, the suite total, the

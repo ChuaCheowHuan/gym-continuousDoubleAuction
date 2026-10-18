@@ -203,7 +203,7 @@ https://github.com/dyn4mik3/OrderBook
 ---
 
 # Contributing:
-Please see [CONTRIBUTING.md](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/CONTRIBUTING.md).
+Please see [CONTRIBUTING.md](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/master/docs/CONTRIBUTING.md).
 
 ---
 

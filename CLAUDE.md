@@ -23,7 +23,7 @@ register is `docs/15_findings_and_recommendations.md`.
 6. **Do not rest a claim on a review.** Reproduce it first (skill `cda-verify-finding`).
 7. **Counts move together.** A new test file changes the unit total, the suite total, the code size
    in `docs/14_perspective_ai_engineer.md` and the inventory in `docs/10_testing.md`
-   (skill `cda-doc-sync`; `tools/check_links.py` must report 0 broken links; `test_links` runs it over README, `docs/`, `CLAUDE.md`, `CONTRIBUTING.md` and the skills).
+   (skill `cda-doc-sync`; `tools/check_links.py` must report 0 broken links; `test_links` runs it over README, `docs/` (`docs/CONTRIBUTING.md` included), `CLAUDE.md` and the skills).
 8. **Reviews file, they do not fix.** When asked for a review, file each confirmed finding as a
    GitHub issue with a severity label (`S1-blocking` to `S4-minor`) plus `bug`, `enhancement`,
    `documentation`, `test-gap` or `refactor`, and an issue type (Bug, Task or Feature). Do not open

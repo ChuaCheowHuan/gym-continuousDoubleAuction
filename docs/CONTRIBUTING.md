@@ -1,0 +1,73 @@
+# Contributing
+
+You are free to download, clone, fork and use this repository. If you find it useful, please
+**reference it** in your work (see [How to cite](../README.md)).
+
+Pull requests are welcome. **Open an issue first** to agree on the scope, so nobody's time is
+wasted on work that will not be merged.
+
+---
+
+## 1. Set up
+
+Python 3.12 is the only version CI tests.
+
+```bash
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+pip install -e ".[dev]"      # pytest, pyflakes, hypothesis, pytest-cov, mypy, ruff
+```
+
+On a CPU-only machine, install the CPU torch wheel first ([26_runbook.md](26_runbook.md) §26.1).
+
+## 2. The rules a change has to follow
+
+| Rule | What it means in practice | Details |
+|---|---|---|
+| **Config is the only source of values** | Values live in `config/*.json` and are read through `config_loader`. No literal defaults in Python. A new key goes in both `env_defaults.json` and `train_config.json`. Never edit `gym_continuousDoubleAuction/config/`: it is a gitignored build copy | [18_configuration.md](18_configuration.md) |
+| **Test first, and show it failing** | A fix lands with a regression test that fails on the previous source: `git stash push -- gym_continuousDoubleAuction/envs`, run the test, `git stash pop` | [10_testing.md](10_testing.md) |
+| **Atomic commits** | One fix per commit, in the order code, then tests, then docs | |
+| **Reproduce before you fix** | A claim from a review, a linter or a bot is reproduced on the current source before anything is built on it | [`cda-verify-finding`](../.claude/skills/cda-verify-finding/SKILL.md) |
+| **History is append-only** | [16_verification_log.md](16_verification_log.md) and [17_changelog.md](17_changelog.md) record what was true when they were written. New facts get a new section; old ones are not edited to match the code | |
+| **Counts move together** | A new test file changes the unit total, the suite total, the code size in [14](14_perspective_ai_engineer.md) and the inventory in [10](10_testing.md) | [`cda-doc-sync`](../.claude/skills/cda-doc-sync/SKILL.md) |
+
+## 3. Check before you push
+
+```bash
+ruff format .                                          # the suite fails on unformatted code
+python -m pytest gym_continuousDoubleAuction/test -q   # unit, then integration, ~4-6 minutes
+python gym_continuousDoubleAuction/CDA_rand.py          # CI's random-agent smoke run
+python tools/check_links.py                            # must report 0 broken links
+```
+
+The suite also runs:
+
+- `pyflakes` over the package, `tools/` and the skill scripts, so an unused import fails;
+- `mypy` over `envs/`, which must have zero errors;
+- `ruff format --check .`;
+- the link checker, over `README.md` and `docs/`, `CLAUDE.md` and the skills.
+
+`pytest --cov` fails below the floor set in `pyproject.toml`.
+
+What CI runs, job by job, is in [10_testing.md](10_testing.md).
+
+## 4. Documentation
+
+Everything except `README.md` lives in `docs/`; its [index](README.md) says which document owns
+which topic. `README.md` is an overview only: put detail in the document that owns the topic, and
+link to it.
+
+When you change behaviour, update the document that describes the current state of that area,
+including its diagrams. For a change worth recording, add a new section to
+[17_changelog.md](17_changelog.md).
+
+## 5. Reviews and issues
+
+A review files each confirmed finding as a GitHub issue rather than fixing it in place. Each
+issue gets:
+
+- a severity label, `S1-blocking` to `S4-minor`;
+- one of `bug`, `enhancement`, `documentation`, `test-gap` or `refactor`;
+- an issue type: Bug, Task or Feature.
+
+The findings register is [15_findings_and_recommendations.md](15_findings_and_recommendations.md).
