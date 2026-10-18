@@ -65,8 +65,8 @@ reshuffled every step, an episode terminates only when every agent is bankrupt a
 `max_step`, and the callback asserts total NAV equals total initial cash at every episode end.
 
 Full detail: §2.5 for the step lifecycle, §2.9 for the same picture with the distributed boundaries
-drawn in. The top-level [README](../README.md) carries a copy of the diagram above; this one is the
-source of truth, so change both together.
+drawn in. This is the only copy of the diagram; the top-level [README](../README.md) shows only the
+four layers of §2.2.
 
 ---
 
