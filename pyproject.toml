@@ -33,8 +33,9 @@ quote-style = "preserve"
 testpaths = ["gym_continuousDoubleAuction/test"]
 # The integration suite builds real RLlib Algorithms and takes minutes; select
 # it explicitly (`pytest gym_continuousDoubleAuction/test/integration`) rather
-# than by default.
-addopts = "-p no:cacheprovider"
+# than by default. Without the ignore, CI's unit step collected it too and the
+# integration step then ran it a second time.
+addopts = "-p no:cacheprovider --ignore=gym_continuousDoubleAuction/test/integration"
 
 [tool.coverage.run]
 source = ["gym_continuousDoubleAuction"]

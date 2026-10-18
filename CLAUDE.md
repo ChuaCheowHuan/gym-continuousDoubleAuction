@@ -13,7 +13,9 @@ register is `docs/15_findings_and_recommendations.md`.
 2. **History files are not edited to match the code.** `docs/16_verification_log.md` and
    `docs/17_changelog.md` record what was true when written. New facts get a new section.
 3. **Run `pytest`, never `python test_x.py`.** `python -m pytest gym_continuousDoubleAuction/test -q`
-   (unit, then `test/integration/`, about four minutes in all). CI's smoke run is
+   runs the unit tests; `test/integration/` is ignored by default (`pyproject.toml` addopts) and
+   runs only when named: `python -m pytest gym_continuousDoubleAuction/test/integration -q`
+   (about four minutes for both). CI's smoke run is
    `python gym_continuousDoubleAuction/CDA_rand.py` (no arguments); `CDA_rand --steps 200 --agents 4`
    is the manual runbook check. `test_lint` runs pyflakes over the package, `tools/` and the skill scripts, so unused imports fail the suite; `test_types` runs `mypy` over `envs/` (zero errors) and `ruff format --check .`, so run `ruff format .` before committing (dev extra: `pip install -e '.[dev]'`). `pytest --cov` fails below the floor in `pyproject.toml`.
 4. **Test first, and show it failing.** A fix lands with a regression test that fails on the previous

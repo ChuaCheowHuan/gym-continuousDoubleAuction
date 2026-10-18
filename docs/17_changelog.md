@@ -4110,3 +4110,20 @@ overview, and the diagrams revised.
 - **Not claimed.** That every number in every document was re-measured: the scanner
   (`cda-doc-sync`) found no other current-tense disagreement, and its remaining hits are historical
   figures left as written.
+
+## 90. CI runs the integration suite once
+
+CI's first step, `pytest gym_continuousDoubleAuction/test`, also collected `test/integration`,
+and its third step then ran those 185 tests again: every real RLlib `Algorithm` was built twice per
+run, about three minutes of the job. `pyproject.toml` already said the suite is selected explicitly
+rather than by default; its `addopts` now ignore `test/integration`, so a plain run is the unit
+tests and naming the integration path still runs it. Done in `pyproject.toml` rather than in the
+workflow, which the session's token could not change.
+
+- **Tests.** `test_s4_docs_and_tooling.py` 17 to 19: a default run collects no integration test;
+  naming the path collects it. Fails on the previous source. Unit 2,110 to 2,112; suite 2,297.
+- **Docs.** Every page that called the plain command "everything" now gives the two commands:
+  [10](10_testing.md), [26](26_runbook.md), [00](00_getting_started.md),
+  [01](01_overview.md), [CONTRIBUTING](CONTRIBUTING.md), the README and `CLAUDE.md`.
+- **Not changed.** The smoke run (`CDA_rand.py`) is not duplicated by any unit test and a test
+  pins it, so it stays. The packaging job tests an installed wheel, which nothing else does.

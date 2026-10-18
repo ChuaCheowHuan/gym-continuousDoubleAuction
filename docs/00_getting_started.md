@@ -48,8 +48,9 @@ its configuration from the repository's `config/` folder ([18](18_configuration.
 # the exchange alone, random agents, no learning: a few seconds
 python -m gym_continuousDoubleAuction.CDA_rand --steps 200 --agents 4
 
-# the full suite: unit tests, then real RLlib builds (about four to six minutes)
+# the unit tests (about a minute), then the real RLlib builds (a few minutes)
 python -m pytest gym_continuousDoubleAuction/test -q
+python -m pytest gym_continuousDoubleAuction/test/integration -q
 ```
 
 The first command ends with `completed 200 steps with 4 random agents.`. Use `pytest` to run
