@@ -4071,3 +4071,40 @@ Found reviewing the PR for section 87. `RunLock.acquire` read the lock, judged i
 - **Test.** The first run is made to wait inside its read of the stale lock while the second tries; without the guard the second finishes inside it. Fails on the previous source.
 - **Not claimed.** That a lock on a network filesystem without `flock` support is serialised; that the lock is a substitute for giving each run its own `log_base_dir`.
 - **Tests.** `test_run_lock.py` 13 to 15. Unit 2,108 to 2,110; suite 2,295. Lines of Python 56,046 to 56,131.
+
+## 89. Documentation restructure: `docs/`, an overview-only README, diagrams audited
+
+Asked for: all documentation in one folder except `README.md`, a README that only gives the
+overview, and the diagrams revised.
+
+- **`doc/` is now `docs/`.** Every reference followed: code comments, configs, CI, the Docker
+  file, the notebook, `CLAUDE.md`, the skills, `tools/check_links.py` and its tests. The history
+  in this file and `docs/16` keeps its wording; `docs/README_v1.md` only had its absolute URLs
+  updated so its images still resolve on master.
+- **`CONTRIBUTING.md` moved to `docs/`** and grew from a paragraph into the development guide:
+  set-up, the repository's rules, the checks before pushing, how reviews file issues.
+- **New pages.** [00_getting_started.md](00_getting_started.md) (clone to first trained policy)
+  and [28_glossary.md](28_glossary.md) (every term, linked to the document that owns it).
+- **`README.md`** is an overview: what the project is, highlights, a four-layer diagram, a
+  three-command quick start, entry points into `docs/`, history, citation, licence. The detailed
+  step diagram it duplicated lives only in [02](02_architecture.md) §2.0.
+- **Diagrams.** All 40 Mermaid blocks were rendered with mermaid-cli and checked against the code.
+  Corrected: the episode flow in [01](01_overview.md) (each agent has its own observation; the mark
+  is the mid, not the last trade; liquidation; per-agent termination; the drawn horizon), the system
+  diagram and step sequence in [02](02_architecture.md) (mark, liquidation, self-match prevention,
+  `clear_step_counters`), the order routing in [03](03_matching_engine.md) (slot targeting,
+  unmatched counting, self-match prevention), the promotion flow in [08](08_self_play_league.md)
+  (idle modules, `promotion_reference`, the passivity guard, eviction after the snapshot succeeds),
+  the `config/` mindmap in [18](18_configuration.md), and a mindmap in [05](05_observation_space.md)
+  that did not parse. New: the liquidation flow in [04](04_accounting.md) §8.2 and the
+  save/restore lifecycle in [26](26_runbook.md) §26.7.
+- **Prose corrected alongside.** [02](02_architecture.md) §2.5 (mark price, `order_slot`, grid
+  pricing, liquidation step), [04](04_accounting.md) §8.2 (the band at NAV ≤ 0, the loop bound),
+  [11](11_logging_and_observability.md) (six reward terms per metric family), the integration
+  count (172 to 185) in [02](02_architecture.md) and [10](10_testing.md), the unit total in
+  [10](10_testing.md) and the expected line in [26](26_runbook.md) §26.2, the code size in
+  [14](14_perspective_ai_engineer.md). [09](09_distributed_training.md) records the known issue
+  #299 (batch and entropy schedule scale with `num_learners`).
+- **Not claimed.** That every number in every document was re-measured: the scanner
+  (`cda-doc-sync`) found no other current-tense disagreement, and its remaining hits are historical
+  figures left as written.
