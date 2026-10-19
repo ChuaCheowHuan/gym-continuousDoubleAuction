@@ -94,7 +94,7 @@ wrong, with four dedicated tests.
 
 | Missing | Consequence for strategy learning |
 |---|---|
-| **Latency** | Order-arrival sequence is a uniform shuffle each step (or a batch clear, `matching_rule`). No agent can be systematically faster, so latency arbitrage / queue-jumping is unlearnable and unpunishable. |
+| **Latency** | Order-arrival sequence is a uniform shuffle each step (or a batch clear, `step_clearing: "batch"`). No agent can be systematically faster, so latency arbitrage / queue-jumping is unlearnable and unpunishable. |
 | **Order stacking, by default** | A trader holds one resting order per price level per side unless `allow_multiple_orders_per_level` is set (off by default, [S3-10](29_fixed_issues.md#s3-10--a-trader-can-hold-only-one-resting-order-per-price-level-verified-fixed---as-an-option)). With it off, a second limit at the same price replaces the first, so layering and multi-clip quoting need the option. |
 | **Time-in-force / order types** | No IOC, FOK, post-only, stop, or hidden orders. Post-only in particular is fundamental to real market making. |
 | **Market impact beyond the book** | Correct within the visible book; no permanent-impact or resilience model. |
