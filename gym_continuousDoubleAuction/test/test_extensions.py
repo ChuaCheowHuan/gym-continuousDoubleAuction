@@ -178,7 +178,7 @@ class TestEnablingIsExplicitAndValidated:
 
     def test_enabling_a_package_that_is_not_installed_raises(self, fresh_discovery):
         with pytest.raises(ValueError, match="not installed"):
-            _cfg(extensions_enabled=["discorl"])
+            _cfg(extensions_enabled=["no_such_extension"])
 
     def test_listing_a_name_twice_raises(self, dummy):
         with pytest.raises(ValueError, match="more than once"):
