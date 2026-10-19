@@ -1,6 +1,6 @@
 """A fill never takes cash below zero: sweeps priced in full, batches re-cleared.
 
-docs/15 S2-14. `Trader._order_approved` priced a market order's opening size at the
+docs/29 S2-14. `Trader._order_approved` priced a market order's opening size at the
 best opposite price, but a sweep pays every level it takes, so an order the
 trader could not afford was approved (cash 1,000, buy 10 against 1 @ 100 and
 9 @ 200: cash -900). Under `step_clearing: "batch"` the same gap is wider: the
@@ -310,7 +310,7 @@ def _underwater_short(cash_after, entry=10, squeezed_to=30, lots=10):
 
 
 class TestClosingALosingShortNeedsTheCashForTheLoss:
-    """docs/15 S2-15. Covering a short past its collateral realises a negative
+    """docs/29 S2-15. Covering a short past its collateral realises a negative
     `position_val` into cash; the check let the cover through unreserved."""
 
     def test_the_position_really_is_under_water(self):

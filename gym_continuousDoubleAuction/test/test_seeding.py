@@ -1,6 +1,6 @@
 """`reset(seed=...)` has to actually seed the episode.
 
-docs/15 S3-5. The env drew from three separate sources of randomness and every
+docs/29 S3-5. The env drew from three separate sources of randomness and every
 one of them went to the *global* `np.random`: the price anchor in `reset`,
 order sizes in `Action_Helper._set_size`, and the queueing order in
 `rand_exec_seq`, which called `sklearn.utils.shuffle(actions, random_state=None)`

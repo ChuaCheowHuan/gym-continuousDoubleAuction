@@ -1,6 +1,6 @@
 """A bankrupt agent is terminated, disarmed, and stops being scored.
 
-docs/15 S2-4. `set_done` recorded bankruptcy in `done_set` and `set_all_done`
+docs/29 S2-4. `set_done` recorded bankruptcy in `done_set` and `set_all_done`
 then rebuilt the per-agent dictionary as all-`False`, so `terminateds[agent]`
 was `False` for every agent on every step. Three consequences, each pinned
 below: the agent kept emitting transitions, it kept accruing reward terms, and
@@ -222,7 +222,7 @@ class TestTerminationLeavesTheLedgerIntact:
 
 
 class TestTheBookTheObservationShowsIsTheBookThatRemains:
-    """docs/15 R-2 (#172): a bankrupt trader's orders leave the book before observations are built.
+    """docs/29 R-2 (#172): a bankrupt trader's orders leave the book before observations are built.
 
     `set_done` pulled them while the step's outputs were being assembled, after the shared
     book snapshot had been taken, so on the bankruptcy step every observation still showed

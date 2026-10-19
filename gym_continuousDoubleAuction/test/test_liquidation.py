@@ -451,7 +451,7 @@ class TestTheBandAllowsForTheTakerFee:
 
 
 class TestThePeakIsSetAtStepBoundaries:
-    """docs/15 R-4 (#174): `max_nav` is the best NAV a step ended on, not a transient one.
+    """docs/29 R-4 (#174): `max_nav` is the best NAV a step ended on, not a transient one.
 
     Every `cal_nav` used to move the peak, including the extra re-marks inside a liquidation
     cascade, so a NAV that existed for an instant mid-step became the peak and charged
@@ -506,7 +506,7 @@ class TestThePeakIsSetAtStepBoundaries:
 
 
 class TestAClosingTraderWithNoEquityStillUsesTheBook:
-    """docs/15 R-3 (#173): at NAV <= 0 the book is tried at the touch before ADL.
+    """docs/29 R-3 (#173): at NAV <= 0 the book is tried at the touch before ADL.
 
     The bankruptcy band is `mark -/+ NAV / position`, so with no equity it was the mark
     itself, which a mid-price mark can never be filled at: the whole position went to ADL
@@ -569,7 +569,7 @@ class TestAClosingTraderWithNoEquityStillUsesTheBook:
 
 
 class TestMaintenanceMarginMustBePositive:
-    """docs/15 R-3 (#173): a zero margin liquidates only at NAV <= 0, the case with no room."""
+    """docs/29 R-3 (#173): a zero margin liquidates only at NAV <= 0, the case with no room."""
 
     @pytest.mark.parametrize("margin", [0, 0.0])
     def test_zero_is_refused_by_name(self, margin):

@@ -94,7 +94,7 @@ class ObsLayout:
     k_rows: int
     extra_dim: int
     private_dim: int
-    #: "levels" or "grid" (State_Helper.BOOK_MODES; docs/15 S3-15).
+    #: "levels" or "grid" (State_Helper.BOOK_MODES; docs/29 S3-15).
     book_mode: str = "levels"
     #: The config's `k_rows`: the own-book block is `2 * levels` wide in both
     #: modes, and in `grid` mode `levels` is also the window's half-width, so
@@ -218,7 +218,7 @@ class ObsLayout:
         if len(fits) > 1:
             # Never guessed: the two readings have different `n_hist` and different rows, and
             # picking the process default silently built a `grid` layout for a `levels` run
-            # (docs/15 R-17, #187).
+            # (docs/29 R-17, #187).
             readings = "; ".join(f"{m} with n_hist {n}" for m, n, _r, _c in fits)
             raise AmbiguousObsLayout(
                 f"An observation of {flat_dim} floats fits more than one book mode "

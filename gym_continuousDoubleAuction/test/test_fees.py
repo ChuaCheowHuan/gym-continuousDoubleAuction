@@ -1,6 +1,6 @@
 """Maker/taker fees: charged against NAV in settlement, collected by the exchange.
 
-docs/15 S2-3 (second half). The reward proxies in `order_penalty`, `trade_penalty`
+docs/29 S2-3 (second half). The reward proxies in `order_penalty`, `trade_penalty`
 and `passive_bonus` charge the reward; these fees charge the ledger, so market
 making has revenue and crossing the spread has a cost that shows up in NAV.
 

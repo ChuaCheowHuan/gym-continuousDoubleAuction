@@ -161,7 +161,7 @@ class TestProgressAndCriticHealth:
             f"{VF_EXPLAINED_VAR_KEY} is in the noise floor for {sorted(noise)} "
             f"after {NUM_ITERS} iterations ({noise}): the critic took no useful "
             f"gradient, PPO degenerates to REINFORCE, and every advantage this "
-            f"run computes is noise. See docs/15 S1-1."
+            f"run computes is noise. See docs/29 S1-1."
         )
 
     def test_the_file_carries_it_too(self):

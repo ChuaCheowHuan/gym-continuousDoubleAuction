@@ -248,7 +248,7 @@ def test_tokenize_ignores_the_private_block_except_the_own_book(spaces):
     The tail is per-agent and the book prefix is shared, so a tokeniser that
     let the tail leak in would make one agent's attention depend on another's
     inventory - and it would do so silently. The one deliberate exception is
-    the own-book block (docs/15 S3-24 phase 1): it is per LEVEL, and it rides
+    the own-book block (docs/29 S3-24 phase 1): it is per LEVEL, and it rides
     on the newest snapshot's level tokens as two extra channels. So perturbing
     everything in the tail *except* that block must move nothing.
     """

@@ -39,7 +39,7 @@ BOOK_DIM = BOOK_ROWS * K_ROWS
 #: against - it lets consumers name a row instead of indexing a magic number.
 #:
 #: The two occupancy rows are 1.0 where the level holds an order and 0.0 where
-#: it does not (docs/15 S3-14). Without them a price entry of 0.0 meant three
+#: it does not (docs/29 S3-14). Without them a price entry of 0.0 meant three
 #: things - an absent level, a quote sitting exactly at the reference price,
 #: and the lone best quote of a one-sided book - and a policy could not tell
 #: which. Measured under random play: 1.2% of occupied price cells read 0.0
@@ -48,7 +48,7 @@ BOOK_DIM = BOOK_ROWS * K_ROWS
 #: its own occupancy, and pass through normalisation unchanged.
 BOOK_ROW_ORDER = ("bid_price", "bid_size", "ask_price", "ask_size", "bid_occupied", "ask_occupied")
 
-#: How the public book is laid out in an EMITTED snapshot (docs/15 S3-15).
+#: How the public book is laid out in an EMITTED snapshot (docs/29 S3-15).
 #:
 #: ``"levels"``: the raw rows above, normalised - the `k_rows` best occupied
 #: prices per side. Slot k of that layout means "the k-th occupied price",
@@ -114,7 +114,7 @@ SNAPSHOT_DIM = OBS_BOOK_DIM + EXTRA_DIM
 #: must equal its length, and __init__ checks that.
 #:
 #: The last four exist because the observation used to carry **no information
-#: about executions at all** (docs/15 S2-7): `set_agg_LOB` iterated the tape,
+#: about executions at all** (docs/29 S2-7): `set_agg_LOB` iterated the tape,
 #: incremented a counter and threw it away, the loop body being a commented-out
 #: `write` copy-pasted from `OrderBook.__str__`. In a continuous double auction
 #: aggressive order flow is the most predictive public signal there is - more so
@@ -218,7 +218,7 @@ def private_fields(k_rows):
 
     `[base (9) | own bid sizes (k) | own ask sizes (k) | own counts (2) |
     unmatched_last_step (1) | action mask (9)]`. The own-book block is the S1-2 tail closed
-    (docs/15 S3-24 phase 1): the agent used to see how much cash it had
+    (docs/29 S3-24 phase 1): the agent used to see how much cash it had
     escrowed but not where, so a cancel was a guess about state the policy
     was never shown - measured at a 7% hit rate under random play. Level k of
     the own book is level k of the public book in the same snapshot, on the
@@ -261,7 +261,7 @@ ACTION_MASK_OFFSET = action_mask_offset(K_ROWS)
 #: Bumped whenever the observation vector's layout changes shape or meaning,
 #: so a checkpoint records which layout its weights were trained against and a
 #: restore into a different one fails by name rather than by tensor shape
-#: (docs/15 S4-19). 1 was the 193-float layout with a 9-field private block;
+#: (docs/29 S4-19). 1 was the 193-float layout with a 9-field private block;
 #: 2 added the own-book block and the feedback flag (216 floats at defaults);
 #: 3 kept the shape and changed the meaning: ask blocks are positive rather
 #: than negated (S4-17) and the space has finite, measured bounds that the
@@ -437,7 +437,7 @@ class State_Helper(SharedState):
         here, by `M_t`. It used to hold frames that had each already been
         normalised by their own midpoint, so frames t-3..t carried denominators
         M_{t-3}..M_t and could not meaningfully be differenced - which is the
-        entire purpose of stacking them. That is docs/15 S2-6.
+        entire purpose of stacking them. That is docs/29 S2-6.
 
         Concretely: a bid resting at 90 while the midpoint moves 100 -> 96 used
         to read 0.100 in one frame and 0.063 in the next. The order had not
@@ -566,7 +566,7 @@ class State_Helper(SharedState):
         occupancy = book[4 * k : 6 * k]
 
         norm_bid_price = np.where(bid_price > 0, (M_t - bid_price) / M_t, 0.0)
-        # Asks are positive, like bids (docs/15 S4-17): the block's position
+        # Asks are positive, like bids (docs/29 S4-17): the block's position
         # says which side it is, so the sign carried nothing, and it stopped an
         # encoder from sharing weights between the two sides. Both price rows
         # are now the fractional distance from the midpoint, >= 0.
@@ -598,7 +598,7 @@ class State_Helper(SharedState):
         what makes it order flow rather than volume: a trade whose aggressor
         bought is +q, one whose aggressor sold is -q. That is the quantity
         microstructure research finds most predictive of short-horizon returns,
-        and the observation carried nothing of it at all (docs/15 S2-7).
+        and the observation carried nothing of it at all (docs/29 S2-7).
 
         Does not advance `_tape_cursor` - `prep_next_state` does, because
         `set_agg_LOB` runs twice per step and only one of those commits a frame.
@@ -651,7 +651,7 @@ class State_Helper(SharedState):
         against the last trade it reads its distance from the price that
         actually printed, which is information. It also puts the observation
         on the same chain as `Exchg_Helper.mark_price`, which never marked off
-        a lone quote when a trade existed (docs/15 S2-5), so what the agent is
+        a lone quote when a trade existed (docs/29 S2-5), so what the agent is
         shown and what its NAV is marked at agree on a one-sided book.
 
         See docs/05 2.1.
@@ -866,7 +866,7 @@ class State_Helper(SharedState):
         sizes through the `own_size` alias and the two counts through
         `own_count` - and a field without a bound raises here, at
         construction, rather than emitting an unbounded float into a Box that
-        claims otherwise (docs/15 S4-15).
+        claims otherwise (docs/29 S4-15).
         """
         cfg = constants("observation_bounds")
 
@@ -1044,7 +1044,7 @@ class State_Helper(SharedState):
         # loop was supposed to produce: it iterated `reversed(self.LOB.tape)`,
         # incremented a counter and discarded it, its body a commented-out
         # `write` copy-pasted from `OrderBook.__str__`, so the observation
-        # carried zero information about trades (docs/15 S2-7).
+        # carried zero information about trades (docs/29 S2-7).
         signed_volume, trade_count, trade_direction = self._trade_flow()
 
         # The raw frame, which is what `obs_history` stores. Normalisation is

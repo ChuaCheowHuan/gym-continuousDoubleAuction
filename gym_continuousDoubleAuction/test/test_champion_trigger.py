@@ -10,7 +10,7 @@ undrawn.
 
 Both GPU runs of 2026-08-15 died this way, at iterations 10 and 12 of 16,
 reporting healthy league stats right up to the iteration it happened. See
-docs/15_findings_and_recommendations.md S3-12.
+docs/29_fixed_issues.md S3-12.
 """
 
 import logging

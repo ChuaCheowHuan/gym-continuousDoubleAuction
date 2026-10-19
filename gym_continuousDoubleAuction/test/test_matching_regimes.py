@@ -97,7 +97,7 @@ class TestAllocationRule:
 
 
 class TestWhoInitiatesAnAuctionTrade:
-    """docs/15 R-1 (#171): a trade with both sides in the batch is signed by a tick rule.
+    """docs/29 R-1 (#171): a trade with both sides in the batch is signed by a tick rule.
 
     Nobody is the aggressor in a call auction, and the order flow the observation carries
     (`signed_volume`, `trade_direction`) needs a sign. Naming the buyer every time made 53%

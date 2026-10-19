@@ -77,7 +77,7 @@ UTILITY_MEASURES = ("contribution", "mean_corrected", "overall")
 #:                 weight matrix, and zeroing the outgoing weights is the whole
 #:                 reason a replacement does not disturb the function.
 #: `recurrent`   - everything in `feedforward`, plus the hidden units of the top
-#:                 layer of an `nn.LSTM` core (docs/15 S3-32, docs/25 section 3.4).
+#:                 layer of an `nn.LSTM` core (docs/29 S3-32, docs/25 section 3.4).
 #:                 The `lstm` encoder has nothing replaceable under
 #:                 `feedforward`, which is why this exists. See `RecurrentLayer`
 #:                 for what a unit is and what is zeroed.
@@ -138,7 +138,7 @@ class CBPConfig:
     fire_on: str = "adam_step"
     reset_optimizer_state: bool = True
     #: Move a replaced unit's mean contribution into the next layer's bias before its
-    #: outgoing weights are zeroed, so the output does not jump (docs/15 R-13, #183). Off by
+    #: outgoing weights are zeroed, so the output does not jump (docs/29 R-13, #183). Off by
     #: default: the papers' rule zeroes and leaves the bias alone, and `docs/16` section 16.13
     #: measured CBP that way.
     compensate_mean: bool = False
@@ -809,7 +809,7 @@ def merge_stats(
 
     A layer can run more than once per step - each MoE expert once per top-k slot, the JEPA
     trunk on the masked context and again on the full observation - and the hook used to keep
-    only the last call, so a unit was judged on a partial, order-dependent view (docs/15 R-14,
+    only the last call, so a unit was judged on a partial, order-dependent view (docs/29 R-14,
     #184). Each statistic is a mean over `rows`, so weighting by rows gives exactly the mean
     over all rows of both calls, as if they had been one batch.
     """

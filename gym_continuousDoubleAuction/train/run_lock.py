@@ -1,4 +1,4 @@
-"""One live run per checkpoint folder (docs/15 R-9, #179).
+"""One live run per checkpoint folder (docs/29 R-9, #179).
 
 Every run under a `log_base_dir` saves into the same `chkpt/` folder. That is deliberate: a
 new run resumes from an earlier run's newest save, so scoping saves per run would make every

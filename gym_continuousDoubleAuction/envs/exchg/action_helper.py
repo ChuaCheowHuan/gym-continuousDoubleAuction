@@ -32,10 +32,10 @@ _CATEGORY_MAP = {
 #: them without instantiating a space.
 ACTION_KEYS = ("category", "order_slot", "price", "price_offset", "size")
 
-#: Bumped whenever the action Dict changes shape or meaning (docs/15 S4-19).
+#: Bumped whenever the action Dict changes shape or meaning (docs/29 S4-19).
 #: 1 was the five-component Dict; 2 added `order_slot`; 3 narrowed `size_mean`
-#: from [-1, 1] to [0, 1] (docs/15 S3-1); 4 replaced `size_mean` and `size_sigma`
-#: with one `size` head (docs/15 S3-2, S3-3).
+#: from [-1, 1] to [0, 1] (docs/29 S3-1); 4 replaced `size_mean` and `size_sigma`
+#: with one `size` head (docs/29 S3-2, S3-3).
 ACTION_LAYOUT_VERSION = 4
 
 
@@ -190,7 +190,7 @@ class Action_Helper(SharedState):
                 # Aims a modify or cancel at one of this agent's own orders - see
                 # Trader._get_order_ID. Before this head existed a cancel had to
                 # name its order's exact price out of thirty codes and landed 7%
-                # of the time under random play (docs/15 S3-24).
+                # of the time under random play (docs/29 S3-24).
                 "order_slot": spaces.Discrete(int(self._act["max_own_orders"]) + 1),
             }
         )
@@ -242,7 +242,7 @@ class Action_Helper(SharedState):
         This was `sklearn.utils.shuffle(actions, random_state=seed)` with the
         one caller passing `seed=None`, which falls through to sklearn's global
         `np.random.mtrand._rand` - so the queueing order ignored the seed
-        entirely (docs/15 S3-5), and shuffling at most `num_agents` dicts cost a
+        entirely (docs/29 S3-5), and shuffling at most `num_agents` dicts cost a
         ~30MB dependency in every EnvRunner (S3-6).
 
         Arguments:
@@ -400,7 +400,7 @@ class Action_Helper(SharedState):
             adds `min_size`.
         """
         # No draw here. The policy samples `size` itself, so the size an order
-        # gets is the action PPO scored. Until docs/15 S3-3 the env drew it from
+        # gets is the action PPO scored. Until docs/29 S3-3 the env drew it from
         # a Gaussian the policy only parameterised, which put the realised size
         # outside the log-probability in the importance ratio, and S3-2 was the
         # sigma that did it: <= 1 on sizes of 25 to 500 moved nothing.
@@ -449,7 +449,7 @@ class Action_Helper(SharedState):
         level_idx = price_code
 
         if self.book_mode == "grid":
-            # The observation's coordinate is the action's (docs/15 S3-15):
+            # The observation's coordinate is the action's (docs/29 S3-15):
             # code j is the cell j ticks from the reference on the passive
             # side, whatever is resting there. No ghost logic is needed - every
             # code names a price - and a bid can cross only through the
@@ -505,7 +505,7 @@ class Action_Helper(SharedState):
         # price level one float-ulp away from the one the agent meant.
         # Measured at tick_size 0.1: an agent re-quoting the same level every
         # step opened a fresh level every step, and its own cancels and
-        # upserts never found the order they targeted. docs/15 S3-4 called this
+        # upserts never found the order they targeted. docs/29 S3-4 called this
         # a rare drift on the anchor path; on the level path it was the rule.
         #
         # Decimal throughout so the result is exact: `Decimal(str(x))` is the

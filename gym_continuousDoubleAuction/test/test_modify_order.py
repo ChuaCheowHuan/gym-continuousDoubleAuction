@@ -132,7 +132,7 @@ class TestModifyIsCancelAndReprocess:
     Scenarios 1, 5 and 6 above are what actually constrain this: each crosses
     the book and asserts exact cash, cash_on_hold and net_position afterwards,
     which an escrow-shuffle cannot produce. This test only stops the function
-    being reintroduced alongside them. See docs/15 S3-20.
+    being reintroduced alongside them. See docs/29 S3-20.
     """
 
     def test_the_escrow_shuffle_helper_is_gone(self):

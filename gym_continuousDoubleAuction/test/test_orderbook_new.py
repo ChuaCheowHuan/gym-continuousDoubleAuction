@@ -318,7 +318,7 @@ class TestOrderBookInvariants:
 
 
 class TestMalformedInputRaisesInsteadOfExiting:
-    """docs/15 S3-7. The engine used to `sys.exit` on malformed input, which
+    """docs/29 S3-7. The engine used to `sys.exit` on malformed input, which
     under RLlib ends the env-runner process rather than the order and is
     swallowed by Ray's fault tolerance as a worker restart. Every guard now
     raises `ValueError` naming the method and the value it refused, so a

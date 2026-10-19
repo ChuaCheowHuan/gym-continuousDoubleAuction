@@ -1,7 +1,7 @@
 """The cash check nets an order against the position *and* against this
 trader's own resting orders.
 
-docs/15 S1-5. `_order_approved` used to compute the "opening" portion of an
+docs/29 S1-5. `_order_approved` used to compute the "opening" portion of an
 order against `abs(net_position)` alone, so every resting order on the closing
 side netted against the same lots. N individually-"closing" orders were each
 waved through against one position, and because the approval is what bounds

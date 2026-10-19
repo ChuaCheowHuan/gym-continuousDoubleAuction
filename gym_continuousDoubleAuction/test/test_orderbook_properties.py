@@ -1,6 +1,6 @@
 """Property-based tests for the matching engine and the ledger.
 
-docs/10 §8 and docs/15 S4-13: the order book states its invariants outright,
+docs/10 §8 and docs/29 S4-13: the order book states its invariants outright,
 and every one of them holds for *any* order sequence, which is exactly what an
 example-based suite cannot say. Hypothesis generates the sequences; shrinking
 turns a failure into the shortest sequence that breaks the invariant, which is
@@ -38,7 +38,7 @@ order = st.fixed_dictionaries(
         "size": st.integers(1, 40),
         "price": st.sampled_from(PRICES),
         # Which own order a modify/cancel aims at: 0 is all/oldest, k the k-th
-        # from the touch, past the count a counted miss (docs/15 S3-24).
+        # from the touch, past the count a counted miss (docs/29 S3-24).
         "slot": st.integers(0, 5),
     }
 )
@@ -159,7 +159,7 @@ class TestEnvInvariants:
         # of the conservation identity is a sum of the same trade values with
         # opposite signs. It held only to ~1e-22 while the basis was stored as
         # a VWAP quotient and multiplied back - this suite is what found that
-        # (seed 161, tick 1; docs/15 S3-23) - so the assertion is `==`, and a
+        # (seed 161, tick 1; docs/29 S3-23) - so the assertion is `==`, and a
         # tolerance here would be the regression.
         for _ in range(steps):
             actions = {a: env.action_spaces[a].sample() for a in env.agents}

@@ -1,6 +1,6 @@
 """The fixed tick-offset grid shared by observation and action (S3-15).
 
-docs/15 S3-15. In the `levels` layout slot k meant "the k-th occupied price",
+docs/29 S3-15. In the `levels` layout slot k meant "the k-th occupied price",
 whose distance from the market wandered - measured under random play the best
 level sat 3.8 +- 2.5 ticks from the reference and its price changed on 35-54%
 of steps, and the action's price code j landed anywhere from 0 to 20 ticks out

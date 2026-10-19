@@ -119,7 +119,7 @@ class TestMetricsCrossTheRunnerBoundary:
             assert pid in reported and reported[pid] >= 0.0
 
     def test_the_risk_adjusted_metrics_reach_the_driver(self):
-        """docs/15 S3-9, logged per module on the runner and compiled on the driver.
+        """docs/29 S3-9, logged per module on the runner and compiled on the driver.
         Max drawdown and the inventory statistics are defined for any agent that
         reported a NAV, so they must be present for the trainable modules; Sharpe
         and Sortino are left out when undefined, so they are not required."""

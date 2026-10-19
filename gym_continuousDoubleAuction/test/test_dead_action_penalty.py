@@ -1,4 +1,4 @@
-"""Phase 3 of docs/15 S3-24, the reward half: `dead_action_penalty`.
+"""Phase 3 of docs/29 S3-24, the reward half: `dead_action_penalty`.
 
 Zero by default, so the reward is bit for bit what it was before the term
 existed; when set, it charges per modify/cancel that named no resting order.

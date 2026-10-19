@@ -116,7 +116,7 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
         # single agent, not a per-agent dict).
         #
         # Finite bounds, from `observation_bounds` in tunable_constants.json
-        # via State_Helper (docs/15 S4-15): every feature is a ratio, a log or
+        # via State_Helper (docs/29 S4-15): every feature is a ratio, a log or
         # a tanh with a known or measured range, and `set_next_state` clips to
         # these and counts what it clipped, so the Box is a true statement
         # about what the env emits rather than the `(-inf, inf)` it used to
@@ -150,7 +150,7 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
         # `PassiveEnvChecker` reads the singular attributes and refuses None.
         # Nothing in the test suite or the CI packaging job exercised `make` -
         # both construct the class directly - so it stayed broken while every
-        # job was green. See docs/15 S2-12.
+        # job was green. See docs/29 S2-12.
         first_agent = agent_ids[0]
         self.observation_space = self.observation_spaces[first_agent]
         self.action_space = self.action_spaces[first_agent]
@@ -193,7 +193,7 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
         # global `np.random` instead: the price anchor here, order sizes in
         # `_set_size`, and the queueing order in `rand_exec_seq`. All three now
         # read `self.np_random`, so `reset(seed=...)` means what the Gymnasium
-        # API says it means (docs/15 S3-5).
+        # API says it means (docs/29 S3-5).
         #
         # `seed=None` deliberately does not re-seed - the contract is that an
         # env which already has a generator keeps its stream across resets, so
@@ -283,7 +283,7 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
         # except `set_done` pulling a bankrupt trader's orders - which marks
         # the snapshot stale. So it is rebuilt only then, or when the render
         # wants the "@ t-1" table; measured at 5.9% of a step otherwise
-        # (docs/15 S4-11).
+        # (docs/29 S4-11).
         if self._snapshot_stale or (self.is_render and logger.isEnabledFor(logging.DEBUG)):
             self.agg_LOB = self.set_agg_LOB()  # LOB state at t before processing LOB
 
@@ -366,7 +366,7 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
 
         # Read-only. This used to null `model_actions`, `LOB_actions` and
         # `shuffled_actions` and clear `seq_trades` / `seq_order_in_book`, so
-        # toggling the render changed what the *next* step's info saw (docs/15
+        # toggling the render changed what the *next* step's info saw (docs/29
         # S4-7). Every one of those is reassigned at the top of `step()` and in
         # `do_actions`, so the clearing bought nothing but the side effect.
         self.print_trades_all_seq(self.seq_trades)

@@ -27,7 +27,7 @@ register(
     # The env still carries the singular `observation_space` / `action_space`
     # the checker was reading - RLlib defines them as the space of a single
     # agent - because leaving them None is what made `gymnasium.make` raise
-    # outright (docs/15 S2-12). Turning the checker off would have hidden that
+    # outright (docs/29 S2-12). Turning the checker off would have hidden that
     # rather than fixed it.
     disable_env_checker=True,
 )

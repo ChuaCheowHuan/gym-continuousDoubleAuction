@@ -1,6 +1,6 @@
 """Zero means one thing: the occupancy rows and the last-trade reference (S3-14).
 
-docs/15 S3-14. `0.0` in a price cell used to mean three things - an absent
+docs/29 S3-14. `0.0` in a price cell used to mean three things - an absent
 level, a quote resting exactly at the reference price, and the lone best quote
 of a one-sided book, whose own price was the reference. Measured under random
 play before the fix, 1.2% of occupied price cells read 0.0 at the shipped
@@ -181,7 +181,7 @@ class TestReferencePrice:
 
     def test_the_chain_matches_the_mark_price(self):
         """On a one-sided book with a print, what the agent sees and what it is
-        marked at are the same number (docs/15 S2-5 narrowed the mark first)."""
+        marked at are the same number (docs/29 S2-5 narrowed the mark first)."""
         env = _env()
         a, b = env.traders
         a.place_order('limit', 'bid', 10, 100.0, env.LOB, env.traders)

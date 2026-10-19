@@ -104,7 +104,7 @@ class TestLayerDiscovery:
 
         29 = 9 category + 5 order_slot + 10 price + 3 price_offset + 2 for
         the one Box head's mean and log-std. It was 31 with the two size
-        heads (docs/15 S3-2, S3-3) and 26 before `order_slot` existed (S3-24).
+        heads (docs/29 S3-2, S3-3) and 26 before `order_slot` existed (S3-24).
         """
         by_name = {l.name: l for l in find_replaceable_layers(build_module(spaces))}
 
@@ -772,7 +772,7 @@ class TestDDPUnwrapping:
 
 
 class TestAUnitIsJudgedOnEveryCallOfTheStep:
-    """docs/15 R-14 (#184): the hook combined nothing, so a layer that ran twice in one step
+    """docs/29 R-14 (#184): the hook combined nothing, so a layer that ran twice in one step
     (each MoE expert once per top-k slot; the JEPA trunk on the masked and the full input) was
     judged on its last call alone."""
 
@@ -842,7 +842,7 @@ class TestAUnitIsJudgedOnEveryCallOfTheStep:
 
 
 class TestMeanCompensation:
-    """docs/15 R-13 (#183): a replaced unit's mean contribution can be moved into the next bias.
+    """docs/29 R-13 (#183): a replaced unit's mean contribution can be moved into the next bias.
 
     Zeroing a unit's outgoing weights, as the papers do, removes whatever steady glow it fed
     the next layer. A saturated tanh unit looks useless to `overall` utility (its activation

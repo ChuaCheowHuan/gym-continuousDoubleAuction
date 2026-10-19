@@ -178,7 +178,7 @@ class TestTickGrid:
     `min_tick` was a hardcoded 1 that made the configured `tick_size` a no-op;
     it now comes from the config key. `OrderBook` still accepts and stores a
     `tick_size` it never reads - that copy is retained deliberately, because the
-    orderbook package is off-limits. See docs/15 S3-4; these tests cover the
+    orderbook package is off-limits. See docs/29 S3-4; these tests cover the
     action-layer half only.
     """
 

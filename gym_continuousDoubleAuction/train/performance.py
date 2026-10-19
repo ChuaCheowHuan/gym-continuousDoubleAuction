@@ -1,6 +1,6 @@
 """Risk-adjusted performance of one agent over one episode, from running sums.
 
-docs/15 S3-9: NAV, trade count and reward were recorded, and nothing a trader would
+docs/29 S3-9: NAV, trade count and reward were recorded, and nothing a trader would
 judge a strategy by was: no Sharpe or Sortino, no drawdown over the path (only the
 last step's), no hit rate, no turnover, no inventory statistics. The counters were
 discarded after the reward consumed them.

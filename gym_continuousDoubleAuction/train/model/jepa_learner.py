@@ -125,7 +125,7 @@ class JEPARLModule(CDAPPOTorchRLModule):
         gradients on, and no optimiser step follows it. With `vf_share_layers: true` it goes
         through the same JEPA encoder as the policy, which then ran the mask-and-predict
         objective and took an EMA step of the target trunk it had no business taking: one more
-        EMA step per module per iteration than optimiser steps (docs/15 R-15, #185). The
+        EMA step per module per iteration than optimiser steps (docs/29 R-15, #185). The
         objective is switched off for the duration and restored after, even on an error.
         """
         encoders = [m for m in self.encoder.modules() if hasattr(m, "objective_enabled")]

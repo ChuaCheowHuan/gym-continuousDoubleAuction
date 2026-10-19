@@ -106,7 +106,7 @@ class TestObservationHistory:
         assert len(set(tails.values())) > 1, (
             "every agent's private block is identical after trading, so the "
             "observation still cannot distinguish a long agent from a short "
-            "one. See docs/15 S1-2."
+            "one. See docs/29 S1-2."
         )
 
     def test_the_private_block_is_the_declared_width(self):

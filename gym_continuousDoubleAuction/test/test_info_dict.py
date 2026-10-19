@@ -299,7 +299,7 @@ class TestMarketState:
 
     def test_a_one_sided_book_reports_none_not_zero(self):
         """0.0 would be indistinguishable from a book whose touch is touching.
-        The observation needs a finite sentinel; a log does not (docs/15 S3-14).
+        The observation needs a finite sentinel; a log does not (docs/29 S3-14).
         """
 
         class FakeTree:
@@ -454,7 +454,7 @@ class TestActivityFields:
             # Over the agents that reported, not over `range(NUM_AGENTS)`: at
             # this cash level an agent can go bankrupt, and a terminated agent
             # stops appearing in `info` from its terminal step onward
-            # (docs/15 S2-4).
+            # (docs/29 S2-4).
             rejections += sum(agent_info["num_rejected_step"] for agent_info in infos.values())
             if terminateds.get("__all__") or truncateds.get("__all__"):
                 break

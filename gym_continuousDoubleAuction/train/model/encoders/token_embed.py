@@ -17,7 +17,7 @@ Tokenising is only half of "reads the observation as the grid it is". A mean
 over per-token linear projections is a linear function of their sum, so without
 a position signal this encoder is invariant to the order of both axes - the
 grid goes in and its per-field mean comes out. It carries the same two
-embeddings the transformer does, for that reason. See docs/15 S2-10.
+embeddings the transformer does, for that reason. See docs/29 S2-10.
 
 The embeddings are necessary and not sufficient: under a linear projection and
 a mean, `mean(W x_i + p_i)` is `W mean(x_i) + mean(p_i)`, so the position is an
@@ -115,7 +115,7 @@ class TorchTokenEmbedEncoder(TorchModel, Encoder):
         # anything nonlinear, so the `lstm` encoder discarded exactly the grid
         # structure its own docstring says it preserves, and any
         # lstm-vs-transformer comparison was measuring something else. That is
-        # docs/15 S2-10.
+        # docs/29 S2-10.
         #
         # `pool="attention"` would have masked this partially; `pool="mean"` is
         # the shipped default, so it did not.

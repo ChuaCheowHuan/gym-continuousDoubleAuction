@@ -6,7 +6,7 @@ wheel carried no `visualize` at all - while docs/01 documents
 `python -m gym_continuousDoubleAuction.visualize.run_all` as an entry point. It
 worked in-tree and from an editable install, which is why nothing noticed: the
 CI packaging job builds a wheel and constructs an env from it, but never
-imported this. See docs/15 S3-21.
+imported this. See docs/29 S3-21.
 
 Deliberately empty otherwise. The modules here are entry points run with
 `python -m`, and importing them eagerly would pull matplotlib into any process

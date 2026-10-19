@@ -274,7 +274,7 @@ class TestNAVCallback:
 class TestATerminatedAgentStillCounts:
     """A bankrupt agent drops out of `info`; its NAV must not drop out too.
 
-    docs/15 S2-4. Once a bankrupt agent is terminated it stops appearing in
+    docs/29 S2-4. Once a bankrupt agent is terminated it stops appearing in
     `info` from its terminal step onward, and the check reads the *final*
     step's info. Summing only what is there leaves the total short by exactly
     that agent's NAV, so every episode containing a bankruptcy would read as a

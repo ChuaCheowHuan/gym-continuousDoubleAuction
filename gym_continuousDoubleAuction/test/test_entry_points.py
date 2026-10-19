@@ -3,13 +3,13 @@
 Both failed in the same way: invisible to every job that runs from a checkout,
 because nothing in the test suite or the CI packaging job exercised them.
 
-**docs/15 S2-12.** `setup.py`'s own docstring documents
+**docs/29 S2-12.** `setup.py`'s own docstring documents
 `gymnasium.make("continuousDoubleAuction-v0")`. It raised `TypeError: action
 space does not inherit from gymnasium.spaces.Space, actual type: NoneType` -
 only the plural `observation_spaces` / `action_spaces` were set, and
 `PassiveEnvChecker` reads the singular ones inherited from `MultiAgentEnv`.
 
-**docs/15 S3-21.** `visualize/` had no `__init__.py`, so `find_packages()`
+**docs/29 S3-21.** `visualize/` had no `__init__.py`, so `find_packages()`
 omitted it and no built wheel carried it - while docs/01 documents
 `python -m gym_continuousDoubleAuction.visualize.run_all` as an entry point.
 The packaging half is asserted in CI, where a wheel actually exists; what is
