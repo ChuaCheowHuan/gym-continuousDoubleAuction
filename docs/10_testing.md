@@ -17,11 +17,11 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# the unit tests (2,165). pyproject.toml's addopts ignores test/integration by default,
+# the unit tests (2,167). pyproject.toml's addopts ignores test/integration by default,
 # so this never runs the slow RLlib suite as well
 python -m pytest gym_continuousDoubleAuction/test -q
 
-# then the integration suite, named explicitly - everything is these two (2,355 tests).
+# then the integration suite, named explicitly - everything is these two (2,357 tests).
 # RLlib wiring, the real save/restore, the progress log and a real remote
 # runner (190 tests, builds real Algorithms)
 python -m pytest gym_continuousDoubleAuction/test/integration -q
@@ -44,7 +44,7 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `1363 passed` on the unit half, `172 passed` on the integration half, when this was first measured; the current totals are 2,165 and 190 (§ "File inventory" below). There is no xfail.
+**[verified]** — `1363 passed` on the unit half, `172 passed` on the integration half, when this was first measured; the current totals are 2,167 and 190 (§ "File inventory" below). There is no xfail.
 
 ### File inventory
 
@@ -141,9 +141,9 @@ Counts re-measured with `--collect-only`.
 | `test_composition.py` | 24 | Reward, episode status, info and liquidation as composed components: out of the MRO, usable alone with explicit inputs, the env's old attributes still forwarded, and `SharedState` / `AccountState` naming real attributes (#152) |
 | `test_types.py` | 3 | `mypy` finds nothing in `envs/`, `ruff format --check` finds nothing to change, and the coverage floor stays configured (#148) |
 | `test_refactors.py` | 117 | The refactoring review's issues: `Account` initialised in one place and its step counters listed once, `_plain`'s call count, one order-book routine per operation, `place_order` and `parse_overrides` flat, `clear_batch` as four steps, `EnvSettings` and the generated `env_config`, the `train/` module split with its re-exports and import order, the callback as a `League` plus an `ActivityLog` plus the NAV audit and league statistics, a real pickle from before that split still loading, and the league and activity log working alone (#252-#258) |
-| `test_extensions.py` | 27 | The extension point ([30](30_extensions.md)): discovery through real entry points, nothing enabled changing nothing, validation of names and settings, composition order under CBP, and the resume guards |
+| `test_extensions.py` | 29 | The extension point ([30](30_extensions.md)): discovery through real entry points, nothing enabled changing nothing, validation of names and settings, composition order under CBP, and the resume guards |
 | `test_loss_seam.py` | 5 | PPO's own loss sits behind `_policy_value_loss`, so an extension that replaces it keeps the MoE and JEPA terms |
-| **unit total** | **2,165** | |
+| **unit total** | **2,167** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -172,7 +172,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((2,355 tests))
+  root((2,357 tests))
     Simulator
       orderbook 88
         the demo scripts as tests, a shadow model
@@ -261,7 +261,7 @@ mindmap
       continual backprop 54
         utility, accumulator, one per step
         device and DDP boundaries
-      extensions 32
+      extensions 34
         found through entry points
         nothing enabled changes nothing
         PPO loss replaceable, MoE and JEPA kept

@@ -7,7 +7,8 @@ loss), an RLModule mixin (extra heads or state), an env wrapper, or any mix of t
 Installing a package changes no run. A run uses an extension only when its name is listed in
 `extensions_enabled`; uninstalling the package and removing the name is the whole undo. With
 nothing enabled, the Learner class, the module classes and the env are the same objects as before
-this feature existed, and a checkpoint's sidecar gains no key.
+this feature existed, the Learner's `learner_config_dict` gains no `extensions` group, and a
+checkpoint's sidecar gains no key.
 
 The first planned extension is DiscoRL (the `cda-discorl` package in the `disco_rl` repository),
 which brings the update rule from *Discovering state-of-the-art reinforcement learning algorithms*
@@ -80,7 +81,8 @@ extension's resolved settings as `extension_settings`. A Learner mixin reads its
 `settings_for(self.config.learner_config_dict, "myext")`.
 
 An env wrapper must not change the observation or action space: the spaces are built from the
-unwrapped env before any wrapper runs.
+unwrapped env before any wrapper runs. `train.evaluate` builds its own env from the checkpoint's
+`env_config`, so it rolls episodes without any wrapper.
 
 ## 4. Adding a loss term, or replacing PPO's
 
