@@ -126,6 +126,6 @@ python -m gym_continuousDoubleAuction.train.evaluate \
 | Understand what the market and the agents are | [01_overview.md](01_overview.md), then [02_architecture.md](02_architecture.md) |
 | Change a value: agents, cash, reward, network | [18_configuration.md](18_configuration.md) |
 | Resume, inspect, probe, pretrain, troubleshoot | [26_runbook.md](26_runbook.md) |
-| Know where the project stands | [15_findings_and_recommendations.md](15_findings_and_recommendations.md) |
+| Know where the project stands | [15_findings_and_recommendations.md](15_findings_and_recommendations.md) (open), [29_fixed_issues.md](29_fixed_issues.md) (fixed) |
 | Look up a term (NAV, mark, ADL, champion…) | [28_glossary.md](28_glossary.md) |
 | Contribute | [CONTRIBUTING.md](CONTRIBUTING.md) |

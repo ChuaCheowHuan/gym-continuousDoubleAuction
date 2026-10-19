@@ -8,7 +8,7 @@ Related: [10_testing.md](10_testing.md) §7 (the gap this closes),
 [18_configuration.md](18_configuration.md) §5.4–5.5 (the encoder group and the comparison
 protocol this supplies a metric for),
 [05_observation_space.md](05_observation_space.md) (what the targets are read out of),
-[15_findings_and_recommendations.md](15_findings_and_recommendations.md) (S1-1, S1-2, S1-3).
+[29_fixed_issues.md](29_fixed_issues.md) (S1-1, S1-2, S1-3).
 
 ---
 
@@ -22,23 +22,18 @@ protocol this supplies a metric for),
 > `encoder` group exists to answer.
 
 The obvious way to close it — train each architecture, compare returns — could not work when this
-was written. Both blockers below are now fixed ([17](17_changelog.md) §29), so the strong form of
-the question is open; what remains is that no multi-seed comparison has actually been run. The
-harness is still the cheaper way in, because it does not need one.
-
-| Finding | Consequence for an architecture comparison |
-|---|---|
-| **S1-1** | `vf_clip_param = 10` against NAV-scale targets pins `vf_loss` at the clip bound. `vf_explained_var ≈ 9e-05`. PPO is REINFORCE with a batch baseline |
-| **S1-3** | The reward is strictly negative-sum over a NAV-conserving market; all-pass scores exactly `0.0` and random trading `−591,027`. Passivity is the joint optimum |
-
-Run an encoder comparison through that reward and the winner is whichever architecture descends
-fastest to doing nothing. This harness asks a narrower question that does not touch the reward:
+was written: S1-1 left the critic flat and S1-3 made passivity the joint optimum, so the winner
+would have been whichever architecture descended fastest to doing nothing. Both are fixed
+([S1-1](29_fixed_issues.md#s1-1--ppos-critic-receives-zero-gradient-verified-fixed), [S1-3](29_fixed_issues.md#s1-3--doing-nothing-is-a-dominant-strategy-verified-fixed); how they blocked a comparison is in [29](29_fixed_issues.md#23-1--the-two-blockers-to-a-returns-based-comparison)), so the strong form of the question
+is open; what remains is that no multi-seed comparison has actually been run. The harness is still
+the cheaper way in, because it does not need one. It asks a narrower question that does not touch
+the reward:
 
 > **How much microstructure does the latent make linearly available?**
 
 Freeze an encoder, fit a ridge readout from its latents to a public quantity a few steps in the
-future, score it held out. No policy, no reward, no value function — so the answer stays valid
-however S1-1 and S1-3 are eventually fixed.
+future, score it held out. No policy, no reward, no value function — so the answer does not depend
+on the reward.
 
 ---
 
@@ -60,7 +55,7 @@ it also lands in `run.log`; `--out` writes it to a file as well.
 | `--encoders` | Architectures scored **untrained** — the inductive-bias baseline |
 | `--checkpoint` / `--module-id` | A trained module, scored alongside them |
 | `--targets` / `--horizons` | Which microstructure quantities, how far ahead |
-| `--episodes` / `--steps` / `--agents` / `--seed` | The random-agent rollout corpus, always in the default env layout (`train.compare` instead passes its run's config to `from_rollouts(env_config=...)`) |
+| `--episodes` / `--steps` / `--agents` / `--seed` | The random-agent rollout corpus (`--episodes` defaults to `cda_probe.num_episodes`, 3, in `config/cli_defaults.json`), always in the default env layout (`train.compare` instead passes its run's config to `from_rollouts(env_config=...)`) |
 | `--parquet` / `--max-rows` | Use `episode_record` output instead of rollouts |
 
 ---
@@ -216,19 +211,17 @@ made by a trained league — different spreads, different depth, different arriv
 encoder scored on random-agent data is being asked how well it represents a market it will never
 see. Rollouts are the default because they always work; Parquet is the one to use once a run exists.
 
-### Which rows the Parquet reader keeps, and why the answer changed
+### Which rows the Parquet reader keeps, and why
 
 `episode_record` writes one row per `(episode, step, agent)`, so a file from an 8-agent run holds
 eight rows per step. The reader keeps one per `(episode_id, step)` by default, and the rollout
 reader likewise keeps one agent.
 
-The *reason* for that default has changed, and the change matters. While S1-2 was open every agent
-received the byte-identical public book vector, so the eight rows were exact duplicates: keeping
-one discarded nothing and avoided a leak, because a row's duplicates would otherwise land on both
-sides of the split. **That premise no longer holds.** [17](17_changelog.md) §30 gave each agent its
-own private tail, so the eight rows now differ in their last `private_dim` floats. Keeping one is
-therefore a real choice — it drops seven agents' private state — and it is still the right default
-for the public-book targets this harness scores, none of which read the private tail.
+Each agent has its own private tail, so the eight rows at a step differ in their last
+`private_dim` floats. Keeping one is a real choice — it drops seven agents' private state — and it
+is the right default for the public-book targets this harness scores, none of which read the
+private tail. (While S1-2 was open the rows were exact duplicates, and the default had a different
+reason - [29](29_fixed_issues.md#23-7--one-row-per-step-the-reason-changed-with-s1-2).)
 
 `--per-agent` (`per_agent=True` to `from_parquet`) keeps every row, and a corpus built that way is **refused for scoring**: targets look `horizon` *rows* ahead, which is `horizon` steps only with one row per step, so with several rows per step "horizon 1" mostly read the same step and "horizon 3" one step ahead ([15](15_findings_and_recommendations.md) R-18, #188). The CLI rejects the flag and `report.run` rejects the corpus. The rest of this paragraph is what a per-agent corpus is, for a reader that does not score targets: the eight rows at a step share an identical book prefix, so a split
 that separates them still leaks the book. Episode-level splitting (§5) is what contains that, and
@@ -248,12 +241,7 @@ not the space it came from, and some widths fit both layouts (569 floats: `grid`
 or `levels` with `n_hist` 8). `from_parquet(book_mode=...)` and `--book-mode` name the run's mode;
 without it such a file raises `AmbiguousObsLayout` instead of being read as the default (`train.pretrain` takes the same flag). The
 encoders being scored are built against an env with the corpus's own `book_mode` and `n_hist`
-([15](15_findings_and_recommendations.md) R-17, #187).
-
-This is the sort of thing a comment gets to be quietly wrong about for a long time. It was found by
-the review in [17](17_changelog.md) §34.5 — a regression introduced by the private-state work
-itself, which fixed the reader's `snapshots` slice and left the row selection reasoning behind it
-untouched.
+([R-17](29_fixed_issues.md#from-the-2026-10-07-review), #187).
 
 ---
 
@@ -261,11 +249,10 @@ untouched.
 
 It says nothing about whether an encoder makes a better **trader**. A latent that linearly carries
 the next midpoint move is evidence that the architecture represents the market, not that PPO can
-exploit it. That second question needed S1-1 and S1-3 fixed first; both are now fixed
-([17](17_changelog.md) §29), so it is answerable for the first time — but answering it means a
-multi-seed training comparison under [18](18_configuration.md) §5.5, not a probe report. This
-harness is deliberately independent of the reward, which is why its own answer survived those
-fixes unchanged.
+exploit it. That second question is answerable now that S1-1 and S1-3 are fixed ([S1-1](29_fixed_issues.md#s1-1--ppos-critic-receives-zero-gradient-verified-fixed), [S1-3](29_fixed_issues.md#s1-3--doing-nothing-is-a-dominant-strategy-verified-fixed)) — but
+answering it means a multi-seed training comparison under [18](18_configuration.md) §5.5, not a
+probe report. This harness is deliberately independent of the reward, which is why its own answer
+survived those fixes unchanged.
 
 It is also scored on a corpus, and a corpus has a distribution. A win on random-agent rollouts is a
 win on random-agent books.

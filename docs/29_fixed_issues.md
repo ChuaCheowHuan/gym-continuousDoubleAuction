@@ -1589,9 +1589,79 @@ Defects that the topic documents described and that were fixed without a registe
 own, or with more detail than the register entry kept. Grouped by the document that described
 them; the document now links here.
 
-<!-- OTHER-DOCS -->
 
-### From [03_matching_engine.md](03_matching_engine.md)
+### From 01 · Overview
+
+Source: [01_overview.md](01_overview.md).
+
+#### 01 §1.6 · A plain install failed on first import
+
+Register: [S3-6](29_fixed_issues.md#s3-6--install_requires-does-not-match-the-imports-verified-fixed), [S3-18](29_fixed_issues.md#s3-18--the-config-tree-was-not-in-the-built-distribution-verified-fixed)
+
+`pip install gym_continuousDoubleAuction` **without** extras used to fail on first import, because
+`install_requires` did not name `ray[rllib]` or `six` and no config JSON reached the wheel. Both
+are fixed (S3-6 and S3-18), and the `packaging` CI job builds the wheel, installs it into a clean
+venv outside the checkout, and steps an env there.
+
+### From 02 · Architecture
+
+Source: [02_architecture.md](02_architecture.md).
+
+#### 02 §2.5 · Per-agent terminateds were rebuilt as all-False
+
+Register: [S2-4](29_fixed_issues.md#s2-4--bankrupt-agents-are-never-terminated-verified-fixed)
+
+`set_all_done` rebuilt `terminateds` and `truncateds` as all-`False` dicts and set only `__all__`,
+so a bankrupt agent was never individually terminated and kept being stepped for the rest of the
+episode.
+
+#### 02 §2.6 · is_render defaulted to true
+
+Register: [S4-7](29_fixed_issues.md#s4--minor)
+
+- **`is_render` defaults to `True`.** `TrainConfig` overrides it, and `render()` is additionally
+  gated on the logger being enabled for DEBUG — so a direct `continuousDoubleAuctionEnv({...})`
+  at the default INFO level builds no tables at all. Raise the level and it dumps the book, the
+  tape and every account on every step.
+
+#### 02 §2.7 · tick_size was two independent values
+
+Register: [S3-4](29_fixed_issues.md#s3-4--the-order-books-tick_size-is-inert-verified-fixed)
+
+`tick_size` used to be two independent values — a hardcoded `min_tick = 1` in `Action_Helper` that
+actually drove prices, and an `OrderBook` argument that was stored and never read — so setting the
+key changed nothing anywhere. Two of the three halves are fixed:
+
+| | Then | Now |
+|---|---|---|
+| `Action_Helper.min_tick` | hardcoded `1` | the `tick_size` config key — this is what builds every price |
+| `reset()` | `OrderBook(1, ...)` | `OrderBook(self.tape_display_length)` — the book takes no tick |
+| `OrderBook.tick_size` | stored, never read | **deleted** (2026-09-18); `OrderBook(0.0001, 10)` is a `TypeError` |
+
+There is no rounding or tick validation anywhere in the matching path; the book's parameter makes
+it look as though there is. The recommendation is to **delete** the book's copy rather than
+enforce it, because there is exactly one price producer in the system and `_set_price` emits
+on-grid prices by construction. It is deferred only because `envs/orderbook/` is off-limits to
+changes. See [18_configuration.md](18_configuration.md) §6 and S3-4 in
+[15_findings_and_recommendations.md](15_findings_and_recommendations.md).
+
+#### 02 §2.10 · Four things worth knowing that are no longer true
+
+Before the fixes, 02 warned about these before anyone touched the env:
+
+- **Per-agent `terminateds` are rebuilt as all-`False` every step.** Only `__all__` is ever set,
+  so a single bankrupt agent keeps being stepped for the rest of the episode (S2-4).
+- **Rendering has side effects.** `_render` nulls `model_actions` / `LOB_actions` /
+  `shuffled_actions` and clears `seq_trades` and `seq_order_in_book`, so toggling `is_render`
+  changes state evolution (S4-7).
+- **The bare `import ray` in the env** (S3-6) is gone; the `MultiAgentEnv` import is the real
+  dependency.
+- **A fair amount of commented-out dead code** (old `step`, old action space, old `modify_order`,
+  old space getters) was left in place as inline history — roughly 200 LOC (S4-4).
+
+### From 03 · Matching Engine
+
+Source: [03_matching_engine.md](03_matching_engine.md).
 
 #### 03 §3.1 · `modify_order` updated the book in place
 
@@ -1625,7 +1695,9 @@ usable traceback. None of the six is reachable from the action layer — decoded
 what a test can now assert (`test_orderbook_new.py::TestMalformedInputRaisesInsteadOfExiting`).
 Tracked as S3-7 in [15_findings_and_recommendations.md](15_findings_and_recommendations.md), fixed.
 
-### From [04_accounting.md](04_accounting.md)
+### From 04 · Accounting
+
+Source: [04_accounting.md](04_accounting.md).
 
 #### 04 §1 · The basis was a rounded quotient
 
@@ -1656,7 +1728,9 @@ contract of that loss was a gain for the agents on the other side, paid by a cou
 could not act and whose policy was never charged for it. Liquidation
 ([04](04_accounting.md) §8) closes the position while its collateral still covers the close.
 
-### From [05_observation_space.md](05_observation_space.md)
+### From 05 · Observation Space
+
+Source: [05_observation_space.md](05_observation_space.md).
 
 #### 05 §7.3 · The tape loop that built nothing
 
@@ -1698,7 +1772,9 @@ probes on that code measured maxima of 47.01 and 51.19 for the size block; the a
 moved with the book and the ratio did not. The negated-ask convention also prevented weight sharing
 between the two sides, which is part of why S4-17 made both sides positive.
 
-### From [06_action_space.md](06_action_space.md)
+### From 06 · Action Space
+
+Source: [06_action_space.md](06_action_space.md).
 
 #### 06 §4 · The size heads that were degenerate
 
@@ -1745,7 +1821,9 @@ no amount of data removes.
 
 `_set_price` also carried a `max_price` parameter its body never read; it was removed.
 
-### From [08_self_play_league.md](08_self_play_league.md)
+### From 08 · League-Based Self-Play
+
+Source: [08_self_play_league.md](08_self_play_league.md).
 
 #### 08 §5.2 · The ordering constraints as bugs
 
@@ -1760,7 +1838,9 @@ for the entire run while the trained snapshot sits unused in the LearnerGroup. C
 `MultiRLModuleSpec` issue in §2, this meant **no self-play was taking place at all** before the
 migration.
 
-### From [09_distributed_training.md](09_distributed_training.md)
+### From 09 · Distributed Training: `num_env_runners` and `num_learners`
+
+Source: [09_distributed_training.md](09_distributed_training.md).
 
 #### 09 §4 · Bugs that only existed at non-default values
 
@@ -1836,7 +1916,9 @@ Before #299 was fixed, `train_batch_size` was passed to RLlib per learner, so N 
 times the episodes per iteration and an entropy decay N times shorter. `train_batch_size` is now
 the whole iteration's batch and is divided across the learners ([17](17_changelog.md) §92).
 
-### From [10_testing.md](10_testing.md)
+### From 10 · Testing
+
+Source: [10_testing.md](10_testing.md).
 
 #### 10 §6.2.2 · The critic test was an xfail
 
@@ -1895,7 +1977,237 @@ are still rows there.
 | ~~**`envs/orderbook/test/example.py` and `genOrders.py`**~~ ([#210](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/210)) | **Closed.** `example.py` had been failing its own string asserts (the printed form had drifted) and `genOrders.py` was Python 2. Both are deleted; `test_orderbook_scripts.py` asserts the example's outcomes and checks a seeded shadow model against the book. |
 | ~~**`visualize/` is almost entirely untested**~~ ([#211](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/211)) | **Closed.** `test_visualize_scripts.py` (32 tests) runs the loader, the six chart scripts, `run_all` and both inspectors on synthetic runs and asserts on the data each plots. Changing the complete-episode filter, a column name, the snapshot slice or an output filename each fails it. `visualize/` is now measured in coverage (it was omitted). |
 
-### From [12_perspective_rl_researcher.md](12_perspective_rl_researcher.md)
+### From 11 · Logging and observability
+
+Source: [11_logging_and_observability.md](11_logging_and_observability.md).
+
+#### 11 §0 · No logging framework, and a conservation check that printed
+
+Register: [S2-8](29_fixed_issues.md#s2-8--no-logging-framework-the-callback-prints-42-diagnostics-per-episode--fixed)
+
+**Status.** This used to be the weakest engineering area in the repository: no logging framework
+at all, ~86 `print()` calls, and a conservation check that reported a corrupt ledger by printing
+`FAILED`. Both are fixed - see §1.3 and §1.5. Coverage was the next gap and is largely closed:
+the custom metrics of §1.2 and a typed, queryable per-step record (§1.1). What is left in §2 now needs
+new computation rather than aggregation of something already in hand.
+
+#### 11 §1.1 · A short run wrote no episode record
+
+Finished episodes waited for `episode_rows_per_file` rows or for an `atexit` handler, which Ray
+does not reliably run when it stops an env runner: a short run wrote nothing (issue #245, changelog
+§75). A file is now also written at the end of every sample (`on_sample_end`).
+
+#### 11 §1.1 · The pickled episode record
+
+Register: [S4-9](29_fixed_issues.md#s4--minor)
+
+The per-step record was a `pickle.dump` of the whole episode performed inline in
+`on_episode_end`. Five things were wrong with it ([21 §2.2–2.4, §5–6](21_logging_review.md)): it
+was untyped and executed arbitrary code on load; it ran on the sampling hot path; a failure raised
+into the hook, which on a remote env runner restarts the worker; `--no-episode-data` disabled the
+write but kept the ~34 MB per episode of accumulation; and it was unbounded.
+
+**The measurement that made the bounds necessary.** At `max_step=4096` and 8 agents a step is 8,314
+pickled bytes, so an episode was **~34 MB** — held in memory and then serialised, per episode, per
+worker. `runtime_profiles.json` had estimated ~10 MB.
+
+The two `.pkl` files that used to sit committed under `episode_data/` — leftover output from an
+older version of `test_nav_callback.py`, not fixtures anything read — have been removed. Nothing
+in the repository writes a pickle any more.
+
+#### 11 §1.2 · maker_fill_ratio measured a conservation identity
+
+The first version of the maker share was summed over all agents, which in a closed double auction is
+exactly `0.5` in every episode whatever anyone did. A real 3-iteration run reported `0.5000` three
+times. The full narrative is in 21 §7 ([29](29_fixed_issues.md#21-7--what-was-found-while-implementing)).
+
+#### 11 §1.4 · The g_store telemetry that could not run
+
+Register: [S4-1](29_fixed_issues.md#s4--minor)
+
+`train/storage/store_handler.py`, `train/logger/log_handler.py` and `train/plotter/plot_handler.py`
+were ~270 LOC that looked like a telemetry pipeline and were a broken one: all three depended on a
+detached Ray actor named `g_store` that **was never created anywhere**, so every entry point into
+them would have raised at call time. They have been deleted, along with the now-orphaned
+`plot_defaults` group in `tunable_constants.json` that only `plot_handler` read. Git history has
+them if the design is ever wanted back.
+
+#### 11 §1.5 · Raising in the episode hook stopped nothing
+
+Register: [S2-8](29_fixed_issues.md#s2-8--no-logging-framework-the-callback-prints-42-diagnostics-per-episode--fixed)
+
+Raising inside `on_episode_end` worked only at `num_env_runners=0`: the hook runs on the env
+runner, so the raise arrived as a `RayTaskError` from `sample()`, and `restart_failed_env_runners`
+(True by default) made `EnvRunnerGroup` log it through Ray's own logger and restart the actor -
+`algo.train()` returned normally. The raise also destroyed the evidence, since
+`synchronous_parallel_sample` asks each runner for `(sample(), get_metrics())` in one call. See
+[21 §2.1](21_logging_review.md). `NavConservationError` subclasses `AssertionError`, so anything
+written to catch the old behaviour still does.
+
+#### 11 §1.5 · A float check that could not resolve its tolerance
+
+Register: [S3-9](29_fixed_issues.md#s3-9--no-risk-adjusted-performance-metrics-fixed)
+
+`nav_tolerance` was once credited with absorbing a `float()` round trip. That round trip was harmless
+at the default `init_cash` — but above `init_cash ≈ 1e10` it made the check unable to resolve this
+very tolerance, passing corrupt ledgers silently. See [16 §16.10](16_verification_log.md).
+
+#### 11 §1.9 · The run narrative lived only in scrollback
+
+§1.6 gave the run a machine-readable history and §1.7 gave the step one, but the log itself was
+still written only to stdout. So a finished run left its *numbers* on disk and its *narrative* in
+scrollback — the per-episode NAV tables, the league statistics, and the ERROR that immediately
+precedes a `strict_nav_check` raise. [17 §17](17_changelog.md) records two GPU runs diagnosed
+exactly that way, after the fact, from a terminal buffer.
+
+Every process now writes
+
+#### 11 §1.10 · Thread- and process-safety holes
+
+Three of the four holes this section examined were real and none of them was covered by a test.
+
+**Setup, within a process.** Was *not* safe. `get_logger` checks `_configured` and then acts on
+it, and `configure()` closes and removes the existing handlers before adding replacements.
+`addHandler` is individually atomic under logging's own module lock, but that *sequence* is not:
+two threads inside it produce duplicate handlers, or one closes a handler the other is emitting
+through. The whole swap is now under `_configure_lock`. The window was small - the first
+`get_logger` normally happens at import, which the import lock serialises - but "small" is not a
+property a test can hold you to.
+
+Three of those were previously weaker than they looked:
+
+* **A pid is not a unique key.** It is unique per *node*. On a multi-node run with `log_base_dir`
+  on a shared filesystem - NFS, or the Drive mount Colab uses - two workers on different nodes can
+  hold the same pid and open the same `run.<pid>.log`, which is the exact rotation race the
+  per-worker name exists to prevent. The name now carries Ray's worker id, which is unique
+  cluster-wide, behind the pid, which is what the `pid=` field of each line matches. Ray is read
+  out of `sys.modules` rather than imported: importing it here would make every consumer of the module (`--help` included) pay for ray, and
+  would put the import ahead of `configure()` and `runtime.apply_env_vars()`, which `main()` runs
+  before `ray.init`.
+* **The driver's own files were not covered at all.** `run.log` carries no pid, and `log_base_dir`
+  defaulted to a fixed `results`, so two concurrent runs - or a notebook session alongside a CLI
+  run - shared both it and `progress.jsonl`. §1.11 is the fix.
+* **The episode record's directory was not covered either.** The episode id kept two *writers*
+  apart, which was never the weak part; the *path* was a bare relative string, resolved inside each
+  worker against whatever working directory it inherited, and shared by every concurrent run. It is
+  absolute and run-scoped now (§1.1, [21 §2.3](21_logging_review.md)). The per-writer file naming
+  is what lets each process enforce its own byte cap without deleting another's files.
+
+**The `iter=` tag is process-wide, not per-thread.** It was a `ContextVar`, chosen so it would be
+per-thread. That was the wrong model twice over: a new thread starts from an empty context, so a
+line the driver logged from any thread but the loop read `iter=-` while the process knew the
+answer; and a value set inside a Ray actor task is not guaranteed to still be in context for the
+next task, which is what §1.12's broadcast needs. It is now a module global - one training loop per
+process, so the iteration is a property of the process. Assignment of an int is atomic under the
+GIL, so it needs no lock.
+
+#### 11 §1.11 · Two runs wrote into one directory
+
+Everything above keeps the *processes of one run* from colliding. Nothing kept two runs apart:
+`log_base_dir` was a fixed `results`, so a second run wrote the same `run.log` and appended to the
+same `progress.jsonl`.
+
+Each run now gets
+
+#### 11 §1.12 · Worker lines carried no iteration
+
+§1.9 noted that a worker's lines read `iter=-` because "the worker genuinely does not know which
+iteration its episode belongs to", and put recovering that association down as a change to what
+RLlib hands the callbacks. That was too pessimistic. The driver knows the number, and
+`foreach_env_runner` already reaches every runner; it only had to be sent.
+
+`_broadcast_iteration` does that
+
+#### 11 §1.13 · A dying run left its reason in scrollback
+
+`main()` was `try: train(cfg) / finally: ray.shutdown()`, with no `except`. An unhandled exception
+- including the `strict_nav_check` `AssertionError` whose entire purpose is to stop a run loudly
+enough to be diagnosed afterwards - unwound to Python's default hook, which writes to `sys.stderr`
+outside logging. So `run.log` ended mid-narrative and the reason for the ending was in scrollback,
+which is the failure §1.9 exists to fix.
+
+Three things now catch it:
+
+#### 11 §1.14 · The stream handler wrote to stderr
+
+`logging.StreamHandler()` with no argument writes to **stderr**, which is what this package did
+while §1.3, §1.9 and `tunable_constants.json` all described it as stdout. It matters:
+`python -m gym_continuousDoubleAuction.train.train > run.txt` captured none of the output a run
+exists to produce. It is now explicitly `sys.stdout`.
+
+#### 11 §1.6 · No per-iteration record
+
+`train()` calls `algo.train()` directly rather than through `tune.Tuner`, so nothing writes
+`progress.csv` or TensorBoard event files. Each iteration's result dict used to be summarised into
+one log line and dropped, which left a finished run with checkpoints, scrollback, and no queryable
+record of how it got there.
+
+Every iteration now appends
+
+#### 11 §2.1 · vf_explained_var was not logged
+
+Register: [S1-1](29_fixed_issues.md#s1-1--ppos-critic-receives-zero-gradient-verified-fixed)
+
+Done, and no longer on this list: **`vf_explained_var`** — the one metric that exposes the frozen
+critic (S1-1), and whose absence is why that defect survived. `_log_iteration` now prints it per
+trainable module on every iteration, read from `result["learners"][<module_id>]` and keyed on
+`trainable_policy_ids`, since only the modules in `policies_to_train` appear in that block.
+
+`test/integration/test_progress_and_vf.py` asserts in CI that a real run reports it, finite, for
+every trainable module. It deliberately does **not** assert `!= 0.0`: while S1-1 was open this
+repository reported values around 1e-5, so that assertion would have passed on a critic that was
+entirely dead. The substantive threshold (`>= 1e-3`) is what distinguishes them, and it is now a
+**live assertion** - it was a strict xfail pinning S1-1, XPASSed on the first run after the fix
+exactly as the marker's reason said it would, and the marker was deleted. See
+[10 §6.2.2](10_testing.md).
+
+#### 11 §3 · Persistence problems that are gone
+
+Seven things are no longer in this table.
+
+The three about the episode record all went with `pickle` (§1.1): the files are Parquet, so there is
+no arbitrary code execution on load; every row carries `run_id`, `iteration` and `wall_time`, so
+correlating with training progress is a join rather than a filename sort; and growth is bounded by
+`episode_sample_every` and `episode_max_bytes` rather than being off/on.
+
+The other four: logging itself is levelled, attributable, switchable and durable, written to a
+rotating file per process as well as stdout (§1.3, §1.9), and the `g_store` dead code is gone
+(§1.4); `progress.jsonl` is the per-iteration machine-readable record (§1.6); the run log does not
+re-create the unbounded-growth problem it would otherwise have added, because `file_max_bytes` and
+`file_backup_count` bound it; and two runs no longer write into each other's files (§1.11) - never
+listed here, but the more serious of the two, since a shared `run.log` loses lines to a rotation
+race and a shared `progress.jsonl` can interleave two writers inside one JSON line.
+
+#### 11 §3 · Rotation discarded the earliest output first
+
+Issue #216.
+
+`file_backup_count` × `file_max_bytes` caps the run log at 60 MB, which at DEBUG is reached quickly — and it was the start of a run, where divergence usually begins, that was dropped. Fixed by `file_keep_head` ([21](21_logging_review.md) §2.5).
+
+#### 11 §4 · Recommended additions that are done
+
+Done, and no longer on this list: `logging` in place of `print`; stopping a run on a NAV
+conservation violation with a `nav_conservation_error` metric (§1.5 - the *stop* moved to the
+driver, the metric did not); writing each iteration's result dict to `progress.jsonl` (§1.6);
+logging `vf_explained_var` per trainable module with a CI assertion behind it (§2.1); and the four
+metric calls this section used to sketch, all four of which now exist:
+
+```python
+# in on_train_result / on_episode_end - all of these are live
+metrics_logger.log_value("champions_promoted", promoted, reduce="sum")
+metrics_logger.log_value("mean_agent_drawdown", dd, window=10)
+metrics_logger.log_value("pass_action_fraction", n_pass / n_actions, window=10)
+metrics_logger.log_value(f"reward_term_var_share_{term}", variance / total, window=10)
+```
+
+The shape of this document has changed with them. It used to end "capture is now good, aggregation
+is four league-and-NAV metrics"; aggregation is now 28 metrics (§1.2), and what is left is
+genuinely different in kind - things that need a *new computation*, not a reduction of something
+already in hand.
+
+### From 12 · Perspective: Reinforcement Learning Researcher
+
+Source: [12_perspective_rl_researcher.md](12_perspective_rl_researcher.md).
 
 The RL researcher's analysis of defects that are now fixed: the argument for why each one mattered
 to learning, and the fixes that were proposed against it.
@@ -2066,7 +2378,9 @@ The agenda this document set out. Every item is done.
 | 13 | One `np.random.Generator` on the env | S | Reproducibility | S3-5 |
 | 14 | Surface rejected / no-op order counts in `infos` | S | Makes the dead-action fraction measurable | S4-14 |
 
-### From [13_perspective_financial_trader.md](13_perspective_financial_trader.md)
+### From 13 · Perspective: Financial Trader / Quant
+
+Source: [13_perspective_financial_trader.md](13_perspective_financial_trader.md).
 
 The trader's view of the market model as it was before the realism fixes: what a desk would have
 objected to, and the fixes proposed.
@@ -2161,7 +2475,9 @@ Register: the IDs in the table. The open items stay in [13](13_perspective_finan
 | 9 | Allow multiple resting orders per price level | M | Unlocks layering / multi-clip quoting | S3-10, as an option |
 | 10 (half) | A margin/liquidation rule | M | Real risk control rather than a reward penalty | Maintenance margin with ADL ([04](04_accounting.md) §8); position limits are still open |
 
-### From [14_perspective_ai_engineer.md](14_perspective_ai_engineer.md)
+### From 14 · Perspective: AI Engineer
+
+Source: [14_perspective_ai_engineer.md](14_perspective_ai_engineer.md).
 
 The engineering audit as first measured, against a tree of 7,478 Python lines with 90 unit tests
 and no logging module. Every gap below is fixed; the current state is in
@@ -2265,4 +2581,484 @@ Register: the IDs named. Items 9, 12 and 15 are not finished and stay in
 Closed by: 1 S3-8; 2 S2-8; 3 and 4 S3-6 and S3-5 (`six` declared rather than dropped); 5 S3-7;
 6 S2-8; 7 S1-1; 8 S4-1 to S4-4; 10 S4-8; 11 S4-12; 13 S4-13; 14 S4-19.
 
-<!-- /OTHER-DOCS -->
+### From 18 · Configuration
+
+Source: [18_configuration.md](18_configuration.md).
+
+#### 18 §2 · The dataclass and the file disagreed
+
+The dataclass said `num_cpus_per_env_runner = 1.0` and `num_gpus_per_learner = 0.75` while the file
+said `0.25` and `0.25`; a run without `--config` silently used the dataclass pair. Every field's
+default now reads the file (`_default("key")`).
+
+#### 18 §5.2 · num_iters restarted at zero on every resume
+
+`num_iters` was a count on a driver loop that restarted at zero, which made 16 configured iterations
+mean 16 *more* every time a run resumed.
+
+#### 18 §5.2 · Every save overwrote one checkpoint directory
+
+Register: [S3-8](29_fixed_issues.md#s3-8--build_algo-returns-a-detached-callback-on-the-restore-path-fixed)
+
+Every save overwrote one directory, which left a run with exactly one recoverable state: no way back
+from a league that collapsed at iteration 12, and a save interrupted partway — the event
+checkpointing exists to survive — destroyed the only copy.
+
+#### 18 §6 · tick_size was inert, then off-grid on a fractional tick
+
+Register: [S3-4](29_fixed_issues.md#s3-4--the-order-books-tick_size-is-inert-verified-fixed)
+
+**This used to be two independent values.** `Action_Helper.min_tick` was a hardcoded `1` that
+actually drove prices, while the configured `tick_size` was passed to an `OrderBook` argument that
+was stored and never read. Setting `tick_size` therefore had no effect anywhere. Both values were
+1, so wiring `min_tick` to the config key changed no behaviour at the current config.
+
+**`reset()` no longer discards it.** It used to rebuild the book as `OrderBook(1, ...)` regardless
+of configuration; it now uses `self.tick_size`. The change is inert — see below — but there is no
+reason to keep a second value in the env.
+
+**Every price the action layer emits is on this grid, for any tick.** `_set_price` snaps its
+result to `min_tick` in `Decimal` before returning it, and `Trader._get_order_ID` compares prices
+as `Decimal(str(price))`, the book's own conversion. Neither was true until the 2026-09-18 pass:
+the level path read prices from a float32 snapshot, so on `tick_size` 0.1 every re-quote at an
+occupied level opened a new price level one float-ulp away and a cancel never found its order
+([15](15_findings_and_recommendations.md) S3-4, [16](16_verification_log.md) §16.17). At the
+default `tick_size` of 1 nothing changes.
+
+**The book's copy is gone.** `OrderBook` used to accept a `tick_size`, store it, and never read
+it; its literal default of `0.0001` was the one value in the project not read from `config/`. On
+2026-09-18 the parameter was deleted along with the `inert_tick_size_copy` block that documented
+it. There is no rounding or tick validation anywhere in the matching path, and now nothing
+suggests there is: the grid is the action layer's alone.
+
+#### 18 §6.1 · Float-grid caveat
+
+Register: [S3-4](29_fixed_issues.md#s3-4--the-order-books-tick_size-is-inert-verified-fixed)
+
+This subsection used to say `_set_price` performed no quantization and that off-grid drift was
+rare: one combination over all anchors 10–100 and six ticks. That count covered the *anchor* path
+only. The *level* path — taken whenever the targeted book level is occupied — read the resting
+price out of `agg_LOB_raw`, a float32 array, so a level at 100.1 read back as
+`100.0999984741211` and the offset was added to that in float. On any non-integer tick every
+re-quote at an occupied level therefore opened a new price-map entry one float-ulp from the one
+the agent meant, and a cancel or same-price limit never found the trader's own order
+([15](15_findings_and_recommendations.md) S3-4, [16](16_verification_log.md) §16.17).
+
+Closed on 2026-09-18: `agg_LOB_raw` is float64, `_set_price` snaps its result to the tick grid
+with a `Decimal` quantize before returning it, and `Trader._get_order_ID` compares as
+`Decimal(str(price))`. `test_tick_grid.py` asserts the grid for ticks {1, 0.5, 0.1, 0.05, 0.01,
+0.3, 0.0001} on both paths. Ticks of `1`, `0.5` and `0.25` were never affected on the anchor path
+and are exact throughout now.
+
+### From 21 · Logging review
+
+Source: [21_logging_review.md](21_logging_review.md).
+
+The audit of logging under multiple env runners and learners. Every finding below is fixed; 21 keeps
+the audit's structure with the current state of each, and links here.
+
+#### 21 §2.1 · strict_nav_check restarted a worker instead of stopping the run
+
+Register: [S2-8](29_fixed_issues.md#s2-8--no-logging-framework-the-callback-prints-42-diagnostics-per-episode--fixed)
+
+_Tracked in [#212](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/212)._
+
+This is the most serious finding, because the feature's stated purpose is to stop a corrupt run
+loudly, and at the repository's own GPU profile (`num_env_runners=2`) it does not.
+
+`on_episode_end` runs on the env runner. Its `raise AssertionError(message)` therefore surfaces as a
+`RayTaskError` from the remote `sample()` call, and:
+
+* `EnvRunnerGroup._ignore_ray_errors_on_env_runners = config.ignore_env_runner_failures or
+  config.restart_failed_env_runners` **[verified]** `env/env_runner_group.py:181-183`;
+* `restart_failed_env_runners` defaults to **True** **[verified]** `algorithms/algorithm_config.py:600`;
+* `foreach_env_runner` passes that flag into
+  `FaultTolerantActorManager.handle_remote_call_result_errors`, whose `ignore_ray_errors` branch is
+  `logger.exception(result_or_error.get())` — log and continue **[verified]**
+  `utils/actor_manager.py:779-788`.
+
+So on a distributed run the assertion kills one env-runner actor, RLlib restarts it (tolerating 100
+consecutive failures by default), and `algo.train()` returns normally. The run continues training on
+a ledger the check just declared corrupt.
+
+Two aggravating details:
+
+* The traceback is logged through **Ray's** logger, not this package's, so it does not reach
+  `run.log`. With `log_level: "WARN"` it reaches Ray's stderr and nothing else. The one line the
+  whole §1.13 excepthook machinery exists to preserve is the one line that escapes it.
+* A restarted env runner is a fresh process: it has lost `set_iteration`, so its lines read `iter=-`
+  until the next `_broadcast_iteration`, and it opens a *new* `run.<pid>.<worker>.log` (see §2.5).
+
+At `num_env_runners=0` — the default and what CI runs — the callback executes in the driver and the
+assertion does stop the run. That is why this has never been observed.
+
+#### 21 §2.2 · The per-step store accumulated with episode data disabled
+
+_Tracked in [#213](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/213)._
+
+`on_episode_step` appended to `self.store[episode.id_]` unconditionally; only the *write* in
+`on_episode_end` was guarded by `episode_data_dir is not None`. So `--no-episode-data` / `episode_data_dir: null` removes the I/O and keeps the
+memory.
+
+**[verified]** by driving the callback with `episode_data_dir=None` for 1000 steps: 1000 step dicts
+retained.
+
+The cost is not small. A step dict for this repository's training shape (8 agents, `obs` of
+`(168,) float32` — the observation width when this was measured, now 233 — the full 21-field
+`info`) pickles to **8,314 bytes** **[verified]**, so one 4,096-step episode is **~34 MB** on disk
+and appreciably more live in Python objects, held per concurrent episode per runner. The widened
+observation makes that a floor rather than an estimate. `runtime_profiles.json` estimated ~10 MB; it is off by 3.4×, and has
+been corrected.
+
+#### 21 §2.3 · episode_data_dir was neither absolute nor run-scoped
+
+_Tracked in [#214](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/214)._
+
+Compare the two paths a worker writes:
+
+| Path | Made absolute | Reaches the worker via | Run-scoped |
+|---|---|---|---|
+| log dir | yes, `os.path.abspath` in `logging_setup.configure` | `$CDA_LOG_DIR` **and** `runtime_env` | yes (`run_dir`) |
+| `episode_data_dir` | no | pickled into the callback | **no** |
+
+`episode_data_dir` defaults to the relative string `"episode_data"`, and `os.makedirs` +
+`open` in the callback resolve it against **the worker process's cwd**. Today that is usually the
+driver's cwd, because nothing sets `runtime_env["working_dir"]` — but it is an accident, not a
+guarantee: any future use of `working_dir`, any Ray job submission, or any multi-node run scatters
+the pickles into per-worker directories with no error and no log line. The log directory was given
+`abspath` for exactly this reason; the episode directory was not.
+
+It is also not run-scoped, so two concurrent runs write into one directory. Collision is unlikely
+(episode IDs are UUID-ish) but "unlikely" is what §1.11 of doc 11 rejected for `run.log`.
+
+#### 21 §2.4 · The pickle write was synchronous, on the sampling hot path
+
+Register: [S4-9](29_fixed_issues.md#s4--minor)
+
+_Tracked in [#215](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/215)._
+
+`pickle.dump` of ~34 MB happens inside `on_episode_end`, in the env runner, between sampling steps.
+On the Colab/GPU profile that is 4 episodes × 2 runners per iteration — ~136 MB of blocking,
+uninstrumented I/O per iteration, against a `sample_timeout_s` budget the config file already warns
+is tight. A slow or FUSE-backed filesystem (`episode_data_root` on Drive is explicitly called out as
+something to avoid, and the profile does avoid it) turns into timed-out iterations that train on
+nothing — the exact failure `_log_iteration`'s "trained on no samples" warning was added for, with a
+cause nothing currently points at.
+
+There is also no `try`/`except` around it. Every other instrumentation writer in this repository
+(`_append_progress`, `_build_file_handler`) refuses to take down a run that is otherwise fine; this
+one raises into `on_episode_end`, and by §2.1 that means a killed and restarted env runner.
+
+#### 21 §2.5 · Log files proliferated with worker restarts
+
+_Tracked in [#216](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/216)._
+
+The per-process naming that makes concurrent writes safe also means the *set* of files is unbounded:
+every restarted env runner (§2.1 makes restarts a normal event, not an exceptional one) opens a new
+`run.<pid>.<worker>.log`. `file_backup_count` bounds each file at 6 × 10 MB; it does not bound the
+number of files. A long run that loses runners repeatedly accumulates 60 MB of quota per incarnation.
+
+The related point doc 11 §3 already makes — rotation discards the *start* of a run, where divergence
+begins — is worse here, because a worker's file is where the NAV tables live.
+
+**Fixed** (issue #216, [17](17_changelog.md) §83). When a worker opens its run log it keeps only the newest `file_max_worker_files` worker logs in the directory (a log with its rotated backups and head counts as one) and removes the rest, so the set is bounded and not only each file. And `file_keep_head` keeps the first `file_max_bytes` of every log as `<name>.head`, copied once at the first rotation and never rotated away, so the start of a run - where divergence begins - survives. Size the pruning above the number of runners plus learners: an idle live runner whose file is older than the newest N would lose its file.
+
+#### 21 §2.6 · Learner processes never received an iteration
+
+_Tracked in [#217](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/217)._
+
+`_broadcast_iteration` targets `algo.env_runner_group` only. At `num_learners > 0` the learner
+actors are separate processes that: receive `$CDA_LOG_LEVEL` / `$CDA_LOG_DIR` through the
+`runtime_env` (so they do write a `run.<pid>.<worker>.log`), but never receive an iteration, so
+every line they emit reads `iter=-` forever. This package logs little from the learner today, so the
+impact is cosmetic — but the repository's own GPU profile sets `num_learners=0`, which means the
+path is untested rather than fine.
+
+**Fixed** (issue #217, [17](17_changelog.md) §83). `_broadcast_iteration` also calls `learner_group.foreach_learner` when the learners are remote actors (`num_learners > 0`); with a local learner it is the driver's process and already tagged. A learner that does not answer within the timeout is a warning, as for env runners. Tested against a fake group; the repository's profiles use `num_learners=0`, so no real remote learner was run.
+
+#### 21 §2.7 · The runtime_env did not cover the cluster's own logging
+
+_Tracked in [#218](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/218)._
+
+`merge_runtime_env()` correctly closes the `ray.init(address=...)` gap for env vars. Two residual
+cases:
+
+* `$CDA_LOG_DIR` is exported as an **absolute** path. On a multi-node cluster that path must exist,
+  and be writable, on every node — otherwise `_build_file_handler` warns (correctly, non-fatally)
+  and that node's NAV tables exist nowhere. The warning goes to the worker's stdout, which is
+  forwarded to the driver console but not into `run.log`.
+* Nothing captures Ray's *own* logger output into the package's run log, so RLlib's diagnostics —
+  "No samples returned from remote workers", the swallowed traceback from §2.1, env-runner restart
+  notices — are in a different stream from the narrative they explain.
+
+**Fixed** (issue #218, [17](17_changelog.md) §83). Both residual cases. The same round trip that carries the iteration returns each process's run-log path, so the driver logs a warning into `run.log` when a process was meant to write one and has none (the directory missing or unwritable on its node), and announces each path once. And `capture_ray_logs` attaches the run-log file handler to the Ray loggers records end at (`ray`, `ray.rllib`, and any other that has turned propagation off), de-duplicated per record, so RLlib's diagnostics land in the same file with the same `pid=` and `iter=` fields. Checked on a real two-runner run: a Ray `DeprecationWarning` from `ray._common.deprecation` appeared in the worker's log. The stream handler is not mirrored - Ray prints its own records to the console.
+
+#### 21 §3.2 · In-flight episodes leaked from store and _activity
+
+_Tracked in [#219](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/219)._
+
+Both dicts are keyed by episode id and pruned only in `on_episode_end`. An episode that is discarded
+without ending never gets pruned. That happens whenever the runner force-resets:
+`MultiAgentEnvRunner._sample` calls `_reset_envs_and_episodes()` when `force_reset or num_episodes
+is not None or self._needs_initial_reset` **[verified]** `env/multi_agent_env_runner.py:290`, and it
+sets `_needs_initial_reset = True` after any episode-count sampling call and after env creation.
+`on_episode_end` is not called for what it throws away.
+
+At this repository's settings (timestep-based sampling, `max_step` truncation guaranteeing episode
+ends) the leak is bounded and rare. It is worth fixing anyway because the leaked unit is not a
+counter, it is up to 4,096 step dicts × `num_envs_per_env_runner` — ~34 MB per event, never freed
+for the life of the worker.
+
+#### 21 §3.3 · The iteration tag was stale after a missed broadcast
+
+_Tracked in [#220](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/220)._
+
+`_broadcast_iteration` is best-effort with a 10 s timeout and `healthy_only=True`. A runner that is
+restarting, unhealthy, or slow at that moment is skipped silently (correctly — it must not stop
+training), and its lines carry the *previous* iteration, not `-`, because the global is still set
+from last time. A stale-but-plausible number is harder to spot than a dash. Applying the broadcast is
+safe with respect to sampling: PPO's `synchronous_parallel_sample` blocks, so the broadcast cannot
+land mid-episode.
+
+**Fixed** (issue #220, [17](17_changelog.md) §83). A remote runner clears the tag in `on_sample_end`, so a runner the next broadcast misses reads `iter=-` rather than the previous iteration; the broadcast that does arrive sets it again before sampling. The local runner (worker index 0) shares the driver's process and is left alone. Lines a remote runner logs between samples now read `-`, which is true: it is not sampling for any iteration then.
+
+#### 21 §3.4 · Duplicate narrative on the console
+
+_Tracked in [#221](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/221)._
+
+The package logger's `propagate` is deliberately left on, and Ray forwards worker stdout to the
+driver console (`log_to_driver` defaults True). So a worker's NAV table appears once in that
+worker's file and again on the driver's console prefixed `(MultiAgentEnvRunner pid=...)`. Harmless,
+but it makes the console misleading as a record of *what the driver knows*, and it is why the
+per-worker files matter more than the console suggests.
+
+**Fixed** (issue #221, [17](17_changelog.md) §83). A worker that is writing its own file echoes only `worker_console_level` (default `WARNING`) and above to stdout, so the NAV table is in its file and not twice; warnings and errors still reach the driver console, and the driver logs each worker's file path once. The driver, and a worker with no file, echo everything. **A change in what a console shows:** the per-episode narrative from remote runners is no longer live on the console; set `worker_console_level` to `INFO` (or empty) to restore it. Verified on a real two-runner run: 0 NAV tables on the console, 6 in each worker's file.
+
+#### 21 §7 · What was found while implementing
+
+Nine things the review did not predict. The last six came out of re-reading the finished work rather
+than out of building it, which is the argument for doing that pass at all — and the last four came
+out of cross-checking channels against each other and against the *other* entry point, which no
+single-channel reading would have caught.
+
+**A 30-second hang at process exit.** ([#222](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/222)) The recorder's first design stopped its writer thread with a
+sentinel value on the queue. `close()` is called at exit, and the one moment it is called under load
+is the one moment the queue is full — so the `put` failed, the thread never learned to stop, and the
+join sat out its whole timeout. Two tests took exactly 30.00s, which is what made it visible. It is
+a `threading.Event` now, with the writer polling; the same two tests take 8s total.
+
+**The `on_train_result` metrics are one iteration late.** ([#223](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/223)) The hook is handed a `result` that has
+already been compiled, so `champions_promoted` reads `1.0` in the row *after* the promotion. This
+has always been true of `league_size` and the return statistics — the new champion metrics simply
+make it visible against a known event. Documented rather than corrected: the lag is uniform, and one
+documented offset is better than a correction that has to be undone if RLlib changes the order.
+
+**Live state should not be pickled at all.** ([#224](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/224)) The callback is cloudpickled into every env runner and
+every checkpoint, and it was carrying its in-flight episode tallies along. The unpickling side is a
+different process; a tally for an episode it never ran is not bookkeeping it should continue.
+`__getstate__` now ships the configuration and nothing else — which is also what makes the
+recorder's thread and queue safe to own.
+
+**`maker_fill_ratio` was a tautology.** ([#225](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/225)) The first version divided the episode's passive fills by its
+trades, aggregated across all agents. In a closed double auction that is exactly `0.5` in every
+episode whatever anyone did: `process_acc` runs once per side of every trade, both sides increment
+`num_trades_step`, and only the passive side increments `num_passive_fills_step`. A real
+3-iteration run reported `0.5000` three times — a constant so clean it reads like a working metric.
+It also mixed a cumulative field (`num_trades`) with a per-step one
+(`num_passive_fills_step`, zeroed by `exchg_helper` on every step), so even per agent it was
+measuring the last step against the whole episode.
+
+It is `maker_fill_ratio_max` now: per-agent shares accumulated over the episode, reported as the
+maximum across agents with at least five fills. 0.5 everywhere means nobody is specialising; one
+agent at 0.9 against the others' 0.3 is a policy that has learnt to quote and wait. The same run now
+reports 0.794, 0.837, 0.645. The floor on fills matters — one passive fill out of one trade is 1.0,
+and with eight agents the maximum would otherwise sit there all run on noise.
+
+The lesson generalises past this metric: **an aggregate over all agents of a two-sided quantity is a
+conservation identity, not an observation.** Anything summing a maker/taker, buyer/seller or
+long/short quantity across a closed market has the same defect waiting in it.
+
+**The one-iteration lag turned out to be fixable.** §7's third item above said it was documented
+rather than corrected. Re-reading RLlib's call site showed the correction is sanctioned: the hook
+runs before `Trainable.log_result` "so that the user has a chance to mutate the result", and the
+TODO beside the `metrics_logger` argument says there is "probably no point in adding more Stats
+here". The callback now writes `result["league"]`, which lands in the row for the iteration it
+describes, and keeps the metrics channel unchanged for readers that consume RLlib metrics rather
+than the result dict. Verified: `promoted` reads 1 in iteration 1's row, where the promotion
+happened.
+
+#### 21 §8 · Corrections to other documents, and three more defects
+
+| Doc | Was | Now |
+|---|---|---|
+| `11 §1.5` | "`strict_nav_check` defaults to true … so the run stops" | The stop is the driver's, from a metric; the hook reports (§2.1 here) |
+| `11 §1.1` | Per-episode pickles, flag switches the record off | Parquet, bounded, run-scoped; the flag now switches off the accumulation too |
+| `11 §1.2` | "Six metrics is the entirety" | 27, with the `on_train_result` lag documented |
+| `11 §3` | Three persistence problems about the `.pkl` files | Gone with `pickle`; one new entry for the unbounded run-log file *count* |
+| `11 §4` | Four sketched `log_value` calls "to add" | All four exist; the list is now things needing new computation |
+| `config/runtime_profiles.json` | "~10MB per 4096-step episode" | ~34 MB, measured at the training shape |
+
+**Two channels disagreed about how many episodes there were.** The same run recorded 8 distinct
+`episode_id`s in Parquet and 6 NAV tables in the logs. Both were right: `on_episode_end` fires only
+for episodes that actually end, while `close` writes whatever was in flight. The fragments were real
+rows and worth keeping, but nothing marked them, so any per-episode aggregate over the file counted
+them as episodes. There is an `episode_complete` column now, and the two channels agree exactly.
+
+The general form is worth remembering: **two independent records of the same events are the cheapest
+correctness check available, and they only help if someone actually compares the counts.** Three of
+the findings on this page came from doing that once.
+
+**The excepthook guard was racy.** `install_excepthooks` has an idempotence flag it checks and then
+sets, and `configure` called it *outside* `_configure_lock` - the same check-then-act shape, in the
+same file, as the bug that lock was added for. Two threads would each chain a hook onto the
+previous one, and every unhandled exception would be logged twice. It is inside the lock now, with a
+test that pins the mechanism and not just the outcome.
+
+**The iteration broadcast under-delivered silently.** `foreach_env_runner` defaults to
+`healthy_only=True` and skips a runner that is restarting or slower than the 10s timeout. That
+runner keeps whatever iteration it was last told, so its lines and its recorded rows carry the
+*previous* iteration rather than `-`. A stale but plausible number is worse than a missing one,
+because nothing about it looks wrong. Blocking sampling until every runner acknowledges a log field
+is not the trade to make, so the broadcast still degrades - but it now says when it fell short.
+
+**The notebook path turned propagation off without the thing that justifies it.**
+`configure_run_logging` disables propagation to the root logger whenever `ray_log_encoding` is set,
+reasoning that Ray is about to configure root and both handlers would print every line twice. That
+reasoning holds only if the `ray.init` that follows applies a `LoggingConfig` - `train.main` does,
+and `runtime.ray_init_kwargs` did not. A notebook run therefore had propagation off with nothing
+taking its place: no duplication, but no Ray-side formatting either, and a `logging.basicConfig()`
+in a cell would have stopped showing package lines. `ray_init_kwargs(rt, cfg)` now adds the
+`logging_config`, so the two entry points agree.
+
+The general form again: **a decision made in one place and acted on in another will drift**, and the
+two entry points into this repository are exactly where that drift lives.
+
+### From 22 · JEPA integration
+
+Source: [22_jepa_integration.md](22_jepa_integration.md).
+
+#### 22 §2.3 · The reward carried almost no signal
+
+Register: [S1-1](29_fixed_issues.md#s1-1--ppos-critic-receives-zero-gradient-verified-fixed), [S1-3](29_fixed_issues.md#s1-3--doing-nothing-is-a-dominant-strategy-verified-fixed)
+
+Three findings compounded when the JEPA proposal was written:
+
+- **S1-1** — `vf_clip_param = 10` against NAV-scale targets pinned `vf_loss` at the clip bound.
+  `vf_explained_var ≈ 9e-05`. PPO was REINFORCE with a batch-standardised baseline.
+- **S1-3** — the reward was strictly negative-sum over a NAV-conserving market. All-pass scored
+  exactly `0.0`; random trading scored `−591,027`. Passivity was both a Nash equilibrium and the
+  joint optimum.
+- **§7** — the default budget is ~262k env steps against a realistic need of 10⁷–10⁸.
+
+So the gradient reaching the encoder was a high-variance signal pointing at a degenerate policy,
+delivered in small quantities.
+
+#### 22 §3.2 · The observation had no private state
+
+Register: [S1-2](29_fixed_issues.md#s1-2--observation-contains-no-private-state-verified-fixed)
+
+> **Status.** S1-2 is closed for inventory, cash, NAV, drawdown, VWAP and time remaining: the
+> observation carries a 9-float private tail ([17](17_changelog.md) §30). **Resting orders are
+> still absent**, so the third bullet below is half-collected and the first still stands.
+
+S1-2: every agent received the byte-identical public book vector — `distinct obs vectors across
+agents: 1`. A JEPA world model over *that* observation modelled the market's evolution and could
+not represent inventory, VWAP, NAV, drawdown or resting orders, because none of them was in its
+input.
+
+Consequences, and where each now stands:
+
+- **Still open.** The latent cannot fully support the four of nine action categories (`modify`,
+  `cancel`) that stay partly blind: an agent sees `cash_on_hold` but not *which* orders that cash
+  is committed to.
+- **Unchanged, and not a defect.** An action-conditioned predictor (§4.3) conditioned on *this*
+  agent's action is fitting the conditional expectation over seven unobserved opponent actions.
+  Its loss has a nonzero floor, and that floor is the residual multi-agent stochasticity rather
+  than underfitting — §33.4 of [17](17_changelog.md) says the same about the shipped world model.
+- **Collected.** With the private block in place, action-conditioning is now the materially more
+  interesting object it promised to be: "what does the book — and my position — look like after I
+  send this order" is a *market-impact* model, which is the quantity the project exists to study.
+
+#### 22 §3.3 · The per-frame normalizer contaminated a predictive target
+
+Register: [S2-6](29_fixed_issues.md#s2-6--every-frame-in-the-observation-stack-has-a-different-normalizer-verified-fixed)
+
+S2-6: each stacked frame is normalised by its **own** L1 midpoint `M_t`, so a price at `t-3` and
+the same price at `t` have different encodings. For a *classification*-flavoured encoder that is a
+nuisance. For a *predictive* objective it is worse: "predict the latent of frame `t` from frames
+`t-3..t-1`" partly means "predict the renormalisation", and the predictor can score well by
+modelling an artefact of the observation pipeline rather than the market.
+
+`log_mid` is in the observation, so `M_t` is recoverable and the artefact is learnable rather than
+information-destroying — which is precisely the problem. **Fix S2-6 (normalise the whole stack by
+the current `M_t`) before running any time-axis masking**, or the ablation in §4.2 will not mean
+what it says.
+
+### From 23 · Probe harness
+
+Source: [23_probe_harness.md](23_probe_harness.md).
+
+#### 23 §1 · The two blockers to a returns-based comparison
+
+Register: [S1-1](29_fixed_issues.md#s1-1--ppos-critic-receives-zero-gradient-verified-fixed), [S1-3](29_fixed_issues.md#s1-3--doing-nothing-is-a-dominant-strategy-verified-fixed)
+
+Training each architecture and comparing returns could not answer the encoder question while these
+stood:
+
+| Finding | Consequence for an architecture comparison |
+|---|---|
+| **S1-1** | `vf_clip_param = 10` against NAV-scale targets pinned `vf_loss` at the clip bound. `vf_explained_var ≈ 9e-05`. PPO was REINFORCE with a batch baseline |
+| **S1-3** | The reward was strictly negative-sum over a NAV-conserving market; all-pass scored exactly `0.0` and random trading `−591,027`. Passivity was the joint optimum |
+
+Run an encoder comparison through that reward and the winner is whichever architecture descends
+fastest to doing nothing.
+
+#### 23 §7 · One row per step: the reason changed with S1-2
+
+Register: [S1-2](29_fixed_issues.md#s1-2--observation-contains-no-private-state-verified-fixed)
+
+The *reason* for that default has changed, and the change matters. While S1-2 was open every agent
+received the byte-identical public book vector, so the eight rows were exact duplicates: keeping
+one discarded nothing and avoided a leak, because a row's duplicates would otherwise land on both
+sides of the split. **That premise no longer holds.** [17](17_changelog.md) §30 gave each agent its
+own private tail, so the eight rows now differ in their last `private_dim` floats. Keeping one is
+therefore a real choice — it drops seven agents' private state — and it is still the right default
+for the public-book targets this harness scores, none of which read the private tail.
+
+#### 23 §7 · Stale row-selection reasoning after the private-state work
+
+The reason for keeping one row per step was left describing duplicate rows after the private-state
+work gave each agent its own tail. This is the sort of thing a comment gets to be quietly wrong about
+for a long time. It was found by the review in [17](17_changelog.md) §34.5 — a regression introduced
+by the private-state work itself, which fixed the reader's `snapshots` slice and left the row
+selection reasoning behind it untouched.
+
+### From 25 · Continual Backprop
+
+Source: [25_continual_backprop.md](25_continual_backprop.md).
+
+#### 25 §3.2 · The reward paid for passivity
+
+Register: [S1-1](29_fixed_issues.md#s1-1--ppos-critic-receives-zero-gradient-verified-fixed), [S1-3](29_fixed_issues.md#s1-3--doing-nothing-is-a-dominant-strategy-verified-fixed)
+
+- **S1-3** — the reward was strictly negative-sum over a NAV-conserving market. All-pass scored
+  exactly `0.0`; random trading scored `−591,027`. Passivity was both a Nash equilibrium and the
+  joint optimum.
+- **S1-1** — `vf_clip_param = 10` against NAV-scale targets pinned `vf_loss` at the clip bound;
+  `vf_explained_var ≈ 9e-05`.
+
+#### 25 §3.4 · A league run on lstm failed once a champion existed
+
+- **A league run on `lstm` used to fail once a champion existed** (issue #278, found while
+  reviewing this change, and reproducible with CBP off). RLlib mis-shaped a stateful module's
+  log-probability when two agents shared it in a step; fixed in `train/model/action_dist.py`
+  (changelog §71), so recurrent CBP now runs through a league.
+
+#### 25 §R-14 · Only the last call of a step counted
+
+Register: [R-14](29_fixed_issues.md#from-the-2026-10-07-review)
+
+A layer that runs more than once in a step (each MoE expert once per top-k slot; the JEPA trunk on the
+masked and the full input) was judged only on its last call. The hook now merges the calls' statistics
+by row count (R-14, #184).
+

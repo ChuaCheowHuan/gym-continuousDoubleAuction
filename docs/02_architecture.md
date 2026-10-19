@@ -469,7 +469,7 @@ order moves cash into `cash_on_hold` rather than out of the account, so
 marks every account at `mark_price()`: by default (`mark_price_source: "mid"`) the midpoint of a
 two-sided book, else the last trade on the tape, else a one-sided quote before anything has
 traded. A mark that needs a two-sided book cannot be moved by printing one trade at a chosen price
-([15](15_findings_and_recommendations.md) S2-5); `"last"` restores the old last-trade mark.
+([S2-5](29_fixed_issues.md#s2-5--self-matching-enables-mark-manipulation-verified-fixed)); `"last"` restores the old last-trade mark.
 `self.last_price` keeps tracking the last traded price, because it is the ghost-level anchor. Per account
 ([`calculate.py`](../gym_continuousDoubleAuction/envs/account/calculate.py)):
 
@@ -518,7 +518,7 @@ reset the deque is pre-filled with `n_hist` copies of the initial raw frame so t
 constant from step 0.
 
 **The history deque is a single shared object on the environment**, so the book prefix is
-identical for every agent; only the 9-float private tail differs. Full spec and its defects in
+identical for every agent; only the 41-float private block differs. Full spec and its defects in
 [05_observation_space.md](05_observation_space.md).
 
 ### Step 7 — outputs
@@ -532,9 +532,10 @@ over traders building obs / reward / done / info, and only then **resets the per
 ordering is correct and easy to break: the reward reads three of those counters and the info dict
 reads all four.
 
-`set_all_done` then rebuilds `terminateds` and `truncateds` as all-`False` dicts and sets only
-`__all__`. This is why a bankrupt agent is never individually terminated — see
-[15_findings_and_recommendations.md](15_findings_and_recommendations.md) S2-4.
+`set_all_done` then completes the per-agent `terminateds` without disturbing the `True`s `set_done`
+put there for an agent bankrupt on this step, omits agents terminated on an earlier step, and derives
+the two `__all__` keys. A bankrupt agent is terminated on its step and stops being stepped
+([29](29_fixed_issues.md#02-25--per-agent-terminateds-were-rebuilt-as-all-false) has the all-`False` rebuild this replaced).
 
 ---
 
@@ -550,7 +551,7 @@ resolving to a number written in Python. The full rules are in
 |---|---|---|---|
 | `num_of_agents` | 5 | 8 | Number of traders |
 | `init_cash` | 1,000,000 | 1,000,000 | Starting cash per trader — must be > 0, see `env_defaults.json` |
-| `tick_size` | 1 | 1 | The price grid; reaches `Action_Helper.min_tick` and the book, see §2.7 |
+| `tick_size` | 1 | 1 | The price grid; reaches `Action_Helper.min_tick`, see §2.7 |
 | `tape_display_length` | 10 | 10 | Tape rows kept for display |
 | `max_step` | 64 | 4,096 | Steps before truncation |
 | `is_render` | `True` | `False` | Log book, tape and accounts every step (DEBUG only) |
@@ -582,34 +583,23 @@ flowchart LR
 
 Two consequences worth flagging:
 
-- **`is_render` defaults to `True`.** `TrainConfig` overrides it, and `render()` is additionally
-  gated on the logger being enabled for DEBUG — so a direct `continuousDoubleAuctionEnv({...})`
-  at the default INFO level builds no tables at all. Raise the level and it dumps the book, the
-  tape and every account on every step.
+- **`is_render` defaults to `false`** in both files, and `render()` is additionally gated on the
+  logger being enabled for DEBUG. `CDA_rand --render` with a DEBUG `cda_log_level` dumps the book,
+  the tape and every account on every step ([29](29_fixed_issues.md#02-26--is_render-defaulted-to-true) has the old default).
 - **`initial_price_min` / `initial_price_max` are reachable from training now.** They are
   `TrainConfig` fields and are forwarded by `env_config`, so a run can narrow the anchor range
-  instead of always drawing from `[10, 100]`. That range is still what the checked-in config ships
-  (S3-4 in [15_findings_and_recommendations.md](15_findings_and_recommendations.md) is about the
-  10× relative-tick swing it produces, not about reachability).
+  instead of always drawing from `[10, 100]`. That range is still what the checked-in config ships;
+  the 10× relative-tick swing it produces is an open remainder of S3-4 in
+  [15](15_findings_and_recommendations.md).
 
-### 2.7 `tick_size` reaches the action layer; the book's copy is inert
+### 2.7 `tick_size` reaches the action layer; the book takes no tick
 
-`tick_size` used to be two independent values — a hardcoded `min_tick = 1` in `Action_Helper` that
-actually drove prices, and an `OrderBook` argument that was stored and never read — so setting the
-key changed nothing anywhere. Two of the three halves are fixed:
-
-| | Then | Now |
-|---|---|---|
-| `Action_Helper.min_tick` | hardcoded `1` | the `tick_size` config key — this is what builds every price |
-| `reset()` | `OrderBook(1, ...)` | `OrderBook(self.tape_display_length)` — the book takes no tick |
-| `OrderBook.tick_size` | stored, never read | **deleted** (2026-09-18); `OrderBook(0.0001, 10)` is a `TypeError` |
-
-There is no rounding or tick validation anywhere in the matching path; the book's parameter makes
-it look as though there is. The recommendation is to **delete** the book's copy rather than
-enforce it, because there is exactly one price producer in the system and `_set_price` emits
-on-grid prices by construction. It is deferred only because `envs/orderbook/` is off-limits to
-changes. See [18_configuration.md](18_configuration.md) §6 and S3-4 in
-[15_findings_and_recommendations.md](15_findings_and_recommendations.md).
+The `tick_size` config key is `Action_Helper.min_tick`, which builds every price; `reset()`
+constructs `OrderBook(self.tape_display_length)`, and `OrderBook(0.0001, 10)` is a `TypeError`.
+There is no rounding or tick validation anywhere in the matching path, and nothing suggests there
+is: there is exactly one price producer in the system, and `_set_price` emits on-grid prices by
+construction. See [18_configuration.md](18_configuration.md) §6; the two independent values this
+replaced are in [29](29_fixed_issues.md#02-27--tick_size-was-two-independent-values) ([S3-4](29_fixed_issues.md#s3-4--the-order-books-tick_size-is-inert-verified-fixed)).
 
 `log1p_spread_ticks` is computed against `min_tick` because that is the tick the action space
 quotes in, which makes observation units match action units — see
@@ -770,15 +760,11 @@ tolerance and restarts the worker. So the hook reports a metric and the driver d
 
 ## 2.10 Things worth knowing before touching it
 
-- **Per-agent `terminateds` are rebuilt as all-`False` every step.** Only `__all__` is ever set,
-  so a single bankrupt agent keeps being stepped for the rest of the episode.
-- **Rendering has side effects.** `_render` nulls `model_actions` / `LOB_actions` /
-  `shuffled_actions` and clears `seq_trades` and `seq_order_in_book`, so toggling `is_render`
-  changes state evolution.
-- **The bare `import ray` in the env is gone** (S3-6); the `MultiAgentEnv` import is the real
-  dependency, and `ray[rllib]` is in `install_requires` because of it.
-- **A fair amount of commented-out dead code** (old `step`, old action space, old `modify_order`,
-  old space getters) is left in place as inline history — roughly 200 LOC.
+- **Rendering is read-only**, so toggling `is_render` does not change state evolution.
+- **`ray[rllib]` is in `install_requires`** because the env imports `MultiAgentEnv`.
+- The all-`False` `terminateds`, the side-effecting render, the bare `import ray` and ~200 LOC of
+  commented-out history that this list once warned about are fixed ([S2-4](29_fixed_issues.md#s2-4--bankrupt-agents-are-never-terminated-verified-fixed), [S4-7](29_fixed_issues.md#s4--minor), [S3-6](29_fixed_issues.md#s3-6--install_requires-does-not-match-the-imports-verified-fixed), [S4-4](29_fixed_issues.md#s4--minor);
+  [29](29_fixed_issues.md#02-210--four-things-worth-knowing-that-are-no-longer-true)).
 - **No module holds a literal copy of a configured value.** `test_config_sources.py` proves it by
   copying `config/` to a temp tree, changing values, pointing `$CDA_CONFIG_DIR` at it and
   asserting the change comes out the far end. Add knobs the way

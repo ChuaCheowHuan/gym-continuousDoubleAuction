@@ -31,7 +31,7 @@ Related: [08_self_play_league.md](08_self_play_league.md) (the non-stationarity 
 [18_configuration.md](18_configuration.md) §5.4 (the encoder group and the comparison protocol),
 [23_probe_harness.md](23_probe_harness.md) (the reward-free measurement this needs),
 [10_testing.md](10_testing.md) §6.4 (the contract a new component must meet),
-[15_findings_and_recommendations.md](15_findings_and_recommendations.md) (S1-1, S1-3),
+[29_fixed_issues.md](29_fixed_issues.md) (S1-1, S1-3),
 [12_perspective_rl_researcher.md](12_perspective_rl_researcher.md) §9.
 
 ---
@@ -416,13 +416,11 @@ available for anyone who wants to measure the difference.
 
 ### 3.2 Preserved plasticity, in a reward that pays for passivity, preserves the ability to learn nothing
 
-The reward findings bite here exactly as they bit JEPA, and slightly harder.
+> **Status.** S1-1 and S1-3 are fixed ([S1-1](29_fixed_issues.md#s1-1--ppos-critic-receives-zero-gradient-verified-fixed), [S1-3](29_fixed_issues.md#s1-3--doing-nothing-is-a-dominant-strategy-verified-fixed); what they were is in [29](29_fixed_issues.md#25-32--the-reward-paid-for-passivity)). This
+> section was written while they stood. Its argument still applies to any reward that pays for
+> passivity, and it is why the comparisons below are probe-scored first.
 
-- **S1-3** — the reward is strictly negative-sum over a NAV-conserving market. All-pass scores
-  exactly `0.0`; random trading scores `−591,027`. Passivity is both a Nash equilibrium and the
-  joint optimum.
-- **S1-1** — `vf_clip_param = 10` against NAV-scale targets pins `vf_loss` at the clip bound;
-  `vf_explained_var ≈ 9e-05`.
+The reward findings bit here exactly as they bit JEPA, and slightly harder.
 
 CBP keeps the network *able to keep learning what it is being taught*. If what it is being taught
 is to descend into doing nothing, CBP's effect on returns will be to help it get there and stay
@@ -430,9 +428,10 @@ there more reliably. Unlike JEPA, CBP has no reward-independent training signal 
 a modification to how the reward's gradient is applied, so it inherits that gradient's problems
 wholesale.
 
-**Consequence for evaluation, and it is not optional:** CBP must be scored on the **probe**
-(§2.4), not on episode return, until S1-3 is fixed. A returns-based comparison would measure which
-variant converges to passivity faster and report it as a win or a loss more or less at random.
+**Consequence for evaluation:** while S1-3 stood, CBP had to be scored on the **probe** (§2.4), not
+on episode return, because a returns-based comparison would measure which variant converges to
+passivity faster. S1-3 is fixed, so a returns-based comparison is interpretable now; none has been
+run, and the probe remains the cheaper first measurement.
 
 ### 3.3 The effect is **not** detectable here at ~20,000 optimiser steps — **[measured]**
 
@@ -448,7 +447,7 @@ This section used to say the question was unknown. It has now been asked, with
 The first number is what the instrument this note proposed actually reported, and it is
 **wrong** — or rather, it is right about something else. The rank of an activation matrix
 depends on the inputs as much as on the network, and here the policy chooses its own inputs:
-under S1-3 passivity is the joint optimum, so a converging agent visits an ever narrower set
+under S1-3 (open when this was measured) passivity was the joint optimum, so a converging agent visits an ever narrower set
 of book states and the rank of what it sees falls with the network unchanged. Hold the
 observations fixed and nothing is left.
 
@@ -494,7 +493,7 @@ under `cbp_scope: "feedforward"`: that encoder's tokenizer is `token_mlp` and it
 fixes it, rather than running a no-op. Attention is explicitly excluded and should be documented as
 excluded, not silently skipped.
 
-**`cbp_scope: "recurrent"` adds the LSTM core** (docs/15 S3-32), and finds 2 layers per trainable
+**`cbp_scope: "recurrent"` adds the LSTM core** ([S3-32](29_fixed_issues.md#s3-32--continual-backprop-a-silent-no-op-on-lstm-and-its-state-in-every-weight-sync-verified-fixed)), and finds 2 layers per trainable
 module in `lstm` (the actor's and the critic's; 1 under `vf_share_layers`) and exactly what
 `feedforward` finds everywhere else. PyTorch stacks an LSTM's four gates, so a unit's parameters are
 scattered, and the split that makes a replacement safe is:
@@ -519,10 +518,8 @@ What it does not cover or does not do:
 - **The activation statistics are taken over every row the LSTM processes.** RLlib pads recurrent
   batches to a fixed sequence length and the loss masks the padding; the utility does not. How many
   padded rows enter, and what that does to the ranking, was not measured.
-- **A league run on `lstm` used to fail once a champion existed** (issue #278, found while
-  reviewing this change, and reproducible with CBP off). RLlib mis-shaped a stateful module's
-  log-probability when two agents shared it in a step; fixed in `train/model/action_dist.py`
-  (changelog §71), so recurrent CBP now runs through a league.
+- **Recurrent CBP runs through a league.** The league failure on `lstm` that this change surfaced
+  (issue #278, independent of CBP) is fixed in `train/model/action_dist.py` ([29](29_fixed_issues.md#25-34--a-league-run-on-lstm-failed-once-a-champion-existed)).
 - **Nothing here says CBP helps a recurrent policy.** The papers do not test one, and the
   measurement in §3.3 (not detectable at this repo's update count) applies unchanged. This makes the
   mechanism *possible* on `lstm`, which it was not.
@@ -636,7 +633,7 @@ The flaw is not subtle in hindsight. Effective rank is a property of a matrix of
 and a matrix of activations has two parents: the network and the inputs. In the supervised
 settings both papers measure it in, the inputs are a fixed dataset, so the network is the only
 thing that can move it. In reinforcement learning the policy chooses its own inputs, and in
-*this* reinforcement-learning problem S1-3 gives it a strong reason to narrow them. Carrying
+*this* reinforcement-learning problem S1-3 gave it a strong reason to narrow them while it stood. Carrying
 the metric across from the papers carried an assumption that does not hold here.
 
 The general form is worth stating because it will recur: **a plasticity correlate measured on
@@ -755,8 +752,9 @@ fingerprint of which capacity it was actually using. Two champions with near-ide
 disjoint high-utility units are *behaviourally* different in a way the league's current
 weighted-sampling scheme cannot see. Utility profiles could inform matchmaking diversity.
 
-Effort: **L**. Depends on A and B, and on S1-3 being fixed first, since without that every champion
-is converging on the same passive behaviour and there is no diversity to preserve.
+Effort: **L**. Depends on A and B. It also needed S1-3 fixed, since otherwise every champion
+converges on the same passive behaviour and there is no diversity to preserve; S1-3 is fixed
+([S1-3](29_fixed_issues.md#s1-3--doing-nothing-is-a-dominant-strategy-verified-fixed)).
 
 ---
 
@@ -770,7 +768,7 @@ The comparison protocol is [18](18_configuration.md) §5.5, with one substitutio
 | Does CBP prevent it? | Same metrics, CBP on vs off | The curves stay flat with CBP on |
 | Does it help the *representation*? | Probe score (§2.4) at iterations 10 / 100 / 1000 | No-CBP probe score falls late; CBP's does not |
 | Does it cost anything early? | Probe + return at low iteration counts | Indistinguishable — `ρ = 1e-4` is small |
-| Does it help returns? | **Deferred until S1-3 is fixed** (§3.2) | Not interpretable before then |
+| Does it help returns? | Returns comparison, multi-seed (§3.2) | Interpretable now that S1-3 is fixed; not yet run |
 
 The metric names are the ones the Learner actually emits ([11](11_logging_and_observability.md)),
 and the rank in the first row is deliberately **not** `cbp_batch_effective_rank`: that one is
@@ -800,8 +798,8 @@ off by default, and orthogonal to every extension already shipped.
 ~20,000 optimiser steps, on a scaled-down environment, at one seed — so the strongest claim
 available today is "the conditions are right", not "this is happening". And the reward problem
 (§3.2) is worse for CBP than it was for JEPA: JEPA had a dense training signal independent of the
-reward, whereas CBP only modulates how the reward's own gradient is applied. Preserved plasticity
-under S1-3 preserves the capacity to learn passivity.
+reward, whereas CBP only modulates how the reward's own gradient is applied. Under a reward that
+pays for passivity, as S1-3's did, preserved plasticity preserves the capacity to learn passivity.
 
 **The scope discipline that matters.** §2.5 is the part most likely to be got wrong by someone
 implementing this quickly, because the encoder registry is the obvious seam, is well documented,
@@ -822,7 +820,7 @@ asked yet.
 
 | Step | Work | Depends on | Effort |
 |---|---|---|---|
-| 0 | S1-1 (`vf_clip_param` / reward scaling), S1-3 (reward sign) | — | S–M |
+| 0 | ~~S1-1 (`vf_clip_param` / reward scaling), S1-3 (reward sign)~~ — **done**, see [29](29_fixed_issues.md) | — | S–M |
 | 1 | ~~**Proposal A** — plasticity metrics, including the utility statistic computed but unused~~ — **done**, `cbp_metrics_only` | **nothing** | S |
 | 2 | ~~**Proposal B** — the mechanism, off by default, composed over `learner_class_for`~~ — **done** | 1 | M |
 | 3 | ~~Checkpoint round-trip and seeding tests for CBP state~~ — **done**, `test_cbp.py` + `integration/test_cbp_wiring.py` | 2 | S |
@@ -831,7 +829,7 @@ asked yet.
 | 5 | **Re-run step 4 at 10⁶–10⁸ steps on real hardware**, multi-seed, reading `train/probe/rank.py` rather than the batch metric | 4b | S code, L compute |
 | 6 | Probe-scored CBP-on/off comparison, multi-seed, with tuned Adam held fixed across arms — **only if step 5 finds something** | 5, [23](23_probe_harness.md) | M |
 | 7 | **Proposal C** — CBP in the offline pretrainer, the cleanest test: no policy, so no input-distribution confound at all | 2 | S |
-| 8 | Returns-based comparison | 0, 6 | M, and only if S1-3 is genuinely fixed first |
+| 8 | Returns-based comparison | 0, 6 | M |
 | 9 | **Proposal D** — utility profiles in league matchmaking | 0, 2 | L |
 
 **Step 5 is now the blocking one, and it is compute rather than code.** Everything through 4b is
@@ -863,7 +861,10 @@ Related work, for the alternatives §1.2 compares against:
 - [Loss of Plasticity in Continual Deep Reinforcement Learning — Abbas et al., CoLLAs 2023](https://arxiv.org/abs/2303.07507)
 - [Adaptive Rational Activations / plasticity in RL — background on activation saturation](https://arxiv.org/abs/2102.09407)
 
-## Review fixes (R-12 to R-14)
+## Review findings (R-12 to R-14)
+
+R-12 is guarded rather than fixed and is open in [15](15_findings_and_recommendations.md); R-13 and
+R-14 are fixed ([R-13](29_fixed_issues.md#from-the-2026-10-07-review)).
 
 - **One learner.** `cbp_enabled` with `num_learners > 1` is refused at config time (R-12, #182).
   Averaged gradients keep several learners identical; a replacement is a direct overwrite chosen
@@ -878,5 +879,4 @@ Related work, for the alternatives §1.2 compares against:
   measured the paper's rule, so switching it on is a different experiment.
 - **Every call of a step.** A layer that runs more than once in a step (each MoE expert once per top-k
   slot; the JEPA trunk on the masked and the full input) is judged on all of them: the hook merges
-  the calls' statistics by row count, exactly, as if they were one batch (R-14, #184). Before, only the
-  last call counted.
+  the calls' statistics by row count, exactly, as if they were one batch (R-14, #184).

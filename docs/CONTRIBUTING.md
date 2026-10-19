@@ -71,4 +71,6 @@ issue gets:
 - one of `bug`, `enhancement`, `documentation`, `test-gap` or `refactor`;
 - an issue type: Bug, Task or Feature.
 
-The findings register is [15_findings_and_recommendations.md](15_findings_and_recommendations.md).
+The findings register is [15_findings_and_recommendations.md](15_findings_and_recommendations.md) for
+what is open; a finding moves, under the same ID, to [29_fixed_issues.md](29_fixed_issues.md) when it
+is fixed.

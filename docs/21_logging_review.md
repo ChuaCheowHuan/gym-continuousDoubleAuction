@@ -15,10 +15,10 @@ Related: [09_distributed_training.md](09_distributed_training.md),
 Everything marked **[verified]** was checked against Ray 2.56.1 as pinned in `requirements.txt`,
 either by reading the installed source at the line cited or by running the code.
 
-**All eight recommendations in §6 are implemented.** §1-§5 are kept in the present tense of the
-audit - they describe what was found - and each §6 item records what was built and where it
-departed from the recommendation. §7 is what the implementation turned up that the review did not
-predict.
+**Every finding here is fixed, and all eight recommendations in §6 are implemented.** §1 and §4–§5
+describe what was audited; each §2–§3 finding now says what the code does instead, and the defect
+it replaced is in [29_fixed_issues.md](29_fixed_issues.md#from-21--logging-review). §6 records
+what was built and where it departed from the recommendation.
 
 ---
 
@@ -35,8 +35,11 @@ modes. Conflating them is the main reason the multi-runner behaviour is hard to 
 | 4 | Per-step episode record | `pickle.dump` | `obs`/`act`/`reward`/`info` for every step | env runners | `<episode_data_dir>/<episode_id>.pkl` |
 | 5 | Per-step `info` | returned from `env.step` | 21 fields per agent per step | the env | consumed by 3 and 4; otherwise dropped |
 
-Channel 4 is the only per-step *persistence*, and it is entirely bespoke — no Ray or RLlib
-machinery is involved in it. That is the crux of §4 and §5.
+The table is the audited state. Channel 4 is Parquet now, bounded and run-scoped (§6 items 3, 5 and 6),
+and channel 3 carries 27 values rather than 6 (§6 item 8).
+
+Channel 4 was the only per-step *persistence*, and it was entirely bespoke — no Ray or RLlib
+machinery was involved in it. That is the crux of §4 and §5.
 
 The plumbing that makes channel 1 work across processes is worth naming, because §2's problems are
 all failures of the same plumbing applied to the other channels:
@@ -56,137 +59,53 @@ None of channels 2–5 has any of that.
 
 ## 2. Problems under multiple env runners
 
-### 2.1 `strict_nav_check` does not stop a distributed run — it restarts a worker
+### 2.1 `strict_nav_check` stops the run from the driver
 
-_Tracked in [#212](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/212)._
+the episode hook reports a violation as the `nav_conservation_violations` metric and the driver
+raises `NavConservationError` after `algo.train()`, so the check stops a run at every runner count
+(§6 item 1). (#212.) The defect is in
+[29](29_fixed_issues.md#21-21--strict_nav_check-restarted-a-worker-instead-of-stopping-the-run).
 
-This is the most serious finding, because the feature's stated purpose is to stop a corrupt run
-loudly, and at the repository's own GPU profile (`num_env_runners=2`) it does not.
+### 2.2 No per-step store when episode data is disabled
 
-`on_episode_end` runs on the env runner. Its `raise AssertionError(message)` therefore surfaces as a
-`RayTaskError` from the remote `sample()` call, and:
+with `episode_data_dir: null` the callback retains nothing per step (§6 item 2). (#213.) The
+defect is in
+[29](29_fixed_issues.md#21-22--the-per-step-store-accumulated-with-episode-data-disabled).
 
-* `EnvRunnerGroup._ignore_ray_errors_on_env_runners = config.ignore_env_runner_failures or
-  config.restart_failed_env_runners` **[verified]** `env/env_runner_group.py:181-183`;
-* `restart_failed_env_runners` defaults to **True** **[verified]** `algorithms/algorithm_config.py:600`;
-* `foreach_env_runner` passes that flag into
-  `FaultTolerantActorManager.handle_remote_call_result_errors`, whose `ignore_ray_errors` branch is
-  `logger.exception(result_or_error.get())` — log and continue **[verified]**
-  `utils/actor_manager.py:779-788`.
+### 2.3 `episode_data_dir` is absolute and run-scoped
 
-So on a distributed run the assertion kills one env-runner actor, RLlib restarts it (tolerating 100
-consecutive failures by default), and `algo.train()` returns normally. The run continues training on
-a ledger the check just declared corrupt.
+`TrainConfig.episode_data_path` resolves `<episode_data_dir>/<run_id>` to an absolute path,
+pickled into the callback every runner receives (§6 item 3). (#214.) The defect is in
+[29](29_fixed_issues.md#21-23--episode_data_dir-was-neither-absolute-nor-run-scoped).
 
-Two aggravating details:
+### 2.4 The episode record is written off the sampling thread
 
-* The traceback is logged through **Ray's** logger, not this package's, so it does not reach
-  `run.log`. With `log_level: "WARN"` it reaches Ray's stderr and nothing else. The one line the
-  whole §1.13 excepthook machinery exists to preserve is the one line that escapes it.
-* A restarted env runner is a fresh process: it has lost `set_iteration`, so its lines read `iter=-`
-  until the next `_broadcast_iteration`, and it opens a *new* `run.<pid>.<worker>.log` (see §2.5).
+the record is Parquet, written from one background thread, and every failure in the writer is a
+warning (§6 items 3, 5 and 6). (#215.) The defect is in
+[29](29_fixed_issues.md#21-24--the-pickle-write-was-synchronous-on-the-sampling-hot-path).
 
-At `num_env_runners=0` — the default and what CI runs — the callback executes in the driver and the
-assertion does stop the run. That is why this has never been observed.
+### 2.5 Worker log files are bounded, and each keeps its head
 
-### 2.2 The per-step store accumulates even when episode data is disabled
-
-_Tracked in [#213](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/213)._
-
-`on_episode_step` appended to `self.store[episode.id_]` unconditionally; only the *write* in
-`on_episode_end` was guarded by `episode_data_dir is not None`. So `--no-episode-data` / `episode_data_dir: null` removes the I/O and keeps the
-memory.
-
-**[verified]** by driving the callback with `episode_data_dir=None` for 1000 steps: 1000 step dicts
-retained.
-
-The cost is not small. A step dict for this repository's training shape (8 agents, `obs` of
-`(168,) float32` — the observation width when this was measured, now 233 — the full 21-field
-`info`) pickles to **8,314 bytes** **[verified]**, so one 4,096-step episode is **~34 MB** on disk
-and appreciably more live in Python objects, held per concurrent episode per runner. The widened
-observation makes that a floor rather than an estimate. `runtime_profiles.json` estimated ~10 MB; it is off by 3.4×, and has
-been corrected.
-
-### 2.3 `episode_data_dir` is the one output path that is not made absolute or exported
-
-_Tracked in [#214](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/214)._
-
-Compare the two paths a worker writes:
-
-| Path | Made absolute | Reaches the worker via | Run-scoped |
-|---|---|---|---|
-| log dir | yes, `os.path.abspath` in `logging_setup.configure` | `$CDA_LOG_DIR` **and** `runtime_env` | yes (`run_dir`) |
-| `episode_data_dir` | no | pickled into the callback | **no** |
-
-`episode_data_dir` defaults to the relative string `"episode_data"`, and `os.makedirs` +
-`open` in the callback resolve it against **the worker process's cwd**. Today that is usually the
-driver's cwd, because nothing sets `runtime_env["working_dir"]` — but it is an accident, not a
-guarantee: any future use of `working_dir`, any Ray job submission, or any multi-node run scatters
-the pickles into per-worker directories with no error and no log line. The log directory was given
-`abspath` for exactly this reason; the episode directory was not.
-
-It is also not run-scoped, so two concurrent runs write into one directory. Collision is unlikely
-(episode IDs are UUID-ish) but "unlikely" is what §1.11 of doc 11 rejected for `run.log`.
-
-### 2.4 Writing the pickle is synchronous, on the sampling hot path
-
-_Tracked in [#215](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/215)._
-
-`pickle.dump` of ~34 MB happens inside `on_episode_end`, in the env runner, between sampling steps.
-On the Colab/GPU profile that is 4 episodes × 2 runners per iteration — ~136 MB of blocking,
-uninstrumented I/O per iteration, against a `sample_timeout_s` budget the config file already warns
-is tight. A slow or FUSE-backed filesystem (`episode_data_root` on Drive is explicitly called out as
-something to avoid, and the profile does avoid it) turns into timed-out iterations that train on
-nothing — the exact failure `_log_iteration`'s "trained on no samples" warning was added for, with a
-cause nothing currently points at.
-
-There is also no `try`/`except` around it. Every other instrumentation writer in this repository
-(`_append_progress`, `_build_file_handler`) refuses to take down a run that is otherwise fine; this
-one raises into `on_episode_end`, and by §2.1 that means a killed and restarted env runner.
-
-### 2.5 Log files proliferate with worker restarts, and rotation is per file
-
-_Tracked in [#216](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/216)._
-
-The per-process naming that makes concurrent writes safe also means the *set* of files is unbounded:
-every restarted env runner (§2.1 makes restarts a normal event, not an exceptional one) opens a new
-`run.<pid>.<worker>.log`. `file_backup_count` bounds each file at 6 × 10 MB; it does not bound the
-number of files. A long run that loses runners repeatedly accumulates 60 MB of quota per incarnation.
-
-The related point doc 11 §3 already makes — rotation discards the *start* of a run, where divergence
-begins — is worse here, because a worker's file is where the NAV tables live.
-
-**Fixed** (issue #216, [17](17_changelog.md) §83). When a worker opens its run log it keeps only the newest `file_max_worker_files` worker logs in the directory (a log with its rotated backups and head counts as one) and removes the rest, so the set is bounded and not only each file. And `file_keep_head` keeps the first `file_max_bytes` of every log as `<name>.head`, copied once at the first rotation and never rotated away, so the start of a run - where divergence begins - survives. Size the pruning above the number of runners plus learners: an idle live runner whose file is older than the newest N would lose its file.
+`file_max_worker_files` bounds the number of worker logs in the directory, and `file_keep_head`
+keeps the first `file_max_bytes` of every log as `<name>.head`. Size the pruning above the number of
+runners plus learners: an idle live runner whose file is older than the newest N would lose its
+file. (#216.) The defect is in
+[29](29_fixed_issues.md#21-25--log-files-proliferated-with-worker-restarts).
 
 ### 2.6 What the learner processes get
 
-_Tracked in [#217](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/217)._
+`_broadcast_iteration` also reaches remote learners (`num_learners > 0`); a learner that does
+not answer within the timeout is a warning. The repository's profiles use `num_learners=0`, so no
+real remote learner has run this path. (#217.) The defect is in
+[29](29_fixed_issues.md#21-26--learner-processes-never-received-an-iteration).
 
-`_broadcast_iteration` targets `algo.env_runner_group` only. At `num_learners > 0` the learner
-actors are separate processes that: receive `$CDA_LOG_LEVEL` / `$CDA_LOG_DIR` through the
-`runtime_env` (so they do write a `run.<pid>.<worker>.log`), but never receive an iteration, so
-every line they emit reads `iter=-` forever. This package logs little from the learner today, so the
-impact is cosmetic — but the repository's own GPU profile sets `num_learners=0`, which means the
-path is untested rather than fine.
+### 2.7 The cluster's own logging reaches the run log
 
-**Fixed** (issue #217, [17](17_changelog.md) §83). `_broadcast_iteration` also calls `learner_group.foreach_learner` when the learners are remote actors (`num_learners > 0`); with a local learner it is the driver's process and already tagged. A learner that does not answer within the timeout is a warning, as for env runners. Tested against a fake group; the repository's profiles use `num_learners=0`, so no real remote learner was run.
-
-### 2.7 The `runtime_env` covers workers, not the cluster's own logging
-
-_Tracked in [#218](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/218)._
-
-`merge_runtime_env()` correctly closes the `ray.init(address=...)` gap for env vars. Two residual
-cases:
-
-* `$CDA_LOG_DIR` is exported as an **absolute** path. On a multi-node cluster that path must exist,
-  and be writable, on every node — otherwise `_build_file_handler` warns (correctly, non-fatally)
-  and that node's NAV tables exist nowhere. The warning goes to the worker's stdout, which is
-  forwarded to the driver console but not into `run.log`.
-* Nothing captures Ray's *own* logger output into the package's run log, so RLlib's diagnostics —
-  "No samples returned from remote workers", the swallowed traceback from §2.1, env-runner restart
-  notices — are in a different stream from the narrative they explain.
-
-**Fixed** (issue #218, [17](17_changelog.md) §83). Both residual cases. The same round trip that carries the iteration returns each process's run-log path, so the driver logs a warning into `run.log` when a process was meant to write one and has none (the directory missing or unwritable on its node), and announces each path once. And `capture_ray_logs` attaches the run-log file handler to the Ray loggers records end at (`ray`, `ray.rllib`, and any other that has turned propagation off), de-duplicated per record, so RLlib's diagnostics land in the same file with the same `pid=` and `iter=` fields. Checked on a real two-runner run: a Ray `DeprecationWarning` from `ray._common.deprecation` appeared in the worker's log. The stream handler is not mirrored - Ray prints its own records to the console.
+the driver warns in `run.log` when a process that should write a run log has none, and
+`capture_ray_logs` attaches the run-log file handler to the Ray loggers, so RLlib's diagnostics land
+in the same file with the same `pid=` and `iter=` fields. Ray prints its own records to the console;
+the stream handler is not mirrored. (#218.) The defect is in
+[29](29_fixed_issues.md#21-27--the-runtime_env-did-not-cover-the-clusters-own-logging).
 
 ---
 
@@ -208,46 +127,24 @@ Doc 11 §1.10 is accurate and this review found nothing to add to it:
 `_iteration` as a module global with atomic int assignment is the right model, for the reasons
 stated. All of this has tests (`TestConcurrentConfiguration`, `TestSeparateProcesses`).
 
-### 3.2 In-flight episodes leak from `store` and `_activity`
+### 3.2 In-flight episodes are bounded in `store` and `_activity`
 
-_Tracked in [#219](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/219)._
+both live-episode dicts are bounded, oldest evicted first (§6 item 4). (#219.) The defect is in
+[29](29_fixed_issues.md#21-32--in-flight-episodes-leaked-from-store-and-_activity).
 
-Both dicts are keyed by episode id and pruned only in `on_episode_end`. An episode that is discarded
-without ending never gets pruned. That happens whenever the runner force-resets:
-`MultiAgentEnvRunner._sample` calls `_reset_envs_and_episodes()` when `force_reset or num_episodes
-is not None or self._needs_initial_reset` **[verified]** `env/multi_agent_env_runner.py:290`, and it
-sets `_needs_initial_reset = True` after any episode-count sampling call and after env creation.
-`on_episode_end` is not called for what it throws away.
+### 3.3 A runner the broadcast misses reads `iter=-`
 
-At this repository's settings (timestep-based sampling, `max_step` truncation guaranteeing episode
-ends) the leak is bounded and rare. It is worth fixing anyway because the leaked unit is not a
-counter, it is up to 4,096 step dicts × `num_envs_per_env_runner` — ~34 MB per event, never freed
-for the life of the worker.
+a remote runner clears its tag in `on_sample_end`, so a runner the next broadcast misses reads
+`iter=-`, not the previous iteration. The local runner shares the driver's process and is left
+alone. (#220.) The defect is in
+[29](29_fixed_issues.md#21-33--the-iteration-tag-was-stale-after-a-missed-broadcast).
 
-### 3.3 The iteration tag is only as fresh as the last broadcast
+### 3.4 One copy of the narrative on the console
 
-_Tracked in [#220](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/220)._
-
-`_broadcast_iteration` is best-effort with a 10 s timeout and `healthy_only=True`. A runner that is
-restarting, unhealthy, or slow at that moment is skipped silently (correctly — it must not stop
-training), and its lines carry the *previous* iteration, not `-`, because the global is still set
-from last time. A stale-but-plausible number is harder to spot than a dash. Applying the broadcast is
-safe with respect to sampling: PPO's `synchronous_parallel_sample` blocks, so the broadcast cannot
-land mid-episode.
-
-**Fixed** (issue #220, [17](17_changelog.md) §83). A remote runner clears the tag in `on_sample_end`, so a runner the next broadcast misses reads `iter=-` rather than the previous iteration; the broadcast that does arrive sets it again before sampling. The local runner (worker index 0) shares the driver's process and is left alone. Lines a remote runner logs between samples now read `-`, which is true: it is not sampling for any iteration then.
-
-### 3.4 Duplicate narrative on the console
-
-_Tracked in [#221](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/221)._
-
-The package logger's `propagate` is deliberately left on, and Ray forwards worker stdout to the
-driver console (`log_to_driver` defaults True). So a worker's NAV table appears once in that
-worker's file and again on the driver's console prefixed `(MultiAgentEnvRunner pid=...)`. Harmless,
-but it makes the console misleading as a record of *what the driver knows*, and it is why the
-per-worker files matter more than the console suggests.
-
-**Fixed** (issue #221, [17](17_changelog.md) §83). A worker that is writing its own file echoes only `worker_console_level` (default `WARNING`) and above to stdout, so the NAV table is in its file and not twice; warnings and errors still reach the driver console, and the driver logs each worker's file path once. The driver, and a worker with no file, echo everything. **A change in what a console shows:** the per-episode narrative from remote runners is no longer live on the console; set `worker_console_level` to `INFO` (or empty) to restore it. Verified on a real two-runner run: 0 NAV tables on the console, 6 in each worker's file.
+a worker writing its own file echoes only `worker_console_level` (default `WARNING`) and above
+to stdout, so the NAV table is in its file and not twice. Set `worker_console_level` to `INFO` (or
+empty) to see the remote runners' per-episode narrative live on the console. (#221.) The defect is
+in [29](29_fixed_issues.md#21-34--duplicate-narrative-on-the-console).
 
 ---
 
@@ -383,69 +280,16 @@ post mortem.
 
 ## 7. What was found while implementing, and while checking the implementation
 
-Nine things the review did not predict. The last six came out of re-reading the finished work rather
-than out of building it, which is the argument for doing that pass at all — and the last four came
-out of cross-checking channels against each other and against the *other* entry point, which no
-single-channel reading would have caught.
-
-**A 30-second hang at process exit.** ([#222](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/222)) The recorder's first design stopped its writer thread with a
-sentinel value on the queue. `close()` is called at exit, and the one moment it is called under load
-is the one moment the queue is full — so the `put` failed, the thread never learned to stop, and the
-join sat out its whole timeout. Two tests took exactly 30.00s, which is what made it visible. It is
-a `threading.Event` now, with the writer polling; the same two tests take 8s total.
-
-**The `on_train_result` metrics are one iteration late.** ([#223](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/223)) The hook is handed a `result` that has
-already been compiled, so `champions_promoted` reads `1.0` in the row *after* the promotion. This
-has always been true of `league_size` and the return statistics — the new champion metrics simply
-make it visible against a known event. Documented rather than corrected: the lag is uniform, and one
-documented offset is better than a correction that has to be undone if RLlib changes the order.
-
-**Live state should not be pickled at all.** ([#224](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/224)) The callback is cloudpickled into every env runner and
-every checkpoint, and it was carrying its in-flight episode tallies along. The unpickling side is a
-different process; a tally for an episode it never ran is not bookkeeping it should continue.
-`__getstate__` now ships the configuration and nothing else — which is also what makes the
-recorder's thread and queue safe to own.
-
-**`maker_fill_ratio` was a tautology.** ([#225](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/225)) The first version divided the episode's passive fills by its
-trades, aggregated across all agents. In a closed double auction that is exactly `0.5` in every
-episode whatever anyone did: `process_acc` runs once per side of every trade, both sides increment
-`num_trades_step`, and only the passive side increments `num_passive_fills_step`. A real
-3-iteration run reported `0.5000` three times — a constant so clean it reads like a working metric.
-It also mixed a cumulative field (`num_trades`) with a per-step one
-(`num_passive_fills_step`, zeroed by `exchg_helper` on every step), so even per agent it was
-measuring the last step against the whole episode.
-
-It is `maker_fill_ratio_max` now: per-agent shares accumulated over the episode, reported as the
-maximum across agents with at least five fills. 0.5 everywhere means nobody is specialising; one
-agent at 0.9 against the others' 0.3 is a policy that has learnt to quote and wait. The same run now
-reports 0.794, 0.837, 0.645. The floor on fills matters — one passive fill out of one trade is 1.0,
-and with eight agents the maximum would otherwise sit there all run on noise.
-
-The lesson generalises past this metric: **an aggregate over all agents of a two-sided quantity is a
-conservation identity, not an observation.** Anything summing a maker/taker, buyer/seller or
-long/short quantity across a closed market has the same defect waiting in it.
-
-**The one-iteration lag turned out to be fixable.** §7's third item above said it was documented
-rather than corrected. Re-reading RLlib's call site showed the correction is sanctioned: the hook
-runs before `Trainable.log_result` "so that the user has a chance to mutate the result", and the
-TODO beside the `metrics_logger` argument says there is "probably no point in adding more Stats
-here". The callback now writes `result["league"]`, which lands in the row for the iteration it
-describes, and keeps the metrics channel unchanged for readers that consume RLlib metrics rather
-than the result dict. Verified: `promoted` reads 1 in iteration 1's row, where the promotion
-happened.
+More defects turned up while the recommendations were being built and checked: a 30-second hang at
+process exit (#222), league metrics one iteration late (#223, now written to `result["league"]` in the row
+they describe), live episode state pickled into every runner (#224), and `maker_fill_ratio` measuring a
+conservation identity (#225, now `maker_fill_ratio_max`). All are fixed; the narratives, and the lesson
+that an aggregate over all agents of a two-sided quantity is a conservation identity, not an observation,
+are in [29](29_fixed_issues.md#21-7--what-was-found-while-implementing).
 
 ---
 
-## 8. Corrections made to existing docs
-
-| Doc | Was | Now |
-|---|---|---|
-| `11 §1.5` | "`strict_nav_check` defaults to true … so the run stops" | The stop is the driver's, from a metric; the hook reports (§2.1 here) |
-| `11 §1.1` | Per-episode pickles, flag switches the record off | Parquet, bounded, run-scoped; the flag now switches off the accumulation too |
-| `11 §1.2` | "Six metrics is the entirety" | 27, with the `on_train_result` lag documented |
-| `11 §3` | Three persistence problems about the `.pkl` files | Gone with `pickle`; one new entry for the unbounded run-log file *count* |
-| `11 §4` | Four sketched `log_value` calls "to add" | All four exist; the list is now things needing new computation |
-| `config/runtime_profiles.json` | "~10MB per 4096-step episode" | ~34 MB, measured at the training shape |
+## 8. What the console records
 
 **The console is not a complete record under multiple runners, and never was.** A two-runner run put
 6 NAV tables in the per-worker log files and 2 on the console. Ray forwards worker stdout to the
@@ -454,37 +298,6 @@ pre-existing Ray behaviour rather than anything this work introduced — and it 
 docs/11 §1.9 gives for the per-process files existing. Worth stating because it makes the console
 misleading as a record: the files are complete, the terminal is a sample.
 
-**Two channels disagreed about how many episodes there were.** The same run recorded 8 distinct
-`episode_id`s in Parquet and 6 NAV tables in the logs. Both were right: `on_episode_end` fires only
-for episodes that actually end, while `close` writes whatever was in flight. The fragments were real
-rows and worth keeping, but nothing marked them, so any per-episode aggregate over the file counted
-them as episodes. There is an `episode_complete` column now, and the two channels agree exactly.
-
-The general form is worth remembering: **two independent records of the same events are the cheapest
-correctness check available, and they only help if someone actually compares the counts.** Three of
-the findings on this page came from doing that once.
-
-**The excepthook guard was racy.** `install_excepthooks` has an idempotence flag it checks and then
-sets, and `configure` called it *outside* `_configure_lock` - the same check-then-act shape, in the
-same file, as the bug that lock was added for. Two threads would each chain a hook onto the
-previous one, and every unhandled exception would be logged twice. It is inside the lock now, with a
-test that pins the mechanism and not just the outcome.
-
-**The iteration broadcast under-delivered silently.** `foreach_env_runner` defaults to
-`healthy_only=True` and skips a runner that is restarting or slower than the 10s timeout. That
-runner keeps whatever iteration it was last told, so its lines and its recorded rows carry the
-*previous* iteration rather than `-`. A stale but plausible number is worse than a missing one,
-because nothing about it looks wrong. Blocking sampling until every runner acknowledges a log field
-is not the trade to make, so the broadcast still degrades - but it now says when it fell short.
-
-**The notebook path turned propagation off without the thing that justifies it.**
-`configure_run_logging` disables propagation to the root logger whenever `ray_log_encoding` is set,
-reasoning that Ray is about to configure root and both handlers would print every line twice. That
-reasoning holds only if the `ray.init` that follows applies a `LoggingConfig` - `train.main` does,
-and `runtime.ray_init_kwargs` did not. A notebook run therefore had propagation off with nothing
-taking its place: no duplication, but no Ray-side formatting either, and a `logging.basicConfig()`
-in a cell would have stopped showing package lines. `ray_init_kwargs(rt, cfg)` now adds the
-`logging_config`, so the two entry points agree.
-
-The general form again: **a decision made in one place and acted on in another will drift**, and the
-two entry points into this repository are exactly where that drift lives.
+The corrections this audit made to other documents, and three defects found by cross-checking the
+channels (unmarked episode fragments, a racy excepthook guard, and the notebook path turning
+propagation off without a `LoggingConfig`), are in [29](29_fixed_issues.md#21-8--corrections-to-other-documents-and-three-more-defects).

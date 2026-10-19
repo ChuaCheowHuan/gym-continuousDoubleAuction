@@ -159,7 +159,7 @@ Two rules worth knowing before the first edit:
 - **A missing key raises; an unknown key raises.** A typo in a JSON key is a hard error at
   startup, not a silently ignored value ([18](18_configuration.md) §1.1).
 - **`loss_multiplier` must stay 1.0.** Any other value makes the game negative-sum and passing a
-  dominant strategy ([15](15_findings_and_recommendations.md) S1-3).
+  dominant strategy ([S1-3](29_fixed_issues.md#s1-3--doing-nothing-is-a-dominant-strategy-verified-fixed)).
 
 For a machine-shaped choice (how many CPUs, whether there is a GPU, where the filesystem is) use
 `config/runtime_profiles.json` via the notebook or `train.runtime`, not `train_config.json`
@@ -242,12 +242,12 @@ Set `--no-episode-data` to switch the record off entirely; it is ~34 MB per 4,09
 ## 26.6 What to watch while it runs
 
 The three failure modes a returns curve cannot show, and the number that shows each
-([11](11_logging_and_observability.md) §1.2 and §1.7, [15](15_findings_and_recommendations.md)):
+([11](11_logging_and_observability.md) §1.2 and §1.7, [29](29_fixed_issues.md)):
 
 | Watch | Where | Healthy | Unhealthy means |
 |---|---|---|---|
 | `vf_explained_var` per trainable module | the `iter N/M` log line; `learners.<module>.vf_explained_var` in `progress.jsonl` | rises from noise toward positive values over the first iterations | stuck near 0 for the whole run: the critic is not learning (S1-1's symptom) |
-| `pass_action_fraction` | `env_runners.pass_action_fraction` | well below 1.0 and not trending to it | trending to 1.0: the league has collapsed to doing nothing, and promotion will still fire (S1-3) |
+| `pass_action_fraction` | `env_runners.pass_action_fraction` | well below 1.0 and not trending to it | trending to 1.0: the league has collapsed to doing nothing (S1-3's symptom); `min_champion_trades` refuses to promote such a policy (S3-11) |
 | `order_rejection_fraction` | `env_runners.order_rejection_fraction` | small | high: agents quote past their cash every step and see nothing for it |
 | `obs_clip_fraction` | `env_runners.obs_clip_fraction` | exactly 0.0 | anything else: the market has escaped a bound in `observation_bounds` and the policy is being shown a clipped value ([05](05_observation_space.md) §1.2); widen the bound, or accept the clip knowingly |
 | `nav_conservation_error` | `env_runners.nav_conservation_error`; `Conserved` lines in `run.log` | exactly 0.0 | anything else stops the run under `strict_nav_check`; the ledger is corrupt |
@@ -415,8 +415,7 @@ seeds a side; below that the footer says the table is a smoke test, and it is ri
 
 ### 26.9.1 Use a trained checkpoint
 
-Roll episodes with a checkpoint's policies and no learning ([15](15_findings_and_recommendations.md)
-S4-12). The checkpoint's own mapping function assigns modules to agents, so the random baselines
+Roll episodes with a checkpoint's policies and no learning ([S4-12](29_fixed_issues.md#s4--minor)). The checkpoint's own mapping function assigns modules to agents, so the random baselines
 and any champions play their parts; the trainable modules act through the same inference path
 the env runner uses.
 
@@ -517,8 +516,8 @@ checkout; reproduce it with `python -m build --wheel` and a clean venv if you to
 `MANIFEST.in` or the config tree.
 
 A change to behaviour is recorded in three places by convention: the finding or its status in
-[15](15_findings_and_recommendations.md), the measurement in [16](16_verification_log.md), and
-the narrative in [17](17_changelog.md). A change to the test inventory updates
+[15](15_findings_and_recommendations.md) (open) or [29](29_fixed_issues.md) (fixed), the
+measurement in [16](16_verification_log.md), and the narrative in [17](17_changelog.md). A change to the test inventory updates
 [10](10_testing.md) and the totals quoted in [01](01_overview.md), [02](02_architecture.md)
 and [14](14_perspective_ai_engineer.md).
 
