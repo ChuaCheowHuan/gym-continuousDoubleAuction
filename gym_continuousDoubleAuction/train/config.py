@@ -418,13 +418,26 @@ class TrainConfig:
                 "their product is a multiple of num_learners."
             )
         share = self.train_batch_size // learners
-        if self.minibatch_size is not None and self.minibatch_size > share:
+        # With minibatch_size null, build_config passes nothing and RLlib uses its own PPO
+        # default, read from RLlib rather than restated here (#307).
+        minibatch = self.minibatch_size
+        if minibatch is None:
+            from ray.rllib.algorithms.ppo import PPOConfig
+
+            minibatch = PPOConfig().minibatch_size
+        if minibatch is not None and minibatch > share:
             # RLlib would refuse this too, but only at algorithm build and naming
             # train_batch_size_per_learner, which no config file sets (#305).
+            source = (
+                f"minibatch_size {minibatch}"
+                if self.minibatch_size is not None
+                else f"minibatch_size null, so RLlib's default of {minibatch},"
+            )
             raise ValueError(
-                f"minibatch_size {self.minibatch_size} exceeds each learner's share of the "
-                f"batch: train_batch_size {self.train_batch_size} / num_learners "
-                f"{self.num_learners} = {share}. Lower minibatch_size or num_learners."
+                f"{source} exceeds each learner's share of the batch: train_batch_size "
+                f"{self.train_batch_size} / num_learners {self.num_learners} = {share}. "
+                "Set a smaller minibatch_size, use fewer learners, or raise the batch "
+                "(the episode length or num_episodes_per_iter)."
             )
         if self.cbp_enabled and self.num_learners > 1:
             # Replacements are chosen from each learner's own minibatch and applied outside the
