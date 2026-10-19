@@ -109,7 +109,7 @@ that could drift from it. Value targets are O(1), the clamp no longer binds, and
 `vf_explained_var` assertion in `integration/test_progress_and_vf.py` — which was a *strict xfail*
 pinning this finding — XPASSed on the first real run after the change and is now a live regression
 guard. The same change also closed S2-3 and made S2-1's fix expressible.
-→ [12 §4](12_perspective_rl_researcher.md#4-the-critic-cannot-learn--vf_clip_param-saturation--fixed),
+→ [12 §4](12_perspective_rl_researcher.md#4-the-critic),
 [07 §2.1](07_reward_function.md)
 
 ### S1-2 · Observation contains no private state **[verified, fixed]**
@@ -152,7 +152,7 @@ Three consequences worth knowing:
 **Still open:** own resting orders and agent identity are not in the block. Resting orders are the
 larger gap — `modify` and `cancel` remain partly blind, since an agent can see its escrowed cash
 but not which orders that cash is committed to.
-→ [12 §2](12_perspective_rl_researcher.md#2-the-observation-contains-no-private-state--fixed),
+→ [12 §2](12_perspective_rl_researcher.md#2-the-observation-and-the-agents-private-state),
 [05 §1.0](05_observation_space.md)
 
 ### S1-3 · Doing nothing is a dominant strategy **[verified, fixed]**
@@ -182,7 +182,7 @@ Passing still scores exactly zero, which is correct rather than residual: in a z
 reward can make trading positive-sum *on average*. What changed is that the friction is now ~0.5%
 of a typical NAV move instead of dominating it, so trading is no longer dominated for an agent with
 any edge. Measured over 1,000 steps, `nav_term` sums to **exactly 0.000000** across agents.
-→ [12 §3.3](12_perspective_rl_researcher.md#33-doing-nothing-is-a-dominant-strategy--fixed),
+→ [12 §3.3](12_perspective_rl_researcher.md#33-doing-nothing-is-not-dominant-and-cannot-be-beaten-on-average),
 [07 §4.3](07_reward_function.md)
 
 ### S1-4 · The default standalone env could not trade **[verified, fixed]**
@@ -279,7 +279,7 @@ which would have left S1-3 half-open while looking like a fix for this. What shi
 **signed** change, `(current_drawdown - previous_drawdown) / init_nav`, whose per-step charges
 telescope to `-drawdown_penalty × final_drawdown` over an episode regardless of path. A round trip
 is free, ending in drawdown is still penalised, and the term cannot be farmed.
-→ [12 §3.4](12_perspective_rl_researcher.md#34-the-drawdown-term-is-a-level-not-a-delta--fixed-but-not-by-the-patch-below),
+→ [12 §3.4](12_perspective_rl_researcher.md#34-the-drawdown-term-charges-a-change-not-a-level),
 [07 §4.1](07_reward_function.md)
 
 ### S2-2 · Unnormalised observation scales saturate the `tanh` MLP **[verified, fixed]**
@@ -337,7 +337,7 @@ counts the fees. The cash check reserves the largest fee so a fill cannot overdr
 at 0, so nothing changes for a run that does not set them; turning them on changes the game
 ([04](04_accounting.md) §9, [18](18_configuration.md) §3.0.4, `test_fees.py`). Borrow cost and
 funding remain absent.
-→ [13 §4](13_perspective_financial_trader.md#4-there-are-no-transaction-costs--fixed-opt-in),
+→ [13 §4](13_perspective_financial_trader.md#4-transaction-costs-are-opt-in),
 [07 §4.2](07_reward_function.md)
 
 ### S2-4 · Bankrupt agents are never terminated **[verified, fixed]**
@@ -398,7 +398,7 @@ the mid in one means posting a better quote somebody else can lift — a price s
 other side of, which is the whole difference. The source is a `mark_price_source` config key ("mid"
 or "last") because the change moves NAV dynamics and a run should be able to reproduce the old
 behaviour.
-→ [13 §3.1](13_perspective_financial_trader.md#31-self-matching)
+→ [13 §3.1](13_perspective_financial_trader.md#31-self-matching-is-prevented)
 
 ### S2-6 · Every frame in the observation stack has a different normalizer **[verified, fixed]**
 
@@ -1894,5 +1894,375 @@ are still rows there.
 | ~~**No performance regression test**~~ ([#209](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/209)) | **Closed.** `test_speed_regression.py` (4 tests): budgets are multiples of a calibration loop timed on the same machine (about 10x over today's cost), and two checks compare the code with itself at two sizes. An O(n) scan per insert fails two; a 20 ms slower step fails the third. |
 | ~~**`envs/orderbook/test/example.py` and `genOrders.py`**~~ ([#210](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/210)) | **Closed.** `example.py` had been failing its own string asserts (the printed form had drifted) and `genOrders.py` was Python 2. Both are deleted; `test_orderbook_scripts.py` asserts the example's outcomes and checks a seeded shadow model against the book. |
 | ~~**`visualize/` is almost entirely untested**~~ ([#211](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/211)) | **Closed.** `test_visualize_scripts.py` (32 tests) runs the loader, the six chart scripts, `run_all` and both inspectors on synthetic runs and asserts on the data each plots. Changing the complete-episode filter, a column name, the snapshot slice or an output filename each fails it. `visualize/` is now measured in coverage (it was omitted). |
+
+### From [12_perspective_rl_researcher.md](12_perspective_rl_researcher.md)
+
+The RL researcher's analysis of defects that are now fixed: the argument for why each one mattered
+to learning, and the fixes that were proposed against it.
+
+#### 12 §2 · The observation contained no private state
+
+Register: [S1-2](29_fixed_issues.md#s1-2--observation-contains-no-private-state-verified-fixed)
+
+**Was the single biggest flaw.** **[verified]**: all agents received the byte-identical 168-float
+vector, at reset and at every step:
+
+```
+obs dim per agent: (168,) | distinct obs vectors across agents: 1
+```
+
+The observation was built once per step from the public book and broadcast:
+
+```python
+states = {f'agent_{i}': stacked_obs for i in range(len(self.traders))}
+```
+
+Nothing in the vector encoded:
+
+| Missing | Where it lives | Why the agent needs it |
+|---|---|---|
+| `net_position` | `Account.__init__` | Sign and size of inventory determine whether a fill opens or closes risk |
+| `VWAP` | `Account.__init__` | Entry price ⇒ unrealised P&L direction |
+| `nav`, `prev_nav` | `Account.__init__`, re-derived in `Calculate.mark_to_mkt` | **The reward is literally `nav − prev_nav`** |
+| `max_nav` | `Account.__init__`, updated in `Calculate.cal_nav` | The drawdown penalty is `0.2·(max_nav − nav)` |
+| `cash`, `cash_on_hold` | `Account.__init__`, moved by `Cash_Processor` | Determines which orders `_order_approved` will reject |
+| own resting orders | `LOB.bids/asks.order_map` | Modify/cancel actions are meaningless without knowing what is resting |
+| agent identity | — | Two agents in the same state cannot differentiate roles |
+| `t_step` / time remaining | `continuousDoubleAuctionEnv.step` | End-of-episode inventory liquidation is a different problem than mid-episode trading |
+
+**Consequence.** The reward was a deterministic function of state variables the policy could not
+see. That is not "hard to learn", it is **ill-posed**: two states with identical books but opposite
+inventory require opposite optimal actions and were indistinguishable to the policy. Nor was it
+ordinary partial observability that a recurrent network could paper over: the drawdown term
+depends on `max_nav`, a *path functional* over the entire episode. Formally the process was not an
+MDP in the agent's observation, and the residual variance was not reducible by any policy over
+those observations.
+
+Two secondary effects:
+
+- The `modify` and `cancel` action categories (4 of the 9 category values) were effectively blind.
+  `_get_order_ID` silently no-oped if nothing matched. ~44% of the discrete action mass was
+  unlearnable.
+- Frame stacking (`n_hist=4`) adds *public* temporal context, which is genuinely useful for
+  order-flow inference, but it cannot substitute for the private state.
+
+**The proposed fix.** Append a per-agent feature block to the snapshot, normalised against
+`init_cash`, and stop broadcasting a single vector:
+
+```python
+private = np.array(
+    [
+        net_position / max_position_scale,
+        (nav - init_cash) / init_cash,
+        (max_nav - nav) / init_cash,  # current drawdown
+        cash / init_cash,
+        cash_on_hold / init_cash,
+        (VWAP - M) / M if net_position else 0.0,
+        resting_bid_notional / init_cash,
+        resting_ask_notional / init_cash,
+        1.0 - t_step / max_step,  # time remaining
+    ],
+    dtype=np.float32,
+)
+```
+
+A ~9-float addition per snapshot, and the single highest-value *structural* change in the
+repository at the time; `test_shared_history_multi_agent_uniformity`, which asserted the defect,
+had to go with it. What shipped is close to this: 9 private floats normalised by the account's own
+`init_nav` ([17](17_changelog.md) §30), later extended to 41 with the agent's own resting orders
+and the action mask ([17](17_changelog.md) §47).
+
+#### 12 §3.6 · The reward coefficients were function-local literals
+
+Register: none (fixed alongside [S2-3](29_fixed_issues.md#s2-3--transaction-cost-proxies-are-10⁵-too-small-verified-fixed)).
+
+All five reward constants were function-local literals, with the code comment "Internal defaults,
+can be moved to config". They are now `env_config` keys, read from the `environment` group of
+`config/train_config.json` (falling back to `config/env_defaults.json` for a bare env), so they are
+captured in the checkpoint's config and sweepable by Tune. Making them reachable did not make them
+right; the values themselves were fixed by S1-1, S2-1 and S2-3.
+
+#### 12 §4 · The critic could not learn: `vf_clip_param` saturation
+
+Register: [S1-1](29_fixed_issues.md#s1-1--ppos-critic-receives-zero-gradient-verified-fixed)
+
+**This was the single most consequential finding.** RLlib's PPO clips the value-function loss:
+
+```python
+vf_loss = torch.pow(value_fn_out - batch[Postprocessing.VALUE_TARGETS], 2.0)
+vf_loss_clipped = torch.clamp(vf_loss, 0, config.vf_clip_param)  # default 10.0
+```
+(`ray/rllib/algorithms/ppo/torch/ppo_torch_learner.py:99-100`)
+
+`TrainConfig` never set `vf_clip_param`, so it stayed at **10.0**, while value targets were
+undiscounted-scale NAV sums in the 10⁴–10⁷ range. `torch.clamp` is **flat** above the bound, so
+`∂vf_loss_clipped/∂θ = 0` for every sample.
+
+**[verified]**: one real training iteration on the shipped config path (`num_agents=4`,
+`num_trained_agents=2`, `max_step=64`, `num_epochs=1`, `minibatch_size=64`):
+
+```
+== policy_0 ==
+   vf_loss                 10.0             ← pinned at vf_clip_param
+   vf_loss_unclipped       13,015,503.0
+   vf_explained_var        8.91e-05         ← critic explains ~0% of return variance
+   total_loss              9.254            ← 10.0 of which is the constant vf term
+   policy_loss             -0.747
+   entropy                 8.844
+   curr_entropy_coeff      0.0
+== policy_1 ==
+   vf_loss                 10.0
+   vf_loss_unclipped       10,513,565.0
+   vf_explained_var        5.42e-05
+   total_loss              9.484
+   entropy                 7.949
+```
+
+`policy_2` / `policy_3` are `RandomRLModule`s and produce no losses, as expected.
+
+Downstream consequences:
+
+1. **GAE degenerated.** RLlib's PPO default was `lambda_=1.0`, so the advantage was already the
+   Monte-Carlo return minus `V(s)`. With `V` a constant-ish untrained function, the advantage was
+   essentially the raw return.
+2. **PPO became REINFORCE with a batch baseline.** Advantages *are* standardised per module in the
+   new stack (`GeneralAdvantageEstimation` divides by the batch std), so the update did not
+   explode, but the variance reduction a critic exists to provide was entirely absent.
+3. **The loss metric was a decoy.** `total_loss ≈ 9.3` looked small and stable; 10.0 of it was a
+   constant. `vf_explained_var` was the metric that exposed it, and nothing in the code surfaced it.
+
+**Fixes proposed, in order of preference:**
+
+- **Normalise the reward.** Divide `nav_change` by `init_cash` (or by a running return scale) so
+  rewards are O(10⁻³) and returns are O(1). This fixes the critic, the drawdown scaling, and the
+  micro-term irrelevance in one change. *This is what shipped, by `acc.init_nav`.*
+- **Or** set `vf_clip_param` to something commensurate (e.g. `1e9`), effectively disabling it, and
+  add `grad_clip` to control the resulting large gradients.
+- **Or** enable a reward-scaling connector / `PopArt`-style value normalisation.
+
+Then **assert on `vf_explained_var`** in the integration suite so the regression cannot recur
+silently. That assertion is now live in `integration/test_progress_and_vf.py`.
+
+#### 12 §9 · The prioritised research agenda, as completed
+
+Register: the IDs in the table.
+
+The agenda this document set out. Every item is done.
+
+| # | Change | Effort | Expected impact | Done by |
+|---|---|---|---|---|
+| 1 | Scale rewards by `init_cash` | S | Critic unblocked | S1-1, by `acc.init_nav`; the `vf_explained_var` guard is live |
+| 2 | Add private state to the observation | M | Makes the reward learnable at all | S1-2; own resting orders since S3-24 |
+| 3 | Make the drawdown penalty an increment | S | Removes the episode-length-dependent risk tax | S2-1, as a *signed* change ([07](07_reward_function.md) §4.1 on why clipping it would not have) |
+| 4 | Re-scale the micro-penalties; express costs in bps | S | Restores the intended incentives | S2-3; real fees opt-in |
+| 5 | `size_mean → Box(0,1)`; scale or drop `size_sigma` | S | Recovers half the action range, removes a null control | S3-1 to S3-3, one `size` head |
+| 6 | Normalise observation feature scales | S | Removes `tanh` saturation | S2-2 |
+| 7 | Terminate bankrupt agents individually | S | Stops zombie transitions polluting returns | S2-4 |
+| 8 | `entropy_coeff > 0` with decay; raise `std_dev_multiplier`; refuse champions with ~0 trades | S | Guards against passivity collapse | S3-11 |
+| 9 | Normalise the whole obs stack by the current `M_t`; add trade-flow features | M | Makes frame stacking informative | S2-6, S2-7 |
+| 10 | Emit size directly as an action | M | Removes unrecorded env-side stochasticity from the ratio | S3-3 |
+| 11 | Assert `vf_explained_var > 0` in the integration suite | S | Prevents §4 from silently regressing | S1-1 |
+| 12 | Raise γ toward 0.999 or shorten episodes | S | Makes long-horizon strategies expressible | S3-13 (γ 0.999, λ 0.95) |
+| 13 | One `np.random.Generator` on the env | S | Reproducibility | S3-5 |
+| 14 | Surface rejected / no-op order counts in `infos` | S | Makes the dead-action fraction measurable | S4-14 |
+
+### From [13_perspective_financial_trader.md](13_perspective_financial_trader.md)
+
+The trader's view of the market model as it was before the realism fixes: what a desk would have
+objected to, and the fixes proposed.
+
+#### 13 §3.2 · The mark was the last print, however stale or thin
+
+Register: [S2-5](29_fixed_issues.md#s2-5--self-matching-enables-mark-manipulation-verified-fixed)
+
+`mark_to_mkt` took `self.LOB.tape[-1]['price']` unconditionally. Consequences:
+
+- A single 1-lot print re-marked the entire market for every participant.
+- On steps with no trades, the previous mark persisted and `prev_nav` was not updated, so
+  `nav_change` covered a multi-step gap rather than one step.
+- Before the very first trade of an episode, NAV was never recomputed and all rewards were exactly
+  0.
+
+A mid-price mark (`(best_bid + best_ask)/2`, falling back to the last trade) was proposed as both
+more standard and far harder to manipulate. That is what `mark_price_source: "mid"` does.
+
+#### 13 §4 · There were no transaction costs
+
+Register: [S2-3](29_fixed_issues.md#s2-3--transaction-cost-proxies-are-10⁵-too-small-verified-fixed)
+
+`grep` for fee, commission, rebate, slippage, borrow across the env found nothing: no maker/taker
+schedule, no exchange fee, no clearing fee, no borrow cost on shorts, no funding on inventory. The
+reward's proxies (`trade_penalty=0.05` per fill, `passive_bonus=0.1` per passive fill) were flat
+per-fill constants 5–6 orders of magnitude too small to matter at the measured per-step NAV scale
+of ±10⁴. Functionally, trading was free.
+
+The proposed fix was to charge in basis points of notional inside the settlement path, so the fee
+flows through NAV rather than being bolted onto the reward:
+
+```python
+fee = notional * (TAKER_BPS if is_aggressor else MAKER_BPS) / 10_000
+self.cash -= fee
+```
+
+with e.g. taker +2 bps / maker −0.5 bps, and the conservation check relaxed to
+`total_nav + total_fees == total_initial_cash`. That is the shape of what shipped
+(`maker_fee_bps`, `taker_fee_bps`, an exchange fee ledger), with both rates at 0 by default.
+
+#### 13 §8 · What could be learned, before the fixes
+
+Register: S1-2, S1-3, S2-3, S2-5, S2-6, S2-7.
+
+The strategy-archetype table as it stood when the agent saw no private state, fees did not exist,
+frames were incomparable and the mark was the last print:
+
+| Archetype | Expressible? | Blocker |
+|---|---|---|
+| **Passive market making** | Partially | Only one order per price level, no post-only, no fee rebate, and the agent could not see its own queue position or inventory |
+| **Directional / momentum** | Barely | Only 4 stacked public snapshots; no trade-flow or volatility features |
+| **Mean reversion** | Barely | Same |
+| **Inventory management** | **No** | The agent could not observe its own inventory |
+| **Spread capture** | **No** | Zero fees meant there was no spread revenue to capture |
+| **Order anticipation** | Partially | Frame stacking gave some order-flow history, but no per-participant attribution and the frames were not comparable |
+| **Wash / mark manipulation** | **Yes — unintentionally** | No SMP, and the mark was the last print |
+| **Latency arbitrage** | No | Arrival order is a uniform shuffle |
+
+The summary then: the strategy that best satisfied the reward was *quote nothing, trade nothing*,
+and the most exploitable non-trivial channel was self-trading to move the mark.
+
+#### 13 §9 · Alignment with the reward's stated objectives, before the fixes
+
+Register: [S1-3](29_fixed_issues.md#s1-3--doing-nothing-is-a-dominant-strategy-verified-fixed), [S2-1](29_fixed_issues.md#s2-1--drawdown-is-penalised-as-a-level-not-an-increment-verified-fixed), [S2-3](29_fixed_issues.md#s2-3--transaction-cost-proxies-are-10⁵-too-small-verified-fixed).
+
+| Stated objective (from the reward's own docstring) | Achieved then? |
+|---|---|
+| "Maximizing NAV" | Yes — `nav_change` was the dominant term |
+| "Reducing number of trades" | No — the 0.05 penalty was ~10⁵× too small |
+| "Selective order placement" | No — same, 0.1 penalty |
+| "Lowering drawdown risk" | **Over-achieved** — the penalty was ~2.4× the entire NAV term (**[verified]**) and drove the policy to inaction |
+| "Capturing spread" | No — the 0.1 passive bonus was negligible, and there were no spread economics to capture |
+
+The implementation collapsed to "NAV change, minus an enormous drawdown tax". Putting every term
+on a common scale, fractional-NAV units, was the recommended fix, and is what shipped.
+
+#### 13 §10 · The trading-realism agenda, done items
+
+Register: the IDs in the table. The open items stay in [13](13_perspective_financial_trader.md) §10.
+
+| # | Change | Effort | Why | Done by |
+|---|---|---|---|---|
+| 1 | Express all reward terms in fractional-NAV units | S | Makes the four secondary objectives bind | S1-1, S2-3 |
+| 2 | Add maker/taker fees in bps inside settlement | M | Creates spread economics | S2-3, opt-in |
+| 3 | Self-match prevention | S | Closes the wash-trade / mark-manipulation channel | S2-5 |
+| 4 | Mark to mid, not last print | S | Removes single-print mark manipulation | S2-5 (`mark_price_source`) |
+| 5 | Terminate + flatten bankrupt agents | S | Removes zombies and stale resting orders | S2-4, R-2, maintenance-margin liquidation ([04](04_accounting.md) §8) |
+| 6 | Expose own position, NAV, drawdown, resting orders in obs | M | Prerequisite for any inventory-aware strategy | S1-2, S3-24 |
+| 7 | Add order-flow imbalance + signed trade volume to obs | S | The highest-value predictive features | S2-7 (`signed_volume`, trade count, direction); realised volatility is not added |
+| 8 | Per-episode desk metrics (Sharpe, max DD, turnover, maker ratio, inventory) | M | Makes "is this agent any good?" answerable | S3-9 |
+| 9 | Allow multiple resting orders per price level | M | Unlocks layering / multi-clip quoting | S3-10, as an option |
+| 10 (half) | A margin/liquidation rule | M | Real risk control rather than a reward penalty | Maintenance margin with ADL ([04](04_accounting.md) §8); position limits are still open |
+
+### From [14_perspective_ai_engineer.md](14_perspective_ai_engineer.md)
+
+The engineering audit as first measured, against a tree of 7,478 Python lines with 90 unit tests
+and no logging module. Every gap below is fixed; the current state is in
+[14](14_perspective_ai_engineer.md).
+
+#### 14 §5.1 · The original code-quality snapshot
+
+Register: [S2-8](29_fixed_issues.md#s2-8--no-logging-framework-the-callback-prints-42-diagnostics-per-episode--fixed), [S3-7](29_fixed_issues.md#s3-7--sysexit-used-for-error-handling-in-the-matching-engine-fixed), [S4-6](29_fixed_issues.md#s4--minor).
+
+| Signal | Measurement |
+|---|---|
+| Python LOC | 7,478 across 63 files |
+| Test LOC | ~2,430 |
+| Unit tests | 90, **all passing** |
+| Integration tests | 13 across 3 classes covering local / remote-EnvRunner / remote-Learner |
+| CI | GitHub Actions on Python 3.12: a `test` job (unit → random smoke run → RLlib integration) and a `packaging` job that installs the built wheel into a clean venv |
+| `logging` module usage | **0** — everything is `print()` |
+| `print()` calls in `envs/` + `train/` | ~86, incl. **42 in the self-play callback** and 13 in the env |
+| `sys.exit()` in library code | 6 in `orderbook.py` (S3-7) |
+| Broad `except Exception` in the callback | 2 (one deliberate, one questionable) |
+| Type hints | present in `train/`; absent in most of `envs/` |
+| Linter / formatter config | none |
+| Pre-commit hooks | none |
+
+#### 14 §5.2 · The costs of the six-mixin environment
+
+Register: [S4-10](29_fixed_issues.md#s4--minor). Reward, done, info and liquidation are composed
+objects now; the state/action pair still shares one `self` (open, in [15](15_findings_and_recommendations.md)).
+
+**Costs:**
+
+- **No enforced interface.** `State_Helper` reads `self.LOB`, `self.traders`, `self.last_price`,
+  `self.min_tick` — none of which it owns or declares. `getattr(self, 'n_hist', 4)` and
+  `getattr(self, 'last_price', 100.0)` are defensive workarounds for exactly this.
+- **Not independently testable.** You cannot unit-test the reward without a full env;
+  `test_reward_logic.py` works around it by instantiating a bare `Reward_Helper()` with a
+  `MockTrader`, which happens to work only because `set_reward` touches nothing else.
+- **Namespace collisions are silent.** Five mixins sharing one `self` means any attribute name
+  reused across them overwrites without warning.
+- **Fragile initialisation.** Whether `MultiAgentEnv.__init__` runs at all depends on which mixin
+  happens to lack an `__init__`, and a stray kwarg reaching `object.__init__` raises `TypeError`
+  — which is how a real bug once surfaced as
+  `AttributeError: … has no attribute 'min_tick'`.
+
+#### 14 §5.4 · Observability as first audited
+
+Register: [S2-8](29_fixed_issues.md#s2-8--no-logging-framework-the-callback-prints-42-diagnostics-per-episode--fixed), [S4-7](29_fixed_issues.md#s4--minor).
+
+- **No logging framework at all.** **[verified]** zero `import logging` in the repository.
+- **~86 `print()` calls** in `envs/` + `train/`, 42 of them in `SelfPlayCallback` — including a
+  3+-line banner per episode start listing the full policy map, five `DEBUG:`-prefixed lines and
+  a full NAV table per episode end.
+- With `num_env_runners > 0`, **every remote worker prints this independently**, with no level
+  filtering, no worker attribution, and no way to turn it off short of editing the source.
+- `env.render()` defaults to **`is_render=True`** on the env, so any direct instantiation dumps
+  the book, tape and every account per step through pandas.
+- **Only three custom values reach TensorBoard** (`league_size`, `league_mean_return`,
+  `league_std_return`). Everything a practitioner would actually watch — NAV distribution,
+  drawdown, trade counts, maker/taker ratio, champion promotions, `vf_explained_var` — is printed
+  to stdout and then lost.
+- The **NAV conservation check** is a good idea implemented as a `print("… FAILED …")`. A
+  conservation violation is a hard ledger-invariant break; it should raise or emit a counter
+  metric.
+
+#### 14 §5.7 · The testing gaps as first audited
+
+Register: S1-1 (learning-signal assertion), S4-6 (coverage), S4-5 (`test_insufficient_funds`),
+S4-13 (property-based tests), S4-11 (`test_speed_regression.py`).
+
+| Gap | Risk |
+|---|---|
+| **No learning-signal assertion** | Nothing checks `vf_explained_var`, `vf_loss` saturation, or that returns improve. This is exactly how the frozen critic went unnoticed. |
+| **No coverage measurement** | No `pytest-cov`, no threshold. |
+| **`test_accounting.py::test_insufficient_funds` is an empty `pass`** with a 15-line comment debating what the behaviour should be — a TODO shipped as a test. |
+| **No property-based tests** | The order book is an ideal Hypothesis target: "tree volume == Σ level volumes", "no crossed book", "Σ NAV == Σ initial cash" hold for *any* order sequence. |
+| **No performance regression test** | Nothing catches a 10× slowdown in the matching engine. |
+
+#### 14 §5.11 · The engineering agenda, as first set
+
+Register: the IDs named. Items 9, 12 and 15 are not finished and stay in
+[14](14_perspective_ai_engineer.md) §5.11.
+
+| # | Change | Effort | Why |
+|---|---|---|---|
+| 1 | Return the algorithm's live callback from `build_algo` on the restore path (§5.9.1) | S | Callers got a detached, empty league object |
+| 2 | Replace all `print()` with `logging`; route callback diagnostics through `metrics_logger` | M | Multi-worker runs are currently unobservable |
+| 3 | Fix `install_requires` (add `ray` / `scikit-learn` / `six`, or remove those imports) | S | The package does not install correctly as declared |
+| 4 | Drop `six` → stdlib `io.StringIO`; drop `sklearn.utils.shuffle` → `random.shuffle` (seeded); drop the unused `import ray` | S | Removes a Py2 shim and a ~30 MB dependency; fixes reproducibility |
+| 5 | `sys.exit` → `raise ValueError` in `orderbook.py` | S | Prevents worker kills |
+| 6 | Raise (or emit a metric) on a NAV conservation violation instead of printing `FAILED` | S | A corrupt ledger should not be a log line |
+| 7 | Add `vf_explained_var` / learning-signal assertions to CI | S | Would have caught the frozen critic |
+| 8 | Delete the `g_store` trio and other dead code | S | Removed a misleading "working" telemetry path |
+| 9 | Add `ruff` + `black` + pre-commit; add `pytest-cov` with a threshold | S | Baseline hygiene |
+| 10 | Make the Docker image `COPY requirements.txt` instead of duplicating it | S | Removes drift |
+| 11 | Add an `evaluate.py` that loads a checkpoint and runs deterministic episodes | M | There is currently no way to *use* a trained policy |
+| 12 | Move `TrainConfig` under `tune.Tuner` | M | Free scheduling, fault tolerance, sweeps |
+| 13 | Property-based tests (Hypothesis) for book invariants | M | The invariants are already known and stated |
+| 14 | Record `SNAPSHOT_DIM` / an env version in the checkpoint | S | Turns a silent checkpoint mismatch into a clear error |
+| 15 | Refactor mixins → composition | L | Makes reward/obs variants swappable |
+
+Closed by: 1 S3-8; 2 S2-8; 3 and 4 S3-6 and S3-5 (`six` declared rather than dropped); 5 S3-7;
+6 S2-8; 7 S1-1; 8 S4-1 to S4-4; 10 S4-8; 11 S4-12; 13 S4-13; 14 S4-19.
 
 <!-- /OTHER-DOCS -->
