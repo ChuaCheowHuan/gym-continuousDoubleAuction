@@ -147,11 +147,9 @@ explicitly, so the config lookup is what a direct instantiation gets.
 **`std_dev_multiplier`** — too low snapshots mediocre policies and bloats the league; too high
 (4.0) rarely finds any. **Recommended 1.5 – 2.5; shipped 1.5.**
 
-It used to ship as **0.1, far below that range**, and the consequence was measurable:
-**[verified]**, a single `algo.train()` call from a fresh build promoted `champion_1` on iteration
-1, because with an empty `champion_history` there is no cooldown and `mean + 0.1·std` is cleared by
-the better of two barely-trained modules. At the default 16-iteration run the pool saturated with
-near-random snapshots.
+Far below that range the league fills with near-random snapshots: with an empty
+`champion_history` there is no cooldown, and `mean + 0.1·std` is cleared on the first iteration by
+the better of two barely-trained modules ([29](29_fixed_issues.md#s3-11--no-entropy-bonus-and-champion-promotion-cannot-detect-passivity-verified-fixed) S3-11).
 
 There is a ceiling on the other side that the 1.5 – 2.5 range hides: with n modules in the league
 no module can be more than `sqrt(n − 1)` population standard deviations above the mean, so a
@@ -258,14 +256,13 @@ flowchart TD
 `League.create_snapshot`
 ([`league.py`](../gym_continuousDoubleAuction/train/callbk/league.py), reached through the
 callback's `_create_champion_snapshot_from_policy`) is the most subtle code in the repository. Its four ordering constraints are **all** load-bearing,
-each was a real bug, and each now has a dedicated integration test:
+and each has a dedicated integration test. Each was once a bug; their history is in
+[29](29_fixed_issues.md#09-4--bugs-that-only-existed-at-non-default-values) and
+[29](29_fixed_issues.md#08-52--the-ordering-constraints-as-bugs):
 
 1. **Read weights from `learner_group.get_state(...)`** — not `algorithm.get_module()`, which
    returns the inference-only EnvRunner copy without the value head, and not
-   `learner_group._learner`, which is `None` whenever `num_learners > 0`. The private-attribute
-   version raised on every snapshot attempt under a remote LearnerGroup and was swallowed by the
-   broad `except`, leaving the league permanently empty while printing one error line per
-   iteration.
+   `learner_group._learner`, which is `None` whenever `num_learners > 0`.
 2. **Append the champion to `available_modules` *before* `add_module`.** `add_module` pickles the
    `new_agent_to_module_mapping_fn` closure — and with it a snapshot of `available_modules` — to
    ship to the remote EnvRunners. Appending afterwards leaves every remote runner's mapping
@@ -281,9 +278,7 @@ each was a real bug, and each now has a dedicated integration test:
    state without a `WEIGHTS_SEQ_NO` key takes the documented "0 means force" branch instead.
 
 Without constraint 4, the champion *acting in the environment* stays at its random initialisation
-for the entire run while the trained snapshot sits unused in the LearnerGroup. Combined with the
-`MultiRLModuleSpec` issue in §2, this meant **no self-play was taking place at all** before the
-migration.
+for the entire run while the trained snapshot sits unused in the LearnerGroup.
 
 The spec itself comes from `RLModuleSpec.from_module(algorithm.env_runner.module[source])` with
 `inference_only = False`, so the champion's structure matches the Learner-side source and the
@@ -296,25 +291,22 @@ matchmaking can never select a half-created module, then logs a traceback. If th
 *after* `add_module` (which had already shipped a pool naming the champion to the remote runners),
 the rollback also calls `remove_module` with the corrected mapping function, so the runners stop
 offering a module whose weights were never copied in; a failing undo is only logged
-([15](15_findings_and_recommendations.md) R-6, #176). The rollback is right. The response to a *repeated* failure is not: it continues silently for hours. This exact
-handler once masked the `learner_group._learner is None` bug for an entire training run.
+([29](29_fixed_issues.md#from-the-2026-10-07-review) R-6, #176). The rollback is right. The response to a *repeated* failure is not: it continues silently for hours. A broad handler can hide a real bug for a whole run this way.
 
 ### 5.4 Eviction
 
-Eviction happens **after** a snapshot has succeeded, in `League.assess`, never before it: a full
-league used to evict first, so a failed snapshot shrank the league for nothing. It also only runs
+Eviction happens **after** a snapshot has succeeded, in `League.assess`, never before it, so a
+failed snapshot never shrinks the league. It also only runs
 when a champion was actually added, so a failed attempt takes nothing away even from a history
-that is over a lowered `max_champions` ([15](15_findings_and_recommendations.md) R-8, #178).
+that is over a lowered `max_champions` ([29](29_fixed_issues.md#from-the-2026-10-07-review) R-8, #178).
 
 `remove_oldest` pops the oldest entry, removes it from `available_modules` **before**
 calling `Algorithm.remove_module` (so the refreshed mapping function cannot return a module about
 to be deleted), and passes `new_agent_to_module_mapping_fn` so remote runners are updated too.
 
-> **Correction to the older documentation.** `docs/known_issues.md` §3.9 stated that removed
-> modules are never freed and league memory grows monotonically. That was fixed: the callback now
-> calls `Algorithm.remove_module`, with the previous behaviour described in a code comment.
-> Failure to remove is caught and reported as non-fatal — training stays correct, the memory is
-> just held.
+Removed modules are freed. A failure to remove is caught and reported as non-fatal — training
+stays correct, the memory is just held. (The older documentation said otherwise:
+[29](29_fixed_issues.md#resolved-before-the-register), #196.)
 
 ---
 
@@ -393,10 +385,9 @@ episode 12345 started, policy map: agent_0 -> policy_0, agent_1 -> policy_1,
 ```
 
 > **This map is trustworthy.** It calls `env_runner.config.policy_mapping_fn` — the mapping the
-> runner is actually using — rather than reimplementing selection or reading `self`. Both matter:
-> the old reimplementation used an unweighted `(hash(episode.id_) + i) % len(candidates)` and
-> named the wrong opponents, and on a remote runner `self.available_modules` contains no champions
-> at all. The older documentation's warning that this printout is unreliable no longer applies.
+> runner is actually using — rather than reimplementing selection or reading `self`. On a remote runner
+> `self.available_modules` contains no champions at all, so reading `self` would name the wrong
+> opponents ([29](29_fixed_issues.md#resolved-before-the-register), #193).
 
 ### Metrics
 
@@ -444,17 +435,14 @@ BEFORE save    -> champion_history: ['champion_1', 'champion_2']
 AFTER restore  -> modules on env_runner:  [champion_1, champion_2, policy_0..policy_3]  ✅
                -> algo's own callback:    champions ['champion_1', 'champion_2']        ✅
                -> mapping fn draws:       {'policy_3', 'champion_1'}                    ✅
-               -> callback returned by build_algo(): champion_history: []               ❌ (fixed)
 ```
 
 `.callbacks(lambda: callback_instance)` closes over the instance, RLlib cloudpickles it into the
 checkpoint, and the restored `Algorithm` gets a callback with its history intact.
 
-The narrower real defect — `build_algo` returning the **fresh, empty** `callback_instance` from
-`build_config` rather than the algorithm's own — is fixed: the restore path returns
-`algo_callback(algo)`, and `None` with a warning if the restored algorithm has no
-`SelfPlayCallback`. `train()` never used the returned callback, so training was unaffected; the
-damage was to anything that *inspected* the league, which saw an empty one. Tracked as S3-8.
+`build_algo`'s restore path returns that same callback, `algo_callback(algo)`, and `None` with a
+warning if the restored algorithm has no `SelfPlayCallback`
+([29](29_fixed_issues.md#s3-8--build_algo-returns-a-detached-callback-on-the-restore-path-fixed) S3-8).
 
 ### 8.1 The sidecar, and what it repairs
 
@@ -545,5 +533,5 @@ iteration and asserts every episode-hook metric reaches the driver. See
 | `'NoneType' object has no attribute 'module'`, once per iteration | Reading `learner_group._learner` with `num_learners > 0` | See §5.2 constraint 1; run `TestLeagueWiringRemoteLearner` |
 | Champion plays like a random network | Weights never force-pushed to the EnvRunners | See §5.2 constraint 4 |
 | Baselines behave like biased networks, not uniform samplers | Module classes declared via `policies=` instead of `MultiRLModuleSpec` | See §2; `test_baseline_opponents_are_random_modules` guards it |
-| Module ID collision after removal | Champion names reused | Fixed via the monotonic `champion_id_counter` |
-| League fills with do-nothing policies | The reward makes passivity dominant (S1-3) | Fix the reward first; add a guard refusing to promote a champion with ~0 trades |
+| Module ID collision after removal | Champion names reused | Prevented by the monotonic `champion_id_counter`; after a restore across a class change the sidecar (§8.1) restores it |
+| League fills with do-nothing policies | The configured reward makes passivity pay (what S1-3 was, [29](29_fixed_issues.md#s1-3--doing-nothing-is-a-dominant-strategy-verified-fixed)) | Check the reward coefficients; `min_champion_trades` refuses a champion with ~0 trades |

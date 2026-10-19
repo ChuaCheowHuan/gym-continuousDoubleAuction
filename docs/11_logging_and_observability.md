@@ -7,20 +7,18 @@ Related: [08_self_play_league.md](08_self_play_league.md) (the callback that doe
 logging), [09_distributed_training.md](09_distributed_training.md) (what changes with multiple
 workers), [14_perspective_ai_engineer.md](14_perspective_ai_engineer.md) §5.4.
 
-**Status.** This used to be the weakest engineering area in the repository: no logging framework
-at all, ~86 `print()` calls, and a conservation check that reported a corrupt ledger by printing
-`FAILED`. Both are fixed - see §1.3 and §1.5. Coverage was the next gap and is largely closed:
-the custom metrics of §1.2 and a typed, queryable per-step record (§1.1). What is left in §2 now needs
-new computation rather than aggregation of something already in hand.
+**Status.** Every module logs through `logging` (§1.3), the conservation check stops a corrupt run
+(§1.5), and the custom metrics of §1.2 and a typed, queryable per-step record (§1.1) cover what the
+run computes. What is left in §2 needs new computation rather than aggregation of something already
+in hand. The defects this replaced are in [29](29_fixed_issues.md#11-0--no-logging-framework-and-a-conservation-check-that-printed).
 
 **Concurrency.** §1.10 is the answer to "is this thread safe or process safe", which is a separate
 question from coverage and was for a long time answered only in prose. It now has tests.
 
 **Distribution.** [21_logging_review.md](21_logging_review.md) is the audit of what all of the above
-does once `num_env_runners > 0`, which is the shape the GPU profile runs. Three of its findings were
-defects rather than gaps - a stop signal that stopped nothing, a switch that switched nothing off,
-and the one output path with no absolute resolution - and §1.5, §1.1 and §1.15 here are what they
-became.
+does once `num_env_runners > 0`, which is the shape the GPU profile runs. Its findings are fixed;
+§1.5, §1.1 and §1.15 here describe what they became, and the defects are in
+[29](29_fixed_issues.md#from-21--logging-review).
 
 ---
 
@@ -80,9 +78,8 @@ a killed run keeps what it had finished.
 `on_episode_end` releases the episode to a background writer thread, which writes
 `<episode_data_dir>/<run_id>/episodes.<pid>.<worker>.<n>.parquet`. A file is written once
 `episode_rows_per_file` rows have accumulated **and at the end of every sample** (`on_sample_end`),
-so the finished episodes are on disk when an iteration returns. They used to wait for the threshold
-or for an `atexit` handler, which Ray does not reliably run when it stops an env runner: a short run
-wrote nothing (issue #245, changelog §75). The cost is that a run has about one small file per runner
+so the finished episodes are on disk when an iteration returns ([29](29_fixed_issues.md#11-11--a-short-run-wrote-no-episode-record) has the defect
+this replaced). The cost is that a run has about one small file per runner
 per iteration; any Parquet reader takes the directory. **One row per (episode, step,
 agent)**, with a declared schema.
 
@@ -108,8 +105,8 @@ to `num_envs_per_env_runner` when a runner steps more environments than that: an
 place in the buffer is dropped from the record ([15](15_findings_and_recommendations.md) R-10,
 #180).
 
-This replaced a `pickle.dump` of the whole episode performed inline in `on_episode_end`. Five
-things changed, and each was a defect ([21 §2.2–2.4, §5–6](21_logging_review.md)):
+Five properties of the record, each answering a defect of the `pickle.dump` it replaced
+([29](29_fixed_issues.md#11-11--the-pickled-episode-record)):
 
 * **Typed and queryable.** `ray.data.read_parquet`, pandas or DuckDB read it without this package
   installed, and `pickle`'s arbitrary-code-execution-on-load is gone. The schema is *declared*, not
@@ -123,8 +120,7 @@ things changed, and each was a defect ([21 §2.2–2.4, §5–6](21_logging_revi
 * **It cannot raise into the hook.** Every failure is a warning. On a remote env runner an
   exception out of `on_episode_end` is a killed and restarted worker, not a stopped run.
 * **`--no-episode-data` now costs nothing.** `on_episode_step` no longer touches observations or
-  actions when the record is off. Previously the flag disabled the write and kept the ~34 MB per
-  episode of accumulation.
+  actions when the record is off.
 * **It is bounded.** `episode_sample_every` (default **10**) records one episode in N, chosen by
   `crc32` of the episode id so every runner samples the same subset without coordinating;
   `episode_max_bytes` (default 2 GiB) caps what each writer keeps, deleting its own oldest files
@@ -155,13 +151,9 @@ RLlib's own offline recording: it starts a Ray Data execution *inside* the env r
 identical — `ray.data.read_parquet` reads these files natively — so nothing downstream is given up.
 pyarrow is not a new dependency; `ray[rllib]` already requires it.
 
-**The measurement that made the bounds necessary.** At `max_step=4096` and 8 agents a step is 8,314
-pickled bytes, so an episode was **~34 MB** — held in memory and then serialised, per episode, per
-worker. `runtime_profiles.json` had estimated ~10 MB.
-
-The two `.pkl` files that used to sit committed under `episode_data/` — leftover output from an
-older version of `test_nav_callback.py`, not fixtures anything read — have been removed. Nothing
-in the repository writes a pickle any more.
+**The measurement that sizes the bounds.** At `max_step=4096` and 8 agents a step is 8,314 bytes
+pickled, so an unsampled episode is **~34 MB** per worker. Nothing in the repository writes a
+pickle.
 
 ### 1.2 RLlib `metrics_logger` custom metrics
 
@@ -227,7 +219,7 @@ metrics channel is kept unchanged for anything reading RLlib's metrics rather th
 tautology in a closed double auction: `process_acc` runs once per side of every trade, both sides
 increment `num_trades_step`, and only the passive side increments `num_passive_fills_step` — so the
 aggregate is exactly `0.5` in every episode whatever anyone did. A real 3-iteration run reported
-`0.5000` three times, which is how the first version of this metric was caught. The maximum across
+`0.5000` three times ([29](29_fixed_issues.md#11-12--maker_fill_ratio-measured-a-conservation-identity)). The maximum across
 agents does carry signal: 0.5 everywhere means nobody is specialising, one agent at 0.9 against the
 others' 0.3 is a policy that has learnt to quote and wait. Agents below five fills are excluded, or
 one passive fill out of one trade would pin the maximum at 1.0 for the whole run.
@@ -238,16 +230,16 @@ quietly shrinking to whichever modules the mapping fn happens to draw.
 
 **The variance shares are the docs/07 §6.4 split, live.** Measured on a real 2-iteration run:
 `nav_term` 0.95, `drawdown_penalty` 0.05, the other three below 1e-8. That is the answer to "which
-term is actually driving the signal", and it previously required reading a file back afterwards. A
+term is actually driving the signal", without reading a file back afterwards. A
 term that is large but constant contributes no variance and correctly reports no share — which is
 why the shares, not the means, are the diagnostic.
 
 **Why the two activity fractions exist.** They separate the two behaviours a return series cannot
 tell apart. An agent that stops trading looks identical in its returns whether it *chose* to pass
-or whether every order it sent was refused. The first is S1-3: `entropy_coeff` is 0.0, policies can
-collapse to always-pass, and such a policy still clears the champion promotion threshold because 0
-beats a negative league mean — so the pool fills with do-nothing snapshots while the returns series
-looks unremarkable. `pass_action_fraction` trending to 1.0 states it outright. The second is a
+or whether every order it sent was refused. The first is the collapse to always-pass that S1-3 and
+S3-11 described ([29](29_fixed_issues.md#s3-11--no-entropy-bonus-and-champion-promotion-cannot-detect-passivity-verified-fixed)):
+a passive policy's returns series looks unremarkable, and `pass_action_fraction` trending to 1.0
+states it outright. The second is a
 policy quoting past its cash; `order_step_placed` cannot express it, being 0 both for an agent that
 never tried and for one whose order was refused.
 
@@ -279,8 +271,7 @@ whose stdout *is* the product.
 Three properties this buys that `print` could not:
 
 * **Worker attribution.** The format carries the pid, so with `num_env_runners > 0` the
-  interleaved episode hooks are separable by process. Previously eight workers wrote
-  indistinguishable text into one stream.
+  interleaved episode hooks are separable by process.
 * **An off switch.** `cda_log_level` in `train_config.json` (or `$CDA_LOG_LEVEL`, or
   `--log-level` on the random runner) sets the level. Remote EnvRunners are separate interpreters
   that never run `main()`, so `configure()` exports the level into the environment and each
@@ -308,18 +299,13 @@ at the default INFO level that no longer produces anything.
 
 ### 1.4 Legacy Ray actor storage (`g_store`) - removed
 
-`train/storage/store_handler.py`, `train/logger/log_handler.py` and `train/plotter/plot_handler.py`
-were ~270 LOC that looked like a telemetry pipeline and were a broken one: all three depended on a
-detached Ray actor named `g_store` that **was never created anywhere**, so every entry point into
-them would have raised at call time. They have been deleted, along with the now-orphaned
-`plot_defaults` group in `tunable_constants.json` that only `plot_handler` read. Git history has
-them if the design is ever wanted back.
+Deleted; what it was and why is in [29](29_fixed_issues.md#11-14--the-g_store-telemetry-that-could-not-run).
 
 ### 1.5 The NAV conservation check
 
 The sum of every agent's NAV must equal the cash the system started with: the ledger is `Decimal`
-end to end, so trading moves cash and never creates it. This was a good idea implemented as a
-`print("... FAILED ...")`. It now reports on the runner and stops on the driver:
+end to end, so trading moves cash and never creates it. The check reports on the runner and stops
+on the driver:
 
 ```python
 # on the env runner, in on_episode_end
@@ -349,25 +335,16 @@ NumPy and will not take a `Decimal`. The comparison that decides the raise is th
 * **The stop is the driver's, not the hook's.** The callback reports - ERROR,
   `nav_conservation_error`, and a `nav_conservation_violations` count - and
   `train._check_nav_conservation` raises `NavConservationError` on the driver after the iteration,
-  before the checkpoint. Raising inside `on_episode_end` worked only at `num_env_runners=0`: the
-  hook runs on the env runner, so the raise arrives as a `RayTaskError` from `sample()`, and
-  `restart_failed_env_runners` (True by default) makes `EnvRunnerGroup` log it through Ray's own
-  logger and restart the actor - `algo.train()` returns normally. The raise also destroyed the
-  evidence, since `synchronous_parallel_sample` asks each runner for `(sample(), get_metrics())` in
-  one call. See [21 §2.1](21_logging_review.md).
-  `NavConservationError` subclasses `AssertionError`, so anything written to catch the old
-  behaviour still does.
+  before the checkpoint, so it works at every runner count: a raise on a remote env runner would
+  only restart that runner ([29](29_fixed_issues.md#11-15--raising-in-the-episode-hook-stopped-nothing)). `NavConservationError` subclasses `AssertionError`.
 * **`nav_tolerance`** (default `1e-6`) is headroom for a change that legitimately removes cash
   from the system, such as fees - see
   [13_perspective_financial_trader.md](13_perspective_financial_trader.md) §4. It is **not**
   absorbing arithmetic noise: with the check exact, the expected error is `0`, and the tolerance
   can be set to `0` to enforce that — the comparison is `abs(error) <= nav_tolerance`, inclusive,
   so `0` means "conservation must be exact" rather than "every episode is a violation". At the
-  default the inclusive and exclusive forms differ only on an error of exactly `1e-6`.
-  The `float()` round trip it was previously credited with
-  absorbing was harmless at the default `init_cash` — but above `init_cash ≈ 1e10` it made the
-  check unable to resolve this very tolerance, passing corrupt ledgers silently. See
-  [16 §16.10](16_verification_log.md).
+  default the inclusive and exclusive forms differ only on an error of exactly `1e-6`. The float
+  check this replaced could not resolve this tolerance above `init_cash ≈ 1e10` ([29](29_fixed_issues.md#11-15--a-float-check-that-could-not-resolve-its-tolerance)).
 
 Covered by `test_nav_callback.py` (25 tests) in two halves: the hook reports a violation without
 raising, counts it, keeps the error exact at an account size `float` cannot resolve, and emits the
@@ -380,11 +357,8 @@ is the claim the in-process tests cannot make.
 ### 1.6 Per-iteration training history (`progress.jsonl`)
 
 `train()` calls `algo.train()` directly rather than through `tune.Tuner`, so nothing writes
-`progress.csv` or TensorBoard event files. Each iteration's result dict used to be summarised into
-one log line and dropped, which left a finished run with checkpoints, scrollback, and no queryable
-record of how it got there.
-
-Every iteration now appends one JSON object to `<run_dir>/progress.jsonl` (§1.11):
+`progress.csv` or TensorBoard event files ([29](29_fixed_issues.md#11-16--no-per-iteration-record) has what this replaced). Every iteration
+appends one JSON object to `<run_dir>/progress.jsonl` (§1.11):
 
 ```python
 result = algo.train()
@@ -406,9 +380,8 @@ _append_progress(result, cfg)
   otherwise training fine.
 * It sits under `log_base_dir`, not with the per-step episode record: one short line per iteration
   belongs with the things that must survive a disconnect, which is why `runtime_profiles.json`
-  splits `results_root` from `episode_data_root` in the first place. It is one level further down
-  than it used to be, in this run's own directory - see §1.11 for why sharing one file across runs
-  was not safe.
+  splits `results_root` from `episode_data_root` in the first place. It is in this run's own
+  directory - see §1.11 for why sharing one file across runs is not safe.
 
 Covered by `test_progress_log.py` (one line per iteration, appends across a restart, numbers
 survive as numbers, awkward values, and a write failure that must not stop the loop) and by
@@ -514,13 +487,11 @@ conservation check (§1.5) depends on its exactness. Sizes need no conversion �
 
 ### 1.9 The run log
 
-§1.6 gave the run a machine-readable history and §1.7 gave the step one, but the log itself was
-still written only to stdout. So a finished run left its *numbers* on disk and its *narrative* in
-scrollback — the per-episode NAV tables, the league statistics, and the ERROR that immediately
-precedes a `strict_nav_check` raise. [17 §17](17_changelog.md) records two GPU runs diagnosed
-exactly that way, after the fact, from a terminal buffer.
+§1.6 is the run's machine-readable history and §1.7 the step's; the run log keeps its narrative —
+the per-episode NAV tables, the league statistics, and the ERROR that precedes a
+`strict_nav_check` stop ([29](29_fixed_issues.md#11-19--the-run-narrative-lived-only-in-scrollback) has the stdout-only log it replaced).
 
-Every process now writes a rotating log file under `log_base_dir`, beside `progress.jsonl`:
+Every process writes a rotating log file under `log_base_dir`, beside `progress.jsonl`:
 
 | File | Written by | Contains |
 |---|---|---|
@@ -550,10 +521,9 @@ tracked in a `ContextVar` — per-thread rather than a module global, since the 
 be the only thread. It reads `-` where the iteration is unknown, which is every env runner and the
 driver before the first iteration and after the last. Not `0`, which is a real iteration number.
 
-A worker's NAV table is therefore dated, attributed and durable. It used to read `iter=-` as well,
-on the reasoning that the worker genuinely does not know which iteration its episode belongs to -
-§1.12 sends it the number instead. The dash remains for a process that legitimately has no
-iteration: the driver before the first one and after the last.
+A worker's NAV table is therefore dated, attributed and durable: §1.12 sends each runner the
+iteration. The dash remains for a process that legitimately has no iteration: the driver before the
+first one and after the last.
 
 Covered by `test_logging_setup.py` (61 tests): the file appears beside the metrics and mirrors
 stdout, rotation bounds it, an unwritable destination warns instead of raising, a worker resolves
@@ -565,21 +535,17 @@ exceptions and warning capture.
 ### 1.10 Thread safety and process safety
 
 The short answer: **thread safe on both the write and the setup path; process safe by not sharing
-files rather than by locking them.** The long answer is worth stating, because three of the four
-holes below were real and none of them was covered by a test.
+files rather than by locking them.** The holes this section once described are fixed and tested;
+they are in [29](29_fixed_issues.md#11-110--thread--and-process-safety-holes).
 
 **Writes, within a process.** Safe, and always were. `logging.Handler.handle()` acquires the
 handler's `RLock` around `emit()`, and `RotatingFileHandler.doRollover()` runs inside `emit`, so
 concurrent `logger.info` from several threads can neither interleave a line nor rotate the file
 twice. `test_concurrent_writers_do_not_tear_a_line` pins it.
 
-**Setup, within a process.** Was *not* safe. `get_logger` checks `_configured` and then acts on
-it, and `configure()` closes and removes the existing handlers before adding replacements.
-`addHandler` is individually atomic under logging's own module lock, but that *sequence* is not:
-two threads inside it produce duplicate handlers, or one closes a handler the other is emitting
-through. The whole swap is now under `_configure_lock`. The window was small - the first
-`get_logger` normally happens at import, which the import lock serialises - but "small" is not a
-property a test can hold you to.
+**Setup, within a process.** Safe. The whole handler swap in `configure()` - close and remove the
+existing handlers, add replacements - is under `_configure_lock`, so two threads cannot produce
+duplicate handlers or close one the other is emitting through.
 
 **Across processes.** `RotatingFileHandler` has no cross-process interlock, and the design's answer
 is not to make sharing safe but to stop processes sharing a file:
@@ -591,24 +557,17 @@ is not to make sharing safe but to stop processes sharing a file:
 | Driver | `progress.jsonl` | its own run directory (§1.11) |
 | Env runner | `episodes.<pid>.<worker>.<n>.parquet` | pid, Ray worker id *and* a per-writer sequence number, under a run-scoped directory (§1.1) |
 
-Three of those were previously weaker than they looked:
+The names are chosen for the cases that make a weaker key fail:
 
-* **A pid is not a unique key.** It is unique per *node*. On a multi-node run with `log_base_dir`
-  on a shared filesystem - NFS, or the Drive mount Colab uses - two workers on different nodes can
-  hold the same pid and open the same `run.<pid>.log`, which is the exact rotation race the
-  per-worker name exists to prevent. The name now carries Ray's worker id, which is unique
-  cluster-wide, behind the pid, which is what the `pid=` field of each line matches. Ray is read
-  out of `sys.modules` rather than imported: importing it here would make every consumer of the module (`--help` included) pay for ray, and
-  would put the import ahead of `configure()` and `runtime.apply_env_vars()`, which `main()` runs
-  before `ray.init`.
-* **The driver's own files were not covered at all.** `run.log` carries no pid, and `log_base_dir`
-  defaulted to a fixed `results`, so two concurrent runs - or a notebook session alongside a CLI
-  run - shared both it and `progress.jsonl`. §1.11 is the fix.
-* **The episode record's directory was not covered either.** The episode id kept two *writers*
-  apart, which was never the weak part; the *path* was a bare relative string, resolved inside each
-  worker against whatever working directory it inherited, and shared by every concurrent run. It is
-  absolute and run-scoped now (§1.1, [21 §2.3](21_logging_review.md)). The per-writer file naming
-  is what lets each process enforce its own byte cap without deleting another's files.
+* **A pid is unique per node, not per cluster.** The worker log name carries Ray's worker id, which
+  is unique cluster-wide, behind the pid, which is what the `pid=` field of each line matches. Ray is
+  read out of `sys.modules` rather than imported, so consumers of the module (`--help` included) do
+  not pay for importing ray, and the import cannot run ahead of `configure()` and
+  `runtime.apply_env_vars()`.
+* **Each run has its own directory** (§1.11), so two concurrent runs - or a notebook session
+  alongside a CLI run - do not share `run.log` or `progress.jsonl`.
+* **The episode record's path is absolute and run-scoped** (§1.1). The per-writer file naming is
+  what lets each process enforce its own byte cap without deleting another's files.
 
 **Why a shared `progress.jsonl` is worse than a shared log.** Not just rotation: line integrity.
 `_append_progress` calls `json.dump(result, fh)`, which writes incrementally - 61 `write()` calls
@@ -617,24 +576,21 @@ is a single `O_APPEND` write and atomic; a real RLlib result dict with learner s
 larger than the buffer and splits (measured: 31 KB → 4 syscalls, 314 KB → 39). Two drivers
 appending would interleave *inside* one JSON line and produce a record nothing can parse.
 
-**The `iter=` tag is process-wide, not per-thread.** It was a `ContextVar`, chosen so it would be
-per-thread. That was the wrong model twice over: a new thread starts from an empty context, so a
-line the driver logged from any thread but the loop read `iter=-` while the process knew the
-answer; and a value set inside a Ray actor task is not guaranteed to still be in context for the
-next task, which is what §1.12's broadcast needs. It is now a module global - one training loop per
-process, so the iteration is a property of the process. Assignment of an int is atomic under the
-GIL, so it needs no lock.
+**The `iter=` tag is process-wide, not per-thread.** It is a module global - one training loop per
+process, so the iteration is a property of the process. A `ContextVar` would be per-thread, so a line
+the driver logged from any thread but the loop would read `iter=-`, and a value set inside a Ray actor
+task is not guaranteed to still be in context for the next task, which §1.12's broadcast needs.
+Assignment of an int is atomic under the GIL, so it needs no lock.
 
 Covered by `TestConcurrentConfiguration` and `TestSeparateProcesses` in `test_logging_setup.py`,
 which spawn real subprocesses because that is the one thing threads cannot stand in for.
 
 ### 1.11 One directory per run
 
-Everything above keeps the *processes of one run* from colliding. Nothing kept two runs apart:
-`log_base_dir` was a fixed `results`, so a second run wrote the same `run.log` and appended to the
-same `progress.jsonl`.
+Everything above keeps the *processes of one run* from colliding; this keeps two runs apart
+([29](29_fixed_issues.md#11-111--two-runs-wrote-into-one-directory) has the shared directory it replaced).
 
-Each run now gets a directory under `log_base_dir`, named by `run_id`:
+Each run gets a directory under `log_base_dir`, named by `run_id`:
 
 ```
 results/                          <- log_base_dir
@@ -647,7 +603,7 @@ results/                          <- log_base_dir
 
 `run_id` is generated from the local date, time and four random hex digits - the timestamp so a
 listing is readable and orderable, the random suffix because two runs launched by the same script
-in the same second would otherwise collide on the second, which is the case being fixed. Setting
+in the same second would otherwise collide on the second. Setting
 `run_id` in `train_config.json` or passing `--run-id` reuses an existing directory, which is how a
 restored run extends the `progress.jsonl` it left behind.
 
@@ -664,14 +620,10 @@ config against the current one, which `config_divergence` reports on.
 
 ### 1.12 The iteration reaches the env runners
 
-§1.9 noted that a worker's lines read `iter=-` because "the worker genuinely does not know which
-iteration its episode belongs to", and put recovering that association down as a change to what
-RLlib hands the callbacks. That was too pessimistic. The driver knows the number, and
-`foreach_env_runner` already reaches every runner; it only had to be sent.
-
-`_broadcast_iteration` does that at the top of each iteration, before `algo.train()` starts
+The driver knows the iteration, and `foreach_env_runner` reaches every runner, so it is sent
+([29](29_fixed_issues.md#11-112--worker-lines-carried-no-iteration) has the `iter=-` it replaced). `_broadcast_iteration` does that at the top of each iteration, before `algo.train()` starts
 sampling. It is best-effort and quiet: a runner that is restarting, or an RLlib rename, degrades to
-the old `iter=-` rather than stopping a training run. `local_env_runner=False`, because the
+`iter=-` rather than stopping a training run. `local_env_runner=False`, because the
 driver's own runner shares its process and `set_iteration` has already tagged it.
 
 This is what makes the run log joinable to `progress.jsonl` under `num_env_runners > 0`, which is
@@ -680,13 +632,8 @@ NAV tables and the conservation ERROR are emitted there and nowhere else.
 
 ### 1.13 A run that dies says why, in the log
 
-`main()` was `try: train(cfg) / finally: ray.shutdown()`, with no `except`. An unhandled exception
-- including the `strict_nav_check` `AssertionError` whose entire purpose is to stop a run loudly
-enough to be diagnosed afterwards - unwound to Python's default hook, which writes to `sys.stderr`
-outside logging. So `run.log` ended mid-narrative and the reason for the ending was in scrollback,
-which is the failure §1.9 exists to fix.
-
-Three things now catch it:
+An unhandled exception - including the `strict_nav_check` stop - is logged into `run.log`, so the
+log does not end mid-narrative ([29](29_fixed_issues.md#11-113--a-dying-run-left-its-reason-in-scrollback) has the defect). Three things catch it:
 
 * `main()` logs the traceback where it happens, so it is tagged with the `iter=` that failed rather
   than appearing after the teardown lines;
@@ -700,24 +647,22 @@ ended by being killed, and a full traceback for an intentional Ctrl-C is noise a
 session.
 
 `warnings.warn` is captured too, via `logging.captureWarnings(True)`. A `DeprecationWarning` from
-Ray or gymnasium is the earliest signal that an upgrade is about to break this repository, and it
-was going to stderr unrecorded and unrotated. Capture alone is not enough - it logs to
+Ray or gymnasium is the earliest signal that an upgrade is about to break this repository. Capture alone is not enough - it logs to
 `py.warnings`, which is outside this package's namespace and inherits none of its handlers, so the
 record would fall through to logging's last-resort handler and reach stderr anyway. The package's
 handlers are mirrored onto it.
 
 ### 1.14 The stream handler writes to stdout
 
-`logging.StreamHandler()` with no argument writes to **stderr**, which is what this package did
-while §1.3, §1.9 and `tunable_constants.json` all described it as stdout. It matters:
-`python -m gym_continuousDoubleAuction.train.train > run.txt` captured none of the output a run
-exists to produce. It is now explicitly `sys.stdout`. Warnings and errors are not split onto stderr
+The handler is explicitly `sys.stdout` (a bare `logging.StreamHandler()` writes to stderr, which
+this package once did - [29](29_fixed_issues.md#11-114--the-stream-handler-wrote-to-stderr)), so `python -m gym_continuousDoubleAuction.train.train >
+run.txt` captures the run. Warnings and errors are not split onto stderr
 separately - they are part of the same narrative, and two streams reorder against each other.
 
 ### 1.15 Ray's own logging, and propagation
 
-Everything above concerns *this package's* logging. Ray's is a separate stream, and until now
-nothing configured it in the processes where it matters most: an env runner's restart notices,
+Everything above concerns *this package's* logging. Ray's is a separate stream, emitted in the
+processes where it matters most: an env runner's restart notices,
 RLlib's "No samples returned from remote workers", and the traceback `EnvRunnerGroup` swallows when
 a runner dies ([21 §2.1](21_logging_review.md)) are emitted by Ray's loggers in workers this package
 never touches.
@@ -741,18 +686,11 @@ the duplication exists only once Ray has configured root.
 
 ### 2.1 Training metrics
 
-Done, and no longer on this list: **`vf_explained_var`** — the one metric that exposes the frozen
-critic (S1-1), and whose absence is why that defect survived. `_log_iteration` now prints it per
-trainable module on every iteration, read from `result["learners"][<module_id>]` and keyed on
-`trainable_policy_ids`, since only the modules in `policies_to_train` appear in that block.
-
-`test/integration/test_progress_and_vf.py` asserts in CI that a real run reports it, finite, for
-every trainable module. It deliberately does **not** assert `!= 0.0`: while S1-1 was open this
-repository reported values around 1e-5, so that assertion would have passed on a critic that was
-entirely dead. The substantive threshold (`>= 1e-3`) is what distinguishes them, and it is now a
-**live assertion** - it was a strict xfail pinning S1-1, XPASSed on the first run after the fix
-exactly as the marker's reason said it would, and the marker was deleted. See
-[10 §6.2.2](10_testing.md).
+**`vf_explained_var`** is logged per trainable module on every iteration, read from
+`result["learners"][<module_id>]` and keyed on `trainable_policy_ids`, since only the modules in
+`policies_to_train` appear in that block. `test/integration/test_progress_and_vf.py` asserts in CI
+that it is finite and `>= 1e-3` for every trainable module ([10 §6.2.2](10_testing.md)). Its
+history as the metric that would have exposed S1-1 is in [29](29_fixed_issues.md#11-21--vf_explained_var-was-not-logged).
 
 Everything else on this list is *computed* by RLlib and reaches `progress.jsonl` (§1.6) as part of
 the full result dict. What is still missing is surfacing: none of it is in the iteration log line
@@ -844,49 +782,21 @@ chosen for, and it makes the info dict awkward for RLlib metric aggregation.
 | Issue | Impact |
 |---|---|
 | `progress.jsonl` grows without rotation | One line per iteration is small, but nothing bounds it across a run that pins its `run_id` and resumes repeatedly |
-| ~~Rotation discards the *earliest* output first~~ (fixed: `file_keep_head`, [21](21_logging_review.md) §2.5) | `file_backup_count` × `file_max_bytes` caps the run log at 60 MB, which at DEBUG is reached quickly — and it is the start of a run, where divergence usually begins, that is dropped. A time-based handler, or archiving the run directory, keeps it |
 
-Seven things are no longer in this table.
+The persistence problems that are fixed - seven of them, including everything about the pickled
+episode record - are in [29](29_fixed_issues.md#11-3--persistence-problems-that-are-gone).
 
-The three about the episode record all went with `pickle` (§1.1): the files are Parquet, so there is
-no arbitrary code execution on load; every row carries `run_id`, `iteration` and `wall_time`, so
-correlating with training progress is a join rather than a filename sort; and growth is bounded by
-`episode_sample_every` and `episode_max_bytes` rather than being off/on.
-
-The other four: logging itself is levelled, attributable, switchable and durable, written to a
-rotating file per process as well as stdout (§1.3, §1.9), and the `g_store` dead code is gone
-(§1.4); `progress.jsonl` is the per-iteration machine-readable record (§1.6); the run log does not
-re-create the unbounded-growth problem it would otherwise have added, because `file_max_bytes` and
-`file_backup_count` bound it; and two runs no longer write into each other's files (§1.11) - never
-listed here, but the more serious of the two, since a shared `run.log` loses lines to a rotation
-race and a shared `progress.jsonl` can interleave two writers inside one JSON line.
-
-One new entry, from the same design: **the run log's file *count* is unbounded even though each file
-is capped.** Every restarted env runner opens a new `run.<pid>.<worker>.log`, and RLlib restarts
-runners as a matter of course. See [21 §2.5](21_logging_review.md).
+The run log's file *count* is bounded too: `file_max_worker_files` prunes the oldest worker logs, and
+`file_keep_head` keeps the start of every log ([21 §2.5](21_logging_review.md)).
 
 ---
 
 ## 4. Recommended additions
 
-Done, and no longer on this list: `logging` in place of `print`; stopping a run on a NAV
-conservation violation with a `nav_conservation_error` metric (§1.5 - the *stop* moved to the
-driver, the metric did not); writing each iteration's result dict to `progress.jsonl` (§1.6);
-logging `vf_explained_var` per trainable module with a CI assertion behind it (§2.1); and the four
-metric calls this section used to sketch, all four of which now exist:
-
-```python
-# in on_train_result / on_episode_end - all of these are live
-metrics_logger.log_value("champions_promoted", promoted, reduce="sum")
-metrics_logger.log_value("mean_agent_drawdown", dd, window=10)
-metrics_logger.log_value("pass_action_fraction", n_pass / n_actions, window=10)
-metrics_logger.log_value(f"reward_term_var_share_{term}", variance / total, window=10)
-```
-
-The shape of this document has changed with them. It used to end "capture is now good, aggregation
-is four league-and-NAV metrics"; aggregation is now 28 metrics (§1.2), and what is left is
-genuinely different in kind - things that need a *new computation*, not a reduction of something
-already in hand.
+The additions this section used to recommend - `logging` in place of `print`, a NAV conservation
+stop with its metric, `progress.jsonl`, `vf_explained_var` with a CI assertion, and four sketched
+metric calls - all exist ([29](29_fixed_issues.md#11-4--recommended-additions-that-are-done)). What is
+left needs a *new computation*, not a reduction of something already in hand.
 
 What remains, in order:
 

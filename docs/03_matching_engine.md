@@ -159,13 +159,12 @@ Every order processed receives a unique, monotonically incrementing ID (`next_or
 
 ## 3. Order modification
 
-### 3.1 The bug that was fixed
+### 3.1 Why a modification is re-processed
 
-`OrderBook.modify_order` originally updated price and quantity **in place** in the `OrderTree`
-without re-running the matching engine. A bid could therefore be modified to a price above the
-best ask and simply *sit there*, leaving the book crossed — a direct violation of double auction
-mechanics. Separately, the trader's cash and hold balances were not adjusted for trades that
-occurred *during* a modification, so account balances drifted.
+A modification goes back through the matching engine, and the trader's balances are re-derived
+from the result, so that a modified order can never leave the book crossed and a fill during a
+modification is settled like any other fill. The defect this replaced is in
+[29](29_fixed_issues.md#03-31--modify_order-updated-the-book-in-place).
 
 ### 3.2 Current book-level logic
 
@@ -259,11 +258,8 @@ These are asserted by the test suite and should be preserved by any change to th
 4. Order IDs are unique and monotonically increasing.
 5. A market order against an empty book is a no-op, not an exception.
 
-> **Correction to the older documentation.** `docs/matching_engine.md` §4 stated that invariant 1
-> was "only partially satisfied" because `test_modify_order_price_change` was marked
-> `@unittest.expectedFailure`. That is no longer true — there is no `expectedFailure` anywhere in
-> the repository, and the test asserts `get_best_bid() == Decimal('101')` and passes. Invariant 1
-> holds on every modification path.
+Invariant 1 holds on every modification path; `test_modify_order_price_change` pins it. The older
+documentation said otherwise ([29](29_fixed_issues.md#03-4--invariant-1-was-documented-as-partial)).
 
 ---
 
@@ -283,13 +279,11 @@ if quote['quantity'] <= 0:
     )
 ```
 
-Until 2026-09-18 these were `sys.exit(...)`. `SystemExit` derives from `BaseException`, not
-`Exception`, so inside a Ray EnvRunner actor it was not caught by ordinary handlers: it killed the
-worker, RLlib marked it unhealthy and restarted it, and the run degraded rather than failing with a
-usable traceback. None of the six is reachable from the action layer — decoded size is
-`rint(abs(N(...))) + min_size ≥ 1` — but they were one action-space change away, and they are
-what a test can now assert (`test_orderbook_new.py::TestMalformedInputRaisesInsteadOfExiting`).
-Tracked as S3-7 in [15_findings_and_recommendations.md](15_findings_and_recommendations.md), fixed.
+A `ValueError` is an ordinary `Exception`, so inside a Ray EnvRunner it fails with a usable
+traceback. None of the six is reachable from the action layer — decoded size is
+`rint(abs(N(...))) + min_size ≥ 1` — and `test_orderbook_new.py::TestMalformedInputRaisesInsteadOfExiting`
+pins each of them. These used to be `sys.exit` calls
+([29](29_fixed_issues.md#s3-7--sysexit-used-for-error-handling-in-the-matching-engine-fixed) S3-7).
 
 The book also no longer accepts a `tick_size`. It never read the one it stored, and the parameter
 suggested a grid the matching path does not enforce — every price is keyed as the `Decimal` it

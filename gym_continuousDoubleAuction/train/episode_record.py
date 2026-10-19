@@ -437,7 +437,7 @@ class EpisodeRecorder:
         reliably run when it stops an env runner (`ray.shutdown()`, an actor
         kill). Left to those two, a run with fewer rows than `rows_per_file`
         wrote nothing at all, and a long one lost up to `rows_per_file - 1`
-        rows per runner (docs/15, issue #245).
+        rows per runner (issue #245, docs/11).
 
         Unlike `flush` this does not touch `_live`: a sample boundary is not an
         episode boundary, and writing a running episode out now would label it

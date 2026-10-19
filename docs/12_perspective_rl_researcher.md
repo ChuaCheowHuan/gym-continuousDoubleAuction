@@ -45,80 +45,24 @@ reasonable prioritised-fictitious-play approximation.
 
 ---
 
-## 2. The observation contains no private state — **fixed**
+## 2. The observation and the agent's private state
 
-> **Status.** S1-2 is closed. Every agent now receives a private tail (`State_Helper.private_fields`;
-> 9 floats when S1-2 closed, 41 now) after the shared book, so the observation is 233 floats and no
-> two agents' vectors are identical. See [17_changelog.md](17_changelog.md) §30 and
-> [05_observation_space.md](05_observation_space.md) §1. **Own resting orders are still absent** —
-> the analysis below is kept because it is the argument for why this mattered, and because the
-> part it names last is the part still open.
+Every agent receives a private tail after the shared book (`State_Helper.private_fields`, 41
+floats at defaults): its position, exposure, cash, escrow, NAV, drawdown, entry price relative to
+mid, realised P&L and time remaining, then its own resting orders on the book grid, its order
+counts, whether its last order-management action landed, and the action mask
+([05_observation_space.md](05_observation_space.md) §1). The reward is a function of exactly these
+quantities, so the learning problem is well-posed in the agent's observation: two states with
+identical books and opposite inventory are now different observations.
 
-**Was the single biggest flaw.** **[verified]** — all agents received the byte-identical 168-float
-vector, at reset and at every step:
+What is still absent is **agent identity**. Two agents in the same private state cannot tell
+which role they are playing, which matters only if roles should be learned as distinct policies
+from one shared module; with one module per trainable agent it is moot.
 
-```
-obs dim per agent: (168,) | distinct obs vectors across agents: 1
-```
-
-The observation is built once per step from the public book and broadcast:
-
-```python
-states = {f'agent_{i}': stacked_obs for i in range(len(self.traders))}
-```
-
-Nothing in the vector encodes:
-
-| Missing | Where it lives | Why the agent needs it |
-|---|---|---|
-| `net_position` | `Account.__init__` | Sign and size of inventory determine whether a fill opens or closes risk |
-| `VWAP` | `Account.__init__` | Entry price ⇒ unrealised P&L direction |
-| `nav`, `prev_nav` | `Account.__init__`, re-derived in `Calculate.mark_to_mkt` | **The reward is literally `nav − prev_nav`** |
-| `max_nav` | `Account.__init__`, updated in `Calculate.cal_nav` | The drawdown penalty is `0.2·(max_nav − nav)` |
-| `cash`, `cash_on_hold` | `Account.__init__`, moved by `Cash_Processor` | Determines which orders `_order_approved` will reject |
-| own resting orders | `LOB.bids/asks.order_map` | Modify/cancel actions are meaningless without knowing what is resting |
-| agent identity | — | Two agents in the same state cannot differentiate roles |
-| `t_step` / time remaining | `continuousDoubleAuctionEnv.step` | End-of-episode inventory liquidation is a different problem than mid-episode trading |
-
-**Consequence.** The reward is a deterministic function of state variables the policy cannot see.
-This is not "hard to learn", it is **ill-posed**: two states with identical books but opposite
-inventory require opposite optimal actions and are indistinguishable to the policy. Nor is it
-ordinary partial observability that a recurrent network could paper over — the drawdown term
-depends on `max_nav`, a *path functional* over the entire episode. Formally the process is not an
-MDP in the agent's observation, and the residual variance is not reducible by any policy over
-these observations.
-
-Two secondary effects:
-
-- The `modify` and `cancel` action categories (4 of the 9 category values) are effectively blind.
-  `_get_order_ID` silently no-ops if nothing matches. ~44% of the discrete action mass is
-  unlearnable.
-- Frame stacking (`n_hist=4`) adds *public* temporal context, which is genuinely useful for
-  order-flow inference, but it cannot substitute for the private state.
-
-**Fix.** Append a per-agent feature block to the snapshot, normalised against `init_cash`, and
-stop broadcasting a single vector:
-
-```python
-private = np.array(
-    [
-        net_position / max_position_scale,
-        (nav - init_cash) / init_cash,
-        (max_nav - nav) / init_cash,  # current drawdown
-        cash / init_cash,
-        cash_on_hold / init_cash,
-        (VWAP - M) / M if net_position else 0.0,
-        resting_bid_notional / init_cash,
-        resting_ask_notional / init_cash,
-        1.0 - t_step / max_step,  # time remaining
-    ],
-    dtype=np.float32,
-)
-```
-
-This is a ~9-float addition per snapshot and the single highest-value *structural* change in the
-repository. Note that `test_shared_history_multi_agent_uniformity` must be deleted when it lands
-— it currently asserts the defect.
+Until this block existed every agent saw the byte-identical public vector, which made the reward
+a function of unobserved state. The analysis of why that was ill-posed, and the fix proposed for
+it, is in [29](29_fixed_issues.md#12-2--the-observation-contained-no-private-state); the register
+entry is [S1-2](29_fixed_issues.md#s1-2--observation-contains-no-private-state-verified-fixed).
 
 ---
 
@@ -126,193 +70,84 @@ repository. Note that `test_shared_history_multi_agent_uniformity` must be delet
 
 Full specification in [07_reward_function.md](07_reward_function.md).
 
-### 3.1 The reward is strictly negative-sum over a zero-sum market — **fixed**
+### 3.1 The reward is zero-sum in its NAV term
 
-> **Status.** S1-3 is closed. `loss_multiplier` 1.5 → 1.0 and the drawdown level → a signed
-> change; the same 4 agents × 300 steps now score **−0.0104** rather than −591,027, and over 1,000
-> steps `nav_term` sums to exactly `0.000000` across agents. See
-> [17_changelog.md](17_changelog.md) §29.2–29.3 and [07_reward_function.md](07_reward_function.md)
-> §2.1.
+NAV is conserved exactly ([verified], 4 agents × 1,000,000 → final total NAV 4,000,000.00), so
+`Σ_agents nav_change = 0` at every step, and the reward's NAV term inherits that: with
+`loss_multiplier` 1.0 and the drawdown charged as a signed change, `nav_term` sums to exactly
+`0.000000` across agents over 1,000 steps, and 4 random agents over 300 steps score **−0.0104** in
+total ([07_reward_function.md](07_reward_function.md) §2.1). The remaining negative-sum part is the
+friction of the micro-terms, which is small by design.
 
-NAV is conserved exactly — **[verified]**, 4 agents × 1,000,000 → final total NAV 4,000,000.00.
-So `Σ_agents nav_change = 0` at every step.
-
-But the reward *then* added a loss-aversion multiplier and a persistent drawdown level. Over 300
-steps with 4 random agents — **[verified]**:
-
-| Term | Summed value |
-|---|---|
-| asymmetric NAV term | −174,502 |
-| drawdown penalty | −416,473 |
-| **total return, all agents** | **−591,027** |
-
-against a market where the NAV pot did not move at all. The drawdown penalty alone is roughly
-**2.4×** the entire (already negative) NAV term.
+It used to be strongly negative-sum (−591,027 over the same 300 steps) through a loss-aversion
+multiplier and a drawdown level: [S1-3](29_fixed_issues.md#s1-3--doing-nothing-is-a-dominant-strategy-verified-fixed) and [S2-1](29_fixed_issues.md#s2-1--drawdown-is-penalised-as-a-level-not-an-increment-verified-fixed).
 
 ### 3.2 The league ranks a signal that is not comparable across roles
 
 Because the four shaping terms are not zero-sum, returns are not comparable across policies
-playing different roles — and the league callback nevertheless ranks trainable modules against a
+playing different roles — and the league callback, by default, ranks trainable modules against a
 pooled `mean + k·std` computed over *all* modules, including the frozen random baselines.
 
-A policy can therefore clear the promotion threshold by **trading less**, not by trading
-*better*. Combined with §3.3, this is a direct path to a league full of do-nothing champions.
+A policy can therefore clear the default promotion threshold by **trading less**, not by trading
+*better*. Two things now stand against that: `min_champion_trades` refuses a champion that has
+stopped trading (S3-11), and `league_self_play.promotion_reference: "excluding_baselines"`
+computes the threshold over the trainable modules and champions only. The second is an option,
+off by default, so the pooled ranking is still what a default run does ([S3-12](29_fixed_issues.md#s3-12--the-league-ranks-a-signal-that-is-not-comparable-across-roles-fixed---as-an-option)).
 
-### 3.3 Doing nothing is a dominant strategy — **fixed**
+### 3.3 Doing nothing is not dominant, and cannot be beaten on average
 
-> **Status.** Passing still scores exactly `0.0`, and always will: in a market where NAV is
-> conserved, no reward can make trading positive-sum *on average*. What changed is that it is no
-> longer **dominant** — random trading scores −0.0104 rather than −591,027, so the residual
-> friction is ~0.5% of a typical NAV move instead of dwarfing it, and an agent with an edge is no
-> longer taxed out of using it. See [17_changelog.md](17_changelog.md) §29.3 and §29.5.
+Passing every step scores exactly `0.0`, and always will: in a market where NAV is conserved, no
+reward can make trading positive-sum *on average*. What matters is that passing is no longer
+**dominant**: random trading scores −0.0104 over 4 agents × 300 steps, so the residual friction is
+~0.5% of a typical NAV move rather than dwarfing it, and an agent with an edge is not taxed out of
+using it. That passing *was* dominant, a Nash equilibrium and the joint optimum, is
+[S1-3](29_fixed_issues.md#s1-3--doing-nothing-is-a-dominant-strategy-verified-fixed).
 
-**[verified]** — a policy where every agent plays `category=0` every step:
+### 3.4 The drawdown term charges a change, not a level
 
-```
-all-agents-pass policy: total return over 300 steps × 4 agents = 0.0
-```
+The term charges the **signed** change in drawdown, `(current_drawdown − previous_drawdown) /
+init_nav`, which telescopes over an episode to `−drawdown_penalty × final_drawdown` whatever path
+was taken. A round trip down and back to the peak is free, ending in drawdown is penalised, and the
+term cannot be farmed; its magnitude no longer scales with `max_step`. The clipped
+`max(0, Δ)` form this document once proposed would have been an asymmetric loss multiplier by
+another name: why it was rejected, and the level form it replaced, are [S2-1](29_fixed_issues.md#s2-1--drawdown-is-penalised-as-a-level-not-an-increment-verified-fixed);
+[07_reward_function.md](07_reward_function.md) §2.1 works through the arithmetic.
 
-Exactly zero — versus −591,027 for random trading. Reason: with no position, no mark-to-market
-change; no orders, no order penalty; no fills, no trade penalty; NAV never falls below `max_nav`,
-so no drawdown.
+### 3.5 The micro-terms are scaled to the NAV term
 
-Trading is therefore **strictly dominated unless the agent can extract more than its penalty
-budget from other agents**, and because the market is zero-sum in NAV the population as a whole
-never can. `(pass, pass, …, pass)` is a Nash equilibrium that is also the *joint-optimal* outcome
-under this reward. Worse, it is an attractor reachable by pure gradient descent from a random
-start: the fastest way to raise return early in training is to stop trading. Empty-market
-collapse is the most likely training outcome as configured.
+Every NAV-derived quantity is divided by `acc.init_nav`, and the coefficients are calibrated
+against the measured move distribution: `order_penalty` 1e-05, `trade_penalty` 2e-05,
+`passive_bonus` 2e-05, ~0.5–1% of the median step that moves NAV at all. `passive_bonus ==
+trade_penalty` makes a passive fill net-free while an aggressive one costs 0.2 bps. Real
+maker/taker fees charged through NAV exist as an option (`maker_fee_bps`, `taker_fee_bps`, both 0
+by default; [13_perspective_financial_trader.md](13_perspective_financial_trader.md) §4). When the
+coefficients were 5–6 orders of magnitude too small to matter: [S2-3](29_fixed_issues.md#s2-3--transaction-cost-proxies-are-10⁵-too-small-verified-fixed).
 
-This is not hypothetical — it is exactly what the numbers above predict.
+### 3.6 Coefficients are configurable
 
-### 3.4 The drawdown term is a level, not a delta — **fixed, but not by the patch below**
-
-> **Status.** S2-1 is closed. The term now charges the **signed** change in drawdown, not the
-> clipped one this section recommends. See the correction after the code block.
-
-`max_nav` is monotone non-decreasing within an episode, so a drawdown opened at step 50 is
-charged **every step until NAV recovers past the old peak**. At `max_step=4096`, a 1,000-unit
-drawdown incurred early costs `0.2 × 1000 × ~4000 ≈ 800,000` — three orders of magnitude more
-than the NAV move that caused it.
-
-Three problems: (a) it is not potential-based, so it changes the optimal policy rather than only
-shaping it; (b) its magnitude scales with episode length, so `max_step` silently becomes a
-risk-aversion hyper-parameter; (c) it is non-Markov in the agent's observation.
-
-**Fix.** Charge the *increment*, which is potential-based and telescoping:
-
-```python
-new_dd = max(0, max_nav - nav)
-reward += -drawdown_penalty * max(0.0, new_dd - prev_dd)  # penalise deepening only
-```
-
-> **Correction — do not apply the clip.** The diagnosis above is right and the patch is not. The
-> `max(0.0, ...)` charges every step that deepens a drawdown and refunds nothing on recovery, so a
-> round trip down and back to the old peak costs `drawdown_penalty × X` and the term is farmable
-> in one direction only. That is an asymmetric loss multiplier wearing a different hat — it
-> reintroduces exactly the negative-sum bias §3.1 is about. What shipped is the **signed** change,
-> which telescopes over an episode to `-drawdown_penalty × final_drawdown` whatever path was taken
-> and leaves §3.1's zero-sum property intact. [07_reward_function.md](07_reward_function.md) §2.1
-> works through the arithmetic.
-
-### 3.5 The micro-terms are numerically irrelevant — **fixed**
-
-> **Status.** S2-3 is closed. Every NAV-derived quantity is divided by `acc.init_nav`, and the
-> coefficients were recalibrated against the measured move distribution rather than guessed:
-> `order_penalty` 1e-05, `trade_penalty` 2e-05, `passive_bonus` 2e-05, which is ~0.5–1% of the
-> median step that moves NAV at all. `passive_bonus == trade_penalty` makes a passive fill
-> net-free while an aggressive one costs 0.2 bps. See [17_changelog.md](17_changelog.md) §29.4.
-> **Real maker/taker fees charged through NAV rather than through the reward remain open.**
-
-`order_penalty=0.1`, `trade_penalty=0.05`, `passive_bonus=0.1` sat against a NAV term whose
-per-step magnitude is **[verified]** in the range −10,949 … +6,126. They are 5–6 orders of
-magnitude too small to influence behaviour. Whatever economic intent they encode (discourage
-over-trading, reward providing liquidity) is not being expressed. Either scale them to the
-reward's natural units or express them as basis-point costs on notional — see
-[13_perspective_financial_trader.md](13_perspective_financial_trader.md) §4.
-
-### 3.6 Coefficients are configurable — **fixed**
-
-All five constants were function-local literals, with the code comment "Internal defaults, can be
-moved to config". They are now `env_config` keys, read from the `environment` group of
-`config/train_config.json` (falling back to `config/env_defaults.json` for a bare env), so they
-are captured in the checkpoint's config and sweepable by Tune. For a research repository, reward
-shaping is the primary experimental axis, and it is now the axis the config file exposes.
-
-Making them reachable did not make them right, and §3.1–3.5 is the record of what was wrong with
-the values. Both changes those sections called for have since shipped — normalisation by starting
-capital and a drawdown charge that is a change rather than a level — which is what §4's banner
-records as the highest-leverage edit in the repository, now made.
+All reward coefficients are `env_config` keys, read from the `environment` group of
+`config/train_config.json` (falling back to `config/env_defaults.json` for a bare env), so they are
+captured in the checkpoint's config and sweepable by Tune. For a research repository, reward
+shaping is the primary experimental axis, and it is the axis the config file exposes. They used to
+be function-local literals ([29](29_fixed_issues.md#12-36--the-reward-coefficients-were-function-local-literals)).
 
 ---
 
-## 4. The critic cannot learn — `vf_clip_param` saturation — **fixed**
+## 4. The critic
 
-> **Status.** S1-1 is closed, and not by setting `vf_clip_param`: `set_reward` divides every
-> NAV-derived quantity by `acc.init_nav`, so value targets are O(1) and the default 10.0 stops
-> binding. `integration/test_progress_and_vf.py` asserts `|vf_explained_var| >= 1e-3` live — it
-> was a strict xfail until the fix made it XPASS. See [17_changelog.md](17_changelog.md) §29.1.
+The critic learns. `set_reward` divides every NAV-derived quantity by `acc.init_nav`, so value
+targets are O(1) and RLlib's default `vf_clip_param` of 10.0 does not bind.
+`integration/test_progress_and_vf.py` asserts `|vf_explained_var| >= 1e-3` on a real short run,
+so a regression is caught rather than hidden behind a flat `total_loss`. `vf_explained_var` is the
+metric to watch for this; `total_loss` is not.
 
-**This was the single most consequential finding.** RLlib's PPO clips the value-function loss:
+`grad_clip` is still unset ([15](15_findings_and_recommendations.md)). With O(1) targets this is a
+precaution rather than a defect.
 
-```python
-vf_loss = torch.pow(value_fn_out - batch[Postprocessing.VALUE_TARGETS], 2.0)
-vf_loss_clipped = torch.clamp(vf_loss, 0, config.vf_clip_param)  # default 10.0
-```
-(`ray/rllib/algorithms/ppo/torch/ppo_torch_learner.py:99-100`)
-
-`TrainConfig` never sets `vf_clip_param`, so it stays at **10.0**, while value targets are
-undiscounted-scale NAV sums in the 10⁴–10⁷ range. `torch.clamp` is **flat** above the bound, so
-`∂vf_loss_clipped/∂θ = 0` for every sample. The critic receives *zero gradient*.
-
-**[verified]** — one real training iteration on the shipped config path (`num_agents=4`,
-`num_trained_agents=2`, `max_step=64`, `num_epochs=1`, `minibatch_size=64`):
-
-```
-== policy_0 ==
-   vf_loss                 10.0             ← pinned at vf_clip_param
-   vf_loss_unclipped       13,015,503.0
-   vf_explained_var        8.91e-05         ← critic explains ~0% of return variance
-   total_loss              9.254            ← 10.0 of which is the constant vf term
-   policy_loss             -0.747
-   entropy                 8.844
-   curr_entropy_coeff      0.0
-== policy_1 ==
-   vf_loss                 10.0
-   vf_loss_unclipped       10,513,565.0
-   vf_explained_var        5.42e-05
-   total_loss              9.484
-   entropy                 7.949
-```
-
-`policy_2` / `policy_3` are `RandomRLModule`s and produce no losses, as expected.
-
-Downstream consequences:
-
-1. **GAE degenerates.** RLlib's PPO default is `lambda_=1.0`, so the advantage is already the
-   Monte-Carlo return minus `V(s)`. With `V` a constant-ish untrained function, the advantage is
-   essentially the raw return.
-2. **PPO becomes REINFORCE with a batch baseline.** Advantages *are* standardised per module in
-   the new stack (`GeneralAdvantageEstimation` divides by the batch std), so the update does not
-   explode — but the variance reduction a critic exists to provide is entirely absent. Sample
-   efficiency collapses.
-3. **The loss metric is a decoy.** `total_loss ≈ 9.3` looks small and stable; 10.0 of it is a
-   constant. Anyone monitoring `total_loss` sees a healthy-looking flat line while nothing is
-   being learned. `vf_explained_var` is the metric that exposes it, and nothing in the code
-   surfaces it.
-
-**Fixes, in order of preference:**
-
-- **Normalise the reward.** Divide `nav_change` by `init_cash` (or by a running return scale) so
-  rewards are O(10⁻³) and returns are O(1). This fixes the critic, the drawdown scaling, and the
-  micro-term irrelevance in one change.
-- **Or** set `vf_clip_param` to something commensurate (e.g. `1e9`) — effectively disabling it —
-  and add `grad_clip` to control the resulting large gradients.
-- **Or** enable a reward-scaling connector / `PopArt`-style value normalisation.
-
-Then **assert on `vf_explained_var`** in the integration suite so the regression cannot recur
-silently. This is precisely the class of bug the existing integration tests were written to catch
-— it just was not on the list.
+How the critic used to receive zero gradient (value targets in the 10⁴–10⁷ range against a clip of
+10), what that did to GAE and PPO, and the fixes considered, is
+[29](29_fixed_issues.md#12-4--the-critic-could-not-learn-vf_clip_param-saturation); the register
+entry is [S1-1](29_fixed_issues.md#s1-1--ppos-critic-receives-zero-gradient-verified-fixed).
 
 ---
 
@@ -320,44 +155,14 @@ silently. This is precisely the class of bug the existing integration tests were
 
 Full specification in [06_action_space.md](06_action_space.md).
 
-### 5.1 Half the size action range is a no-op
+### 5.1 Size is one action head
 
-`_set_size` applies `abs()` to the Gaussian sample. **[verified]**, same RNG seed:
-
-```
-mean=+0.5 -> [250.0, 250.0, 250.0, 250.0, 250.0]
-mean=-0.5 -> [250.0, 250.0, 250.0, 250.0, 250.0]   identical: True
-```
-
-`size_mean` was declared on `Box(-1, 1)`, so the policy's Gaussian head spent half its range on a
-mirror image. The optimum is bimodal at `±m`, which fights the unimodal Gaussian policy: the head
-is pushed toward mean 0 by symmetric gradients, and mean 0 means *minimum* size. The gradient
-also has a kink at exactly 0 — where a Gaussian policy initializes. **Fixed (S3-1):** the space is
-now `Box(0, 1)`.
-
-### 5.2 The `size_sigma` head was inert
-
-`sigma` is passed straight to `np.random.normal` as an **absolute** standard deviation, while
-means are 49.5·|m| (market) or 499.5·|m| (limit). **[verified]**:
-
-```
-sigma=0.0 -> [250.0, 250.0, 250.0];  sigma=1.0 -> [251.0, 249.0, 250.0]
-```
-
-Across `sigma ∈ [0,1]` the size varies by ±1 contract on a base of 250. The head is a null
-control: the policy paid entropy cost for a parameter with no effect. **Fixed (S3-2):** deleted.
-
-### 5.3 Environment-side sampling broke the log-probability
-
-The policy emits distribution **parameters**, and the environment draws the sample. The realised
-size is therefore not part of the action whose log-probability PPO uses in the importance ratio.
-The policy is credited or blamed for an outcome driven by an unrecorded random draw whose
-realisation it never observes.
-
-This shows up as extra advantage variance that no amount of data removes. The standard
-formulation is to have the policy emit the size directly (a `Box` action, with sampling handled
-by the policy distribution, so `log π(a|s)` covers it), letting PPO's own exploration schedule
-control the spread. **Fixed (S3-3):** the policy now emits one `size` head directly.
+The policy emits the order size directly as one `size` head on `Box(0, 1)`, sampled by the policy
+distribution, so `log π(a|s)` covers it and PPO's own exploration schedule controls the spread.
+The environment draws nothing. Three earlier defects led here, each in the register: half the old
+`size_mean` range was a mirror image of the other ([S3-1](29_fixed_issues.md#s3-1--half-the-size_mean-action-range-is-a-no-op-verified-fixed)), the `size_sigma` head was a null
+control ([S3-2](29_fixed_issues.md#s3-2--the-size_sigma-head-is-inert-verified-fixed)), and the environment sampled the size outside the policy's log-probability
+([S3-3](29_fixed_issues.md#s3-3--size-is-sampled-by-the-environment-outside-the-policys-log-prob-verified-fixed)).
 
 ### 5.4 Action-space geometry is otherwise good
 
@@ -367,48 +172,40 @@ episode's random price anchor, and the passive/join/aggressive offset is exactly
 market maker faces. The "ghost level" fallback keeps the action well-defined in a thin book,
 which matters a lot early in an episode when the book is empty.
 
-The remaining geometric flaw is that level index *k* means "the *k*-th occupied price", a
-non-stationary coordinate shared with the observation — see
-[05_observation_space.md](05_observation_space.md) §7.4.
+Observation and action share one stationary coordinate: price code *j* is a fixed tick offset
+from the reference price, the same grid the observation's book uses
+([05_observation_space.md](05_observation_space.md) §1.4). It used to be the *k*-th occupied
+price, which moved every step ([S3-15](29_fixed_issues.md#s3-15--level-index-is-a-non-stationary-coordinate-verified-fixed)).
 
 ### 5.5 Simultaneous-move semantics and reproducibility
 
 All agents act on the same observation, and arrival order is randomised per step. This makes the
 step a simultaneous-move stage game with a random tie-break — clean and defensible.
 
-**Reproducibility — fixed.** This section used to record the opposite. `reset(seed=...)` forwarded
-to `MultiAgentEnv.reset`, which seeded `self._np_random` — which nothing read; all three of the
-env's random draws went to the global `np.random` instead, including `rand_exec_seq`, whose
-`sklearn.utils.shuffle(..., random_state=None)` fell through to sklearn's own global stream. No
-episode was reproducible, which for an environment whose entire output is simulated data was
-disqualifying.
-
-The fix is the one this section proposed: one `Generator` on the env — gymnasium's own
-`self.np_random` — threaded through the price anchor, size sampling and the shuffle. It also
-removed the `scikit-learn` dependency, ~30 MB in every EnvRunner to shuffle at most eight dicts.
-`test_seeding.py` pins it, and seeds the *global* stream to two different values while asserting
-the seeded episode is unchanged — the direction that would otherwise hide a regression.
+**Reproducibility.** An episode is reproducible from its seed: one `Generator` on the env,
+gymnasium's own `self.np_random`, is threaded through the price anchor and the arrival shuffle,
+and `test_seeding.py` pins it, seeding the *global* stream to two different values while asserting
+the seeded episode is unchanged. Seeding used to do nothing at all ([S3-5](29_fixed_issues.md#s3-5--seeding-is-entirely-non-functional-verified-fixed)).
 
 One limitation to keep in view: this makes an *episode* reproducible from its seed. A whole
 distributed training run is not, because RLlib seeds each worker from `config.seed + worker_index`
 once at construction and a restarted runner re-seeds from the same value, rewinding its stream
 mid-run.
 
-### 5.6 Silent no-ops give no learning signal — **half fixed**
+### 5.6 Silent no-ops are measured, masked and unpenalised
 
-Rejected orders (insufficient cash, NAV ≤ 0) and `modify` / `cancel` against a non-existent order
-all return empty lists. None of them is penalised or visible to the agent, so the learning signal
-is unchanged: a no-op action and a deliberate pass are the same experience.
+Rejected orders (insufficient cash, NAV ≤ 0) and a `modify` / `cancel` with nothing to target are
+counted: `num_rejected_step`, `is_pass_action` and `num_unmatched_step` reach `info` and become
+the `order_rejection_fraction`, `pass_action_fraction` and `unmatched_action_fraction` metrics, so
+a policy collapsing to always-pass is visible while it happens. The impossible order-management
+categories are masked, taking the unmatched fraction from 29.6% to 0.2% under random play, and the
+agent sees whether its last order-management action landed (`unmatched_last_step`)
+([S4-14](29_fixed_issues.md#s4--minor), [S3-24](29_fixed_issues.md#s3-24--modify-and-cancel-cannot-be-aimed-so-they-are-mostly-dead-actions-verified-fixed)).
 
-What *is* fixed is the measurement half this section asked for. `num_rejected_step` counts refused
-orders, travels out in `info`, and is reduced into an `order_rejection_fraction` metric per
-episode; `is_pass_action` separates a deliberate pass, and becomes `pass_action_fraction`. So "a
-large and unmeasured fraction of all actions is probably a no-op" is now measurable for the cash
-half, and a policy that has collapsed to always-pass is visible while it happens rather than only
-in a post mortem (which matters for S1-3, since 0 beats a negative mean at promotion time).
-
-Still missing: the `modify` / `cancel`-with-nothing-to-target case has no counter, so the two
-kinds of dead action cannot be told apart, and neither is shaped.
+**Still open: the learning signal.** A refused or dead action is not penalised by default.
+`dead_action_penalty` exists and ships at `0.0` deliberately, because any positive value makes the
+reward negative-sum across agents again (S1-3). The cash-driven refusals are size-driven and a
+category mask cannot reach them. Whether either kind should be shaped is a reward-design decision.
 
 ---
 
@@ -416,27 +213,18 @@ kinds of dead action cannot be told apart, and neither is shaped.
 
 | Mechanism | Status |
 |---|---|
-| Policy entropy | `entropy_coeff = 0.0` (RLlib default, never overridden) **[verified]** |
+| Policy entropy | `entropy_coeff` 0.01 falling to 0.001 on a schedule in global env steps |
 | Entropy at init | **[verified]** 7.95 / 8.84 nats — near-uniform over the `Dict` space |
-| Env-side size noise | Present but inert (§5.2) |
+| Env-side size noise | None: the size is a policy action (§5.1) |
 | Opponent diversity | **The real exploration driver** — the league |
 | Episode randomisation | Price anchor `randint(10,100)`, arrival-order shuffle |
 
-With `entropy_coeff=0`, nothing resists premature collapse of the categorical heads. In a
-competitive game that is often survivable because the league keeps the opponent distribution wide
-— but here the league only refreshes when a champion is promoted, and if the learners converge to
-"always pass" (§3.3) they will still clear the promotion threshold (0 beats a negative league
-mean), so the league will happily fill with champion snapshots of the do-nothing policy. The
-mechanism is correct; the reward feeds it the wrong signal.
-
-Compounding this, `std_dev_multiplier=0.1` means **[verified]** a champion is promoted on the
-very first eligible iteration, so at the default 16-iteration run the pool saturates with
-barely-trained snapshots.
-
-**Recommendation:** set `entropy_coeff` to a small positive value with a decay schedule, raise
-`std_dev_multiplier` into the 1.5–2.5 range, and add a guard that refuses to promote a champion
-whose trade count is ~0. **Done (S3-11):** entropy 0.01 falling to 0.001, the multiplier at 1.5
-(2.5 would never promote at the default league size), and `min_champion_trades`.
+The entropy bonus resists premature collapse of the categorical heads, and the league keeps the
+opponent distribution wide. The league only refreshes when a champion is promoted, so what it is
+fed matters: `std_dev_multiplier` is 1.5 (2.5 would never promote at the default league size) and
+`min_champion_trades` refuses to promote a snapshot that has stopped trading, so a league cannot
+fill with do-nothing champions. When the entropy coefficient was 0 and the multiplier 0.1, so that
+a champion was promoted on the first eligible iteration: [S3-11](29_fixed_issues.md#s3-11--no-entropy-bonus-and-champion-promotion-cannot-detect-passivity-verified-fixed).
 
 ---
 
@@ -449,8 +237,8 @@ whose trade count is ~0. **Done (S3-11):** entropy 0.01 falling to 0.001, the mu
 | `minibatch_size` | `None` → RLlib default 128 | [`train.py`](../gym_continuousDoubleAuction/train/train.py) |
 | Gradient steps / iteration | ≈ 16384/128 × 4 = **512** | derived |
 | `lr` | 5e-5, constant | [`train.py`](../gym_continuousDoubleAuction/train/train.py) |
-| `gamma` | 0.99 (RLlib default) → effective horizon ~100 steps; **now 0.999** (config key, docs/15 S3-13) | **[verified]** |
-| `lambda_` | 1.0 (RLlib default) → Monte-Carlo advantages; **now 0.95** (config key) | **[verified]** |
+| `gamma` | 0.999 (`ppo` config key) → effective horizon ~1,000 steps | config |
+| `lambda_` | 0.95 (`ppo` config key) | config |
 | Default run length | 16 iterations ≈ **262k env steps** | [`train.py`](../gym_continuousDoubleAuction/train/train.py) |
 
 Observations:
@@ -458,12 +246,11 @@ Observations:
 - **Only 4 episodes per iteration.** Each episode has one random price anchor and one opponent
   draw per agent slot. Four samples of that joint randomness is a very small effective batch for
   estimating the league gradient, even though the *step* count is respectable.
-- **γ=0.99 vs a 4096-step episode.** The effective horizon (~100 steps) is 2.5% of the episode.
-  Any strategy with a payoff horizon longer than ~100 steps (inventory accumulation, sustained
-  market making) is invisible to the return. Either raise γ toward 0.999 or shorten episodes.
-- **λ=1.0.** RLlib's PPO default is not the usual 0.95. With a working critic, λ=0.95 would
-  meaningfully reduce variance; with the broken critic (§4) it makes no difference, which is
-  itself a diagnostic.
+- **γ=0.999 against a 4096-step episode.** The effective horizon is about 1,000 steps, a quarter
+  of the episode, and λ=0.95 restores GAE's variance reduction. Both are the usual choices for a
+  long episode, not tuned on this env; they were 0.99 and 1.0 (RLlib's defaults) until
+  [S3-13](29_fixed_issues.md#s3-13--γ099-against-4096-step-episodes-verified-fixed), and results trained at those
+  values are not comparable.
 - **262k steps is a smoke-test budget**, not a training budget, for an 8-agent competitive game.
   Realistically this needs 10⁷–10⁸ steps, which is why `num_env_runners` matters — see
   [09_distributed_training.md](09_distributed_training.md).
@@ -478,96 +265,44 @@ Observations:
 - Champion cooldown + rolling eviction prevents league churn.
 - Cross-process-deterministic matchmaking via `crc32`.
 - KL penalty at RLlib defaults (`kl_coeff=0.2`, `kl_target=0.01`).
-- Advantage standardisation per module keeps the update from exploding despite the reward scale.
+- Advantage standardisation per module keeps the update well-conditioned.
 
 **At risk:**
 
-1. **Unnormalised observations into a `tanh` MLP.** **[verified]** feature ranges in a live
-   episode:
+1. **The default encoder has no normalisation in front of it.** The observation is scaled at the
+   source (sizes as `sqrt(V / limit_max_size)`, `log_mid` centred), so the book features land
+   within ±1.2 and the size/price spread is 3.7×; `encoder_type: mlp` relies on that and has no
+   `MeanStdFilter` or normalisation connector. The other encoders LayerNorm after their input
+   projection ([18](18_configuration.md) §5.4). The ~80–250× spread this used to be is
+   [S2-2](29_fixed_issues.md#s2-2--unnormalised-observation-scales-saturate-the-tanh-mlp-verified-fixed).
 
-   | Block | min | max |
-   |---|---|---|
-   | normalised bid price | 0.0000 | 0.4048 |
-   | sqrt bid size | 0.0000 | **47.01** |
-   | normalised ask price | −0.5802 | 0.0000 |
-   | sqrt ask size | **−40.29** | 0.0000 |
-   | `log_mid` | 3.6763 | 4.0431 |
-   | `log1p_spread` | 0.0000 | 2.7726 |
+2. **`grad_clip=None`** (RLlib default). With O(1) value targets (§4) the critic gradient is
+   bounded by the reward scale, so this is a precaution, recorded as open in
+   [15](15_findings_and_recommendations.md).
 
-   That is a **~80–250×** spread (book-dependent) between the price features and the size
-   features, feeding a `tanh` first layer with `fcnet_hiddens=[256,256]`. The size units saturate
-   `tanh` immediately and dominate the gradient; the price units contribute almost nothing. No
-   `MeanStdFilter` or normalisation connector is configured. `sqrt` was the right instinct — it
-   just is not enough. Divide sizes by a reference scale, and centre `log_mid` on `log(55)`.
+3. **The relative tick varies 10× across episodes by default.** The configured `tick_size`
+   reaches the book (it used to be dropped:
+   [S3-4](29_fixed_issues.md#s3-4--the-order-books-tick_size-is-inert-verified-fixed)), but with the price anchor
+   drawn from `randint(10, 100)` the tick is 10% of price at anchor 10 and 1% at anchor 100: a
+   large source of episode-to-episode non-stationarity. `log_mid` lets the agent *detect* the
+   regime, but it must still learn very different regimes from 4 episodes per iteration.
+   `initial_price_min` / `initial_price_max` are `TrainConfig` fields forwarded to the env, so
+   narrowing the range is a one-line config edit; the checked-in config ships the wide range, so
+   this is an experiment to run rather than a limitation.
 
-   > **Partially mitigated, for the non-default encoders only.** This finding stands unchanged for
-   > `encoder_type: mlp`, which is still the default and still has no normalisation in front of it.
-   > But every other encoder ([18](18_configuration.md) §5.4) LayerNorms immediately after its
-   > input projection, and that is deliberately not configurable. The same phenomenon was measured
-   > from the other end while building them: per-channel standard deviations of `[1.27, 8.17,
-   > 0.046, 9.52]`, and an untrained attention layer putting a mean **47%** of its mass on a single
-   > token (entropy 1.62 of a possible 3.78 over 44 tokens), falling to 9.5% and 2.76 with the norm.
-   > Two independent measurements of one problem. Fixing it at the source — in the observation, as
-   > this finding recommends — would still be better than every encoder compensating for it.
-
-2. **`grad_clip=None`** (RLlib default, **[verified]**). With the reward scale in §4 and no
-   critic gradient, the policy gradient is the only path — but if the reward is normalised
-   without also setting `grad_clip`, the restored critic gradient will be large. Set `grad_clip`
-   when fixing the scale.
-
-3. **No per-agent termination.** **[verified]** — forcing `agent_0.nav = −50`:
-
-   ```
-   terminateds: {'agent_0': False, 'agent_1': False, 'agent_2': False,
-                 'agent_3': False, '__all__': False}
-   done_set: {'agent_0'}
-   ```
-
-   `set_done` records bankruptcy in `done_set`, but `set_all_done` then overwrites **every**
-   per-agent flag with `False`. A bankrupt agent keeps generating transitions with a negative NAV
-   for the rest of the episode. `_order_approved` blocks its new orders, so it becomes a zombie
-   emitting only pass-equivalent steps — and its accumulated drawdown penalty keeps charging
-   every step, poisoning the module's episode return with a term unrelated to its policy. That
-   return is exactly what champion promotion reads.
-
-4. **`tick_size` config is silently dropped.** **[verified]**:
-
-   ```
-   config=0.25 | LOB.tick_size before reset=0.25 | after reset=1 | action min_tick=1
-   ```
-
-   `reset()` hardcodes `OrderBook(1, ...)`, discarding the configured tick; the env never even
-   stores `self.tick_size`. Combined with a price anchor drawn from `randint(10, 100)`, the
-   *relative* tick size varies **10×** across episodes (10% of price at anchor 10; 1% at anchor
-   100). That is a large, uncontrolled source of episode-to-episode non-stationarity. `log_mid`
-   was added to the observation precisely so the agent can *detect* which regime it is in, which
-   is the right mitigation — but the agent must then learn two very different regimes from 4
-   episodes per iteration.
-
-5. **`initial_price_min/max` are reachable now — the wide range is a choice.** They were read in
-   `reset()` but omitted from `TrainConfig.env_config`, so training always got `[10, 100]` and only
-   the unit tests could narrow it. Both are `TrainConfig` fields and are forwarded, so narrowing
-   the anchor range is a one-line config edit. The checked-in config still ships the wide range, so
-   the 10× relative-tick swing above is still what a default run experiences — but it is now
-   controllable, which makes it an experiment rather than a limitation.
+Bankrupt agents terminate individually and stop emitting transitions; that they used to linger as
+zombies charged a drawdown every step is
+[S2-4](29_fixed_issues.md#s2-4--bankrupt-agents-are-never-terminated-verified-fixed).
 
 ---
 
 ## 9. Prioritised research agenda
 
-| # | Change | Effort | Expected impact |
-|---|---|---|---|
-| 1 | ~~Scale rewards by `init_cash`~~ — **done**, by `acc.init_nav` | S | **Critic unblocked.** `vf_explained_var` guard is live, no longer an xfail |
-| 2 | ~~Add private state to the observation (§2)~~ — **done**, 9 floats | M | Makes the reward learnable at all. Own resting orders still absent |
-| 3 | ~~Make the drawdown penalty an increment~~ — **done**, as a *signed* change | S | Removes the episode-length-dependent risk tax; see [07 §4.1](07_reward_function.md) on why clipping it would not have |
-| 4 | ~~Re-scale the micro-penalties; express costs in bps~~ — **done** | S | Restores the intended incentives. Real fees charged through NAV remain open (S2-3) |
-| 5 | ~~`size_mean → Box(0,1)`; scale or drop `size_sigma`~~ — **done** (S3-1 to S3-3), one `size` head | S | Recovers half the action range, removes a null control |
-| 6 | Normalise observation feature scales | S | Removes `tanh` saturation |
-| 7 | Terminate bankrupt agents individually | S | Stops zombie transitions polluting returns |
-| 8 | ~~`entropy_coeff > 0` with decay; raise `std_dev_multiplier`; refuse champions with ~0 trades~~ — **done** (S3-11) | S | Guards against passivity collapse |
-| 9 | Normalise the whole obs stack by the current `M_t`; add trade-flow features | M | Makes frame stacking actually informative |
-| 10 | Emit size directly as an action instead of distribution parameters | M | Removes unrecorded env-side stochasticity from the ratio |
-| 11 | ~~Assert `vf_explained_var > 0` in the integration suite~~ — **done** | S | Prevents §4 from silently regressing |
-| 12 | Raise γ toward 0.999 or shorten episodes | S | Makes long-horizon strategies expressible |
-| 13 | One `np.random.Generator` on the env, threaded through everything | S | Reproducibility |
-| 14 | Surface rejected / no-op order counts in `infos` | S | Makes the dead-action fraction measurable |
+Every item on the agenda this document set out is done: reward scaling, private state, the
+drawdown change, cost scaling, the size head, feature scaling, bankrupt termination, entropy and
+passivity guards, the stack normaliser and trade flow, γ, seeding, and dead-action counts. The
+table, with what closed each item, is in
+[29](29_fixed_issues.md#12-9--the-prioritised-research-agenda-as-completed).
+
+What this perspective would do next is in §6–§8: the relative-tick swing of the default price range
+(§8, a config choice), agent identity (§2), and whether dead actions should be shaped (§5.6).

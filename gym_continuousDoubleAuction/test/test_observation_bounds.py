@@ -1,6 +1,6 @@
 """The observation Box has finite, measured bounds, and a clip is counted.
 
-docs/15 S4-15. The space used to be `Box(-inf, inf)`: a true statement about
+docs/29 S4-15. The space used to be `Box(-inf, inf)`: a true statement about
 nothing, which disabled RLlib's space checks and observation filters. Every
 feature is a ratio, a log or a tanh with a known or measured range, so the
 bounds now come from `observation_bounds` in tunable_constants.json, the

@@ -34,7 +34,7 @@ from gym_continuousDoubleAuction.train.returns import usable_return
 
 logger = get_logger(__name__)
 
-#: The modules the promotion threshold can be computed over (docs/15 S3-12).
+#: The modules the promotion threshold can be computed over (docs/29 S3-12).
 PROMOTION_REFERENCES = ("pooled", "excluding_baselines")
 
 
@@ -137,7 +137,7 @@ class League:
             league.min_champion_trades = 0.0
             logger.warning(
                 "this league callback was saved before the champion passivity "
-                "guard existed (docs/15 S3-11), so it runs without one: a policy "
+                "guard existed (docs/29 S3-11), so it runs without one: a policy "
                 "that has stopped trading can still be promoted. Start a fresh "
                 "run to get min_champion_trades."
             )
@@ -214,7 +214,7 @@ class League:
 
         # A policy that has stopped trading earns exactly 0, and 0 beats a league
         # of modules that are losing money, so it clears the return threshold
-        # (docs/15 S3-11). Refuse it. `None` means the trade counts did not reach
+        # (docs/29 S3-11). Refuse it. `None` means the trade counts did not reach
         # the result; that is reported but does not block, because a guard that
         # blocks on missing data would stop the league growing, silently and
         # for good, the way the NaN threshold once did.
@@ -294,7 +294,7 @@ class League:
         included. `excluding_baselines` leaves them out: a baseline's return is
         what a random agent earns in whatever role it is dealt, which is not
         comparable with a learner's, and with them in a learner can clear the bar
-        by trading less rather than better (docs/15 S3-12).
+        by trading less rather than better (docs/29 S3-12).
 
         With n modules nobody is more than sqrt(n - 1) standard deviations above
         the mean, so a set of n <= multiplier^2 + 1 can never promote anyone
@@ -354,7 +354,7 @@ class League:
 
         # Eviction is NOT done here. It used to be, so a full league lost its oldest champion
         # before the snapshot that was to replace it was taken, and a failed snapshot shrank
-        # the league for nothing (docs/15 R-8, #178). `assess` evicts once the new champion
+        # the league for nothing (docs/29 R-8, #178). `assess` evicts once the new champion
         # exists; `algorithm` is kept in the signature for the callers that pass it.
         return True
 
@@ -512,7 +512,7 @@ class League:
             # remote env runner, and the module itself now exists with weights that were
             # never copied in. Taking it out again also ships the corrected pool; rolling back
             # the driver's list alone left the runners picking a randomly initialised module
-            # the league believed it did not have (docs/15 R-6, #176).
+            # the league believed it did not have (docs/29 R-6, #176).
             if module_added:
                 try:
                     algorithm.remove_module(
@@ -539,7 +539,7 @@ class League:
         """Drop the oldest champions beyond `max_champions`, after a snapshot succeeded.
 
         Make-before-break: the new champion is in place first, so the league never has fewer
-        champions than it did because a snapshot failed (docs/15 R-8, #178). The cost is one
+        champions than it did because a snapshot failed (docs/29 R-8, #178). The cost is one
         extra module for the moment between the two. A failed snapshot leaves the history at
         or under the limit, so this does nothing.
         """

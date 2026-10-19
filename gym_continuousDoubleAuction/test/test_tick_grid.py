@@ -1,6 +1,6 @@
 """Prices the action layer produces sit on the tick grid, for any tick.
 
-docs/15 S3-4 (the float-grid caveat). `_set_price` read resting prices out of a
+docs/29 S3-4 (the float-grid caveat). `_set_price` read resting prices out of a
 float32 snapshot and added its offset in float, so on any non-integer tick the
 book was keyed on prices one float-ulp off the level the agent meant:
 100.0999984741211 for a level at 100.1, 100.19999999999999 for 100.1 + 0.1.

@@ -83,7 +83,8 @@ reading paths for common goals.
 | [01 Overview](docs/01_overview.md) | What the project is and the question it is built to ask |
 | [02 Architecture](docs/02_architecture.md) | Layers, classes, the step lifecycle, data flow |
 | [26 Runbook](docs/26_runbook.md) | Every command: configure, train, resume, inspect, troubleshoot |
-| [15 Findings](docs/15_findings_and_recommendations.md) | Where the project stands: what was wrong and what is fixed |
+| [15 Findings](docs/15_findings_and_recommendations.md) | Where the project stands, and what is still open |
+| [29 Fixed issues](docs/29_fixed_issues.md) | Every problem found and fixed, with how it was found and what fixed it |
 | [28 Glossary](docs/28_glossary.md) | The terms the documents use |
 | [Contributing](docs/CONTRIBUTING.md) | How to set up, the rules a change follows, what to run before pushing |
 

@@ -4,10 +4,12 @@ Scope: strategy logic, risk management, market data handling, execution realism,
 metrics, alignment with financial objectives.
 
 **Headline:** the matching engine is a faithful price/time-priority CDA and the clearing
-arithmetic is exact and conserved. The gaps are in the *market model* around it — no transaction
-costs, no margin, no self-match prevention, no liquidation, cash-collateralised shorts, and a
-metrics layer that reports NAV but none of the risk-adjusted statistics a trading desk would
-require.
+arithmetic is exact and conserved. The market model around it now has maker/taker fees (opt-in),
+self-match prevention, a mid-price mark, maintenance margin with liquidation and auto-deleveraging,
+and the risk-adjusted statistics a desk would ask for. What remains is structural: no exogenous
+information process, cash-collateralised shorts with no borrow cost, no position limits, no order
+types beyond limit and market, and no latency model. The defects this document used to list, and
+how each was fixed, are in [29_fixed_issues.md](29_fixed_issues.md).
 
 ---
 
@@ -19,9 +21,9 @@ require.
 | Instrument | One unnamed contract, no expiry, no dividend, no carry |
 | Participants | Only the RL agents — no exogenous flow, no designated market maker |
 | Price formation | Fully endogenous; seeded by a random anchor in `[10, 100]` |
-| Tick | 1.0 currency unit, fixed |
-| Depth exposed | 10 levels per side |
-| Fees | **None** |
+| Tick | `tick_size`, 1.0 currency unit by default |
+| Depth exposed | ±10 ticks around the reference price (`book_mode: "grid"`), or 10 levels per side (`"levels"`) |
+| Fees | Maker/taker in bps of notional (`maker_fee_bps`, `taker_fee_bps`); **0 by default** |
 | Settlement | Instantaneous, T+0, no clearing house |
 | Short selling | Allowed, 100% cash-collateralised, no borrow fee, no locate |
 | Leverage | **None** — 1:1 cash-collateralised both directions |
@@ -71,10 +73,10 @@ NAV conservation check passes to the cent.
 
 **Buying power is enforced before execution.** `_order_approved` computes the *opening* portion
 of an order — the part that increases risk — and only cash-checks that. Closing or covering is
-always permitted, a cancel is never checked, a modify may spend the escrow it releases (it used
-to be refused exactly when the trader was fully committed — S2-13), and margin held against a
-resting *exit* order counts as buying power for a new position (S1-5's tail, closed 2026-09-18). It even estimates a market order's cost from the contra side's best price,
-falling back to the last tape print.
+always permitted, a cancel is never checked, a modify may spend the escrow it releases, and margin
+held against a resting *exit* order counts as buying power for a new position. A market order is
+priced across every level it would sweep, not at the touch. (The defects this rule once had are
+[S1-5](29_fixed_issues.md#s1-5--the-cash-check-is-bypassable-position-is-not-bounded-by-capital-verified-fixed), [S2-13](29_fixed_issues.md#s2-13--a-cancel-was-cash-checked-like-a-new-order-so-an-over-committed-trader-could-not-cancel-verified-fixed) and S2-14.)
 `test_cash_check.py::test_position_flip_insufficient_cash` covers the hard case (long 10, sell
 20, only the 10-lot short leg needs cash). This is subtle and right.
 
@@ -92,86 +94,49 @@ wrong, with four dedicated tests.
 
 | Missing | Consequence for strategy learning |
 |---|---|
-| **Latency** | Order-arrival sequence is a uniform shuffle each step. No agent can be systematically faster, so latency arbitrage / queue-jumping is unlearnable and unpunishable. |
-| **Self-match prevention** | **[verified]** an agent can cross its own resting order and print a trade. Wash trading is a legal strategy here. |
-| **Order stacking** | **[verified]** a trader can hold only **one** resting order per price level per side — a second limit at the same price *replaces* the first (level volume 7, not 12). Layering, iceberg and multi-clip quoting are impossible **unless `allow_multiple_orders_per_level` is set** (off by default; docs/15 S3-10). |
+| **Latency** | Order-arrival sequence is a uniform shuffle each step (or a batch clear, `step_clearing: "batch"`). No agent can be systematically faster, so latency arbitrage / queue-jumping is unlearnable and unpunishable. |
+| **Order stacking, by default** | A trader holds one resting order per price level per side unless `allow_multiple_orders_per_level` is set (off by default, [S3-10](29_fixed_issues.md#s3-10--a-trader-can-hold-only-one-resting-order-per-price-level-verified-fixed---as-an-option)). With it off, a second limit at the same price replaces the first, so layering and multi-clip quoting need the option. |
 | **Time-in-force / order types** | No IOC, FOK, post-only, stop, or hidden orders. Post-only in particular is fundamental to real market making. |
-| **Market impact beyond the book** | Correct within the visible 10 levels; no permanent-impact or resilience model. |
-| **Bankruptcy handling** | A negative-NAV agent is never terminated (§5). No forced liquidation, no margin call. |
+| **Market impact beyond the book** | Correct within the visible book; no permanent-impact or resilience model. |
 | **Circuit breakers** | None. The price can jump arbitrarily far on a single sweep of a thin book. |
 | **Opening/closing auction** | None. Episodes begin with an empty book and a synthetic price anchor. |
 
-### 3.1 Self-matching
+### 3.1 Self-matching is prevented
 
-**[verified]**:
+An incoming order that would cross the trader's own resting order withdraws that resting order
+first (cancel-resting SMP, `Trader._prevent_self_match`), as every regulated venue requires.
 
-```
-self-trade executed: True | tape len: 1 | same ID both sides: True
-```
+### 3.2 The mark is the midpoint
 
-The code explicitly *handles* this case rather than preventing it: `_process_trades` branches on
-`counter_party.ID == init_party.ID` and routes to `init_is_counter_cash_transfer`. The accounting
-is consistent, so it does not corrupt NAV — but it means an agent can print arbitrary volume at
-arbitrary prices at zero cost.
+Accounts are marked at the L1 midpoint when the book is two-sided (`mark_price_source: "mid"`), so
+a single 1-lot print no longer re-marks the market; `"last"` reproduces the old last-print mark.
+Moving the mark now takes a real two-sided market, and moving the mid means posting a better quote
+somebody else can lift.
 
-Because `mark_to_mkt` uses the **last tape print** as the mark, this is a direct **mark
-manipulation channel**: an agent holding inventory can self-trade one contract at a favourable
-price and instantly re-mark *everyone's* book — including its own reward. Real venues ban this
-(SMP is mandatory on essentially every regulated venue) for exactly this reason.
-
-**Fix:** in `process_order_list`, skip resting orders whose `trade_id` equals the incoming
-`quote['trade_id']` (cancel-newest or cancel-resting semantics), or reject the order at
-`_order_approved`.
-
-### 3.2 The mark is the last print, however stale or thin
-
-`mark_to_mkt` takes `self.LOB.tape[-1]['price']` unconditionally. Consequences:
-
-- A single 1-lot print re-marks the entire market for every participant.
-- On steps with no trades, the previous mark persists and `prev_nav` is not updated, so
-  `nav_change` covers a multi-step gap rather than one step.
-- Before the very first trade of an episode, NAV is never recomputed and all rewards are exactly
-  0.
-
-A mid-price mark (`(best_bid + best_ask)/2`, falling back to last trade) would be both more
-standard and far harder to manipulate.
+Self-matching combined with a last-print mark used to be a free mark-manipulation channel:
+[S2-5](29_fixed_issues.md#s2-5--self-matching-enables-mark-manipulation-verified-fixed); what else the last-print mark did is in
+[29](29_fixed_issues.md#13-32--the-mark-was-the-last-print-however-stale-or-thin).
 
 ---
 
-## 4. There are no transaction costs — **fixed, opt-in**
+## 4. Transaction costs are opt-in
 
-> **Status.** Maker/taker fees in basis points of notional now exist, charged inside settlement and
-> collected by an exchange ledger, so NAV conservation reads `sum(NAV) + fees == starting cash`
-> ([04](04_accounting.md) §9, [18](18_configuration.md) §3.0.4, [15](15_findings_and_recommendations.md)
-> S2-3). They ship at 0; set `taker_fee_bps` and `maker_fee_bps` to use them. Borrow cost and funding
-> are still absent. The analysis below is as it was written.
+Maker/taker fees in basis points of notional are charged inside settlement and collected by an
+exchange ledger, so NAV conservation reads `sum(NAV) + fees == starting cash`
+([04](04_accounting.md) §9, [18](18_configuration.md) §3.0.4). The taker pays `taker_fee_bps`,
+the maker `maker_fee_bps` (negative is a rebate). **Both ship at 0**, and borrow cost and funding
+are absent.
 
+So a default run is still a cost-free market, and the trader's objection still applies to it.
+With zero costs and a zero-sum book, the microstructure equilibrium is degenerate: there is no
+bid-ask spread to *earn*, so market making has no revenue model, and no cost to crossing, so there
+is no reason to be patient. Every real market's structure (the existence of a spread, the
+maker/taker split, the value of queue position) is a consequence of costs. A run that studies
+market making should set the fees; the reward's `passive_bonus == trade_penalty` expresses a small
+spread price on its own.
 
-`grep` for fee, commission, rebate, slippage, borrow across the env: nothing. There is no
-maker/taker schedule, no exchange fee, no clearing fee, no borrow cost on shorts, no funding on
-inventory.
-
-The reward has *proxies* — `trade_penalty=0.05` per fill and `passive_bonus=0.1` per passive fill
-— but they are flat per-fill constants and, at the measured per-step NAV scale of ±10⁴, are
-**5–6 orders of magnitude too small to matter**. Functionally, trading is free.
-
-Why a trader should care: with zero costs and a zero-sum book, the microstructure equilibrium is
-degenerate. There is no bid-ask spread to *earn*, so market making has no revenue model; there is
-no cost to crossing, so there is no reason to be patient. Every real market's structure — the
-existence of a spread, the maker/taker split, the value of queue position — is a consequence of
-costs. Take them out and the strategy space you are studying is not the one that exists.
-
-**Fix:** charge in basis points of notional, applied inside the settlement path so it flows
-through NAV rather than being bolted onto the reward:
-
-```python
-fee = notional * (TAKER_BPS if is_aggressor else MAKER_BPS) / 10_000
-self.cash -= fee
-```
-
-with e.g. taker +2 bps / maker −0.5 bps. Note this makes the market *slightly* negative-sum in
-NAV, so the `on_episode_end` conservation check must be relaxed to
-`total_nav + total_fees == total_initial_cash`.
+When there were no fees at all and the reward's proxies were too small to matter: [S2-3](29_fixed_issues.md#s2-3--transaction-cost-proxies-are-10⁵-too-small-verified-fixed) and
+[29](29_fixed_issues.md#13-4--there-were-no-transaction-costs).
 
 ---
 
@@ -186,23 +151,22 @@ NAV, so the `on_episode_end` conservation check must be relaxed to
   hold, exactly as a buy would.
 - **High-water mark** tracked per account (`max_nav`) and used as a drawdown penalty in the
   reward.
+- **Maintenance margin and liquidation.** A trader whose equity falls to `maintenance_margin` of
+  its position's value is closed out in the book, with auto-deleveraging for what the book cannot
+  absorb; a trader at NAV <= 0 is terminated individually and its orders leave the book
+  ([04](04_accounting.md) §8).
 
 ### What is missing
 
 | Gap | Detail |
 |---|---|
 | **No position limit** | Nothing caps `net_position`. Size is bounded only by cash and by `limit_max_size = 1000` in the action space (`limit_size_mul = 499.5`, so a full-scale size is ≈ 500 contracts). |
-| **No margin call / forced liquidation** | An agent can be marked to a negative NAV and simply sits there. |
-| **No per-agent termination on bankruptcy** | **[verified]**: forcing `agent_0.nav = −50` yields `terminateds: {'agent_0': False, …}`. `set_done` records it in `done_set` but `set_all_done` overwrites all flags. The episode only ends when **every** agent is bust. |
 | **No borrow/locate on shorts** | Unlimited short capacity subject only to cash. |
 | **No intraday risk limits** | No max loss, no max order size relative to NAV, no fat-finger check. |
 | **Drawdown is punished but not constrained** | The reward taxes drawdown; nothing prevents it. |
 
-The **zombie-agent** problem deserves emphasis. A bankrupt agent cannot place new orders, so it
-stops trading — but it keeps accruing the per-step drawdown penalty for the remainder of what may
-be thousands of steps, and any resting orders it left in the book stay live and executable. Its
-episode return is then dominated by a constant tax unrelated to its decisions, which is exactly
-the signal the champion-promotion logic reads.
+A bankrupt agent used to keep its flag at `False` and linger as a zombie charged a drawdown every
+step: [S2-4](29_fixed_issues.md#s2-4--bankrupt-agents-are-never-terminated-verified-fixed).
 
 ---
 
@@ -211,10 +175,11 @@ the signal the champion-promotion logic reads.
 **Format.** The observation is a **normalised L2 snapshot**, 10 levels a side, frame-stacked 4
 deep. Full spec in [05_observation_space.md](05_observation_space.md).
 
-**Normalisation is well designed.** Prices are expressed as signed relative distance from the L1
-midpoint, `(M − P_bid)/M` and `−(P_ask − M)/M`. This makes the representation invariant to the
-episode's random price level — the right choice, and the same thing a practitioner does before
-feeding a book to a model.
+**Normalisation is well designed.** In the level view prices are expressed as relative distance
+from the L1 midpoint, `(M − P_bid)/M` and `(P_ask − M)/M`, both non-negative; in the default grid
+view each cell is a fixed tick offset from the reference price. Either way the representation is
+invariant to the episode's random price level — the right choice, and the same thing a
+practitioner does before feeding a book to a model.
 
 Because that transform *destroys* the price level, two scalars restore it:
 
@@ -225,21 +190,19 @@ Because that transform *destroys* the price level, two scalars restore it:
 
 The reasoning is spelled out in the source comments and is correct.
 
-**Sizes** use `sqrt` compression with a sign convention marking the side. Sound in principle;
-unscaled in practice — **[verified]** the sqrt-size features reach ±47 while the price features
-stay within ±0.58 in the same rollout.
+**Sizes** are `sqrt(V / limit_max_size)`, units-free like the prices, so every book feature lands
+within ±1.2 ([05](05_observation_space.md) §2.3). They used to reach ±47 against prices within
+±0.58: [S2-2](29_fixed_issues.md#s2-2--unnormalised-observation-scales-saturate-the-tanh-mlp-verified-fixed).
 
 ### What a trader would additionally want in the feature vector
 
 | Feature | Why |
 |---|---|
-| **Order-flow imbalance** | The single strongest short-horizon predictor in the microstructure literature. It reached the observation as `signed_volume` (S2-7); the old unused helper that computed `ord_imb` / `sum_ord_imb` — but it is imported by nothing. |
-| **Trade flow / signed volume** | Aggressor-side volume over the last k steps. The tape loop in `set_agg_LOB` is a dead placeholder where this was clearly intended ([05](05_observation_space.md) §7.3). |
+| **Order-flow imbalance over a window** | The single strongest short-horizon predictor in the microstructure literature. Each frame carries the last step's `signed_volume`, trade count and direction ([05](05_observation_space.md) §3.4, [S2-7](29_fixed_issues.md#s2-7--no-trade-flow-information--the-tape-loop-is-dead-code-verified-fixed)); a longer window is only what the 4-frame stack gives |
 | Realised volatility | Rolling σ of mid returns |
 | Microprice | `(bid_sz·ask_px + ask_sz·bid_px)/(bid_sz+ask_sz)` — better fair value than mid |
 | Book slope / cumulative depth | Liquidity beyond L1 |
-| Own queue position | See §5 and [12](12_perspective_rl_researcher.md) §2 — currently absent entirely |
-| Time remaining | Inventory should be flattened near the close |
+| Own queue position | The agent sees its own resting size at each level ([05](05_observation_space.md) §1.0.1) but not where in the queue it sits |
 
 The `pic/ten_k/` directory contains plots named `ord_imb.png` and `sum_imb.png`, so order
 imbalance was studied at some point; it just never became a model input.
@@ -263,27 +226,19 @@ imbalance was studied at some point; it just never became a model input.
 | System NAV / system profit | [`exchg_helper.py`](../gym_continuousDoubleAuction/envs/exchg/exchg_helper.py) |
 | NAV conservation check | end of every episode, callback |
 | Per-episode desk metrics | `episode_nav_mean/_min/_max`, `mean_agent_drawdown`, `mean_abs_net_position`, `mean_num_trades`, `maker_fill_ratio_max` |
+| Risk-adjusted performance, per module | `module_sharpe`, `module_sortino`, `module_max_drawdown`, `module_hit_rate`, `module_position_turnover`, `module_mean_abs_position`, `module_max_abs_position` ([11](11_logging_and_observability.md) §1.2) |
+| P&L attribution, per module | `module_realised_pnl`, `module_unrealised_pnl`, and adverse-selection mark-outs `module_markout_<h>` for each `markout_horizons` entry |
 | League mean/std return, league size, promotions, idle modules | RLlib metrics |
 | NAV, drawdown, reward decomposition, execution-quality and order-book charts | `visualize/run_all.py` |
 
 ### What is absent
 
-The gap has narrowed from "nothing but NAV" to a specific list. The counters and levels a desk
-statistic is computed *from* are all captured now — inventory, drawdown, maker fills, spread — and
-the per-step Parquet record holds the NAV trajectory the path-dependent ones need. What is missing
-is the reduction, not the input:
+Most of what a desk would ask for is now reduced into a metric ([S3-9](29_fixed_issues.md#s3-9--no-risk-adjusted-performance-metrics-fixed)). Still absent:
 
-- **Sharpe / Sortino** on the per-step NAV return series — computable from the record, not computed
-- **Maximum drawdown over the episode** — the per-step *level* is reported; the episode maximum is
-  not reduced into a metric
-- **Hit rate**, average win / average loss
-- **Turnover** and P&L per unit of turnover
-- **Time-weighted inventory** — mean and max |position| are metrics; the time-weighted version is not
-- **Realised vs unrealised P&L split** — `profit` and `total_profit` exist on the account but are
-  not exported to `info`
-- **Quote presence / time at the touch** — the basic market-making KPI. This one genuinely needs
-  new computation: nothing tracks how long an agent's order rested at the best price
-- **Adverse selection** — mark-out P&L at t+k after a passive fill. Also new computation
+- **Average win / average loss**, and P&L per unit of turnover
+- **Time-weighted inventory**: mean and max |position| are metrics; the time-weighted version is not
+- **Quote presence / time at the touch**, the basic market-making KPI. Nothing tracks how long an
+  agent's order rested at the best price
 
 One caveat on the maker/taker ratio, because the obvious version of it is a tautology here: in a
 closed double auction exactly one side of every fill is passive, so the *aggregate* maker share is
@@ -299,8 +254,8 @@ floats, because they are read for plots and diagnostics where a float is both su
 directly usable. The Parquet record carries both — `nav` for arithmetic and `nav_str` for the
 exact value.
 
-**Recommendation:** the remaining reductions belong in `SelfPlayCallback.on_episode_end` beside
-the ones already there, or in `visualize/` for anything that needs the whole trajectory. See
+**Recommendation:** the remaining reductions belong in `train/performance.py` beside the ones
+already there, or in `visualize/` for anything that needs the whole trajectory. See
 [11_logging_and_observability.md](11_logging_and_observability.md) §1.2 and §2.
 
 ---
@@ -311,20 +266,20 @@ Mapping the action space to real strategy archetypes:
 
 | Archetype | Expressible? | Blocker |
 |---|---|---|
-| **Passive market making** | Partially | Can quote at a level with a passive offset — but only **one order per price level** unless `allow_multiple_orders_per_level` is set, no post-only, no fee rebate, and the agent cannot see its own queue position or inventory |
-| **Directional / momentum** | Barely | Only 4 stacked public snapshots; no trade-flow or volatility features |
-| **Mean reversion** | Barely | Same |
-| **Inventory management** | **No** | The agent cannot observe its own inventory |
-| **Spread capture** | **No** | Zero fees means there is no spread revenue to capture (§4) |
-| **Order anticipation** | Partially | Frame stacking gives some order-flow history, but no per-participant attribution and the frames are not comparable ([05](05_observation_space.md) §7.1) |
-| **Wash / mark manipulation** | **Yes — unintentionally** | No SMP, and the mark is the last print (§3.1) |
+| **Passive market making** | Partially | Can quote at a tick offset with a passive or joining price, and sees its inventory and resting size; one order per price level unless `allow_multiple_orders_per_level` is set, no post-only, and fees (so a rebate) only if configured |
+| **Directional / momentum** | Partially | Trade-flow scalars and four comparable stacked frames; no volatility feature |
+| **Mean reversion** | Partially | Same |
+| **Inventory management** | **Yes** | Position, exposure, entry price and time remaining are in the private block |
+| **Spread capture** | Only with fees on | At default fees the only spread price is `passive_bonus == trade_penalty`, a small one (§4) |
+| **Order anticipation** | Partially | Comparable frames give order-flow history, but no per-participant attribution |
+| **Wash / mark manipulation** | **No** | Self-match prevention and a mid mark (§3) |
 | **Latency arbitrage** | No | Arrival order is a uniform shuffle |
 
-The uncomfortable summary: under the current configuration, the strategy that best satisfies the
-reward is *quote nothing, trade nothing* (see
-[12_perspective_rl_researcher.md](12_perspective_rl_researcher.md) §3.3), and the most
-exploitable non-trivial channel is self-trading to move the mark. Neither is the intended
-research object.
+Inventory-aware market making is now expressible, and the manipulation channel is closed. What a
+policy will actually learn is an open research question rather than one the environment answers
+by construction. The table as it stood before the fixes, when the best response was *quote
+nothing, trade nothing*, is in
+[29](29_fixed_issues.md#13-8--what-could-be-learned-before-the-fixes).
 
 ---
 
@@ -332,31 +287,28 @@ research object.
 
 | Stated objective (from the reward's own docstring) | Achieved? |
 |---|---|
-| "Maximizing NAV" | Yes — `nav_change` is the dominant term |
-| "Reducing number of trades" | No — the 0.05 penalty is ~10⁵× too small |
-| "Selective order placement" | No — same, 0.1 penalty |
-| "Lowering drawdown risk" | **Over-achieved** — the penalty is ~2.4× the entire NAV term (**[verified]**) and drives the policy to inaction |
-| "Capturing spread" | No — the 0.1 passive bonus is negligible, and there are no spread economics to capture |
+| "Maximizing NAV" | Yes — `nav_change` is the dominant term, and zero-sum across agents |
+| "Reducing number of trades" | Yes, as a price — `order_penalty` and `trade_penalty` are fractions of starting capital calibrated against the measured move distribution |
+| "Selective order placement" | Same |
+| "Lowering drawdown risk" | Yes — the drawdown term charges the signed change, which telescopes to the final drawdown instead of taxing every step under the peak |
+| "Capturing spread" | Partly — a passive fill is net-free and an aggressive one costs 0.2 bps; real spread economics need the fees (§4) |
 
-The intent is sound and reads like it was written by someone who trades. The implementation
-collapses to "NAV change, minus an enormous drawdown tax". Putting every term on a common scale —
-fractional-NAV units — would make the stated objective the realised one.
+Every term is on a common scale, fractional-NAV units, so the stated objective is the realised one.
+How it used to collapse to "NAV change, minus an enormous drawdown tax" is in
+[29](29_fixed_issues.md#13-9--alignment-with-the-rewards-stated-objectives-before-the-fixes).
 
 ---
 
 ## 10. Prioritised trading-realism agenda
 
+Items 1–9 of the original agenda are done, and the liquidation half of 10: fractional-NAV reward
+units, fees, self-match prevention, a mid mark, bankrupt termination, private state, trade flow,
+desk metrics, multiple orders per level, and maintenance margin with liquidation. The table, with
+what closed each item, is in [29](29_fixed_issues.md#13-10--the-trading-realism-agenda-done-items).
+What is left:
+
 | # | Change | Effort | Why |
 |---|---|---|---|
-| 1 | Express all reward terms in fractional-NAV units | S | Makes the four secondary objectives actually bind |
-| 2 | Add maker/taker fees in bps inside settlement | M | Creates spread economics; makes market making a real strategy |
-| 3 | Self-match prevention | S | Closes the wash-trade / mark-manipulation channel |
-| 4 | Mark to mid, not last print | S | Removes single-print mark manipulation; more standard |
-| 5 | Terminate + flatten bankrupt agents | S | Removes zombies and stale resting orders |
-| 6 | Expose own position, NAV, drawdown, resting orders in obs | M | Prerequisite for any inventory-aware strategy |
-| 7 | Add order-flow imbalance + signed trade volume + realised vol to obs (`helper.py` already has OFI; the tape loop is a ready-made hook) | S | The highest-value predictive features in microstructure |
-| 8 | Per-episode desk metrics (Sharpe, max DD, turnover, maker ratio, inventory) | M | Makes "is this agent any good?" answerable |
-| 9 | Allow multiple resting orders per price level | M | Unlocks layering / multi-clip quoting |
-| 10 | Position limits and a margin/liquidation rule | M | Real risk control rather than a reward penalty |
+| 10 | Position limits | M | Real risk control rather than a reward penalty |
 | 11 | Post-only and IOC order types | M | Required for realistic market making |
 | 12 | An exogenous information process (a latent fundamental + informed traders) | L | Turns redistribution into price discovery, which is what the microstructure framing needs |

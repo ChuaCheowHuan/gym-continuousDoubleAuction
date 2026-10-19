@@ -1,4 +1,4 @@
-"""Phase 2 of docs/15 S3-24: a modify or cancel is aimed by slot.
+"""Phase 2 of docs/29 S3-24: a modify or cancel is aimed by slot.
 
 Slot k names the agent's k-th own resting order on the named side, counted
 from the touch - best price first, oldest first within a level, the order the

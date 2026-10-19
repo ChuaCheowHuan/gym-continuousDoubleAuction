@@ -14,11 +14,11 @@ from gym_continuousDoubleAuction.train.performance import PerformanceTally
 logger = get_logger(__name__)
 
 #: Per-module mean trades per episode, logged by the env runners at episode end
-#: and read by the driver's champion check (docs/15 S3-11). Nested under the
+#: and read by the driver's champion check (docs/29 S3-11). Nested under the
 #: module id: `result["env_runners"][MODULE_TRADES_METRIC]["policy_0"]`.
 MODULE_TRADES_METRIC = "module_trades_per_episode"
 
-#: Prefix of the per-module risk-adjusted metrics (docs/15 S3-9): one metric per
+#: Prefix of the per-module risk-adjusted metrics (docs/29 S3-9): one metric per
 #: name in `performance.METRICS`, e.g. `module_sharpe`, each nested under the
 #: module id like `MODULE_TRADES_METRIC` and meaned over the iteration's episodes.
 MODULE_PERFORMANCE_PREFIX = "module_"
@@ -40,10 +40,10 @@ def new_tally() -> dict:
         "passes": 0,
         "rejections": 0,
         # modify/cancel actions that found no order to act on. The third
-        # silent no-op beside a pass and a refusal (docs/15 S4-14).
+        # silent no-op beside a pass and a refusal (docs/29 S4-14).
         "unmatched": 0,
         # Agent-steps on which at least one observation element was clipped to
-        # the declared bounds (docs/15 S4-15). A bound that is wrong for the
+        # the declared bounds (docs/29 S4-15). A bound that is wrong for the
         # market shows here, not as a silent saturation.
         "clipped_steps": 0,
         # Per agent, because the maker share summed over *all* agents is a
@@ -62,7 +62,7 @@ def new_tally() -> dict:
         # The last NAV string each agent reported, carried forward so the
         # conservation check can still add up after an agent stops reporting.
         # A bankrupt agent is terminated and drops out of `info` from its
-        # terminal step onward (docs/15 S2-4), and the check used to read only
+        # terminal step onward (docs/29 S2-4), and the check used to read only
         # `get_infos(-1)` - so a terminated agent's NAV silently vanished from
         # the total and the ledger looked broken when it was not. Kept as the
         # exact `str()` of the Decimal, which is the whole reason `info["NAV"]`
@@ -268,7 +268,7 @@ class ActivityLog:
             )
 
     def log_module_performance(self, episode, tally, metrics_logger) -> None:
-        """Each module's risk-adjusted performance in this episode (docs/15 S3-9).
+        """Each module's risk-adjusted performance in this episode (docs/29 S3-9).
 
         Per module, like the trade counts, because the question is "how does this
         policy compare", and meaned over the iteration's episodes. A metric that is

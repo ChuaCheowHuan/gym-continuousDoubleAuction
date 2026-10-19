@@ -49,7 +49,7 @@ jobs:
 
   # Every job above installs the full requirements.txt from a checkout, so none
   # of them can see what a *user* gets from `pip install`. That is why both
-  # halves of docs/15 S3-6/S3-18 went unnoticed: install_requires did not name
+  # halves of docs/29 went unnoticed: install_requires did not name
   # ray[rllib], scikit-learn or six, and no config JSON was in the distribution
   # at all - so an installed copy raised FileNotFoundError on import, while CI
   # stayed green. This job is the missing coverage: build the wheel, install it

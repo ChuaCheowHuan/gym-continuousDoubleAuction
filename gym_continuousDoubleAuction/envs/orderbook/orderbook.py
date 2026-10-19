@@ -548,7 +548,7 @@ class OrderBook(object):
 
         A call auction has no aggressor, and the order flow the observation carries
         (`signed_volume`, `trade_direction`) needs a sign. Always naming the buyer made 53% of
-        batch trades buyer-initiated by construction (docs/15 R-1, #171). A tick rule instead:
+        batch trades buyer-initiated by construction (docs/29 R-1, #171). A tick rule instead:
         a clearing price above the reference (the pre-batch mid) was pushed there by buyers, one
         below it by sellers, and an unchanged price repeats the last direction - the buyer
         until there has been one, which keeps the old answer where nothing is known.

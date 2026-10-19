@@ -603,7 +603,7 @@ class TestMakerFillRatio:
 
 
 class TestUnmatchedActionFraction:
-    """docs/15 S4-14, the other half: a modify or cancel with nothing to act on.
+    """docs/29 S4-14, the other half: a modify or cancel with nothing to act on.
 
     The third silent no-op. Its fraction is emitted beside the pass and
     rejection fractions so the three together bound how much of an episode's

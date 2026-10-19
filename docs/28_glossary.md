@@ -82,6 +82,6 @@ is given in `code`.
 
 | Term | Meaning here | Owner |
 |---|---|---|
-| **Finding, S1–S4** | A confirmed defect or gap, ranked from blocking (S1) to minor (S4) | [15](15_findings_and_recommendations.md) |
-| **R-n** | A recommendation in the findings register, as opposed to a defect | [15](15_findings_and_recommendations.md) |
+| **Finding, S1–S4** | A confirmed defect or gap, ranked from blocking (S1) to minor (S4). Open ones are in 15; fixed ones move, under the same ID, to 29 | [15](15_findings_and_recommendations.md), [29](29_fixed_issues.md) |
+| **R-n** | An item from the 2026-10-07 review. The fixed ones are in 29; the ones documented or guarded instead are open decisions in 15 | [15](15_findings_and_recommendations.md), [29](29_fixed_issues.md) |
 | **Layout version** | The observation and action layout stamped beside a checkpoint, so weights are never read against a different layout | [05](05_observation_space.md) |

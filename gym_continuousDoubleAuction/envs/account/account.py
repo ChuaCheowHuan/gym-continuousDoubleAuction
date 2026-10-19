@@ -95,7 +95,7 @@ class Account(Calculate, Cash_Processor):
             maker_fee_bps = env_default("maker_fee_bps")
         if taker_fee_bps is UNSET:
             taker_fee_bps = env_default("taker_fee_bps")
-        # Exchange fees, in basis points of a fill's notional (docs/15 S2-3).
+        # Exchange fees, in basis points of a fill's notional (docs/29 S2-3).
         # Rates belong to the account for its life: `reset_acc` clears what
         # was paid, not what is charged. A negative maker rate is a rebate.
         validate_fee_rates(maker_fee_bps, taker_fee_bps)
@@ -156,7 +156,7 @@ class Account(Calculate, Cash_Processor):
         # independently rounded products. Every trade moves the same exact
         # value between two accounts' cash and basis, so with the basis held
         # as that sum the conservation identity is exact by construction
-        # (docs/15 S3-23, docs/16 16.19).
+        # (docs/29 S3-23, docs/16 16.19).
         #
         # Realised P&L is deliberately rolled into it on a partial close:
         # `_size_decrease` subtracts the trade VALUE, not `VWAP x quantity`.
@@ -195,14 +195,14 @@ class Account(Calculate, Cash_Processor):
         # second is an agent repeatedly quoting past its cash (docs/11 2.2).
         self.num_rejected_step = 0
         # `modify` / `cancel` actions this step that named no resting order to
-        # act on. The other half of docs/15 S4-14: `num_rejected_step` counts an
+        # act on. The other half of docs/29 S4-14: `num_rejected_step` counts an
         # order the cash check refused, `is_pass_action` a deliberate pass, and
         # until this existed the third silent outcome - an order-management
         # action with nothing to manage - left no trace at all. From the
         # policy's side all three look identical: nothing happened.
         self.num_unmatched_step = 0
         # Observation elements `set_next_state` clipped to the declared bounds
-        # this step (docs/15 S4-15). Assigned, not incremented: one observation
+        # this step (docs/29 S4-15). Assigned, not incremented: one observation
         # is built per agent per step. Non-zero means a bound in
         # `observation_bounds` is tighter than the market it is describing.
         self.num_obs_clipped_step = 0
@@ -433,7 +433,7 @@ class Account(Calculate, Cash_Processor):
 
         `scaleb` shifts the decimal point, so the fee is exact and the
         exchange's ledger balances to the last digit: there is no quotient
-        here to round (docs/15 S3-23).
+        here to round (docs/29 S3-23).
         """
         if fee_role == 'none':
             return

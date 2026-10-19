@@ -3,7 +3,7 @@
 Two findings, fixed together because both live in how a frame becomes part of
 the emitted observation.
 
-**docs/15 S2-6.** `obs_history` used to hold frames that had each already been
+**docs/29 S2-6.** `obs_history` used to hold frames that had each already been
 normalised by their own midpoint, so frames t-3..t carried denominators
 M_{t-3}..M_t and could not meaningfully be differenced - which is the entire
 purpose of stacking them. A bid resting at 90 while the midpoint moved 100 ->
@@ -11,7 +11,7 @@ purpose of stacking them. A bid resting at 90 while the midpoint moved 100 ->
 denominator had. The deque now holds raw frames and the whole stack is
 normalised once, at emission, by M_t.
 
-**docs/15 S2-7.** `set_agg_LOB` iterated the tape, incremented a counter and
+**docs/29 S2-7.** `set_agg_LOB` iterated the tape, incremented a counter and
 discarded it - the loop body a commented-out `write` copy-pasted from
 `OrderBook.__str__` - so the observation carried *no* information about
 executions: no last traded price, no direction, no signed volume, no trade

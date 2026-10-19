@@ -20,7 +20,7 @@ class Calculate(AccountState):
         liquidation cascade re-marks every account several times in one step, and a NAV
         that existed between two of those re-marks is one no observation or reward ever
         saw. Letting it set the peak charged drawdown against a level nobody could have
-        held at a step boundary (docs/15 R-4, #174). A fund's high-water mark is set the
+        held at a step boundary (docs/29 R-4, #174). A fund's high-water mark is set the
         same way, at valuation points.
         """
         if self.nav > self.max_nav:
@@ -58,7 +58,7 @@ class Calculate(AccountState):
         # Built from the exact basis and one product, `|pos| x mark`. It used
         # to be `|pos| x VWAP + |pos| x (mark - VWAP)`: two products of a
         # rounded quotient, rounded independently, which is where NAV
-        # conservation lost its last digit (docs/15 S3-23). For a long this is
+        # conservation lost its last digit (docs/29 S3-23). For a long this is
         # `mkt_val` exactly; for a short `2 x cost_basis - mkt_val`.
         raw_val = self.cost_basis
         mkt_val = abs(self.net_position) * mkt_price

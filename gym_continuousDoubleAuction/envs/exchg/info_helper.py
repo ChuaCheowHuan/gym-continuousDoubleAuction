@@ -127,10 +127,10 @@ class InfoBuilder(object):
                 "order_step_placed": acc.order_step_placed,
                 "num_rejected_step": acc.num_rejected_step,
                 # modify/cancel actions that named no resting order this step -
-                # the third way an action can silently do nothing (docs/15 S4-14).
+                # the third way an action can silently do nothing (docs/29 S4-14).
                 "num_unmatched_step": acc.num_unmatched_step,
                 # Observation elements clipped to the declared Box bounds this
-                # step (docs/15 S4-15). Zero unless a bound is wrong for the market.
+                # step (docs/29 S4-15). Zero unless a bound is wrong for the market.
                 "num_obs_clipped_step": acc.num_obs_clipped_step,
                 "num_liquidations_step": acc.num_liquidations_step,
                 "liquidated_book_qty_step": acc.liquidated_book_qty_step,

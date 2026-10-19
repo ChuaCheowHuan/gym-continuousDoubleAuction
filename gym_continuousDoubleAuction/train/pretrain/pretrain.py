@@ -154,7 +154,7 @@ def resolve_spec(encoder_type: str, encoder_spec: Optional[Dict[str, Any]]) -> D
     `encoder_fingerprint(encoder_type, None)` - so a pretrained encoder was
     built from whatever the code shipped rather than from what the run would be
     configured with, and the weights would not load into a training run built
-    from the config block. See docs/15 S3-22.
+    from the config block. See docs/29 S3-22.
     """
     if encoder_spec is not None:
         return encoder_spec
@@ -272,7 +272,7 @@ def pretrain(
     # from what the run would be configured with. `save` then wrote
     # `encoder_fingerprint(encoder_type, None)` beside the weights, and a
     # training run built from the config block could not load them. See
-    # docs/15 S3-22.
+    # docs/29 S3-22.
     encoder_spec = resolve_spec(encoder_type, encoder_spec)
 
     torch.manual_seed(seed)

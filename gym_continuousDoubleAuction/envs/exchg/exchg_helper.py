@@ -177,7 +177,7 @@ class Exchg_Helper(State_Helper, Action_Helper):
 
         Returns `{trade_id: (trades, order_in_book)}`. The auction asks
         `_batch_affordable` whether each order's owner can pay for the fill at
-        the price it settles at, so no fill overdraws cash (docs/15 S2-14); a
+        the price it settles at, so no fill overdraws cash (docs/29 S2-14); a
         market order turned away that way is a rejection, like any order the
         cash check refuses.
         """
@@ -217,7 +217,7 @@ class Exchg_Helper(State_Helper, Action_Helper):
 
         * ``"mid"`` - the L1 midpoint of a **two-sided** book, then the last
           tape print, then a one-sided quote. This is the default and the
-          reason is docs/15 S2-5: the mark used to be the last print alone, so
+          reason is docs/29 S2-5: the mark used to be the last print alone, so
           one trade at a chosen price re-marked every account in the market. A
           midpoint cannot be moved by printing a trade; it moves only when
           someone *quotes*, and a quote that moves it is one anybody else can
@@ -299,7 +299,7 @@ class Exchg_Helper(State_Helper, Action_Helper):
         `None` rather than 0.0 when a side is empty. The observation needs a
         finite sentinel and uses 0.0 for "no two-sided market"; a log does not,
         and 0.0 there would be indistinguishable from a genuinely crossed-to-
-        touching book - the ambiguity docs/15 S3-14 is about. `None` encodes as
+        touching book - the ambiguity docs/29 S3-14 is about. `None` encodes as
         JSON null.
         """
         # Decimal, as the book already reports them: these are prices, and
@@ -334,7 +334,7 @@ class Exchg_Helper(State_Helper, Action_Helper):
             # A trader terminated on an earlier step is not scored again. It
             # still holds an account (the NAV-conservation check sums every
             # trader, live or not), it simply stops producing transitions -
-            # see `EpisodeStatus.set_done` and docs/15 S2-4.
+            # see `EpisodeStatus.set_done` and docs/29 S2-4.
             if not self.is_live(trader):
                 continue
 

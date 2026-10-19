@@ -13,7 +13,7 @@ extend-exclude = ["*.ipynb"]
 # `ruff check .` locally and the suite in CI agree on what a finding is. Style
 # rules are deliberately not selected: an 18,000-line tree that has never had a
 # formatter is reformatted in one deliberate pass or not at all, not rule by
-# rule in unrelated commits (docs/15 S4-6).
+# rule in unrelated commits (docs/29 S4-6).
 select = ["F"]
 
 [tool.mypy]

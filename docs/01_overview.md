@@ -1,8 +1,9 @@
 # 1. Overview — What This Repository Is
 
-For how it is built, see [02_architecture.md](02_architecture.md). For what is wrong with it,
-see [15_findings_and_recommendations.md](15_findings_and_recommendations.md). For how it got
-here, see [17_changelog.md](17_changelog.md).
+For how it is built, see [02_architecture.md](02_architecture.md). For what is still open, see
+[15_findings_and_recommendations.md](15_findings_and_recommendations.md); for what was wrong and
+how it was fixed, [29_fixed_issues.md](29_fixed_issues.md). For how it got here, see
+[17_changelog.md](17_changelog.md).
 
 ---
 
@@ -162,7 +163,7 @@ Note what the exits mean. Truncation at the horizon is the normal ending. The ho
 `max_step`, or a length drawn at reset when `episode_length_mode` is `random`. A bankrupt agent
 is terminated on the step its NAV reaches zero and stops being stepped; the episode as a whole
 terminates only when every agent is bankrupt ([02](02_architecture.md) §2.5,
-[15](15_findings_and_recommendations.md) S2-4).
+[S2-4](29_fixed_issues.md#s2-4--bankrupt-agents-are-never-terminated-verified-fixed)).
 
 ---
 
@@ -190,10 +191,10 @@ comments that explain *why* the previous behaviour was wrong at the RLlib-intern
 on the `WEIGHTS_SEQ_NO` force-push). The maintainer clearly debugged real silent-degradation bugs
 and encoded the lessons.
 
-There is a **sharp quality gradient across the repository**. The simulator layer and the
-`train/` package are mature. The **learning-problem layer** — observation content, reward
-scaling, PPO hyper-parameters — has not received the same scrutiny, and that is where the
-remaining high-impact issues are.
+The simulator layer and the `train/` package matured first. The **learning-problem layer** —
+observation content, reward scaling, PPO hyper-parameters — is where the high-impact issues were
+(S1-1 to S1-3), and those are fixed ([29](29_fixed_issues.md)); what is still open is in
+[15](15_findings_and_recommendations.md).
 
 ---
 
@@ -204,7 +205,7 @@ remaining high-impact issues are.
 | `python -m gym_continuousDoubleAuction.train.train --iters 4 --agents 4` | League self-play PPO training |
 | `python -m gym_continuousDoubleAuction.train.train --help` | Full CLI |
 | `python gym_continuousDoubleAuction/CDA_rand.py` | Random-agent smoke run, no learning (CI stage 2) |
-| `python -m pytest gym_continuousDoubleAuction/test -q` | 2,128 unit tests; the integration suite is left out by default |
+| `python -m pytest gym_continuousDoubleAuction/test -q` | 2,133 unit tests; the integration suite is left out by default |
 | `python -m pytest gym_continuousDoubleAuction/test/integration -q` | 185 integration tests that build real `Algorithm`s |
 | `python -m gym_continuousDoubleAuction.CDA_rand --help` | Flags for the smoke run; defaults in `config/cli_defaults.json` |
 | `CDA_train.ipynb` | Notebook driver; imports `TrainConfig` / `train` from `train.py`. Runs unchanged on [Colab](20_colab.md) and in the [docker image](19_docker.md) — set `PLATFORM` / `USE_GPU` in its first cell, everything else comes from `config/runtime_profiles.json` |
@@ -222,8 +223,8 @@ pip install -r requirements.txt
 pip install -e .            # or -e ".[rllib]" / ".[plot]" / ".[dev]"
 ```
 
-`pip install gym_continuousDoubleAuction` **without** extras used to fail on first import, because
-`install_requires` did not name `ray[rllib]` or `six` and no config JSON reached the wheel. Both
-are fixed (S3-6 and S3-18), and the `packaging` CI job now builds the wheel, installs it into a
-clean venv outside the checkout, and steps an env there — so the installed-package path is tested
-rather than assumed. See [14_perspective_ai_engineer.md](14_perspective_ai_engineer.md) §5.3.
+A plain `pip install gym_continuousDoubleAuction` works: `install_requires` names what the package
+imports and the config tree ships in the wheel. The `packaging` CI job builds the wheel, installs it
+into a clean venv outside the checkout, and steps an env there — so the installed-package path is
+tested rather than assumed ([29](29_fixed_issues.md#01-16--a-plain-install-failed-on-first-import)
+has why it once failed). See [14_perspective_ai_engineer.md](14_perspective_ai_engineer.md) §5.3.

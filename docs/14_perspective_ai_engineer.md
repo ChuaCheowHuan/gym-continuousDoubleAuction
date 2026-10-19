@@ -5,39 +5,29 @@ observability, production-level considerations.
 
 **Headline:** the `train/` package is modern, well-reasoned and genuinely well tested — the Ray
 2.56 migration was done properly, with regression tests for the distributed failure modes. The
-`envs/` package is older code carrying visible technical debt: no logging, `sys.exit` as error
-handling, dead modules, and a packaging manifest that does not match the imports. Nothing here is
-production-deployable as a service, but as a research codebase it is above average.
+`envs/` package is older code, but the debt this audit first found there (no logging, `sys.exit`
+as error handling, dead modules, a packaging manifest that did not match the imports) is paid
+down; what that audit measured is in [29](29_fixed_issues.md#14-51--the-original-code-quality-snapshot).
+Nothing here is production-deployable as a service, but as a research codebase it is above
+average.
 
 ---
 
 ## 5.1 Overall code-quality snapshot
 
-> **This section is the original audit and is no longer accurate.** It was measured against a
-> tree of 7,478 Python lines with 90 unit tests and no logging module. The repository is now
-> 56,301 lines across 199 Python files, with 2,128 unit and 185 integration tests, a 523-line
-> `logging_setup` and a test that fails the build on a bare `print` in `envs/` or `train/`. The
-> `sklearn.utils.shuffle` import it names was removed (`action_helper.py:182` records that), and
-> the `install_requires` block it quotes no longer exists - `ray[rllib]` and `six` are in it and
-> the numpy floor is `>=2.2`. Read [15](15_findings_and_recommendations.md) and
-> [16](16_verification_log.md) for the current state; this is kept for the reasoning, not the
-> numbers.
-
-
 | Signal | Measurement |
 |---|---|
-| Python LOC | 7,478 across 63 files |
-| Test LOC | ~2,430 |
-| Unit tests | 90, **all passing** |
-| Integration tests | 13 across 3 classes covering local / remote-EnvRunner / remote-Learner |
+| Python code | 56,354 lines across 199 Python files |
+| Tests | 2,133 unit and 185 integration, all passing |
 | CI | GitHub Actions on Python 3.12: a `test` job (unit → random smoke run → RLlib integration) and a `packaging` job that installs the built wheel into a clean venv |
-| `logging` module usage | **0** — everything is `print()` |
-| `print()` calls in `envs/` + `train/` | ~86, incl. **42 in the self-play callback** and 13 in the env |
-| `sys.exit()` in library code | **0** — the six in `orderbook.py` raise `ValueError` since 2026-09-18 (S3-7) |
-| Broad `except Exception` in the callback | 2 (one deliberate, one questionable) |
-| Type hints | present in `train/`; on the public API of every `envs/` module since 2026-09-18 (S4-6) |
-| Linter / formatter config | pyflakes, enforced by `test_lint.py` (zero findings); `pyproject.toml` with a matching `ruff` selection, `pytest` and `coverage` tables; no formatter pass yet |
+| Logging | `logging_setup`: levelled, worker-attributed, a rotating run log; a test fails the build on a bare `print` in `envs/` or `train/` |
+| `sys.exit()` in library code | **0** — the matching engine raises `ValueError` |
+| Lint, format, types | pyflakes (`test_lint.py`, zero findings), `ruff format --check` and `mypy` over `envs/` at zero errors (`test_types.py`) |
+| Coverage | `pytest --cov` fails below the floor in `pyproject.toml`; a local gate, not a CI one |
 | Pre-commit hooks | none |
+
+The snapshot this section first recorded (7,478 lines, 90 unit tests, ~86 `print()` calls, no
+logging module) is in [29](29_fixed_issues.md#14-51--the-original-code-quality-snapshot).
 
 The quality gradient across the repository is steep. `train/train.py`, `policy_handler.py` and
 `model_handler.py` are written to a high standard — module docstrings that explain *why*,
@@ -54,82 +44,28 @@ The environment is built by inheriting five helper classes plus RLlib's `MultiAg
 **Works:** the cooperative `super().__init__(**kwargs)` chain is correct, and splitting obs /
 action / reward / done / info into files makes each concern easy to find.
 
-**Costs:**
+**Composition, where it was cheap.** Reward, done, info and liquidation are composed objects
+(`RewardModel`, `EpisodeStatus`, `InfoBuilder`, `LiquidationEngine`), each taking its inputs
+explicitly, so each can be unit-tested without a full env. The state/action pair still shares
+one `self`: it shares the observation layout and the book snapshot on every call, and what it
+shares is declared in `SharedState` and checked by `mypy` ([02_architecture.md](02_architecture.md)
+§2.4). The costs of the six-mixin design (no enforced interface, silent namespace collisions,
+fragile initialisation) are in [29](29_fixed_issues.md#14-52--the-costs-of-the-six-mixin-environment).
 
-- **No enforced interface.** `State_Helper` reads `self.LOB`, `self.traders`, `self.last_price`,
-  `self.min_tick` — none of which it owns or declares. `getattr(self, 'n_hist', 4)` and
-  `getattr(self, 'last_price', 100.0)` are defensive workarounds for exactly this.
-- **Not independently testable.** You cannot unit-test the reward without a full env;
-  `test_reward_logic.py` works around it by instantiating a bare `Reward_Helper()` with a
-  `MockTrader`, which happens to work only because `set_reward` touches nothing else.
-- **Namespace collisions are silent.** Five mixins sharing one `self` means any attribute name
-  reused across them overwrites without warning.
-- **Fragile initialisation.** Whether `MultiAgentEnv.__init__` runs at all depends on which mixin
-  happens to lack an `__init__`, and a stray kwarg reaching `object.__init__` raises `TypeError`
-  — which is how a real bug once surfaced as
-  `AttributeError: … has no attribute 'min_tick'`.
-
-> **Update (issue #152).** Reward, done, info and liquidation are composed objects now
-> (`RewardModel`, `EpisodeStatus`, `InfoBuilder`, `LiquidationEngine`); the state/action pair still
-> shares one `self`, with the shared attributes declared in `SharedState` and checked by `mypy`.
-> The costs above describe the six-mixin design this section audited. See
-> [02_architecture.md](02_architecture.md) §2.4.
-
-A composition refactor (`self.state = StateBuilder(book, cfg)`, `self.reward = RewardFn(cfg)`)
-would be mechanical and would make reward/obs variants swappable — which is what a research
-codebase most needs.
+Finishing it for the state/action pair (`self.state = StateBuilder(book, cfg)`) would make
+observation variants swappable the way reward variants now are — which is what a research
+codebase most needs. Recorded as open in [15](15_findings_and_recommendations.md).
 
 ---
 
 ## 5.3 Dependency management
 
-> **This section is the original audit and is no longer accurate.** The `install_requires` block
-> quoted below no longer exists: `ray[rllib]==2.56.1` and `six>=1.16` are in it and the numpy floor
-> is `>=2.2` (S3-6). `sklearn.utils.shuffle` is not imported by `action_helper.py` - line 182 is a
-> comment recording its removal - and `ray[rllib]` is not behind an extra. Kept for the reasoning.
-
-
-### The declared vs. actual import mismatch
-
-[`setup.py`](../setup.py) declares:
-
-```python
-install_requires = [
-    "gymnasium==1.2.2",
-    "numpy>=2.5,<3",
-    "pandas>=3.0,<4",
-    "sortedcontainers>=2.4",
-    "tabulate>=0.10",
-]
-```
-
-with the comment *"Kept deliberately narrow: these are what the environment needs to import… so
-the env stays usable without [RLlib]."*
-
-That claim does not hold. **[verified]** — the environment package imports three undeclared
-packages:
-
-| Import | Location | Declared in `install_requires`? |
-|---|---|---|
-| `ray.rllib.env.multi_agent_env` | [`continuousDoubleAuction_env.py`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py) | **No** — it is in the `[rllib]` extra |
-| `sklearn.utils.shuffle` | [`action_helper.py`](../gym_continuousDoubleAuction/envs/exchg/action_helper.py) | **No** — `scikit-learn` is in the `[plot]` extra |
-| `six.moves.cStringIO` | [`orderbook.py`](../gym_continuousDoubleAuction/envs/orderbook/orderbook.py), [`orderlist.py`](../gym_continuousDoubleAuction/envs/orderbook/orderlist.py) | **No** — not in `requirements.txt` either |
-
-`pip install gym_continuousDoubleAuction` without the extras produces an `ImportError` on the
-first `import`. CI never catches this because it always installs the full `requirements.txt`.
-
-Three of these are trivially removable:
-
-- **`import ray`** on line 6 of the env is entirely unused — only the `MultiAgentEnv` import on
-  line 7 is needed. (Even that could be made optional with a lazy import, delivering the "env
-  usable without RLlib" property the comment promises.)
-- **`six`** is a Python-2 compatibility shim. `from io import StringIO` is the stdlib equivalent;
-  `six` is only present transitively via `python-dateutil` and could vanish on any dependency
-  bump.
-- **`sklearn.utils.shuffle`** pulls scikit-learn (~30 MB plus SciPy) into every EnvRunner process
-  to shuffle a list of ≤8 dicts. `random.shuffle` or `np.random.permutation` is a drop-in
-  replacement — and would also let the shuffle be seeded from the env's RNG, fixing the
-  reproducibility gap in [12](12_perspective_rl_researcher.md) §5.5.
+`install_requires` matches what the package imports: `ray[rllib]` (the env's base class is
+RLlib's `MultiAgentEnv`) and `six` (imported by `envs/orderbook/`) are declared, `scikit-learn` is
+gone because nothing imports it, and the `packaging` CI job installs the built wheel into a clean
+venv and imports it, so a mismatch fails CI. The manifest used to declare five packages while the
+env imported three more: [S3-6](29_fixed_issues.md#s3-6--install_requires-does-not-match-the-imports-verified-fixed), with the config tree missing from the wheel in
+[S3-18](29_fixed_issues.md#s3-18--the-config-tree-was-not-in-the-built-distribution-verified-fixed).
 
 ### What is done well
 
@@ -150,45 +86,27 @@ Three of these are trivially removable:
 
 ## 5.4 Observability
 
-This is the weakest engineering area. Full audit in
-[11_logging_and_observability.md](11_logging_and_observability.md); the summary:
+Full audit in [11_logging_and_observability.md](11_logging_and_observability.md); the summary:
 
-> **This section is the original audit, kept as the record of what was found.** Most of it has
-> since been addressed — there is a logging framework, no `print()` survives in `envs/` or
-> `train/`, output is levelled and worker-attributed and written to a rotating run log, the
-> conservation check raises and emits a metric, and `vf_explained_var` is surfaced per iteration.
-> The custom-metric count is four rather than three. Read
-> [11](11_logging_and_observability.md) §1 for the current state; the bullets below describe the
-> starting point, not today.
+- **A logging framework** (`logging_setup`): levelled output, worker attribution, a rotating run
+  log per process, and no `print()` left in `envs/` or `train/`.
+- **The NAV conservation check raises** at the driver and emits `nav_conservation_error`.
+- **Training metrics reach TensorBoard and `progress.jsonl`:** league state, desk metrics,
+  `vf_explained_var`, per-module performance.
+- `env.render()` is off by default (`is_render: false`).
 
-- **No logging framework at all.** **[verified]** zero `import logging` in the repository.
-- **~86 `print()` calls** in `envs/` + `train/`, 42 of them in `SelfPlayCallback` — including a
-  3+-line banner per episode start listing the full policy map, five `DEBUG:`-prefixed lines and
-  a full NAV table per episode end.
-- With `num_env_runners > 0`, **every remote worker prints this independently**, with no level
-  filtering, no worker attribution, and no way to turn it off short of editing the source.
-- `env.render()` defaults to **`is_render=True`** on the env, so any direct instantiation dumps
-  the book, tape and every account per step through pandas.
-- **Only three custom values reach TensorBoard** (`league_size`, `league_mean_return`,
-  `league_std_return`). Everything a practitioner would actually watch — NAV distribution,
-  drawdown, trade counts, maker/taker ratio, champion promotions, `vf_explained_var` — is printed
-  to stdout and then lost.
-- The **NAV conservation check** is a good idea implemented as a `print("… FAILED …")`. A
-  conservation violation is a hard ledger-invariant break; it should raise or emit a counter
-  metric.
+This was the weakest engineering area when first audited: no `import logging` anywhere, ~86
+`print()` calls, and three custom values reaching TensorBoard
+([29](29_fixed_issues.md#14-54--observability-as-first-audited), [S2-8](29_fixed_issues.md#s2-8--no-logging-framework-the-callback-prints-42-diagnostics-per-episode--fixed)).
 
 ---
 
 ## 5.5 Error handling
 
-**`sys.exit()` in library code — fixed (S3-7).** `orderbook.py` had six live occurrences. `sys.exit`
-raises `SystemExit`, which derives from `BaseException`, not `Exception`, so inside a Ray EnvRunner
-actor it killed the worker and RLlib restarted it rather than failing with a usable traceback. All
-six raise `ValueError` naming the method and the refused value, and
-`test_orderbook_new.py::TestMalformedInputRaisesInsteadOfExiting` asserts that nothing in the
-engine raises `SystemExit`. They were never reachable from the action layer - decoded size is
-`rint(abs(N(...))) + min_size ≥ 1` - which is why the fix waited on lifting the `envs/orderbook/`
-freeze ([17](17_changelog.md) §45.1).
+**Malformed input to the matching engine raises `ValueError`** naming the method and the refused
+value; `test_orderbook_new.py::TestMalformedInputRaisesInsteadOfExiting` asserts that nothing in
+the engine raises `SystemExit`, which would kill a Ray worker instead of surfacing a traceback. It
+used to `sys.exit`: [S3-7](29_fixed_issues.md#s3-7--sysexit-used-for-error-handling-in-the-matching-engine-fixed).
 
 **The broad `except Exception` in champion creation** is *deliberate and defensible*: it rolls
 back the pool entry so matchmaking can never select a half-created module, and prints a
@@ -198,9 +116,9 @@ leaving the league permanently empty while printing one line per iteration. The 
 right; the response to a *repeated* failure should escalate (raise after N consecutive failures,
 or emit a metric) rather than continuing silently for hours.
 
-**Silent no-ops in the env** are a third category: rejected orders and unmatched modify/cancel
-requests return `([], [])` with nothing recorded. See
-[12](12_perspective_rl_researcher.md) §5.6.
+**No-ops in the env** are a third category: rejected orders and unmatched modify/cancel requests
+change nothing in the book, but are counted (`num_rejected_step`, `num_unmatched_step`) and
+reported as metrics. See [12](12_perspective_rl_researcher.md) §5.6.
 
 ---
 
@@ -249,8 +167,8 @@ The concurrency reasoning in the callback is the strongest code in the repo:
 
 | Bottleneck | Detail |
 |---|---|
-| ~~**Per-episode pickles**~~ **— fixed** | This used to `pickle.dump` every step of every episode, synchronously, inside `on_episode_end`: ~34 MB per 4,096-step episode at 8 agents, held in memory and then serialised, per episode, per worker — and `--no-episode-data` disabled only the write, not the accumulation. It is now Parquet written by a background thread per process, bounded by `episode_sample_every` (one episode in 10) and `episode_max_bytes` (2 GiB per writer), and the off switch is genuinely off. Every failure inside the writer is a warning, so a full disk can no longer kill an env runner. See [11](11_logging_and_observability.md) §1.1. |
-| **`_process_counter_party` linear scan** | [`trader.py`](../gym_continuousDoubleAuction/envs/agent/trader.py) scans all agents per fill → O(fills × agents). Fine at 8 agents; a dict lookup is the obvious fix. |
+| **Episode record** | Parquet written by a background thread per process, bounded by `episode_sample_every` (one episode in 10) and `episode_max_bytes` (2 GiB per writer); `--no-episode-data` switches it off, buffering included. A writer failure is a warning, so a full disk cannot kill an env runner ([11](11_logging_and_observability.md) §1.1). It used to be a synchronous per-step pickle ([S4-9](29_fixed_issues.md#s4--minor)). |
+| **Counter-party lookup** | O(1) in the env (trader IDs index the roster), after measuring ([S4-11](29_fixed_issues.md#s4--minor)). |
 | **`set_agg_LOB` called twice per step** | Once pre-action (display only) and once post-action. The pre-action call is pure overhead when `is_render=False`. |
 | **`Decimal` arithmetic** | Correct but roughly an order of magnitude slower than float. Acceptable for a ledger; it is in the hot matching path. |
 | **`env.render()` string building** | Builds pandas DataFrames per step when enabled. Must stay off in training. |
@@ -276,38 +194,23 @@ Full inventory in [10_testing.md](10_testing.md). Engineering-relevant summary:
   integration tests — so an env-level break and an RLlib-level break are distinguishable from the
   job name alone.
 
-**Gaps**
-
-| Gap | Risk |
-|---|---|
-| **No learning-signal assertion** | Nothing checks `vf_explained_var`, `vf_loss` saturation, or that returns improve. This is exactly how the frozen critic went unnoticed. |
-| **No coverage measurement** | No `pytest-cov`, no threshold. |
-| **`test_accounting.py::test_insufficient_funds` is an empty `pass`** with a 15-line comment debating what the behaviour should be — a TODO shipped as a test. |
-| **No property-based tests** | The order book is an ideal Hypothesis target: "tree volume == Σ level volumes", "no crossed book", "Σ NAV == Σ initial cash" hold for *any* order sequence. |
-| **No performance regression test** | Nothing catches a 10× slowdown in the matching engine. |
+**Gaps.** The gaps this section first listed are closed: a live `vf_explained_var` assertion
+(S1-1), a coverage floor (S4-6), a real `test_insufficient_funds` (S4-5), Hypothesis invariant
+tests for the book (S4-13), and `test_speed_regression.py` against a matching-engine slowdown.
+The original table is in [29](29_fixed_issues.md#14-57--the-testing-gaps-as-first-audited). What
+remains is that the coverage floor is a local gate rather than a CI one
+([10](10_testing.md) §7).
 
 ---
 
 ## 5.8 Dead and vestigial code
 
-| Item | Status |
-|---|---|
-| ~~`train/storage/store_handler.py`, `train/logger/log_handler.py`, `train/plotter/plot_handler.py`~~ | **Deleted.** ~270 LOC depending on a `g_store` actor that was never created — see [11 §1.4](11_logging_and_observability.md) |
-| ~~`train/helper/helper.py`~~ | **Deleted** (2026-09-18, S4-1) |
-| ~~`envs/agent/random_agent.py`~~ | **Deleted** (2026-09-18, S4-2); `Trader` no longer inherits from it |
-| ~~`State_Helper.state_diff`~~ | **Deleted** (2026-09-18, S4-3) |
-| ~~`Action_Helper._set_side` / `_set_type` / `_higher` / `_lower`~~ | **Deleted** (2026-09-18, S4-3) |
-| `Action_Helper.max_price` | passed into `_set_price` and never used in its body |
-| ~~`OrderBook.__str__0`, `Order.__str__0`, `OrderList.to_str`~~ | **Deleted** (2026-09-18), with the shadowed `Order.next_order`/`prev_order` methods |
-| ~~`OrderBook.get_volume_at_price`~~ | **Deleted** (2026-09-18), with the commented-out old `modify_order` |
-| ~~`envs/orderbook/test/example.py`, `genOrders.py` (353 LOC)~~ | **Deleted** (#210); their scenarios are `test_orderbook_scripts.py` |
-| ~~~200 LOC of commented-out code~~ | **Deleted** (2026-09-18, S4-4) |
-| ~~`CODEOWNER` **and** `CODEOWNERS`~~ | **Fixed**; only `CODEOWNERS` remains |
-
-The ~270 LOC of unreachable telemetry in `train/` — three modules that looked like a working
-pipeline and were a broken one — has been deleted. What remains above is smaller and less
-misleading, though `helper.py`'s order-imbalance functions are still worth salvaging into the
-observation rather than dropping (see [13](13_perspective_financial_trader.md) §6).
+All the dead and vestigial code this section listed is deleted: the ~270 LOC `g_store`
+telemetry trio, `train/helper/helper.py`, `envs/agent/random_agent.py`, the unused
+`State_Helper` / `Action_Helper` methods, the dead order-book methods, the 353-LOC scratch
+scripts in `envs/orderbook/test/`, ~200 LOC of commented-out code, and the duplicate `CODEOWNER`
+file ([S4-1 to S4-4 and S4-18](29_fixed_issues.md#s4--minor)). The order-imbalance idea in the old `helper.py` reached
+the observation as `signed_volume` ([13](13_perspective_financial_trader.md) §6).
 
 ---
 
@@ -330,14 +233,16 @@ observation rather than dropping (see [13](13_perspective_financial_trader.md) �
 
 | Gap | Impact |
 |---|---|
-| ~~**`build_algo` returns a detached callback on the restore path**~~ | Fixed — see §5.9.1, along with four adjacent checkpoint defects. |
-| ~~**The Docker image `pip install`s a hardcoded dependency list**~~ | **Fixed** (S4-8): it `COPY`s `requirements.txt` and installs from it |
-| ~~**No inference/serving path**~~ | **Partly closed.** `train/evaluate.py` rolls episodes with a checkpoint's policies (S4-12) and `train/export.py` writes one module's weights to a torch file (docs/26 §26.9.2). What remains: no Ray Serve deployment, and no TorchScript/ONNX — the exported file still needs `ray[rllib]` and this package to rebuild the architecture. |
-| **No config validation** | `TrainConfig` accepts `num_trained_agents > num_agents` (caught later, in `build_multi_rl_module_spec`), negative `max_step`, etc. |
-| **No experiment tracking** | No MLflow / W&B; results are TensorBoard + stdout. |
+| **No serving path** | `train/evaluate.py` rolls episodes with a checkpoint's policies and `train/export.py` writes one module's weights to a torch file (docs/26 §26.9.2). There is no Ray Serve deployment and no TorchScript/ONNX: the exported file still needs `ray[rllib]` and this package to rebuild the architecture. |
+| **Partial config validation** | `TrainConfig` refuses invalid values at construction (γ, λ, entropy, the batch split across learners and others), but `num_trained_agents > num_agents` is still caught later, in `build_multi_rl_module_spec`. |
+| **No experiment tracking** | No MLflow / W&B; results are TensorBoard, `progress.jsonl` and the run log. |
 | **No Ray Tune integration** | `train()` is a hand-rolled loop; using `tune.Tuner` would bring scheduling, fault tolerance and sweeps essentially for free. |
-| **No env versioning** | Changing the observation layout silently invalidates old checkpoints. `SNAPSHOT_DIM` is a good constant but is not recorded in the checkpoint. |
-| **No resource requests / limits** | Not documented for a cluster deployment. |
+| **No resource requests / limits** | Not documented for a cluster deployment beyond [00](00_getting_started.md) §0.2. |
+
+The observation and action layout versions are recorded in every checkpoint, so a layout change
+is refused by name at restore rather than by tensor shape. That, the Docker image installing from
+`requirements.txt`, and `build_algo` returning the live callback are fixed gaps
+([S4-19, S4-8](29_fixed_issues.md#s4--minor), [S3-8](29_fixed_issues.md#s3-8--build_algo-returns-a-detached-callback-on-the-restore-path-fixed)).
 
 ### 5.9.1 Checkpoint/restore: what actually happens
 
@@ -363,40 +268,13 @@ callback_instance)` closes over the instance, RLlib cloudpickles it into the che
 restored `Algorithm` gets a callback with its history intact. That is better than the design
 suggests, and worth knowing.
 
-The defect was narrower — and is **now fixed**; what follows describes what it was. `build_algo`
-called `build_config(cfg)` unconditionally, then on the restore branch discarded the freshly-built
-`ppo` config and returned the **fresh, empty** `callback_instance` alongside the restored
-algorithm:
-
-```python
-ppo, callback_instance = build_config(cfg)  # builds a NEW callback
-if cfg.is_restore and os.path.exists(...):
-    algo = Algorithm.from_checkpoint(...)  # uses the RESTORED callback
-else:
-    algo = ppo.build_algo()
-return algo, callback_instance  # ...but returns the new one
-```
-
-`train()` ignores the returned callback, so training is unaffected. But any caller that *uses* it
-— the notebook, or the integration tests' `cls.callback._create_champion_snapshot_from_policy(
-cls.algo, ...)` pattern — would be driving a detached object whose `available_modules` disagrees
-with the mapping function the algorithm is actually using. Champions promoted through the
-detached instance would be added as modules but never selected.
-
-**Fixed:** the restore branch returns `algo_callback(algo)` — the instance RLlib unpickled, the one
-whose `available_modules` the mapping function is actually reading — and `None` with a warning if
-the restored algorithm has no `SelfPlayCallback`. Returning `None` rather than a plausible-looking
-empty object is deliberate: a caller that inspects a detached league gets a wrong answer silently,
-where an attribute error on `None` does not.
-
-The probe also surfaced four adjacent defects in the same path, all now fixed:
-
-| Was | Now |
-|---|---|
-| Every save overwrote one `chkpt/` directory — one recoverable state per run, destroyed by a crash mid-save | `chkpt/iter_N/`, staged and renamed, newest `chkpt_keep` retained, fallback to the previous on an unreadable one |
-| `from_checkpoint` silently discarded the config built from `train_config.json` | Structural divergence raises; everything else prints as ignored |
-| The driver loop counted from zero, so `num_iters` meant "that many *more*" after a restore | `num_iters` is a target iteration, read from `algo.iteration`; `num_iters_is_delta` opts back in |
-| Champion metadata existed only inside the cloudpickled callback | `league_state.json` beside each checkpoint, reconciled against the modules that came back |
+`build_algo` returns that instance on the restore path, `algo_callback(algo)`, and `None` with
+a warning if the restored algorithm has no `SelfPlayCallback`: a caller that inspects a detached
+league would get a wrong answer silently, where an attribute error on `None` does not. Checkpoints
+are `chkpt/iter_N/`, staged and renamed with the newest `chkpt_keep` retained; a structural config
+divergence on restore raises; `num_iters` is a target iteration; and `league_state.json` sits
+beside each checkpoint. The probe's last line above is the defect it found, that `build_algo`
+returned a fresh, empty callback, fixed with four adjacent checkpoint defects in [S3-8](29_fixed_issues.md#s3-8--build_algo-returns-a-detached-callback-on-the-restore-path-fixed).
 
 The remaining gap is structural rather than a bug: `train()` is still a hand-rolled loop, so this
 is a reimplementation of retention and fault tolerance that `tune.Tuner` would provide (§5.9).
@@ -407,31 +285,22 @@ is a reimplementation of retention and fault tolerance that `tune.Tuner` would p
 
 Low risk overall (a self-contained simulator), but two notes:
 
-1. ~~**`pickle` for episode data**~~ — **fixed.** The per-step record is Parquet, read by
-   `ray.data.read_parquet`, pandas or DuckDB without this package installed, so the
-   arbitrary-code-execution-on-load surface is gone. The `visualize/inspect_latest_episode*.py`
-   loaders read Parquet too, and the two committed `.pkl` files are deleted.
-2. ~~**`sys.exit` in a worker process**~~ (§5.5) — **fixed** (S3-7). The six calls raise
-   `ValueError`; nothing in the engine can end an env-runner process.
+1. **Episode data is Parquet**, read by `ray.data.read_parquet`, pandas or DuckDB without this
+   package installed, so there is no arbitrary-code-execution-on-load surface. It used to be
+   pickle ([S4-9](29_fixed_issues.md#s4--minor)).
+2. **Nothing in the engine can end an env-runner process**: malformed input raises `ValueError`
+   (§5.5).
 
 ---
 
 ## 5.11 Prioritised engineering agenda
 
+Twelve of the fifteen items on the agenda this document first set are done; the table, with what
+closed each, is in [29](29_fixed_issues.md#14-511--the-engineering-agenda-as-first-set). What is
+left:
+
 | # | Change | Effort | Why |
 |---|---|---|---|
-| 1 | ~~Return the algorithm's live callback from `build_algo` on the restore path (§5.9.1)~~ **done** | S | Callers got a detached, empty league object |
-| 2 | Replace all `print()` with `logging`; route callback diagnostics through `metrics_logger` | M | Multi-worker runs are currently unobservable |
-| 3 | Fix `install_requires` (add `ray` / `scikit-learn` / `six`, or remove those imports) | S | The package does not install correctly as declared |
-| 4 | Drop `six` → stdlib `io.StringIO`; drop `sklearn.utils.shuffle` → `random.shuffle` (seeded); drop the unused `import ray` | S | Removes a Py2 shim and a ~30 MB dependency; fixes reproducibility |
-| 5 | `sys.exit` → `raise ValueError` in `orderbook.py` | S | Prevents worker kills |
-| 6 | Raise (or emit a metric) on a NAV conservation violation instead of printing `FAILED` | S | A corrupt ledger should not be a log line |
-| 7 | Add `vf_explained_var` / learning-signal assertions to CI | S | Would have caught the frozen critic |
-| 8 | ~~Delete the `g_store` trio~~ **done**; other dead code remains | S | Removed a misleading "working" telemetry path |
-| 9 | Add `ruff` + `black` + pre-commit; add `pytest-cov` with a threshold | S | Baseline hygiene |
-| 10 | Make the Docker image `COPY requirements.txt` instead of duplicating it | S | Removes drift |
-| 11 | Add an `evaluate.py` that loads a checkpoint and runs deterministic episodes | M | There is currently no way to *use* a trained policy |
+| 9 | Add `pre-commit`; enforce the coverage floor in CI | S | `ruff`, `ruff format` and `pytest-cov` are configured; the hooks and the CI gate are not |
 | 12 | Move `TrainConfig` under `tune.Tuner` | M | Free scheduling, fault tolerance, sweeps |
-| 13 | Property-based tests (Hypothesis) for book invariants | M | The invariants are already known and stated |
-| 14 | Record `SNAPSHOT_DIM` / an env version in the checkpoint | S | Turns a silent checkpoint mismatch into a clear error |
-| 15 | Refactor mixins → composition | L | Makes reward/obs variants swappable |
+| 15 | Finish the composition refactor for the state/action pair | L | Makes observation variants swappable (§5.2) |

@@ -55,7 +55,7 @@ Nothing here reads a Parquet file or steps an env:
 
 | Reused | From | What it already handles |
 |---|---|---|
-| `from_rollouts`, `from_parquet` | `train/probe/corpus.py` | Both sources, the per-agent deduplication (S1-2 means an 8-agent record holds eight copies of every observation), episode marking, width validation |
+| `from_rollouts`, `from_parquet` | `train/probe/corpus.py` | Both sources, the per-agent deduplication (an 8-agent record holds eight rows per step that share the book), episode marking, width validation |
 | `split_masks` | `train/probe/probe.py` | The train/validation split, by episode |
 | `build_module` | `train/probe/features.py` | Building the module *training* would build — same catalog, same `vf_share_layers`, same wrapper |
 
@@ -172,7 +172,7 @@ pretraining is worth it at scale.
 ## 7. Distribution shift
 
 A book made by uniformly-random agents does not look like one made by a trained league: different
-spreads, different depth, different arrival intensity. Pretraining only on `--episodes` rollouts
+spreads, different depth, different arrival intensity. Pretraining only on `--episodes` rollouts (default `cda_pretrain.num_episodes`, 6)
 fits a market the agent will never trade in.
 
 Once a run exists, prefer `--parquet` over its episode record (`episode_sample_every` already bounds

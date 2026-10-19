@@ -68,7 +68,7 @@ class RewardModel(object):
         # Per modify/cancel that named no resting order. 0.0 by default: any
         # positive value makes the game negative-sum (S1-3), so switching it
         # on is a measured decision. The miss reaches the policy anyway
-        # through the `unmatched_last_step` observation field (docs/15 S3-24).
+        # through the `unmatched_last_step` observation field (docs/29 S3-24).
         self.dead_action_penalty = dead_action_penalty
 
     def set_reward(self, rewards: Dict[str, float], trader) -> Dict[str, float]:

@@ -1,7 +1,8 @@
 # 6. Action Space
 
-The current `Dict` action space, its deterministic price anchoring, the two size heads it
-used to have and why they went, and the legacy `Tuple` design it replaced.
+The current `Dict` action space, its deterministic price anchoring, and the legacy `Tuple` design
+it replaced. The defects of the action path that have been fixed are in
+[29_fixed_issues.md](29_fixed_issues.md).
 
 Related: [05_observation_space.md](05_observation_space.md) §5 (prices resolve against
 `agg_LOB_raw`), [03_matching_engine.md](03_matching_engine.md) §3.5 (order targeting),
@@ -118,7 +119,7 @@ whatever is available. `test_market_order_mapping` proves this by submitting a d
 
 ### 1.5 Aiming a modify or cancel: `order_slot`
 
-Since 2026-09-18 ([15](15_findings_and_recommendations.md) S3-24, phase 2) the Dict carries a
+Since 2026-09-18 ([S3-24](29_fixed_issues.md#s3-24--modify-and-cancel-cannot-be-aimed-so-they-are-mostly-dead-actions-verified-fixed), phase 2) the Dict carries a
 sixth head, `order_slot: Discrete(max_own_orders + 1)`, and it is what aims the two
 order-management categories:
 
@@ -146,10 +147,10 @@ resting orders per agent ([18](18_configuration.md) §4.2).
   The match is made in `Decimal`, the type the book stores prices in, and `_set_price` snaps every
   price it emits to the `tick_size` grid before handing it over — so the price an agent names is
   the price level the book has, on any tick, not only on `tick_size` 1
-  ([15](15_findings_and_recommendations.md) S3-4).
+  ([S3-4](29_fixed_issues.md#s3-4--the-order-books-tick_size-is-inert-verified-fixed)).
 - A **cancel** is never cash-checked; it only releases escrow. A **modify** may spend the escrow
   of the order it replaces, so shrinking or re-pricing an order is always possible
-  ([15](15_findings_and_recommendations.md) S2-13).
+  ([S2-13](29_fixed_issues.md#s2-13--a-cancel-was-cash-checked-like-a-new-order-so-an-over-committed-trader-could-not-cancel-verified-fixed)).
 
 See [03_matching_engine.md](03_matching_engine.md) §3.5 for why the two differ.
 
@@ -212,76 +213,26 @@ survived the redesign intact, and the `category × price-level × price-offset` 
 thoughtful piece of design: the passive/join/aggressive offset is exactly the decision a market
 maker faces.
 
-The corresponding cost, worth being explicit about: level index *k* means "the *k*-th occupied
-price", not a fixed distance, so the coordinate system is non-stationary. See
-[05_observation_space.md](05_observation_space.md) §7.4.
+In the default `grid` mode a price code is a tick offset from the reference price, so the
+coordinate is the same on every step. In `levels` mode level index *k* means "the *k*-th occupied
+price", not a fixed distance, so the coordinate is non-stationary; that is why the grid is the
+default ([S3-15](29_fixed_issues.md#s3-15--level-index-is-a-non-stationary-coordinate-verified-fixed)).
 
 ---
 
-## 4. The size heads that were degenerate (fixed)
+## 4. Size, and the helpers left behind
 
-Until the action layout moved to version 4 the size was two heads, `size_mean` and `size_sigma`,
-and `_set_size` turned them into a size with
-`rint(abs(N(mean_mul × size_mean, size_sigma)))`, drawn from `self.np_random`. That had three
-defects ([15](15_findings_and_recommendations.md) S3-1 to S3-3). All three are closed by the one
-`size` head of §1.2, which the policy samples itself.
+The size is one `size` head on `Box(0, 1)` (§1.2), which the policy samples itself, so the size
+an order gets is the action PPO scores and the same action gives the same size under any env seed
+(`TestSizeHead`). It replaced two heads, `size_mean` and `size_sigma`, from which the environment
+drew the size; their three defects — half of `size_mean` a mirror image, `size_sigma` inert, and a
+draw outside the policy's log-probability — are [S3-1](29_fixed_issues.md#s3-1--half-the-size_mean-action-range-is-a-no-op-verified-fixed), [S3-2](29_fixed_issues.md#s3-2--the-size_sigma-head-is-inert-verified-fixed) and [S3-3](29_fixed_issues.md#s3-3--size-is-sampled-by-the-environment-outside-the-policys-log-prob-verified-fixed),
+with the verified outputs in [29](29_fixed_issues.md#06-4--the-size-heads-that-were-degenerate).
 
-### 4.1 Half the `size_mean` range was a no-op (S3-1)
-
-The `abs()` folded the distribution. **[verified]**, same RNG seed:
-
-```
-mean=+0.5 -> [250.0, 250.0, 250.0, 250.0, 250.0]
-mean=-0.5 -> [250.0, 250.0, 250.0, 250.0, 250.0]   identical: True
-```
-
-`size_mean` was declared on `Box(-1, 1)`, so the policy's Gaussian head spent half its range on a
-mirror image. Worse, the optimum was bimodal at `±m`, which fights the unimodal Gaussian policy:
-the head is pushed toward mean 0 by symmetric gradients, and mean 0 means *minimum* size. The
-gradient also had a kink at exactly 0 — the worst possible place for one, since that is where a
-Gaussian policy initializes.
-
-**Fixed first** by declaring the range `Box(0, 1)` (action layout 3), then by the single head
-below. `size` is non-negative, and `TestSizeHead` checks that eleven values across the range give
-eleven different sizes, for market and limit orders alike.
-
-### 4.2 The `size_sigma` head was inert (S3-2)
-
-`sigma` was passed straight to `np.random.normal` as an **absolute** standard deviation, while
-means were 49.5·|m| (market) or 499.5·|m| (limit). **[verified]**, 4,000 limit sizes at
-`size_mean = 0.5`:
-
-```
-sigma=0.0 -> std 0.00 (all 250);  sigma=0.25 -> 0.37;  sigma=0.5 -> 0.58;  sigma=1.0 -> 1.05
-```
-
-Across `sigma ∈ [0,1]` the size varied by about ±1 contract on a base of 250. The head was a null
-control: the policy paid entropy cost for a parameter with no effect. **Fixed** by deleting it
-(the issue offered "scale it, or delete it"; with the size sampled by the policy there is nothing
-left for a sigma to control).
-
-### 4.3 Environment-side sampling broke the log-probability (S3-3)
-
-The policy emitted distribution **parameters** and the environment drew the sample. The realised
-size was therefore not part of the action whose log-probability PPO uses in the importance ratio.
-The policy was credited or blamed for an outcome driven by an unrecorded random draw, and the
-agent never observed the realisation. **[verified]**: one action, eight env seeds, eight draws:
-
-```
-size_mean=0.5, size_sigma=1.0 -> sizes [251, 251, 251, 253, 250, 250, 252, 251]
-```
-
-The spread was small here because sigma was small (§4.2), but the structure was wrong: advantage
-variance that no amount of data removes. **Fixed** by having the policy emit the size directly as
-a `Box` action, so `log π(a|s)` covers it and PPO's own exploration schedule controls the spread.
-`Action_Helper._set_size` no longer touches the random generator, and the same action now gives
-the same size under any env seed (`TestSizeHead`).
-
-### 4.4 Dead helper methods
+### 4.1 Dead helper methods
 
 `_set_side`, `_set_type`, `_higher` and `_lower` are all superseded by the category mapping and
-the offset arithmetic, and are never called. (`_set_price` also used to carry a `max_price`
-parameter its body never read; that one is gone.)
+the offset arithmetic, and are never called.
 
 ---
 
@@ -323,11 +274,11 @@ if price == 0:
 
 An agent could learn that "price code 3" was a safe passive placement; when liquidity vanished,
 price code 3 became a lottery ticket. That non-stationarity makes it extremely hard for a network
-to converge on a stable value function. **Resolved** by the ghost-level anchoring in §2.3.
+to converge on a stable value function. Replaced by the ghost-level anchoring of §2.3.
 
 **Forced aggression.** Codes 1–10 always offset by 1 tick, so an agent could never *join* a level
 at exactly its price. This designed-in penny war prevented agents from learning passive
-liquidity-providing strategies. **Resolved** by the `price_offset` dimension, whose "join" value
+liquidity-providing strategies. Replaced by the `price_offset` dimension, whose "join" value
 is exactly the level price.
 
 **Redundant boundary codes.** Codes 0 and 11 became unnecessary once levels and offsets could be
@@ -364,7 +315,7 @@ the price anchor in `reset`, order sizes in `_set_size`, and this shuffle — re
 the per-env `Generator` that `super().reset(seed=...)` seeds, so `reset(seed=...)` means what the
 Gymnasium API says it means. `test_seeding.py` pins it, and deliberately seeds the *global* NumPy
 stream to two different values while asserting the seeded episode is unchanged — which is the
-direction that would have hidden the original bug. S3-5, fixed.
+direction that would have hidden the original bug ([S3-5](29_fixed_issues.md#s3-5--seeding-is-entirely-non-functional-verified-fixed)).
 
 The explicit `seed` parameter still works for a caller that wants to pin this one shuffle without
 touching the env's stream.

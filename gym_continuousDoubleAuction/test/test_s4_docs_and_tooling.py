@@ -179,6 +179,18 @@ class TestStaleCommentsAndNotes:
                 command = block["_module"].split(".")[-1]
                 assert command in data["_source"], command
 
+    def test_the_mark_price_notes_give_the_fallback_order_mark_price_uses(self):
+        """Both notes said a one-sided quote came before the last print. `mark_price` tries the
+        last print first and takes a one-sided quote only when nothing has printed, because a
+        lone quote as the mark is the manipulation S2-5 removed (`test_self_match.py`)."""
+        import json
+        from gym_continuousDoubleAuction.config_loader import config_dir
+
+        for name in ("env_defaults.json", "train_config.json"):
+            note = json.load(open(config_dir() / name))["environment"]["_note_mark_price_source"]
+            last, quote = note.index("last tape print"), note.index("one-sided quote")
+            assert last < quote, name
+
 
 import glob  # noqa: E402
 import json  # noqa: E402
@@ -252,3 +264,38 @@ class TestEveryConfigKeyAndFlagIsDocumented:
 
     def test_an_undocumented_key_would_be_caught(self):
         assert not re.search(r"(?<![\w-])zz_not_a_real_key(?![\w])", _docs_text())
+
+
+class TestThePr308ReviewFindings:
+    """#309-#312, from the review of PR #308: text that said something the code or the other
+    documents do not."""
+
+    def test_docs13_names_step_clearing_for_the_batch_clear(self):
+        """#309: `matching_rule` splits a level (fifo / pro_rata); `step_clearing` batches."""
+        row = next(
+            line
+            for line in open("docs/13_perspective_financial_trader.md", encoding="utf-8")
+            if line.startswith("| **Latency** |")
+        )
+        assert "step_clearing" in row and "matching_rule" not in row
+
+    def test_every_group_moved_into_docs29_says_whose_sections_it_cites(self):
+        """#310: bare section numbers in moved text mean the source document's sections."""
+        lines = open("docs/29_fixed_issues.md", encoding="utf-8").read().split("\n")
+        groups = [i for i, line in enumerate(lines) if line.startswith("### From ")]
+        assert len(groups) > 10
+        for i in groups:
+            head = " ".join(lines[i : i + 6])
+            assert "section numbers" in head and "this document" in head, lines[i]
+
+    def test_docs15_lists_every_remainder_the_topic_docs_mark_open(self):
+        """#311: agent identity (from S1-2) and the last traded price (from S2-7)."""
+        text = open("docs/15_findings_and_recommendations.md", encoding="utf-8").read()
+        assert "agent identity" in text.lower() and "last traded price" in text.lower()
+        moved = open("docs/29_fixed_issues.md", encoding="utf-8").read()
+        assert "own resting orders and agent identity are not in the block" not in moved
+
+    def test_docs14_carries_no_per_module_line_count_for_logging_setup(self):
+        """#312: it said 523 lines when the module was 703; a count nothing checks drifts."""
+        text = open("docs/14_perspective_ai_engineer.md", encoding="utf-8").read()
+        assert not re.search(r"`logging_setup` \(\d+ lines\)|\d+-line `?logging_setup", text)

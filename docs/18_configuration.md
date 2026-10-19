@@ -286,11 +286,10 @@ Two of these are less free than they look:
 
 - **`loss_multiplier` must be 1.0** to keep the game zero-sum. Total NAV is conserved exactly, so
   `Σ nav_change = 0` across agents; any value above 1 makes `Σ reward < 0`, which makes passing
-  dominant for every agent and collapses the market. That is S1-3, measured: all-pass scored
-  exactly 0.0 while random trading scored −591,027. It shipped at 1.5.
+  dominant for every agent and collapses the market — S1-3, when it shipped at 1.5 ([S1-3](29_fixed_issues.md#s1-3--doing-nothing-is-a-dominant-strategy-verified-fixed)).
 - **`drawdown_penalty` multiplies a signed change, not a level.** The level was charged on all
   4,096 steps of an episode, so one early loss taxed every later step even from an idle agent
-  (S2-1). Clipping the change at zero would not have been the fix — see
+  ([S2-1](29_fixed_issues.md#s2-1--drawdown-is-penalised-as-a-level-not-an-increment-verified-fixed)). Clipping the change at zero would not have been the fix — see
   [07 §4.1](07_reward_function.md).
 
 The micro-penalties were calibrated against measurement, not chosen: over 8,000 random-agent steps
@@ -474,9 +473,8 @@ is `_default("key")`, which reads `config/train_config.json` when a `TrainConfig
 
 Two consequences worth knowing:
 
-- **The dataclass and the file cannot disagree.** They used to. Before this change the dataclass
-  said `num_cpus_per_env_runner = 1.0` and `num_gpus_per_learner = 0.75` while the file said `0.25`
-  and `0.25`; a run without `--config` silently used the dataclass pair.
+- **The dataclass and the file cannot disagree** ([29](29_fixed_issues.md#18-2--the-dataclass-and-the-file-disagreed) has the run that silently used the
+  dataclass's values).
 - **A key missing from the file raises**, rather than resolving to something written in Python.
 
 Network shape is configured through `fcnet_hiddens`, `fcnet_activation` and `vf_share_layers`,
@@ -516,7 +514,7 @@ only way to set them outside the Python API.
 
 ### 5.0 The entropy bonus and the champion guard
 
-Four keys, added for [15](15_findings_and_recommendations.md) S3-11, all with a shipped value that
+Four keys, added for [S3-11](29_fixed_issues.md#s3-11--no-entropy-bonus-and-champion-promotion-cannot-detect-passivity-verified-fixed), all with a shipped value that
 differs from what RLlib or the earlier config gave:
 
 | Key | Group | Shipped | Meaning |
@@ -606,7 +604,7 @@ until it returns or raises, and a second run on the folder is refused with the w
 its own `log_base_dir` (which is what `train.compare` does for every run), wait, or delete the
 lock if that run is gone. A lock whose process no longer exists on this machine, or that this
 process left behind, is taken over; one held from another machine cannot be checked and counts as
-live; two runs finding the same stale lock take it one after the other, through a `flock` on `.run.lock.guard` ([15](15_findings_and_recommendations.md) R-9, #179, #296).
+live; two runs finding the same stale lock take it one after the other, through a `flock` on `.run.lock.guard` ([R-9](29_fixed_issues.md#from-the-2026-10-07-review), #179, #296).
 
 **Two log levels, deliberately.** Ray at `INFO` is noise; this package at `INFO` is the per-episode
 NAV table, the per-iteration league statistics and the checkpoint lines — the output a run is meant
@@ -621,9 +619,7 @@ root and both handlers would otherwise print every line twice. See
 [11 §1.15](11_logging_and_observability.md).
 
 **`num_iters` is a target.** A 16-iteration run resumed at iteration 9 does 7 more, so the length
-of a run does not depend on how many times it was interrupted. It used to be a count on a driver
-loop that restarted at zero, which made 16 configured iterations mean 16 *more* every time. The
-iteration numbers are the algorithm's own — RLlib stores `training_iteration` in the checkpoint —
+of a run does not depend on how many times it was interrupted. ([29](29_fixed_issues.md#18-52--num_iters-restarted-at-zero-on-every-resume) has the count it replaced.) The iteration numbers are the algorithm's own — RLlib stores `training_iteration` in the checkpoint —
 so they are the same numbers the checkpoint directories and the log lines carry.
 `num_iters_is_delta` restores the old reading, for extending a run that already reached its target.
 
@@ -636,10 +632,8 @@ results/chkpt/
 └── iter_00008/          ← the newest; what a restore picks
 ```
 
-`chkpt_keep` prunes the oldest. Every save used to overwrite one directory, which left a run with
-exactly one recoverable state: no way back from a league that collapsed at iteration 12, and a save
-interrupted partway — the event checkpointing exists to survive — destroyed the only copy. Saves
-are now staged as `iter_N.tmp` and renamed into place, so an interrupted save leaves a directory
+`chkpt_keep` prunes the oldest ([29](29_fixed_issues.md#18-52--every-save-overwrote-one-checkpoint-directory) has the single overwritten directory this replaced).
+Saves are staged as `iter_N.tmp` and renamed into place, so an interrupted save leaves a directory
 the scanner skips rather than a half-written one that looks complete. A restore that cannot read
 the newest checkpoint falls back to the one before it.
 
@@ -697,7 +691,7 @@ It is now loud in both directions:
   `max_own_orders + 1`, `price` is `k_rows`, and so on; `envs/layout_version.py`) — and `build_algo` compares it before restoring.
   A checkpoint from the 193-float / five-head layout (version 1) resumed into this code fails with
   a message naming both versions and the fields that differ, rather than at a tensor shape on the
-  first step or, worse, not at all. That is S4-19, closed.
+  first step or, worse, not at all ([S4-19](29_fixed_issues.md#s4--minor)).
 - **A structural change is fatal.** `num_agents`, `n_hist`, `encoder_type`, `encoder_spec` or the
   policy set changing means the restored weights do not fit the requested problem, so the restore
   raises rather than training something other than what was asked for. Revert the key, or start a
@@ -836,52 +830,25 @@ architectures means separate runs, not a resume.
 which is the only thing that constructs prices — `_set_price` builds them as
 `anchor ± k × min_tick`.
 
-**This used to be two independent values.** `Action_Helper.min_tick` was a hardcoded `1` that
-actually drove prices, while the configured `tick_size` was passed to an `OrderBook` argument that
-was stored and never read. Setting `tick_size` therefore had no effect anywhere. Both values were
-1, so wiring `min_tick` to the config key changed no behaviour at the current config.
-
-**`reset()` no longer discards it.** It used to rebuild the book as `OrderBook(1, ...)` regardless
-of configuration; it now uses `self.tick_size`. The change is inert — see below — but there is no
-reason to keep a second value in the env.
+One value: the configured `tick_size` is `Action_Helper.min_tick`, `reset()` keeps it, and the
+book takes no tick of its own. There is no rounding or tick validation anywhere in the matching
+path; the grid is the action layer's alone.
 
 **Every price the action layer emits is on this grid, for any tick.** `_set_price` snaps its
-result to `min_tick` in `Decimal` before returning it, and `Trader._get_order_ID` compares prices
-as `Decimal(str(price))`, the book's own conversion. Neither was true until the 2026-09-18 pass:
-the level path read prices from a float32 snapshot, so on `tick_size` 0.1 every re-quote at an
-occupied level opened a new price level one float-ulp away and a cancel never found its order
-([15](15_findings_and_recommendations.md) S3-4, [16](16_verification_log.md) §16.17). At the
-default `tick_size` of 1 nothing changes.
+result to `min_tick` in `Decimal` before returning it, `agg_LOB_raw` is float64, and
+`Trader._get_order_ID` compares prices as `Decimal(str(price))`, the book's own conversion.
+`test_tick_grid.py` asserts the grid for ticks {1, 0.5, 0.1, 0.05, 0.01, 0.3, 0.0001} on both the
+anchor and the level path. The inert copy, and the float-ulp drift on a fractional tick that made a
+cancel miss its order, are in
+[29](29_fixed_issues.md#18-6--tick_size-was-inert-then-off-grid-on-a-fractional-tick)
+([S3-4](29_fixed_issues.md#s3-4--the-order-books-tick_size-is-inert-verified-fixed)).
 
-**The book's copy is gone.** `OrderBook` used to accept a `tick_size`, store it, and never read
-it; its literal default of `0.0001` was the one value in the project not read from `config/`. On
-2026-09-18 the parameter was deleted along with the `inert_tick_size_copy` block that documented
-it. There is no rounding or tick validation anywhere in the matching path, and now nothing
-suggests there is: the grid is the action layer's alone.
-
-**Why deletion rather than enforcement.** There is exactly one price producer in the system:
-every price reaching `process_order` comes from `_set_price` via `place_order`, and it now emits
-on-grid prices by construction (§6.1). Validation in the book would re-derive a guarantee the
+**Why the book does not enforce the grid.** There is exactly one price producer in the system:
+every price reaching `process_order` comes from `_set_price` via `place_order`, and it emits
+on-grid prices by construction. Validation in the book would re-derive a guarantee the
 producer already provides. Enforcement in `OrderBook.process_order` becomes the right call only if
 a second price source appears that the action layer does not control — scripted or human agents,
 replayed real order flow, an external feed.
-
-### 6.1 Float-grid caveat — closed
-
-This subsection used to say `_set_price` performed no quantization and that off-grid drift was
-rare: one combination over all anchors 10–100 and six ticks. That count covered the *anchor* path
-only. The *level* path — taken whenever the targeted book level is occupied — read the resting
-price out of `agg_LOB_raw`, a float32 array, so a level at 100.1 read back as
-`100.0999984741211` and the offset was added to that in float. On any non-integer tick every
-re-quote at an occupied level therefore opened a new price-map entry one float-ulp from the one
-the agent meant, and a cancel or same-price limit never found the trader's own order
-([15](15_findings_and_recommendations.md) S3-4, [16](16_verification_log.md) §16.17).
-
-Closed on 2026-09-18: `agg_LOB_raw` is float64, `_set_price` snaps its result to the tick grid
-with a `Decimal` quantize before returning it, and `Trader._get_order_ID` compares as
-`Decimal(str(price))`. `test_tick_grid.py` asserts the grid for ticks {1, 0.5, 0.1, 0.05, 0.01,
-0.3, 0.0001} on both paths. Ticks of `1`, `0.5` and `0.25` were never affected on the anchor path
-and are exact throughout now.
 
 ---
 
@@ -1144,10 +1111,10 @@ damage getting them wrong does:
    smoke-scale run.
 
 5. **Score them without the reward first.** Points 1–4 are about running the comparison
-   well; this one is about whether the comparison can answer anything at all. While S1-1
-   holds, `vf_explained_var` is ~9e-05 and PPO is REINFORCE with a batch baseline; while
-   S1-3 holds, passivity is the joint optimum. An architecture ranking taken from returns
-   under those two is a ranking of how fast each architecture descends to doing nothing.
+   well; this one is about whether the comparison can answer anything at all. A ranking taken
+   from returns is only as good as the reward: while S1-1 and S1-3 stood, it would have ranked
+   how fast each architecture descends to doing nothing. Both are fixed ([S1-1](29_fixed_issues.md#s1-1--ppos-critic-receives-zero-gradient-verified-fixed), [S1-3](29_fixed_issues.md#s1-3--doing-nothing-is-a-dominant-strategy-verified-fixed)), and a
+   reward-free score is still the cheaper first measurement.
 
    ```bash
    python -m gym_continuousDoubleAuction.train.probe --encoders mlp transformer lstm
@@ -1160,13 +1127,12 @@ damage getting them wrong does:
    [23_probe_harness.md](23_probe_harness.md).
 
    It does not replace a training comparison. It answers "does this architecture represent
-   the market better", not "does it trade better", and the second question genuinely needs
-   S1-1 and S1-3 fixed.
+   the market better", not "does it trade better", and the second needs a multi-seed training
+   comparison.
 
 For `moe_transformer` also watch `moe_max_expert_share` and `moe_min_expert_share` in
 the learner metrics — a collapsed mixture is indistinguishable from a healthy one by
 loss or throughput alone.
-
 
 ---
 

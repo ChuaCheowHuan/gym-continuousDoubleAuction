@@ -10,10 +10,16 @@ designed to exploit the first without depending on the second.
 
 Related: [05_observation_space.md](05_observation_space.md) (what would be encoded),
 [12_perspective_rl_researcher.md](12_perspective_rl_researcher.md) §2, §4, §6, §7 (the defects
-this interacts with), [15_findings_and_recommendations.md](15_findings_and_recommendations.md)
+this interacts with), [29_fixed_issues.md](29_fixed_issues.md)
 (S1-1, S1-2, S1-3, S2-6), [18_configuration.md](18_configuration.md) §5.4–5.5 (the encoder group
 and the comparison protocol), [10_testing.md](10_testing.md) §6.4 (the contract a new encoder
 must meet).
+
+> **Status.** This proposal was written while S1-1, S1-2, S1-3 and S2-6 were open. All four are
+> fixed: the critic learns ([S1-1](29_fixed_issues.md#s1-1--ppos-critic-receives-zero-gradient-verified-fixed)), the observation carries private state including the agent's own
+> resting orders ([S1-2](29_fixed_issues.md#s1-2--observation-contains-no-private-state-verified-fixed)), passivity is no longer the joint optimum ([S1-3](29_fixed_issues.md#s1-3--doing-nothing-is-a-dominant-strategy-verified-fixed)), and the stack is
+> normalised by one midpoint ([S2-6](29_fixed_issues.md#s2-6--every-frame-in-the-observation-stack-has-a-different-normalizer-verified-fixed)). Where the argument below cites them, it describes the state
+> the proposal was written against; the defects themselves are in [29](29_fixed_issues.md).
 
 ---
 
@@ -125,21 +131,14 @@ that is itself being trained, so **anything genuinely unpredictable is free to b
 the representation**, and the loss stops paying attention to it. This is the single strongest
 argument for JEPA specifically, as opposed to self-supervision generally, in this environment.
 
-### 2.3 The reward currently carries almost no signal, and JEPA does not need it
+### 2.3 JEPA does not need the reward
 
-Three findings compound:
-
-- **S1-1** — `vf_clip_param = 10` against NAV-scale targets pins `vf_loss` at the clip bound.
-  `vf_explained_var ≈ 9e-05`. PPO is REINFORCE with a batch-standardised baseline.
-- **S1-3** — the reward is strictly negative-sum over a NAV-conserving market. All-pass scores
-  exactly `0.0`; random trading scores `−591,027`. Passivity is both a Nash equilibrium and the
-  joint optimum.
-- **§7** — the default budget is ~262k env steps against a realistic need of 10⁷–10⁸.
-
-So the gradient currently reaching the encoder is a high-variance signal pointing at a degenerate
-policy, delivered in small quantities. A latent-prediction loss is **dense (every token, every
+When this was written the reward carried almost no signal: S1-1 left the critic flat and S1-3 made
+passivity the joint optimum (both fixed, [29](29_fixed_issues.md#22-23--the-reward-carried-almost-no-signal)). One limit still holds: the default budget is
+~262k env steps against a realistic need of 10⁷–10⁸ (§7), so the policy gradient reaching the
+encoder is a high-variance signal in small quantities. A latent-prediction loss is **dense (every token, every
 step), always defined, and independent of the reward being correct**. It is the one training
-signal in this system that is not downstream of S1-1 and S1-3.
+signal in this system that does not depend on the reward being right.
 
 That cuts both ways, and §3 is about the other way.
 
@@ -190,7 +189,7 @@ Four objections. None is fatal; all change what may honestly be claimed.
 
 ### 3.1 A better encoder makes a better do-nothing agent — **prerequisite met**
 
-> **Status.** S1-1 and S1-3 are fixed ([17](17_changelog.md) §29), so this no longer blocks
+> **Status.** S1-1 and S1-3 are fixed ([S1-1](29_fixed_issues.md#s1-1--ppos-critic-receives-zero-gradient-verified-fixed), [S1-3](29_fixed_issues.md#s1-3--doing-nothing-is-a-dominant-strategy-verified-fixed)), so this no longer blocks
 > anything. It is kept because it is the reason the ordering in §7 is what it is, and because the
 > *measurement* it warns about is still unmade.
 
@@ -206,42 +205,28 @@ why the probe harness could be built and used first. The gate is now open and un
 multi-seed training comparison has been run, so nothing yet says whether a JEPA encoder makes a
 better *trader*. §5.5's protocol is what would answer it.
 
-### 3.2 The observation had no private state — **mostly fixed**
+### 3.2 The observation carries private state
 
-> **Status.** S1-2 is closed for inventory, cash, NAV, drawdown, VWAP and time remaining: the
-> observation carries a 9-float private tail ([17](17_changelog.md) §30). **Resting orders are
-> still absent**, so the third bullet below is half-collected and the first still stands.
+S1-2 is fixed: every agent receives its own 41-float private block - inventory, cash, NAV, drawdown,
+VWAP, time remaining, its own resting orders and the action mask ([05](05_observation_space.md) §1.0;
+the defect, and what it meant for a world model, is in
+[29](29_fixed_issues.md#22-32--the-observation-had-no-private-state)).
 
-S1-2: every agent received the byte-identical public book vector — `distinct obs vectors across
-agents: 1`. A JEPA world model over *that* observation modelled the market's evolution and could
-not represent inventory, VWAP, NAV, drawdown or resting orders, because none of them was in its
-input.
+- **Not a defect.** An action-conditioned predictor (§4.3) conditioned on *this* agent's action is
+  fitting the conditional expectation over seven unobserved opponent actions. Its loss has a nonzero
+  floor, and that floor is the residual multi-agent stochasticity rather than underfitting — §33.4
+  of [17](17_changelog.md) says the same about the shipped world model.
+- **What it makes possible.** With the private block in place, action-conditioning is the
+  materially more interesting object it promised to be: "what does the book — and my position —
+  look like after I send this order" is a *market-impact* model, which is the quantity the project
+  exists to study.
 
-Consequences, and where each now stands:
+### 3.3 One normaliser per stack, so a predictive target is clean
 
-- **Still open.** The latent cannot fully support the four of nine action categories (`modify`,
-  `cancel`) that stay partly blind: an agent sees `cash_on_hold` but not *which* orders that cash
-  is committed to.
-- **Unchanged, and not a defect.** An action-conditioned predictor (§4.3) conditioned on *this*
-  agent's action is fitting the conditional expectation over seven unobserved opponent actions.
-  Its loss has a nonzero floor, and that floor is the residual multi-agent stochasticity rather
-  than underfitting — §33.4 of [17](17_changelog.md) says the same about the shipped world model.
-- **Collected.** With the private block in place, action-conditioning is now the materially more
-  interesting object it promised to be: "what does the book — and my position — look like after I
-  send this order" is a *market-impact* model, which is the quantity the project exists to study.
-
-### 3.3 The per-frame normalizer contaminates a predictive target
-
-S2-6: each stacked frame is normalised by its **own** L1 midpoint `M_t`, so a price at `t-3` and
-the same price at `t` have different encodings. For a *classification*-flavoured encoder that is a
-nuisance. For a *predictive* objective it is worse: "predict the latent of frame `t` from frames
-`t-3..t-1`" partly means "predict the renormalisation", and the predictor can score well by
-modelling an artefact of the observation pipeline rather than the market.
-
-`log_mid` is in the observation, so `M_t` is recoverable and the artefact is learnable rather than
-information-destroying — which is precisely the problem. **Fix S2-6 (normalise the whole stack by
-the current `M_t`) before running any time-axis masking**, or the ablation in §4.2 will not mean
-what it says.
+S2-6 is fixed: the whole stack is normalised by the current `M_t`, so the same price has the same
+encoding in every frame ([05](05_observation_space.md) §4). Time-axis masking (§4.2) therefore
+predicts the market, not a renormalisation. Why that mattered is in
+[29](29_fixed_issues.md#22-33--the-per-frame-normalizer-contaminated-a-predictive-target).
 
 ### 3.4 The scale is small, and JEPA's evidence is at scale
 
@@ -268,7 +253,7 @@ mindmap
     B · Masked-latent aux loss
       new `jepa` encoder_type
       rides the MoE aux-loss seam
-      needs S2-6 for time masking
+      time masking needs one normaliser - S2-6 fixed
     C · Action-conditioned world model
       z_t+1 from (z_t, a_t)
       needs NEXT_OBS connector
@@ -526,9 +511,10 @@ say plainly that you did not.
 
 **What it does not buy**
 
-- Nothing about S1-1, S1-3, S2-1 or S2-3. The reward stays negative-sum and the critic stays flat.
-- Nothing about S1-2. A world model over a shared public observation cannot represent private
-  state, so `modify` and `cancel` stay blind.
+- Nothing about the reward or the critic. S1-1, S1-3, S2-1 and S2-3 were fixed in the reward and
+  the PPO configuration, not by an encoder ([29](29_fixed_issues.md)).
+- Nothing about what is observed. A world model represents only what the observation carries; the
+  private state is there because S1-2 was fixed in the observation ([S1-2](29_fixed_issues.md#s1-2--observation-contains-no-private-state-verified-fixed)).
 - No large effect should be expected at 88 tokens and ~10⁵–10⁶ parameters. The comparable
   published result on financial series is a ~10% improvement over an identity baseline from a
   367K-parameter model.
@@ -545,14 +531,14 @@ is the piece worth starting.
 
 | Step | Work | Depends on | Effort |
 |---|---|---|---|
-| 0 | S1-1 (`vf_clip_param` / reward scaling), S1-3 (reward sign), S2-6 (shared normalizer) | — | S–M |
+| 0 | ~~S1-1 (`vf_clip_param` / reward scaling), S1-3 (reward sign), S2-6 (shared normalizer)~~ — **done**, see [29](29_fixed_issues.md) | — | S–M |
 | 1 | ~~**Proposal A** — offline probe harness and reward-free encoder scores~~ — **done**, see [23](23_probe_harness.md) | **nothing** | S |
 | 2 | Generalise the aux-loss seam: `ENCODER_AUX_LOSS`, encoder-aware `_collect` and `get_non_inference_attributes` | — | S |
 | 3 | ~~**Proposal B** — the `jepa` encoder~~ — **done**, all three mask axes | — | M |
 | 4 | Time-axis masking in Proposal B | 0 (S2-6), 3 | S |
 | 5 | ~~**Proposal D** — offline pretraining, with a fingerprint guard~~ — **done**, see [24](24_pretraining.md) | 3 | M |
 | 6 | ~~**Proposal C** — action-conditioned world model~~ — **done**, `world_model: true` | 0, 3 | M–L |
-| 7 | Intrinsic reward from predictor error | 0, 6 | M, and only if S1-3 is genuinely fixed first |
+| 7 | Intrinsic reward from predictor error | 0, 6 | M, and only once S1-3's fix is shown to hold in training |
 
 Steps 1 and 2 are worth doing whatever is decided about the rest: one closes a documented testing
 gap, and the other is a refactor the second auxiliary loss makes overdue.

@@ -684,7 +684,7 @@ class TorchJEPAEncoder(TorchModel, Encoder):
 
         # Collapse metrics and the hinge, both computed on the ONLINE side.
         #
-        # This is the whole of docs/15 S2-9. They used to be derived from
+        # This is the whole of docs/29 S2-9. They used to be derived from
         # `target`, which is produced inside `torch.no_grad()` by a trunk whose
         # parameters are additionally `requires_grad_(False)`. So `std` had
         # `grad_fn is None`, `variance_penalty` had `requires_grad False`, and

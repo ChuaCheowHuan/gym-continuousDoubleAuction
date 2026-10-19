@@ -254,7 +254,7 @@ class TestCBPRunsInsideARealUpdate:
 
 
 class TestCBPOnTheLSTMCore:
-    """docs/15 S3-32: under scope `recurrent` the lstm encoder is no longer a no-op.
+    """docs/29 S3-32: under scope `recurrent` the lstm encoder is no longer a no-op.
 
     Before, `cbp_enabled` on `lstm` found no replaceable layer and trained
     exactly like CBP off. Here the mechanism fires inside a real PPO update on

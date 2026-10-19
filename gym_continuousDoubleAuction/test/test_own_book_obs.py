@@ -1,4 +1,4 @@
-"""Phase 1 of docs/15 S3-24: the agent can see its own resting orders.
+"""Phase 1 of docs/29 S3-24: the agent can see its own resting orders.
 
 The private block gains an own-book block - this agent's resting size at each
 of the k_rows public levels on each side, on the public book's scale and sign

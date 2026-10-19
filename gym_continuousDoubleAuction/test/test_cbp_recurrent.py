@@ -1,4 +1,4 @@
-"""Continual Backprop on an LSTM core (docs/15 S3-32, docs/25 section 3.4).
+"""Continual Backprop on an LSTM core (docs/29 S3-32, docs/25 section 3.4).
 
 The `lstm` encoder has no two-Linear block in it, so under the original
 `feedforward` scope Continual Backprop found nothing to replace there and

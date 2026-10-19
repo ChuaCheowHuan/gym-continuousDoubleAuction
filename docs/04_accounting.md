@@ -37,11 +37,9 @@ everywhere; sizes and `net_position` are `int`, because a position is a count of
 requires float rewards. No field changes type mid-episode — `_covered` resets `position_val` and
 `VWAP` to `Decimal(0)` rather than a bare `0` for exactly that reason.
 
-All arithmetic is `Decimal`, and the basis is carried as a **sum**, not a quotient. Until
-2026-09-18 the ledger stored `VWAP = cost / size` and rebuilt the basis as `size × VWAP`; the
-quotient rounds at the 28-digit context whenever it does not terminate, and `mark_to_mkt` then
-multiplied it back in two independently rounded products, so conservation held only to about one
-unit in the 22nd decimal place ([15](15_findings_and_recommendations.md) S3-23). With `cost_basis`
+All arithmetic is `Decimal`, and the basis is carried as a **sum**, not a quotient: a stored
+`VWAP = cost / size` would round at the 28-digit context whenever it does not terminate
+([29](29_fixed_issues.md#04-1--the-basis-was-a-rounded-quotient) S3-23). With `cost_basis`
 primary, every term of the conservation identity is a sum of the same trade values with opposite
 signs, and the property suite asserts `Σ NAV == Σ initial cash` with `==`. This is what makes the
 simulation exactly zero-sum in NAV terms:
@@ -95,11 +93,8 @@ what makes the episode-end conservation check (`Σ NAV == num_agents × init_cas
 rather than approximate — it is exact in `Decimal`, and the tolerance exists as headroom for a
 future change that legitimately removes cash, such as fees.
 
-The one function that would have broken it was deleted rather than wired up: `modify_cash_transfer`
-computed an escrow delta with no term for a fill, so a modify that crossed the spread would have
-escrowed cash against quantity that was no longer resting. A modify is handled as
-cancel-and-reprocess instead. See S3-20 in
-[15_findings_and_recommendations.md](15_findings_and_recommendations.md).
+A modify is handled as cancel-and-reprocess, so there is no escrow-delta path that could miss a
+fill during the modification ([29](29_fixed_issues.md#s3-20--the-escrow-delta-path-for-order-modification-was-dead-verified-fixed) S3-20).
 
 ---
 
@@ -132,24 +127,20 @@ new quote is processed.
 
    Also spendable: escrow held against this trader's resting orders that would only *close* its
    position (`_closing_escrow`, capped at `|net_position|`, oldest order first). That cash backs a
-   fill that can only reduce risk, and treating it as spent refused two thirds of all orders at
-   `init_cash` 100,000 under random play ([15](15_findings_and_recommendations.md) S1-5,
+   fill that can only reduce risk; treating it as spent refuses most orders of a committed trader
+   ([29](29_fixed_issues.md#s1-5--the-cash-check-is-bypassable-position-is-not-bounded-by-capital-verified-fixed) S1-5,
    [16](16_verification_log.md) §16.18). `cash` may therefore sit below zero by at most that
    amount while both orders rest; `cash + cash_on_hold` never does and NAV is unaffected.
 
-3. **A `cancel` is never cash-checked.** It places nothing and only releases escrow. It used to be
-   run through the same predicate with its own irrelevant size and price, so a trader with all its
-   cash escrowed was refused the cancel that would have freed it
-   ([15](15_findings_and_recommendations.md) S2-13). Only the `nav > 0` gate applies to it.
+3. **A `cancel` is never cash-checked.** It places nothing and only releases escrow, so a trader with all its cash escrowed can always
+   cancel to free it ([29](29_fixed_issues.md#s2-13--a-cancel-was-cash-checked-like-a-new-order-so-an-over-committed-trader-could-not-cancel-verified-fixed) S2-13). Only the `nav > 0` gate applies to it.
 
 A market order (`price == -1.0`) pays every level it sweeps, so it is priced level by level
 (`Trader._sweep_cost`): the contracts that only close a position are free, and the ones that open
 risk are charged at the price of the level they reach, walking the opposite side from the touch. The
 trader's own resting orders on that side are skipped, since self-match prevention cancels them
 before the order meets the book. A thin book costs only what it can fill (the rest lapses), and an
-empty one falls back to the last tape price, then to 1. It used to be `opening_size × best price`:
-cash 1,000, a market buy of 10 against 1 @ 100 and 9 @ 200 was approved and left cash at −900
-([15](15_findings_and_recommendations.md) S2-14, `test_overdraw.py`).
+empty one falls back to the last tape price, then to 1 ([29](29_fixed_issues.md#s2-14--a-market-order-is-cash-checked-at-the-touch-but-pays-every-level-it-sweeps-verified-fixed) S2-14, `test_overdraw.py`).
 
 A buy that takes a **short** flat, or past flat, also reserves the loss it realises
 (`Trader._loss_on_cover`). Cash moves for the closing part of an order only when the position reaches
@@ -159,7 +150,7 @@ short posted its notional as collateral and is worth `2 × cost_basis − |posit
 negative once the price passes twice the entry. Covering it then takes that much out of cash, so the
 order needs it on top of anything it opens (a flip), and a trader whose short is under water by more
 than its free cash cannot flatten it with an order; `liquidation` is what removes it
-([15](15_findings_and_recommendations.md) S2-15). A resting bid that would cover the short owes that
+([29](29_fixed_issues.md#s2-15--closing-a-losing-position-realises-the-loss-into-cash-without-a-cash-check-verified-fixed) S2-15). A resting bid that would cover the short owes that
 loss when it fills, but its reserve is not escrowed, so later opening orders must leave it in cash
 (`Trader._resting_cover_loss`, bounded by the highest resting limit, the same shape as the resting
 maker fee). The loss is not a notional, so no fee is charged on it, at queue time or at clearing.
@@ -317,13 +308,12 @@ the signal champion promotion reads. Tracked as S2-4.
 `liquidation` and `maintenance_margin` in the env config ([18](18_configuration.md) §3.0.3);
 `envs/exchg/liquidation_helper.py`.
 
-**Why.** Until 2026-09-19 the only risk control on an open position was the solvency gate: at
-`nav <= 0` the trader was terminated and its resting orders pulled, but its **position stayed
-open** and `mark_to_mkt` kept marking it to the end of the episode. A short has no loss ceiling, so
-a bankrupt short went on losing — measured in `CDA_train.ipynb` at −1.9M against a 1M start — and
-every contract of that loss was a gain for the agents on the other side, paid by a counterparty
-that could not act and whose policy was never charged for it. Real venues close a position while
-its collateral still covers the close; this is that.
+**Why.** The solvency gate alone terminates a trader at `nav <= 0` and pulls its resting orders,
+but leaves its position open and marked to the end of the episode. A short has no loss ceiling, so
+a bankrupt short would go on losing, and every contract of that loss would be a gain for the agents
+on the other side, paid by a counterparty that cannot act. Real venues close a position while its
+collateral still covers the close; this is that. What happened before it existed is in
+[29](29_fixed_issues.md#04-8--a-bankrupt-traders-position-stayed-open).
 
 ### 8.1 The trigger
 
@@ -348,7 +338,7 @@ apply to short stock (FINRA Rule 4210). `maintenance_margin = 0` liquidates at b
    being bought back, `(mark - nav / |pos|) / (1 - rate)` for a long being sold, with `rate` the
    taker fee as a fraction (at 0 it is `mark - nav / net_position`). Snapped to the tick on the
    conservative side. At NAV ≤ 0 there is no equity to bound the close, so the band is the touch
-   (the best opposite price, that level only) and ADL takes the rest ([15](15_findings_and_recommendations.md)
+   (the best opposite price, that level only) and ADL takes the rest ([29](29_fixed_issues.md#from-the-2026-10-07-review)
    R-3); a `maintenance_margin` of 0 is refused. The fills
    are ordinary trades against orders other agents chose to rest, settled by `_process_trades`, and
    they print. Nothing is left resting. With NAV already ≤ 0 (a gap through bankruptcy in one step)
@@ -463,13 +453,13 @@ notional (`price × quantity`). Both ship at **0**, so nothing changes until a r
   Under `step_clearing: "batch"` a counter party that arrived in the same batch is booked as an
   `init_party` but is still the maker. A negative maker rate is a rebate. A batch has no real
   aggressor, so which of two same-batch orders pays the taker rate follows the record's initiator,
-  which a tick rule picks ([15](15_findings_and_recommendations.md) R-1): the buyer if the clearing
+  which a tick rule picks ([29](29_fixed_issues.md#from-the-2026-10-07-review) R-1): the buyer if the clearing
   price is above the pre-batch mid, the seller if below, the last direction if equal. With unequal
   rates the choice is still a convention, and equal rates (or `step_clearing: "sequential"`) avoid it.
 - **How.** `Account.process_acc` takes the fee out of `cash` as the last step of booking a fill, so
   it flows through NAV, the reward's `nav_term` and the drawdown like any other loss. The fee is
   `(trade_val × bps).scaleb(-4)`, a shift of the decimal point, so it is exact and the ledger still
-  balances to the last digit ([15](15_findings_and_recommendations.md) S3-23).
+  balances to the last digit ([29](29_fixed_issues.md#s3-23--nav-conservation-is-exact-only-to-decimal-context-rounding-verified-fixed) S3-23).
 - **Where it goes.** Each account keeps `fees_paid`, cleared by `reset_acc`. The exchange's ledger
   is their sum, `env.fees_collected`, and money is conserved with it counted:
   `sum(NAV) + fees_collected == starting cash`. The episode-end check in the callback adds it to

@@ -636,7 +636,7 @@ class TestTheCallbackFlushesAtTheEndOfASample:
 
 
 class TestTheLiveEpisodeCapFollowsTheRunnersEnvs:
-    """docs/15 R-10 (#180): the recorder buffers at most `max_live_episodes` unfinished episodes
+    """docs/29 R-10 (#180): the recorder buffers at most `max_live_episodes` unfinished episodes
     (a literal 8 in `EpisodeRecorder.__init__`), and the callback never set it. A runner that
     plays more envs at once than that had episodes standing in the corridor, dropped from the
     record. The floor is now a config key, and the recorder is never smaller than the number of

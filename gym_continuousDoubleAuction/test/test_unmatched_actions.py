@@ -1,4 +1,4 @@
-"""docs/15 S4-14, the remaining half: a `modify` or `cancel` that names no
+"""docs/29 S4-14, the remaining half: a `modify` or `cancel` that names no
 resting order is counted.
 
 Three ways an action can silently do nothing, and the field that now records
@@ -75,7 +75,7 @@ class TestTraderCounter:
         assert (frozen.acc.num_unmatched_step, frozen.acc.num_rejected_step) == (0, 1)
 
     def test_cancel_on_the_empty_side_counts(self):
-        """A cancel is aimed by slot now, not by price (docs/15 S3-24), and the
+        """A cancel is aimed by slot now, not by price (docs/29 S3-24), and the
         only miss left is a side with nothing of the agent's resting on it."""
         self.t.place_order('limit', 'bid', 1, 100, self.book, [self.t])
         self.t.place_order('cancel', 'ask', 1, 99, self.book, [self.t], slot=2)

@@ -28,7 +28,7 @@ class EpisodeStatus(object):
         held. A bankrupt agent kept emitting transitions, kept accruing reward,
         and kept resting executable orders - and its module return, which is
         what champion promotion reads, was then dominated by a constant
-        unrelated to its policy. That is docs/15 S2-4.
+        unrelated to its policy. That is docs/29 S2-4.
 
         Termination is decided and applied in the same call, which is also what
         settles the `done_set`-is-monotone worry: an agent is terminated at the

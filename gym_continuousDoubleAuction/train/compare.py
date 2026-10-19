@@ -217,12 +217,12 @@ def run_one(base_cfg, encoder: str, seed: int, out_dir: str, iters: int) -> Dict
             # The two other no-op fractions and the maker ratio, because the
             # claim an order-management change makes is about *activity*, not
             # returns: "agents that can aim cancels quote more and hold fewer
-            # stale orders" shows up here first (docs/15 S3-24, phase 4).
+            # stale orders" shows up here first (docs/29 S3-24, phase 4).
             "order_rejection_fraction": _as_float(env_runners.get("order_rejection_fraction")),
             "unmatched_action_fraction": _as_float(env_runners.get("unmatched_action_fraction")),
             "maker_fill_ratio_max": _as_float(env_runners.get("maker_fill_ratio_max")),
             # Agent-steps whose observation was clipped to the declared Box
-            # bounds (docs/15 S4-15); should be 0 unless the bounds are wrong.
+            # bounds (docs/29 S4-15); should be 0 unless the bounds are wrong.
             "obs_clip_fraction": _as_float(env_runners.get("obs_clip_fraction")),
             "parameters": _parameter_count(algo, trainable[0]),
         }

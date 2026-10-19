@@ -18,7 +18,7 @@ They drift. Work from the code, not from the docs.
 2. **List disagreements:**
    `python .claude/skills/cda-doc-sync/scripts/claims.py . "${TMPDIR:-/tmp}/facts.json"`
    Output is `category  file:line  claimed -> actual  | line`. `16_verification_log.md`,
-   `17_changelog.md` and `27_agent_skills.md` are skipped on purpose. Besides the number
+   `17_changelog.md`, `27_agent_skills.md` and `29_fixed_issues.md` are skipped on purpose. Besides the number
    categories it checks the per-file inventory in `docs/10` (a wrong count, a stale row, a test file
    with no row), the code size in `docs/14`, and that every config key and CLI flag is mentioned in
    some doc (`config key`, `cli flag`: a key or flag nothing documents).

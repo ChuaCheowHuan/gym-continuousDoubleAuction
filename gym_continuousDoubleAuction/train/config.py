@@ -134,7 +134,7 @@ class TrainConfig:
     # arrival or at one uniform price ("sequential" / "batch").
     matching_rule: str = _default("matching_rule")
     step_clearing: str = _default("step_clearing")
-    # Whether a trader may rest several orders at one price (docs/15 S3-10).
+    # Whether a trader may rest several orders at one price (docs/29 S3-10).
     allow_multiple_orders_per_level: bool = _default("allow_multiple_orders_per_level")
     # What happens when equity runs out (docs/04 section 8): "market_adl"
     # closes a trader out below maintenance_margin - book first, then ADL for
@@ -154,7 +154,7 @@ class TrainConfig:
     # Bounds of the per-episode price anchor, drawn as randint(min, max) in
     # reset(). These were readable by the env but had no TrainConfig field, so
     # training runs could not narrow the range - the relative tick therefore
-    # varied 10x across episodes with no way to control it. See docs/15 S3-4.
+    # varied 10x across episodes with no way to control it. See docs/29 S3-4.
     initial_price_min: int = _default("initial_price_min")
     initial_price_max: int = _default("initial_price_max")
 
@@ -211,9 +211,9 @@ class TrainConfig:
     # run, so this is exposed rather than left implicit.
     minibatch_size: Optional[int] = _default("minibatch_size")
     # The PPO entropy bonus, falling linearly from `entropy_coeff` to
-    # `entropy_coeff_final` over `entropy_decay_iters` iterations (docs/15
+    # `entropy_coeff_final` over `entropy_decay_iters` iterations (docs/29
     # S3-11). RLlib's own default is 0.0.
-    # The discount and the GAE parameter (docs/15 S3-13). RLlib's own defaults are
+    # The discount and the GAE parameter (docs/29 S3-13). RLlib's own defaults are
     # 0.99 and 1.0.
     gamma: float = _default("gamma")
     lambda_: float = _default("lambda_")
@@ -280,12 +280,12 @@ class TrainConfig:
     max_champions: int = _default("max_champions")
     min_iterations_between_champions: int = _default("min_iterations_between_champions")
     # Mean trades per episode a trainable policy needs over the iteration to be
-    # promoted (docs/15 S3-11). 0 disables the guard.
+    # promoted (docs/29 S3-11). 0 disables the guard.
     min_champion_trades: float = _default("min_champion_trades")
-    # Which modules the promotion threshold is computed over (docs/15 S3-12):
+    # Which modules the promotion threshold is computed over (docs/29 S3-12):
     # "pooled" or "excluding_baselines".
     promotion_reference: str = _default("promotion_reference")
-    # Steps ahead at which fills are marked out (docs/15 S3-9).
+    # Steps ahead at which fills are marked out (docs/29 S3-9).
     markout_horizons: List[int] = _default("markout_horizons")
     original_opponent_weight: float = _default("original_opponent_weight")
     champion_weight: float = _default("champion_weight")

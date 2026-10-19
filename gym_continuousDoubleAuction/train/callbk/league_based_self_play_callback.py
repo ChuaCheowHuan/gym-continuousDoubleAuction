@@ -50,7 +50,7 @@ NAV_VIOLATIONS_METRIC = "nav_conservation_violations"
 #: not a pass) so a run that is never being checked is visible.
 NAV_UNCHECKED_METRIC = "nav_conservation_unchecked"
 
-#: The modules the promotion threshold can be computed over (docs/15 S3-12).
+#: The modules the promotion threshold can be computed over (docs/29 S3-12).
 PROMOTION_REFERENCES = ("pooled", "excluding_baselines")
 
 
@@ -135,11 +135,11 @@ class SelfPlayCallback(RLlibCallback):
                 a trainable policy needs to be promoted. A policy that has
                 collapsed to always-pass earns exactly 0, which beats a league of
                 money-losing modules, so it would otherwise clear the return
-                threshold (docs/15 S3-11). 0 disables the guard.
+                threshold (docs/29 S3-11). 0 disables the guard.
             promotion_reference: Which modules the promotion threshold is computed
                 over: "pooled" (all of them, baselines included) or
                 "excluding_baselines" (trainable modules and champions). See
-                `_threshold_returns` and docs/15 S3-12.
+                `_threshold_returns` and docs/29 S3-12.
             markout_horizons: Steps ahead at which a fill's adverse-selection
                 mark-out is measured, one `module_markout_<h>` metric each (see
                 `train/performance.py`). Empty switches mark-outs off.
@@ -382,7 +382,7 @@ class SelfPlayCallback(RLlibCallback):
                 max_bytes=self.episode_max_bytes,
                 rows_per_file=self.episode_rows_per_file,
                 # Never fewer chairs than envs a runner steps at once: an episode with no
-                # place in the buffer is dropped from the record (docs/15 R-10, #180).
+                # place in the buffer is dropped from the record (docs/29 R-10, #180).
                 max_live_episodes=max(
                     int(self.episode_max_live_episodes), int(self.envs_per_env_runner)
                 ),
