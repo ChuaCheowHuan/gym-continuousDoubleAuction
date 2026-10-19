@@ -99,7 +99,7 @@ import and reads its config tree relative to the repository root
 Three checks, cheapest first. All three are what CI runs ([10](10_testing.md) §7).
 
 ```bash
-# 1. the simulator and the training-side units: ~3 min, 2,126 tests (incl. pyflakes and Hypothesis);
+# 1. the simulator and the training-side units: ~3 min, 2,128 tests (incl. pyflakes and Hypothesis);
 #    test/integration is left out by default (pyproject.toml addopts)
 python -m pytest gym_continuousDoubleAuction/test -q
 
@@ -110,7 +110,7 @@ python -m gym_continuousDoubleAuction.CDA_rand --steps 200 --agents 4
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 ```
 
-Expected: `2126 passed`, a line reading `completed 200 steps with 4 random agents.`, and
+Expected: `2128 passed`, a line reading `completed 200 steps with 4 random agents.`, and
 `185 passed`. `pytest` is the only runner that works; `python test_x.py` defines classes and exits
 ([10](10_testing.md) §0).
 

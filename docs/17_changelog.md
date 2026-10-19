@@ -4198,3 +4198,20 @@ already refused at start-up. Only the messages misled.
   fail on the previous source; the fixed-mode message, one learner and RLlib's default pass on
   both. Unit 2,121 to 2,126; suite 2,311.
 - **Docs.** [09](09_distributed_training.md) lists both start-up checks.
+
+## 94. The share check covers RLlib's default minibatch (#307)
+
+Found reviewing PR #306 (section 93). The #305 check ran only for an explicit `minibatch_size`. With
+the shipped `null`, `build_config` passes nothing and RLlib uses its PPO default of 128. A share
+below 128 (`max_step` 32 × 4 episodes over 2 learners is 64) still failed late, in RLlib's terms.
+The line section 93 added to [09](09_distributed_training.md) said that default "always fits".
+
+- **Fix.** With `minibatch_size: null`, `TrainConfig` checks the minibatch RLlib will use, read from
+  RLlib's own `PPOConfig` rather than restated. The message names it as RLlib's default and lists
+  raising the batch as a way out. Every config it refuses, RLlib refused too.
+- **Tests.** `test_config_wiring.py` 31 to 33: a share of 64 with `null` is refused, and a share of
+  128 is accepted. The refusal case fails on the previous source. `test_config_sources.py`'s
+  derived-properties fixture built a 30-step batch that RLlib could never train with its default
+  minibatch; it now sets `minibatch_size` 10, and what it asserts is unchanged. Unit 2,126 to
+  2,128; suite 2,313.
+- **Docs.** The `09` line says which shares the default fits.

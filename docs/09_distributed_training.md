@@ -311,7 +311,9 @@ default-config tests, before being considered correct.**
     keys for the active mode (#304).
   - **A minibatch has to fit one learner's share.** `minibatch_size` may not exceed
     `train_batch_size / num_learners`, because each learner draws its minibatches from its own share
-    (#305). The shipped `minibatch_size: null` (RLlib's 128) always fits.
+    (#305). With the shipped `minibatch_size: null`, RLlib's own default (128) is the one checked
+    (#307): it fits any share of at least 128 steps, which the shipped batch of 16,384 always is,
+    but not a short test run split across learners.
 
   Before #299 was fixed, N learners meant N times the episodes per iteration and an entropy decay
   N times shorter.
