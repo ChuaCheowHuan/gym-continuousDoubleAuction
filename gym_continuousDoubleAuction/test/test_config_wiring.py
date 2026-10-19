@@ -283,3 +283,15 @@ class TestMinibatchFitsEachLearnersShare:
 
     def test_the_rllib_default_is_left_alone(self):
         assert TrainConfig(num_learners=2, minibatch_size=None).minibatch_size is None
+
+    def test_rllibs_default_is_checked_when_minibatch_size_is_null(self):
+        """#307: with `minibatch_size: null` RLlib uses its own default (128), which a small
+        batch split across learners can fall below; that failed late, in RLlib's terms."""
+        # 32 x 4 = 128 steps over 2 learners is a share of 64.
+        with pytest.raises(ValueError, match="RLlib's default") as err:
+            TrainConfig(num_learners=2, max_step=32, num_episodes_per_iter=4)
+        assert "minibatch_size" in str(err.value) and "64" in str(err.value)
+
+    def test_rllibs_default_fits_a_share_of_its_own_size(self):
+        cfg = TrainConfig(num_learners=2, max_step=64, num_episodes_per_iter=4)
+        assert cfg.minibatch_size is None and cfg.train_batch_size_per_learner == 128
