@@ -4180,3 +4180,21 @@ and finished it in 4.
 - **Docs.** [09](09_distributed_training.md) replaces the known-issue note with how the batch is
   split; [18](18_configuration.md) says an iteration is `train_batch_size` steps whatever
   `num_learners` is.
+
+## 93. Two start-up messages for multi-learner runs (#304, #305)
+
+Found reviewing PR #303 (section 92). Both cases need non-default settings, and both runs were
+already refused at start-up. Only the messages misled.
+
+- **#304.** The uneven-batch refusal told a run with `episode_length_mode: random` to change
+  `max_step`, which that mode ignores. It now names the keys that set the expected length in the
+  active mode: `max_step`, or `(max_step_min + max_step_max) // 2`.
+- **#305.** With `num_learners > 1`, a `minibatch_size` above each learner's share
+  (`train_batch_size / num_learners`) was refused only by RLlib, at algorithm build, naming
+  `train_batch_size_per_learner`, which no config file sets. `TrainConfig` now refuses it next to
+  the even-split check, naming `minibatch_size`, `num_learners` and the share. A config RLlib
+  accepted is unaffected.
+- **Tests.** `test_config_wiring.py` 26 to 31. The random-mode message and the minibatch refusal
+  fail on the previous source; the fixed-mode message, one learner and RLlib's default pass on
+  both. Unit 2,121 to 2,126; suite 2,311.
+- **Docs.** [09](09_distributed_training.md) lists both start-up checks.
