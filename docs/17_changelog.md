@@ -4274,5 +4274,5 @@ behaviour). The code was right; both notes now say so.
 - **Resumes.** The enabled set and every resolved setting are unrestorable; the sidecar records
   each extension's version and a restore without it is refused by name. A default run writes no
   new sidecar key and resolves the same classes as before.
-- **Tests.** `test_extensions.py` (27) and `test_loss_seam.py` (5); unit 2,133 to 2,165.
-  `integration/test_extensions_wiring.py` (5); integration 185 to 190; suite 2,355.
+- **Tests.** `test_extensions.py` (29) and `test_loss_seam.py` (5); unit 2,133 to 2,167.
+  `integration/test_extensions_wiring.py` (5); integration 185 to 190; suite 2,357.
