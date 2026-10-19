@@ -1224,3 +1224,13 @@ So before concluding anything from a CBP run, read `cbp_replacements` and `cbp_m
 a replacement count of 0, or a mature fraction pinned at `0.0`, means it did not run, not that it
 did not help. If more replacement is wanted without raising the rate, `minibatch_size` is the lever
 — it multiplies the optimiser steps per iteration, which is the clock CBP runs on.
+
+## 5.7. The `extensions` group
+
+Separately installed packages that add to the learning stack ([30](30_extensions.md)). Both keys
+are unrestorable: a resume must enable exactly what the checkpoint did, with the same settings.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `extensions_enabled` | `[]` | Names of installed extensions to compose into this run. Installing a package changes nothing until its name is here; a name that is not installed raises |
+| `extension_settings` | `{}` | One object per extension, keyed by name. Each extension fills in its own defaults and rejects keys it does not declare. A block for an extension that is not enabled is ignored |

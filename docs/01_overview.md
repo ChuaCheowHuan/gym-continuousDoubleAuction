@@ -205,8 +205,8 @@ observation content, reward scaling, PPO hyper-parameters — is where the high-
 | `python -m gym_continuousDoubleAuction.train.train --iters 4 --agents 4` | League self-play PPO training |
 | `python -m gym_continuousDoubleAuction.train.train --help` | Full CLI |
 | `python gym_continuousDoubleAuction/CDA_rand.py` | Random-agent smoke run, no learning (CI stage 2) |
-| `python -m pytest gym_continuousDoubleAuction/test -q` | 2,133 unit tests; the integration suite is left out by default |
-| `python -m pytest gym_continuousDoubleAuction/test/integration -q` | 185 integration tests that build real `Algorithm`s |
+| `python -m pytest gym_continuousDoubleAuction/test -q` | 2,165 unit tests; the integration suite is left out by default |
+| `python -m pytest gym_continuousDoubleAuction/test/integration -q` | 190 integration tests that build real `Algorithm`s |
 | `python -m gym_continuousDoubleAuction.CDA_rand --help` | Flags for the smoke run; defaults in `config/cli_defaults.json` |
 | `CDA_train.ipynb` | Notebook driver; imports `TrainConfig` / `train` from `train.py`. Runs unchanged on [Colab](20_colab.md) and in the [docker image](19_docker.md) — set `PLATFORM` / `USE_GPU` in its first cell, everything else comes from `config/runtime_profiles.json` |
 | `python -m gym_continuousDoubleAuction.visualize.run_all` | Regenerates every chart in `visualize/` from the latest episode Parquet record and `progress.jsonl` |
