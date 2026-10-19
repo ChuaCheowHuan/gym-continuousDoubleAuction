@@ -4158,3 +4158,25 @@ RAM, GPU, disk, shared memory, network), and a table of measured wall times and 
     [CONTRIBUTING](CONTRIBUTING.md); it is about three.
 - **Cross-links.** The README's quick start, [19](19_docker.md) §19.4 and [26](26_runbook.md) §26.1
   point at the table.
+
+## 92. The batch is per iteration, across learners (#299)
+
+RLlib samples `train_batch_size_per_learner × num_learners` env steps per iteration, and
+`build_config` passed `train_batch_size` as the per-learner value. With N > 1 learners an iteration
+held N × `num_episodes_per_iter` episodes, and the entropy schedule, placed at
+`train_batch_size × entropy_decay_iters` env steps of the global count, ended after
+`entropy_decay_iters / N` iterations. Measured on the previous source: 2 learners sampled 32,768
+steps per iteration and finished the decay in 8 iterations instead of 16; 4 learners sampled 65,536
+and finished it in 4.
+
+- **Fix.** `TrainConfig.train_batch_size_per_learner` is `train_batch_size / max(num_learners, 1)`
+  and is what RLlib receives. `train_batch_size` keeps meaning the whole iteration, so the schedule
+  needed no change. A batch that does not split evenly is refused, naming `num_learners`.
+  `num_learners` 0 and 1 build exactly what they built before.
+- **Tests.** `test_config_wiring.py` 17 to 26: at 0, 1, 2 and 4 learners, the total batch equals
+  `train_batch_size` and the schedule ends after `entropy_decay_iters` iterations. An uneven split
+  is refused. The test fails at 2 and 4 learners on the previous source. Unit 2,112 to 2,121; suite
+  2,306.
+- **Docs.** [09](09_distributed_training.md) replaces the known-issue note with how the batch is
+  split; [18](18_configuration.md) says an iteration is `train_batch_size` steps whatever
+  `num_learners` is.
