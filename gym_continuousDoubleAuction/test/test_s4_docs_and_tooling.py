@@ -179,6 +179,18 @@ class TestStaleCommentsAndNotes:
                 command = block["_module"].split(".")[-1]
                 assert command in data["_source"], command
 
+    def test_the_mark_price_notes_give_the_fallback_order_mark_price_uses(self):
+        """Both notes said a one-sided quote came before the last print. `mark_price` tries the
+        last print first and takes a one-sided quote only when nothing has printed, because a
+        lone quote as the mark is the manipulation S2-5 removed (`test_self_match.py`)."""
+        import json
+        from gym_continuousDoubleAuction.config_loader import config_dir
+
+        for name in ("env_defaults.json", "train_config.json"):
+            note = json.load(open(config_dir() / name))["environment"]["_note_mark_price_source"]
+            last, quote = note.index("last tape print"), note.index("one-sided quote")
+            assert last < quote, name
+
 
 import glob  # noqa: E402
 import json  # noqa: E402
