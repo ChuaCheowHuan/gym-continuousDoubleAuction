@@ -1,7 +1,7 @@
 # 9. Distributed Training: `num_env_runners` and `num_learners`
 
 What these two `TrainConfig` / `AlgorithmConfig` settings do, how they interact with league-based
-self-play, and which bugs existed at non-default values before they were fixed.
+self-play, and what goes wrong at non-default values if code assumes a single process.
 
 Related: [08_self_play_league.md](08_self_play_league.md) (what runs in the callback these
 settings distribute), [10_testing.md](10_testing.md) §6
@@ -32,9 +32,8 @@ driver only orchestrates.
 `num_learners=0`, the driver's
 [`SelfPlayCallback`](../gym_continuousDoubleAuction/train/callbk/league_based_self_play_callback.py)
 instance *is* the object doing the sampling, and the driver's `LearnerGroup` *is* local. The
-moment either setting goes above `0`, that stops being true — and three separate bugs in this
-codebase's history lived exactly in that gap. All three are fixed and carry regression tests that
-run at the non-default value; §4 documents them because the *gap* is still there for new code.
+moment either setting goes above `0`, that stops being true. §4 lists what goes stale across that boundary and the guards and
+regression tests, run at the non-default value, that keep it from mattering.
 
 ---
 
@@ -221,64 +220,30 @@ force-push described in [08_self_play_league.md](08_self_play_league.md) §5.2.
 
 ---
 
-## 4. Bugs that only existed at non-default values (all fixed)
-
-Every bug in this section has been fixed in the current tree — the commit is named inline, and
-each has regression coverage that runs at the non-default value. They are documented because the
-structural gap that produced them has not gone away.
+## 4. The process-boundary gap
 
 Both settings default to `0` in `TrainConfig`, which is the one configuration where everything
-lives in a single process. Every bug below was invisible there and only appeared once a setting
-went to `1` or more — because that is what created a second process with its own stale copy of
-something the driver mutates.
+lives in a single process. At `1` or more, a second process holds its own copy of something the
+driver mutates, and code written and tested only at `num_env_runners=0, num_learners=0` — where the
+driver's objects and the "remote" objects are literally the same object — can be wrong there and
+pass every default-config test. Three bugs in this codebase's history lived in exactly that gap;
+they are in [29](29_fixed_issues.md#09-4--bugs-that-only-existed-at-non-default-values). The gap
+itself has not gone away, so the guards against it are part of the design:
 
-### 4.1 `num_env_runners > 0`: champion pool published one snapshot late
+| Setting | What would go stale | Guard | Regression test |
+|---|---|---|---|
+| `num_env_runners > 0` | The mapping function `add_module` pickles snapshots `available_modules` at the moment of the call | Append the champion to `available_modules` **before** `add_module`, with a rollback on failure ([08](08_self_play_league.md) §5.2 constraint 2) | `TestLeagueWiringRemoteEnvRunners` |
+| `num_env_runners > 0` | A remote runner's `self.available_modules` never contains a champion | The policy-map printout reads `env_runner.config.policy_mapping_fn`, which `add_module` keeps current | `TestLeagueWiringRemoteEnvRunners` |
+| `num_env_runners > 0` | `sync_weights` between two updates carries a `WEIGHTS_SEQ_NO` the runner already has, and is dropped | Force-push without the sequence number ([08](08_self_play_league.md) §5.2 constraint 4) | `TestLeagueWiringRemoteEnvRunners` |
+| `num_learners > 0` | `learner_group._learner` is `None` when the `LearnerGroup` is remote | Read module state through the public `learner_group.get_state(components=...)` ([08](08_self_play_league.md) §5.2 constraint 1) | `TestLeagueWiringRemoteLearner` |
 
-Fixed in `9c1c6da`. `_create_champion_snapshot_from_policy` called
-`algorithm.add_module(new_agent_to_module_mapping_fn=self.get_mapping_fn(self), ...)` to push a
-refreshed mapping function to every actor. That callable closes over `self`, and `add_module`
-pickles it to ship it — which snapshots `self.available_modules` at the moment of the call. The
-code appended the new champion to `available_modules` *after* calling `add_module`, so every
-remote actor's mapping function was permanently one champion behind. Measured over 800 draws: the
-driver drew `{policy_2, policy_3, champion_1, champion_2}`; a remote actor drew only
-`{policy_2, policy_3, champion_1}`.
-
-Fix: append to `available_modules` **before** calling `add_module`, with a rollback in the
-exception path so a failed snapshot can never be selected.
-
-A second, related bug fixed in the same commit: the `on_episode_start` "Policy Map" printout read
-`self.available_modules` directly, which — on a remote actor — never contains any champion at
-all, since that actor's callback copy is never updated after construction. Fixed by reading
-`env_runner.config.policy_mapping_fn` instead, which `add_module` *does* keep current.
-
-Regression coverage: `TestLeagueWiringRemoteEnvRunners` in
-[`test_league_wiring.py`](../gym_continuousDoubleAuction/test/integration/test_league_wiring.py),
-added in `d53c9fd`. It probes the remote actor directly (module presence, weight equality, and
-`config.policy_mapping_fn` draw distribution), with a premise-guard test
-(`test_sampling_actually_happens_remotely`) asserting the actor really is remote — without it, a
-broken probe silently degrades into iterating an empty list and every assertion passes vacuously.
-
-### 4.2 `num_learners > 0`: champion snapshotting failed on every attempt
-
-Fixed in `a446281`. `_create_champion_snapshot_from_policy` read the source module via
-`algorithm.learner_group._learner.module[...]` — the private `_learner` attribute described in
-§3.1, which is `None` whenever the `LearnerGroup` is remote. Every snapshot attempt raised
-`'NoneType' object has no attribute 'module'`, and the broad `except` around the snapshot logic
-swallowed it: one error line per iteration, league permanently empty, no crash. Measured before
-the fix at `num_learners=1`: `champions created: []`.
-
-Fix: read the module state through the public `learner_group.get_state(components=...)`, which
-works whether the `LearnerGroup` is local or remote.
-
-Regression coverage: `TestLeagueWiringRemoteLearner`, added in the same commit, with its own
-premise guard (`test_learner_group_is_actually_remote`).
-
-### 4.3 The pattern
-
-All three bugs (this document's two, plus the `WEIGHTS_SEQ_NO` one found earlier in the
-migration) trace to the same root cause: code written and tested only at
-`num_env_runners=0, num_learners=0`, where the driver's objects and the "remote" objects are
-literally the same object, so nothing about process boundaries could go wrong.
+Both test classes are in
+[`test_league_wiring.py`](../gym_continuousDoubleAuction/test/integration/test_league_wiring.py).
+Each probes the remote actor directly (module presence, weight equality, and the
+`config.policy_mapping_fn` draw distribution) and has a premise guard
+(`test_sampling_actually_happens_remotely`, `test_learner_group_is_actually_remote`) asserting the
+actor really is remote — without it, a broken probe silently degrades into iterating an empty list
+and every assertion passes vacuously.
 
 **Any new code touching `SelfPlayCallback` or champion snapshotting should be exercised against
 both `TestLeagueWiringRemoteEnvRunners` and `TestLeagueWiringRemoteLearner`, not just the
@@ -314,9 +279,6 @@ default-config tests, before being considered correct.**
     (#305). With the shipped `minibatch_size: null`, RLlib's own default (128) is the one checked
     (#307): it fits any share of at least 128 steps, which the shipped batch of 16,384 always is,
     but not a short test run split across learners.
-
-  Before #299 was fixed, N learners meant N times the episodes per iteration and an entropy decay
-  N times shorter.
 
 `num_env_runners` and `num_learners` should be sized independently, against whichever of sampling
 or learning is actually the bottleneck on the target machine — not moved in lockstep.

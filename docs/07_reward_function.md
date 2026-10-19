@@ -25,7 +25,7 @@ the reward is shaped to encourage five behaviours:
    that named no resting order. **Ships at 0.0**: any positive value makes the game negative-sum
    (S1-3), so it is a knob for a measured run, not a default; the miss already reaches the policy
    through the `unmatched_last_step` observation field, which costs nothing
-   ([15](15_findings_and_recommendations.md) S3-24, phase 3).
+   ([S3-24](29_fixed_issues.md#s3-24--modify-and-cancel-cannot-be-aimed-so-they-are-mostly-dead-actions-verified-fixed), phase 3).
 
 The intent is sound and reads like it was written by someone who trades. §5 shows how much of it
 actually binds.
@@ -84,11 +84,11 @@ reward = (
 trader started with, so it cannot drift from the ledger — is what unblocked the critic. PPO clamps
 the value loss at `vf_clip_param` (RLlib's default 10.0), and dollar-scale NAV targets in the
 10⁴–10⁷ range made `clamp(vf_loss, 0, 10)` flat, so the critic's gradient was exactly zero.
-That is **S1-1**, and `integration/test_progress_and_vf.py` now asserts against it live rather than
+That is [S1-1](29_fixed_issues.md#s1-1--ppos-critic-receives-zero-gradient-verified-fixed), and `integration/test_progress_and_vf.py` now asserts against it live rather than
 pinning it as an expected failure.
 
 **The drawdown charge telescopes.** Charging the *level* billed one early loss on every one of an
-episode's 4,096 remaining steps, even to an agent that never traded again (**S2-1**). The signed
+episode's 4,096 remaining steps, even to an agent that never traded again ([S2-1](29_fixed_issues.md#s2-1--drawdown-is-penalised-as-a-level-not-an-increment-verified-fixed)). The signed
 change sums over an episode to exactly `-drawdown_penalty × final_drawdown`, whatever path was
 taken to get there.
 
@@ -101,7 +101,7 @@ reintroduces precisely the negative-sum bias `loss_multiplier: 1.0` exists to re
 **The reward is zero-sum when NAV is.** Total NAV is conserved exactly, so `Σ nav_change = 0`
 across agents — and measured over 1,000 random-agent steps, `nav_term` now sums to **exactly
 0.000000**. Any `loss_multiplier > 1` breaks that, which is what made passing dominant for every
-agent (**S1-3**).
+agent ([S1-3](29_fixed_issues.md#s1-3--doing-nothing-is-a-dominant-strategy-verified-fixed)).
 
 The five coefficients **are** configuration now. They were function-local literals with a code
 comment acknowledging they "can be moved to config"; they are `env_config` keys, set on
@@ -191,7 +191,7 @@ The formula needs per-step and high-water-mark state that the account did not or
 **[`calculate.py`](../gym_continuousDoubleAuction/envs/account/calculate.py)** — `cal_nav`
 recomputes NAV and `update_peak` raises `max_nav` to it; the env calls `update_peak` once per step,
 after the liquidation cascade, so a NAV that existed only between two re-marks is never a peak
-([15](15_findings_and_recommendations.md) R-4).
+(R-4 in [29](29_fixed_issues.md#from-the-2026-10-07-review)).
 
 **[`trader.py`](../gym_continuousDoubleAuction/envs/agent/trader.py)** — in `place_order`,
 `order_step_placed` is set **only** for `market` and `limit` types. `modify` and `cancel` are
@@ -244,33 +244,9 @@ passive side; that identity is a useful check that the counters are being attrib
 Residual friction is −0.036 over 4,000 agent-steps, or −9e-6 per agent-step, against per-step NAV
 moves of ~2e-3. Roughly 0.5% of the signal: a cost, not a tax.
 
-### 4.1 The drawdown term was a level, not a delta — **fixed**
+### 4.1 The drawdown term is a signed change
 
-`max_nav` is monotone non-decreasing within an episode, so a drawdown opened at step 50 was
-charged **every step until NAV recovered past the old peak**. Measured on the old reward it was
-~2.4× the entire (already negative) NAV term. At `max_step = 4096`, a 1,000-unit drawdown incurred
-early cost `0.2 × 1000 × ~4000 ≈ 800,000` — three orders of magnitude more than the NAV move that
-caused it.
-
-Three problems: (a) it was not potential-based, so it changed the optimal policy rather than only
-shaping it; (b) its magnitude scaled with episode length, so `max_step` silently became a
-risk-aversion hyper-parameter; (c) it is non-Markov in the agent's observation, because `max_nav`
-is a path functional the agent cannot see. (c) is addressed separately, by putting `max_nav` into
-the observation — see [05](05_observation_space.md).
-
-**The fix, and a correction to the one this section used to recommend.** It previously proposed
-
-```python
-reward += -drawdown_penalty * max(0.0, new_dd - prev_dd)  # penalise deepening only
-```
-
-which is wrong in a way worth recording. Below the peak, a losing step has `nav_term = -X` *and*
-`Δdrawdown = +X`, so it costs `-(1 + c)X`; the matching recovery pays only `+X`. A round trip nets
-`-cX`. That is an asymmetric loss multiplier by another name, and it puts back exactly the
-negative-sum bias that setting `loss_multiplier` to 1.0 removes — so the clipped form would have
-left S1-3 half-open while looking like a fix for S2-1.
-
-What shipped is the **signed** change:
+The term charges the **change** in distance from peak NAV, not the distance:
 
 ```python
 previous_drawdown = float(trader.acc.drawdown)
@@ -280,47 +256,40 @@ drawdown_change = (current_drawdown - previous_drawdown) / scale
 
 The per-step charges telescope: over an episode they sum to `-drawdown_penalty × final_drawdown`
 regardless of path. A round trip is free, ending in drawdown is still penalised, and the term
-cannot be farmed — the sum is bounded above by zero because drawdown itself is.
+cannot be farmed — the sum is bounded above by zero because drawdown itself is. Why the change is
+signed rather than clipped at zero is §2.1. `max_nav` itself is in the observation ([05](05_observation_space.md)), so the term is
+not a function of anything the agent cannot see.
 
-`trader.acc.drawdown` is now load-bearing twice: it is the diagnostic docs/11 §2.3 wanted recorded,
+`trader.acc.drawdown` is load-bearing twice: it is the diagnostic docs/11 §2.3 wanted recorded,
 **and** it is what the next step reads back as `previous_drawdown`. Dropping it would silently
-restore the level penalty, since the "change" would then equal the level on every step.
+restore a level penalty, since the "change" would then equal the level on every step.
 
-### 4.2 The micro-terms were numerically irrelevant — **fixed**
+The level penalty this replaced, charged every step until NAV recovered and measured at 2.4× the
+NAV term, is [S2-1](29_fixed_issues.md#s2-1--drawdown-is-penalised-as-a-level-not-an-increment-verified-fixed).
 
-`order_penalty = 0.1`, `trade_penalty = 0.05`, `passive_bonus = 0.1` sat against a NAV term whose
-per-step magnitude ran −10,949 … +6,126. They were 5–6 orders of magnitude too small to influence
-behaviour, so whatever economic intent they encoded was not being expressed. That is S2-3.
+### 4.2 The micro-terms are calibrated to a typical NAV move
 
-They are now expressed in the same units as everything else — fractions of starting capital, where
-`1e-05` is one basis point. Calibration came from measurement rather than choice: over 8,000
-random-agent steps, 37% of steps move NAV at all, and one that does moves it by a median
-**1.9e-03** of starting capital (p90 7.3e-03). The penalties sit at 0.5–1% of that median move.
+`order_penalty`, `trade_penalty` and `passive_bonus` are expressed in the same units as everything
+else — fractions of starting capital, where `1e-05` is one basis point. Calibration came from
+measurement rather than choice: over 8,000 random-agent steps, 37% of steps move NAV at all, and
+one that does moves it by a median **1.9e-03** of starting capital (p90 7.3e-03). The penalties sit
+at 0.5–1% of that median move.
 
 `passive_bonus` is set equal to `trade_penalty`, so a passive fill is net-free while an aggressive
 one costs 0.2 bps. That is objective 5 ("capture spread") expressed as a price rather than as a
-separate bonus competing with the trade penalty.
+separate bonus competing with the trade penalty. When they were raw currency amounts they were 5–6
+orders of magnitude too small to matter ([S2-3](29_fixed_issues.md#s2-3--transaction-cost-proxies-are-10⁵-too-small-verified-fixed)).
 
-### 4.3 Doing nothing was a dominant strategy — **fixed**
+### 4.3 Passing scores zero, and trading is not dominated
 
-Passing every step yielded **exactly zero**, versus −591,027 for random trading. With no position
-there is no mark-to-market change; with no orders no order penalty; with no fills no trade
-penalty; NAV never falls below `max_nav`, so no drawdown. Trading was therefore strictly dominated
-unless an agent could extract more than its penalty budget from the others — and because the
-market is zero-sum in NAV, the population as a whole never could. `(pass, …, pass)` was a Nash
-equilibrium that was also the *joint optimum*, reachable by pure gradient descent from a random
-start, because the fastest way to raise return early in training was to stop trading. That is
-S1-3, and empty-market collapse was the predicted outcome.
-
-Two changes removed the systematic bias: `loss_multiplier` from 1.5 to **1.0**, and the drawdown
-level to a signed change. Random trading now scores −0.0104 against the same 0.0 baseline.
-
-Passing still scores exactly zero, and that is correct rather than a remaining defect — in a
-zero-sum market no reward can make trading positive-sum *on average*, and it should not try. What
-matters is that the residual friction (~0.5% of a typical NAV move) is now far smaller than the
-edge an agent with any skill can capture, so trading is no longer dominated for an agent that has
-one. Whether that is enough to produce a liquid market in practice is a training question, and it
-is what [23](23_probe_harness.md) and a real run are for.
+Passing every step scores exactly zero; random trading scores −0.0104 on the same 4 agents × 300
+steps. That is correct rather than a defect — in a zero-sum market no reward can make trading
+positive-sum *on average*, and it should not try. What matters is that the residual friction
+(~0.5% of a typical NAV move) is far smaller than the edge an agent with any skill can capture, so
+trading is not dominated for an agent that has one. Whether that is enough to produce a liquid
+market in practice is a training question, and it is what [23](23_probe_harness.md) and a real run
+are for. The reward under which doing nothing *was* the dominant strategy, and the two changes that
+removed it, are [S1-3](29_fixed_issues.md#s1-3--doing-nothing-is-a-dominant-strategy-verified-fixed).
 
 ---
 
@@ -363,13 +332,14 @@ Prospect theory puts human loss aversion at roughly 2×.
 
 | Setting | Value |
 |---|---|
-| Conservative | 1.5 (current) |
+| Conservative | 1.5 |
 | Standard | 2.0 |
 
 Multipliers above 1.0 create a gravity toward neutral positions, discouraging high-variance
 gambling. Note the interaction with §4.3: because NAV is conserved across the population, any
 multiplier above 1.0 makes the *summed* reward strictly negative, which is part of what makes
-passivity dominant. Reducing it toward 1.0 is one of the levers for fixing S1-3.
+passivity dominant. That is why the default is 1.0, and why a value above it changes the game
+rather than tuning it ([S1-3](29_fixed_issues.md#s1-3--doing-nothing-is-a-dominant-strategy-verified-fixed)).
 
 ### 6.3 Drawdown matching
 
@@ -405,12 +375,6 @@ while it is happening, not something recovered afterwards from a file. See
 Instead of hardcoding `0.1`, use a relative value such as `0.0001 * trader.acc.init_nav`.
 Hyperparameters then stay meaningful regardless of the absolute cash level of the simulation.
 
-Better still, **normalise the whole reward by `init_cash`** so rewards are O(10⁻³) and returns
-are O(1). That single change fixes three separate problems at once:
-
-- the frozen critic (S1-1) — value targets come back inside `vf_clip_param`;
-- the drawdown scaling (S2-1);
-- the micro-term irrelevance (S2-3).
-
-It is the highest-leverage change in the repository. See
-[12_perspective_rl_researcher.md](12_perspective_rl_researcher.md) §4.
+The NAV-derived terms already work this way: everything is divided by `acc.init_nav` (§2), so
+rewards are O(10⁻³) and returns O(1). That normalisation is what fixed [S1-1](29_fixed_issues.md#s1-1--ppos-critic-receives-zero-gradient-verified-fixed),
+[S2-1](29_fixed_issues.md#s2-1--drawdown-is-penalised-as-a-level-not-an-increment-verified-fixed) and [S2-3](29_fixed_issues.md#s2-3--transaction-cost-proxies-are-10⁵-too-small-verified-fixed) together.

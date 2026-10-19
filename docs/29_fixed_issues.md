@@ -309,7 +309,7 @@ Re-measured: the size/price standard-deviation ratio falls from **220× to 3.7×
 lands inside ±1.2, and inventory exceeds its scale on **0.0%** of agent-steps against 13.2%.
 `test_obs_feature_scales.py` asserts the *property* — that the blocks are comparable and bounded —
 rather than the formulas, which stay pinned where they were.
-→ [05 §7.5](05_observation_space.md#75-feature-scales-differ-by-one-to-two-orders-of-magnitude-after-normalization--fixed)
+→ [05 §7.5, below](#05-75--a-bare-square-root)
 
 ### S2-3 · Transaction-cost proxies are ~10⁵× too small **[verified, fixed]**
 
@@ -418,7 +418,7 @@ stack once, by `M_t`. Concretely: a bid resting at 90 while the midpoint moved 1
 0.0625 in both, `log_mid` still differs across them (0.0 → −0.0408) because each frame keeps its own
 midpoint, and a new `mid_return` scalar records the move as −0.04. Nothing is lost; it is no longer
 smeared through every price in the book.
-→ [05 §7.1](05_observation_space.md#71-each-frame-in-the-stack-is-normalized-by-a-different-denominator--fixed)
+→ [05 §2.2](05_observation_space.md#22-prices--fractional-distance-from-m)
 
 ### S2-7 · No trade-flow information — the tape loop is dead code **[verified, fixed]**
 
@@ -443,7 +443,7 @@ observation is 193 floats rather than 177, so no earlier checkpoint loads.
 The flow cursor advances only in `prep_next_state`, never in `set_agg_LOB`, because the latter runs
 twice per step and only one call commits a frame — a display-only snapshot must not eat the step's
 trade flow.
-→ [05 §7.3](05_observation_space.md#73-the-tape-loop-is-dead-code--there-is-no-trade-flow-information-at-all--fixed)
+→ [05 §7.3, below](#05-73--the-tape-loop-that-built-nothing)
 
 ### S2-8 · No logging framework; the callback prints 42 diagnostics per episode — **fixed**
 
@@ -1590,3 +1590,309 @@ own, or with more detail than the register entry kept. Grouped by the document t
 them; the document now links here.
 
 <!-- OTHER-DOCS -->
+
+### From [03_matching_engine.md](03_matching_engine.md)
+
+#### 03 §3.1 · `modify_order` updated the book in place
+
+Register: none (the test that pinned it is in [Resolved before the register](29_fixed_issues.md#resolved-before-the-register), #203).
+
+`OrderBook.modify_order` originally updated price and quantity **in place** in the `OrderTree`
+without re-running the matching engine. A bid could therefore be modified to a price above the
+best ask and simply *sit there*, leaving the book crossed — a direct violation of double auction
+mechanics. Separately, the trader's cash and hold balances were not adjusted for trades that
+occurred *during* a modification, so account balances drifted.
+
+#### 03 §4 · Invariant 1 was documented as partial
+
+Register: none.
+
+> **Correction to the older documentation.** `docs/matching_engine.md` §4 stated that invariant 1
+> was "only partially satisfied" because `test_modify_order_price_change` was marked
+> `@unittest.expectedFailure`. That is no longer true — there is no `expectedFailure` anywhere in
+> the repository, and the test asserts `get_best_bid() == Decimal('101')` and passes. Invariant 1
+> holds on every modification path.
+
+#### 03 §5 · `sys.exit` in the matching engine
+
+Register: [S3-7](29_fixed_issues.md#s3-7--sysexit-used-for-error-handling-in-the-matching-engine-fixed).
+
+Until 2026-09-18 these were `sys.exit(...)`. `SystemExit` derives from `BaseException`, not
+`Exception`, so inside a Ray EnvRunner actor it was not caught by ordinary handlers: it killed the
+worker, RLlib marked it unhealthy and restarted it, and the run degraded rather than failing with a
+usable traceback. None of the six is reachable from the action layer — decoded size is
+`rint(abs(N(...))) + min_size ≥ 1` — but they were one action-space change away, and they are
+what a test can now assert (`test_orderbook_new.py::TestMalformedInputRaisesInsteadOfExiting`).
+Tracked as S3-7 in [15_findings_and_recommendations.md](15_findings_and_recommendations.md), fixed.
+
+### From [04_accounting.md](04_accounting.md)
+
+#### 04 §1 · The basis was a rounded quotient
+
+Register: [S3-23](29_fixed_issues.md#s3-23--nav-conservation-is-exact-only-to-decimal-context-rounding-verified-fixed).
+
+Until 2026-09-18 the ledger stored `VWAP = cost / size` and rebuilt the basis as `size × VWAP`; the
+quotient rounds at the 28-digit context whenever it does not terminate, and `mark_to_mkt` then
+multiplied it back in two independently rounded products, so conservation held only to about one
+unit in the 22nd decimal place. `cost_basis` is now primary.
+
+#### 04 §3 · Closing escrow counted as spent
+
+Register: [S1-5](29_fixed_issues.md#s1-5--the-cash-check-is-bypassable-position-is-not-bounded-by-capital-verified-fixed).
+
+Treating escrow held against a trader's own closing orders as spent refused two thirds of all
+orders at `init_cash` 100,000 under random play ([16](16_verification_log.md) §16.18). It is now
+spendable (`_closing_escrow`, capped at `|net_position|`).
+
+#### 04 §8 · A bankrupt trader's position stayed open
+
+Register: none (liquidation was added 2026-09-19).
+
+Until 2026-09-19 the only risk control on an open position was the solvency gate: at `nav <= 0`
+the trader was terminated and its resting orders pulled, but its **position stayed open** and
+`mark_to_mkt` kept marking it to the end of the episode. A short has no loss ceiling, so a bankrupt
+short went on losing — measured in `CDA_train.ipynb` at −1.9M against a 1M start — and every
+contract of that loss was a gain for the agents on the other side, paid by a counterparty that
+could not act and whose policy was never charged for it. Liquidation
+([04](04_accounting.md) §8) closes the position while its collateral still covers the close.
+
+### From [05_observation_space.md](05_observation_space.md)
+
+#### 05 §7.3 · The tape loop that built nothing
+
+Register: [S2-7](29_fixed_issues.md#s2-7--no-trade-flow-information--the-tape-loop-is-dead-code-verified-fixed)
+
+The loop in `set_agg_LOB` as it stood before the fix:
+
+```python
+if self.LOB.tape != None and len(self.LOB.tape) > 0:
+    num = 0
+    for entry in reversed(self.LOB.tape):
+        if num < self.LOB.tape_display_length:
+            # tempfile.write(...)
+            num += 1
+        else:
+            break
+```
+
+`entry` is never used. It *looked* like it was building tape features; it built nothing. This was
+the largest missing *public* feature, and the placeholder loop suggests it was intended to be there.
+
+#### 05 §7.5 · A bare square root
+
+Register: [S2-2](29_fixed_issues.md#s2-2--unnormalised-observation-scales-saturate-the-tanh-mlp-verified-fixed)
+
+A bare `sqrt` stabilised variance *within* the size block and left the cross-block mismatch
+untouched — arguably worse than no normalisation, because the documentation asserted the
+observation was normalised. The 22 well-scaled features (prices and the two scalars) fed the same
+linear layer as the 20 size features and were up to ~250× smaller, so the price half was close to
+invisible at initialisation and the size units saturated `tanh` immediately.
+
+#### 05 §6 · Feature scales before the fix
+
+Register: [S2-2](29_fixed_issues.md#s2-2--unnormalised-observation-scales-saturate-the-tanh-mlp-verified-fixed)
+
+Before [17](17_changelog.md) §37.4, sizes were a bare `sqrt(V)` reaching **±47** beside prices of
+±0.4, a standard-deviation ratio of **220×**, and `log_mid` was an uncentred 4.55–4.64. Two earlier
+probes on that code measured maxima of 47.01 and 51.19 for the size block; the absolute numbers
+moved with the book and the ratio did not. The negated-ask convention also prevented weight sharing
+between the two sides, which is part of why S4-17 made both sides positive.
+
+### From [06_action_space.md](06_action_space.md)
+
+#### 06 §4 · The size heads that were degenerate
+
+Register: [S3-1](29_fixed_issues.md#s3-1--half-the-size_mean-action-range-is-a-no-op-verified-fixed),
+[S3-2](29_fixed_issues.md#s3-2--the-size_sigma-head-is-inert-verified-fixed),
+[S3-3](29_fixed_issues.md#s3-3--size-is-sampled-by-the-environment-outside-the-policys-log-prob-verified-fixed)
+
+Until the action layout moved to version 4 the size was two heads, `size_mean` and `size_sigma`,
+and `_set_size` turned them into a size with
+`rint(abs(N(mean_mul × size_mean, size_sigma)))`, drawn from `self.np_random`. The verified outputs
+behind the three findings:
+
+**Half the `size_mean` range was a no-op (S3-1).** The `abs()` folded the distribution; same RNG
+seed:
+
+```
+mean=+0.5 -> [250.0, 250.0, 250.0, 250.0, 250.0]
+mean=-0.5 -> [250.0, 250.0, 250.0, 250.0, 250.0]   identical: True
+```
+
+The optimum was bimodal at `±m`, which fights the unimodal Gaussian policy: the head is pushed
+toward mean 0 by symmetric gradients, and mean 0 means *minimum* size. Fixed first by declaring the
+range `Box(0, 1)` (action layout 3), then by the single head.
+
+**The `size_sigma` head was inert (S3-2).** `sigma` was an **absolute** standard deviation while
+means were 49.5·|m| (market) or 499.5·|m| (limit); 4,000 limit sizes at `size_mean = 0.5`:
+
+```
+sigma=0.0 -> std 0.00 (all 250);  sigma=0.25 -> 0.37;  sigma=0.5 -> 0.58;  sigma=1.0 -> 1.05
+```
+
+Deleted rather than rescaled: with the size sampled by the policy there is nothing left for a sigma
+to control.
+
+**Environment-side sampling broke the log-probability (S3-3).** One action, eight env seeds, eight
+draws:
+
+```
+size_mean=0.5, size_sigma=1.0 -> sizes [251, 251, 251, 253, 250, 250, 252, 251]
+```
+
+The spread was small because sigma was small, but the structure was wrong: advantage variance that
+no amount of data removes.
+
+`_set_price` also carried a `max_price` parameter its body never read; it was removed.
+
+### From [08_self_play_league.md](08_self_play_league.md)
+
+#### 08 §5.2 · The ordering constraints as bugs
+
+Register: none; see also [09 §4](#09-4--bugs-that-only-existed-at-non-default-values).
+
+- **Constraint 1.** Reading weights through `learner_group._learner` raised on every snapshot
+  attempt under a remote LearnerGroup and was swallowed by the broad `except`, leaving the league
+  permanently empty while printing one error line per iteration. That same broad handler masked
+  the `learner_group._learner is None` bug for an entire training run.
+- **Constraint 4.** Without constraint 4, the champion *acting in the environment* stays at its random initialisation
+for the entire run while the trained snapshot sits unused in the LearnerGroup. Combined with the
+`MultiRLModuleSpec` issue in §2, this meant **no self-play was taking place at all** before the
+migration.
+
+### From [09_distributed_training.md](09_distributed_training.md)
+
+#### 09 §4 · Bugs that only existed at non-default values
+
+Register: none; [08 §5.2](#08-52--the-ordering-constraints-as-bugs) has the snapshot-side detail.
+§3.1 below means [09](09_distributed_training.md) §3.1.
+
+Every bug in this section has been fixed in the current tree — the commit is named inline, and
+each has regression coverage that runs at the non-default value. They are documented because the
+structural gap that produced them has not gone away.
+
+Both settings default to `0` in `TrainConfig`, which is the one configuration where everything
+lives in a single process. Every bug below was invisible there and only appeared once a setting
+went to `1` or more — because that is what created a second process with its own stale copy of
+something the driver mutates.
+
+##### 4.1 `num_env_runners > 0`: champion pool published one snapshot late
+
+Fixed in `9c1c6da`. `_create_champion_snapshot_from_policy` called
+`algorithm.add_module(new_agent_to_module_mapping_fn=self.get_mapping_fn(self), ...)` to push a
+refreshed mapping function to every actor. That callable closes over `self`, and `add_module`
+pickles it to ship it — which snapshots `self.available_modules` at the moment of the call. The
+code appended the new champion to `available_modules` *after* calling `add_module`, so every
+remote actor's mapping function was permanently one champion behind. Measured over 800 draws: the
+driver drew `{policy_2, policy_3, champion_1, champion_2}`; a remote actor drew only
+`{policy_2, policy_3, champion_1}`.
+
+Fix: append to `available_modules` **before** calling `add_module`, with a rollback in the
+exception path so a failed snapshot can never be selected.
+
+A second, related bug fixed in the same commit: the `on_episode_start` "Policy Map" printout read
+`self.available_modules` directly, which — on a remote actor — never contains any champion at
+all, since that actor's callback copy is never updated after construction. Fixed by reading
+`env_runner.config.policy_mapping_fn` instead, which `add_module` *does* keep current.
+
+Regression coverage: `TestLeagueWiringRemoteEnvRunners` in
+[`test_league_wiring.py`](../gym_continuousDoubleAuction/test/integration/test_league_wiring.py),
+added in `d53c9fd`. It probes the remote actor directly (module presence, weight equality, and
+`config.policy_mapping_fn` draw distribution), with a premise-guard test
+(`test_sampling_actually_happens_remotely`) asserting the actor really is remote — without it, a
+broken probe silently degrades into iterating an empty list and every assertion passes vacuously.
+
+##### 4.2 `num_learners > 0`: champion snapshotting failed on every attempt
+
+Fixed in `a446281`. `_create_champion_snapshot_from_policy` read the source module via
+`algorithm.learner_group._learner.module[...]` — the private `_learner` attribute described in
+§3.1, which is `None` whenever the `LearnerGroup` is remote. Every snapshot attempt raised
+`'NoneType' object has no attribute 'module'`, and the broad `except` around the snapshot logic
+swallowed it: one error line per iteration, league permanently empty, no crash. Measured before
+the fix at `num_learners=1`: `champions created: []`.
+
+Fix: read the module state through the public `learner_group.get_state(components=...)`, which
+works whether the `LearnerGroup` is local or remote.
+
+Regression coverage: `TestLeagueWiringRemoteLearner`, added in the same commit, with its own
+premise guard (`test_learner_group_is_actually_remote`).
+
+##### 4.3 The pattern
+
+All three bugs (this document's two, plus the `WEIGHTS_SEQ_NO` one found earlier in the
+migration) trace to the same root cause: code written and tested only at
+`num_env_runners=0, num_learners=0`, where the driver's objects and the "remote" objects are
+literally the same object, so nothing about process boundaries could go wrong.
+
+**Any new code touching `SelfPlayCallback` or champion snapshotting should be exercised against
+both `TestLeagueWiringRemoteEnvRunners` and `TestLeagueWiringRemoteLearner`, not just the
+default-config tests, before being considered correct.**
+
+#### 09 §5 · The batch scaled with `num_learners` (#299)
+
+Register: none (GitHub issue #299, fixed in #303).
+
+Before #299 was fixed, `train_batch_size` was passed to RLlib per learner, so N learners meant N
+times the episodes per iteration and an entropy decay N times shorter. `train_batch_size` is now
+the whole iteration's batch and is divided across the learners ([17](17_changelog.md) §92).
+
+### From [10_testing.md](10_testing.md)
+
+#### 10 §6.2.2 · The critic test was an xfail
+
+Register: [S1-1](29_fixed_issues.md#s1-1--ppos-critic-receives-zero-gradient-verified-fixed).
+
+`test_the_critic_actually_explains_something` was a strict xfail until S1-1 was fixed; the fix made
+it XPASS, which failed the build exactly as the marker's reason said it would, and the marker was
+then deleted. The suite has had no xfail since.
+
+#### 10 §1.1 · `test_modify_order_price_change` was documented as an expected failure
+
+Register: none ([Resolved before the register](29_fixed_issues.md#resolved-before-the-register), #203).
+
+> **Correction.** `docs/testing.md` described `test_modify_order_price_change` as
+> `@unittest.expectedFailure`, "documenting a known limitation rather than asserting
+> correctness". There is no `expectedFailure` anywhere in the repository; the test asserts and
+> passes.
+
+#### 10 Side effects · Test output was committed
+
+Register: none ([Resolved before the register](29_fixed_issues.md#resolved-before-the-register), #198).
+
+The two `episode_data/test_ep_*.pkl` files an earlier revision noted as committed — output of the
+old tests, not fixtures anything read — are gone from the repository.
+
+#### 10 §7 · Why the packaging job exists
+
+Register: [S3-6](29_fixed_issues.md#s3-6--install_requires-does-not-match-the-imports-verified-fixed), [S3-18](29_fixed_issues.md#s3-18--the-config-tree-was-not-in-the-built-distribution-verified-fixed).
+
+Every CI step installs the full `requirements.txt` from a checkout, which is exactly why both halves
+of S3-6 / S3-18 went unnoticed — `install_requires` did not name `ray[rllib]` or `six`, and no config
+JSON reached the distribution at all, so an installed copy raised `FileNotFoundError` on import
+while CI stayed green.
+
+> **Correction.** `docs/known_issues.md` §4 and `docs/testing.md` §7 stated that "nothing enforces
+> the test suite — there is no CI". That has not been true since the Ray 2.56 migration.
+
+#### 10 §8 · Closed test gaps
+
+Register: none (several have their own issues, linked in the table).
+
+Rows struck from the gaps table in [10](10_testing.md) §8 once each was closed. The parts left open
+are still rows there.
+
+| Gap | How it was closed |
+|---|---|
+| ~~**The learning-signal assertion is an xfail, not a guard**~~ | **Closed.** S1-1 is fixed and the `vf_explained_var >= 1e-3` threshold in `integration/test_progress_and_vf.py` is a live assertion — see §6.2.2. What is still unchecked is narrower than it was: `vf_loss` saturation, and "returns improve" across iterations. |
+| ~~**`test_accounting.py::test_insufficient_funds` is an empty `pass`**~~ | **Closed.** It asserts the refusal, the untouched ledger and the approved affordable half. |
+| ~~**No information-content tests for the observation**~~ ([#205](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/205)) | **Closed.** `test_obs_information.py` (30 tests, both book modes) asks what the observation can tell apart: different resting prices, sizes and sides, a trade in the flow fields, accounts by owner, and each information-carrying field moving under random play. Reintroducing the dead tape loop (S2-7), dropping the ask row from the grid or zeroing the private block fails 4, 2 and 8 of them. It does not say the observation is *sufficient* to trade well; that is #206. |
+| ~~**`test_shared_history_multi_agent_uniformity` encodes a defect as a requirement**~~ | **Closed.** S1-2 is fixed and the test is replaced by a pair that splits the claim — the book prefix stays shared, the private tail must not be. See §4.2. |
+| ~~**Reproducibility is untested**~~ | **Closed.** `test_seeding.py` (11 tests) asserts two identically-seeded episodes match and two differently-seeded ones do not, across all three randomness sources — and does it while seeding the *global* NumPy stream to different values, so it cannot pass for the wrong reason. What remains untested is reproducibility of a whole multi-worker *training run*, which is a different claim. |
+| ~~**Edge cases in league matchmaking**~~ ([#207](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/207)) | **Closed.** `test_matchmaking_edges.py` (20 tests). It found one: all-zero weights gave NaN probabilities and a crash at the first episode; the pool now draws uniformly with one warning, and negative, non-finite or non-numeric weights are refused by name at construction. |
+| ~~**No property-based tests**~~ | **Closed.** `test_orderbook_properties.py` (§2.5). Its first run found two defects the example suite had not, which is the argument for it. |
+| ~~**No coverage measurement**~~ ([#208](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/208)) | **Closed: measured and thresholded** (by #148). `pytest --cov` (pytest-cov in the `dev` extra, scoped by `pyproject.toml`) on the unit suite: **86.4%** line-and-branch over `envs/` and `train/` (79.1% when first measured), (**86.9%** once `visualize/`, no longer omitted, is measured too, #211), with `fail_under = 84` so the run fails below it and `__main__` guards excluded. Least covered: `probe/__main__` (0%, run by hand), `cbp_learner` (32%, its tests are in the integration suite), `CDA_rand` (18%, the CI smoke run), `evaluate` (64% from the unit half; the integration test covers the rest). The floor applies where `--cov` is run; CI does not run it (the workflow cannot be edited from here). |
+| ~~**No performance regression test**~~ ([#209](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/209)) | **Closed.** `test_speed_regression.py` (4 tests): budgets are multiples of a calibration loop timed on the same machine (about 10x over today's cost), and two checks compare the code with itself at two sizes. An O(n) scan per insert fails two; a 20 ms slower step fails the third. |
+| ~~**`envs/orderbook/test/example.py` and `genOrders.py`**~~ ([#210](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/210)) | **Closed.** `example.py` had been failing its own string asserts (the printed form had drifted) and `genOrders.py` was Python 2. Both are deleted; `test_orderbook_scripts.py` asserts the example's outcomes and checks a seeded shadow model against the book. |
+| ~~**`visualize/` is almost entirely untested**~~ ([#211](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/211)) | **Closed.** `test_visualize_scripts.py` (32 tests) runs the loader, the six chart scripts, `run_all` and both inspectors on synthetic runs and asserts on the data each plots. Changing the complete-episode filter, a column name, the snapshot slice or an output filename each fails it. `visualize/` is now measured in coverage (it was omitted). |
+
+<!-- /OTHER-DOCS -->

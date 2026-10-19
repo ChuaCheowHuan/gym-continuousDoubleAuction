@@ -44,7 +44,7 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `1363 passed` on the unit half, `172 passed` on the integration half, when this was first measured; the current totals are 2,110 and 185 (§ "File inventory" below). There is no xfail: the one that pinned S1-1 XPASSed when S1-1 was fixed and was deleted (see §6.2.2).
+**[verified]** — `1363 passed` on the unit half, `172 passed` on the integration half, when this was first measured; the current totals are 2,110 and 185 (§ "File inventory" below). There is no xfail.
 
 ### File inventory
 
@@ -120,7 +120,7 @@ Counts re-measured with `--collect-only`.
 | `test_visualize_orderbook.py` | 12 | The newest book snapshot is read from the middle of the observation, never off the end — the only arithmetic in `visualize/` that can be wrong without raising |
 | `test_probe.py` | 61 | The reward-free probe harness's arithmetic on synthetic observations: target definitions, episode-boundary masking, the splits, the metrics, unscoreable cells, and that `snapshots` reads the book rather than the private tail |
 | `test_bankrupt_termination.py` | 13 | A trader whose NAV reaches zero is terminated, and the episode ends when too few solvent traders remain |
-| `test_resting_exposure.py` | 8 | Escrow against live orders: what a resting order commits, and the layered-closing-order exploit that used to leave a trader short |
+| `test_resting_exposure.py` | 8 | Escrow against live orders: what a resting order commits, and the layered-closing-order exploit that left a trader short (S1-5) |
 | `test_self_match.py` | 14 | A trader cannot trade with itself: the crossing leg is withdrawn before the matcher, and the resting leg cannot become the mark (S2-5) |
 | `test_entry_vwap.py` | 11 | `entry_vwap` is the price actually paid and stays positive while a position is open, where the rolled `carrying_vwap` can go negative |
 | `test_obs_pipeline.py` | 13 | The raw-frame deque and the one-normaliser-per-stack property: a resting order reads the same in every frame (S2-6) |
@@ -146,7 +146,7 @@ Counts re-measured with `--collect-only`.
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
 | `integration/test_export_checkpoint.py` | 7 | Train, force a champion, save, export and reload: the default picks the winner, and the exported tensors are the source policy's rather than a fresh initialisation |
-| `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported, finite, and **above 1e-3** — a live guard since S1-1 was fixed |
+| `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported, finite, and **above 1e-3** — a live guard on S1-1 |
 | `integration/test_evaluate_seed.py` | 3 | `train.evaluate --seed` repeats sampled actions on a real module set, a different seed does not, and an unseeded run is not claimed to (#243) |
 | `integration/test_distributed_observability.py` | 14 | A real `num_env_runners=1` iteration: every episode-hook metric arrives on the driver, the episode record is written by the *worker* into the driver's absolute run-scoped path, and at the shipped `episode_rows_per_file` it is on disk when the iteration returns (#245) |
 | `integration/test_encoder_wiring.py` | 48 | Champions inherit the encoder; a restore cannot change it; the recurrent and MoE paths train end to end; a real checkpoint round-trip with a custom encoder |
@@ -160,12 +160,10 @@ Counts re-measured with `--collect-only`.
 > `test_OrderBook.py`, `test_cda_nsp.py` and `test_orderbook_double_delete_order.py` do not exist.
 > The current names are in the table above.
 
-> **Side effect note, resolved.** The suite writes no `episode_data/` into the working tree:
+> **Side effects.** The suite writes no `episode_data/` into the working tree:
 > `test_nav_callback` builds its callback with `episode_data_dir=None`, and `test_episode_record`
-> writes into `tmp_path`. The two `episode_data/test_ep_*.pkl` files an earlier revision noted as
-> committed — output of the old tests, not fixtures anything read — are gone from the repository.
-> Both `episode_data` and `gym_continuousDoubleAuction/episode_data` remain in `.gitignore`, since
-> a *training* run still writes there by default.
+> writes into `tmp_path`. Both `episode_data` and `gym_continuousDoubleAuction/episode_data` are
+> in `.gitignore`, since a *training* run still writes there by default.
 
 ### Coverage at a glance
 
@@ -301,11 +299,6 @@ mindmap
 | `test_modify_order_quantity_decrease` | Reducing 10 → 5 updates book volume without losing priority |
 | `test_modify_order_price_change` | Moving an order from 100 to 101 leaves `get_best_bid() == 101` — the order is correctly removed from one level and inserted into the other |
 
-> **Correction.** `docs/testing.md` described `test_modify_order_price_change` as
-> `@unittest.expectedFailure`, "documenting a known limitation rather than asserting
-> correctness". There is no `expectedFailure` anywhere in the repository; the test asserts and
-> passes.
-
 **Group C — invariants (`TestOrderBookInvariants`)**
 
 | Test | Verifies |
@@ -409,14 +402,14 @@ fill against a real counterparty the two NAVs still sum to what they started at.
 
 ### 2.2.2 `test_unmatched_actions.py` (15 tests)
 
-[15](15_findings_and_recommendations.md) S4-14's other half. At the `Trader`: a cancel or modify
+[29](29_fixed_issues.md#s4--minor) S4-14's other half. At the `Trader`: a cancel or modify
 with nothing resting, or at the wrong price, increments `num_unmatched_step`; matched actions and
 ordinary new limits do not; `reset_acc` clears it. Through the env: the field is in `info` as an
 `int`, is per step, and has a column in the episode record.
 
 ### 2.4 The own book and the order slot — `test_own_book_obs.py` (10), `test_order_slot.py` (17), `test_dead_action_penalty.py` (3), `test_layout_version.py` (7)
 
-[15](15_findings_and_recommendations.md) S3-24 and S4-19. `test_own_book_obs.py`: the private
+[29](29_fixed_issues.md#s3-24--modify-and-cancel-cannot-be-aimed-so-they-are-mostly-dead-actions-verified-fixed) S3-24 and S4-19. `test_own_book_obs.py`: the private
 block's layout (`private_fields`, 41 at depth 10, own book at offset 9, the action mask last); the
 env declares the 305 width of its `levels` config; the own book is empty at reset; an own bid at the touch shows to its owner only, at the
 public book's scale; an own ask is negative and equals the public ask size when alone; two agents
@@ -443,13 +436,13 @@ timestamps ascending within a level, no locked or crossed book, every trade on t
 Two further properties: each trader's `cash_on_hold` equals the notional of its own resting
 orders, and positions net to zero across traders. `TestEnvInvariants` steps the whole env with
 random actions under a Hypothesis-chosen seed at ticks {1, 0.5, 0.1}: NAV conservation **exactly**
-(`==`, since S3-23 was fixed), `cash + cash_on_hold >= 0`, every price-map key on the grid, every `info["NAV"]`
+(`==`; S3-23), `cash + cash_on_hold >= 0`, every price-map key on the grid, every `info["NAV"]`
 parsing back to the ledger exactly, finite rewards. Its first run found S3-23 and the modify
 timestamp defect ([16](16_verification_log.md) §16.18).
 
 ### 2.7 `test_overdraw.py` (32 tests)
 
-[15](15_findings_and_recommendations.md) S2-14, [04](04_accounting.md) §3, [06](06_action_space.md)
+[29](29_fixed_issues.md#s2-14--a-market-order-is-cash-checked-at-the-touch-but-pays-every-level-it-sweeps-verified-fixed) S2-14, [04](04_accounting.md) §3, [06](06_action_space.md)
 §8.2. A market order is priced by walking the book: the old documented case (cash 1,000, buy 10
 against 1 @ 100 and 9 @ 200) is refused, the exact cost is approved and a unit less is not, a sweep
 that stays at the touch costs the touch, a thin book costs only what fills, the trader's own
@@ -471,7 +464,7 @@ never crossed.
 
 ### 2.6 `test_fees.py` (55 tests)
 
-[15](15_findings_and_recommendations.md) S2-3, [04](04_accounting.md) §9. At the account: the shipped
+[29](29_fixed_issues.md#s2-3--transaction-cost-proxies-are-10⁵-too-small-verified-fixed) S2-3, [04](04_accounting.md) §9. At the account: the shipped
 rates are 0; the taker pays `taker_fee_bps` and the maker `maker_fee_bps` of the notional, exactly;
 the fee comes out of NAV; a negative maker rate is a rebate; a self-trade and a forced transfer
 (`fee_role="none"`) pay nothing; `reset_acc` clears what was paid and keeps the rates. At the cash
@@ -490,7 +483,7 @@ built directly as well as by the env.
 
 ### 2.2.1 `test_tick_grid.py` (18 tests)
 
-[15](15_findings_and_recommendations.md) S3-4's float-grid caveat, which turned out not to be a
+[29](29_fixed_issues.md#s3-4--the-order-books-tick_size-is-inert-verified-fixed) S3-4's float-grid caveat, which turned out not to be a
 caveat. `TestSetPriceIsOnTheGrid` asserts that `_set_price` lands on the `tick_size` grid for every
 level and offset, on both sides, for ticks {1, 0.5, 0.1, 0.05, 0.01, 0.3, 0.0001} — both the ghost
 path and, with orders resting, the level path — and that `agg_LOB_raw` holds prices exactly
@@ -599,11 +592,9 @@ shared/private split.
 | `test_the_private_block_is_the_declared_width` | `PRIVATE_FIELDS` and `private_dim` agree, and the observation is `n_hist × SNAPSHOT_DIM + PRIVATE_DIM` |
 | `test_the_private_block_is_bounded_and_finite` | It shares a `tanh` MLP with the book, so an unbounded field would saturate it (S2-2) |
 
-> **This file used to cement a design flaw as a requirement.**
-> `test_shared_history_multi_agent_uniformity` asserted that every agent received the identical
-> vector — which was true, and was S1-2. It is replaced by the two tests above, which split the
-> claim: the book prefix must *still* be shared (that half was never the bug) and the private tail
-> must not be.
+> The two tests above split one claim: the book prefix is shared by every agent and the private
+> tail is not. They replace a test that asserted the whole vector was identical, which was S1-2
+> ([29](29_fixed_issues.md#s1-2--observation-contains-no-private-state-verified-fixed)).
 
 > **`test_sliding_window_updates` is the one that would have caught the slicing trap.** The newest
 > frame no longer ends where the vector does, so it indexes `book_dim - SNAPSHOT_DIM : book_dim`.
@@ -645,9 +636,8 @@ on stochastic size sampling.
 | `test_reward_formula_components` | The full multi-factor formula against a known scenario |
 | `test_asymmetric_loss_reward` | Losses are penalised more heavily than equivalent gains |
 
-The suite instantiates a bare `RewardModel()` with a `MockTrader`. It used to work only because
-`set_reward` touched nothing else on `self`; the reward is a composed object now (issue #152), so it is
-the design, not a coincidence.
+The suite instantiates a bare `RewardModel()` with a `MockTrader`. The reward is a composed object
+(issue #152) that takes its inputs explicitly, so that is all it needs.
 
 ---
 
@@ -769,7 +759,7 @@ three iterations (~15s) and reads the file back.
 | `test_a_real_result_survives_the_json_round_trip` | The nested `env_runners` and `learners` blocks are still *in* the line, not merely that it parses |
 | `test_vf_explained_var_is_reported_for_every_trainable_module` | The key RLlib really emits, for exactly the modules in `policies_to_train` |
 | `test_the_metric_is_finite` | A NaN is a diverged value loss |
-| `test_the_critic_actually_explains_something` | **A live assertion** — `\|vf_explained_var\| >= 1e-3`. It was a strict xfail until S1-1 was fixed; the fix made it XPASS, which failed the build exactly as the marker's reason said it would, and the marker was then deleted |
+| `test_the_critic_actually_explains_something` | **A live assertion** — `\|vf_explained_var\| >= 1e-3`. Guards S1-1; its history as an xfail is in [29](29_fixed_issues.md#10-622--the-critic-test-was-an-xfail) |
 | `test_the_file_carries_it_too` | The on-disk record, not just the returned result, has the metric for every iteration |
 
 The one thing worth preserving in any edit here is the assertion that is deliberately *absent*.
@@ -1106,33 +1096,22 @@ python -m pytest gym_continuousDoubleAuction/test -q --ignore=gym_continuousDoub
 ```
 
 A second job, **`packaging`**, covers what none of those can see: what a *user* gets from
-`pip install`. Every step above installs the full `requirements.txt` from a checkout, which is
-exactly why both halves of S3-6 / S3-18 went unnoticed — `install_requires` did not name
-`ray[rllib]` or `six`, and no config JSON reached the distribution at all, so an installed copy
-raised `FileNotFoundError` on import while CI stayed green. The job builds the wheel, asserts it
+`pip install`. Every step above installs the full `requirements.txt` from a checkout, so none of them would
+notice a dependency missing from `install_requires` or a config file missing from the wheel
+([29](29_fixed_issues.md#s3-6--install_requires-does-not-match-the-imports-verified-fixed) S3-6, S3-18). The job builds the wheel, asserts it
 carries `config/*.json`, installs it into a clean venv, and — from a directory with no checkout in
 it, so the import cannot resolve to the source tree — constructs an env and steps it.
-
-> **Correction.** `docs/known_issues.md` §4 and `docs/testing.md` §7 stated that "nothing enforces
-> the test suite — there is no CI". That has not been true since the Ray 2.56 migration.
 
 ---
 
 ## 8. Gaps
 
-Honest accounting of what the suite does **not** cover.
+Honest accounting of what the suite does **not** cover. Gaps that have been closed are in
+[29](29_fixed_issues.md#10-8--closed-test-gaps).
 
 | Gap | Risk |
 |---|---|
-| ~~**The learning-signal assertion is an xfail, not a guard**~~ | **Closed.** S1-1 is fixed and the `vf_explained_var >= 1e-3` threshold in `integration/test_progress_and_vf.py` is a live assertion — see §6.2.2. What is still unchecked is narrower than it was: `vf_loss` saturation, and "returns improve" across iterations. |
-| ~~**`test_accounting.py::test_insufficient_funds` is an empty `pass`**~~ | **Closed.** It asserts the refusal, the untouched ledger and the approved affordable half. |
-| ~~**No information-content tests for the observation**~~ ([#205](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/205)) | **Closed.** `test_obs_information.py` (30 tests, both book modes) asks what the observation can tell apart: different resting prices, sizes and sides, a trade in the flow fields, accounts by owner, and each information-carrying field moving under random play. Reintroducing the dead tape loop (S2-7), dropping the ask row from the grid or zeroing the private block fails 4, 2 and 8 of them. It does not say the observation is *sufficient* to trade well; that is #206. |
-| ~~**`test_shared_history_multi_agent_uniformity` encodes a defect as a requirement**~~ | **Closed.** S1-2 is fixed and the test is replaced by a pair that splits the claim — the book prefix stays shared, the private tail must not be. See §4.2. |
-| ~~**Reproducibility is untested**~~ | **Closed.** `test_seeding.py` (11 tests) asserts two identically-seeded episodes match and two differently-seeded ones do not, across all three randomness sources — and does it while seeding the *global* NumPy stream to different values, so it cannot pass for the wrong reason. What remains untested is reproducibility of a whole multi-worker *training run*, which is a different claim. |
+| **The critic is guarded, its loss and the returns are not** | `vf_explained_var >= 1e-3` in `integration/test_progress_and_vf.py` is a live assertion (§6.2.2). Unchecked: `vf_loss` saturation, and "returns improve" across iterations. |
+| **Reproducibility of a whole training run** | `test_seeding.py` covers the env's three randomness sources; reproducibility of a multi-worker *training run* is a different claim and is untested. |
+| **The coverage floor is not a CI step** | `fail_under = 84` applies where `pytest --cov` is run (86.4% line-and-branch on the unit suite, 86.9% with `visualize/`); CI does not run it (the workflow cannot be edited from here). Least covered: `probe/__main__` (0%, run by hand), `cbp_learner` (32%, its tests are in the integration suite), `CDA_rand` (18%, the CI smoke run), `evaluate` (64% from the unit half; the integration test covers the rest). |
 | **No encoder is tested for whether it *learns*** ([#206](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/206)) | **Still the largest gap, now with the tool to close it and one dry run of it.** §6.4 proves only mechanics, and `train/probe/` routes around the reward entirely ([23](23_probe_harness.md)). The protocol in [18](18_configuration.md) §5.5 is one command, `python -m gym_continuousDoubleAuction.train.compare`, run once at smoke scale to prove the path and once more, before and after the S3-24 layout change, at three seeds × 8 iterations of the scaled-down protocol ([16](16_verification_log.md) §16.18, §16.20). Both runs are at a scale where the policies are still near random, so they prove plumbing. **The run at scale - 16 iterations, three seeds, every registered encoder, `jepa` included - has not been done.** Until it is, no claim that one encoder trades better than another, or that agents learn to use the new order-management heads, is supported by anything in this repository. |
-| ~~**Edge cases in league matchmaking**~~ ([#207](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/207)) | **Closed.** `test_matchmaking_edges.py` (20 tests). It found one: all-zero weights gave NaN probabilities and a crash at the first episode; the pool now draws uniformly with one warning, and negative, non-finite or non-numeric weights are refused by name at construction. |
-| ~~**No property-based tests**~~ | **Closed.** `test_orderbook_properties.py` (§2.5). Its first run found two defects the example suite had not, which is the argument for it. |
-| ~~**No coverage measurement**~~ ([#208](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/208)) | **Closed: measured and thresholded** (by #148). `pytest --cov` (pytest-cov in the `dev` extra, scoped by `pyproject.toml`) on the unit suite: **86.4%** line-and-branch over `envs/` and `train/` (79.1% when first measured), (**86.9%** once `visualize/`, no longer omitted, is measured too, #211), with `fail_under = 84` so the run fails below it and `__main__` guards excluded. Least covered: `probe/__main__` (0%, run by hand), `cbp_learner` (32%, its tests are in the integration suite), `CDA_rand` (18%, the CI smoke run), `evaluate` (64% from the unit half; the integration test covers the rest). The floor applies where `--cov` is run; CI does not run it (the workflow cannot be edited from here). |
-| ~~**No performance regression test**~~ ([#209](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/209)) | **Closed.** `test_speed_regression.py` (4 tests): budgets are multiples of a calibration loop timed on the same machine (about 10x over today's cost), and two checks compare the code with itself at two sizes. An O(n) scan per insert fails two; a 20 ms slower step fails the third. |
-| ~~**`envs/orderbook/test/example.py` and `genOrders.py`**~~ ([#210](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/210)) | **Closed.** `example.py` had been failing its own string asserts (the printed form had drifted) and `genOrders.py` was Python 2. Both are deleted; `test_orderbook_scripts.py` asserts the example's outcomes and checks a seeded shadow model against the book. |
-| ~~**`visualize/` is almost entirely untested**~~ ([#211](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/211)) | **Closed.** `test_visualize_scripts.py` (32 tests) runs the loader, the six chart scripts, `run_all` and both inspectors on synthetic runs and asserts on the data each plots. Changing the complete-episode filter, a column name, the snapshot slice or an output filename each fails it. `visualize/` is now measured in coverage (it was omitted). |
