@@ -304,9 +304,19 @@ default-config tests, before being considered correct.**
   `train_batch_size_per_learner × num_learners` env steps per iteration, so `TrainConfig` hands it
   `train_batch_size / num_learners`. An iteration then holds `num_episodes_per_iter` episodes, and
   the entropy schedule ends after `entropy_decay_iters` iterations, however many learners share the
-  work. The batch has to split evenly: a `max_step × num_episodes_per_iter` that is not a multiple
-  of `num_learners` is refused at start-up. Before #299 was fixed, N learners meant N times the
-  episodes per iteration and an entropy decay N times shorter.
+  work. Two consequences are checked at start-up:
+  - **The batch has to split evenly.** The expected episode length × `num_episodes_per_iter` must
+    be a multiple of `num_learners`. The expected length is `max_step`, or
+    `(max_step_min + max_step_max) // 2` with `episode_length_mode: random`; the error names the
+    keys for the active mode (#304).
+  - **A minibatch has to fit one learner's share.** `minibatch_size` may not exceed
+    `train_batch_size / num_learners`, because each learner draws its minibatches from its own share
+    (#305). With the shipped `minibatch_size: null`, RLlib's own default (128) is the one checked
+    (#307): it fits any share of at least 128 steps, which the shipped batch of 16,384 always is,
+    but not a short test run split across learners.
+
+  Before #299 was fixed, N learners meant N times the episodes per iteration and an entropy decay
+  N times shorter.
 
 `num_env_runners` and `num_learners` should be sized independently, against whichever of sampling
 or learning is actually the bottleneck on the target machine — not moved in lockstep.

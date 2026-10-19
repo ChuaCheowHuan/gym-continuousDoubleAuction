@@ -114,7 +114,9 @@ class TestTrainConfigHasNoValuesOfItsOwn:
             "train_config.json",
             lambda raw: (
                 raw["environment"].update(max_step=10),
-                raw["ppo"].update(num_episodes_per_iter=3),
+                # A minibatch that fits the 30-step batch: RLlib's default of 128 does not,
+                # and TrainConfig refuses that at construction (#307).
+                raw["ppo"].update(num_episodes_per_iter=3, minibatch_size=10),
             ),
         )
         assert TrainConfig().train_batch_size == 30

@@ -17,11 +17,11 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# the unit tests (2,121). pyproject.toml's addopts ignores test/integration by default,
+# the unit tests (2,128). pyproject.toml's addopts ignores test/integration by default,
 # so this never runs the slow RLlib suite as well
 python -m pytest gym_continuousDoubleAuction/test -q
 
-# then the integration suite, named explicitly - everything is these two (2,306 tests).
+# then the integration suite, named explicitly - everything is these two (2,313 tests).
 # RLlib wiring, the real save/restore, the progress log and a real remote
 # runner (185 tests, builds real Algorithms)
 python -m pytest gym_continuousDoubleAuction/test/integration -q
@@ -89,7 +89,7 @@ Counts re-measured with `--collect-only`.
 | `test_probabilistic_mapping.py` | 1 | League matchmaking distribution |
 | `test_config_loading.py` | 17 | `train_config.json` → `TrainConfig` → env |
 | `test_config_sources.py` | 27 | No literal copy of a configured value survives in Python |
-| `test_config_wiring.py` | 26 | Config keys reaching their consumers; `episode_data_path` absolute and run-scoped; an iteration samples `train_batch_size` steps and the entropy schedule ends after `entropy_decay_iters` iterations at any `num_learners` (#299) |
+| `test_config_wiring.py` | 33 | Config keys reaching their consumers; `episode_data_path` absolute and run-scoped; an iteration samples `train_batch_size` steps and the entropy schedule ends after `entropy_decay_iters` iterations at any `num_learners` (#299); the uneven-batch refusal names the keys of the active mode (#304); `minibatch_size` fits each learner's share, RLlib's default included when it is null (#305, #307) |
 | `test_runtime_profiles.py` | 28 | `runtime_profiles.json` → hardware sets, platform paths |
 | `test_checkpointing.py` | 52 | Checkpoint retention, restore selection, league state across a save |
 | `test_action_dist.py` | 15 | A stateful module's log-probability for two agents in one step: RLlib's `(B, B)` result pinned as the bug, the corrected `(B, 1)`, `(B,)` and `(B, T)` shapes, the old squeeze case, the wrapper cached and idempotent (#278) |
@@ -141,7 +141,7 @@ Counts re-measured with `--collect-only`.
 | `test_composition.py` | 24 | Reward, episode status, info and liquidation as composed components: out of the MRO, usable alone with explicit inputs, the env's old attributes still forwarded, and `SharedState` / `AccountState` naming real attributes (#152) |
 | `test_types.py` | 3 | `mypy` finds nothing in `envs/`, `ruff format --check` finds nothing to change, and the coverage floor stays configured (#148) |
 | `test_refactors.py` | 117 | The refactoring review's issues: `Account` initialised in one place and its step counters listed once, `_plain`'s call count, one order-book routine per operation, `place_order` and `parse_overrides` flat, `clear_batch` as four steps, `EnvSettings` and the generated `env_config`, the `train/` module split with its re-exports and import order, the callback as a `League` plus an `ActivityLog` plus the NAV audit and league statistics, a real pickle from before that split still loading, and the league and activity log working alone (#252-#258) |
-| **unit total** | **2,121** | |
+| **unit total** | **2,128** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -171,7 +171,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((2,306 tests))
+  root((2,313 tests))
     Simulator
       orderbook 88
         the demo scripts as tests, a shadow model

@@ -243,3 +243,55 @@ class TestTheBatchIsPerIterationAcrossLearners:
         # 16,384 steps cannot be shared equally by 3 learners.
         with pytest.raises(ValueError, match="num_learners"):
             TrainConfig(num_learners=3)
+
+
+class TestTheUnevenBatchRefusalNamesTheKeysThatSetIt:
+    """#304: the refusal told a random-horizon run to change `max_step`, which that mode
+    ignores; its batch comes from `max_step_min` and `max_step_max`."""
+
+    def test_fixed_mode_names_max_step(self):
+        with pytest.raises(ValueError) as err:
+            TrainConfig(max_step=4095, num_episodes_per_iter=1, num_learners=2)
+        assert "max_step" in str(err.value) and "max_step_min" not in str(err.value)
+
+    def test_random_mode_names_the_horizon_bounds(self):
+        with pytest.raises(ValueError) as err:
+            TrainConfig(
+                episode_length_mode="random",
+                max_step_min=100,
+                max_step_max=202,
+                num_episodes_per_iter=3,
+                num_learners=2,
+            )
+        message = str(err.value)
+        assert "max_step_min" in message and "max_step_max" in message
+        assert "Choose max_step and" not in message
+
+
+class TestMinibatchFitsEachLearnersShare:
+    """#305: with N > 1 learners each one trains on train_batch_size / N, and RLlib refuses a
+    larger minibatch_size only at algorithm build, naming a key no config file sets."""
+
+    def test_a_minibatch_above_a_learners_share_is_refused_at_config_time(self):
+        # 16,384 / 2 = 8,192 per learner.
+        with pytest.raises(ValueError, match="num_learners") as err:
+            TrainConfig(num_learners=2, minibatch_size=12000)
+        assert "minibatch_size" in str(err.value) and "8192" in str(err.value)
+
+    def test_the_same_minibatch_fits_one_learner(self):
+        assert TrainConfig(num_learners=1, minibatch_size=12000).minibatch_size == 12000
+
+    def test_the_rllib_default_is_left_alone(self):
+        assert TrainConfig(num_learners=2, minibatch_size=None).minibatch_size is None
+
+    def test_rllibs_default_is_checked_when_minibatch_size_is_null(self):
+        """#307: with `minibatch_size: null` RLlib uses its own default (128), which a small
+        batch split across learners can fall below; that failed late, in RLlib's terms."""
+        # 32 x 4 = 128 steps over 2 learners is a share of 64.
+        with pytest.raises(ValueError, match="RLlib's default") as err:
+            TrainConfig(num_learners=2, max_step=32, num_episodes_per_iter=4)
+        assert "minibatch_size" in str(err.value) and "64" in str(err.value)
+
+    def test_rllibs_default_fits_a_share_of_its_own_size(self):
+        cfg = TrainConfig(num_learners=2, max_step=64, num_episodes_per_iter=4)
+        assert cfg.minibatch_size is None and cfg.train_batch_size_per_learner == 128

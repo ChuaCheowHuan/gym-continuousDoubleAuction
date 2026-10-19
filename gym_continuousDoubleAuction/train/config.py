@@ -205,7 +205,8 @@ class TrainConfig:
     # False keeps policy and value on separate trunks, which matters against
     # the non-stationary league opponents - see model_handler.
     vf_share_layers: bool = _default("vf_share_layers")
-    # PPO requires minibatch_size <= train_batch_size_per_learner. RLlib's
+    # PPO requires minibatch_size <= train_batch_size_per_learner, each learner's
+    # share of the iteration's batch (`__post_init__` checks it). RLlib's
     # default is 128, which is larger than the batch of a short-episode test
     # run, so this is exposed rather than left implicit.
     minibatch_size: Optional[int] = _default("minibatch_size")
@@ -404,11 +405,39 @@ class TrainConfig:
         if self.train_batch_size % learners:
             # RLlib takes the batch per learner and samples that times num_learners per
             # iteration (#299), so the iteration's batch has to split evenly across them.
+            # The keys named are the ones that set the expected length in this mode (#304).
+            length_keys = (
+                "(max_step_min + max_step_max) // 2"
+                if self.episode_length_mode == "random"
+                else "max_step"
+            )
             raise ValueError(
                 f"train_batch_size {self.train_batch_size} (expected episode length x "
                 f"num_episodes_per_iter) does not split evenly across num_learners="
-                f"{self.num_learners}. Choose max_step and num_episodes_per_iter so their "
-                "product is a multiple of num_learners."
+                f"{self.num_learners}. Choose {length_keys} and num_episodes_per_iter so "
+                "their product is a multiple of num_learners."
+            )
+        share = self.train_batch_size // learners
+        # With minibatch_size null, build_config passes nothing and RLlib uses its own PPO
+        # default, read from RLlib rather than restated here (#307).
+        minibatch = self.minibatch_size
+        if minibatch is None:
+            from ray.rllib.algorithms.ppo import PPOConfig
+
+            minibatch = PPOConfig().minibatch_size
+        if minibatch is not None and minibatch > share:
+            # RLlib would refuse this too, but only at algorithm build and naming
+            # train_batch_size_per_learner, which no config file sets (#305).
+            source = (
+                f"minibatch_size {minibatch}"
+                if self.minibatch_size is not None
+                else f"minibatch_size null, so RLlib's default of {minibatch},"
+            )
+            raise ValueError(
+                f"{source} exceeds each learner's share of the batch: train_batch_size "
+                f"{self.train_batch_size} / num_learners {self.num_learners} = {share}. "
+                "Set a smaller minibatch_size, use fewer learners, or raise the batch "
+                "(the episode length or num_episodes_per_iter)."
             )
         if self.cbp_enabled and self.num_learners > 1:
             # Replacements are chosen from each learner's own minibatch and applied outside the
