@@ -4247,3 +4247,17 @@ behaviour). The code was right; both notes now say so.
 
 - **Test.** `test_s4_docs_and_tooling.py` 19 to 20: the notes name the last print before the
   one-sided quote. It fails on the previous notes. Unit 2,128 to 2,129; suite 2,314.
+
+## 97. Four findings from the review of PR #308 (#309–#312)
+
+- **#309.** [13](13_perspective_financial_trader.md)'s latency row credited the batch clear to
+  `matching_rule`, which splits a level between resting orders; the key is `step_clearing: "batch"`.
+- **#310.** Text moved into [29](29_fixed_issues.md) cited its source document's sections by bare
+  number. Each group in 29 now says that its section numbers and "this document" mean the source.
+- **#311.** [15](15_findings_and_recommendations.md)'s remainders table gains two rows that the topic
+  documents already marked open: agent identity (from S1-2) and the last traded price (from S2-7).
+  The S1-2 entry in 29 no longer lists own resting orders as still open; they arrived with S3-24.
+- **#312.** [14](14_perspective_ai_engineer.md) gave `logging_setup` as 523 lines; it was 703. The
+  per-module count is dropped, since nothing checks it.
+- **Tests.** `test_s4_docs_and_tooling.py` 20 to 24, one per issue; each fails on the previous docs.
+  Unit 2,129 to 2,133; suite 2,318.
