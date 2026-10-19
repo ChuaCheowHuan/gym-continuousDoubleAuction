@@ -17,7 +17,13 @@ import re
 import sys
 
 ROOT, FACTS = sys.argv[1], sys.argv[2]
-SKIP = {"16_verification_log.md", "17_changelog.md", "README_v1.md", "27_agent_skills.md"}
+SKIP = {
+    "16_verification_log.md",
+    "17_changelog.md",
+    "README_v1.md",
+    "27_agent_skills.md",
+    "29_fixed_issues.md",
+}
 f = json.load(open(FACTS))
 WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8}
 NUM = r"(\d[\d,]*|" + "|".join(WORDS) + r")"

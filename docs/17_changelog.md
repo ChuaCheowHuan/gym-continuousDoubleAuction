@@ -4215,3 +4215,23 @@ The line section 93 added to [09](09_distributed_training.md) said that default 
   minibatch; it now sets `minibatch_size` 10, and what it asserts is unchanged. Unit 2,126 to
   2,128; suite 2,313.
 - **Docs.** The `09` line says which shares the default fits.
+
+## 95. Fixed problems in one document
+
+Every problem the documentation recorded as fixed now lives in
+[29_fixed_issues.md](29_fixed_issues.md), instead of being spread across the topic documents.
+
+- **The register split.** All 53 S1–S3 entries, the 28 S4 rows, the 14 fixed R-items, the
+  "resolved since the older documentation set" table and the ticked-off sequence moved from
+  [15](15_findings_and_recommendations.md) to 29 under their original IDs. 15 keeps what is open:
+  R-7, R-11, R-12, R-18 and R-19, and six remainders of fixed findings (`grad_clip`, `train/`
+  under `mypy`, the state/action mixin pair, frame stacking, the relative tick, `pre-commit`).
+- **The topic documents.** 01–14, 18 and 21–25 describe the code as it is and link to 29 for the
+  defect a design replaced. History the register entry lacked moved with it, grouped by source
+  document at the end of 29. Several passages that still described long-fixed defects as current
+  (in 02, 12, 13 and 22) were brought up to date while moving.
+- **Code comments.** 203 references of the form `docs/15 S..` / `docs/15 R-n` to a fixed finding
+  now name `docs/29`; the open R-items stay on 15. `.github/workflows/tests.yml` carries one more
+  (`docs/15 S3-6/S3-18`) and is left for an edit with `workflow` scope.
+- **Unchanged.** [16](16_verification_log.md), this changelog and [README_v1](README_v1.md); no
+  README_v1 link needed changing.

@@ -40,6 +40,7 @@ mindmap
       13 Financial trader
       14 AI engineer
       15 Findings
+      29 Fixed issues
       16 Verification log
     Research
       22 JEPA integration
@@ -73,7 +74,7 @@ mindmap
 | # | Document | What it answers |
 |---|---|---|
 | 8 | [08_self_play_league.md](08_self_play_league.md) | League play: champion snapshotting and its four load-bearing ordering constraints, weighted matchmaking, configuration, monitoring, troubleshooting |
-| 9 | [09_distributed_training.md](09_distributed_training.md) | `num_env_runners` and `num_learners`: what each distributes, worked examples, and three now-fixed bugs that existed only at non-default values |
+| 9 | [09_distributed_training.md](09_distributed_training.md) | `num_env_runners` and `num_learners`: what each distributes, worked examples, and what goes stale across a process boundary with the guard and test for each |
 | 10 | [10_testing.md](10_testing.md) | Every test file, what each case pins down, CI, and the gaps |
 | 11 | [11_logging_and_observability.md](11_logging_and_observability.md) | What training records, where it goes, and the gap between what is computed and what is surfaced |
 | 21 | [21_logging_review.md](21_logging_review.md) | The same audit re-run with `num_env_runners > 0`: what breaks when the hooks stop running on the driver |
@@ -85,7 +86,8 @@ mindmap
 | 12 | [12_perspective_rl_researcher.md](12_perspective_rl_researcher.md) | Algorithm, reward design, exploration, sample efficiency, training stability |
 | 13 | [13_perspective_financial_trader.md](13_perspective_financial_trader.md) | Microstructure realism, risk, execution, P&L, desk metrics |
 | 14 | [14_perspective_ai_engineer.md](14_perspective_ai_engineer.md) | Code quality, packaging, scalability, observability, production readiness |
-| 15 | [15_findings_and_recommendations.md](15_findings_and_recommendations.md) | Where the project stands, then consolidated, severity-ranked findings with fixes and a suggested sequence |
+| 15 | [15_findings_and_recommendations.md](15_findings_and_recommendations.md) | Where the project stands, and what is still open: review decisions and the remainders of fixed findings |
+| 29 | [29_fixed_issues.md](29_fixed_issues.md) | Every problem found and fixed, under its original ID: what was wrong, how it was found, what fixed it |
 | 16 | [16_verification_log.md](16_verification_log.md) | Every executed probe and its raw output |
 | 17 | [17_changelog.md](17_changelog.md) | What changed since `original_v1` (2020) and why |
 | 22 | [22_jepa_integration.md](22_jepa_integration.md) | What JEPA is, why this observation suits it and this reward does not, and four ways it could be used |
@@ -127,10 +129,10 @@ mindmap
 [04](04_accounting.md) → [05](05_observation_space.md) → [06](06_action_space.md)
 
 **Deciding whether to build on this**
-[01](01_overview.md) → [15](15_findings_and_recommendations.md) → [16](16_verification_log.md)
+[01](01_overview.md) → [15](15_findings_and_recommendations.md) → [29](29_fixed_issues.md) → [16](16_verification_log.md)
 
 **Planning changes to the RL layer**
-[15](15_findings_and_recommendations.md) (severity order) → [12](12_perspective_rl_researcher.md) →
+[15](15_findings_and_recommendations.md) (what is open) → [29](29_fixed_issues.md) (what was wrong, in severity order) → [12](12_perspective_rl_researcher.md) →
 [05](05_observation_space.md) → [07](07_reward_function.md)
 
 **Weighing a representation-learning change (JEPA)**
@@ -150,7 +152,7 @@ mindmap
 the cadence caveat that decides whether a result means anything) →
 [11](11_logging_and_observability.md) (the three correlates) →
 [23](23_probe_harness.md) (the reward-free metric it must be scored on) →
-[15](15_findings_and_recommendations.md) (S1-1, S1-3, which gate the returns comparison)
+[29](29_fixed_issues.md) (S1-1, S1-3, which gated the returns comparison)
 
 **Setting up training**
 [26](26_runbook.md) (the commands, in order) → [18](18_configuration.md) (where every value lives) → [08](08_self_play_league.md) →
