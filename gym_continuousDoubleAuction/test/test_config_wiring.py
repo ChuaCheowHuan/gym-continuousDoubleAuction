@@ -243,3 +243,26 @@ class TestTheBatchIsPerIterationAcrossLearners:
         # 16,384 steps cannot be shared equally by 3 learners.
         with pytest.raises(ValueError, match="num_learners"):
             TrainConfig(num_learners=3)
+
+
+class TestTheUnevenBatchRefusalNamesTheKeysThatSetIt:
+    """#304: the refusal told a random-horizon run to change `max_step`, which that mode
+    ignores; its batch comes from `max_step_min` and `max_step_max`."""
+
+    def test_fixed_mode_names_max_step(self):
+        with pytest.raises(ValueError) as err:
+            TrainConfig(max_step=4095, num_episodes_per_iter=1, num_learners=2)
+        assert "max_step" in str(err.value) and "max_step_min" not in str(err.value)
+
+    def test_random_mode_names_the_horizon_bounds(self):
+        with pytest.raises(ValueError) as err:
+            TrainConfig(
+                episode_length_mode="random",
+                max_step_min=100,
+                max_step_max=202,
+                num_episodes_per_iter=3,
+                num_learners=2,
+            )
+        message = str(err.value)
+        assert "max_step_min" in message and "max_step_max" in message
+        assert "Choose max_step and" not in message
