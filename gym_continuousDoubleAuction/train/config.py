@@ -404,11 +404,17 @@ class TrainConfig:
         if self.train_batch_size % learners:
             # RLlib takes the batch per learner and samples that times num_learners per
             # iteration (#299), so the iteration's batch has to split evenly across them.
+            # The keys named are the ones that set the expected length in this mode (#304).
+            length_keys = (
+                "(max_step_min + max_step_max) // 2"
+                if self.episode_length_mode == "random"
+                else "max_step"
+            )
             raise ValueError(
                 f"train_batch_size {self.train_batch_size} (expected episode length x "
                 f"num_episodes_per_iter) does not split evenly across num_learners="
-                f"{self.num_learners}. Choose max_step and num_episodes_per_iter so their "
-                "product is a multiple of num_learners."
+                f"{self.num_learners}. Choose {length_keys} and num_episodes_per_iter so "
+                "their product is a multiple of num_learners."
             )
         if self.cbp_enabled and self.num_learners > 1:
             # Replacements are chosen from each learner's own minibatch and applied outside the
