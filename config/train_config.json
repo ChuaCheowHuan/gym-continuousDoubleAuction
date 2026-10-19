@@ -111,6 +111,11 @@
     "cbp_dead_unit_threshold": 0.01,
     "cbp_metrics_every_n_updates": 10
   },
+  "extensions": {
+    "_note": "Separately installed packages registered under the gym_cda.extensions entry point (docs/30_extensions.md). Installing a package changes no run: list its name in extensions_enabled to compose it in. extension_settings holds one object per extension, keyed by name; each extension fills in its own defaults and rejects keys it does not declare, and a block for an extension that is not enabled is ignored, so uninstalling one needs only its name removed from the list. Both keys are unrestorable: a resume must enable exactly what the checkpoint did, with the same settings.",
+    "extensions_enabled": [],
+    "extension_settings": {}
+  },
   "encoder": {
     "_source": "gym_continuousDoubleAuction/train/model/encoders/ (ENCODER_REGISTRY)",
     "_note": "Selects the network the *trainable* PPO modules encode observations with. The frozen RandomRLModule baselines have no network and ignore this entirely. `mlp` is the default and is a pass-through: it resolves to the stock RLlib DefaultModelConfig built from the `ppo` group's fcnet_hiddens / fcnet_activation / vf_share_layers, touching none of the custom encoder machinery, so a default run and every checkpoint written by one are unaffected by this group existing. Any other value routes the trainable modules through CDACatalog and a custom encoder. An unregistered name raises at config-build time, naming the ones that are registered.",

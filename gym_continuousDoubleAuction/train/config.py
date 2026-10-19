@@ -257,6 +257,15 @@ class TrainConfig:
     cbp_dead_unit_threshold: float = _default("cbp_dead_unit_threshold")
     cbp_metrics_every_n_updates: int = _default("cbp_metrics_every_n_updates")
 
+    # --- Extensions ----------------------------------------------------------
+    # Separately installed packages registered under the `gym_cda.extensions`
+    # entry point (docs/30, train/extensions.py). Installing one changes no run;
+    # it takes effect when named here. Each extension owns and validates its
+    # own settings block, keyed by its name; a block for an extension that is
+    # not enabled is ignored. Both are unrestorable on a resume.
+    extensions_enabled: List[str] = _default("extensions_enabled")
+    extension_settings: Dict[str, Any] = _default("extension_settings")
+
     # --- Encoder -------------------------------------------------------------
     # Which network the trainable modules encode observations with. "mlp" is a
     # pass-through to the stock RLlib path built from fcnet_* above; any other
@@ -448,6 +457,12 @@ class TrainConfig:
                 "the unit to replace separately on each learner, so the replicas would diverge. "
                 "Use num_learners 0 or 1, or cbp_metrics_only, until the choice is synchronised."
             )
+
+        # Imported here: `extensions` reads entry points, which nothing that
+        # only imports this module for its constants should pay for.
+        from gym_continuousDoubleAuction.train import extensions
+
+        extensions.validate(self)
 
     @property
     def entropy_setting(self):
