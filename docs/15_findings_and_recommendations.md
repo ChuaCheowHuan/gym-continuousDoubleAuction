@@ -38,6 +38,8 @@ mindmap
       R-19 stream switches agent only on termination
     Remainders of fixed findings
       grad_clip unset
+      no agent identity in the observation
+      no last traded price feature
       train/ not under mypy; coverage floor not in CI
       State_Helper and Action_Helper still share state
       4x stacking of near-duplicate frames
@@ -76,6 +78,8 @@ of each is in [29](29_fixed_issues.md).
 | S4-10 | `State_Helper` and `Action_Helper` still share the env's `self`: they share the observation layout and the book snapshot on every call. What they share is declared in `SharedState` and checked by `mypy` ([02](02_architecture.md) §2.4) |
 | S2-6 / [05](05_observation_space.md) §7 | The book is stacked as four near-identical absolute frames; the informative change between frames is left for the network to difference. `mid_return` supplies the anchor's delta and nothing supplies the book's |
 | S3-4 | With the default `initial_price_min` / `initial_price_max` of 10 and 100, the tick's size *relative* to the price varies 10× across episodes. Narrowing the range is a config change, not a code change |
+| S1-2 | Agent identity is not in the observation: two agents in the same private state cannot tell which role they play. It matters only if roles should be learned by one shared module; with one module per trainable agent it is moot ([12](12_perspective_rl_researcher.md) §2) |
+| S2-7 | The last traded price is not an observation feature. `mid_return` and the reference-price fallback carry most of what it would ([05](05_observation_space.md) §7.2) |
 | S4-6 | A formatter is enforced (`ruff format --check` in `test_types`), but there is no `pre-commit` configuration |
 
 ---
@@ -129,7 +133,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **2,129 unit tests pass** (plus 185 integration), covering every position-flip path, cash-check edge case, modify-order
+- **2,133 unit tests pass** (plus 185 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 
