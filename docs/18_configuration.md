@@ -525,7 +525,7 @@ differs from what RLlib or the earlier config gave:
 | `lambda_` | `ppo` | 0.95 | GAE parameter. RLlib's own default is 1.0, which makes the advantage pure Monte-Carlo. In `[0, 1]`. Both are in the restore fingerprint: a resume of a 0.99 / 1.0 checkpoint keeps them and says so. Set 0.99 and 1.0 for the old behaviour |
 | `entropy_coeff` | `ppo` | 0.01 | PPO entropy bonus at the start of the run. RLlib's own default is 0.0 |
 | `entropy_coeff_final` | `ppo` | 0.001 | The value it has fallen to after `entropy_decay_iters` iterations, held there afterwards |
-| `entropy_decay_iters` | `ppo` | 16 | Iterations over which it falls, linearly in env steps (one iteration is `train_batch_size` steps). At least 1 |
+| `entropy_decay_iters` | `ppo` | 16 | Iterations over which it falls, linearly in env steps (one iteration is `train_batch_size` steps, whatever `num_learners` is). At least 1 |
 | `std_dev_multiplier` | `league_self_play` | 1.5 | A champion must beat `league_mean + multiplier × league_std`. Was 0.1 |
 | `promotion_reference` | `league_self_play` | `pooled` | Which modules the promotion threshold is computed over: `pooled` (all, the frozen random baselines included) or `excluding_baselines` (trainable modules and champions). While the latter set is too small for `std_dev_multiplier` to be clearable (two learners and no champion) the threshold falls back to the pooled one, and `result["league"]["reference"]` says which was used |
 | `markout_horizons` | `league_self_play` | `[1, 10]` | Steps ahead at which each fill is marked against the mid, logged as `module_markout_<h>` (adverse selection: positive when the price moved the agent's way after the fill). Positive integers; `[]` switches them off (#286) |

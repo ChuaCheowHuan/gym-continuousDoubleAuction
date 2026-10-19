@@ -207,3 +207,39 @@ class TestEpisodeRecordPath:
         filesystem the checkpoints must survive on."""
         cfg = TrainConfig(episode_data_dir="episode_data")
         assert not cfg.episode_data_path.startswith(cfg.run_dir)
+
+
+class TestTheBatchIsPerIterationAcrossLearners:
+    """#299: RLlib samples `train_batch_size_per_learner x num_learners` env steps per
+    iteration. `train_batch_size` was passed as the per-learner value, so with N > 1 learners an
+    iteration held N x `num_episodes_per_iter` episodes and the entropy schedule, placed at
+    `train_batch_size x entropy_decay_iters` env steps, ended after `entropy_decay_iters / N`
+    iterations."""
+
+    @staticmethod
+    def _ppo(**overrides):
+        import dataclasses
+
+        from gym_continuousDoubleAuction.train.train import build_config
+
+        cfg = dataclasses.replace(
+            TrainConfig(), num_gpus_per_learner=0.0, cbp_enabled=False, **overrides
+        )
+        ppo = build_config(cfg)
+        return cfg, ppo[0] if isinstance(ppo, tuple) else ppo
+
+    @pytest.mark.parametrize("num_learners", [0, 1, 2, 4])
+    def test_an_iteration_samples_train_batch_size_steps(self, num_learners):
+        cfg, ppo = self._ppo(num_learners=num_learners)
+        assert ppo.total_train_batch_size == cfg.train_batch_size
+
+    @pytest.mark.parametrize("num_learners", [0, 1, 2, 4])
+    def test_the_entropy_schedule_ends_after_entropy_decay_iters(self, num_learners):
+        cfg, ppo = self._ppo(num_learners=num_learners)
+        (_, _), (end, _) = ppo.entropy_coeff
+        assert end / ppo.total_train_batch_size == cfg.entropy_decay_iters
+
+    def test_a_batch_that_does_not_split_evenly_is_refused(self):
+        # 16,384 steps cannot be shared equally by 3 learners.
+        with pytest.raises(ValueError, match="num_learners"):
+            TrainConfig(num_learners=3)

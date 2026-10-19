@@ -300,12 +300,13 @@ default-config tests, before being considered correct.**
   bottleneck; it adds the distributed-systems surface described in §4.2 for a larger effective
   batch per iteration and faster wall-clock training.
 
-  > **Known issue ([#299](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/299)).**
-  > `train_batch_size` is passed to RLlib as the batch *per learner*, and RLlib samples
-  > `train_batch_size × num_learners` env steps per iteration. With N > 1 learners, each iteration
-  > therefore holds N × `num_episodes_per_iter` episodes, and the entropy schedule reaches
-  > `entropy_coeff_final` after `entropy_decay_iters / N` iterations instead of
-  > `entropy_decay_iters`. `num_learners` 0 and 1 are unaffected.
+  **The batch is per iteration, not per learner.** RLlib samples
+  `train_batch_size_per_learner × num_learners` env steps per iteration, so `TrainConfig` hands it
+  `train_batch_size / num_learners`. An iteration then holds `num_episodes_per_iter` episodes, and
+  the entropy schedule ends after `entropy_decay_iters` iterations, however many learners share the
+  work. The batch has to split evenly: a `max_step × num_episodes_per_iter` that is not a multiple
+  of `num_learners` is refused at start-up. Before #299 was fixed, N learners meant N times the
+  episodes per iteration and an entropy decay N times shorter.
 
 `num_env_runners` and `num_learners` should be sized independently, against whichever of sampling
 or learning is actually the bottleneck on the target machine — not moved in lockstep.

@@ -400,6 +400,16 @@ class TrainConfig:
             )
         if self.min_champion_trades < 0:
             raise ValueError(f"min_champion_trades must be >= 0; got {self.min_champion_trades}.")
+        learners = max(int(self.num_learners), 1)
+        if self.train_batch_size % learners:
+            # RLlib takes the batch per learner and samples that times num_learners per
+            # iteration (#299), so the iteration's batch has to split evenly across them.
+            raise ValueError(
+                f"train_batch_size {self.train_batch_size} (expected episode length x "
+                f"num_episodes_per_iter) does not split evenly across num_learners="
+                f"{self.num_learners}. Choose max_step and num_episodes_per_iter so their "
+                "product is a multiple of num_learners."
+            )
         if self.cbp_enabled and self.num_learners > 1:
             # Replacements are chosen from each learner's own minibatch and applied outside the
             # gradient, so the replicas can pick different units and drift apart; nothing in
@@ -466,8 +476,21 @@ class TrainConfig:
         Under a random horizon an episode's length is a draw, so the batch is
         sized by the mean of the range - the number of episodes it holds is
         then `num_episodes_per_iter` on average rather than exactly.
+
+        This is the whole iteration, across every learner. RLlib is given
+        `train_batch_size_per_learner` and samples that times `num_learners`
+        (#299); the entropy schedule counts in the same env steps.
         """
         return self.expected_episode_length * self.num_episodes_per_iter
+
+    @property
+    def train_batch_size_per_learner(self) -> int:
+        """Each learner's share of `train_batch_size`; all of it with 0 or 1 learner.
+
+        `__post_init__` refuses a batch that does not split evenly, so the shares
+        add back up to exactly `train_batch_size`.
+        """
+        return self.train_batch_size // max(int(self.num_learners), 1)
 
     @property
     def expected_episode_length(self) -> int:
