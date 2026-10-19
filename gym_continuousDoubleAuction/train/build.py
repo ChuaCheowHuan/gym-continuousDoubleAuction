@@ -231,7 +231,7 @@ def build_config(cfg: TrainConfig):
             ),
         )
         .training(
-            train_batch_size_per_learner=cfg.train_batch_size,
+            train_batch_size_per_learner=cfg.train_batch_size_per_learner,
             num_epochs=cfg.num_epochs,
             entropy_coeff=cfg.entropy_setting,
             gamma=cfg.gamma,
