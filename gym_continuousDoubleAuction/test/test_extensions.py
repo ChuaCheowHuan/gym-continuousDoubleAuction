@@ -159,6 +159,20 @@ class TestNothingEnabledChangesNothing:
         extensions.compose_module_specs(multi, ["policy_0"], _cfg())
         assert spec.module_class is CDAPPOTorchLearner
 
+    def test_the_learner_config_dict_gains_no_group(self):
+        from gym_continuousDoubleAuction.train.build import _learner_config_dict
+
+        assert extensions.EXTENSIONS_CONFIG_KEY not in _learner_config_dict(_cfg())
+
+    def test_the_env_registers_without_a_train_config(self):
+        """`train.evaluate` registers the env before it has any TrainConfig."""
+        from ray.tune.registry import ENV_CREATOR, _global_registry
+
+        from gym_continuousDoubleAuction.train.build import ENV_NAME, register_env
+
+        register_env(None)
+        assert _global_registry.contains(ENV_CREATOR, ENV_NAME)
+
     def test_a_default_run_records_no_extension(self):
         assert extensions.versions({"extensions": extensions.learner_config(_cfg())}) == {}
 
