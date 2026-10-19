@@ -149,9 +149,10 @@ Three consequences worth knowing:
   right-pad with zeros. It gets its own projection and joins as one token — `blocks.PrivateToken`,
   shared by every tokenising encoder so they stay comparable.
 
-**Still open:** own resting orders and agent identity are not in the block. Resting orders are the
-larger gap — `modify` and `cancel` remain partly blind, since an agent can see its escrowed cash
-but not which orders that cash is committed to.
+**Still open when this was fixed:** own resting orders and agent identity. Own resting orders have
+been in the block since S3-24 (the own-book rows, [05](05_observation_space.md) §1.0.1), so
+`modify` and `cancel` are no longer blind; agent identity is still absent and is listed as open in
+[15](15_findings_and_recommendations.md).
 → [12 §2](12_perspective_rl_researcher.md#2-the-observation-and-the-agents-private-state),
 [05 §1.0](05_observation_space.md)
 
@@ -1593,6 +1594,7 @@ them; the document now links here.
 ### From 01 · Overview
 
 Source: [01_overview.md](01_overview.md).
+Bare section numbers (§) and "this document" in this group refer to [01](01_overview.md).
 
 #### 01 §1.6 · A plain install failed on first import
 
@@ -1606,6 +1608,7 @@ venv outside the checkout, and steps an env there.
 ### From 02 · Architecture
 
 Source: [02_architecture.md](02_architecture.md).
+Bare section numbers (§) and "this document" in this group refer to [02](02_architecture.md).
 
 #### 02 §2.5 · Per-agent terminateds were rebuilt as all-False
 
@@ -1662,6 +1665,7 @@ Before the fixes, 02 warned about these before anyone touched the env:
 ### From 03 · Matching Engine
 
 Source: [03_matching_engine.md](03_matching_engine.md).
+Bare section numbers (§) and "this document" in this group refer to [03](03_matching_engine.md).
 
 #### 03 §3.1 · `modify_order` updated the book in place
 
@@ -1698,6 +1702,7 @@ Tracked as S3-7 in [15_findings_and_recommendations.md](15_findings_and_recommen
 ### From 04 · Accounting
 
 Source: [04_accounting.md](04_accounting.md).
+Bare section numbers (§) and "this document" in this group refer to [04](04_accounting.md).
 
 #### 04 §1 · The basis was a rounded quotient
 
@@ -1731,6 +1736,7 @@ could not act and whose policy was never charged for it. Liquidation
 ### From 05 · Observation Space
 
 Source: [05_observation_space.md](05_observation_space.md).
+Bare section numbers (§) and "this document" in this group refer to [05](05_observation_space.md).
 
 #### 05 §7.3 · The tape loop that built nothing
 
@@ -1775,6 +1781,7 @@ between the two sides, which is part of why S4-17 made both sides positive.
 ### From 06 · Action Space
 
 Source: [06_action_space.md](06_action_space.md).
+Bare section numbers (§) and "this document" in this group refer to [06](06_action_space.md).
 
 #### 06 §4 · The size heads that were degenerate
 
@@ -1824,6 +1831,7 @@ no amount of data removes.
 ### From 08 · League-Based Self-Play
 
 Source: [08_self_play_league.md](08_self_play_league.md).
+Bare section numbers (§) and "this document" in this group refer to [08](08_self_play_league.md).
 
 #### 08 §5.2 · The ordering constraints as bugs
 
@@ -1841,6 +1849,7 @@ migration.
 ### From 09 · Distributed Training: `num_env_runners` and `num_learners`
 
 Source: [09_distributed_training.md](09_distributed_training.md).
+Bare section numbers (§) and "this document" in this group refer to [09](09_distributed_training.md).
 
 #### 09 §4 · Bugs that only existed at non-default values
 
@@ -1919,6 +1928,7 @@ the whole iteration's batch and is divided across the learners ([17](17_changelo
 ### From 10 · Testing
 
 Source: [10_testing.md](10_testing.md).
+Bare section numbers (§) and "this document" in this group refer to [10](10_testing.md).
 
 #### 10 §6.2.2 · The critic test was an xfail
 
@@ -1980,6 +1990,7 @@ are still rows there.
 ### From 11 · Logging and observability
 
 Source: [11_logging_and_observability.md](11_logging_and_observability.md).
+Bare section numbers (§) and "this document" in this group refer to [11](11_logging_and_observability.md).
 
 #### 11 §0 · No logging framework, and a conservation check that printed
 
@@ -2208,6 +2219,7 @@ already in hand.
 ### From 12 · Perspective: Reinforcement Learning Researcher
 
 Source: [12_perspective_rl_researcher.md](12_perspective_rl_researcher.md).
+Bare section numbers (§) and "this document" in this group refer to [12](12_perspective_rl_researcher.md).
 
 The RL researcher's analysis of defects that are now fixed: the argument for why each one mattered
 to learning, and the fixes that were proposed against it.
@@ -2381,6 +2393,7 @@ The agenda this document set out. Every item is done.
 ### From 13 · Perspective: Financial Trader / Quant
 
 Source: [13_perspective_financial_trader.md](13_perspective_financial_trader.md).
+Bare section numbers (§) and "this document" in this group refer to [13](13_perspective_financial_trader.md).
 
 The trader's view of the market model as it was before the realism fixes: what a desk would have
 objected to, and the fixes proposed.
@@ -2478,6 +2491,7 @@ Register: the IDs in the table. The open items stay in [13](13_perspective_finan
 ### From 14 · Perspective: AI Engineer
 
 Source: [14_perspective_ai_engineer.md](14_perspective_ai_engineer.md).
+Bare section numbers (§) and "this document" in this group refer to [14](14_perspective_ai_engineer.md).
 
 The engineering audit as first measured, against a tree of 7,478 Python lines with 90 unit tests
 and no logging module. Every gap below is fixed; the current state is in
@@ -2584,6 +2598,7 @@ Closed by: 1 S3-8; 2 S2-8; 3 and 4 S3-6 and S3-5 (`six` declared rather than dro
 ### From 18 · Configuration
 
 Source: [18_configuration.md](18_configuration.md).
+Bare section numbers (§) and "this document" in this group refer to [18](18_configuration.md).
 
 #### 18 §2 · The dataclass and the file disagreed
 
@@ -2653,6 +2668,7 @@ and are exact throughout now.
 ### From 21 · Logging review
 
 Source: [21_logging_review.md](21_logging_review.md).
+Bare section numbers (§) and "this document" in this group refer to [21](21_logging_review.md).
 
 The audit of logging under multiple env runners and learners. Every finding below is fixed; 21 keeps
 the audit's structure with the current state of each, and links here.
@@ -2936,6 +2952,7 @@ two entry points into this repository are exactly where that drift lives.
 ### From 22 · JEPA integration
 
 Source: [22_jepa_integration.md](22_jepa_integration.md).
+Bare section numbers (§) and "this document" in this group refer to [22](22_jepa_integration.md).
 
 #### 22 §2.3 · The reward carried almost no signal
 
@@ -2997,6 +3014,7 @@ what it says.
 ### From 23 · Probe harness
 
 Source: [23_probe_harness.md](23_probe_harness.md).
+Bare section numbers (§) and "this document" in this group refer to [23](23_probe_harness.md).
 
 #### 23 §1 · The two blockers to a returns-based comparison
 
@@ -3036,6 +3054,7 @@ selection reasoning behind it untouched.
 ### From 25 · Continual Backprop
 
 Source: [25_continual_backprop.md](25_continual_backprop.md).
+Bare section numbers (§) and "this document" in this group refer to [25](25_continual_backprop.md).
 
 #### 25 §3.2 · The reward paid for passivity
 
