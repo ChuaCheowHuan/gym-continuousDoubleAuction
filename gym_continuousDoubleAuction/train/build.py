@@ -40,10 +40,12 @@ def register_env(cfg: TrainConfig) -> None:
 
     Enabled extensions wrap it here (docs/30), so every env RLlib creates - on
     the driver and on remote runners - is wrapped the same way. With none
-    enabled `wrap_env` returns the env unchanged.
+    enabled `wrap_env` returns the env unchanged. `cfg` is None when
+    `train.evaluate` restores a checkpoint; it builds its own env, so the
+    registered one is left unwrapped.
     """
-    enabled = list(cfg.extensions_enabled)
-    settings = dict(cfg.extension_settings)
+    enabled = list(cfg.extensions_enabled) if cfg is not None else []
+    settings = dict(cfg.extension_settings) if cfg is not None else {}
     tune.register_env(
         ENV_NAME,
         lambda env_config: extensions.wrap_env(
@@ -139,12 +141,11 @@ def _learner_config_dict(cfg: TrainConfig) -> dict:
     consults it whether or not CBP is on - at the shipped defaults it finds
     torch's own values and defers to RLlib's implementation unchanged.
     """
-    return {
+    config_dict = {
         OPTIMIZER_CONFIG_KEY: {
             "adam_betas": list(cfg.adam_betas),
             "adam_weight_decay": cfg.adam_weight_decay,
         },
-        extensions.EXTENSIONS_CONFIG_KEY: extensions.learner_config(cfg),
         CBP_CONFIG_KEY: {
             "cbp_enabled": cfg.cbp_enabled,
             "cbp_metrics_only": cfg.cbp_metrics_only,
@@ -160,6 +161,11 @@ def _learner_config_dict(cfg: TrainConfig) -> dict:
             "cbp_metrics_every_n_updates": cfg.cbp_metrics_every_n_updates,
         },
     }
+    # Only when one is enabled, so a default run's config is what it was
+    # before extensions existed (docs/30).
+    if cfg.extensions_enabled:
+        config_dict[extensions.EXTENSIONS_CONFIG_KEY] = extensions.learner_config(cfg)
+    return config_dict
 
 
 def build_config(cfg: TrainConfig):
