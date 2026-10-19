@@ -4235,3 +4235,15 @@ Every problem the documentation recorded as fixed now lives in
   (`docs/15 S3-6/S3-18`) and is left for an edit with `workflow` scope.
 - **Unchanged.** [16](16_verification_log.md), this changelog and [README_v1](README_v1.md); no
   README_v1 link needed changing.
+
+## 96. The mark-price notes give the order `mark_price` uses
+
+Found while consolidating section 95. The `_note_mark_price_source` notes in `env_defaults.json` and
+`train_config.json` said the `mid` mark falls back to a one-sided quote before the last print.
+`mark_price` does the reverse: the midpoint of a two-sided book, then the last print, and a
+one-sided quote only before anything has printed. The order matters, because a lone quote as the
+mark is the manipulation S2-5 removed ([29](29_fixed_issues.md); `test_self_match.py` pins the
+behaviour). The code was right; both notes now say so.
+
+- **Test.** `test_s4_docs_and_tooling.py` 19 to 20: the notes name the last print before the
+  one-sided quote. It fails on the previous notes. Unit 2,128 to 2,129; suite 2,314.

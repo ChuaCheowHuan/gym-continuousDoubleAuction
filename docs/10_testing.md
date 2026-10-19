@@ -17,11 +17,11 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# the unit tests (2,128). pyproject.toml's addopts ignores test/integration by default,
+# the unit tests (2,129). pyproject.toml's addopts ignores test/integration by default,
 # so this never runs the slow RLlib suite as well
 python -m pytest gym_continuousDoubleAuction/test -q
 
-# then the integration suite, named explicitly - everything is these two (2,313 tests).
+# then the integration suite, named explicitly - everything is these two (2,314 tests).
 # RLlib wiring, the real save/restore, the progress log and a real remote
 # runner (185 tests, builds real Algorithms)
 python -m pytest gym_continuousDoubleAuction/test/integration -q
@@ -134,14 +134,14 @@ Counts re-measured with `--collect-only`.
 | `test_export.py` | 20 | `train.export`'s pure half: which module is the winner, the no-champion and foreign-layout messages, and what the written record carries (docs/26 §26.9.2) |
 | `test_lint.py` | 3 | The package, `tools/` and the skill scripts are pyflakes-clean, and the lint reaches the directories it claims to; any message fails the suite (S4-6, #249) |
 | `test_links.py` | 8 | `tools/check_links.py` reports no broken link in the docs, the skills and the repo files they name (#250) |
-| `test_s4_docs_and_tooling.py` | 19 | The documentation-and-tooling S4 fixes: the layout-version pointer, the CI command quoted in CLAUDE.md and docs/27, the built skills, stale texts, and every config key and flag being documented (#273, #266, #267, #251, #249); and that CI runs the integration suite once (a default run leaves it out, naming it runs it) |
+| `test_s4_docs_and_tooling.py` | 20 | The documentation-and-tooling S4 fixes: the layout-version pointer, the CI command quoted in CLAUDE.md and docs/27, the built skills, stale texts (including the mark-price notes' fallback order), and every config key and flag being documented (#273, #266, #267, #251, #249); and that CI runs the integration suite once (a default run leaves it out, naming it runs it) |
 | `test_s4_hardening.py` | 59 | The hardening and speed fixes: call-time account defaults, `settle_batch`'s pre-check, `flat_view`, the `info` fast path and the cached reference price (#247, #248) |
 | `test_pnl_split_and_markouts.py` | 39 | Realised and unrealised P&L against the NAV identity in random play, fill counters, forced fills excluded, mark-outs, and the callback and config wiring (#286) |
 | `test_logging_issues.py` | 40 | The logging review's issues under multiple env runners: the kept start of a run log, pruning of worker logs, Ray's own records in the run log (once per record), the driver learning each process's log path, the iteration broadcast to remote learners, a missed broadcast reading `-`, and a worker's console not repeating its file (#216-#221) |
 | `test_composition.py` | 24 | Reward, episode status, info and liquidation as composed components: out of the MRO, usable alone with explicit inputs, the env's old attributes still forwarded, and `SharedState` / `AccountState` naming real attributes (#152) |
 | `test_types.py` | 3 | `mypy` finds nothing in `envs/`, `ruff format --check` finds nothing to change, and the coverage floor stays configured (#148) |
 | `test_refactors.py` | 117 | The refactoring review's issues: `Account` initialised in one place and its step counters listed once, `_plain`'s call count, one order-book routine per operation, `place_order` and `parse_overrides` flat, `clear_batch` as four steps, `EnvSettings` and the generated `env_config`, the `train/` module split with its re-exports and import order, the callback as a `League` plus an `ActivityLog` plus the NAV audit and league statistics, a real pickle from before that split still loading, and the league and activity log working alone (#252-#258) |
-| **unit total** | **2,128** | |
+| **unit total** | **2,129** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -169,7 +169,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((2,313 tests))
+  root((2,314 tests))
     Simulator
       orderbook 88
         the demo scripts as tests, a shadow model

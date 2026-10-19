@@ -99,7 +99,7 @@ import and reads its config tree relative to the repository root
 Three checks, cheapest first. All three are what CI runs ([10](10_testing.md) §7).
 
 ```bash
-# 1. the simulator and the training-side units: ~3 min, 2,128 tests (incl. pyflakes and Hypothesis);
+# 1. the simulator and the training-side units: ~3 min, 2,129 tests (incl. pyflakes and Hypothesis);
 #    test/integration is left out by default (pyproject.toml addopts)
 python -m pytest gym_continuousDoubleAuction/test -q
 
