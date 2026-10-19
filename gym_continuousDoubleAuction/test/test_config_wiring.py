@@ -266,3 +266,20 @@ class TestTheUnevenBatchRefusalNamesTheKeysThatSetIt:
         message = str(err.value)
         assert "max_step_min" in message and "max_step_max" in message
         assert "Choose max_step and" not in message
+
+
+class TestMinibatchFitsEachLearnersShare:
+    """#305: with N > 1 learners each one trains on train_batch_size / N, and RLlib refuses a
+    larger minibatch_size only at algorithm build, naming a key no config file sets."""
+
+    def test_a_minibatch_above_a_learners_share_is_refused_at_config_time(self):
+        # 16,384 / 2 = 8,192 per learner.
+        with pytest.raises(ValueError, match="num_learners") as err:
+            TrainConfig(num_learners=2, minibatch_size=12000)
+        assert "minibatch_size" in str(err.value) and "8192" in str(err.value)
+
+    def test_the_same_minibatch_fits_one_learner(self):
+        assert TrainConfig(num_learners=1, minibatch_size=12000).minibatch_size == 12000
+
+    def test_the_rllib_default_is_left_alone(self):
+        assert TrainConfig(num_learners=2, minibatch_size=None).minibatch_size is None
