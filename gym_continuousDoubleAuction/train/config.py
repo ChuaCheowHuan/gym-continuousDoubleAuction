@@ -205,7 +205,8 @@ class TrainConfig:
     # False keeps policy and value on separate trunks, which matters against
     # the non-stationary league opponents - see model_handler.
     vf_share_layers: bool = _default("vf_share_layers")
-    # PPO requires minibatch_size <= train_batch_size_per_learner. RLlib's
+    # PPO requires minibatch_size <= train_batch_size_per_learner, each learner's
+    # share of the iteration's batch (`__post_init__` checks it). RLlib's
     # default is 128, which is larger than the batch of a short-episode test
     # run, so this is exposed rather than left implicit.
     minibatch_size: Optional[int] = _default("minibatch_size")
@@ -415,6 +416,15 @@ class TrainConfig:
                 f"num_episodes_per_iter) does not split evenly across num_learners="
                 f"{self.num_learners}. Choose {length_keys} and num_episodes_per_iter so "
                 "their product is a multiple of num_learners."
+            )
+        share = self.train_batch_size // learners
+        if self.minibatch_size is not None and self.minibatch_size > share:
+            # RLlib would refuse this too, but only at algorithm build and naming
+            # train_batch_size_per_learner, which no config file sets (#305).
+            raise ValueError(
+                f"minibatch_size {self.minibatch_size} exceeds each learner's share of the "
+                f"batch: train_batch_size {self.train_batch_size} / num_learners "
+                f"{self.num_learners} = {share}. Lower minibatch_size or num_learners."
             )
         if self.cbp_enabled and self.num_learners > 1:
             # Replacements are chosen from each learner's own minibatch and applied outside the
