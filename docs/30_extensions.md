@@ -10,10 +10,10 @@ nothing enabled, the Learner class, the module classes and the env are the same 
 this feature existed, the Learner's `learner_config_dict` gains no `extensions` group, and a
 checkpoint's sidecar gains no key.
 
-The first planned extension is DiscoRL (the `cda-discorl` package in its own repository,
+The first extension is DiscoRL (the `cda-discorl` package in its own repository,
 [cda_disco_rl](https://github.com/ChuaCheowHuan/cda_disco_rl)),
 which brings learning mechanisms from *Discovering state-of-the-art reinforcement learning
-algorithms* (Oh et al., 2025) to the PPO learner.
+algorithms* (Oh et al., 2025) to the PPO learner. §7 shows how to install, enable and compare it.
 
 The code is [`train/extensions.py`](../gym_continuousDoubleAuction/train/extensions.py). Related:
 [18_configuration.md](18_configuration.md) §5.7 (the config group),
@@ -121,3 +121,73 @@ replaced loss, and round-trips a checkpoint.
 
 An extension's own repository runs its tests against this one, so these two files are the
 contract it relies on.
+
+## 7. Using the DiscoRL extension
+
+The `cda-discorl` package lives in its own repository,
+[cda_disco_rl](https://github.com/ChuaCheowHuan/cda_disco_rl), and imports nothing from DeepMind's
+`disco_rl`. Its own documentation covers each component, every setting and the comparison
+against PPO. This section covers only the steps on this side.
+
+### 7.1 Install
+
+Install this repository first, then the package:
+
+```bash
+pip install -e .
+pip install "git+https://github.com/ChuaCheowHuan/cda_disco_rl"
+```
+
+Installing it changes no run. Run `pip uninstall cda-discorl` and remove its name from
+`extensions_enabled` to undo it.
+
+### 7.2 Enable it for a run
+
+For `train.train`, copy `config/train_config.json`, set the `extensions` group in the copy, and
+pass the copy with `--config`:
+
+```json
+"extensions": {
+  "extensions_enabled": ["discorl"],
+  "extension_settings": {"discorl": {"modules": ["policy_0"], "target_policy": true}}
+}
+```
+
+With two trained agents, this setting gives `policy_0` the component and leaves `policy_1` as plain
+PPO, so one league compares the two. The package's
+[configuration guide](https://github.com/ChuaCheowHuan/cda_disco_rl/blob/main/docs/configuration.md)
+lists the five components (`target_policy`, `adv_ema`, `value_norm`, `env_variety` and
+`policy_prediction`), their settings and ready-made blocks.
+
+### 7.3 Compare it against plain PPO
+
+`train.compare` takes the same two keys with `--set`. Running it once with them and once without
+gives a multi-seed comparison:
+
+```bash
+python -m gym_continuousDoubleAuction.train.compare \
+  --encoders mlp --seeds 0 1 2 --iters 30 --out out/target_policy \
+  --agents 4 --trained-agents 2 --max-step 512 --episodes-per-iter 4 --no-probe \
+  --set 'extensions_enabled=["discorl"]' \
+  --set 'extension_settings={"discorl":{"modules":["policy_0","policy_1"],"target_policy":true}}'
+```
+
+The package's
+[findings](https://github.com/ChuaCheowHuan/cda_disco_rl/blob/main/docs/findings.md) record the
+results so far. At three seeds and 30 iterations, no component separated from PPO on return.
+Target policy had the best mean, and the categorical critic and Disco103 did not learn here, so
+the package leaves both out.
+
+### 7.4 What to read in the logs
+
+Each component logs under its trained module's learner metrics, with a `discorl_` prefix:
+
+| Metric | Component |
+|---|---|
+| `discorl_target_kl` | `target_policy` |
+| `discorl_value_norm_mean`, `discorl_value_norm_std` | `value_norm` |
+| `discorl_policy_prediction_loss` | `policy_prediction` |
+
+`vf_explained_var` stays comparable with a plain PPO run's. With `value_norm` on it is computed
+from normalised targets and predictions, and normalising both the same way leaves explained
+variance unchanged.

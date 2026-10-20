@@ -202,6 +202,10 @@ field of the same name): `--env-runners` sets `num_env_runners` (0 samples in th
 `--envs-per-runner` sets `num_envs_per_env_runner` (environments each runner steps), and
 `--gpus-per-learner` sets `num_gpus_per_learner` (0 trains on CPU).
 
+To train with a separately installed extension such as DiscoRL, install the package and list its
+name in the `extensions` group of the config you pass with `--config`
+([30](30_extensions.md) §7). Nothing changes until the name is listed.
+
 To use more than one core, raise `num_env_runners` and read [09](09_distributed_training.md)
 first, especially about `sample_timeout_s`: an iteration whose runners time out trains on
 **nothing** and still checkpoints, and the log line for it says so
