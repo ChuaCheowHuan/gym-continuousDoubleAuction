@@ -276,6 +276,29 @@ class TestTheCheckpoint:
         assert os.path.isfile(os.path.join(path, pretrain_pkg.FINGERPRINT_FILE))
         assert os.path.isdir(os.path.join(path, pretrain_pkg.MODULE_SUBDIR))
 
+    def test_a_relative_path_writes_all_three_pieces(
+        self, saved, spec_block, tmp_path, monkeypatch
+    ):
+        """`--out` defaults to `pretrained/jepa`, a relative path, and Ray's
+        `save_to_path` reads one as a URI with no scheme and raises - after
+        `encoder.pt` is written, leaving a checkpoint the probe refuses (#316)."""
+        _path, module = saved
+        monkeypatch.chdir(tmp_path)
+        pretrain_pkg.save(module, os.path.join("pretrained", "jepa"), "jepa", spec_block)
+        written = tmp_path / "pretrained" / "jepa"
+        assert (written / pretrain_pkg.WEIGHTS_FILE).is_file()
+        assert (written / pretrain_pkg.FINGERPRINT_FILE).is_file()
+        assert (written / pretrain_pkg.MODULE_SUBDIR).is_dir()
+
+    def test_a_relative_module_path_loads(self, saved, monkeypatch):
+        """`train.probe --checkpoint` and `train.export --checkpoint` restore a
+        module through `features.load_module`, which handed Ray the path as
+        typed (#316)."""
+        path, _module = saved
+        monkeypatch.chdir(path)
+        restored = features_module.load_module(pretrain_pkg.MODULE_SUBDIR, "policy_0")
+        assert restored is not None
+
     def test_the_fingerprint_names_the_architecture(self, saved, spec_block):
         path, _module = saved
         with open(os.path.join(path, pretrain_pkg.FINGERPRINT_FILE)) as handle:
