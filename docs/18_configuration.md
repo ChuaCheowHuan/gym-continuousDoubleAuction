@@ -185,8 +185,8 @@ bare `continuousDoubleAuctionEnv({})` — a test fixture, a notebook, an `env_co
 hand — falls back to `env_defaults.json`.
 
 Those standalone values deliberately differ from the training ones: `num_of_agents=5`,
-`max_step=64`, `init_cash=1000000`, `is_render=true`. A bare env is small, cheap and prints what it is
-doing; a training env is large and silent. Keeping them in a separate file is what lets both be
+`max_step=64`, `init_cash=1000000`. A bare env is small and cheap; a training env is large. Both
+ship `is_render=false` ([29](29_fixed_issues.md) S4-7). Keeping them in a separate file is what lets both be
 explicit instead of one being a literal buried in `__init__`.
 
 ---
@@ -194,9 +194,28 @@ explicit instead of one being a literal buried in `__init__`.
 ## 3. Environment config
 
 The `environment` group of `train_config.json`, forwarded as an `env_config` dict to
-`continuousDoubleAuctionEnv` by `TrainConfig.env_config`. See
-[02_architecture.md](02_architecture.md) §2.6 for the table of the original seven keys and their
-`TrainConfig` counterparts.
+`continuousDoubleAuctionEnv` by `TrainConfig.env_config`. The original keys, with the standalone
+default and the training value of each (the keys added since have their own subsections below):
+
+| Key | Standalone default | `TrainConfig` value | Meaning |
+|---|---|---|---|
+| `num_of_agents` | 5 | 8 | Number of traders |
+| `init_cash` | 1,000,000 | 1,000,000 | Starting cash per trader — must be > 0, see `env_defaults.json` |
+| `tick_size` | 1 | 1 | The price grid; reaches `Action_Helper.min_tick`, see [02](02_architecture.md) §2.7 |
+| `tape_display_length` | 10 | 10 | Tape rows kept for display |
+| `max_step` | 64 | 4,096 | Steps before truncation |
+| `is_render` | `False` | `False` | Log book, tape and accounts every step (DEBUG only) |
+| `n_hist` | 4 | 4 | Observation history window |
+| `initial_price_min` | 10 | 10 | Lower bound of the per-episode price anchor |
+| `initial_price_max` | 100 | 100 | Upper bound of the per-episode price anchor |
+| `min_size`, `mkt_max_size`, `limit_size_multiple` | 1 / 100 / 10 | same | Order sizing, consumed by `Action_Helper` |
+| `order_penalty`, `trade_penalty`, `drawdown_penalty`, `passive_bonus`, `loss_multiplier` | 1e-05 / 2e-05 / 0.2 / 2e-05 / 1.0 | same | Reward coefficients, consumed by `Reward_Helper`. Each multiplies a quantity already expressed as a fraction of starting NAV, so 1e-05 is one basis point of initial capital. **`loss_multiplier` must stay 1.0** or the reward stops being zero-sum — see [07_reward_function.md](07_reward_function.md) §2.1 |
+
+The standalone column is [`config/env_defaults.json`](../config/env_defaults.json) and the
+training column is the `environment` group of
+[`config/train_config.json`](../config/train_config.json). They differ deliberately: a bare env is
+small and renders, a training env is large and silent. `TrainConfig.env_config` supplies every key
+above, so a training run never reaches the fallbacks.
 
 ### 3.0 The book layout: `book_mode`
 
