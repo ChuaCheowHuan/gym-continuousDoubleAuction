@@ -270,7 +270,8 @@ NAV term, is [S2-1](29_fixed_issues.md#s2-1--drawdown-is-penalised-as-a-level-no
 ### 4.2 The micro-terms are calibrated to a typical NAV move
 
 `order_penalty`, `trade_penalty` and `passive_bonus` are expressed in the same units as everything
-else — fractions of starting capital, where `1e-05` is one basis point. Calibration came from
+else — fractions of starting capital, where `1e-04` is one basis point, so
+`1e-05` is 0.1 bp. Calibration came from
 measurement rather than choice: over 8,000 random-agent steps, 37% of steps move NAV at all, and
 one that does moves it by a median **1.9e-03** of starting capital (p90 7.3e-03). The penalties sit
 at 0.5–1% of that median move.
