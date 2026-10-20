@@ -4276,3 +4276,30 @@ behaviour). The code was right; both notes now say so.
   new sidecar key and resolves the same classes as before.
 - **Tests.** `test_extensions.py` (29) and `test_loss_seam.py` (5); unit 2,133 to 2,167.
   `integration/test_extensions_wiring.py` (5); integration 185 to 190; suite 2,357.
+
+## 99. Documentation consolidation: one home for each overlapping topic
+
+Asked for: identify markdown files and content in `docs/` that overlap, and consolidate them, with
+[README_v1](README_v1.md) and everything it links to unchanged.
+
+- **Open items.** [15](15_findings_and_recommendations.md) gains "Open from the perspective
+  reviews": position limits, post-only and IOC orders and an exogenous information process
+  ([13](13_perspective_financial_trader.md) §10), `tune.Tuner`, `pre-commit` and the state/action
+  refactor ([14](14_perspective_ai_engineer.md) §5.11), and dead-action shaping
+  ([12](12_perspective_rl_researcher.md) §5.6). The first four were missing from 15. The three
+  agenda sections now link to 15.
+- **Install and checks.** [00](00_getting_started.md) §0.3–0.4 is the only copy of the install
+  and check commands; [26](26_runbook.md) §26.1–26.2 link to it and keep their runbook-only extras.
+  The copy in 26 had drifted: it expected `2128 passed` against 2,133 tests. 26 §26.11's packaging,
+  `workflow`-scope and recording notes moved to [CONTRIBUTING](CONTRIBUTING.md) §3–§4, which was
+  only appended to.
+- **Logging.** `21_logging_review.md` is now §5 of [11](11_logging_and_observability.md), with
+  21 §N as 11 §5.N; 11's Continual Backprop metrics section is §6. 21 stays as a redirect page
+  with the section map. The `docs/21 §N` references in code comments and `config/tunable_constants.json`
+  notes now name `docs/11 §5.N`. 16, this changelog and 29 keep their links to 21.
+- **Env key table.** It moved from [02](02_architecture.md) §2.6 to [18](18_configuration.md) §3.
+  Three places said a bare env renders (`is_render` true); `env_defaults.json` ships false.
+- **Learner seam.** [22](22_jepa_integration.md) §2.4 and [25](25_continual_backprop.md) §2.5
+  link to [30](30_extensions.md) §3–§4 for the general mechanism.
+- **Unchanged.** README_v1, [05](05_observation_space.md) (its three linked headings), the
+  `CONTRIBUTING.md` path, `docs/pic/`, [16](16_verification_log.md). No file was renumbered.
