@@ -162,6 +162,10 @@ MoE stat keys. Two encoders producing auxiliary losses is the point at which
 second parallel chain named `jepa_*`. This is a refactor the JEPA work would pay for, not a cost
 it would impose.
 
+How a Learner is composed today, and the method to override to add a loss term or replace PPO's,
+is described once, in [30_extensions.md](30_extensions.md) §3–§4; this section is the JEPA-specific
+argument.
+
 ### 2.5 An unlabelled corpus already exists, in a queryable format
 
 [`episode_record.py`](../gym_continuousDoubleAuction/train/episode_record.py) writes one Parquet
