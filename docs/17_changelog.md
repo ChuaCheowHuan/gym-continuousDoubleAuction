@@ -4346,3 +4346,9 @@ filed thirteen issues. This section fixes twelve of them; #327 (literal defaults
   among the docs that quote totals.
 - **#326, #328.** [00](00_getting_started.md) §0.3: editable is the expected install, not the only
   working one. §0.4: CI runs `CDA_rand` with no arguments, after the unit suite.
+- **Huan's calls on the review's open questions.** The metric count is gone from
+  [01](01_overview.md) §1.5, [08](08_self_play_league.md) and [11](11_logging_and_observability.md)
+  §1.2, which disagreed (27, 28) and matched no way of counting the table. 08's code example uses the
+  shipped `std_dev_multiplier` of 1.5. [23](23_probe_harness.md)'s `--parquet` examples name
+  `episode_data/<run_id>`, where the record is written. The two sampling-speed figures (00's ~112
+  steps/s, the `rollouts` note's ~60 per runner) are left as they are and tracked as #330.

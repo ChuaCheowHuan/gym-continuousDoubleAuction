@@ -181,8 +181,8 @@ Reading `git log`, the project has four eras:
 4. **The operability era, since merged to `master`** — everything a run needs to be diagnosed
    rather than merely launched: `config/` as the only place values live
    ([18](18_configuration.md)), recoverable checkpointing, a logging framework replacing ~86
-   `print()` calls, the Parquet per-step record, 27 custom metrics
-   ([11](11_logging_and_observability.md)), and reproducible episodes.
+   `print()` calls, the Parquet per-step record, custom metrics
+   ([11](11_logging_and_observability.md) §1.2), and reproducible episodes.
 
 The recent commits are unusually high quality: narrow, each with a regression test, and with code
 comments that explain *why* the previous behaviour was wrong at the RLlib-internals level (see

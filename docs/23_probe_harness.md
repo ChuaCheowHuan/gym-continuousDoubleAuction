@@ -48,7 +48,7 @@ on the reward.
 ```bash
 python -m gym_continuousDoubleAuction.train.probe
 python -m gym_continuousDoubleAuction.train.probe --encoders mlp transformer lstm moe_transformer
-python -m gym_continuousDoubleAuction.train.probe --parquet <log_dir>/episodes
+python -m gym_continuousDoubleAuction.train.probe --parquet episode_data/<run_id>
 python -m gym_continuousDoubleAuction.train.probe --checkpoint <chkpt>/iter_12 --module-id policy_0
 ```
 
@@ -358,7 +358,7 @@ single PPO iteration.
 
 ```bash
 python -m gym_continuousDoubleAuction.train.pretrain --steps 300
-python -m gym_continuousDoubleAuction.train.pretrain --parquet <log_dir>/episodes --steps 2000
+python -m gym_continuousDoubleAuction.train.pretrain --parquet episode_data/<run_id> --steps 2000
 ```
 
 Defaults live in [`config/cli_defaults.json`](../config/cli_defaults.json) under `cda_pretrain`:
