@@ -11,8 +11,8 @@ this feature existed, the Learner's `learner_config_dict` gains no `extensions` 
 checkpoint's sidecar gains no key.
 
 The first planned extension is DiscoRL (the `cda-discorl` package in the `disco_rl` repository),
-which brings the update rule from *Discovering state-of-the-art reinforcement learning algorithms*
-(Oh et al., 2025).
+which brings learning mechanisms from *Discovering state-of-the-art reinforcement learning
+algorithms* (Oh et al., 2025) to the PPO learner.
 
 The code is [`train/extensions.py`](../gym_continuousDoubleAuction/train/extensions.py). Related:
 [18_configuration.md](18_configuration.md) §5.7 (the config group),
