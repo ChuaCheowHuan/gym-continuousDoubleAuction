@@ -10,7 +10,8 @@ nothing enabled, the Learner class, the module classes and the env are the same 
 this feature existed, the Learner's `learner_config_dict` gains no `extensions` group, and a
 checkpoint's sidecar gains no key.
 
-The first planned extension is DiscoRL (the `cda-discorl` package in the `disco_rl` repository),
+The first planned extension is DiscoRL (the `cda-discorl` package in its own repository,
+[cda_disco_rl](https://github.com/ChuaCheowHuan/cda_disco_rl)),
 which brings learning mechanisms from *Discovering state-of-the-art reinforcement learning
 algorithms* (Oh et al., 2025) to the PPO learner.
 
