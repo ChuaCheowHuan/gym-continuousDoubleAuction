@@ -17,8 +17,10 @@ What these pin, in the order the algorithm runs:
     whether anything is ever replaced at a realistic replacement rate.
 """
 
+import json
 import logging
 import math
+import os
 
 import pytest
 import torch
@@ -955,3 +957,43 @@ class TestContinualBackpropNeedsOneLearner:
         from gym_continuousDoubleAuction.train.config import TrainConfig
 
         TrainConfig(num_learners=2)
+
+
+class TestDiscoveryMatchesTheRecordedLayers:
+    """Every encoder's replaceable layers, as discovered on master at f7c1353.
+
+    CBP's state is keyed by layer name across a checkpoint, so the layers found
+    - their names, kinds, incoming module, consumers and widths - must not move
+    when discovery is rewritten (it now reads trunks through `layout`).
+    """
+
+    FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "cbp_layers_f7c1353.json")
+
+    def test_every_encoder_scope_and_sharing_matches(self, spaces):
+        from gym_continuousDoubleAuction.train.model.cbp import RecurrentLayer
+
+        with open(self.FIXTURE) as fh:
+            recorded = json.load(fh)
+        got = {}
+        for encoder_type in [MLP_ENCODER_TYPE] + sorted(ENCODER_REGISTRY):
+            for share in (False, True):
+                module = build_module(spaces, encoder_type, vf_share_layers=share)
+                path = {id(m): n for n, m in module.named_modules()}
+                for scope in ("feedforward", "recurrent"):
+                    got[f"{encoder_type}|share={share}|{scope}"] = [
+                        [
+                            layer.name,
+                            type(layer).__name__,
+                            path[
+                                id(
+                                    layer.lstm
+                                    if isinstance(layer, RecurrentLayer)
+                                    else layer.incoming
+                                )
+                            ],
+                            [path[id(o)] for o in layer.outgoing],
+                            layer.num_units,
+                        ]
+                        for layer in find_replaceable_layers(module, scope)
+                    ]
+        assert got == recorded
