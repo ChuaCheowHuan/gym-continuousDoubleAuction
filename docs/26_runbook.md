@@ -68,51 +68,17 @@ flowchart LR
 
 ## 26.1 Install
 
-Python **3.12** only. `setup.py` says `>=3.12`; CI tests 3.12 and nothing else, and scipy's pin
-has no 3.11 wheels ([10](10_testing.md) §7). For the minimum and recommended hardware (CPU, RAM,
-disk, GPU) and measured run times, see [00](00_getting_started.md) §0.2.
-
-```bash
-git clone https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction.git
-cd gym-continuousDoubleAuction
-python3.12 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip setuptools wheel
-
-# CPU box: take the CPU torch wheel first so the CUDA build is not pulled in
-pip install torch==2.13.0 --extra-index-url https://download.pytorch.org/whl/cpu
-pip install -r requirements.txt
-pip install -e ".[dev]"
-```
-
-On a GPU box skip the CPU wheel line and let `requirements.txt` resolve torch, or use the Docker
-image in [19](19_docker.md). On Colab follow [20](20_colab.md); the notebook bootstraps itself.
-
-`pip install -e .` is required, not optional: the package registers the env with gymnasium on
-import and reads its config tree relative to the repository root
-([18](18_configuration.md) §1).
+The install commands are in [00](00_getting_started.md) §0.3, with the hardware and measured run
+times in §0.2. Python **3.12** only; on a GPU box use the Docker image in [19](19_docker.md), and
+on Colab follow [20](20_colab.md).
 
 ---
 
 ## 26.2 Check the install
 
-Three checks, cheapest first. All three are what CI runs ([10](10_testing.md) §7).
-
-```bash
-# 1. the simulator and the training-side units: ~3 min, 2,167 tests (incl. pyflakes and Hypothesis);
-#    test/integration is left out by default (pyproject.toml addopts)
-python -m pytest gym_continuousDoubleAuction/test -q
-
-# 2. a random-agent episode through the whole env, no learning: a few seconds
-python -m gym_continuousDoubleAuction.CDA_rand --steps 200 --agents 4
-
-# 3. RLlib wiring, real Algorithm builds, save/restore, evaluate: ~3.5 min, 190 tests
-python -m pytest gym_continuousDoubleAuction/test/integration -q
-```
-
-Expected: `2167 passed`, a line reading `completed 200 steps with 4 random agents.`, and
-`190 passed`. `pytest` is the only runner that works; `python test_x.py` defines classes and exits
-([10](10_testing.md) §0).
+The three checks CI runs (the unit suite, a random-agent episode, the integration suite) are in
+[00](00_getting_started.md) §0.4. `pytest` is the only runner that works; `python test_x.py`
+defines classes and exits ([10](10_testing.md) §0).
 
 `CDA_rand` also takes `--init-cash` (each trader's starting cash; the default is in
 `cli_defaults.json` under `cda_env_rand`). At 0 no order is ever approved and the book stays empty.
@@ -501,30 +467,6 @@ applied inside the module, so nothing extra is needed for it.
 
 ## 26.11 Before you push
 
-What CI runs, so run it first ([10](10_testing.md) §7):
-
-```bash
-python -m pytest gym_continuousDoubleAuction/test -q
-python gym_continuousDoubleAuction/CDA_rand.py
-python -m pytest gym_continuousDoubleAuction/test/integration -q
-```
-
-Lint is part of the first line: `test_lint.py` runs pyflakes over the package and fails on any
-message, so a stray import fails the same step a broken test would. To see the messages directly,
-`python -m pyflakes gym_continuousDoubleAuction` (pyflakes is in the `dev` extra). The
-Hypothesis-driven `test_orderbook_properties.py` is also in that step; if it fails, the shrunk
-failing example it prints is the bug report.
-
-The `packaging` CI job additionally builds the wheel and imports it from a directory with no
-checkout; reproduce it with `python -m build --wheel` and a clean venv if you touched `setup.py`,
-`MANIFEST.in` or the config tree.
-
-A change to behaviour is recorded in three places by convention: the finding or its status in
-[15](15_findings_and_recommendations.md) (open) or [29](29_fixed_issues.md) (fixed), the
-measurement in [16](16_verification_log.md), and the narrative in [17](17_changelog.md). A change to the test inventory updates
-[10](10_testing.md) and the totals quoted in [01](01_overview.md), [02](02_architecture.md)
-and [14](14_perspective_ai_engineer.md).
-
-Note for anyone automating pushes: the push credential used by the hosted review sessions has no
-`workflow` scope, so a change to `.github/workflows/` from one of those is rejected on push
-([17](17_changelog.md) §37); make workflow edits from a local checkout.
+The commands CI runs, the checks the suite adds (pyflakes, `mypy`, `ruff format`, the link
+checker), the packaging job and where a change is recorded are in
+[CONTRIBUTING.md](CONTRIBUTING.md) §3–§4.

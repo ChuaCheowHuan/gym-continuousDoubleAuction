@@ -54,7 +54,8 @@ default run ([11](11_logging_and_observability.md) §1.1). Pass `--no-episode-da
 
 ## 0.3 Install
 
-Python **3.12** is the only version CI tests.
+Python **3.12** is the only version CI tests: `setup.py` says `>=3.12`, and scipy's pin has no
+3.11 wheels ([10](10_testing.md) §7).
 
 ```bash
 git clone https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction.git
@@ -75,17 +76,21 @@ its configuration from the repository's `config/` folder ([18](18_configuration.
 | Where you run | Use |
 |---|---|
 | A Linux machine, CPU only (macOS is untested) | the commands above |
-| A machine with an NVIDIA GPU | the training image, [19_docker.md](19_docker.md) |
+| A machine with an NVIDIA GPU | skip the CPU wheel line and let `requirements.txt` resolve torch, or use the training image, [19_docker.md](19_docker.md) |
 | Google Colab | the notebook, [20_colab.md](20_colab.md) |
 
 ## 0.4 Check that it works
+
+These are the three checks CI runs ([10](10_testing.md) §7), cheapest first.
 
 ```bash
 # the exchange alone, random agents, no learning: a few seconds
 python -m gym_continuousDoubleAuction.CDA_rand --steps 200 --agents 4
 
-# the unit tests (about 3 minutes), then the real RLlib builds (about 3.5 minutes)
+# the unit tests (about 3 minutes; test/integration is left out by default, pyproject.toml addopts)
 python -m pytest gym_continuousDoubleAuction/test -q
+
+# RLlib wiring, real Algorithm builds, save/restore, evaluate (about 3.5 minutes)
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 ```
 

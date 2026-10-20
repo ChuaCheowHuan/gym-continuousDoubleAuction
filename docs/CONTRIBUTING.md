@@ -50,6 +50,18 @@ The suite also runs:
 
 `pytest --cov` fails below the floor set in `pyproject.toml`.
 
+To see the pyflakes messages directly, run `python -m pyflakes gym_continuousDoubleAuction`
+(pyflakes is in the `dev` extra). The Hypothesis-driven `test_orderbook_properties.py` runs in the
+unit step; if it fails, the shrunk failing example it prints is the bug report.
+
+The `packaging` CI job also builds the wheel and imports it from a directory with no checkout.
+Reproduce it with `python -m build --wheel` and a clean venv if you touched `setup.py`,
+`MANIFEST.in` or the config tree.
+
+The push credential used by the hosted review sessions has no `workflow` scope, so a change to
+`.github/workflows/` from one of those is rejected on push ([17](17_changelog.md) §37). Make
+workflow edits from a local checkout.
+
 What CI runs, job by job, is in [10_testing.md](10_testing.md).
 
 ## 4. Documentation
@@ -61,6 +73,12 @@ link to it.
 When you change behaviour, update the document that describes the current state of that area,
 including its diagrams. For a change worth recording, add a new section to
 [17_changelog.md](17_changelog.md).
+
+A change to behaviour is recorded in three places by convention: the finding or its status in
+[15](15_findings_and_recommendations.md) (open) or [29](29_fixed_issues.md) (fixed), the
+measurement in [16](16_verification_log.md), and the narrative in [17](17_changelog.md). A change
+to the test inventory updates [10](10_testing.md) and the totals quoted in
+[01](01_overview.md), [02](02_architecture.md) and [14](14_perspective_ai_engineer.md).
 
 ## 5. Reviews and issues
 
