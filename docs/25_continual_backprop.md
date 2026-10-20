@@ -697,8 +697,11 @@ train/model/cbp.py          # the algorithm. Imports no RLlib, so the formulas
 
 train/model/cbp_learner.py  # the RLlib wiring
     CBPLearnerMixin             # hooks, apply_gradients, metrics, get/set_state
-    TunedAdamMixin              # the papers' betas and weight decay, separately
     with_continual_backprop()   # composes over any base learner
+
+train/model/optim_learner.py  # independent of CBP
+    TunedAdamMixin              # the papers' betas and weight decay, separately
+    with_tuned_adam()           # composes it alone
 ```
 
 - **Where:** `apply_gradients`, once per minibatch, immediately after the optimiser step — the
