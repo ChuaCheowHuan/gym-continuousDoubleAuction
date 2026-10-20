@@ -306,3 +306,4 @@ table, with what closed each item, is in
 
 What this perspective would do next is in §6–§8: the relative-tick swing of the default price range
 (§8, a config choice), agent identity (§2), and whether dead actions should be shaped (§5.6).
+All three are tracked in [15](15_findings_and_recommendations.md).

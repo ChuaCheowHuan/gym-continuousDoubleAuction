@@ -25,7 +25,8 @@ do-nothing strategy, and the reward scale disabled PPO's critic. All three are f
 the observation-pipeline and action-path defects found after them.
 
 What is open is small and mostly a matter of choice: five review items that need a decision
-rather than a patch, and a handful of remainders recorded when their findings were closed.
+rather than a patch, a handful of remainders recorded when their findings were closed, and the
+next steps the three perspective reviews name.
 
 ```mermaid
 mindmap
@@ -45,6 +46,12 @@ mindmap
       4x stacking of near-duplicate frames
       relative tick varies 10x with the default price range
       no pre-commit
+    From the perspective reviews
+      dead-action shaping
+      position limits
+      post-only and IOC orders
+      an exogenous information process
+      TrainConfig under tune.Tuner
 ```
 
 ---
@@ -81,6 +88,23 @@ of each is in [29](29_fixed_issues.md).
 | S1-2 | Agent identity is not in the observation: two agents in the same private state cannot tell which role they play. It matters only if roles should be learned by one shared module; with one module per trainable agent it is moot ([12](12_perspective_rl_researcher.md) §2) |
 | S2-7 | The last traded price is not an observation feature. `mid_return` and the reference-price fallback carry most of what it would ([05](05_observation_space.md) §7.2) |
 | S4-6 | A formatter is enforced (`ruff format --check` in `test_types`), but there is no `pre-commit` configuration |
+
+---
+
+## Open from the perspective reviews
+
+The items the three perspective documents still list as their next steps. Each document's agenda
+section links here; the done items of each agenda are in [29](29_fixed_issues.md).
+
+| From | What is open | Effort |
+|---|---|---|
+| [12](12_perspective_rl_researcher.md) §5.6 | Whether refused or dead actions should be shaped. `dead_action_penalty` ships at `0.0`, because any positive value makes the reward negative-sum across agents again (S1-3). A reward-design decision | S |
+| [13](13_perspective_financial_trader.md) §10, item 10 | Position limits: real risk control rather than a reward penalty | M |
+| [13](13_perspective_financial_trader.md) §10, item 11 | Post-only and IOC order types, required for realistic market making | M |
+| [13](13_perspective_financial_trader.md) §10, item 12 | An exogenous information process (a latent fundamental and informed traders), which turns redistribution into price discovery | L |
+| [14](14_perspective_ai_engineer.md) §5.11, item 9 | Add `pre-commit` and enforce the coverage floor in CI (the S4-6 rows above) | S |
+| [14](14_perspective_ai_engineer.md) §5.11, item 12 | Move `TrainConfig` under `tune.Tuner`, for scheduling, fault tolerance and sweeps | M |
+| [14](14_perspective_ai_engineer.md) §5.11, item 15 | Finish the composition refactor for the state/action pair (the S4-10 row above) | L |
 
 ---
 
