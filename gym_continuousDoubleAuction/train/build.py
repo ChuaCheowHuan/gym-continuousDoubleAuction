@@ -119,13 +119,13 @@ def _learner_class(cfg: TrainConfig):
 
     # Imported here rather than at module scope: a run using neither should not
     # pay for importing the mixins, and nothing else in this module needs them.
-    from gym_continuousDoubleAuction.train.model.cbp_learner import (
-        with_continual_backprop,
-        with_tuned_adam,
-    )
-
     if cbp:
+        from gym_continuousDoubleAuction.train.model.cbp_learner import with_continual_backprop
+
         return with_continual_backprop(base, tuned_adam=tuned_adam)
+
+    from gym_continuousDoubleAuction.train.model.optim_learner import with_tuned_adam
+
     return with_tuned_adam(base)
 
 

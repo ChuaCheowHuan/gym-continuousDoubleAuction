@@ -9,8 +9,8 @@ four pieces of it:
                            carries its own state through a checkpoint.
   with_continual_backprop - composes the mixin over whatever Learner the
                            configured encoder selected.
-  configure_optimizers_for_module
-                         - the papers' tuned Adam, opt-in.
+  TunedAdamMixin         - the papers' tuned Adam, opt-in; it lives in
+                           `optim_learner` and is re-exported here.
   learner_config         - reads the config group off the AlgorithmConfig.
 
 Why a mixin, and not another registry entry
@@ -58,6 +58,12 @@ from typing import Any, Dict, List, Optional, Tuple
 import torch
 
 from gym_continuousDoubleAuction.logging_setup import get_logger
+
+# `TunedAdamMixin` lives in `optim_learner`. It is imported here under its old
+# name on purpose: checkpoints written before the move pickle their Learner
+# class with a reference to `cbp_learner.TunedAdamMixin`, and they must keep
+# loading (test_learner_class_compat.py).
+from gym_continuousDoubleAuction.train.model.optim_learner import TunedAdamMixin
 from gym_continuousDoubleAuction.train.model.cbp import (
     CBPConfig,
     CBPLayerState,
@@ -78,9 +84,6 @@ CBP_STATE = "continual_backprop"
 
 #: Key under which the config group rides on `learner_config_dict`.
 CBP_CONFIG_KEY = "continual_backprop"
-
-#: Key under which the optimiser group rides on `learner_config_dict`.
-OPTIMIZER_CONFIG_KEY = "optimizer"
 
 #: Metric names, logged per module. Prefixed so they do not collide with the
 #: MoE and JEPA metrics a composed learner also emits.
@@ -402,52 +405,6 @@ class CBPLearnerMixin:
                     layer_state.set_state(saved[name])
 
 
-class TunedAdamMixin:
-    """Adam's betas and weight decay, from config instead of torch's defaults.
-
-    A mixin of its own rather than part of `CBPLearnerMixin`, because the two
-    interventions are independent and the papers treat them that way. Both
-    papers run every algorithm *except* the standard-PPO baseline with
-    `beta_1 = beta_2 = 0.99`, on the grounds that the usual (0.9, 0.999)
-    mismatch is itself a cause of plasticity loss: the squared-gradient
-    estimate in the denominator updates far more slowly than the gradient
-    estimate in the numerator, so one large gradient produces one very large,
-    destabilising update. The Nature paper separately applies continual
-    backprop together with L2 in every reinforcement-learning experiment, and
-    reports that the pair is insensitive to the replacement rate where CBP
-    alone is not.
-
-    Keeping them separable is the point: composing this only when CBP is on
-    would make every CBP-vs-baseline comparison a comparison of CBP *and* a
-    retuned optimiser, which is exactly the confound to avoid.
-    """
-
-    def configure_optimizers_for_module(self, module_id, config=None) -> None:
-        values = (getattr(self.config, "learner_config_dict", None) or {}).get(
-            OPTIMIZER_CONFIG_KEY
-        ) or {}
-        betas = values.get("adam_betas")
-        weight_decay = values.get("adam_weight_decay")
-        if not betas and not weight_decay:
-            # Nothing configured - defer, so the optimiser is bit-for-bit the
-            # one RLlib builds. This is the path every existing run takes.
-            super().configure_optimizers_for_module(module_id, config=config)
-            return
-
-        params = self.get_parameters(self.module[module_id])
-        optimizer = torch.optim.Adam(
-            params,
-            betas=tuple(betas) if betas else (0.9, 0.999),
-            weight_decay=float(weight_decay or 0.0),
-        )
-        self.register_optimizer(
-            module_id=module_id,
-            optimizer=optimizer,
-            params=params,
-            lr_or_lr_schedule=config.lr,
-        )
-
-
 def with_continual_backprop(base, tuned_adam: bool = False):
     """Compose the mixins over a Learner class.
 
@@ -461,8 +418,3 @@ def with_continual_backprop(base, tuned_adam: bool = False):
     if tuned_adam:
         mixins = mixins + (TunedAdamMixin,)
     return type(f"CBP{base.__name__}", mixins + (base,), {})
-
-
-def with_tuned_adam(base):
-    """Compose only the optimiser mixin, for a run using it without CBP."""
-    return type(f"TunedAdam{base.__name__}", (TunedAdamMixin, base), {})
