@@ -315,7 +315,8 @@ def evaluate(
     # A checkpoint from another layout cannot drive this env; say so by name.
     check_layout_stamp(_read_league_state(checkpoint), checkpoint)
     register_env(None)
-    algo = Algorithm.from_checkpoint(checkpoint)
+    # Ray reads a bare relative path as a URI with no scheme and raises (#316).
+    algo = Algorithm.from_checkpoint(os.path.abspath(checkpoint))
     try:
         env_overrides = dict(env_overrides or {})
         env_config = dict(algo.config.env_config)
