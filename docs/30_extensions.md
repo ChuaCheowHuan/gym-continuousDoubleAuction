@@ -41,6 +41,7 @@ EXTENSION = Extension(
     defaults={"coeff": 0.1},  # every setting it accepts, with its default
     validate=check,  # optional (settings, train_config) -> None, raises
     learner_mixin=MyLearnerMixin,  # optional
+    learner_order=0,  # optional; a higher value wraps further out
     module_mixin=MyModuleMixin,  # optional
     module_ids=pick,  # optional (settings, trainable_ids) -> ids; default all
     env_wrapper=wrap,  # optional (env, settings) -> env
@@ -68,9 +69,9 @@ them while the package is uninstalled.
 
 | Piece | Composed in | Order |
 |---|---|---|
-| Learner mixin | `build._learner_class`, after the encoder's Learner and before Continual Backprop and tuned Adam | Mixins sorted by extension name, ahead of the base |
-| Module mixin | `build.build_config`, on each trainable module the extension's `module_ids` selects | Same; frozen baselines are never touched |
-| Env wrapper | `build.register_env`, on every env RLlib creates | Same |
+| Learner mixin | `build._learner_class`, after the encoder's Learner and before Continual Backprop and tuned Adam | Mixins sorted by `learner_order` (highest outermost), then by name, ahead of the base |
+| Module mixin | `build.build_config`, on each trainable module the extension's `module_ids` selects | By extension name; frozen baselines are never touched |
+| Env wrapper | `build.register_env`, on every env RLlib creates | By extension name |
 
 So an extension inherits the MoE and JEPA loss terms, and CBP still wraps the result. The composed
 classes are built with `type()` and travel to remote Learners and runners pickled by value, so a

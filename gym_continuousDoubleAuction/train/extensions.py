@@ -65,6 +65,9 @@ class Extension:
         validate: Optional `(settings, train_config) -> None`, raising on a bad
             value or combination. Called with defaults already filled in.
         learner_mixin: Composed over the Learner, ahead of it in the MRO.
+        learner_order: How far out `learner_mixin` wraps. Mixins compose by
+            `(-learner_order, name)`, so a higher value sits earlier in the MRO
+            and wraps every lower one; equal values keep name order.
         module_mixin: Composed over the trainable RLModule class.
         module_ids: Optional `(settings, trainable_ids) -> ids` choosing which
             trainable modules get `module_mixin`. Default: all of them.
@@ -79,6 +82,7 @@ class Extension:
     defaults: Mapping[str, Any] = field(default_factory=dict)
     validate: Optional[Callable[[Dict[str, Any], Any], None]] = None
     learner_mixin: Optional[type] = None
+    learner_order: int = 0
     module_mixin: Optional[type] = None
     module_ids: Optional[Callable[[Dict[str, Any], Sequence[str]], Sequence[str]]] = None
     env_wrapper: Optional[Callable[[Any, Dict[str, Any]], Any]] = None
@@ -170,10 +174,15 @@ def _enabled(cfg) -> List[Tuple[Extension, Dict[str, Any]]]:
 def compose_learner(base: type, cfg) -> type:
     """`base` with every enabled extension's Learner mixin ahead of it.
 
-    Returns `base` itself when none has one. Mixins are ordered by extension
-    name, so the class and its MRO are the same on every process and run.
+    Returns `base` itself when none has one. Mixins are ordered by
+    `(-learner_order, name)`: a higher `learner_order` wraps further out, and
+    the order, so the class and its MRO, is the same on every process and run.
     """
-    mixins = tuple(ext.learner_mixin for ext, _ in _enabled(cfg) if ext.learner_mixin is not None)
+    ordered = sorted(
+        (ext for ext, _ in _enabled(cfg) if ext.learner_mixin is not None),
+        key=lambda ext: (-ext.learner_order, ext.name),
+    )
+    mixins = tuple(ext.learner_mixin for ext in ordered)
     if not mixins:
         return base
     return type(f"Ext{base.__name__}", mixins + (base,), {})
