@@ -66,7 +66,7 @@ What CI runs, job by job, is in [10_testing.md](10_testing.md).
 
 ## 4. Documentation
 
-Everything except `README.md` lives in `docs/`; its [index](README.md) says which document owns
+Everything except `README.md` lives in `docs/`; its [index](map.md) says which document owns
 which topic. `README.md` is an overview only: put detail in the document that owns the topic, and
 link to it.
 

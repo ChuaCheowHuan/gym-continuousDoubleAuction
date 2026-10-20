@@ -239,7 +239,7 @@ prefix, so all 39 of those links resolved against the repository root and were b
 fixed; the table now lists every document, including [18](18_configuration.md), [19](19_docker.md), [20](20_colab.md) and [21](21_logging_review.md).
 
 **Later follow-up.** The index has since moved out of the top-level README into
-[doc/README.md](README.md), which GitHub shows when someone browses the folder; see §58.
+[doc/README.md](map.md), which GitHub shows when someone browses the folder; see §58.
 
 ## 10. Test suite: unittest → pytest
 
@@ -3364,7 +3364,7 @@ orientation page it was meant to be.
 | Was in the README | Now in |
 |---|---|
 | The "system at a glance" diagram | [02](02_architecture.md) §2.0, the canonical copy, now coloured by package. The README keeps a copy marked as such |
-| The documentation mindmap, the five document tables, the reading paths | [doc/README.md](README.md), new. Links rewritten relative to `doc/`; a row added for [README_v1.md](README_v1.md) |
+| The documentation mindmap, the five document tables, the reading paths | [doc/README.md](map.md), new. Links rewritten relative to `doc/`; a row added for [README_v1.md](README_v1.md) |
 | The "Main problems" status paragraph | [15](15_findings_and_recommendations.md) "Status in brief" |
 | Summary, v1 pointer, acknowledgements, disclaimer, citation | still the README, verbatim |
 
@@ -3449,7 +3449,7 @@ This log and [16](16_verification_log.md) are history and were left as they are.
 | 1,144 unit + 163 integration; `1023 passed`; 112, 153, 156 and 165 integration | **1,214 + 163 = 1,377** | [01](01_overview.md), [02](02_architecture.md), [10](10_testing.md) (header, mindmap, per-file inventory, §6.4.4), [14](14_perspective_ai_engineer.md), [15](15_findings_and_recommendations.md), [26](26_runbook.md) §26.2, re-run |
 | a 216-float observation, a 32-float private block | **233 = 4 × 48 + 41** in `grid`, 305 in `levels` | [05](05_observation_space.md), [09](09_distributed_training.md), [10](10_testing.md), [12](12_perspective_rl_researcher.md), [15](15_findings_and_recommendations.md), [18](18_configuration.md), [21](21_logging_review.md) |
 | `private_dim` 32 = 9 + 2k + 2 + 1 | **41**, with the nine action-mask entries | [05](05_observation_space.md) §1, [18](18_configuration.md) |
-| five reward terms | **six**, `dead_action_penalty` included | the system diagram ([README](../README.md), [02](02_architecture.md)), [doc/README](README.md), [11](11_logging_and_observability.md) |
+| five reward terms | **six**, `dead_action_penalty` included | the system diagram ([README](../README.md), [02](02_architecture.md)), [doc/README](map.md), [11](11_logging_and_observability.md) |
 | 44 tokens of 6 channels; `level` is `k_rows + 1` tokens | **88 × 6** in `grid` (22 per snapshot), 44 × 8 in `levels` | [18](18_configuration.md) §5.4, [22](22_jepa_integration.md) |
 | the package tree without `liquidation_helper`, `layout_version`, `compare`, `action_mask`, `cbp`, `cbp_learner`, `moe_learner`, the inspect scripts | all listed | [02](02_architecture.md) §2.3 |
 | five CLIs missing from the entry points | `evaluate`, `export`, `probe`, `pretrain`, `compare` | [01](01_overview.md) §1.6 |
@@ -4301,5 +4301,9 @@ Asked for: identify markdown files and content in `docs/` that overlap, and cons
   Three places said a bare env renders (`is_render` true); `env_defaults.json` ships false.
 - **Learner seam.** [22](22_jepa_integration.md) §2.4 and [25](25_continual_backprop.md) §2.5
   link to [30](30_extensions.md) §3–§4 for the general mechanism.
+- **The index is `docs/map.md`.** `docs/README.md` was renamed so that `docs/` holds one README,
+  the 2020 [README_v1](README_v1.md). Links to it in `README.md`, `CLAUDE.md`, CONTRIBUTING and
+  three link targets in this changelog's §§ (their wording unchanged) now point at
+  [map.md](map.md). Browsing `docs/` on GitHub now shows the file list rather than the index.
 - **Unchanged.** README_v1, [05](05_observation_space.md) (its three linked headings), the
   `CONTRIBUTING.md` path, `docs/pic/`, [16](16_verification_log.md). No file was renumbered.
