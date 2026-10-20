@@ -4312,3 +4312,37 @@ Asked for: identify markdown files and content in `docs/` that overlap, and cons
   [map.md](map.md). Browsing `docs/` on GitHub now shows the file list rather than the index.
 - **Unchanged.** README_v1, [05](05_observation_space.md) (its three linked headings), the
   `CONTRIBUTING.md` path, `docs/pic/`, [16](16_verification_log.md). No file was renumbered.
+
+## 100. The 2026-10-20 docs review: one bug and twelve doc fixes (#316–#326, #328)
+
+A correctness review of the docs on PR #315's branch, checked against the code and `config/`,
+filed thirteen issues. This section fixes twelve of them; #327 (literal defaults in
+`create_multi_agent_config`) is a code refactor and is left open.
+
+- **#316, a bug.** `train.evaluate`, `train.probe`, `train.export` and `train.pretrain` failed on a
+  relative path with pyarrow's `URI has empty scheme`; the runbook's commands all use one. The three
+  Ray call sites now get an absolute path ([29](29_fixed_issues.md) "From 23"). Three regression
+  tests, in `test_evaluate.py` and `test_pretrain.py`, fail on the previous source.
+- **#317.** [26](26_runbook.md) §26.2: `CDA_rand --init-cash 0` raises; it does not run with an empty
+  book.
+- **#318.** `1e-05` is 0.1 basis point, not one ([07](07_reward_function.md) §4.2,
+  [18](18_configuration.md) §3 and §3.2).
+- **#319.** [06](06_action_space.md) §1's table gains the `order_slot` row; §1.5 no longer calls it a
+  sixth head (there are five).
+- **#320.** [04](04_accounting.md): dead `modify`/`cancel` actions are counted
+  (`num_unmatched_step`, `unmatched_action_fraction`) and agents see their own orders; the paragraph
+  saying otherwise predated S3-24 and S4-14.
+- **#321.** Test counts: 2,170 unit and 190 integration (2,360) after the three new tests, in 00,
+  01, 02, 10, 14 and 15; 00 keeps the counts its timings were measured at. 14's code size is 57,347
+  lines. 10's `test_layout_version.py` heading says 16.
+- **#322.** [02](02_architecture.md) §2.3's package map drops the deleted `envs/orderbook/test/` and
+  adds `settings.py`, `account_state.py`, `run_lock.py`, `extensions.py`, `performance.py`,
+  `returns.py` and `model/action_dist.py`.
+- **#323.** The last two "a bare env renders" claims ([18](18_configuration.md) §3,
+  `env_defaults.json`'s `_note`).
+- **#324.** [02](02_architecture.md) §2.6: `CDA_rand --render` raises the level itself; a DEBUG
+  `cda_log_level` is the training-side route.
+- **#325.** [CONTRIBUTING](CONTRIBUTING.md) §1 links 00 §0.3 for the CPU wheel; §4 lists 00 and 15
+  among the docs that quote totals.
+- **#326, #328.** [00](00_getting_started.md) §0.3: editable is the expected install, not the only
+  working one. §0.4: CI runs `CDA_rand` with no arguments, after the unit suite.

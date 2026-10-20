@@ -168,14 +168,15 @@ gym_continuousDoubleAuction/
 │   │   ├── orderbook.py                   OrderBook: process / cancel / modify + tape
 │   │   ├── ordertree.py                   price → OrderList SortedDict, per side
 │   │   ├── orderlist.py                   FIFO doubly-linked list per price
-│   │   ├── order.py                       single order record
-│   │   └── test/                          standalone scripts, not collected by pytest
+│   │   └── order.py                       single order record
 │   ├── account/                         clearing / risk
 │   │   ├── account.py                     position state machine
+│   │   ├── account_state.py               the account fields, declared for the type checker
 │   │   ├── cash_processor.py              cash ↔ cash_on_hold transfers
 │   │   └── calculate.py                   NAV, P&L, mark-to-market
-│   └── agent/
-│       └── trader.py                      order lifecycle + trade settlement
+│   ├── agent/
+│   │   └── trader.py                      order lifecycle + trade settlement
+│   └── settings.py                      EnvSettings: every env key, read and checked in one place
 ├── train/
 │   ├── train.py                        train(); re-exports the names below, `python -m ...train.train`
 │   ├── config.py                       TrainConfig (every knob, from train_config.json)
@@ -184,10 +185,15 @@ gym_continuousDoubleAuction/
 │   ├── progress.py                     progress.jsonl, the driver-side NAV check, iteration metrics
 │   ├── cli.py                          argument parsing, logging set-up, main
 │   ├── runtime.py                      platform + hardware profile resolution (Colab / docker)
+│   ├── run_lock.py                     one live run per checkpoint folder
+│   ├── extensions.py                   installable extensions via entry points (docs/30)
+│   ├── performance.py                  per-episode Sharpe, Sortino, drawdown, hit rate, turnover
+│   ├── returns.py                      one definition of "this module reported no return"
 │   ├── episode_record.py               EpisodeRecorder: the Parquet per-step record
 │   ├── policy/policy_handler.py        MultiRLModuleSpec, module ID conventions
 │   ├── model/model_handler.py          RandomRLModule + DefaultModelConfig + CDACatalog
 │   ├── model/action_mask.py            reads the mask out of the private block (docs/06 §7)
+│   ├── model/action_dist.py            the Dict action distribution, with a rank-safe log-prob
 │   ├── model/encoders/                 selectable observation encoders for the trainable modules
 │   ├── model/jepa_learner.py           JEPA module + learner (docs/22 4.2)
 │   ├── model/moe_learner.py            CDAPPOTorchRLModule (masking) + CDAPPOTorchLearner (MoE aux loss)
@@ -207,8 +213,8 @@ gym_continuousDoubleAuction/
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   ├── inspect_latest_episode*.py        print the newest episode as a table or JSON
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               2,167 unit tests
-    └── integration/                    185 tests that build real Algorithms
+└── test/                               2,170 unit tests
+    └── integration/                    190 tests that build real Algorithms
 ```
 
 `train/logger/`, `train/plotter/` and `train/storage/` — the legacy Ray-actor telemetry an earlier
@@ -569,8 +575,8 @@ flowchart LR
 Two consequences worth flagging:
 
 - **`is_render` defaults to `false`** in both files, and `render()` is additionally gated on the
-  logger being enabled for DEBUG. `CDA_rand --render` with a DEBUG `cda_log_level` dumps the book,
-  the tape and every account on every step ([29](29_fixed_issues.md#02-26--is_render-defaulted-to-true) has the old default).
+  logger being enabled for DEBUG. `CDA_rand --render` (which raises the level to DEBUG itself), or
+  a DEBUG `cda_log_level` in training, dumps the book, the tape and every account on every step ([29](29_fixed_issues.md#02-26--is_render-defaulted-to-true) has the old default).
 - **`initial_price_min` / `initial_price_max` are reachable from training now.** They are
   `TrainConfig` fields and are forwarded by `env_config`, so a run can narrow the anchor range
   instead of always drawing from `[10, 100]`. That range is still what the checked-in config ships;

@@ -3051,6 +3051,18 @@ for a long time. It was found by the review in [17](17_changelog.md) §34.5 — 
 by the private-state work itself, which fixed the reader's `snapshots` slice and left the row
 selection reasoning behind it untouched.
 
+#### 23 §12 · A relative `--out` or `--checkpoint` path failed (#316)
+
+Register: none (GitHub issue #316, found by the 2026-10-20 docs review).
+
+`train.pretrain` with its default `--out pretrained/jepa`, and `train.probe`, `train.export` and
+`train.evaluate` given `--checkpoint results/chkpt/iter_<n>` (the form every runbook command uses),
+failed with pyarrow's `URI has empty scheme`: Ray's `save_to_path`, `RLModule.from_checkpoint` and
+`Algorithm.from_checkpoint` read a bare relative path as a URI. `pretrain` failed after writing
+`encoder.pt`, leaving a checkpoint the probe refused. The three call sites now pass an absolute
+path, as `train.train` already did; `test_evaluate.py` and `test_pretrain.py` pin it
+([17](17_changelog.md) §100).
+
 ### From 25 · Continual Backprop
 
 Source: [25_continual_backprop.md](25_continual_backprop.md).
