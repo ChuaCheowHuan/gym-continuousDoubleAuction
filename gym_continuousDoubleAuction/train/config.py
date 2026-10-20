@@ -303,7 +303,7 @@ class TrainConfig:
     episode_data_dir: Optional[str] = _default("episode_data_dir")
     # Record one episode in N. The record is ~34MB per 4096-step episode, so
     # "on" used to mean "until the disk fills"; this and episode_max_bytes are
-    # what bound it (docs/21 §6 item 6).
+    # what bound it (docs/11 §5.6 item 6).
     episode_sample_every: int = _default("episode_sample_every")
     episode_max_bytes: int = _default("episode_max_bytes")
     episode_rows_per_file: int = _default("episode_rows_per_file")
@@ -357,8 +357,8 @@ class TrainConfig:
     # How Ray formats its own logging, in the driver and in every process it
     # starts for this job: "TEXT" or "JSON". Handed to `ray.LoggingConfig`,
     # which is the only lever that reaches a worker's Ray-side output at all -
-    # including the traceback RLlib swallows when an env runner dies (docs/21
-    # §2.1, §6 item 7). "" leaves Ray's logging alone.
+    # including the traceback RLlib swallows when an env runner dies (docs/11
+    # §5.2.1, §5.6 item 7). "" leaves Ray's logging alone.
     ray_log_encoding: str = _default("ray_log_encoding")
     # This package's own log level, applied by logging_setup and exported so
     # remote env runners - separate processes that never run main() - come up
@@ -595,7 +595,7 @@ class TrainConfig:
         """Where this run's per-step episode record goes, or None if it is off.
 
         Two things this does that the raw `episode_data_dir` did not, and both
-        are the reasons docs/21 §2.3 called it the one output path with no
+        are the reasons docs/11 §5.2.3 called it the one output path with no
         protection at all:
 
         * **Absolute.** The callback carrying this string is pickled into every

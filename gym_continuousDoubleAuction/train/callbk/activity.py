@@ -30,7 +30,7 @@ def new_tally() -> dict:
     Running sums rather than a retained series: the variance share in
     `_log_reward_terms` needs only the first two moments, and an episode is
     `max_step` x `num_agents` agent-steps - keeping them all to compute five
-    numbers at the end is the memory cost docs/21 §2.2 is about.
+    numbers at the end is the memory cost docs/11 §5.2.2 is about.
     """
     return {
         # Env steps and agent-steps are different denominators: the fractions
@@ -102,7 +102,7 @@ class ActivityLog:
     """The tallies of the episodes in flight on this process, and the metrics they become."""
 
     #: How many unfinished episodes' tallies to keep. `on_episode_end` is not
-    #: called for episodes a force-reset discards (docs/21 §3.2), so a dict keyed
+    #: called for episodes a force-reset discards (docs/11 §5.3.2), so a dict keyed
     #: by episode id and pruned only there grows for the life of the process.
     #: Generous next to any realistic `num_envs_per_env_runner`, and three ints
     #: per entry, so the cap costs nothing and closes the leak.
@@ -445,7 +445,7 @@ class ActivityLog:
 
         Insertion-ordered, so "oldest" is the episode that started first. An
         episode discarded by a force-reset never reaches `on_episode_end` and so
-        never has its tally popped (docs/21 §3.2); this is what stops that
+        never has its tally popped (docs/11 §5.3.2); this is what stops that
         turning into a dict that grows for the life of the worker.
         """
         while len(self.tallies) >= self.max_live:

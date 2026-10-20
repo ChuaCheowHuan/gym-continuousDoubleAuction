@@ -214,7 +214,7 @@ def configure(
     passes False, because it is about to hand `ray.init` a `LoggingConfig`, and
     that configures the root logger of this process and every worker Ray starts
     for the job: with propagation on, every line this package emits would be
-    printed once by the handler attached here and once by Ray's (docs/21 §6
+    printed once by the handler attached here and once by Ray's (docs/11 §5.6
     item 7). It is a parameter rather than a constant precisely because the
     duplication only exists once Ray has configured the root logger.
     """

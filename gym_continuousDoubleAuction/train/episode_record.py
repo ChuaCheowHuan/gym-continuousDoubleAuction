@@ -2,7 +2,7 @@
 
 This replaces the per-episode `pickle.dump` the league callback used to do
 inline. Four things were wrong with that, and each maps onto a property of this
-module (docs/21 §2.2-2.4, §5, §6):
+module (docs/11 §5.2.2-5.2.4, §5.5, §5.6):
 
 * **`pickle` executes arbitrary code on load**, has no schema, and is queryable
   only by loading a whole episode into Python. Parquet is columnar, typed, safe
@@ -22,7 +22,7 @@ module (docs/21 §2.2-2.4, §5, §6):
   caps what this process keeps, so "on" is no longer a synonym for "until the
   disk fills".
 
-**Why pyarrow rather than `ray.data`.** docs/21 §6 item 5 said "Parquet via Ray
+**Why pyarrow rather than `ray.data`.** docs/11 §5.6 item 5 said "Parquet via Ray
 Data"; this writes Parquet with `pyarrow.parquet` directly, and the reason is
 the objection §5 raised against RLlib's own offline recording:
 `OfflineSingleAgentEnvRunner` clamps Ray Data's execution resources to
@@ -241,7 +241,7 @@ class EpisodeRecorder:
         output_dir: Where the files go. Absolute by the time it reaches here;
             the callback is pickled into every env runner, and a relative path
             would be resolved against whatever cwd that worker happened to have
-            (docs/21 §2.3).
+            (docs/11 §5.2.3).
         run_id: Written into every row, so files from two runs sharing a
             directory can still be told apart.
         sample_every: Record one episode in N, chosen by a hash of the episode
@@ -262,7 +262,7 @@ class EpisodeRecorder:
             aggregate a two-file join.
         max_live_episodes: How many unfinished episodes to buffer. An episode
             that is discarded without ending - which happens on any force-reset
-            (docs/21 §3.2) - never reaches `finish_episode`, so without this the
+            (docs/11 §5.3.2) - never reaches `finish_episode`, so without this the
             buffer keeps up to `max_step` rows per lost episode for the life of
             the process.
         queue_size: Depth of the hand-off to the writer thread. When it is full
@@ -487,7 +487,7 @@ class EpisodeRecorder:
         """Drop the oldest live episode once too many are open at once.
 
         `on_episode_end` is not called for episodes a force-reset throws away
-        (docs/21 §3.2), so without a cap those rows are held until the process
+        (docs/11 §5.3.2), so without a cap those rows are held until the process
         dies. Evicting rather than writing them: a partial episode with no end
         is not a record anyone would trust, and writing it would make the file's
         episode boundaries a lie.

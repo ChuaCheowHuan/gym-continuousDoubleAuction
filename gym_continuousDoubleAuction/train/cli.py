@@ -203,7 +203,7 @@ def ray_logging_config(cfg: TrainConfig):
     package's own logging already crosses to the runners (`$CDA_LOG_LEVEL`,
     `$CDA_LOG_DIR`, and the `runtime_env`), but Ray's does not: an env-runner
     restart notice, the "No samples returned from remote workers" warning, and
-    the traceback `EnvRunnerGroup` swallows when a runner dies (docs/21 §2.1) are
+    the traceback `EnvRunnerGroup` swallows when a runner dies (docs/11 §5.2.1) are
     all emitted by Ray's own loggers in a process this package never configured.
     A `LoggingConfig` is applied by Ray to the driver and to every process it
     starts for the job, which is exactly that set.

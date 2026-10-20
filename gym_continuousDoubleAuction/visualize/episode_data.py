@@ -1,8 +1,8 @@
 """Shared loader for the visualize scripts: reads the per-step Parquet record.
 
 `train.episode_record.EpisodeRecorder` writes one row per (episode, step, agent)
-to `<episode_data_dir>/<run_id>/episodes.<tag>.<seq>.parquet` (docs/21 logging
-review, recommendation 4). That replaced the per-episode `pickle.dump` this
+to `<episode_data_dir>/<run_id>/episodes.<tag>.<seq>.parquet` (docs/11 §5.6, the
+Parquet recommendation). That replaced the per-episode `pickle.dump` this
 package used to convert to `latest_episode_data.json` for these scripts to
 read; every visualize_*.py script now goes through `load_episode` here instead
 of each re-deriving where a run's data lives and which episode is "the" one.

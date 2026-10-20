@@ -14,7 +14,7 @@ and restarts the actor, and `algo.train()` returns normally - the run carries on
 training on the ledger the check just condemned. The raise also destroyed the
 evidence: `synchronous_parallel_sample` asks each runner for
 `(sample(), get_metrics())` in one call, so a throwing `sample()` means the
-metrics for that runner are discarded with the error. See docs/21 §2.1.
+metrics for that runner are discarded with the error. See docs/11 §5.2.1.
 
 So now the callback *reports* - the ERROR, `nav_conservation_error`, and a
 `nav_conservation_violations` count - and `train._check_nav_conservation` acts
