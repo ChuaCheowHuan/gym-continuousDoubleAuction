@@ -822,8 +822,8 @@ What remains, in order:
 What the logging above does once `num_env_runners > 0`, which is the shape the GPU profile runs:
 what broke when the run was distributed, what the concurrency story is once Ray's fault tolerance
 is in the picture, and whether Ray/RLlib already provide the per-step recording this repository
-hand-rolls. It was written as a separate audit (`21_logging_review.md`, now a redirect page whose
-§N is §5.N here). See also [09_distributed_training.md](09_distributed_training.md).
+hand-rolls. It was written as a separate audit (`21_logging_review.md`, since deleted), whose §N is
+§5.N here. See also [09_distributed_training.md](09_distributed_training.md).
 
 Everything marked **[verified]** was checked against Ray 2.56.1 as pinned in `requirements.txt`,
 either by reading the installed source at the line cited or by running the code.

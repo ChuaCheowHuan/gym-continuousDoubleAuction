@@ -175,11 +175,7 @@ the cadence caveat that decides whether a result means anything) →
 **Trading / microstructure review**
 [13](13_perspective_financial_trader.md) → [03](03_matching_engine.md) → [04](04_accounting.md)
 
-## Moved pages
+## Retired numbers
 
-These paths stay as short redirect pages so that older links still land.
-
-| Page | Now |
-|---|---|
-| [21_logging_review.md](21_logging_review.md) | [11_logging_and_observability.md](11_logging_and_observability.md) §5 |
-| [24_pretraining.md](24_pretraining.md) | [23_probe_harness.md](23_probe_harness.md) Part 2 |
+21 (the logging review) is now [11](11_logging_and_observability.md) §5, and 24 (offline
+pretraining) is [23](23_probe_harness.md) Part 2. The numbers are not reused.

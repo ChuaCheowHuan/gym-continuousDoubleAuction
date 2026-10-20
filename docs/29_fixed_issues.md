@@ -1572,7 +1572,7 @@ is done; the items still open are listed in [15](15_findings_and_recommendations
 
 **Phase 5 — engineering hygiene (≈3 days)**
 16. ~~`logging` replaces `print`; a conservation violation stops the run (S2-8)~~ — **done**. The
-    stop moved to the driver once [21 §2.1](21_logging_review.md) found that raising in the episode
+    stop moved to the driver once [11 §5.2.1](11_logging_and_observability.md) found that raising in the episode
     hook stops nothing at `num_env_runners > 0`
 17. ~~Fix `install_requires`; drop `sklearn` and the unused `import ray` (S3-6)~~ — **done**, with
     a `packaging` CI job so an installed copy is exercised rather than assumed. `six` is declared
@@ -2013,7 +2013,7 @@ does not reliably run when it stops an env runner: a short run wrote nothing (is
 Register: [S4-9](29_fixed_issues.md#s4--minor)
 
 The per-step record was a `pickle.dump` of the whole episode performed inline in
-`on_episode_end`. Five things were wrong with it ([21 §2.2–2.4, §5–6](21_logging_review.md)): it
+`on_episode_end`. Five things were wrong with it ([11 §5.2.2–5.2.4, §5.5–5.6](11_logging_and_observability.md)): it
 was untyped and executed arbitrary code on load; it ran on the sampling hot path; a failure raised
 into the hook, which on a remote env runner restarts the worker; `--no-episode-data` disabled the
 write but kept the ~34 MB per episode of accumulation; and it was unbounded.
@@ -2052,7 +2052,7 @@ runner, so the raise arrived as a `RayTaskError` from `sample()`, and `restart_f
 (True by default) made `EnvRunnerGroup` log it through Ray's own logger and restart the actor -
 `algo.train()` returned normally. The raise also destroyed the evidence, since
 `synchronous_parallel_sample` asks each runner for `(sample(), get_metrics())` in one call. See
-[21 §2.1](21_logging_review.md). `NavConservationError` subclasses `AssertionError`, so anything
+[11 §5.2.1](11_logging_and_observability.md). `NavConservationError` subclasses `AssertionError`, so anything
 written to catch the old behaviour still does.
 
 #### 11 §1.5 · A float check that could not resolve its tolerance
@@ -2101,7 +2101,7 @@ Three of those were previously weaker than they looked:
 * **The episode record's directory was not covered either.** The episode id kept two *writers*
   apart, which was never the weak part; the *path* was a bare relative string, resolved inside each
   worker against whatever working directory it inherited, and shared by every concurrent run. It is
-  absolute and run-scoped now (§1.1, [21 §2.3](21_logging_review.md)). The per-writer file naming
+  absolute and run-scoped now (§1.1, [11 §5.2.3](11_logging_and_observability.md)). The per-writer file naming
   is what lets each process enforce its own byte cap without deleting another's files.
 
 **The `iter=` tag is process-wide, not per-thread.** It was a `ContextVar`, chosen so it would be
@@ -2193,7 +2193,7 @@ race and a shared `progress.jsonl` can interleave two writers inside one JSON li
 
 Issue #216.
 
-`file_backup_count` × `file_max_bytes` caps the run log at 60 MB, which at DEBUG is reached quickly — and it was the start of a run, where divergence usually begins, that was dropped. Fixed by `file_keep_head` ([21](21_logging_review.md) §2.5).
+`file_backup_count` × `file_max_bytes` caps the run log at 60 MB, which at DEBUG is reached quickly — and it was the start of a run, where divergence usually begins, that was dropped. Fixed by `file_keep_head` ([11](11_logging_and_observability.md) §5.2.5).
 
 #### 11 §4 · Recommended additions that are done
 
@@ -2667,10 +2667,10 @@ and are exact throughout now.
 
 ### From 21 · Logging review
 
-Source: [21_logging_review.md](21_logging_review.md).
-Bare section numbers (§) and "this document" in this group refer to [21](21_logging_review.md).
+Source: the logging review, once its own page (`21_logging_review.md`) and now [11](11_logging_and_observability.md) §5.
+Bare section numbers (§) and "this document" in this group are the review's: its §N is [11](11_logging_and_observability.md) §5.N.
 
-The audit of logging under multiple env runners and learners. Every finding below is fixed; 21 keeps
+The audit of logging under multiple env runners and learners. Every finding below is fixed; [11](11_logging_and_observability.md) §5 keeps
 the audit's structure with the current state of each, and links here.
 
 #### 21 §2.1 · strict_nav_check restarted a worker instead of stopping the run

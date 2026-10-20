@@ -236,7 +236,7 @@ The reconciliation table produced during that merge was not carried into the cur
 pointed at `gym_continuousDoubleAuction/doc/change.md` and three `CHANGES_*.md` redirect shims in
 a folder that no longer existed, and every entry in its own document table omitted the `doc/`
 prefix, so all 39 of those links resolved against the repository root and were broken. Both are
-fixed; the table now lists every document, including [18](18_configuration.md), [19](19_docker.md), [20](20_colab.md) and [21](21_logging_review.md).
+fixed; the table now lists every document, including [18](18_configuration.md), [19](19_docker.md), [20](20_colab.md) and [21](11_logging_and_observability.md#5-distributed-runs-multiple-env-runners-multiple-learners-and-rays-built-ins).
 
 **Later follow-up.** The index has since moved out of the top-level README into
 [doc/README.md](map.md), which GitHub shows when someone browses the folder; see §58.
@@ -965,7 +965,7 @@ through to stderr anyway; the handlers are mirrored onto it.
 §23 made the logging correct within a process and between two runs. It did not ask what happens
 once sampling moves off the driver — which is what `runtime_profiles.json`'s GPU profile does at
 `num_env_runners=2`, and what CI, at `num_env_runners=0`, never exercises.
-[21_logging_review.md](21_logging_review.md) is that audit. Three of its findings were defects
+[21_logging_review.md](11_logging_and_observability.md#5-distributed-runs-multiple-env-runners-multiple-learners-and-rays-built-ins) is that audit. Three of its findings were defects
 rather than gaps, and all eight of its recommendations are implemented.
 
 ### 24.1 The stop signal stopped nothing
@@ -1013,7 +1013,7 @@ a warning, and `episode_sample_every` (default 10) plus `episode_max_bytes` (def
 writer) bound it.
 
 It is written with `pyarrow.parquet`, not `ray.data`, deliberately. Starting a Ray Data execution
-inside an env runner is the same objection [21 §5](21_logging_review.md) raises against RLlib's own
+inside an env runner is the same objection [21 §5](11_logging_and_observability.md#5-distributed-runs-multiple-env-runners-multiple-learners-and-rays-built-ins) raises against RLlib's own
 offline recording: it clamps to `num_cpus_per_env_runner` and competes with sampling on a two-core
 profile. `ray.data.read_parquet` reads the output natively, so nothing downstream is lost.
 
@@ -1176,7 +1176,7 @@ next edit and rots *silently*, since nothing checks it.
 
 All of them now point at the file, with the function or class named in the prose beside the link.
 That is one indirection worse to follow and does not go stale. Ray-internal citations in
-[21](21_logging_review.md) keep their line numbers: they cite a pinned version of somebody else's
+[21](11_logging_and_observability.md#5-distributed-runs-multiple-env-runners-multiple-learners-and-rays-built-ins) keep their line numbers: they cite a pinned version of somebody else's
 source, which is exactly the case where a line number is the right reference.
 
 ### 27.2 What the docs said that the code no longer did
@@ -1190,8 +1190,8 @@ The specific corrections, each verified against the tree:
 | 02 §2.6 | `initial_price_min` / `initial_price_max` are unreachable from training | Both are `TrainConfig` fields, forwarded by `env_config` |
 | 06 §6, 12 §5.5, 10 §8 | No episode is reproducible even with a seed set | S3-5 is fixed; `test_seeding.py` pins it eleven ways |
 | 07 §2, 12 §3.6 | The five reward coefficients are function-local literals | They are `env_config` keys — the same document already said so two paragraphs earlier |
-| 08 §7 | "Six metrics is the entirety of what reaches RLlib's structured logger" | 27. [21 §8](21_logging_review.md) had already corrected the same sentence in doc 11 and missed the copy here |
-| 08 §9 | The NAV check raises `AssertionError` from the episode hook | The hook counts; the driver raises. That split is the whole point of [21 §2.1](21_logging_review.md) |
+| 08 §7 | "Six metrics is the entirety of what reaches RLlib's structured logger" | 27. [21 §8](11_logging_and_observability.md#5-distributed-runs-multiple-env-runners-multiple-learners-and-rays-built-ins) had already corrected the same sentence in doc 11 and missed the copy here |
+| 08 §9 | The NAV check raises `AssertionError` from the episode hook | The hook counts; the driver raises. That split is the whole point of [21 §2.1](11_logging_and_observability.md#5-distributed-runs-multiple-env-runners-multiple-learners-and-rays-built-ins) |
 | 08, 04 §1, 07 §3 | Three per-step counters | Four, plus `reward_terms` and `drawdown` |
 | 04 §3, 12 §5.6, 15 S4-14 | Rejections are silent and the dead-action fraction is unmeasurable | `num_rejected_step` and `is_pass_action` reach `info` and become metrics. The `modify` / `cancel`-with-no-target case is still uncounted |
 | 05 §10, 11 §1.1, 14, 15 S4-9 | Episode data is `pickle`; two `.pkl` fixtures are committed | Parquet, and the files are gone from the repository |
@@ -1763,7 +1763,7 @@ after a real run, or the offline pretraining of doc/22 4.4.
 
 `train/pretrain/` trains a JEPA encoder's self-supervised objective on observations alone - no
 reward, no policy, no opponents - and writes weights a training run starts from. See
-[24_pretraining.md](24_pretraining.md).
+[24_pretraining.md](23_probe_harness.md#part-2-offline-jepa-pretraining).
 
 ### 32.1 Almost entirely reuse
 
@@ -2718,7 +2718,7 @@ anywhere, only a line in this changelog.
 
 The same numbers were corrected in [README](../README.md), [01](01_overview.md),
 [02](02_architecture.md) §2.5 and §2.9, [09](09_distributed_training.md),
-[12](12_perspective_rl_researcher.md), [18](18_configuration.md), [21](21_logging_review.md),
+[12](12_perspective_rl_researcher.md), [18](18_configuration.md), [21](11_logging_and_observability.md#5-distributed-runs-multiple-env-runners-multiple-learners-and-rays-built-ins),
 [22](22_jepa_integration.md), [23](23_probe_harness.md) and [25](25_continual_backprop.md). Two of
 those were not just a width:
 
@@ -3447,7 +3447,7 @@ This log and [16](16_verification_log.md) are history and were left as they are.
 | Was | Now | Where |
 |---|---|---|
 | 1,144 unit + 163 integration; `1023 passed`; 112, 153, 156 and 165 integration | **1,214 + 163 = 1,377** | [01](01_overview.md), [02](02_architecture.md), [10](10_testing.md) (header, mindmap, per-file inventory, §6.4.4), [14](14_perspective_ai_engineer.md), [15](15_findings_and_recommendations.md), [26](26_runbook.md) §26.2, re-run |
-| a 216-float observation, a 32-float private block | **233 = 4 × 48 + 41** in `grid`, 305 in `levels` | [05](05_observation_space.md), [09](09_distributed_training.md), [10](10_testing.md), [12](12_perspective_rl_researcher.md), [15](15_findings_and_recommendations.md), [18](18_configuration.md), [21](21_logging_review.md) |
+| a 216-float observation, a 32-float private block | **233 = 4 × 48 + 41** in `grid`, 305 in `levels` | [05](05_observation_space.md), [09](09_distributed_training.md), [10](10_testing.md), [12](12_perspective_rl_researcher.md), [15](15_findings_and_recommendations.md), [18](18_configuration.md), [21](11_logging_and_observability.md#5-distributed-runs-multiple-env-runners-multiple-learners-and-rays-built-ins) |
 | `private_dim` 32 = 9 + 2k + 2 + 1 | **41**, with the nine action-mask entries | [05](05_observation_space.md) §1, [18](18_configuration.md) |
 | five reward terms | **six**, `dead_action_penalty` included | the system diagram ([README](../README.md), [02](02_architecture.md)), [doc/README](map.md), [11](11_logging_and_observability.md) |
 | 44 tokens of 6 channels; `level` is `k_rows + 1` tokens | **88 × 6** in `grid` (22 per snapshot), 44 × 8 in `levels` | [18](18_configuration.md) §5.4, [22](22_jepa_integration.md) |
@@ -3471,7 +3471,7 @@ thing and an open item can be assigned, discussed and closed by a commit.
 - **What was filed:** the 80 S1–S4 findings and the 15 "Resolved since the older documentation
   set" rows of [15](15_findings_and_recommendations.md); its new section of open decisions from the
   2026-10-07 review, R-1 to R-19, which had been only in that review's conversation; the open test
-  gaps of [10](10_testing.md) §8; and the logging findings of [21](21_logging_review.md) §2, §3 and
+  gaps of [10](10_testing.md) §8; and the logging findings of [21](11_logging_and_observability.md#5-distributed-runs-multiple-env-runners-multiple-learners-and-rays-built-ins) §2, §3 and
   §7. §3.1 of 21 is a statement of what is safe, not an issue, and was not filed.
 - **State:** 91 closed as completed, each with a comment quoting how the docs record the
   resolution (and, for the 2026-10-07 fixes, the commit merged in #90); 44 open. A partly fixed
@@ -4294,15 +4294,16 @@ Asked for: identify markdown files and content in `docs/` that overlap, and cons
   `workflow`-scope and recording notes moved to [CONTRIBUTING](CONTRIBUTING.md) §3–§4, which was
   only appended to.
 - **Logging.** `21_logging_review.md` is now §5 of [11](11_logging_and_observability.md), with
-  21 §N as 11 §5.N; 11's Continual Backprop metrics section is §6. 21 stays as a redirect page
-  with the section map. The `docs/21 §N` references in code comments and `config/tunable_constants.json`
-  notes now name `docs/11 §5.N`. 16, this changelog and 29 keep their links to 21.
+  21 §N as 11 §5.N; 11's Continual Backprop metrics section is §6. The page itself is deleted.
+  The `docs/21 §N` references in code comments and `config/tunable_constants.json` notes now name
+  `docs/11 §5.N`. Links to 21 in 29 and in this changelog now point at 11 (16 had none), and the
+  issue and PR descriptions on GitHub that named `doc/21` now name 11.
 - **Env key table.** It moved from [02](02_architecture.md) §2.6 to [18](18_configuration.md) §3.
   Three places said a bare env renders (`is_render` true); `env_defaults.json` ships false.
 - **Learner seam.** [22](22_jepa_integration.md) §2.4 and [25](25_continual_backprop.md) §2.5
   link to [30](30_extensions.md) §3–§4 for the general mechanism.
 - **Reward-free tools.** `24_pretraining.md` is now Part 2 of [23](23_probe_harness.md), with
-  24 §N as 23 §(10+N); 24 stays as a redirect page. 23's second `## 8.` (effective rank) is §10, and
+  24 §N as 23 §(10+N); 24 is deleted, and links to it here and on GitHub point at 23. 23's second `## 8.` (effective rank) is §10, and
   the two links that meant it ([11](11_logging_and_observability.md) §6, [18](18_configuration.md)
   §5.6) now say §10. The `pretrain` CLI's help text and `config/cli_defaults.json` name 23.
 - **The index is `docs/map.md`.** `docs/README.md` was renamed so that `docs/` holds one README,

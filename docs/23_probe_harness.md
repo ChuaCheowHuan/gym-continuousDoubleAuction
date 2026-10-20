@@ -2,7 +2,7 @@
 
 Two tools that work on observations alone, with no reward: the probe harness (§1–§10) scores what an
 encoder represents, and offline pretraining (§11–§18) trains a JEPA encoder before any PPO run.
-Pretraining was its own page, `24_pretraining.md`, now a redirect: its §N is §(10+N) here.
+Pretraining was its own page, `24_pretraining.md` (since deleted): its §N is §(10+N) here.
 
 ## Part 1: the probe harness
 
