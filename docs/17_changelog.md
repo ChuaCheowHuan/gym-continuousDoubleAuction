@@ -4301,6 +4301,10 @@ Asked for: identify markdown files and content in `docs/` that overlap, and cons
   Three places said a bare env renders (`is_render` true); `env_defaults.json` ships false.
 - **Learner seam.** [22](22_jepa_integration.md) §2.4 and [25](25_continual_backprop.md) §2.5
   link to [30](30_extensions.md) §3–§4 for the general mechanism.
+- **Reward-free tools.** `24_pretraining.md` is now Part 2 of [23](23_probe_harness.md), with
+  24 §N as 23 §(10+N); 24 stays as a redirect page. 23's second `## 8.` (effective rank) is §10, and
+  the two links that meant it ([11](11_logging_and_observability.md) §6, [18](18_configuration.md)
+  §5.6) now say §10. The `pretrain` CLI's help text and `config/cli_defaults.json` name 23.
 - **The index is `docs/map.md`.** `docs/README.md` was renamed so that `docs/` holds one README,
   the 2020 [README_v1](README_v1.md). Links to it in `README.md`, `CLAUDE.md`, CONTRIBUTING and
   three link targets in this changelog's §§ (their wording unchanged) now point at

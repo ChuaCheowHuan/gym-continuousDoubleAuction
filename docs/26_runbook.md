@@ -323,7 +323,7 @@ The Parquet record itself is one `pandas.read_parquet` away, with one row per
 ## 26.9 Reward-free tools: probe and pretrain
 
 Both exist because the reward could not settle an encoder comparison
-([23](23_probe_harness.md), [24](24_pretraining.md)). Both take a corpus from random-agent
+([23](23_probe_harness.md) Parts 1 and 2). Both take a corpus from random-agent
 rollouts by default, or from a run's episode record with `--parquet`, which is the better corpus
 once a run exists.
 
@@ -350,7 +350,7 @@ steps), `--batch-size` and `--lr` (the optimiser), `--log-every` (steps between 
 `cda_pretrain`.
 
 For pretraining watch `latent_std`, not the loss: a collapsed encoder has a perfect loss
-([24](24_pretraining.md) §5). The CLI exits non-zero when it detects one.
+([23](23_probe_harness.md) §15). The CLI exits non-zero when it detects one.
 
 **Comparing encoders** is one command, the protocol of [18](18_configuration.md) §5.5: every
 (encoder, seed) is a separate run with the seed pinned, the final checkpoint is probed against one

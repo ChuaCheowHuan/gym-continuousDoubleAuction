@@ -33,7 +33,7 @@ below should shrink to a pointer to it.
 | 5 | `cda-add-config-key` | medium | half a day | Adding the fee keys touched 6 places; a checklist skill is enough |
 | 6 | `cda-branch-and-pr` | medium | half a day | Encodes the repository's commit and branch rules, which were re-derived every session |
 | 7 | `cda-refactor-scout` | low | half a day | Measure-then-file; the profile found a 24% hot spot nobody had named |
-| 8 | `cda-encoder-compare`, `cda-pretrain-then-probe`, `cda-cbp-check` | research | 1 day each | Wrap the three research workflows in [18](18_configuration.md) §5.5, [24](24_pretraining.md) and [25](25_continual_backprop.md) with their known traps |
+| 8 | `cda-encoder-compare`, `cda-pretrain-then-probe`, `cda-cbp-check` | research | 1 day each | Wrap the three research workflows in [18](18_configuration.md) §5.5, [23](23_probe_harness.md) Part 2 and [25](25_continual_backprop.md) with their known traps |
 
 Skills 1 to 4 are one theme: **keep the claims, the code and the tracker saying the same thing**.
 That is the repository's main maintenance cost, because [15](15_findings_and_recommendations.md),
@@ -258,7 +258,7 @@ not** show (returns are noise at this scale; the probe is reward-free).
 **Trigger.** Pretraining a JEPA encoder, or scoring one on the probe harness.
 
 **Steps.** Pretrain with `train.pretrain`; read `latent_std` before the loss, since a collapsed run
-has an excellent loss ([24](24_pretraining.md)); probe with `--pretrained <dir> --pretrained-encoder jepa`
+has an excellent loss ([23](23_probe_harness.md) Part 2); probe with `--pretrained <dir> --pretrained-encoder jepa`
 against the held-out fifth; compare to the untrained encoder on the same targets and horizons; report
 the effective rank per feature set.
 

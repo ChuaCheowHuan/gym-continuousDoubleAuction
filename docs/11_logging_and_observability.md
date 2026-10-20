@@ -1165,7 +1165,7 @@ own it is a textbook plasticity collapse; it is the agent's behaviour.
 It is kept because "what the network is doing on the data it is training on" is a real thing to
 want, and it is named for the batch it is measured on rather than for what it looks like it
 measures. **For a statement about the network, use `train/probe/rank.py`** across checkpoints
-([23](23_probe_harness.md) §8), where the corpus is fixed while the encoder varies.
+([23](23_probe_harness.md) §10), where the corpus is fixed while the encoder varies.
 
 The other two correlates are robust to this — weights do not depend on the batch, and a unit dead
 on one input distribution is generally dead on others — but both read zero on the shipped network

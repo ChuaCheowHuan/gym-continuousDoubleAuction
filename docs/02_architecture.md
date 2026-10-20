@@ -193,7 +193,7 @@ gym_continuousDoubleAuction/
 │   ├── model/moe_learner.py            CDAPPOTorchRLModule (masking) + CDAPPOTorchLearner (MoE aux loss)
 │   ├── model/cbp.py, cbp_learner.py    Continual Backprop and its Learner mixin (docs/25)
 │   ├── probe/                          reward-free encoder scoring (docs/23)
-│   ├── pretrain/                       offline JEPA pretraining (docs/24)
+│   ├── pretrain/                       offline JEPA pretraining (docs/23)
 │   ├── callbk/…_self_play_callback.py  league: champions, matchmaking, metrics, the record
 │   ├── callbk/nav_audit.py             the NAV conservation audit: ledger reads, sum, report
 │   ├── callbk/league_stats.py          idle/valid returns, best trainable, candidate trades

@@ -1236,7 +1236,7 @@ would ever mature and **continual backprop would never fire once**.
 **And do not read `cbp_batch_effective_rank` as a statement about the network.** It is measured on
 the training minibatch, which the policy's own behaviour shapes; on this system it fell 24.6% while
 the network's rank on a fixed corpus did not move at all ([16](16_verification_log.md) §16.16). The
-comparable version is `train/probe/rank.py`, read across checkpoints ([23](23_probe_harness.md) §8).
+comparable version is `train/probe/rank.py`, read across checkpoints ([23](23_probe_harness.md) §10).
 
 A mechanism that never fires produces identical logs, losses and returns to one that is working.
 So before concluding anything from a CBP run, read `cbp_replacements` and `cbp_mature_unit_frac`:

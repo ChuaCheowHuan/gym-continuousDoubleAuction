@@ -31,7 +31,7 @@ def _cli(key):
 
 def main(argv=None):
     p = argparse.ArgumentParser(
-        description="Pretrain a JEPA encoder on observations alone. See docs/24_pretraining.md.",
+        description="Pretrain a JEPA encoder on observations alone. See docs/23_probe_harness.md, Part 2.",
     )
     p.add_argument(
         "--out",

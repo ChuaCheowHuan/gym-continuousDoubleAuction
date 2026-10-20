@@ -43,8 +43,7 @@ mindmap
       16 Verification log
     Research
       22 JEPA integration
-      23 Probe harness
-      24 Pretraining
+      23 Probe harness and pretraining
       25 Continual Backprop
 ```
 
@@ -89,8 +88,7 @@ mindmap
 | 16 | [16_verification_log.md](16_verification_log.md) | Every executed probe and its raw output |
 | 17 | [17_changelog.md](17_changelog.md) | What changed since `original_v1` (2020) and why |
 | 22 | [22_jepa_integration.md](22_jepa_integration.md) | What JEPA is, why this observation suits it and this reward does not, and four ways it could be used |
-| 23 | [23_probe_harness.md](23_probe_harness.md) | Scoring an encoder on microstructure targets without the reward: how to run it, how to read it, why the probe is linear |
-| 24 | [24_pretraining.md](24_pretraining.md) | Training a JEPA encoder on observations alone before any PPO run, the fingerprint that guards its weights, and why to watch `latent_std` rather than the loss |
+| 23 | [23_probe_harness.md](23_probe_harness.md) | The two reward-free tools. Part 1: scoring an encoder on microstructure targets without the reward, how to read it, why the probe is linear. Part 2: pretraining a JEPA encoder on observations alone, the fingerprint that guards its weights, and why to watch `latent_std` rather than the loss |
 | 25 | [25_continual_backprop.md](25_continual_backprop.md) | What Continual Backprop is, why league self-play is the non-stationary regime it targets, why it belongs on the Learner rather than the encoder registry, and why the papers' hyperparameters cannot be copied at this repo's update cadence |
 | 30 | [30_extensions.md](30_extensions.md) | Adding to the learning stack from a separately installed package: what it declares, how a run enables it, where its Learner, module and env pieces are composed, how resumes are guarded, and how to install, enable and compare the DiscoRL extension |
 | 27 | [27_agent_skills.md](27_agent_skills.md) | Which agent skills this repository would pay for, from the work that was done by hand in the review passes: what each does, its evidence, the scripts it needs, the mistakes it must not repeat, and the order to build them in |
@@ -143,8 +141,8 @@ mindmap
 [18](18_configuration.md) §5.5 (seeds, separate runs, parameter counts)
 
 **Pretraining an encoder before training a policy**
-[22](22_jepa_integration.md) §4.2 (the objective) → [24](24_pretraining.md) (running it) →
-[23](23_probe_harness.md) (measuring what it taught)
+[22](22_jepa_integration.md) §4.2 (the objective) → [23](23_probe_harness.md) Part 2 (running it) →
+[23](23_probe_harness.md) Part 1 (measuring what it taught)
 
 **Weighing a plasticity change for long runs (Continual Backprop)**
 [25](25_continual_backprop.md) → [18](18_configuration.md) §5.6 (the two config groups, and
@@ -184,3 +182,4 @@ These paths stay as short redirect pages so that older links still land.
 | Page | Now |
 |---|---|
 | [21_logging_review.md](21_logging_review.md) | [11_logging_and_observability.md](11_logging_and_observability.md) §5 |
+| [24_pretraining.md](24_pretraining.md) | [23_probe_harness.md](23_probe_harness.md) Part 2 |

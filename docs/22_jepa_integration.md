@@ -540,7 +540,7 @@ is the piece worth starting.
 | 2 | Generalise the aux-loss seam: `ENCODER_AUX_LOSS`, encoder-aware `_collect` and `get_non_inference_attributes` | — | S |
 | 3 | ~~**Proposal B** — the `jepa` encoder~~ — **done**, all three mask axes | — | M |
 | 4 | Time-axis masking in Proposal B | 0 (S2-6), 3 | S |
-| 5 | ~~**Proposal D** — offline pretraining, with a fingerprint guard~~ — **done**, see [24](24_pretraining.md) | 3 | M |
+| 5 | ~~**Proposal D** — offline pretraining, with a fingerprint guard~~ — **done**, see [23](23_probe_harness.md) Part 2 | 3 | M |
 | 6 | ~~**Proposal C** — action-conditioned world model~~ — **done**, `world_model: true` | 0, 3 | M–L |
 | 7 | Intrinsic reward from predictor error | 0, 6 | M, and only once S1-3's fix is shown to hold in training |
 
