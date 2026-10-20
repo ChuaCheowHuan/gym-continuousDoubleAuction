@@ -26,7 +26,6 @@ mindmap
       08 Self-play league
       09 Distributed training
       11 Logging
-      21 Logging under runners
     Operations
       26 Runbook
       27 Agent skills
@@ -76,8 +75,7 @@ mindmap
 | 8 | [08_self_play_league.md](08_self_play_league.md) | League play: champion snapshotting and its four load-bearing ordering constraints, weighted matchmaking, configuration, monitoring, troubleshooting |
 | 9 | [09_distributed_training.md](09_distributed_training.md) | `num_env_runners` and `num_learners`: what each distributes, worked examples, and what goes stale across a process boundary with the guard and test for each |
 | 10 | [10_testing.md](10_testing.md) | Every test file, what each case pins down, CI, and the gaps |
-| 11 | [11_logging_and_observability.md](11_logging_and_observability.md) | What training records, where it goes, and the gap between what is computed and what is surfaced |
-| 21 | [21_logging_review.md](21_logging_review.md) | The same audit re-run with `num_env_runners > 0`: what breaks when the hooks stop running on the driver |
+| 11 | [11_logging_and_observability.md](11_logging_and_observability.md) | What training records, where it goes, the gap between what is computed and what is surfaced, and (§5) what changes with `num_env_runners > 0` |
 
 ### Analysis
 
@@ -178,3 +176,11 @@ the cadence caveat that decides whether a result means anything) →
 
 **Trading / microstructure review**
 [13](13_perspective_financial_trader.md) → [03](03_matching_engine.md) → [04](04_accounting.md)
+
+## Moved pages
+
+These paths stay as short redirect pages so that older links still land.
+
+| Page | Now |
+|---|---|
+| [21_logging_review.md](21_logging_review.md) | [11_logging_and_observability.md](11_logging_and_observability.md) §5 |

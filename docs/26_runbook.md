@@ -205,7 +205,7 @@ From the two-iteration command above, launched in an empty directory:
 | `episode_data/<run_id>/*.parquet` | The per-step record of every info field for one episode in `episode_sample_every` | `episode_max_bytes` per writer |
 
 Set `--no-episode-data` to switch the record off entirely; it is ~34 MB per 4,096-step episode at
-8 agents ([11](11_logging_and_observability.md) §1.6, [21](21_logging_review.md) §2.2).
+8 agents ([11](11_logging_and_observability.md) §1.6, §5.2.2).
 
 ---
 
@@ -316,7 +316,7 @@ another.
 
 The Parquet record itself is one `pandas.read_parquet` away, with one row per
 (episode, step, agent) and every `info` field as a column ([11](11_logging_and_observability.md)
-§1.1 and §1.7, [21](21_logging_review.md)).
+§1.1, §1.7 and §5).
 
 ---
 

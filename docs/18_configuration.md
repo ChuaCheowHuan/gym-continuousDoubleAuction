@@ -447,7 +447,7 @@ process on the first `get_logger` call — including inside Ray's worker process
 `num_env_runners > 0` several processes log into one stream. See
 [11 §1.3](11_logging_and_observability.md).
 
-The last four keys are about many processes writing logs ([21](21_logging_review.md) §2.5, §2.7, §3.4):
+The last four keys are about many processes writing logs ([11](11_logging_and_observability.md) §5.2.5, §5.2.7, §5.3.4):
 `file_keep_head` keeps the first `file_max_bytes` of every run log as `<name>.head`, because rotation
 discards the start of a run first; `file_max_worker_files` keeps only the newest N worker logs in a
 directory (each restarted env runner opens a new set), `0` meaning no pruning; `worker_console_level` is
@@ -497,7 +497,7 @@ ledger is corrupt — and the `nav_conservation_error` metric is emitted either 
 decided **on the driver**, from the `nav_conservation_violations` count, rather than raised inside
 the episode hook: that hook runs on the env runner, where RLlib's fault tolerance swallows the
 exception and restarts the worker. See [11 §1.5](11_logging_and_observability.md) and
-[21 §2.1](21_logging_review.md).
+[11 §5.2.1](11_logging_and_observability.md).
 
 The same group carries the four knobs on the per-step episode record:
 
