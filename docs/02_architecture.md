@@ -192,6 +192,8 @@ gym_continuousDoubleAuction/
 │   ├── model/jepa_learner.py           JEPA module + learner (docs/22 4.2)
 │   ├── model/moe_learner.py            CDAPPOTorchRLModule (masking) + CDAPPOTorchLearner (MoE aux loss)
 │   ├── model/cbp.py, cbp_learner.py    Continual Backprop and its Learner mixin (docs/25)
+│   ├── model/optim_learner.py          tuned Adam (betas, weight decay), independent of CBP
+│   ├── model/layout.py                 where each trunk ends and which heads read it
 │   ├── probe/                          reward-free encoder scoring (docs/23)
 │   ├── pretrain/                       offline JEPA pretraining (docs/24)
 │   ├── callbk/…_self_play_callback.py  league: champions, matchmaking, metrics, the record
@@ -207,7 +209,7 @@ gym_continuousDoubleAuction/
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   ├── inspect_latest_episode*.py        print the newest episode as a table or JSON
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               2,167 unit tests
+└── test/                               2,204 unit tests
     └── integration/                    185 tests that build real Algorithms
 ```
 

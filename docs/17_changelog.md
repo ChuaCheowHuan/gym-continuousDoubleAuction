@@ -4276,3 +4276,24 @@ behaviour). The code was right; both notes now say so.
   new sidecar key and resolves the same classes as before.
 - **Tests.** `test_extensions.py` (29) and `test_loss_seam.py` (5); unit 2,133 to 2,167.
   `integration/test_extensions_wiring.py` (5); integration 185 to 190; suite 2,357.
+
+## 99. Preparing Continual Backprop to move into its own package
+
+The first phase of the CBP extraction plan: no behaviour changes, and CBP still ships here.
+
+- **`learner_order`.** An extension can declare how far out its Learner mixin wraps; mixins compose
+  by `(-learner_order, name)`. Every existing composition is unchanged, since all default to 0
+  ([30](30_extensions.md) §1, §3). CBP will need the highest order once it is an extension.
+- **Tuned Adam moved.** `TunedAdamMixin` and `with_tuned_adam` are in `train/model/optim_learner.py`.
+  `cbp_learner` still imports `TunedAdamMixin` under its old name, because a checkpoint pickles its
+  composed Learner class with the mixins named by module path; a run that used tuned Adam names
+  `cbp_learner.TunedAdamMixin`.
+- **Layout contract.** `train/model/layout.py` (`trunk_outputs`) says where each trunk ends (an MLP's
+  `nn.Sequential` or the `nn.LSTM`) and which heads read it. CBP's trunk-to-head and recurrent
+  discovery use only that, so it no longer knows the model's attribute paths.
+- **Tests.** `test_learner_class_compat.py` (7) loads Learner classes cloudpickled on master at
+  f7c1353; `test_model_layout.py` (26) pins `trunk_outputs` for every encoder; `test_cbp.py` 70 to
+  71 checks discovery against the layers recorded at f7c1353; `test_extensions.py` 29 to 32. Unit
+  2,167 to 2,204. The four tuned-Adam tests that use no CBP setting moved from
+  `integration/test_cbp_wiring.py` (46 to 42) to `integration/test_tuned_adam.py`; integration stays
+  190; suite 2,394.
