@@ -150,3 +150,28 @@ class TestMidEpisodeBankruptcy:
         rows = self._roll(monkeypatch)
         assert rows["agent_1"]["pass_fraction"] == 1.0, "it passed on both of its 2 steps"
         assert rows["agent_0"]["pass_fraction"] == 1.0
+
+
+class TestARelativeCheckpointPath:
+    """Every command in docs/26 passes `results/chkpt/iter_<n>`, and Ray's
+    `Algorithm.from_checkpoint` reads a bare relative path as a URI with no
+    scheme and raises (#316). The path reaches Ray absolute."""
+
+    def test_it_reaches_ray_as_an_absolute_path(self, tmp_path, monkeypatch):
+        from ray.rllib.algorithms.algorithm import Algorithm
+
+        class _Stop(Exception):
+            pass
+
+        seen = {}
+
+        def _from_checkpoint(path, *args, **kwargs):
+            seen["path"] = path
+            raise _Stop
+
+        monkeypatch.setattr(Algorithm, "from_checkpoint", staticmethod(_from_checkpoint))
+        (tmp_path / "iter_00001").mkdir()
+        monkeypatch.chdir(tmp_path)
+        with pytest.raises(_Stop):
+            evaluate.evaluate("iter_00001", episodes=1, seed=0, deterministic=True)
+        assert seen["path"] == str(tmp_path / "iter_00001")

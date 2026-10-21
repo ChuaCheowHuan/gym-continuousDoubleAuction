@@ -81,7 +81,8 @@ The three checks CI runs (the unit suite, a random-agent episode, the integratio
 defines classes and exits ([10](10_testing.md) §0).
 
 `CDA_rand` also takes `--init-cash` (each trader's starting cash; the default is in
-`cli_defaults.json` under `cda_env_rand`). At 0 no order is ever approved and the book stays empty.
+`cli_defaults.json` under `cda_env_rand`). It must be above 0: at 0 the env refuses to start, because
+a trader's private state is normalised by its starting NAV.
 
 To see the env work step by step, ask for the render, which writes at DEBUG:
 

@@ -18,6 +18,7 @@ Each agent's action is a `gymnasium.spaces.Dict`
 | Key | Space | Config key | Description |
 |---|---|---|---|
 | `category` | `Discrete(9)` | `action_space.category_n` | Trade action — side and type combined |
+| `order_slot` | `Discrete(5)` | `action_space.max_own_orders` (+ 1) | Which own resting order a `modify` or `cancel` aims at (§1.5) |
 | `size` | `Box(0.0, 1.0)` | `action_space.size_low` / `_high` | Order size as a fraction of the size ceiling (§1.2) |
 | `price` | `Discrete(10)` | `observation_layout.k_rows` | Ticks from the reference price on the passive side (`book_mode: "grid"`, the default); book level index 0–9 in `levels` mode |
 | `price_offset` | `Discrete(3)` | `action_space.price_offset_n` | Stance relative to that level: 0 passive, 1 join, 2 aggressive |
@@ -119,8 +120,8 @@ whatever is available. `test_market_order_mapping` proves this by submitting a d
 
 ### 1.5 Aiming a modify or cancel: `order_slot`
 
-Since 2026-09-18 ([S3-24](29_fixed_issues.md#s3-24--modify-and-cancel-cannot-be-aimed-so-they-are-mostly-dead-actions-verified-fixed), phase 2) the Dict carries a
-sixth head, `order_slot: Discrete(max_own_orders + 1)`, and it is what aims the two
+Since 2026-09-18 ([S3-24](29_fixed_issues.md#s3-24--modify-and-cancel-cannot-be-aimed-so-they-are-mostly-dead-actions-verified-fixed), phase 2) the Dict carries
+another head, `order_slot: Discrete(max_own_orders + 1)` (one of five now), and it is what aims the two
 order-management categories:
 
 | `order_slot` | `cancel` | `modify` |

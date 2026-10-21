@@ -17,11 +17,11 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# the unit tests (2,168). pyproject.toml's addopts ignores test/integration by default,
+# the unit tests (2,171). pyproject.toml's addopts ignores test/integration by default,
 # so this never runs the slow RLlib suite as well
 python -m pytest gym_continuousDoubleAuction/test -q
 
-# then the integration suite, named explicitly - everything is these two (2,358 tests).
+# then the integration suite, named explicitly - everything is these two (2,361 tests).
 # RLlib wiring, the real save/restore, the progress log and a real remote
 # runner (190 tests, builds real Algorithms)
 python -m pytest gym_continuousDoubleAuction/test/integration -q
@@ -44,7 +44,7 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `1363 passed` on the unit half, `172 passed` on the integration half, when this was first measured; the current totals are 2,168 and 190 (§ "File inventory" below). There is no xfail.
+**[verified]** — `1363 passed` on the unit half, `172 passed` on the integration half, when this was first measured; the current totals are 2,171 and 190 (§ "File inventory" below). There is no xfail.
 
 ### File inventory
 
@@ -68,7 +68,7 @@ Counts re-measured with `--collect-only`.
 | `test_order_slot.py` | 17 | `order_slot`: cancel by slot, cancel-all, modify by slot and by FIFO, clamping, the cash check on the slotted order, the head in the action space, and a random-play hit-rate floor (S3-24 phase 2) |
 | `test_dead_action_penalty.py` | 3 | The sixth reward term: zero by default and bit-for-bit neutral, charged per miss when set, forwarded by `TrainConfig` |
 | `test_layout_version.py` | 16 | The layout stamp: written beside every checkpoint, passes for the current layout, refuses a version, field or `book_mode` mismatch by name (S4-19, S3-15) |
-| `test_evaluate.py` | 6 | `train.evaluate`'s pure half: unbatching a Dict action, per-module means, the rendered table, the CLI defaults (S4-12) |
+| `test_evaluate.py` | 7 | `train.evaluate`'s pure half: unbatching a Dict action, per-module means, the rendered table, the CLI defaults (S4-12), and a relative checkpoint path reaching Ray absolute (#316) |
 | `test_tick_grid.py` | 18 | Every action price sits on the `tick_size` grid; upsert and cancel find their order on a fractional tick (S3-4) |
 | `test_modify_order.py` | 7 | The six modify-order accounting scenarios, plus a guard that the dead escrow helper stays deleted |
 | `test_new_action_space.py` | 18 | Action decoding, ghost pricing, `tick_size` reaching the action layer, price levels matching book depth |
@@ -115,7 +115,7 @@ Counts re-measured with `--collect-only`.
 | `test_episode_record.py` | 47 | The Parquet per-step record: declared schema and its drift guard against `InfoBuilder`, identity columns, sampling rate, byte cap, eviction of episodes that never end, the ways it must fail without raising, and the end-of-sample flush that gets finished episodes to disk without waiting for exit (#245) |
 | `test_encoder_registry.py` | 46 | The selectable-encoder seam: registry, `CDACatalog`, the `mlp` pass-through staying byte-for-byte what it was, `ObsLayout`, tokenisation |
 | `test_encoder_architectures.py` | 170 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
-| `test_pretrain.py` | 36 | Offline JEPA pretraining: the loop trains only the trunk and predictor, a collapse is reported rather than hidden, a NaN or unmeasured run counts as unusable and is never saved (#239), and the checkpoint's fingerprint refuses a mismatched architecture |
+| `test_pretrain.py` | 38 | Offline JEPA pretraining: the loop trains only the trunk and predictor, a collapse is reported rather than hidden, a NaN or unmeasured run counts as unusable and is never saved (#239), the checkpoint's fingerprint refuses a mismatched architecture, and a relative path saves and loads (#316) |
 | `test_visualize_scripts.py` | 32 | `visualize/` end to end on small synthetic Parquet and `progress.jsonl` runs: the loader's complete-episode rule, the data in each chart's lines, `run_all`, both inspectors (#211) |
 | `test_visualize_orderbook.py` | 12 | The newest book snapshot is read from the middle of the observation, never off the end — the only arithmetic in `visualize/` that can be wrong without raising |
 | `test_probe.py` | 61 | The reward-free probe harness's arithmetic on synthetic observations: target definitions, episode-boundary masking, the splits, the metrics, unscoreable cells, and that `snapshots` reads the book rather than the private tail |
@@ -143,7 +143,7 @@ Counts re-measured with `--collect-only`.
 | `test_refactors.py` | 117 | The refactoring review's issues: `Account` initialised in one place and its step counters listed once, `_plain`'s call count, one order-book routine per operation, `place_order` and `parse_overrides` flat, `clear_batch` as four steps, `EnvSettings` and the generated `env_config`, the `train/` module split with its re-exports and import order, the callback as a `League` plus an `ActivityLog` plus the NAV audit and league statistics, a real pickle from before that split still loading, and the league and activity log working alone (#252-#258) |
 | `test_extensions.py` | 30 | The extension point ([30](30_extensions.md)): discovery through real entry points, nothing enabled changing nothing, validation of names and settings, composition order under CBP, and the resume guards |
 | `test_loss_seam.py` | 5 | PPO's own loss sits behind `_policy_value_loss`, so an extension that replaces it keeps the MoE and JEPA terms |
-| **unit total** | **2,168** | |
+| **unit total** | **2,171** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -172,7 +172,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((2,358 tests))
+  root((2,361 tests))
     Simulator
       orderbook 88
         the demo scripts as tests, a shadow model
@@ -241,7 +241,7 @@ mindmap
         obs layout, tokenisation
         the contract every encoder meets
         transformer, lstm, MoE specifics
-      tooling 49
+      tooling 50
         speed regression against a calibration loop
         lint enforced, comparison driver
         evaluate a checkpoint, export its weights
@@ -254,7 +254,7 @@ mindmap
         splits never shuffled
         unscoreable vs zero
         effective rank on a fixed corpus
-      pretrain 26
+      pretrain 28
         trains trunk + predictor only
         collapse reported not hidden
         fingerprint refuses a mismatch
@@ -415,7 +415,7 @@ with nothing resting, or at the wrong price, increments `num_unmatched_step`; ma
 ordinary new limits do not; `reset_acc` clears it. Through the env: the field is in `info` as an
 `int`, is per step, and has a column in the episode record.
 
-### 2.4 The own book and the order slot — `test_own_book_obs.py` (10), `test_order_slot.py` (17), `test_dead_action_penalty.py` (3), `test_layout_version.py` (7)
+### 2.4 The own book and the order slot — `test_own_book_obs.py` (10), `test_order_slot.py` (17), `test_dead_action_penalty.py` (3), `test_layout_version.py` (16)
 
 [29](29_fixed_issues.md#s3-24--modify-and-cancel-cannot-be-aimed-so-they-are-mostly-dead-actions-verified-fixed) S3-24 and S4-19. `test_own_book_obs.py`: the private
 block's layout (`private_fields`, 41 at depth 10, own book at offset 9, the action mask last); the

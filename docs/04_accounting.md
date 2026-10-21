@@ -165,7 +165,7 @@ is only a first filter; the clearing price is checked again after it is chosen
 20, and only the 10-lot short leg needs cash.
 
 > This supersedes an older documentation claim that the system "only validates `nav > 0`,
-> potentially allowing high leverage." A real cash check exists and is tested fourteen ways.
+> potentially allowing high leverage." A real cash check exists and is tested in `test_cash_check.py`.
 
 **Rejections are counted now, but still cost nothing.** A refused order returns `([], [])`
 without a penalty and without reaching the book — but it increments `num_rejected_step`, which
@@ -174,9 +174,11 @@ closes the measurement half of S4-14: an agent that is quiet because it chose to
 every order is refused for want of cash are now distinguishable from the metrics alone, which
 they were not when both showed up only as an absent trade.
 
-Still silent: `modify` and `cancel` against a non-existent order return empty lists with no
-counter at all. Given that agents cannot see their own resting orders
-([05](05_observation_space.md) §7.7), that dead-action fraction remains unmeasured.
+Dead `modify` and `cancel` actions are counted too. One that names no resting order returns empty
+lists, increments `num_unmatched_step`, and is reduced into the `unmatched_action_fraction` metric
+([11](11_logging_and_observability.md) §1.2). Agents see their own resting orders in the own-book
+block, and the miss itself arrives in the next observation as `unmatched_last_step`
+([05](05_observation_space.md) §1.0.1).
 
 ---
 

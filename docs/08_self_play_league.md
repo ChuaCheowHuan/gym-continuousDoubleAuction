@@ -73,7 +73,7 @@ from ray.rllib.algorithms.ppo import PPOConfig
 callback = SelfPlayCallback(
     num_trainable_policies=2,  # k learning agents
     num_random_policies=6,  # m initial frozen baselines
-    std_dev_multiplier=0.1,  # snapshot when return > mean + 0.1*std
+    std_dev_multiplier=1.5,  # snapshot when return > mean + 1.5*std (the shipped value)
     max_champions=8,  # rolling window size
     min_iterations_between_champions=2,  # cooldown
     original_opponent_weight=1.0,  # baseline selection priority
@@ -404,7 +404,7 @@ The callback's own metrics, the ones about the league:
 
 Plus the per-episode ones this callback emits from `on_episode_end` — NAV conservation, the
 pass/rejection fractions, the reward-term split, the end-of-episode account state, the maker
-ratio and the per-module trade counts the champion guard reads. **28 metrics in total**; the full table is in
+ratio and the per-module trade counts the champion guard reads. The full table is in
 [11_logging_and_observability.md](11_logging_and_observability.md) §1.2, which is the reference
 for what a run surfaces. (An earlier revision of this section said six, which was true before
 that work landed.)

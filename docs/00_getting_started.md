@@ -41,8 +41,8 @@ configuration (8 agents, `max_step` 4,096, 4 episodes per iteration, the `cpu` p
 | Task | Wall time | Peak RAM |
 |---|---|---|
 | `CDA_rand.py` smoke run (1,000 steps, 4 random agents) | 8 s | 0.6 GB |
-| Unit tests (2,133) | 3 min | 2.9 GB |
-| Integration tests (185, real RLlib builds) | 3.5 min | 3.3 GB |
+| Unit tests (2,133 when measured; 2,171 now) | 3 min | 2.9 GB |
+| Integration tests (185 when measured; 190 now, real RLlib builds) | 3.5 min | 3.3 GB |
 | One training iteration (16,384 env steps) | 2 min 40 s: 2 min 26 s sampling at about 112 steps/s, 12.5 s PPO update | 2.2 GB |
 | The default 16-iteration run | about 45 min (extrapolated from one iteration) | 2.2 GB |
 | One checkpoint | | 6.5 MB on disk |
@@ -70,8 +70,10 @@ pip install -r requirements.txt
 pip install -e ".[dev]"
 ```
 
-`pip install -e .` is required. On import, the package registers the env with Gymnasium and reads
-its configuration from the repository's `config/` folder ([18](18_configuration.md) §1).
+Install the checkout editable (`pip install -e .`). On import, the package registers the env with
+Gymnasium and reads its configuration from the repository's `config/` folder, so an edit there takes
+effect on the next run ([18](18_configuration.md) §1). A non-editable install also works, but it reads
+the copy of `config/` shipped inside the package instead.
 
 | Where you run | Use |
 |---|---|
@@ -81,7 +83,9 @@ its configuration from the repository's `config/` folder ([18](18_configuration.
 
 ## 0.4 Check that it works
 
-These are the three checks CI runs ([10](10_testing.md) §7), cheapest first.
+The same three checks CI runs ([10](10_testing.md) §7), cheapest first. CI runs them in the order
+unit suite, `CDA_rand`, integration suite, and runs `CDA_rand` with no arguments (1,000 steps,
+4 agents).
 
 ```bash
 # the exchange alone, random agents, no learning: a few seconds

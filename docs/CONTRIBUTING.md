@@ -18,7 +18,7 @@ pip install -r requirements.txt
 pip install -e ".[dev]"      # pytest, pyflakes, hypothesis, pytest-cov, mypy, ruff
 ```
 
-On a CPU-only machine, install the CPU torch wheel first ([26_runbook.md](26_runbook.md) §26.1).
+On a CPU-only machine, install the CPU torch wheel first ([00_getting_started.md](00_getting_started.md) §0.3).
 
 ## 2. The rules a change has to follow
 
@@ -78,7 +78,8 @@ A change to behaviour is recorded in three places by convention: the finding or 
 [15](15_findings_and_recommendations.md) (open) or [29](29_fixed_issues.md) (fixed), the
 measurement in [16](16_verification_log.md), and the narrative in [17](17_changelog.md). A change
 to the test inventory updates [10](10_testing.md) and the totals quoted in
-[01](01_overview.md), [02](02_architecture.md) and [14](14_perspective_ai_engineer.md).
+[00](00_getting_started.md), [01](01_overview.md), [02](02_architecture.md),
+[14](14_perspective_ai_engineer.md) and [15](15_findings_and_recommendations.md).
 
 ## 5. Reviews and issues
 

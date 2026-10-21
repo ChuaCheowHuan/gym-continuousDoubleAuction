@@ -181,8 +181,8 @@ Reading `git log`, the project has four eras:
 4. **The operability era, since merged to `master`** — everything a run needs to be diagnosed
    rather than merely launched: `config/` as the only place values live
    ([18](18_configuration.md)), recoverable checkpointing, a logging framework replacing ~86
-   `print()` calls, the Parquet per-step record, 27 custom metrics
-   ([11](11_logging_and_observability.md)), and reproducible episodes.
+   `print()` calls, the Parquet per-step record, custom metrics
+   ([11](11_logging_and_observability.md) §1.2), and reproducible episodes.
 
 The recent commits are unusually high quality: narrow, each with a regression test, and with code
 comments that explain *why* the previous behaviour was wrong at the RLlib-internals level (see
@@ -204,7 +204,7 @@ observation content, reward scaling, PPO hyper-parameters — is where the high-
 | `python -m gym_continuousDoubleAuction.train.train --iters 4 --agents 4` | League self-play PPO training |
 | `python -m gym_continuousDoubleAuction.train.train --help` | Full CLI |
 | `python gym_continuousDoubleAuction/CDA_rand.py` | Random-agent smoke run, no learning (CI stage 2) |
-| `python -m pytest gym_continuousDoubleAuction/test -q` | 2,168 unit tests; the integration suite is left out by default |
+| `python -m pytest gym_continuousDoubleAuction/test -q` | 2,171 unit tests; the integration suite is left out by default |
 | `python -m pytest gym_continuousDoubleAuction/test/integration -q` | 190 integration tests that build real `Algorithm`s |
 | `python -m gym_continuousDoubleAuction.CDA_rand --help` | Flags for the smoke run; defaults in `config/cli_defaults.json` |
 | `CDA_train.ipynb` | Notebook driver; imports `TrainConfig` / `train` from `train.py`. Runs unchanged on [Colab](20_colab.md) and in the [docker image](19_docker.md) — set `PLATFORM` / `USE_GPU` in its first cell, everything else comes from `config/runtime_profiles.json` |

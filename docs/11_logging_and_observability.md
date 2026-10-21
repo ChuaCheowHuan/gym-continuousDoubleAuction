@@ -184,7 +184,7 @@ pickle.
 | `idle_modules` | Modules that played no episode this iteration | 1 | `on_train_result` |
 | `iterations_since_champion` | Iterations since the last snapshot | 1 | `on_train_result` |
 
-**28 metrics**, up from six. What was missing was never capture — it was aggregation: §2.3, §2.4
+Six metrics before this work, the table above now. What was missing was never capture — it was aggregation: §2.3, §2.4
 and §2.5 all described numbers already sitting in `info` or already computed in the callback and
 then dropped.
 
