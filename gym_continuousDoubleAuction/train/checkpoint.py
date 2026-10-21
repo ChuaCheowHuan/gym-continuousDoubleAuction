@@ -454,7 +454,13 @@ def _config_fingerprint(config) -> dict:
     # `_check_restored_config` only reports keys present in BOTH fingerprints,
     # so a restore that turned continual backprop on was neither applied nor
     # mentioned. See UNRESTORABLE_CONFIG_KEYS.
-    for group, values in (getattr(config, "learner_config_dict", None) or {}).items():
+    learner_config_dict = getattr(config, "learner_config_dict", None) or {}
+    if learner_config_dict:
+        # The extensions group is only written when one is enabled, so a
+        # default run's config has none. Without this its fingerprint lacks the
+        # key, and a resume that turned an extension off was never compared.
+        fingerprint["extensions_enabled"] = ()
+    for group, values in learner_config_dict.items():
         if group == extensions.EXTENSIONS_CONFIG_KEY:
             # Nested one level deeper than the other groups, and owned by
             # packages this repository does not know: each setting becomes
