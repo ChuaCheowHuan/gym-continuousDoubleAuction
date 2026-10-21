@@ -4261,3 +4261,20 @@ behaviour). The code was right; both notes now say so.
   per-module count is dropped, since nothing checks it.
 - **Tests.** `test_s4_docs_and_tooling.py` 20 to 24, one per issue; each fails on the previous docs.
   Unit 2,129 to 2,133; suite 2,318.
+
+## 98. An extension point for separately installed learning methods
+
+- **What.** A package registered under the `gym_cda.extensions` entry point can add a Learner mixin,
+  an RLModule mixin and an env wrapper without an edit here, and a run uses it only when its name
+  is in the new `extensions_enabled` key ([30](30_extensions.md), [18](18_configuration.md) §5.7).
+  PPO's own loss moved behind `CDAPPOTorchLearner._policy_value_loss`, so an extension can replace
+  it and keep the MoE and JEPA terms.
+- **Why.** The DiscoRL integration is to live in its own package (`cda-discorl`, in the
+  `disco_rl` repository), installed to turn it on and uninstalled to remove it.
+- **Resumes.** The enabled set and every resolved setting are unrestorable, in both directions: a
+  default run's config has no extensions group, and its fingerprint still reads as "none
+  enabled", so turning an extension off on a resume is refused too. The sidecar records
+  each extension's version and a restore without it is refused by name. A default run writes no
+  new sidecar key and resolves the same classes as before.
+- **Tests.** `test_extensions.py` (30) and `test_loss_seam.py` (5); unit 2,133 to 2,168.
+  `integration/test_extensions_wiring.py` (5); integration 185 to 190; suite 2,358.

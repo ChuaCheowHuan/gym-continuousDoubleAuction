@@ -10,6 +10,7 @@ from gym_continuousDoubleAuction.logging_setup import get_logger
 from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (
     SelfPlayCallback,
 )
+from gym_continuousDoubleAuction.train import extensions
 from gym_continuousDoubleAuction.train.model.encoders import (
     learner_class_for,
     needs_next_obs,
@@ -35,8 +36,22 @@ logger = get_logger("gym_continuousDoubleAuction.train.train")
 
 
 def register_env(cfg: TrainConfig) -> None:
-    """Register the CDA env with Tune under ENV_NAME."""
-    tune.register_env(ENV_NAME, lambda env_config: continuousDoubleAuctionEnv(env_config))
+    """Register the CDA env with Tune under ENV_NAME.
+
+    Enabled extensions wrap it here (docs/30), so every env RLlib creates - on
+    the driver and on remote runners - is wrapped the same way. With none
+    enabled `wrap_env` returns the env unchanged. `cfg` is None when
+    `train.evaluate` restores a checkpoint; it builds its own env, so the
+    registered one is left unwrapped.
+    """
+    enabled = list(cfg.extensions_enabled) if cfg is not None else []
+    settings = dict(cfg.extension_settings) if cfg is not None else {}
+    tune.register_env(
+        ENV_NAME,
+        lambda env_config: extensions.wrap_env(
+            continuousDoubleAuctionEnv(env_config), enabled, settings
+        ),
+    )
 
 
 def make_spaces(cfg: TrainConfig):
@@ -89,6 +104,10 @@ def _learner_class(cfg: TrainConfig):
     a default run identical to one from before this existed.
     """
     base = learner_class_for(cfg.encoder_type, CDAPPOTorchLearner)
+    # Installed extensions (docs/30) go between the encoder's Learner and CBP:
+    # they inherit the MoE and JEPA terms, and CBP still wraps everything. With
+    # none enabled this returns `base` itself.
+    base = extensions.compose_learner(base, cfg)
 
     cbp = cfg.cbp_enabled or cfg.cbp_metrics_only
     # The optimiser knobs are composed independently of CBP, so that the
@@ -122,7 +141,7 @@ def _learner_config_dict(cfg: TrainConfig) -> dict:
     consults it whether or not CBP is on - at the shipped defaults it finds
     torch's own values and defers to RLlib's implementation unchanged.
     """
-    return {
+    config_dict = {
         OPTIMIZER_CONFIG_KEY: {
             "adam_betas": list(cfg.adam_betas),
             "adam_weight_decay": cfg.adam_weight_decay,
@@ -142,6 +161,11 @@ def _learner_config_dict(cfg: TrainConfig) -> dict:
             "cbp_metrics_every_n_updates": cfg.cbp_metrics_every_n_updates,
         },
     }
+    # Only when one is enabled, so a default run's config is what it was
+    # before extensions existed (docs/30).
+    if cfg.extensions_enabled:
+        config_dict[extensions.EXTENSIONS_CONFIG_KEY] = extensions.learner_config(cfg)
+    return config_dict
 
 
 def build_config(cfg: TrainConfig):
@@ -170,6 +194,9 @@ def build_config(cfg: TrainConfig):
         pretrained_path=cfg.pretrained_encoder_path,
         book_mode=cfg.book_mode,
     )
+    # Enabled extensions' module mixins, on the trainable modules each selects
+    # (docs/30). A no-op with none enabled.
+    extensions.compose_module_specs(rl_module_spec, policies_to_train, cfg)
 
     callback_instance = SelfPlayCallback(
         num_trainable_policies=cfg.num_trained_agents,
@@ -308,7 +335,11 @@ def build_algo(cfg: TrainConfig):
         # Before touching RLlib: a checkpoint from another observation or
         # action layout can never be resumed into this one, and falling back
         # to an older save would only find the same layout again.
-        check_layout_stamp(_read_league_state(path), path, book_mode=cfg.book_mode)
+        sidecar = _read_league_state(path)
+        check_layout_stamp(sidecar, path, book_mode=cfg.book_mode)
+        # Likewise a checkpoint trained with an extension that is not installed
+        # here: unpickling it would fail inside RLlib, on every older save too.
+        extensions.check_installed(sidecar, path)
         try:
             algo = Algorithm.from_checkpoint(path)
         except Exception as exc:

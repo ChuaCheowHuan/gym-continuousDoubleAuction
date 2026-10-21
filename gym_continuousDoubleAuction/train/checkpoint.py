@@ -18,6 +18,7 @@ from gym_continuousDoubleAuction.train.model.encoders import (
 )
 from gym_continuousDoubleAuction.train.policy.policy_handler import CHAMPION_PREFIX
 from gym_continuousDoubleAuction.train.config import TrainConfig
+from gym_continuousDoubleAuction.train import extensions
 
 logger = get_logger("gym_continuousDoubleAuction.train.train")
 
@@ -232,6 +233,12 @@ def _write_league_state(path: str, algo, iteration: int) -> None:
     # by name at `build_algo`, before RLlib gets as far as a tensor shape.
     env_config = getattr(getattr(algo, "config", None), "env_config", None) or {}
     state[LAYOUT_KEY] = layout_stamp(env_config.get("book_mode"))
+    # Which installed extensions (docs/30) trained these weights. Only written
+    # when there are any, so a default run's sidecar is unchanged; read back by
+    # `extensions.check_installed` before a restore touches RLlib.
+    used = extensions.versions(getattr(getattr(algo, "config", None), "learner_config_dict", None))
+    if used:
+        state[extensions.EXTENSIONS_STATE_KEY] = used
     with open(os.path.join(path, LEAGUE_STATE_FILE), "w") as fh:
         json.dump(state, fh, indent=2)
 
@@ -348,6 +355,9 @@ UNRESTORABLE_CONFIG_KEYS = (
     "cbp_metrics_only",
     "adam_betas",
     "adam_weight_decay",
+    # Which installed extensions are composed in (docs/30). Each one's own
+    # settings are fingerprinted as `ext.<name>.<key>` and checked below.
+    "extensions_enabled",
 )
 
 
@@ -394,6 +404,7 @@ PRE_FEATURE_BEHAVIOUR = {
     "cbp_metrics_every_n_updates": 10,
     "adam_betas": (0.9, 0.999),
     "adam_weight_decay": 0.0,
+    "extensions_enabled": (),
 }
 
 
@@ -443,7 +454,22 @@ def _config_fingerprint(config) -> dict:
     # `_check_restored_config` only reports keys present in BOTH fingerprints,
     # so a restore that turned continual backprop on was neither applied nor
     # mentioned. See UNRESTORABLE_CONFIG_KEYS.
-    for group, values in (getattr(config, "learner_config_dict", None) or {}).items():
+    learner_config_dict = getattr(config, "learner_config_dict", None) or {}
+    if learner_config_dict:
+        # The extensions group is only written when one is enabled, so a
+        # default run's config has none. Without this its fingerprint lacks the
+        # key, and a resume that turned an extension off was never compared.
+        fingerprint["extensions_enabled"] = ()
+    for group, values in learner_config_dict.items():
+        if group == extensions.EXTENSIONS_CONFIG_KEY:
+            # Nested one level deeper than the other groups, and owned by
+            # packages this repository does not know: each setting becomes
+            # `ext.<name>.<key>`, a prefix no other group can produce.
+            fingerprint["extensions_enabled"] = tuple(values.get("extensions_enabled") or ())
+            for name, settings in (values.get("extension_settings") or {}).items():
+                for key, value in settings.items():
+                    fingerprint[f"ext.{name}.{key}"] = _comparable(value)
+            continue
         if isinstance(values, dict):
             for key, value in values.items():
                 # The group name is dropped, so these share one namespace with
@@ -468,6 +494,15 @@ def _config_fingerprint(config) -> dict:
     fingerprint.update(_encoder_fingerprint(config))
 
     return fingerprint
+
+
+def _comparable(value):
+    """A JSON round trip turns tuples into lists; compare both as tuples."""
+    if isinstance(value, (list, tuple)):
+        return tuple(_comparable(v) for v in value)
+    if isinstance(value, dict):
+        return tuple(sorted((k, _comparable(v)) for k, v in value.items()))
+    return value
 
 
 def _encoder_fingerprint(config) -> dict:
@@ -541,7 +576,10 @@ def _check_restored_config(restored, desired) -> None:
 
     diverged = {key: (old[key], new[key]) for key in set(old) & set(new) if old[key] != new[key]}
 
-    structural = {k: v for k, v in diverged.items() if k in STRUCTURAL_CONFIG_KEYS}
+    structural_keys = STRUCTURAL_CONFIG_KEYS + extensions.structural_keys(
+        getattr(desired, "learner_config_dict", None)
+    )
+    structural = {k: v for k, v in diverged.items() if k in structural_keys}
     if structural:
         fail(
             "the configuration changes the shape of the problem the checkpoint was trained on.",
@@ -573,6 +611,16 @@ def _check_restored_config(restored, desired) -> None:
         for key in checked
         if key in new and new[key] != checkpoint_value(key)
     }
+    # An extension's settings are read when its classes are composed, before
+    # the restore, exactly like the CBP group. Only keys both sides carry: a
+    # setting a newer version of the extension added has nothing to compare.
+    unrestorable.update(
+        {
+            key: (was, wants)
+            for key, (was, wants) in diverged.items()
+            if key.startswith("ext.") and key not in structural_keys
+        }
+    )
     if unrestorable:
         fail(
             "these keys are read when the Learner class is chosen and the "

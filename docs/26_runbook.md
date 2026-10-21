@@ -99,19 +99,19 @@ import and reads its config tree relative to the repository root
 Three checks, cheapest first. All three are what CI runs ([10](10_testing.md) §7).
 
 ```bash
-# 1. the simulator and the training-side units: ~3 min, 2,133 tests (incl. pyflakes and Hypothesis);
+# 1. the simulator and the training-side units: ~3 min, 2,168 tests (incl. pyflakes and Hypothesis);
 #    test/integration is left out by default (pyproject.toml addopts)
 python -m pytest gym_continuousDoubleAuction/test -q
 
 # 2. a random-agent episode through the whole env, no learning: a few seconds
 python -m gym_continuousDoubleAuction.CDA_rand --steps 200 --agents 4
 
-# 3. RLlib wiring, real Algorithm builds, save/restore, evaluate: ~3.5 min, 185 tests
+# 3. RLlib wiring, real Algorithm builds, save/restore, evaluate: ~3.5 min, 190 tests
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 ```
 
-Expected: `2128 passed`, a line reading `completed 200 steps with 4 random agents.`, and
-`185 passed`. `pytest` is the only runner that works; `python test_x.py` defines classes and exits
+Expected: `2168 passed`, a line reading `completed 200 steps with 4 random agents.`, and
+`190 passed`. `pytest` is the only runner that works; `python test_x.py` defines classes and exits
 ([10](10_testing.md) §0).
 
 `CDA_rand` also takes `--init-cash` (each trader's starting cash; the default is in
@@ -201,6 +201,10 @@ Flags that change what a run does (the others are in `--help`, and every one has
 field of the same name): `--env-runners` sets `num_env_runners` (0 samples in the driver),
 `--envs-per-runner` sets `num_envs_per_env_runner` (environments each runner steps), and
 `--gpus-per-learner` sets `num_gpus_per_learner` (0 trains on CPU).
+
+To train with a separately installed extension such as DiscoRL, install the package and list its
+name in the `extensions` group of the config you pass with `--config`
+([30](30_extensions.md) §7). Nothing changes until the name is listed.
 
 To use more than one core, raise `num_env_runners` and read [09](09_distributed_training.md)
 first, especially about `sample_timeout_s`: an iteration whose runners time out trains on

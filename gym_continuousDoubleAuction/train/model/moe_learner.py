@@ -135,7 +135,7 @@ class CDAPPOTorchLearner(PPOTorchLearner):
 
     @override(PPOTorchLearner)
     def compute_loss_for_module(self, *, module_id, config, batch, fwd_out):
-        total_loss = super().compute_loss_for_module(
+        total_loss = self._policy_value_loss(
             module_id=module_id, config=config, batch=batch, fwd_out=fwd_out
         )
 
@@ -166,6 +166,18 @@ class CDAPPOTorchLearner(PPOTorchLearner):
             window=1,
         )
         return total_loss + coeff * aux_loss
+
+    def _policy_value_loss(self, *, module_id, config, batch, fwd_out):
+        """PPO's own policy, value and entropy loss, before any auxiliary term.
+
+        The seam an extension that *replaces* PPO's loss overrides (docs/30
+        section 4). Overriding `compute_loss_for_module` instead would drop the
+        MoE term added above and, because `CDAJEPALearner` reaches this class
+        through `super()`, the JEPA term too.
+        """
+        return super().compute_loss_for_module(
+            module_id=module_id, config=config, batch=batch, fwd_out=fwd_out
+        )
 
     def _aux_loss_coeff(self, module_id) -> float:
         """The module's own `aux_loss_coeff`, read from its encoder config.
