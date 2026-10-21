@@ -105,7 +105,7 @@ def _parse_container(name: str, raw: str, want: type):
 def _parse_bool(name: str, raw: str) -> bool:
     # An explicit set each way, and nothing else: `ture` or `enabled`
     # used to be silently False, and a typo in `action_mask` or
-    # `cbp_enabled` would run a whole sweep with the wrong setting.
+    # `vf_share_layers` would run a whole sweep with the wrong setting.
     spelling = raw.strip().lower()
     if spelling in _TRUE_SPELLINGS:
         return True
@@ -147,12 +147,19 @@ def parse_overrides(items) -> Dict[str, Any]:
     """
     from gym_continuousDoubleAuction.train.train import TrainConfig
 
+    from gym_continuousDoubleAuction.train.config import (
+        MOVED_CBP_KEYS,
+        moved_cbp_keys_message,
+    )
+
     fields = {f.name: f for f in dataclasses.fields(TrainConfig)}
     out: Dict[str, Any] = {}
     for item in items:
         if "=" not in item:
             raise SystemExit(f"--set expects FIELD=VALUE, got {item!r}")
         name, raw = item.split("=", 1)
+        if name in MOVED_CBP_KEYS:
+            raise SystemExit(f"--set: {moved_cbp_keys_message([name])}")
         if name not in fields:
             raise SystemExit(f"--set: TrainConfig has no field {name!r}")
         out[name] = _coerce(name, raw, _annotation(fields[name]))

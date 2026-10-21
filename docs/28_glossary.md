@@ -75,7 +75,7 @@ is given in `code`.
 | **Encoder** | The network that turns the observation into features for the policy and value heads. Five are selectable by `encoder_type` | [18](18_configuration.md) §5.4 |
 | **JEPA** | Joint-embedding predictive architecture: a self-supervised objective that predicts masked observation latents from visible ones | [22](22_jepa_integration.md), [23](23_probe_harness.md) Part 2 |
 | **Probe** | A linear model scoring an encoder's features on future market quantities, with no reward involved | [23](23_probe_harness.md) |
-| **CBP (Continual Backprop)** | Re-initialising low-utility hidden units during training to keep the network plastic | [25](25_continual_backprop.md) |
+| **CBP (Continual Backprop)** | Re-initialising low-utility hidden units during training to keep the network plastic. The `cbp` extension in the cda-cbp package | [25](25_continual_backprop.md) |
 | **Episode record** | The Parquet file with one row per (episode, step, agent) | [11](11_logging_and_observability.md) |
 
 ## Project vocabulary

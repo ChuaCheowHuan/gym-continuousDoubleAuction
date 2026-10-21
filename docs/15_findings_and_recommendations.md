@@ -24,7 +24,7 @@ problem rather than the simulator: agents observed no private state, the reward 
 do-nothing strategy, and the reward scale disabled PPO's critic. All three are fixed, along with
 the observation-pipeline and action-path defects found after them.
 
-What is open is small and mostly a matter of choice: five review items that need a decision
+What is open is small and mostly a matter of choice: four review items that need a decision
 rather than a patch, a handful of remainders recorded when their findings were closed, and the
 next steps the three perspective reviews name.
 
@@ -34,7 +34,6 @@ mindmap
     Decisions from the 2026-10-07 review
       R-7 league repairs apply to the driver pool only
       R-11 what obs and action mean in the episode record
-      R-12 CBP with several learners - refused
       R-18 per-agent probe corpus - refused for scoring
       R-19 stream switches agent only on termination
     Remainders of fixed findings
@@ -67,9 +66,14 @@ Each was documented or guarded instead. The 14 that were fixed are in
 |---|---|
 | R-7 ([#177](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/177)) | **Documented** ([17](17_changelog.md) §87). A known, deliberate limit, now stated in `docs/08`: repairs apply to the driver's pool, the restore logs a warning whenever it repairs anything, and it only happens after unpickle drift. Pushing the repair to remote runners waits for a case that needs it. Was: The league repair made on restore is not pushed to remote env runners |
 | R-11 ([#181](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/181)) | **Documented** ([17](17_changelog.md) §87). `obs` is the observation the step produced and `action` the action taken in it; the shift needed for (o_t, a_t) pairs is written down in `docs/11` and the schema. Nothing in the repository pairs them. Was: The Parquet record's `obs` column is the observation after the step, paired with that step's action, and the probe corpus reads it. Changes what the record means and what the probe scores |
-| R-12 ([#182](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/182)) | **Guarded** ([17](17_changelog.md) §87). `cbp_enabled` with `num_learners > 1` is refused at config time; `cbp_metrics_only` is allowed. Synchronising the choice across learners is still to do. Was: Continual Backprop under `num_learners > 1`: each DDP rank may pick a different unit to replace, so the replicas' parameters diverge |
 | R-18 ([#188](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/188)) | **Guarded** ([17](17_changelog.md) §87). A per-agent corpus is refused for scoring (`report.run`, and the probe CLI). A per-stream lookup is the proper fix if per-agent scoring is ever wanted. Was: **[verified]** Probe targets shift by rows, not by steps, so under `--per-agent` (or any gap in the rows) a target reads the wrong future row. A correct fix needs a stream id separate from the episode id, or the episode split leaks across agents |
 | R-19 ([#189](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/189)) | **Documented** ([17](17_changelog.md) §87). Low impact: the stream switches agent only when the lead agent terminates (0.3% of rows at low cash), and every target is a public-book quantity. Written down in `docs/23`. Was: The rollout and Parquet probe corpora switch agent mid-episode |
+
+R-12 (Continual Backprop with `num_learners > 1`, refused rather than synchronised) left with
+Continual Backprop: CBP is now the [cda-cbp](https://github.com/ChuaCheowHuan/cda_cbp) package,
+whose own validation refuses that combination, and synchronising the choice across learners is
+work for that package ([#182](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/182))
+([25](25_continual_backprop.md), [17](17_changelog.md) §100).
 
 ---
 
@@ -157,7 +161,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **2,208 unit tests pass** (plus 190 integration), covering every position-flip path, cash-check edge case, modify-order
+- **2,134 unit tests pass** (plus 148 integration), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 

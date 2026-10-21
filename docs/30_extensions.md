@@ -69,11 +69,11 @@ them while the package is uninstalled.
 
 | Piece | Composed in | Order |
 |---|---|---|
-| Learner mixin | `build._learner_class`, after the encoder's Learner and before Continual Backprop and tuned Adam | Mixins sorted by `learner_order` (highest outermost), then by name, ahead of the base |
+| Learner mixin | `build._learner_class`, after the encoder's Learner and before tuned Adam | Mixins sorted by `learner_order` (highest outermost), then by name, ahead of the base |
 | Module mixin | `build.build_config`, on each trainable module the extension's `module_ids` selects | By extension name; frozen baselines are never touched |
 | Env wrapper | `build.register_env`, on every env RLlib creates | By extension name |
 
-So an extension inherits the MoE and JEPA loss terms, and CBP still wraps the result. The composed
+So an extension inherits the MoE and JEPA loss terms. Continual Backprop (§8) declares `learner_order=100`, so it wraps every other extension and reads the gradients of the final loss. The composed
 classes are built with `type()` and travel to remote Learners and runners pickled by value, so a
 remote process needs the package importable but no registration of its own.
 
@@ -109,6 +109,9 @@ the PPO and JEPA Learners.
   extension on or off. A default run's config carries no extensions group, and it is compared as
   "none enabled". A checkpoint from before this feature reads the same way, so it restores with the
   default config.
+- A restore unpickles the checkpoint's classes before RLlib does, so a class whose package is
+  missing stops the restore with the import error's own message. RLlib would swallow it and fail
+  later with an unrelated error, which read as a corrupt save and fell back to an older one.
 - Every resolved setting is fingerprinted as `ext.<name>.<key>`. Changing one on a resume raises
   as unrestorable; changing one listed in `structural_keys` raises as structural.
 
@@ -194,3 +197,29 @@ Each component logs under its trained module's learner metrics, with a `discorl_
 `vf_explained_var` stays comparable with a plain PPO run's. With `value_norm` on it is computed
 from normalised targets and predictions, and normalising both the same way leaves explained
 variance unchanged.
+
+## 8. Continual Backprop
+
+The second extension is Continual Backprop, which was built into this repository until it moved to
+the `cda-cbp` package ([cda_cbp](https://github.com/ChuaCheowHuan/cda_cbp)). It is a Learner mixin
+only, and shows the two parts of this contract the DiscoRL example does not use:
+
+- **`learner_order=100`.** CBP replaces units after the optimiser step, so it has to see the step
+  every other mixin's loss produced. A higher order wraps further out, whatever the names.
+- **The module layout contract.** CBP needs to know where each trunk ends and which heads read
+  it. It asks [`train/model/layout.py`](../gym_continuousDoubleAuction/train/model/layout.py)
+  rather than this repository's attribute paths, and
+  [`test_model_layout.py`](../gym_continuousDoubleAuction/test/test_model_layout.py) fails here if
+  a rename would break it.
+
+```bash
+pip install "git+https://github.com/ChuaCheowHuan/cda_cbp"
+```
+
+```json
+"extensions_enabled": ["cbp"],
+"extension_settings": {"cbp": {"replacement_rate": 1e-4}}
+```
+
+Its settings, metrics, and how to move a config or resume a checkpoint from the built-in version
+are in [25](25_continual_backprop.md) and the package's own docs.

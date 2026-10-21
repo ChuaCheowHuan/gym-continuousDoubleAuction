@@ -26,7 +26,8 @@ self-play PPO training pipeline on RLlib 2.56's new API stack.
 - **League self-play.** Trainable policies play against random baselines and frozen champion
   snapshots, drawn by weighted matchmaking.
 - **Research tooling.** Five selectable observation encoders, JEPA pretraining, a reward-free
-  probe harness, Continual Backprop, evaluation and weight export.
+  probe harness, evaluation and weight export. Continual Backprop and DiscoRL are separately
+  installed extensions ([docs/30](docs/30_extensions.md)).
 - **Reproducible and tested.** Every value lives in `config/*.json`. Runs can be seeded and
   resumed from checkpoints. Over 2,000 tests run in CI.
 

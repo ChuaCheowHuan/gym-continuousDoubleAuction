@@ -17,13 +17,13 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# the unit tests (2,208). pyproject.toml's addopts ignores test/integration by default,
+# the unit tests (2,134). pyproject.toml's addopts ignores test/integration by default,
 # so this never runs the slow RLlib suite as well
 python -m pytest gym_continuousDoubleAuction/test -q
 
-# then the integration suite, named explicitly - everything is these two (2,398 tests).
+# then the integration suite, named explicitly - everything is these two (2,282 tests).
 # RLlib wiring, the real save/restore, the progress log and a real remote
-# runner (190 tests, builds real Algorithms)
+# runner (148 tests, builds real Algorithms)
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 
 # a single file
@@ -44,7 +44,7 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `1363 passed` on the unit half, `172 passed` on the integration half, when this was first measured; the current totals are 2,208 and 190 (§ "File inventory" below). There is no xfail.
+**[verified]** — `1363 passed` on the unit half, `172 passed` on the integration half, when this was first measured; the current totals are 2,134 and 148 (§ "File inventory" below). There is no xfail.
 
 ### File inventory
 
@@ -118,7 +118,7 @@ Counts re-measured with `--collect-only`.
 | `test_pretrain.py` | 38 | Offline JEPA pretraining: the loop trains only the trunk and predictor, a collapse is reported rather than hidden, a NaN or unmeasured run counts as unusable and is never saved (#239), the checkpoint's fingerprint refuses a mismatched architecture, and a relative path saves and loads (#316) |
 | `test_visualize_scripts.py` | 32 | `visualize/` end to end on small synthetic Parquet and `progress.jsonl` runs: the loader's complete-episode rule, the data in each chart's lines, `run_all`, both inspectors (#211) |
 | `test_visualize_orderbook.py` | 12 | The newest book snapshot is read from the middle of the observation, never off the end — the only arithmetic in `visualize/` that can be wrong without raising |
-| `test_probe.py` | 61 | The reward-free probe harness's arithmetic on synthetic observations: target definitions, episode-boundary masking, the splits, the metrics, unscoreable cells, and that `snapshots` reads the book rather than the private tail |
+| `test_probe.py` | 59 | The reward-free probe harness's arithmetic on synthetic observations: target definitions, episode-boundary masking, the splits, the metrics, unscoreable cells, and that `snapshots` reads the book rather than the private tail |
 | `test_bankrupt_termination.py` | 13 | A trader whose NAV reaches zero is terminated, and the episode ends when too few solvent traders remain |
 | `test_resting_exposure.py` | 8 | Escrow against live orders: what a resting order commits, and the layered-closing-order exploit that left a trader short (S1-5) |
 | `test_self_match.py` | 14 | A trader cannot trade with itself: the crossing leg is withdrawn before the matcher, and the resting leg cannot become the mark (S2-5) |
@@ -127,14 +127,12 @@ Counts re-measured with `--collect-only`.
 | `test_obs_information.py` | 30 | What the observation can tell apart, in both book modes: different resting prices, sizes and sides give different observations, a trade shows in the flow fields, accounts differ by owner, and every field meant to carry information moves under random play (#205) |
 | `test_obs_feature_scales.py` | 10 | Every observation block lands on one scale — the size/price ratio and the centred `log_mid` (S2-2) |
 | `test_entry_points.py` | 8 | The two documented entry points work: `gymnasium.make("continuousDoubleAuction-v0")`, and `visualize/` being importable from a wheel |
-| `test_cbp_recurrent.py` | 21 | CBP on an LSTM core: which parameters are a unit, a replacement that leaves the new unit inert and moves the function only by the old unit's contribution, Adam's moments cleared for exactly the reset entries, and discovery on the real encoders under each scope (S3-32) |
-| `test_cbp.py` | 71 | Continual Backprop's algorithm core, with no Ray and no `Algorithm` — §6.6.1 |
 | `test_probe_corpus_config.py` | 8 | The probe corpus follows the run's env config: `book_mode` and `n_hist` change its width, explicit arguments win, the caller's dict is untouched, and `train.compare` hands its overridden config to the corpus (#261) |
 | `test_compare.py` | 18 | The encoder comparison driver's aggregation: means and standard deviations across seeds, the separation rule and its three-seed floor, the rendered table and its caveats |
 | `test_export.py` | 20 | `train.export`'s pure half: which module is the winner, the no-champion and foreign-layout messages, and what the written record carries (docs/26 §26.9.2) |
 | `test_lint.py` | 3 | The package, `tools/` and the skill scripts are pyflakes-clean, and the lint reaches the directories it claims to; any message fails the suite (S4-6, #249) |
 | `test_links.py` | 8 | `tools/check_links.py` reports no broken link in the docs, the skills and the repo files they name (#250) |
-| `test_s4_docs_and_tooling.py` | 24 | The documentation-and-tooling S4 fixes: the layout-version pointer, the CI command quoted in CLAUDE.md and docs/27, the built skills, stale texts (including the mark-price notes' fallback order), and every config key and flag being documented (#273, #266, #267, #251, #249); four PR #308 review findings (#309-#312); and that CI runs the integration suite once (a default run leaves it out, naming it runs it) |
+| `test_s4_docs_and_tooling.py` | 22 | The documentation-and-tooling S4 fixes: the layout-version pointer, the CI command quoted in CLAUDE.md and docs/27, the built skills, stale texts (including the mark-price notes' fallback order), and every config key and flag being documented (#273, #266, #267, #251, #249); four PR #308 review findings (#309-#312); and that CI runs the integration suite once (a default run leaves it out, naming it runs it) |
 | `test_s4_hardening.py` | 59 | The hardening and speed fixes: call-time account defaults, `settle_batch`'s pre-check, `flat_view`, the `info` fast path and the cached reference price (#247, #248) |
 | `test_pnl_split_and_markouts.py` | 39 | Realised and unrealised P&L against the NAV identity in random play, fill counters, forced fills excluded, mark-outs, and the callback and config wiring (#286) |
 | `test_logging_issues.py` | 40 | The logging review's issues under multiple env runners: the kept start of a run log, pruning of worker logs, Ray's own records in the run log (once per record), the driver learning each process's log path, the iteration broadcast to remote learners, a missed broadcast reading `-`, and a worker's console not repeating its file (#216-#221) |
@@ -143,9 +141,10 @@ Counts re-measured with `--collect-only`.
 | `test_refactors.py` | 117 | The refactoring review's issues: `Account` initialised in one place and its step counters listed once, `_plain`'s call count, one order-book routine per operation, `place_order` and `parse_overrides` flat, `clear_batch` as four steps, `EnvSettings` and the generated `env_config`, the `train/` module split with its re-exports and import order, the callback as a `League` plus an `ActivityLog` plus the NAV audit and league statistics, a real pickle from before that split still loading, and the league and activity log working alone (#252-#258) |
 | `test_extensions.py` | 33 | The extension point ([30](30_extensions.md)): discovery through real entry points, nothing enabled changing nothing, validation of names and settings, composition order under CBP and by `learner_order`, and the resume guards |
 | `test_loss_seam.py` | 5 | PPO's own loss sits behind `_policy_value_loss`, so an extension that replaces it keeps the MoE and JEPA terms |
-| `test_learner_class_compat.py` | 7 | Learner classes cloudpickled on master (f7c1353) for the default, tuned-Adam and CBP compositions still load: a checkpoint names its mixins by module path |
+| `test_learner_class_compat.py` | 10 | Learner classes cloudpickled on master (f7c1353) for the default, tuned-Adam and CBP compositions still load: a checkpoint names its mixins by module path. The CBP ones load with cda-cbp installed and fail naming it without |
 | `test_model_layout.py` | 26 | The model-layout contract: `layout.trunk_outputs` reports each encoder's MLP or LSTM trunk output and the heads reading it, with and without `vf_share_layers` |
-| **unit total** | **2,208** | |
+| `test_cbp_moved.py` | 19 | Continual Backprop moved to cda-cbp ([25](25_continual_backprop.md)): an old `cbp_*` key names the package, an old checkpoint's group reads as the `cbp` extension's settings, the old mixin name resolves or names the package, and a restore without the package stops instead of falling back |
+| **unit total** | **2,134** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -155,12 +154,11 @@ Counts re-measured with `--collect-only`.
 | `integration/test_distributed_observability.py` | 14 | A real `num_env_runners=1` iteration: every episode-hook metric arrives on the driver, the episode record is written by the *worker* into the driver's absolute run-scoped path, and at the shipped `episode_rows_per_file` it is on disk when the iteration returns (#245) |
 | `integration/test_encoder_wiring.py` | 48 | Champions inherit the encoder; a restore cannot change it; the recurrent and MoE paths train end to end; a real checkpoint round-trip with a custom encoder |
 | `integration/test_probe_harness.py` | 28 | The probe against the real env: a usable rollout corpus, every registered encoder frozen and read, the LSTM's state reset per episode, a real checkpoint restored with its weights |
-| `integration/test_cbp_wiring.py` | 42 | Continual Backprop inside a real `Algorithm`: composition over the encoder's Learner, a real save and restore, and the restore guard — §6.6.2 |
 | `integration/test_stateful_logp.py` | 7 | The real `lstm` and `mlp` modules: log-probability shape for 1, 2 and 3 agents, and every distribution getter returns the corrected class (#278) |
 | `integration/test_champion_guard_wiring.py` | 3 | A real run: every trainable module's trade count reaches the driver, the league state says whether a candidate was refused, and RLlib applies the decaying entropy bonus (S3-11) |
-| `integration/test_tuned_adam.py` | 4 | Tuned Adam with no CBP setting: it composes alone, and the configured betas and weight decay land on the built optimiser |
+| `integration/test_tuned_adam.py` | 4 | Tuned Adam on its own: it composes alone, and the configured betas and weight decay land on the built optimiser |
 | `integration/test_extensions_wiring.py` | 5 | An enabled extension inside a real `Algorithm`: its Learner replaces PPO's loss for one iteration, its module mixin is only on the module it selected, the sampled env is wrapped, and a checkpoint round-trips and records it |
-| **integration total** | **190** | |
+| **integration total** | **148** | |
 
 > **Stale references in older docs.** `test_orderbook.py`, `repro_orderbook_crossed_book.py`,
 > `test_OrderBook.py`, `test_cda_nsp.py` and `test_orderbook_double_delete_order.py` do not exist.
@@ -175,7 +173,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((2,398 tests))
+  root((2,282 tests))
     Simulator
       orderbook 88
         the demo scripts as tests, a shadow model
@@ -252,7 +250,7 @@ mindmap
         logging, progress log, info dict
         activity metrics, episode record
         NAV conservation, book rendering
-      probe 61
+      probe 59
         targets, episode masking
         splits never shuffled
         unscoreable vs zero
@@ -261,22 +259,21 @@ mindmap
         trains trunk + predictor only
         collapse reported not hidden
         fingerprint refuses a mismatch
-      continual backprop 92
-        utility, accumulator, one per step
-        device and DDP boundaries
+      continual backprop moved 19
+        old keys and checkpoints name cda-cbp
       extensions 38
         found through entry points
         learner_order decides the wrapping
         nothing enabled changes nothing
         PPO loss replaceable, MoE and JEPA kept
-      checkpoint and layout contracts 33
+      checkpoint and layout contracts 36
         old pickled Learner classes load
         trunk outputs per encoder
       visualize 32
         the loader and every chart script on synthetic runs
       packaging 8
         gymnasium.make, visualize importable
-    Integration 190
+    Integration 148
       league wiring, 3 topologies
       real save and restore
       real progress.jsonl, live vf_explained_var guard
@@ -943,7 +940,7 @@ Two files, added with `train/probe/` ([23](23_probe_harness.md)). The harness pr
 people will cite*, so what these pin is not that it runs but the handful of properties that decide
 whether its numbers mean anything.
 
-#### 6.5.1 `test_probe.py` — 61 tests
+#### 6.5.1 `test_probe.py` — 59 tests
 
 Runs on synthetic observations built by hand, not on env rollouts: the arithmetic is the subject,
 and a target checked against the same expression that computes it checks nothing.
@@ -982,7 +979,7 @@ test found a live bug while being written: the path resolver fell back to loadin
 *root* as a module, so a mistyped `--module-id` surfaced as a missing-file error about an internal
 pickle instead of naming the modules that were there.
 
-### 6.5.1 `test_probe.py::TestEffectiveRank` — 9 tests
+### 6.5.1 `test_probe.py::TestEffectiveRank` — 7 tests
 
 The rank measurement the probe harness gained after the Learner's own turned out to be
 confounded ([25](25_continual_backprop.md) §3.8). Rank-one and collapsed matrices score as
@@ -991,92 +988,31 @@ directions at all; a corpus too short for the feature width is flagged rather th
 straight, because rank is bounded by `min(rows, width)` and a short corpus caps every set at the
 same number.
 
-`test_it_agrees_with_the_torch_definition` is the load-bearing one. There are two
-implementations of effective rank — torch in `cbp.py`, because the Learner works in torch and
-`cbp.py` must not import RLlib or the probe package; numpy in `probe/rank.py`, because the
-harness works in numpy. Nothing but that test keeps them the same measurement, and both
-docstrings promise it does.
-
-They differ in exactly one place, and
-`test_the_one_deliberate_divergence_is_the_degenerate_row_count` is what makes that deliberate
-rather than accidental: a matrix with fewer than two rows is `0` in the probe, where the value
-lands in a report column read as a rank, and `NaN` on the Learner, where it lands in a metric
-series and a plotted `0.0` would read as total collapse.
+There is a second implementation of effective rank, in torch, in Continual Backprop's code, which
+moved to the [cda-cbp](https://github.com/ChuaCheowHuan/cda_cbp) package. The test that keeps the
+two the same measurement, and the one that pins their single deliberate difference (fewer than two
+rows is `0` here, a report column, and `NaN` there, a metric series where `0.0` would read as
+total collapse), moved with it: they need both packages installed, which is the package's CI.
 
 ---
 
 ### 6.6 Continual Backprop
 
-Two files, and the split is the same one `cbp.py` makes: the algorithm is testable without RLlib,
-the wiring is not. See [25_continual_backprop.md](25_continual_backprop.md).
+Continual Backprop moved to the [cda-cbp](https://github.com/ChuaCheowHuan/cda_cbp) package
+([25](25_continual_backprop.md)), and its tests moved with it: the algorithm-core file
+(`test_cbp.py`, 71 tests), the LSTM-core file (21), and the integration wiring file (42), plus an
+equivalence test that ran the built-in and the extension side by side from the same state and found
+them bit-identical. Their history, including the bugs they found, is in
+[17](17_changelog.md) and [29](29_fixed_issues.md).
 
-### 6.6.1 `test_cbp.py` — 71 tests
+What stays here is what this repository promises the package and the people who used it:
 
-No Ray, no `Algorithm`. The formulas are checked against hand-computed values rather than against
-the implementation.
-
-| Group | Pins |
+| File | Pins |
 |---|---|
-| Layer discovery | The default network yields **four** replaceable layers, not two — the last hidden layer's outgoing weights are in the `pi`/`vf` head, and a walker confined to the encoder silently finds half of them. A shared trunk yields one layer with two consumers. A frozen layer yields none. Every encoder, scope and sharing finds exactly the layers recorded on master at f7c1353 |
-| Config | Every unknown setting raises by name; `metrics_only` is active but never replaces |
-| Utility | Each of the three measures against its paper equation; the outgoing sum spans every consumer; bias correction leaves age 0 alone |
-| Replacement | Outgoing zeroed, incoming resampled inside the init distribution's bound, bookkeeping and Adam moments reset |
-| Accumulator | A rate too small to replace anything still accumulates; **at most one replacement per step**; immature units are never selected |
-| Determinism | The same generator gives the same weights, and replacement does not disturb the global RNG stream |
-| Device placement | State is allocated on the layer's device and the RNG on the learner's — asserted as a property, since a CPU-only box cannot execute the GPU path |
-| DDP unwrapping | A stub with `TorchDDPRLModule`'s two relevant behaviours yields the same layers, under the same names |
-
-**`test_frozen_layers_are_skipped` is the load-bearing one.** Discovery finds the `jepa` encoder's
-EMA `target_trunk`, because it is structurally identical to the trunk it mirrors. Replacing a unit
-there would break the EMA relationship the whole objective rests on, and — since nothing updates
-that trunk by gradient descent — nothing would ever undo it. `requires_grad` is what separates
-them.
-
-`test_the_last_hidden_layer_consumes_into_the_head` is the other: it asserts the policy head's 26
-outputs and the value head's 1, so a regression that stopped at the encoder boundary fails loudly
-rather than quietly halving the mechanism.
-
-### 6.6.2 `integration/test_cbp_wiring.py` — 42 tests
-
-The claims that need a real `Algorithm`, modelled on `TestMoEAuxLossReachesTheOptimiser` and
-`TestOtherEncodersAreUnaffectedByJEPA`.
-
-| Class | Covers |
-|---|---|
-| `TestCompositionPreservesTheEncodersLearner` | CBP subclasses the encoder's Learner rather than competing for RLlib's single slot, so `compute_loss_for_module` — and with it the MoE and JEPA terms — still resolves to the base |
-| `TestTunedAdamComposesWithCBP` | CBP and tuned Adam compose together, and the learner config carries both groups. Tuned Adam alone is in `integration/test_tuned_adam.py` |
-| `TestCBPRunsInsideARealUpdate` | Four layers per trainable module and none for the frozen baselines; units actually replaced; the one-per-step cap holds against the optimiser-step count; metrics logged; training still produces a finite loss |
-| `TestMetricsOnlyChangesNothing` | An absurd replacement rate replaces nothing, while the correlates are still logged and the utility still accumulates |
-| `TestCBPStateSurvivesACheckpoint` | Utility and ages round-trip; a checkpoint **without** the CBP block still restores; a block missing one layer leaves that layer alone |
-| `TestCBPSurvivesARealSaveAndRestore` | A real `save_to_path` and `build_algo(is_restore=True)`, which `get_state`/`set_state` cannot show because they never leave the process — and where champions are present from `build()` |
-| `TestRestoreCannotChangeCBP` | Enabling continual backprop or retuning Adam alongside `is_restore` raises, including on a checkpoint predating the groups; a tuning knob edited while the mechanism is off does not; and a `learner_config_dict` key colliding with an AlgorithmConfig one raises rather than silently shadowing it, since the groups are flattened into a single fingerprint namespace |
-
-Two things these tests have to do deliberately. They **force the replacement rate up**: at the
-shipped `1e-4` nothing fires in a test-length run, so every assertion about replacement would pass
-vacuously — which is [25](25_continual_backprop.md) §3.6 restated as a testing problem. And
-`test_units_were_actually_replaced` exists precisely so that a mechanism silently doing nothing
-cannot pass the rest of the class.
-
-`test_state_round_trips_through_set_state` found a real bug rather than confirming one: `get_state`
-used `.detach().cpu()`, which returns *the same object* for a tensor already on the CPU, so the
-state dict aliased the live tensors and a checkpoint would have recorded whatever they later
-drifted to.
-
-**On what this suite cannot reach.** A code review found four bugs after these tests were passing,
-and none was in the algorithm: all four were at boundaries the suite does not cross — GPU, DDP, and
-a restore with a changed config. The suite runs CPU-only at `num_learners: 0` and only ever
-restores an unchanged config, which is precisely the envelope the bugs lived outside. The device
-and DDP tests added afterwards assert the *property* (state allocated from the weight's device, a
-wrapper unwrapped before discovery) rather than executing it, because a CPU-only box cannot do the
-latter. That is weaker than the real thing and is the honest limit here; see
-[25 §3.7](25_continual_backprop.md).
-
-`test_champions_in_the_restored_league_are_not_attached` found a worse one, and only the *real*
-restore could have. Continual backprop was attaching to league champions — frozen snapshots that
-share the `MultiRLModule` with the trainable policies — so a replacement would have silently
-mutated an opponent that is supposed to be constant. A fresh run cannot catch it, because the
-league is empty when the learner is built. The test asserts a champion is present first, so it
-fails loudly rather than passing vacuously if the league ever comes back empty.
+| `test_model_layout.py` (26) | Where each encoder's trunk ends and which heads read it, the contract CBP finds its layers through |
+| `test_extensions.py::TestLearnerOrder` (3) | A higher `learner_order` wraps further out, whatever the names, so CBP sees every other mixin's step |
+| `test_learner_class_compat.py` (10) | Learner classes pickled before the move, CBP ones included, still load, or fail naming cda-cbp |
+| `test_cbp_moved.py` (19) | Old `cbp_*` keys name the package; an old checkpoint's `continual_backprop` group reads as the `cbp` extension's settings, so resuming it with the same settings passes, a changed setting or a config that leaves CBP out is refused; a restore without the package stops before RLlib, instead of falling back to a fresh run |
 
 ---
 
@@ -1127,5 +1063,5 @@ Honest accounting of what the suite does **not** cover. Gaps that have been clos
 |---|---|
 | **The critic is guarded, its loss and the returns are not** | `vf_explained_var >= 1e-3` in `integration/test_progress_and_vf.py` is a live assertion (§6.2.2). Unchecked: `vf_loss` saturation, and "returns improve" across iterations. |
 | **Reproducibility of a whole training run** | `test_seeding.py` covers the env's three randomness sources; reproducibility of a multi-worker *training run* is a different claim and is untested. |
-| **The coverage floor is not a CI step** | `fail_under = 84` applies where `pytest --cov` is run (86.4% line-and-branch on the unit suite, 86.9% with `visualize/`); CI does not run it (the workflow cannot be edited from here). Least covered: `probe/__main__` (0%, run by hand), `cbp_learner` (32%, its tests are in the integration suite), `CDA_rand` (18%, the CI smoke run), `evaluate` (64% from the unit half; the integration test covers the rest). |
+| **The coverage floor is not a CI step** | `fail_under = 84` applies where `pytest --cov` is run (86.4% line-and-branch on the unit suite when measured, 86.9% with `visualize/`; 89.5% on the unit suite after Continual Backprop moved out, [17](17_changelog.md) §102); CI does not run it (the workflow cannot be edited from here). Least covered: `probe/__main__` (0%, run by hand), `cbp_learner` (77%, the shim kept for old checkpoints), `CDA_rand` (18%, the CI smoke run), `evaluate` (64% from the unit half; the integration test covers the rest). |
 | **No encoder is tested for whether it *learns*** ([#206](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/206)) | **Still the largest gap, now with the tool to close it and one dry run of it.** §6.4 proves only mechanics, and `train/probe/` routes around the reward entirely ([23](23_probe_harness.md)). The protocol in [18](18_configuration.md) §5.5 is one command, `python -m gym_continuousDoubleAuction.train.compare`, run once at smoke scale to prove the path and once more, before and after the S3-24 layout change, at three seeds × 8 iterations of the scaled-down protocol ([16](16_verification_log.md) §16.18, §16.20). Both runs are at a scale where the policies are still near random, so they prove plumbing. **The run at scale - 16 iterations, three seeds, every registered encoder, `jepa` included - has not been done.** Until it is, no claim that one encoder trades better than another, or that agents learn to use the new order-management heads, is supported by anything in this repository. |

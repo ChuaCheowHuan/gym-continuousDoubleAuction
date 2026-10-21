@@ -539,12 +539,12 @@ class TestEnvSettings:
 _MOVED = {
     "config": "generate_run_id _default TrainConfig ENV_NAME TRAIN_CONFIG_FILE PROGRESS_FILE "
     "_BROADCAST_TIMEOUT_S VF_EXPLAINED_VAR_KEY",
-    "build": "register_env make_spaces _next_obs_connector CBP_CONFIG_KEY OPTIMIZER_CONFIG_KEY "
+    "build": "register_env make_spaces _next_obs_connector OPTIMIZER_CONFIG_KEY "
     "_learner_class _learner_config_dict build_config build_algo log_module_sizes",
     "checkpoint": "CHECKPOINT_PREFIX CHECKPOINT_TMP_SUFFIX LEAGUE_STATE_FILE _is_checkpoint "
     "list_checkpoints save_checkpoint _prune_checkpoints warn_about_foreign_checkpoints "
     "algo_callback _write_league_state _read_league_state _reconcile_league_state "
-    "STRUCTURAL_CONFIG_KEYS UNRESTORABLE_CONFIG_KEYS UNRESTORABLE_WHEN_ACTIVE_KEYS "
+    "STRUCTURAL_CONFIG_KEYS UNRESTORABLE_CONFIG_KEYS "
     "PRE_FEATURE_BEHAVIOUR _config_fingerprint _check_restored_config restore_candidates "
     "_fix_checkpoint_optimizer_betas",
     "progress": "NavConservationError nav_violations _check_nav_conservation _apply_iteration "

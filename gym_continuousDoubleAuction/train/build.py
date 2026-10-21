@@ -23,6 +23,7 @@ from gym_continuousDoubleAuction.train.policy.policy_handler import (
 )
 from gym_continuousDoubleAuction.train.config import TrainConfig, ENV_NAME
 from gym_continuousDoubleAuction.train.checkpoint import (
+    check_pickled_classes_load,
     restore_candidates,
     _read_league_state,
     _fix_checkpoint_optimizer_betas,
@@ -78,52 +79,40 @@ def _next_obs_connector(observation_space, action_space):
     return [AddNextObservationsFromEpisodesToTrainBatch()]
 
 
-#: The `learner_config_dict` keys the CBP learner reads. Named here rather than
-#: imported from `cbp_learner` so that building a config does not drag the
-#: mixin in on a run that has continual backprop switched off.
-CBP_CONFIG_KEY = "continual_backprop"
-
-
 OPTIMIZER_CONFIG_KEY = "optimizer"
 
 
 def _learner_class(cfg: TrainConfig):
-    """The Learner for this run: the encoder's, optionally wrapped by CBP.
+    """The Learner for this run: the encoder's, then extensions, then tuned Adam.
 
-    Two separate mechanisms, resolved in order:
+    Three separate mechanisms, resolved in order:
 
     1. `learner_class_for` picks the Learner the *encoder* needs - the JEPA one
        for `jepa`, the shared MoE one for everything else. RLlib takes a single
        algorithm-wide Learner, so this is a one-of-N choice.
-    2. Continual Backprop is then composed over the result. It is orthogonal to
-       the encoder, so it must not compete for that slot; `with_continual_backprop`
-       subclasses whatever came back, leaving `compute_loss_for_module` - and so
-       the MoE and JEPA loss terms - resolving to the base learner.
+    2. Enabled extensions (docs/30) are composed over it, so they inherit the
+       MoE and JEPA loss terms. Continual Backprop is one of them now (the
+       `cda-cbp` package); its `learner_order` keeps it outside the others.
+    3. Tuned Adam, when its knobs differ from torch's defaults. It only
+       overrides `configure_optimizers_for_module`, which no extension
+       touches, so its place in the MRO changes nothing else.
 
-    With CBP off this returns exactly what step 1 returned, which is what keeps
-    a default run identical to one from before this existed.
+    With no extension and torch's Adam this returns exactly what step 1
+    returned, which is what keeps a default run identical to one from before.
     """
     base = learner_class_for(cfg.encoder_type, CDAPPOTorchLearner)
-    # Installed extensions (docs/30) go between the encoder's Learner and CBP:
-    # they inherit the MoE and JEPA terms, and CBP still wraps everything. With
-    # none enabled this returns `base` itself.
     base = extensions.compose_learner(base, cfg)
 
-    cbp = cfg.cbp_enabled or cfg.cbp_metrics_only
-    # The optimiser knobs are composed independently of CBP, so that the
-    # papers' tuned Adam can be run on its own. Composing it only alongside CBP
-    # would make every CBP-vs-baseline comparison a comparison of both at once.
+    # The optimiser knobs are composed independently of any extension, so that
+    # the papers' tuned Adam can be run on its own: composing it only alongside
+    # Continual Backprop would make every CBP-vs-baseline comparison a
+    # comparison of both at once.
     tuned_adam = list(cfg.adam_betas) != [0.9, 0.999] or cfg.adam_weight_decay != 0.0
-    if not cbp and not tuned_adam:
+    if not tuned_adam:
         return base
 
-    # Imported here rather than at module scope: a run using neither should not
-    # pay for importing the mixins, and nothing else in this module needs them.
-    if cbp:
-        from gym_continuousDoubleAuction.train.model.cbp_learner import with_continual_backprop
-
-        return with_continual_backprop(base, tuned_adam=tuned_adam)
-
+    # Imported here rather than at module scope: a run without it should not
+    # pay for importing the mixin, and nothing else in this module needs it.
     from gym_continuousDoubleAuction.train.model.optim_learner import with_tuned_adam
 
     return with_tuned_adam(base)
@@ -134,31 +123,17 @@ def _learner_config_dict(cfg: TrainConfig) -> dict:
 
     RLlib passes `learner_config_dict` through to the Learner untouched. That
     is the supported channel for a custom Learner's own knobs, and it is what
-    lets the CBP mixin be configured without a second config path or a
-    subclass per setting.
+    lets a mixin be configured without a second config path or a subclass per
+    setting.
 
     The optimiser group is always present because `configure_optimizers_for_module`
-    consults it whether or not CBP is on - at the shipped defaults it finds
-    torch's own values and defers to RLlib's implementation unchanged.
+    consults it whenever tuned Adam is composed - at the shipped defaults it
+    finds torch's own values and defers to RLlib's implementation unchanged.
     """
     config_dict = {
         OPTIMIZER_CONFIG_KEY: {
             "adam_betas": list(cfg.adam_betas),
             "adam_weight_decay": cfg.adam_weight_decay,
-        },
-        CBP_CONFIG_KEY: {
-            "cbp_enabled": cfg.cbp_enabled,
-            "cbp_metrics_only": cfg.cbp_metrics_only,
-            "cbp_replacement_rate": cfg.cbp_replacement_rate,
-            "cbp_maturity_threshold": cfg.cbp_maturity_threshold,
-            "cbp_utility_decay": cfg.cbp_utility_decay,
-            "cbp_utility": cfg.cbp_utility,
-            "cbp_scope": cfg.cbp_scope,
-            "cbp_fire_on": cfg.cbp_fire_on,
-            "cbp_reset_optimizer_state": cfg.cbp_reset_optimizer_state,
-            "cbp_compensate_mean": cfg.cbp_compensate_mean,
-            "cbp_dead_unit_threshold": cfg.cbp_dead_unit_threshold,
-            "cbp_metrics_every_n_updates": cfg.cbp_metrics_every_n_updates,
         },
     }
     # Only when one is enabled, so a default run's config is what it was
@@ -340,6 +315,9 @@ def build_algo(cfg: TrainConfig):
         # Likewise a checkpoint trained with an extension that is not installed
         # here: unpickling it would fail inside RLlib, on every older save too.
         extensions.check_installed(sidecar, path)
+        # And one whose classes cannot be imported here at all, which RLlib
+        # would hide behind an unrelated error that reads as a corrupt save.
+        check_pickled_classes_load(path)
         try:
             algo = Algorithm.from_checkpoint(path)
         except Exception as exc:

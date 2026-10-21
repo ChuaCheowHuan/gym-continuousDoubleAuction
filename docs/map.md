@@ -89,7 +89,7 @@ mindmap
 | 17 | [17_changelog.md](17_changelog.md) | What changed since `original_v1` (2020) and why |
 | 22 | [22_jepa_integration.md](22_jepa_integration.md) | What JEPA is, why this observation suits it and this reward does not, and four ways it could be used |
 | 23 | [23_probe_harness.md](23_probe_harness.md) | The two reward-free tools. Part 1: scoring an encoder on microstructure targets without the reward, how to read it, why the probe is linear. Part 2: pretraining a JEPA encoder on observations alone, the fingerprint that guards its weights, and why to watch `latent_std` rather than the loss |
-| 25 | [25_continual_backprop.md](25_continual_backprop.md) | What Continual Backprop is, why league self-play is the non-stationary regime it targets, why it belongs on the Learner rather than the encoder registry, and why the papers' hyperparameters cannot be copied at this repo's update cadence |
+| 25 | [25_continual_backprop.md](25_continual_backprop.md) | Continual Backprop moved to the cda-cbp package: where its full note, settings and metrics now live, how to install and enable it, and how old configs and checkpoints are handled |
 | 30 | [30_extensions.md](30_extensions.md) | Adding to the learning stack from a separately installed package: what it declares, how a run enables it, where its Learner, module and env pieces are composed, how resumes are guarded, and how to install, enable and compare the DiscoRL extension |
 | 27 | [27_agent_skills.md](27_agent_skills.md) | Which agent skills this repository would pay for, from the work that was done by hand in the review passes: what each does, its evidence, the scripts it needs, the mistakes it must not repeat, and the order to build them in |
 
@@ -145,15 +145,15 @@ mindmap
 [23](23_probe_harness.md) Part 1 (measuring what it taught)
 
 **Weighing a plasticity change for long runs (Continual Backprop)**
-[25](25_continual_backprop.md) → [18](18_configuration.md) §5.6 (the two config groups, and
-the cadence caveat that decides whether a result means anything) →
+[25](25_continual_backprop.md) (moved to cda-cbp; its note, settings and cadence caveat) →
+[18](18_configuration.md) §5.6 (tuned Adam, kept here) →
 [11](11_logging_and_observability.md) (the three correlates) →
 [23](23_probe_harness.md) (the reward-free metric it must be scored on) →
 [29](29_fixed_issues.md) (S1-1, S1-3, which gated the returns comparison)
 
 **Adding a learning method from another package (extensions)**
 [30](30_extensions.md) → [18](18_configuration.md) §5.7 (the config group) →
-[25](25_continual_backprop.md) §2.5 (why Learner changes are not encoders)
+[30](30_extensions.md) §8 (Continual Backprop as an extension: `learner_order`, the layout contract)
 
 **Setting up training**
 [26](26_runbook.md) (the commands, in order) → [18](18_configuration.md) (where every value lives) → [08](08_self_play_league.md) →
