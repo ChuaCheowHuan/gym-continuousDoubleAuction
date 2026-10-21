@@ -77,8 +77,8 @@ def build_multi_rl_module_spec(
     num_agents,
     num_trained_agents,
     fcnet_hiddens=None,
-    fcnet_activation="tanh",
-    vf_share_layers=False,
+    fcnet_activation=None,
+    vf_share_layers=None,
     encoder_type=None,
     encoder_specs=None,
     pretrained_path=None,
@@ -94,6 +94,8 @@ def build_multi_rl_module_spec(
         fcnet_hiddens: Hidden sizes for the trainable modules. `mlp` only.
         fcnet_activation: Activation for the hidden layers. `mlp` only.
         vf_share_layers: Whether policy and value share a trunk.
+            None, for any of these three, reads the `ppo` group of
+            `config/train_config.json` (`default_model_config`).
         encoder_type: Which observation encoder the trainable modules use.
             None reads the `encoder` group of `config/train_config.json`.
         encoder_specs: Per-encoder hyperparameter blocks. None reads the same
@@ -150,8 +152,8 @@ def create_multi_agent_config(
     num_agents,
     num_trained_agents,
     fcnet_hiddens=None,
-    fcnet_activation="tanh",
-    vf_share_layers=False,
+    fcnet_activation=None,
+    vf_share_layers=None,
     encoder_type=None,
     encoder_specs=None,
     pretrained_path=None,
