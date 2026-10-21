@@ -212,13 +212,13 @@ class TestComposition:
         assert issubclass(composed, CDAPPOTorchLearner)
         assert composed._policy_value_loss is CDAPPOTorchLearner._policy_value_loss
 
-    def test_cbp_still_wraps_the_composed_learner(self, dummy):
-        from gym_continuousDoubleAuction.train.model.cbp_learner import CBPLearnerMixin
+    def test_tuned_adam_wraps_the_composed_learner(self, dummy):
+        from gym_continuousDoubleAuction.train.model.optim_learner import TunedAdamMixin
 
-        composed = _learner_class(_cfg(extensions_enabled=["dummy"], cbp_enabled=True))
+        composed = _learner_class(_cfg(extensions_enabled=["dummy"], adam_betas=[0.99, 0.99]))
         mro = composed.__mro__
         assert (
-            mro.index(CBPLearnerMixin)
+            mro.index(TunedAdamMixin)
             < mro.index(dummy.learner_mixin)
             < mro.index(CDAPPOTorchLearner)
         )

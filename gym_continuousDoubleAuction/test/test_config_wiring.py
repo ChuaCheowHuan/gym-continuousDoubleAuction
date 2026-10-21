@@ -222,9 +222,7 @@ class TestTheBatchIsPerIterationAcrossLearners:
 
         from gym_continuousDoubleAuction.train.train import build_config
 
-        cfg = dataclasses.replace(
-            TrainConfig(), num_gpus_per_learner=0.0, cbp_enabled=False, **overrides
-        )
+        cfg = dataclasses.replace(TrainConfig(), num_gpus_per_learner=0.0, **overrides)
         ppo = build_config(cfg)
         return cfg, ppo[0] if isinstance(ppo, tuple) else ppo
 
