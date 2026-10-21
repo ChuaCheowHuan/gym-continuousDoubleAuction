@@ -1117,10 +1117,12 @@ propagation off without a `LoggingConfig`), are in [29](29_fixed_issues.md#21-8-
 
 ## 6. Continual Backprop metrics
 
-Emitted per trainable module by `CBPLearnerMixin` when `cbp_enabled` or `cbp_metrics_only` is set,
-through the same `self.metrics.log_dict(..., key=module_id, window=1)` path the MoE and JEPA terms
-use. Absent entirely when both are false. Full context in
-[25_continual_backprop.md](25_continual_backprop.md) §4.1.
+Emitted per trainable module by the [cda-cbp](https://github.com/ChuaCheowHuan/cda_cbp) package's
+`CBPLearnerMixin` when the `cbp` extension is enabled (with or without `metrics_only`), through the
+same `self.metrics.log_dict(..., key=module_id, window=1)` path the MoE and JEPA terms use. Absent
+entirely without it. The names are unchanged from when CBP was built in; the package's
+`docs/metrics.md` is the reference, and its `docs/continual_backprop.md` §4.1 the context
+([25](25_continual_backprop.md)).
 
 The first three are the **three correlates of loss of plasticity** both papers track. The Nature
 paper's claim for continual backprop is precisely that it is the only method that keeps all three
@@ -1144,10 +1146,11 @@ rather than emitted per layer, which would be 80 series for a 16-layer `moe_tran
 
 **The two that decide whether any of the others mean anything** are `cbp_replacements` and
 `cbp_mature_unit_frac`. A continual backprop that never fires — which is the *expected* outcome at
-the shipped replacement rate over a short run, for the cadence reason in
-[18 §5.6.4](18_configuration.md) — logs exactly what a working one logs. Read those two first.
+the default replacement rate over a short run, because its rate and maturity are counted in
+optimiser steps and this project takes about 4 per iteration (cda-cbp's `docs/settings.md`) — logs
+exactly what a working one logs. Read those two first.
 
-`cbp_batch_effective_rank` runs an SVD and is therefore computed every `cbp_metrics_every_n_updates`
+`cbp_batch_effective_rank` runs an SVD and is therefore computed every `metrics_every_n_updates`
 optimiser steps rather than every one; the same counter gates keeping an activation sample in the
 forward hook at all.
 

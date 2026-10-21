@@ -309,7 +309,7 @@ describes the corpus and not the thing you wanted to compare.
 Because it is only a statement about the network if the inputs hold still, and this harness is
 the only place in the repository where they do.
 
-`CBPLearnerMixin` reports the same quantity on whatever minibatch training produced. In a
+Continual Backprop's Learner mixin (the `cbp` extension in [cda-cbp](https://github.com/ChuaCheowHuan/cda_cbp)) reports the same quantity on whatever minibatch training produced. In a
 supervised setting that would be equivalent. Here the policy chooses its own inputs, and under
 S1-3 the reward makes passivity the joint optimum — so a converging agent visits an ever narrower
 set of book states and the rank of its activations falls with the network unchanged.

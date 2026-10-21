@@ -16,7 +16,7 @@ actually crosses between them. Colour says which package a box lives in.
 flowchart LR
     subgraph RL["RLlib training stack (train/)"]
         POL["RLModule per agent<br/>policy_* / champion_*"]
-        LRN["Learner<br/>PPO update (+ optional CBP mixin)"]
+        LRN["Learner<br/>PPO update (+ optional extension mixins)"]
         CB["SelfPlayCallback<br/>league + metrics + record"]
     end
 
@@ -103,7 +103,7 @@ flowchart BT
     L1["<b>1 · Matching engine</b><br/>envs/orderbook/<br/>price levels in a SortedDict, FIFO per level, tape with both parties"]
     L2["<b>2 · Trader + accounting</b><br/>envs/agent/ · envs/account/<br/>order gating, Decimal cash escrow, position, VWAP, NAV, margin"]
     L3["<b>3 · Environment</b><br/>continuousDoubleAuction_env.py · envs/exchg/<br/>MultiAgentEnv step: action, state, reward, done, info mixins"]
-    L4["<b>4 · Training</b><br/>train/<br/>RLlib PPO, league self-play, encoders, CBP, checkpoints"]
+    L4["<b>4 · Training</b><br/>train/<br/>RLlib PPO, league self-play, encoders, extensions, checkpoints"]
     X["<b>Cross-cutting</b><br/>config_loader.py · logging_setup.py<br/>every configured value, every log record"]
 
     L1 --> L2 --> L3 --> L4
@@ -197,8 +197,8 @@ gym_continuousDoubleAuction/
 │   ├── model/encoders/                 selectable observation encoders for the trainable modules
 │   ├── model/jepa_learner.py           JEPA module + learner (docs/22 4.2)
 │   ├── model/moe_learner.py            CDAPPOTorchRLModule (masking) + CDAPPOTorchLearner (MoE aux loss)
-│   ├── model/cbp.py, cbp_learner.py    Continual Backprop and its Learner mixin (docs/25)
-│   ├── model/optim_learner.py          tuned Adam (betas, weight decay), independent of CBP
+│   ├── model/cbp_learner.py            shim for old checkpoints; CBP is now cda-cbp (docs/25)
+│   ├── model/optim_learner.py          tuned Adam (betas, weight decay)
 │   ├── model/layout.py                 where each trunk ends and which heads read it
 │   ├── probe/                          reward-free encoder scoring (docs/23)
 │   ├── pretrain/                       offline JEPA pretraining (docs/23)
@@ -215,8 +215,8 @@ gym_continuousDoubleAuction/
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   ├── inspect_latest_episode*.py        print the newest episode as a table or JSON
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               2,208 unit tests
-    └── integration/                    190 tests that build real Algorithms
+└── test/                               2,134 unit tests
+    └── integration/                    148 tests that build real Algorithms
 ```
 
 `train/logger/`, `train/plotter/` and `train/storage/` — the legacy Ray-actor telemetry an earlier

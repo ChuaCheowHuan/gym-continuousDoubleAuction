@@ -4375,3 +4375,49 @@ The first phase of the CBP extraction plan: no behaviour changes, and CBP still 
   2,171 to 2,208. The four tuned-Adam tests that use no CBP setting moved from
   `integration/test_cbp_wiring.py` (46 to 42) to `integration/test_tuned_adam.py`; integration stays
   190; suite 2,398.
+
+## 102. Continual Backprop moved to the cda-cbp package
+
+The last phase of the CBP extraction plan; §101 was the first. CBP is now the `cbp` extension in
+[cda-cbp](https://github.com/ChuaCheowHuan/cda_cbp) (`extensions_enabled: ["cbp"]`, settings under
+`extension_settings.cbp` without the `cbp_` prefix). Before the removal, that package's equivalence
+test ran the built-in CBP and the extension from the same state on the same episodes and found
+identical weights, optimiser state, CBP state and metrics, with units replaced, for `mlp`, `jepa`,
+`lstm` under `recurrent` scope, `metrics_only`, and `fire_on: "iteration"` with `compensate_mean`.
+
+- **Removed.** `train/model/cbp.py`; the twelve `cbp_*` TrainConfig fields and their
+  `continual_backprop` group in `train_config.json`; the CBP learner group and composition in
+  `build`; the `num_learners > 1` check (the package's `validate` makes it now); and
+  `UNRESTORABLE_WHEN_ACTIVE_KEYS`. Tuned Adam (`optim_learner.py`) and the layout contract stay.
+- **Old configs.** A `cbp_*` key in a `--config` file, a `--set` override, or a `$CDA_CONFIG_DIR`
+  copy of `train_config.json` raises at load, naming cda-cbp. The last one would otherwise have
+  been ignored, and a run that asked for CBP would have trained without it.
+- **Old checkpoints.** `cbp_learner.py` is now a shim: `TunedAdamMixin`, and `CBPLearnerMixin`
+  resolved from cda_cbp on demand, or an ImportError naming the package. The restore check reads an
+  old checkpoint's `continual_backprop` group as the `cbp` extension's settings, so it resumes with
+  `extensions_enabled: ["cbp"]` and the same values; a changed value is refused, as it was before.
+  Checked on a real CBP checkpoint (16 replacements, `utility: "contribution"`): with cda-cbp
+  installed it resumed with every unit's age and the replacement count intact and kept replacing;
+  without it, it stopped naming the package.
+- **One resume gap, found by that check and fixed.** RLlib's `from_checkpoint` catches any error
+  unpickling the checkpoint's classes and builds with no config, failing later with "'NoneType'
+  object has no attribute 'to_dict'". `build_algo` took that for a corrupt save and fell back to
+  older checkpoints and finally to a fresh run, so a CBP checkpoint resumed without the package
+  would have quietly started over. `build_algo` now unpickles the classes itself first
+  (`checkpoint.check_pickled_classes_load`) and stops on an ImportError with its own message. Any
+  extension whose package is missing gets the same. (A config that leaves CBP out is refused by
+  the `extensions_enabled` check #314's resume fix made, which reads a default run's config as
+  "none enabled".)
+- **Findings.** R-12 (CBP with `num_learners > 1`) left the open register in
+  [15](15_findings_and_recommendations.md) with CBP: the package refuses the combination, and
+  synchronising the choice is work for it.
+- **Tests.** `test_cbp_moved.py` (19, 16 failing on the previous source); `test_learner_class_compat.py`
+  7 to 10. Moved to cda_cbp: `test_cbp.py` (71), `test_cbp_recurrent.py` (21),
+  `integration/test_cbp_wiring.py` (42), the layer fixture, and the four checks that pinned CBP
+  against this repository (`test_probe.py` 61 to 59, `test_s4_docs_and_tooling.py` 24 to 22). Unit
+  2,208 to 2,134; integration 190 to 148; suite 2,398 to 2,282. Python code 57,690 lines in 208
+  files to 54,515 in 205. Unit coverage 89.5%.
+- **Docs.** [25](25_continual_backprop.md) is a pointer to the package's docs, whose
+  `continual_backprop.md` keeps this document's section numbers, so every "25 §n" in these docs
+  still names the right text. [18](18_configuration.md) §5.6 keeps only tuned Adam;
+  [30](30_extensions.md) §8 has CBP as the second worked example.

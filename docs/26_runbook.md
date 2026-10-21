@@ -117,7 +117,7 @@ Groups and what they own ([18](18_configuration.md) §1 and §5):
 | `rollouts`, `learner` | where sampling and learning run | `num_env_runners`, `sample_timeout_s`, `num_gpus_per_learner` |
 | `ppo`, `optimizer` | the update | `lr`, `num_epochs`, `fcnet_hiddens`, `adam_betas` |
 | `encoder` | which network encodes the observation | `encoder_type`, `encoder_specs`, `pretrained_encoder_path` |
-| `continual_backprop` | selective reinitialisation, off by default | `cbp_enabled`, `cbp_metrics_only` |
+| `extensions` | installed add-ons such as Continual Backprop ([cda-cbp](https://github.com/ChuaCheowHuan/cda_cbp)), none by default | `extensions_enabled`, `extension_settings` |
 | `league_self_play` | champion promotion and the episode record | `std_dev_multiplier`, `episode_data_dir`, `strict_nav_check` |
 | `run` | iterations, checkpoints, logging, seed | `num_iters`, `chkpt_freq`, `log_base_dir`, `run_id`, `is_restore`, `seed` |
 
@@ -291,9 +291,9 @@ flowchart TD
 A restore rebuilds the algorithm from the checkpoint's own config and **ignores** most of
 `train_config.json`. The run says which values it ignored, and refuses outright when the change
 would not fit the weights (`num_agents`, `n_hist`, the encoder) or would silently not apply
-(`cbp_enabled`, `adam_betas`). Read the message; it names the key. Comparing architectures or
-switching continual backprop on means a fresh run in a new `log_base_dir`
-([18](18_configuration.md) §5.3, [25](25_continual_backprop.md) §4).
+(`extensions_enabled`, `adam_betas`). Read the message; it names the key. Comparing architectures or
+switching an extension such as Continual Backprop on means a fresh run in a new `log_base_dir`
+([18](18_configuration.md) §5.3, [25](25_continual_backprop.md)).
 
 ---
 
@@ -455,7 +455,9 @@ applied inside the module, so nothing extra is needed for it.
 | `ValueError: ... unknown config keys` | a key in `--config` or a profile names no `TrainConfig` field | fix the spelling; see `--help` for names |
 | `iter N trained on no samples` | remote runners did not deliver the batch in `sample_timeout_s` | raise `--sample-timeout`, or lower `--max-step` / `num_episodes_per_iter` ([09](09_distributed_training.md) §5, [18](18_configuration.md) §5.1) |
 | `Cannot restore: the configuration changes the shape of the problem` | a structural key differs from the checkpoint | revert the key, or start fresh in a new `--log-base-dir` |
-| `Cannot restore: these keys are read when the Learner class is chosen` | `cbp_*` or `adam_*` changed alongside `--restore` | same: fresh run |
+| `Cannot restore: these keys are read when the Learner class is chosen` | `adam_*`, `extensions_enabled` or an `ext.<name>.*` setting changed alongside `--restore` | same: fresh run. For a checkpoint trained with Continual Backprop, enable `cbp` with the settings it used ([25](25_continual_backprop.md)) |
+| `This checkpoint was trained with Continual Backprop ... Install the cda-cbp package` | resuming a CBP checkpoint without the package | `pip install git+https://github.com/ChuaCheowHuan/cda_cbp`, then enable `cbp` ([25](25_continual_backprop.md)) |
+| `... Continual Backprop moved out of gym-continuousDoubleAuction into the cda-cbp package` | a config or `--set` still names a `cbp_*` key | move it to `extension_settings.cbp` without the prefix ([25](25_continual_backprop.md)) |
 | `NavConservationError` stops the run | the ledger created or destroyed cash | a bug, not a tuning problem: keep the run directory and the episode Parquet, open an issue with `run.log`'s `NAV conservation VIOLATED` block |
 | `checkpoint is already at iteration N, at or past the target` | `num_iters` is a target and the restore is past it | raise `--iters` or pass `--iters-is-delta` |
 | `already holds N checkpoint(s) from an earlier run` | fresh run into a used `results/chkpt` | harmless now; dangerous with a later `--restore`. Move them or change `--log-base-dir` |

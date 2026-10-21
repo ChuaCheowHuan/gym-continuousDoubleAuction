@@ -504,9 +504,10 @@ opponents, where sharing a trunk between policy and value tends to destabilise t
 
 Which *kind* of network sits underneath that is the separate `encoder` group — see §5.4.
 
-How that network is *updated* is two further groups, `optimizer` and `continual_backprop` — see
-§5.6. Both are off-by-default in the sense that matters: at their shipped values the optimiser is
-the one RLlib has always built and the learner class is the one the encoder selects, unchanged.
+How that network is *updated* is the `optimizer` group (§5.6) and any installed extension enabled
+in the `extensions` group (§5.7), such as Continual Backprop. Both are off by default in the sense
+that matters: at their shipped values the optimiser is the one RLlib has always built and the
+learner class is the one the encoder selects, unchanged.
 
 `SelfPlayCallback` does the same with the `league_self_play` group and the two agent counts. That
 group also carries the two knobs on the episode-end NAV conservation check: `nav_tolerance`, the
@@ -1155,13 +1156,21 @@ loss or throughput alone.
 
 ---
 
-## 5.6. The `optimizer` and `continual_backprop` groups
+## 5.6. The `optimizer` group, and where Continual Backprop went
 
-Two groups that change how the network is *updated* rather than what shape it is. Both ship inert:
-leave them alone and a run builds the same optimiser and resolves the same Learner class it always
-has. Full rationale in [25_continual_backprop.md](25_continual_backprop.md).
+A group that changes how the network is *updated* rather than what shape it is. It ships inert:
+leave it alone and a run builds the same optimiser it always has.
 
-### 5.6.1 Why they are two groups and not one
+Continual Backprop (CBP), which used to be a second group here (`continual_backprop`, the `cbp_*`
+keys), is now the `cbp` extension in the [cda-cbp](https://github.com/ChuaCheowHuan/cda_cbp)
+package: install it, list `"cbp"` in `extensions_enabled` and put its settings, without the
+`cbp_` prefix, under `extension_settings.cbp` (§5.7, [25](25_continual_backprop.md)). Its settings
+table, the notes that were in `train_config.json`, and the cadence caveat (its rate and maturity
+are counted in optimiser steps, of which this project takes about 4 per iteration against the
+papers' 320) are in that package's `docs/settings.md`. A config that still carries a `cbp_*` key
+fails at load, naming the package.
+
+### 5.6.1 Why tuned Adam is separate from CBP
 
 The continual-backprop papers' reinforcement-learning recipe is not CBP alone. It is CBP **plus**
 L2 at a weight decay of `1e-4` **plus** "tuned Adam" at `β₁ = β₂ = 0.99`, the last on the grounds
@@ -1172,8 +1181,8 @@ standard-PPO baseline uses the retuned values.
 
 That makes them easy to bundle, and bundling them would be a mistake: turning CBP on and retuning
 Adam in the same change would measure the two together, and neither paper claims they are the same
-intervention. So they are separate groups, separately composable, and `_learner_class` will compose
-the optimiser mixin with or without the CBP one.
+intervention. So the optimiser stays here, composed by `_learner_class` whether or not any
+extension is enabled (`train/model/optim_learner.py`).
 
 ### 5.6.2 `optimizer`
 
@@ -1185,64 +1194,16 @@ the optimiser mixin with or without the CBP one.
 At the defaults, `configure_optimizers_for_module` defers to RLlib's own implementation, so the
 optimiser is bit-for-bit the one every existing run and checkpoint was built with.
 
-### 5.6.3 `continual_backprop`
-
-| Key | Default | Meaning |
-|---|---|---|
-| `cbp_enabled` | `false` | Master switch. Off, with `cbp_metrics_only` off too, means no CBP mixin: the learner is the encoder's own class, with tuned Adam composed on only if the `optimizer` group is non-default. On `lstm` it finds no layer to replace and logs a warning ([25](25_continual_backprop.md) §3.4) |
-| `cbp_metrics_only` | `false` | Compute the utility and log the correlates, **replace nothing**. Cannot change a run's trajectory |
-| `cbp_replacement_rate` | `1e-4` | Fraction of eligible units replaced **per optimiser step** |
-| `cbp_maturity_threshold` | `100` | Optimiser steps a fresh unit is protected for |
-| `cbp_utility_decay` | `0.99` | Decay of the utility running average |
-| `cbp_utility` | `"overall"` | `contribution`, `mean_corrected`, or `overall` |
-| `cbp_scope` | `"feedforward"` | Which units are replaceable: `feedforward`, or `recurrent` to add the top layer of an LSTM core (the `lstm` encoder has nothing replaceable under `feedforward`) |
-| `cbp_fire_on` | `"adam_step"` | `adam_step` (the papers' placement) or `iteration` |
-| `cbp_reset_optimizer_state` | `true` | Zero Adam's moments for replaced weights |
-| `cbp_compensate_mean` | `false` | Move a replaced unit's mean contribution into the next layer's bias before its outgoing weights are zeroed, so the output does not jump ([15](15_findings_and_recommendations.md) R-13). Off keeps the papers' rule, which `docs/16` §16.13 measured; run `train.compare` with it on and off before changing the default. Feed-forward layers only. Unrestorable while CBP is active |
-| `cbp_dead_unit_threshold` | `0.01` | Mean \|activation\| below which a unit counts as dead, metric only. Cannot fire on a tanh network, which does not die toward zero |
-| `cbp_metrics_every_n_updates` | `10` | How often to compute the metrics; the effective rank runs an SVD |
-
-**The keys carry a `cbp_` prefix because `config_loader.flatten` collapses every group of
-`train_config.json` into a single namespace and raises on a duplicate.** Bare names like `enabled`
-or `utility` would be a collision waiting for the next group anyone adds.
-
-**Changing any of these alongside `is_restore` is a hard error.** Not for the reason
-`encoder_spec` is — no tensor shape depends on them and the weights would restore perfectly well —
-but because they are consumed when the Learner class is chosen and the optimiser is built, both of
-which happen *before* a restore. `Algorithm.from_checkpoint` then rebuilds from the checkpoint's own
-config and discards them, so turning continual backprop on alongside a resume did nothing at all
-and looked exactly like a run that honoured it. They are `UNRESTORABLE_CONFIG_KEYS` rather than
-`STRUCTURAL_CONFIG_KEYS`, and the error message says so, because a reader who concluded the
-checkpoint was unusable would throw away a good one.
-
-Two softenings. A tuning knob edited while continual backprop is off on both sides is allowed —
-it describes something that was not going to happen either way, and a guard that fails on nothing
-is a guard people switch off. And a checkpoint written before these groups existed is compared
-against what such a run actually *did* (continual backprop off, torch's own Adam) rather than
-being skipped, which matters because at the time of writing every checkpoint in existence predates
-the feature.
-
-The per-unit utility and ages *are* checkpoint state and travel with the learner; a pre-feature
-checkpoint restores cleanly, with every unit starting at age 0.
-
-### 5.6.4 The one thing to check before believing a result
-
-`cbp_replacement_rate` and `cbp_maturity_threshold` are counted in **optimiser steps**, and this
-project takes far fewer of them than the papers do: 4 per iteration at the defaults (`num_epochs: 4`
-over one full batch, `minibatch_size: null`) against Continual PPO's 320. The papers' own PPO
-maturity threshold of `1e4` would be 2,500 iterations here, against a default run of 16 — no unit
-would ever mature and **continual backprop would never fire once**.
-
-**And do not read `cbp_batch_effective_rank` as a statement about the network.** It is measured on
-the training minibatch, which the policy's own behaviour shapes; on this system it fell 24.6% while
-the network's rank on a fixed corpus did not move at all ([16](16_verification_log.md) §16.16). The
-comparable version is `train/probe/rank.py`, read across checkpoints ([23](23_probe_harness.md) §10).
-
-A mechanism that never fires produces identical logs, losses and returns to one that is working.
-So before concluding anything from a CBP run, read `cbp_replacements` and `cbp_mature_unit_frac`:
-a replacement count of 0, or a mature fraction pinned at `0.0`, means it did not run, not that it
-did not help. If more replacement is wanted without raising the rate, `minibatch_size` is the lever
-— it multiplies the optimiser steps per iteration, which is the clock CBP runs on.
+**Changing either alongside `is_restore` is a hard error.** Not for the reason `encoder_spec` is —
+no tensor shape depends on them and the weights would restore perfectly well — but because they
+are consumed when the Learner class is chosen and the optimiser is built, both of which happen
+*before* a restore. `Algorithm.from_checkpoint` then rebuilds from the checkpoint's own config and
+discards them, so a retuned optimiser alongside a resume did nothing at all and looked exactly like
+a run that honoured it. They are `UNRESTORABLE_CONFIG_KEYS` rather than `STRUCTURAL_CONFIG_KEYS`,
+and the error message says so, because a reader who concluded the checkpoint was unusable would
+throw away a good one. A checkpoint written before the group existed is compared against what
+such a run actually *did* (torch's own Adam) rather than being skipped. The same rule covers
+`extensions_enabled` and every extension setting (§5.7).
 
 ## 5.7. The `extensions` group
 
@@ -1253,3 +1214,10 @@ are unrestorable: a resume must enable exactly what the checkpoint did, with the
 |---|---|---|
 | `extensions_enabled` | `[]` | Names of installed extensions to compose into this run. Installing a package changes nothing until its name is here; a name that is not installed raises |
 | `extension_settings` | `{}` | One object per extension, keyed by name. Each extension fills in its own defaults and rejects keys it does not declare. A block for an extension that is not enabled is ignored |
+
+A config that enables nothing counts as `extensions_enabled: []` in the restore check, so a
+checkpoint that ran an extension cannot be resumed by a config that leaves it out (the run would
+otherwise go on running it from the checkpoint's own config, with nothing saying so). A checkpoint
+from before Continual Backprop moved out carries its settings as the old `continual_backprop`
+group; the restore check reads that group as the `cbp` extension's settings, so it resumes with
+`extensions_enabled: ["cbp"]` and the same values ([25](25_continual_backprop.md)).

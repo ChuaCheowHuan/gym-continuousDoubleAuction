@@ -33,7 +33,7 @@ below should shrink to a pointer to it.
 | 5 | `cda-add-config-key` | medium | half a day | Adding the fee keys touched 6 places; a checklist skill is enough |
 | 6 | `cda-branch-and-pr` | medium | half a day | Encodes the repository's commit and branch rules, which were re-derived every session |
 | 7 | `cda-refactor-scout` | low | half a day | Measure-then-file; the profile found a 24% hot spot nobody had named |
-| 8 | `cda-encoder-compare`, `cda-pretrain-then-probe`, `cda-cbp-check` | research | 1 day each | Wrap the three research workflows in [18](18_configuration.md) §5.5, [23](23_probe_harness.md) Part 2 and [25](25_continual_backprop.md) with their known traps |
+| 8 | `cda-encoder-compare`, `cda-pretrain-then-probe`, `cda-cbp-check` | research | 1 day each | Wrap the three research workflows in [18](18_configuration.md) §5.5, [23](23_probe_harness.md) Part 2 and [25](25_continual_backprop.md) with their known traps. `cda-cbp-check` now belongs in the cda-cbp repository, with the code it checks |
 
 Skills 1 to 4 are one theme: **keep the claims, the code and the tracker saying the same thing**.
 That is the repository's main maintenance cost, because [15](15_findings_and_recommendations.md),
@@ -271,6 +271,10 @@ probe's `--per-agent` mode shifts targets by rows, not steps ([#188](https://git
 ### `cda-cbp-check`
 
 **Trigger.** Turning on Continual Backprop for a run, or reading its metrics.
+
+**Where.** Continual Backprop moved to the [cda-cbp](https://github.com/ChuaCheowHuan/cda_cbp)
+package, so this skill would be built there; it needs cda-cbp installed. The setting below is now
+`extension_settings.cbp.scope`.
 
 **Steps.** Build the module for the chosen encoder and count replaceable layers (mlp 4, transformer
 4, moe_transformer 16, jepa 6, **lstm 0** under `cbp_scope: "feedforward"`, where CBP does nothing and only warns, and 2 under `"recurrent"`, S3-32); confirm
