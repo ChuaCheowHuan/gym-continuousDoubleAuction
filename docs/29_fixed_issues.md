@@ -2606,6 +2606,16 @@ The dataclass said `num_cpus_per_env_runner = 1.0` and `num_gpus_per_learner = 0
 said `0.25` and `0.25`; a run without `--config` silently used the dataclass pair. Every field's
 default now reads the file (`_default("key")`).
 
+#### 18 intro · The policy helpers kept their own network defaults (#327)
+
+Register: none (GitHub issue #327, found by the 2026-10-20 docs review).
+
+`create_multi_agent_config` and `build_multi_rl_module_spec` declared `fcnet_activation="tanh"`
+and `vf_share_layers=False`, a second copy of the `ppo` group. TrainConfig always passes both, so a
+training run was unaffected; a direct caller, such as [08](08_self_play_league.md)'s example, got
+the Python copy. Both default to `None` now, which `default_model_config` reads from the file, as
+`fcnet_hiddens` already did. `test_config_sources.py` pins it ([17](17_changelog.md) §103).
+
 #### 18 §5.2 · num_iters restarted at zero on every resume
 
 `num_iters` was a count on a driver loop that restarted at zero, which made 16 configured iterations

@@ -4421,3 +4421,19 @@ identical weights, optimiser state, CBP state and metrics, with units replaced, 
   `continual_backprop.md` keeps this document's section numbers, so every "25 §n" in these docs
   still names the right text. [18](18_configuration.md) §5.6 keeps only tuned Adam;
   [30](30_extensions.md) §8 has CBP as the second worked example.
+
+## 103. The policy helpers read their network settings from the file (#327)
+
+`create_multi_agent_config` and `build_multi_rl_module_spec` declared `fcnet_activation="tanh"`
+and `vf_share_layers=False`, a second copy of the `ppo` group. Both now default to `None`, which
+`default_model_config` reads from `train_config.json`, as `fcnet_hiddens` already did. A training
+run is unchanged, since TrainConfig always passes both; a direct call, such as
+[08](08_self_play_league.md)'s example, now follows the file ([29](29_fixed_issues.md) "From 18").
+
+- **Test.** `test_config_sources.py` 27 to 29: with `relu` and `true` in an edited config tree, a
+  bare call to either helper builds that network. Both fail on the previous source. Unit 2,134 to
+  2,136; integration 148; suite 2,284.
+- **Wording.** [18](18_configuration.md)'s intro said there is no `.get(key, default)` anywhere,
+  which is false of runtime dicts (actions, orders, `info`). It now says no *configured* value is
+  read that way or taken as a literal keyword default.
+

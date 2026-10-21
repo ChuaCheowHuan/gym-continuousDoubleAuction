@@ -17,11 +17,11 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# the unit tests (2,134). pyproject.toml's addopts ignores test/integration by default,
+# the unit tests (2,136). pyproject.toml's addopts ignores test/integration by default,
 # so this never runs the slow RLlib suite as well
 python -m pytest gym_continuousDoubleAuction/test -q
 
-# then the integration suite, named explicitly - everything is these two (2,282 tests).
+# then the integration suite, named explicitly - everything is these two (2,284 tests).
 # RLlib wiring, the real save/restore, the progress log and a real remote
 # runner (148 tests, builds real Algorithms)
 python -m pytest gym_continuousDoubleAuction/test/integration -q
@@ -44,7 +44,7 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `1363 passed` on the unit half, `172 passed` on the integration half, when this was first measured; the current totals are 2,134 and 148 (§ "File inventory" below). There is no xfail.
+**[verified]** — `1363 passed` on the unit half, `172 passed` on the integration half, when this was first measured; the current totals are 2,136 and 148 (§ "File inventory" below). There is no xfail.
 
 ### File inventory
 
@@ -88,7 +88,7 @@ Counts re-measured with `--collect-only`.
 | `test_logging_setup.py` | 61 | Level resolution and export, handler setup, no `print` in `envs/` or `train/`, the rotating run log, per-worker files, the `iter=` tag, dated stamps, concurrent configuration, two-process isolation, unhandled exceptions, warning capture, propagation control and `ray.LoggingConfig` |
 | `test_probabilistic_mapping.py` | 1 | League matchmaking distribution |
 | `test_config_loading.py` | 17 | `train_config.json` → `TrainConfig` → env |
-| `test_config_sources.py` | 27 | No literal copy of a configured value survives in Python |
+| `test_config_sources.py` | 29 | No literal copy of a configured value survives in Python |
 | `test_config_wiring.py` | 33 | Config keys reaching their consumers; `episode_data_path` absolute and run-scoped; an iteration samples `train_batch_size` steps and the entropy schedule ends after `entropy_decay_iters` iterations at any `num_learners` (#299); the uneven-batch refusal names the keys of the active mode (#304); `minibatch_size` fits each learner's share, RLlib's default included when it is null (#305, #307) |
 | `test_runtime_profiles.py` | 28 | `runtime_profiles.json` → hardware sets, platform paths |
 | `test_checkpointing.py` | 52 | Checkpoint retention, restore selection, league state across a save |
@@ -144,7 +144,7 @@ Counts re-measured with `--collect-only`.
 | `test_learner_class_compat.py` | 10 | Learner classes cloudpickled on master (f7c1353) for the default, tuned-Adam and CBP compositions still load: a checkpoint names its mixins by module path. The CBP ones load with cda-cbp installed and fail naming it without |
 | `test_model_layout.py` | 26 | The model-layout contract: `layout.trunk_outputs` reports each encoder's MLP or LSTM trunk output and the heads reading it, with and without `vf_share_layers` |
 | `test_cbp_moved.py` | 19 | Continual Backprop moved to cda-cbp ([25](25_continual_backprop.md)): an old `cbp_*` key names the package, an old checkpoint's group reads as the `cbp` extension's settings, the old mixin name resolves or names the package, and a restore without the package stops instead of falling back |
-| **unit total** | **2,134** | |
+| **unit total** | **2,136** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -173,7 +173,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((2,282 tests))
+  root((2,284 tests))
     Simulator
       orderbook 88
         the demo scripts as tests, a shadow model

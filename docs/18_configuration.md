@@ -5,9 +5,11 @@ Every value in the project lives in `config/`. No module holds a literal copy of
 The `config/` folder at the repository root holds five JSON files, **all five of which are real
 inputs**. Python code declares the *schema* — what each knob is called, what type it has, what it
 does — and reads the *value* from these files through
-[`config_loader.py`](../gym_continuousDoubleAuction/config_loader.py). There is no
-`.get(key, some_default)` anywhere in the codebase, because a default written in Python is exactly
-the second copy this arrangement exists to remove.
+[`config_loader.py`](../gym_continuousDoubleAuction/config_loader.py). No configured value is
+read with `.get(key, some_default)`, and no function takes one as a literal keyword default (an
+argument left as `None` is read from the file), because a default written in Python is exactly the
+second copy this arrangement exists to remove. `.get` with a default does appear on runtime dicts,
+such as actions, orders and `info`, which hold no configured values.
 
 JSON has no comment syntax, so each file (and each group inside it) carries a `_source` key naming
 the module that reads it, plus a `_description` and often a `_note`. The loader strips any key
