@@ -102,23 +102,8 @@ class TestCompositionPreservesTheEncodersLearner:
         assert composed.compute_loss_for_module is CDAJEPALearner.compute_loss_for_module
 
 
-class TestTunedAdamIsIndependentOfCBP:
-    """The optimiser knobs must be usable without continual backprop.
-
-    The papers treat them as separate interventions that happen to be used
-    together. Composing the optimiser change only alongside CBP would make
-    every CBP-vs-baseline comparison a comparison of both at once - the exact
-    confound the two config groups exist to avoid.
-    """
-
-    def test_defaults_compose_nothing(self):
-        assert _learner_class(TrainConfig(**TEST_CFG)) is CDAPPOTorchLearner
-
-    def test_tuned_adam_alone_composes_only_the_optimiser_mixin(self):
-        cfg = TrainConfig(**TEST_CFG, adam_betas=[0.99, 0.99], adam_weight_decay=1e-4)
-        composed = _learner_class(cfg)
-        assert TunedAdamMixin in composed.__mro__
-        assert CBPLearnerMixin not in composed.__mro__
+class TestTunedAdamComposesWithCBP:
+    """Tuned Adam and CBP compose together; each alone is in test_tuned_adam.py."""
 
     def test_both_compose_together(self):
         cfg = TrainConfig(**TEST_CFG, **FIRING_CFG, adam_betas=[0.99, 0.99], adam_weight_decay=1e-4)
@@ -126,38 +111,10 @@ class TestTunedAdamIsIndependentOfCBP:
         assert CBPLearnerMixin in composed.__mro__
         assert TunedAdamMixin in composed.__mro__
 
-    def test_weight_decay_alone_is_enough_to_compose(self):
-        """L2 is half the papers' RL recipe and must be reachable on its own."""
-        cfg = TrainConfig(**TEST_CFG, adam_weight_decay=1e-4)
-        assert TunedAdamMixin in _learner_class(cfg).__mro__
-
     def test_the_config_dict_carries_both_groups(self):
         values = _learner_config_dict(TrainConfig(**TEST_CFG))
         assert set(values) == {"optimizer", "continual_backprop"}
         assert values["optimizer"]["adam_betas"] == [0.9, 0.999]
-
-
-class TestTunedAdamReachesTheOptimiser:
-    """The betas and weight decay actually land on the built optimiser."""
-
-    @classmethod
-    def setup_class(cls):
-        ray.init(ignore_reinit_error=True, include_dashboard=False, log_to_driver=False, num_cpus=2)
-        cfg = TrainConfig(**TEST_CFG, adam_betas=[0.99, 0.99], adam_weight_decay=1e-4)
-        ppo_config, _cb = build_config(cfg)
-        cls.algo = ppo_config.build_algo()
-
-    @classmethod
-    def teardown_class(cls):
-        cls.algo.stop()
-        ray.shutdown()
-
-    def test_the_optimiser_carries_the_configured_values(self):
-        learner = self.algo.learner_group._learner
-        optimizer = learner.get_optimizer(module_id="policy_0")
-        group = optimizer.param_groups[0]
-        assert tuple(group["betas"]) == (0.99, 0.99)
-        assert group["weight_decay"] == pytest.approx(1e-4)
 
 
 class TestCBPRunsInsideARealUpdate:

@@ -51,6 +51,8 @@ from typing import Any, Dict, List, Optional
 import torch
 import torch.nn as nn
 
+from gym_continuousDoubleAuction.train.model.layout import trunk_outputs
+
 #: Utility measures, in the order Appendix C ablates them.
 #:
 #: `contribution`   - Nature eq. 1: |h| * sum|w_out|.
@@ -445,15 +447,14 @@ def _sequential_layers(seq: nn.Sequential, prefix: str) -> List[ReplaceableLayer
     return layers
 
 
-def _mlp_trunk(module: nn.Module) -> Optional[nn.Sequential]:
-    """The `net.mlp` Sequential of an RLlib `TorchMLPEncoder`, or None.
-
-    Duck-typed rather than an isinstance check against RLlib's class, so this
-    module keeps its promise of importing no RLlib.
-    """
-    net = getattr(module, "net", None)
-    mlp = getattr(net, "mlp", None)
-    return mlp if isinstance(mlp, nn.Sequential) else None
+def _head_consumers(heads: List[nn.Module], width: int) -> List[nn.Linear]:
+    """The first Linear of each head, where it reads a vector of `width`."""
+    consumers = []
+    for head in heads:
+        first = next((m for m in head.modules() if isinstance(m, nn.Linear)), None)
+        if first is not None and first.in_features == width:
+            consumers.append(first)
+    return consumers
 
 
 def _trunk_head_layers(module: nn.Module) -> List[ReplaceableLayer]:
@@ -472,28 +473,15 @@ def _trunk_head_layers(module: nn.Module) -> List[ReplaceableLayer]:
     Only applied to an MLP trunk. A transformer trunk ends in pooling and a
     LayerNorm rather than a bare Linear, so there is no well-defined unit to
     join across; those encoders contribute their feed-forward blocks through
-    `_sequential_layers` and nothing else.
+    `_sequential_layers` and nothing else. Which trunks exist and which heads
+    read them comes from `layout.trunk_outputs`, so this function knows no
+    attribute path of the model.
     """
-    encoder = getattr(module, "encoder", None)
-    if encoder is None:
-        return []
-
-    pi, vf = getattr(module, "pi", None), getattr(module, "vf", None)
-    # `encoder` is the shared trunk under vf_share_layers, feeding both heads;
-    # otherwise the actor and critic are independent networks with one head
-    # each. Both are handled by the same code because `outgoing` is a list.
-    pairings = [
-        (getattr(encoder, "encoder", None), [pi, vf]),
-        (getattr(encoder, "actor_encoder", None), [pi]),
-        (getattr(encoder, "critic_encoder", None), [vf]),
-    ]
-
     layers: List[ReplaceableLayer] = []
-    for trunk_name, (trunk, heads) in zip(("encoder", "actor_encoder", "critic_encoder"), pairings):
-        mlp = _mlp_trunk(trunk) if trunk is not None else None
-        if mlp is None:
+    for trunk in trunk_outputs(module):
+        if trunk.mlp is None:
             continue
-        children = list(mlp)
+        children = list(trunk.mlp)
         last_linear = next(
             (i for i in reversed(range(len(children))) if isinstance(children[i], nn.Linear)),
             None,
@@ -507,17 +495,11 @@ def _trunk_head_layers(module: nn.Module) -> List[ReplaceableLayer]:
             continue
         activation = next((m for m in tail if isinstance(m, _ACTIVATIONS)), None)
 
-        consumers = []
-        for head in heads:
-            if head is None:
-                continue
-            first = next((m for m in head.modules() if isinstance(m, nn.Linear)), None)
-            if first is not None and first.in_features == children[last_linear].out_features:
-                consumers.append(first)
+        consumers = _head_consumers(trunk.heads, children[last_linear].out_features)
         if consumers:
             layers.append(
                 ReplaceableLayer(
-                    name=f"encoder.{trunk_name}.net.mlp.{last_linear}",
+                    name=f"{trunk.mlp_path}.{last_linear}",
                     incoming=children[last_linear],
                     outgoing=consumers,
                     activation=activation,
@@ -529,37 +511,20 @@ def _trunk_head_layers(module: nn.Module) -> List[ReplaceableLayer]:
 def _recurrent_layers(module: nn.Module) -> List["RecurrentLayer"]:
     """The LSTM core of each trunk, paired with the heads that read its output.
 
-    The same trunk-to-head pairing as `_trunk_head_layers`: under
-    `vf_share_layers` one `encoder.encoder` feeds both heads, otherwise the
-    actor and critic each have an LSTM and one head. A trunk whose output is
-    not the LSTM's (something after it) or whose heads do not read a vector of
-    its width is skipped rather than guessed at.
+    The same trunk-to-head pairing as `_trunk_head_layers`, from
+    `layout.trunk_outputs`. A bidirectional or projected LSTM, or one whose
+    heads do not read a vector of its width, is skipped rather than guessed at.
     """
-    encoder = getattr(module, "encoder", None)
-    if encoder is None:
-        return []
-    pi, vf = getattr(module, "pi", None), getattr(module, "vf", None)
-    pairings = (
-        ("encoder", getattr(encoder, "encoder", None), [pi, vf]),
-        ("actor_encoder", getattr(encoder, "actor_encoder", None), [pi]),
-        ("critic_encoder", getattr(encoder, "critic_encoder", None), [vf]),
-    )
     layers: List[RecurrentLayer] = []
-    for trunk_name, trunk, heads in pairings:
-        lstm = getattr(trunk, "lstm", None) if trunk is not None else None
-        if not isinstance(lstm, nn.LSTM) or lstm.bidirectional or lstm.proj_size:
+    for trunk in trunk_outputs(module):
+        lstm = trunk.lstm
+        if lstm is None or lstm.bidirectional or lstm.proj_size:
             continue
-        consumers = []
-        for head in heads:
-            if head is None:
-                continue
-            first = next((m for m in head.modules() if isinstance(m, nn.Linear)), None)
-            if first is not None and first.in_features == lstm.hidden_size:
-                consumers.append(first)
+        consumers = _head_consumers(trunk.heads, lstm.hidden_size)
         if consumers:
             layers.append(
                 RecurrentLayer(
-                    name=f"encoder.{trunk_name}.lstm",
+                    name=str(trunk.lstm_path),
                     lstm=lstm,
                     outgoing=consumers,
                     layer_index=lstm.num_layers - 1,

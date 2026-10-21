@@ -234,7 +234,10 @@ results were produced with.
 weights are in the head (`pi` / `vf`), not in the encoder. A layer walker confined to `encoder`
 finds one replaceable layer per network where there are two, and silently leaves half the units
 unreplaceable. `find_replaceable_layers` joins across that boundary, and
-`test_cbp.py::test_the_last_hidden_layer_consumes_into_the_head` is what keeps it joined.
+`test_cbp.py::test_the_last_hidden_layer_consumes_into_the_head` is what keeps it joined. It
+learns where each trunk ends and which heads read it from `train/model/layout.py`
+(`trunk_outputs`), not from the model's attribute paths; `test_model_layout.py` pins that contract
+for every encoder.
 
 ### 2.3 The budget this project needs is the regime where plasticity loss appears
 
@@ -702,8 +705,11 @@ train/model/cbp.py          # the algorithm. Imports no RLlib, so the formulas
 
 train/model/cbp_learner.py  # the RLlib wiring
     CBPLearnerMixin             # hooks, apply_gradients, metrics, get/set_state
-    TunedAdamMixin              # the papers' betas and weight decay, separately
     with_continual_backprop()   # composes over any base learner
+
+train/model/optim_learner.py  # independent of CBP
+    TunedAdamMixin              # the papers' betas and weight decay, separately
+    with_tuned_adam()           # composes it alone
 ```
 
 - **Where:** `apply_gradients`, once per minibatch, immediately after the optimiser step — the

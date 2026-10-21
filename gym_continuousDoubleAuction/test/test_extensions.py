@@ -309,3 +309,47 @@ class TestResumeIsGuarded:
     def test_a_sidecar_without_extensions_passes(self, fresh_discovery):
         extensions.check_installed({}, "ckpt")
         extensions.check_installed(None, "ckpt")
+
+
+ORDERED_MODULE = textwrap.dedent(
+    '''
+    from gym_continuousDoubleAuction.train.extensions import Extension
+
+
+    class LearnerMixin:
+        pass
+
+
+    EXTENSION = Extension(
+        name="{name}", version="0.1.0", learner_mixin=LearnerMixin, learner_order={order}
+    )
+    '''
+)
+
+
+class TestLearnerOrder:
+    """`learner_order` decides how far out a mixin wraps, not the extension's name."""
+
+    @pytest.fixture
+    def pair(self, tmp_path, monkeypatch, fresh_discovery):
+        # Names sort opposite to the requested order: "aaa" must wrap outside "zzz".
+        for name, order in (("aaa", 10), ("zzz", 0)):
+            root = tmp_path / name
+            root.mkdir()
+            source = ORDERED_MODULE.replace("{name}", name).replace("{order}", str(order))
+            _install(root, name, "EXTENSION", source, module=f"cda_{name}_ext")
+            monkeypatch.syspath_prepend(str(root))
+        return extensions.discover()
+
+    def test_the_default_order_is_zero(self):
+        assert extensions.Extension(name="x", version="0").learner_order == 0
+
+    def test_a_higher_order_wraps_further_out_whatever_the_names(self, pair):
+        composed = _learner_class(_cfg(extensions_enabled=["zzz", "aaa"]))
+        mro = composed.__mro__
+        assert mro.index(pair["aaa"].learner_mixin) < mro.index(pair["zzz"].learner_mixin)
+
+    def test_equal_orders_fall_back_to_name_order(self, dummy):
+        # The existing single-extension behaviour: the mixin sits directly over the base.
+        composed = _learner_class(_cfg(extensions_enabled=["dummy"]))
+        assert composed.__mro__[1] is dummy.learner_mixin
