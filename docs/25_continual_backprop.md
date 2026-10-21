@@ -360,6 +360,11 @@ The mixin sits ahead of the base in the MRO, so `apply_gradients`, `get_state` a
 the base. That is what keeps the MoE and JEPA loss terms. `TunedAdamMixin` composes the same way,
 on its own or alongside CBP (§5.6 of [18](18_configuration.md)).
 
+The same composition point also takes a separately installed package's Learner mixin, placed
+before CBP so CBP still wraps the result. The general mechanism, its order and how to add or
+replace a loss term are in [30_extensions.md](30_extensions.md) §3–§4; this section is the
+CBP-specific argument.
+
 **Which hook it composes onto is settled in §3.1, not here, and the answer is not the one this
 section originally gave.** The first draft argued for `after_gradient_based_update` — confirmed
 against the installed RLlib (2.56.1) to run **once** per `update()`, after the whole minibatch and
@@ -737,7 +742,7 @@ Effort: **M**. Risk: **contained** — the off-by-default path resolves to the s
 ### 4.3 Proposal C — CBP during offline pretraining
 
 `train/pretrain/` trains a JEPA encoder on observations alone before any PPO run
-([24](24_pretraining.md)). That loop has **no PPO ratio at all**, so §3.1's constraint vanishes and
+([23](23_probe_harness.md) Part 2). That loop has **no PPO ratio at all**, so §3.1's constraint vanishes and
 replacement can run as often as the algorithm wants. It is also the cleanest possible test of the
 mechanism: a supervised-style objective with a well-defined loss, where "did plasticity degrade"
 has an unambiguous answer.

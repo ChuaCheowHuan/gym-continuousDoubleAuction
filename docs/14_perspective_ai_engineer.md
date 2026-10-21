@@ -297,10 +297,5 @@ Low risk overall (a self-contained simulator), but two notes:
 
 Twelve of the fifteen items on the agenda this document first set are done; the table, with what
 closed each, is in [29](29_fixed_issues.md#14-511--the-engineering-agenda-as-first-set). What is
-left:
-
-| # | Change | Effort | Why |
-|---|---|---|---|
-| 9 | Add `pre-commit`; enforce the coverage floor in CI | S | `ruff`, `ruff format` and `pytest-cov` are configured; the hooks and the CI gate are not |
-| 12 | Move `TrainConfig` under `tune.Tuner` | M | Free scheduling, fault tolerance, sweeps |
-| 15 | Finish the composition refactor for the state/action pair | L | Makes observation variants swappable (§5.2) |
+left (`pre-commit` and the coverage gate, `tune.Tuner`, the state/action composition refactor of
+§5.2) is in [15](15_findings_and_recommendations.md#open-from-the-perspective-reviews).

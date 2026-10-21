@@ -117,10 +117,9 @@ other. The environment is a valid *game*; framing it as a market simulator overr
 | Truncation | at `max_step` | `set_all_done` in [`done_helper.py`](../gym_continuousDoubleAuction/envs/exchg/done_helper.py) |
 
 Note the env's **own** defaults differ from what `TrainConfig` passes — a bare
-`continuousDoubleAuctionEnv({})` gets 5 agents, `init_cash=1,000,000`, `max_step=64` and
-`is_render=True`. (`init_cash` was `0` until it was found to make the bare env inert — every
+`continuousDoubleAuctionEnv({})` gets 5 agents, `init_cash=1,000,000` and `max_step=64`. (`init_cash` was `0` until it was found to make the bare env inert — every
 order refused, every agent bankrupt on step 1.)
-The full table is in [02_architecture.md](02_architecture.md) §2.6.
+The full table is in [18_configuration.md](18_configuration.md) §3.
 
 Within one env step, all N agents' orders are collected, **randomly shuffled**, and then applied
 to the book one at a time
@@ -213,7 +212,7 @@ observation content, reward scaling, PPO hyper-parameters — is where the high-
 | `python -m gym_continuousDoubleAuction.train.evaluate --checkpoint <dir>` | Roll episodes with a checkpoint's policies and report what they do ([26](26_runbook.md)) |
 | `python -m gym_continuousDoubleAuction.train.export --checkpoint <dir>` | Export one module's weights from a checkpoint; `--list` shows the league ([26](26_runbook.md) §26.9.2) |
 | `python -m gym_continuousDoubleAuction.train.probe` | Score encoders on microstructure targets without the reward ([23](23_probe_harness.md)) |
-| `python -m gym_continuousDoubleAuction.train.pretrain` | Pretrain a JEPA encoder on observations alone ([24](24_pretraining.md)) |
+| `python -m gym_continuousDoubleAuction.train.pretrain` | Pretrain a JEPA encoder on observations alone ([23](23_probe_harness.md) Part 2) |
 | `python -m gym_continuousDoubleAuction.train.compare --encoders mlp transformer --seeds 0 1 2` | Seeded encoder sweep, each run scored by the probe ([18](18_configuration.md) §5.5) |
 
 Installation:

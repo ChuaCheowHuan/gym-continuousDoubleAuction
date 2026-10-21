@@ -33,7 +33,7 @@ MODULE_EPISODE_RETURNS_MEAN = "module_episode_returns_mean"
 #: `RayTaskError` from `sample()`, and `restart_failed_env_runners` - True by
 #: default - makes `EnvRunnerGroup` log it through Ray's own logger and restart
 #: the actor: `algo.train()` returns normally and the run carries on training on
-#: the ledger the check just condemned (docs/21 §2.1). Worse, the raise loses the
+#: the ledger the check just condemned (docs/11 §5.2.1). Worse, the raise loses the
 #: evidence: `synchronous_parallel_sample` asks each runner for
 #: `(sample(), get_metrics())` in one call, so a `sample()` that throws means
 #: `get_metrics()` never runs and that runner's metrics - including this one -
@@ -121,9 +121,9 @@ class SelfPlayCallback(RLlibCallback):
                 Parquet. Must be an absolute path: this object is pickled into
                 every env runner, and a relative one would be resolved against
                 whatever working directory that worker happened to inherit
-                (docs/21 §2.3). None disables the record entirely - and now
+                (docs/11 §5.2.3). None disables the record entirely - and now
                 disables the *accumulation* too, which the flag previously did
-                not (docs/21 §2.2).
+                not (docs/11 §5.2.2).
             nav_tolerance: Absolute cash tolerance for the episode-end NAV
                 conservation check.
             strict_nav_check: Stop the run on a conservation violation. Acted on
@@ -245,7 +245,7 @@ class SelfPlayCallback(RLlibCallback):
         #
         # This used to be `self.store`, a dict of every step of every live
         # episode, appended to unconditionally - so `--no-episode-data` bought
-        # only the I/O and kept the ~34 MB per episode of memory (docs/21 §2.2).
+        # only the I/O and kept the ~34 MB per episode of memory (docs/11 §5.2.2).
         self._episode_recorder = None
 
     def __getstate__(self):
@@ -472,7 +472,7 @@ class SelfPlayCallback(RLlibCallback):
         # The per-step record, if it is on. Nothing above this line touches the
         # observations or actions, so a run with `episode_data_dir` unset now
         # pays neither the I/O nor the memory - which is what the flag always
-        # claimed and never did (docs/21 §2.2).
+        # claimed and never did (docs/11 §5.2.2).
         recorder = self._recorder()
         if recorder is not None:
             # RLlib's own env timestep where it exists, because it is the
@@ -532,7 +532,7 @@ class SelfPlayCallback(RLlibCallback):
         # itself happens off this thread and every failure inside it is a
         # warning, so a full disk can no longer raise into a hook that runs on
         # an env runner - which, with restart_failed_env_runners on, would have
-        # meant a killed and restarted worker (docs/21 §2.4).
+        # meant a killed and restarted worker (docs/11 §5.2.4).
         recorder = self._recorder()
         if recorder is not None:
             recorder.finish_episode(episode.id_)

@@ -299,7 +299,7 @@ def pretrain(
 
     # The test fifth is held out deliberately, not wasted. The probe scores a
     # pretrained encoder "on identical rows with an identical split"
-    # (docs/24 section 6), so these are exactly the episodes its test score is
+    # (docs/23 section 16), so these are exactly the episodes its test score is
     # read on; training on them here would leak them into that score.
     train_mask, validation_mask, _test_mask = probe_module.split_masks(
         corpus.episode_index, len(corpus)

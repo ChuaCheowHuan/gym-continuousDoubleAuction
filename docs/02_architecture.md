@@ -193,7 +193,7 @@ gym_continuousDoubleAuction/
 │   ├── model/moe_learner.py            CDAPPOTorchRLModule (masking) + CDAPPOTorchLearner (MoE aux loss)
 │   ├── model/cbp.py, cbp_learner.py    Continual Backprop and its Learner mixin (docs/25)
 │   ├── probe/                          reward-free encoder scoring (docs/23)
-│   ├── pretrain/                       offline JEPA pretraining (docs/24)
+│   ├── pretrain/                       offline JEPA pretraining (docs/23)
 │   ├── callbk/…_self_play_callback.py  league: champions, matchmaking, metrics, the record
 │   ├── callbk/nav_audit.py             the NAV conservation audit: ledger reads, sum, report
 │   ├── callbk/league_stats.py          idle/valid returns, best trainable, candidate trades
@@ -544,28 +544,13 @@ the two `__all__` keys. A bankrupt agent is terminated on its step and stops bei
 The env is built from an `env_config` dict. **The env holds no literal default for any key**:
 `continuousDoubleAuctionEnv._cfg` returns `self.config[key]` when the caller supplied it and
 `config_loader.env_default(key)` otherwise, so a key absent from both raises by name rather than
-resolving to a number written in Python. The full rules are in
+resolving to a number written in Python. The full rules and every key's value are in
 [18_configuration.md](18_configuration.md); this is the env-side view.
 
-| Key | Standalone default | `TrainConfig` value | Meaning |
-|---|---|---|---|
-| `num_of_agents` | 5 | 8 | Number of traders |
-| `init_cash` | 1,000,000 | 1,000,000 | Starting cash per trader — must be > 0, see `env_defaults.json` |
-| `tick_size` | 1 | 1 | The price grid; reaches `Action_Helper.min_tick`, see §2.7 |
-| `tape_display_length` | 10 | 10 | Tape rows kept for display |
-| `max_step` | 64 | 4,096 | Steps before truncation |
-| `is_render` | `True` | `False` | Log book, tape and accounts every step (DEBUG only) |
-| `n_hist` | 4 | 4 | Observation history window |
-| `initial_price_min` | 10 | 10 | Lower bound of the per-episode price anchor |
-| `initial_price_max` | 100 | 100 | Upper bound of the per-episode price anchor |
-| `min_size`, `mkt_max_size`, `limit_size_multiple` | 1 / 100 / 10 | same | Order sizing, consumed by `Action_Helper` |
-| `order_penalty`, `trade_penalty`, `drawdown_penalty`, `passive_bonus`, `loss_multiplier` | 1e-05 / 2e-05 / 0.2 / 2e-05 / 1.0 | same | Reward coefficients, consumed by `Reward_Helper`. Each multiplies a quantity already expressed as a fraction of starting NAV, so 1e-05 is one basis point of initial capital. **`loss_multiplier` must stay 1.0** or the reward stops being zero-sum — see [07_reward_function.md](07_reward_function.md) §2.1 |
-
-The standalone column is [`config/env_defaults.json`](../config/env_defaults.json) and the
-training column is the `environment` group of
-[`config/train_config.json`](../config/train_config.json). They differ deliberately: a bare env is
-small and renders, a training env is large and silent. `TrainConfig.env_config` supplies every key
-above, so a training run never reaches the fallbacks.
+The standalone values are [`config/env_defaults.json`](../config/env_defaults.json) and the
+training values are the `environment` group of [`config/train_config.json`](../config/train_config.json);
+[18](18_configuration.md) §3 has the table of both. `TrainConfig.env_config` supplies every key, so
+a training run never reaches the fallbacks.
 
 ```mermaid
 flowchart LR
