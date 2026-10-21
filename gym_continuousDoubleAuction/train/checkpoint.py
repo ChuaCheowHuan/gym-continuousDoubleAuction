@@ -345,38 +345,17 @@ STRUCTURAL_CONFIG_KEYS = (
 #: and - because `_config_fingerprint` did not carry them - said nothing either.
 #: A hard error rather than a warning: "I turned continual backprop on and it
 #: made no difference" is a conclusion someone could carry a long way before
-#: discovering it never ran.
+#: discovering it never ran. (Continual Backprop is now the `cbp` extension, so
+#: its switch is `extensions_enabled` and its settings `ext.cbp.<key>`.)
 #:
-#: They are NOT structural. No tensor shape depends on them, and the per-unit
-#: utility and ages restore cleanly. Changing one means a fresh run, not a
+#: They are NOT structural. No tensor shape depends on them. Changing one means a fresh run, not a
 #: resume - the same rule as the encoder group, arrived at by a different route.
 UNRESTORABLE_CONFIG_KEYS = (
-    "cbp_enabled",
-    "cbp_metrics_only",
     "adam_betas",
     "adam_weight_decay",
     # Which installed extensions are composed in (docs/30). Each one's own
     # settings are fingerprinted as `ext.<name>.<key>` and checked below.
     "extensions_enabled",
-)
-
-
-#: The rest of the continual-backprop group. Unrestorable for the same reason,
-#: but only *material* when continual backprop is running on one side or the
-#: other - a replacement rate edited while the mechanism is off in both the
-#: checkpoint and the config changes nothing that was going to happen anyway,
-#: and failing a resume over it would be noise.
-UNRESTORABLE_WHEN_ACTIVE_KEYS = (
-    "cbp_replacement_rate",
-    "cbp_maturity_threshold",
-    "cbp_utility_decay",
-    "cbp_utility",
-    "cbp_scope",
-    "cbp_fire_on",
-    "cbp_reset_optimizer_state",
-    "cbp_compensate_mean",
-    "cbp_dead_unit_threshold",
-    "cbp_metrics_every_n_updates",
 )
 
 
@@ -387,25 +366,37 @@ UNRESTORABLE_WHEN_ACTIVE_KEYS = (
 #: is a statement about the behaviour of a *past* run, and reading the current
 #: file would make it a statement about the present one - so editing a default
 #: would silently change what an old checkpoint is judged to have done. The
-#: values are "continual backprop off" and "torch's own Adam", which is what the
-#: code did before `cbp_learner` existed.
+#: values are "torch's own Adam" and "no extension", which is what the code did
+#: before either existed.
 PRE_FEATURE_BEHAVIOUR = {
-    "cbp_enabled": False,
-    "cbp_metrics_only": False,
-    "cbp_replacement_rate": 1e-4,
-    "cbp_maturity_threshold": 100,
-    "cbp_utility_decay": 0.99,
-    "cbp_utility": "overall",
-    "cbp_scope": "feedforward",
-    "cbp_fire_on": "adam_step",
-    "cbp_reset_optimizer_state": True,
-    "cbp_compensate_mean": False,
-    "cbp_dead_unit_threshold": 0.01,
-    "cbp_metrics_every_n_updates": 10,
     "adam_betas": (0.9, 0.999),
     "adam_weight_decay": 0.0,
     "extensions_enabled": (),
 }
+
+
+#: The `learner_config_dict` group Continual Backprop's settings lived in before
+#: it moved to the `cda-cbp` package, as `cbp_`-prefixed keys. Checkpoints from
+#: then still carry it, and nothing writes it now.
+LEGACY_CBP_GROUP = "continual_backprop"
+
+
+def _legacy_cbp_settings(group: dict) -> Optional[dict]:
+    """A pre-move `continual_backprop` group as the `cbp` extension's settings.
+
+    None when CBP was off - neither replacing nor measuring - because such a run
+    did what a run without the extension does. Otherwise the settings without
+    their prefix, which is what `cda-cbp` names them: a checkpoint resumed with
+    `extensions_enabled: ["cbp"]` and the same settings then compares equal, and
+    a changed one is refused like any other extension setting.
+    """
+    if not (group.get("cbp_enabled") or group.get("cbp_metrics_only")):
+        return None
+    return {
+        key[len("cbp_") :]: _comparable(value)
+        for key, value in group.items()
+        if key.startswith("cbp_") and key != "cbp_enabled"
+    }
 
 
 def _config_fingerprint(config) -> dict:
@@ -448,9 +439,9 @@ def _config_fingerprint(config) -> dict:
     for key, value in (getattr(config, "env_config", None) or {}).items():
         fingerprint[f"env_config.{key}"] = value
 
-    # The continual-backprop and optimiser groups ride on `learner_config_dict`
-    # rather than being AlgorithmConfig attributes, so they have to be flattened
-    # in by hand. Without this they were invisible to the comparison entirely:
+    # The optimiser and extension groups ride on `learner_config_dict` rather
+    # than being AlgorithmConfig attributes, so they have to be flattened in by
+    # hand. Without this they were invisible to the comparison entirely:
     # `_check_restored_config` only reports keys present in BOTH fingerprints,
     # so a restore that turned continual backprop on was neither applied nor
     # mentioned. See UNRESTORABLE_CONFIG_KEYS.
@@ -460,7 +451,11 @@ def _config_fingerprint(config) -> dict:
         # default run's config has none. Without this its fingerprint lacks the
         # key, and a resume that turned an extension off was never compared.
         fingerprint["extensions_enabled"] = ()
+    legacy_cbp = None
     for group, values in learner_config_dict.items():
+        if group == LEGACY_CBP_GROUP:
+            legacy_cbp = _legacy_cbp_settings(values)
+            continue
         if group == extensions.EXTENSIONS_CONFIG_KEY:
             # Nested one level deeper than the other groups, and owned by
             # packages this repository does not know: each setting becomes
@@ -473,8 +468,8 @@ def _config_fingerprint(config) -> dict:
         if isinstance(values, dict):
             for key, value in values.items():
                 # The group name is dropped, so these share one namespace with
-                # the AlgorithmConfig attributes above. That is why the CBP keys
-                # carry a `cbp_` prefix and the optimiser ones an `adam_` one -
+                # the AlgorithmConfig attributes above. That is why the optimiser
+                # keys carry an `adam_` prefix -
                 # the same rule `config_loader.flatten` enforces one level up.
                 # Raised rather than overwritten: a silent collision would hide
                 # a real divergence from `_check_restored_config`, which is the
@@ -490,6 +485,14 @@ def _config_fingerprint(config) -> dict:
                 # the `!=` here needs; `adam_betas` is the only one and a tuple
                 # compares cleanly against a list once both are normalised.
                 fingerprint[key] = tuple(value) if isinstance(value, list) else value
+
+    if legacy_cbp is not None:
+        # Read after the loop, so the extension group - which sets
+        # `extensions_enabled` - cannot overwrite it whichever comes first.
+        enabled = fingerprint.get("extensions_enabled", ())
+        fingerprint["extensions_enabled"] = enabled + (("cbp",) if "cbp" not in enabled else ())
+        for key, value in legacy_cbp.items():
+            fingerprint[f"ext.cbp.{key}"] = value
 
     fingerprint.update(_encoder_fingerprint(config))
 
@@ -599,20 +602,13 @@ def _check_restored_config(restored, desired) -> None:
     def checkpoint_value(key):
         return old.get(key, PRE_FEATURE_BEHAVIOUR[key])
 
-    checked = list(UNRESTORABLE_CONFIG_KEYS)
-    # The tuning knobs only count when the mechanism is actually running on one
-    # side or the other; otherwise they describe something that was not going to
-    # happen either way, and failing a resume over one would be pure noise.
-    if any(checkpoint_value(k) or new.get(k) for k in ("cbp_enabled", "cbp_metrics_only")):
-        checked += list(UNRESTORABLE_WHEN_ACTIVE_KEYS)
-
     unrestorable = {
         key: (checkpoint_value(key), new[key])
-        for key in checked
+        for key in UNRESTORABLE_CONFIG_KEYS
         if key in new and new[key] != checkpoint_value(key)
     }
     # An extension's settings are read when its classes are composed, before
-    # the restore, exactly like the CBP group. Only keys both sides carry: a
+    # the restore, exactly like the optimiser group. Only keys both sides carry: a
     # setting a newer version of the extension added has nothing to compare.
     unrestorable.update(
         {
@@ -649,6 +645,38 @@ def _check_restored_config(restored, desired) -> None:
         "train with these values, start a fresh run.",
         detail,
     )
+
+
+def check_pickled_classes_load(path: str) -> None:
+    """Raise if the classes a checkpoint pickled cannot be imported here.
+
+    `Algorithm.from_checkpoint` unpickles the algorithm class and its config -
+    which holds the composed Learner class - and on *any* error falls back to
+    building with no config at all, failing later with "'NoneType' object has
+    no attribute 'to_dict'". `build_algo` reads that as a truncated save and
+    falls back to an older one, and finally to a fresh run. When the cause is a
+    class whose package is not installed - Continual Backprop's mixin, now in
+    `cda-cbp` (`cbp_learner.MISSING_PACKAGE`), or an extension's - every older
+    save fails the same way, so the run would quietly start over. Raised here,
+    before that loop, with the import error's own message.
+
+    Only an ImportError: anything else (a truncated file) is left to
+    `from_checkpoint` and the fallback, as before.
+    """
+    # Imported here so that reading this module does not import RLlib.
+    import ray.cloudpickle as cloudpickle
+    from ray.rllib.utils.checkpoints import Checkpointable
+
+    ctor_file = os.path.join(path, Checkpointable.CLASS_AND_CTOR_ARGS_FILE_NAME)
+    if not os.path.isfile(ctor_file):
+        return
+    try:
+        with open(ctor_file, "rb") as fh:
+            cloudpickle.load(fh)
+    except ImportError as exc:
+        raise ImportError(f"Cannot restore {path}: {exc}") from exc
+    except Exception:
+        return
 
 
 def restore_candidates(cfg: TrainConfig) -> List[Tuple[int, str]]:

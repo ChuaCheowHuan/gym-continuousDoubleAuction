@@ -14,7 +14,7 @@ Why it lives **here** and not on the Learner
 Because the answer depends entirely on which observations you measure it over,
 and only this harness holds that fixed.
 
-`CBPLearnerMixin` also reports a rank, computed on whatever minibatch training
+Continual Backprop's Learner mixin (the `cda-cbp` extension) also reports a rank, computed on whatever minibatch training
 happened to produce. In a supervised setting that distinction would not matter:
 the dataset is fixed, so a falling rank is the network. In *this* setting the
 policy shapes its own input distribution, and under S1-3 the reward makes
@@ -70,10 +70,9 @@ MIN_ROWS_PER_WIDTH = 2.0
 def effective_rank(matrix: np.ndarray, threshold: float = DEFAULT_THRESHOLD) -> int:
     """Smallest number of singular values carrying `threshold` of the total.
 
-    The same definition `cbp.effective_rank` implements in torch, on numpy
-    here because that is what this harness works in. Two array libraries, one
-    definition, and nothing but
-    `test_probe.py::TestEffectiveRank.test_it_agrees_with_the_torch_definition`
+    The same definition `cda_cbp.cbp.effective_rank` implements in torch, on
+    numpy here because that is what this harness works in. Two array libraries,
+    one definition, and nothing but cda-cbp's `tests/test_moved_checks.py`
     keeping them the same measurement.
 
     Returns 0 for an empty matrix and for one whose singular values are all
@@ -81,7 +80,7 @@ def effective_rank(matrix: np.ndarray, threshold: float = DEFAULT_THRESHOLD) -> 
 
     **The one place the two deliberately differ** is a matrix with fewer than
     two rows. Here that is 0, because the number goes into a report column
-    where it is read as a rank; `cbp.effective_rank` returns NaN, because that
+    where it is read as a rank; cda-cbp's `effective_rank` returns NaN, because that
     one goes into a metric series where 0 would be read as total collapse. The
     agreement test pins both answers so the divergence stays deliberate.
     """
@@ -177,7 +176,7 @@ def render(table: Mapping[str, RankRow], feature_names: Sequence[str]) -> str:
     lines += [
         "",
         "  Measured on a corpus that does not change while the encoder does, which is what",
-        "  makes it comparable across checkpoints. The Learner's own `cbp_batch_effective_rank`",
+        "  makes it comparable across checkpoints. CBP's `cbp_batch_effective_rank` (cda-cbp)",
         "  is computed on the training minibatch and moves with the policy's input distribution",
         "  as well as with the network - see docs/23 and docs/16 §16.16.",
     ]

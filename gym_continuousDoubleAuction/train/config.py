@@ -30,6 +30,39 @@ ENV_NAME = "continuousDoubleAuction-v0"
 TRAIN_CONFIG_FILE = "train_config.json"
 
 
+#: The Continual Backprop keys, which moved to the `cda-cbp` package with the
+#: mechanism itself (docs/25). Not a value: the names a config from before the
+#: move carries, so that one fails naming the package instead of saying only
+#: "unknown key" - or, read from a `$CDA_CONFIG_DIR` copy of train_config.json,
+#: being ignored, which would leave a run that asked for CBP running without it.
+MOVED_CBP_KEYS = frozenset(
+    {
+        "cbp_enabled",
+        "cbp_metrics_only",
+        "cbp_replacement_rate",
+        "cbp_maturity_threshold",
+        "cbp_utility_decay",
+        "cbp_utility",
+        "cbp_scope",
+        "cbp_fire_on",
+        "cbp_reset_optimizer_state",
+        "cbp_compensate_mean",
+        "cbp_dead_unit_threshold",
+        "cbp_metrics_every_n_updates",
+    }
+)
+
+
+def moved_cbp_keys_message(keys) -> str:
+    """What to tell someone whose config still carries `keys` from MOVED_CBP_KEYS."""
+    return (
+        f"{sorted(keys)}: Continual Backprop moved out of gym-continuousDoubleAuction into the "
+        "cda-cbp package (https://github.com/ChuaCheowHuan/cda_cbp). Install it, list \"cbp\" "
+        "in extensions_enabled and set its options under extension_settings.cbp, without the "
+        "cbp_ prefix (docs/25)."
+    )
+
+
 #: Per-iteration result dicts, one JSON object per line, under `run_dir`.
 #: `algo.train()` returns a full metrics dict every iteration and the loop used
 #: to read two keys out of it for a log line and drop the rest, so a finished
@@ -226,36 +259,10 @@ class TrainConfig:
     # exactly the optimiser RLlib has always built. Set them to reproduce the
     # continual-backprop papers' RL recipe, which runs every algorithm but the
     # standard-PPO baseline at beta_1 = beta_2 = 0.99 and pairs CBP with a
-    # weight decay of 1e-4. Kept apart from the CBP knobs on purpose: turning
-    # both on at once would measure them together.
+    # weight decay of 1e-4. Kept apart from CBP (now the `cda-cbp` extension)
+    # on purpose: turning both on at once would measure them together.
     adam_betas: List[float] = _default("adam_betas")
     adam_weight_decay: float = _default("adam_weight_decay")
-
-    # --- Continual Backprop --------------------------------------------------
-    # Selective reinitialisation of low-utility hidden units, after the
-    # optimiser step. An update rule rather than an architecture, so it is
-    # composed over whichever Learner the encoder chose instead of replacing
-    # it - see train/model/cbp_learner.py.
-    #
-    # None of these is a STRUCTURAL_CONFIG_KEY: no tensor shape depends on
-    # them, so unlike encoder_spec a restore may turn continual backprop on or
-    # change its rate. The per-unit utility and ages are checkpoint state and
-    # travel with the learner.
-    cbp_enabled: bool = _default("cbp_enabled")
-    cbp_metrics_only: bool = _default("cbp_metrics_only")
-    # Counted in OPTIMISER STEPS, not iterations. See the cadence note in
-    # train_config.json: this repo takes 4 Adam steps per iteration against the
-    # papers' 320, so their values do not transfer.
-    cbp_replacement_rate: float = _default("cbp_replacement_rate")
-    cbp_maturity_threshold: int = _default("cbp_maturity_threshold")
-    cbp_utility_decay: float = _default("cbp_utility_decay")
-    cbp_utility: str = _default("cbp_utility")
-    cbp_scope: str = _default("cbp_scope")
-    cbp_fire_on: str = _default("cbp_fire_on")
-    cbp_reset_optimizer_state: bool = _default("cbp_reset_optimizer_state")
-    cbp_compensate_mean: bool = _default("cbp_compensate_mean")
-    cbp_dead_unit_threshold: float = _default("cbp_dead_unit_threshold")
-    cbp_metrics_every_n_updates: int = _default("cbp_metrics_every_n_updates")
 
     # --- Extensions ----------------------------------------------------------
     # Separately installed packages registered under the `gym_cda.extensions`
@@ -383,6 +390,9 @@ class TrainConfig:
         - no test fixtures - are enforced once, here, where the value arrives
         from a file.
         """
+        moved = MOVED_CBP_KEYS & set(flat_view(TRAIN_CONFIG_FILE))
+        if moved:
+            raise ValueError(f"{TRAIN_CONFIG_FILE}: {moved_cbp_keys_message(moved)}")
         if not self.run_id:
             self.run_id = generate_run_id()
 
@@ -448,16 +458,6 @@ class TrainConfig:
                 "Set a smaller minibatch_size, use fewer learners, or raise the batch "
                 "(the episode length or num_episodes_per_iter)."
             )
-        if self.cbp_enabled and self.num_learners > 1:
-            # Replacements are chosen from each learner's own minibatch and applied outside the
-            # gradient, so the replicas can pick different units and drift apart; nothing in
-            # DDP pulls them back (docs/15 R-12, #182). `cbp_metrics_only` replaces nothing.
-            raise ValueError(
-                f"cbp_enabled with num_learners={self.num_learners}: continual backprop picks "
-                "the unit to replace separately on each learner, so the replicas would diverge. "
-                "Use num_learners 0 or 1, or cbp_metrics_only, until the choice is synchronised."
-            )
-
         # Imported here: `extensions` reads entry points, which nothing that
         # only imports this module for its constants should pay for.
         from gym_continuousDoubleAuction.train import extensions
@@ -507,6 +507,9 @@ class TrainConfig:
 
         values = flatten(raw, path)
 
+        moved = MOVED_CBP_KEYS & set(values)
+        if moved:
+            raise ValueError(f"{path}: {moved_cbp_keys_message(moved)}")
         known = {f.name for f in dataclasses.fields(cls)}
         unknown = sorted(set(values) - known)
         if unknown:
