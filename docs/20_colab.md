@@ -137,8 +137,9 @@ The GPU buys the update, not the run.
 
 > The 1-core row was measured on a 4-vCPU Intel Xeon at 2.1 GHz with policy inference included
 > ([00](00_getting_started.md) §0.2). It replaces an earlier extrapolation of ~516 steps/s, which
-> was the environment alone with random actions and no policy. The 2-runner row halves it and has
-> not been timed on Colab; a Colab vCPU may be slower.
+> was the environment alone with random actions and no policy. The 2-runner row halves it, as two
+> runners did when timed on a 4-vCPU Xeon ([00](00_getting_started.md) §0.2); it has not been timed
+> on Colab, and a Colab vCPU may be slower.
 
 **Session limits:** free Colab disconnects after ~90 minutes idle and caps sessions at ~12 hours.
 The default run fits comfortably; a longer one may not — see §20.5.

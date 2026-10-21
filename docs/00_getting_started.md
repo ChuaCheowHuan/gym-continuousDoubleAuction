@@ -41,14 +41,25 @@ configuration (8 agents, `max_step` 4,096, 4 episodes per iteration, the `cpu` p
 | Task | Wall time | Peak RAM |
 |---|---|---|
 | `CDA_rand.py` smoke run (1,000 steps, 4 random agents) | 8 s | 0.6 GB |
-| Unit tests (2,133 when measured; 2,134 now) | 3 min | 2.9 GB |
+| Unit tests (2,133 when measured; 2,136 now) | 3 min | 2.9 GB |
 | Integration tests (185 when measured; 148 now, real RLlib builds) | 3.5 min | 3.3 GB |
 | One training iteration (16,384 env steps) | 2 min 40 s: 2 min 26 s sampling at about 112 steps/s, 12.5 s PPO update | 2.2 GB |
 | The default 16-iteration run | about 45 min (extrapolated from one iteration) | 2.2 GB |
 | One checkpoint | | 6.5 MB on disk |
 
-With 2 env runners (the `gpu` profile), sampling runs in two processes, so an iteration should take
-roughly half as long. That figure is an estimate, not a measurement. The per-step Parquet record
+With 2 env runners (the `gpu` profile), sampling runs in two processes and takes half as long. On
+a second 4-vCPU Intel Xeon (2.8 GHz, 2026-10-21, same configuration, episode record off), one
+iteration's 16,384 steps sampled in:
+
+| Setup | Sampling | Env steps/s |
+|---|---|---|
+| In the driver (`num_env_runners` 0, the `cpu` profile) | 190 s | 86 |
+| 1 remote env runner | 182 s | 90 |
+| 2 remote env runners (as in the `gpu` profile) | 96 s | 171 in all, about 90 per runner |
+
+A remote runner samples as fast as the driver does in-process, so one figure covers both: about
+90 env steps/s per runner on that machine, and 112 on the one above. The PPO update took 16–17 s
+in each case. The per-step Parquet record
 adds about 34 MB per recorded episode; one episode in ten is recorded by default, about 220 MB per
 default run ([11](11_logging_and_observability.md) §1.1). Pass `--no-episode-data` to turn it off.
 

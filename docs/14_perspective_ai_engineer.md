@@ -17,8 +17,8 @@ average.
 
 | Signal | Measurement |
 |---|---|
-| Python code | 54,515 lines across 205 Python files |
-| Tests | 2,134 unit and 148 integration, all passing |
+| Python code | 54,546 lines across 205 Python files |
+| Tests | 2,136 unit and 148 integration, all passing |
 | CI | GitHub Actions on Python 3.12: a `test` job (unit → random smoke run → RLlib integration) and a `packaging` job that installs the built wheel into a clean venv |
 | Logging | `logging_setup`: levelled, worker-attributed, a rotating run log; a test fails the build on a bare `print` in `envs/` or `train/` |
 | `sys.exit()` in library code | **0** — the matching engine raises `ValueError` |

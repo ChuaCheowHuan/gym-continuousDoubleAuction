@@ -351,3 +351,32 @@ class TestCliDefaultsComeFromTheFile:
 
         assert parser_defaults
         assert all(d is argparse.SUPPRESS for d in parser_defaults)
+
+
+class TestPolicyHandlerHasNoValuesOfItsOwn:
+    """A direct caller of the policy helpers gets the file's network settings.
+
+    TrainConfig always passes `fcnet_activation` and `vf_share_layers`, so a
+    training run never saw the keyword defaults these helpers used to declare
+    ("tanh" and False). A bare call, such as the example in docs/08, did.
+    """
+
+    @pytest.fixture
+    def spaces(self):
+        env = continuousDoubleAuctionEnv({})
+        agent_id = env.agents[0]
+        return env.get_observation_space(agent_id), env.get_action_space(agent_id)
+
+    @pytest.mark.parametrize("helper", ["create_multi_agent_config", "build_multi_rl_module_spec"])
+    def test_network_settings_follow_the_file(self, config_tree, spaces, helper):
+        from gym_continuousDoubleAuction.train.policy import policy_handler
+
+        config_tree(
+            "train_config.json",
+            lambda raw: raw["ppo"].update(fcnet_activation="relu", vf_share_layers=True),
+        )
+        result = getattr(policy_handler, helper)(*spaces, 2, 1, encoder_type="mlp")
+        spec = result[2] if isinstance(result, tuple) else result
+        model_config = spec.rl_module_specs["policy_0"].model_config
+        assert model_config.fcnet_activation == "relu"
+        assert model_config.vf_share_layers is True

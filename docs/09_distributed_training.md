@@ -296,7 +296,8 @@ machines this repo is actually run on, under a ceiling of 2 CPUs + 1 GPU
 | `num_gpus_per_learner` | 1.0 | 0.0 |
 
 The gpu set is the second bullet above — `num_env_runners=N, num_learners=0` — chosen because
-sampling is measured at ~500 env-steps/sec on one core against a PPO update a GPU finishes in
+sampling is measured at 86–112 env-steps/sec on one core ([00](00_getting_started.md) §0.2)
+against a PPO update a GPU finishes in
 seconds. It is deliberately *not* the third bullet: a remote learner would consume one of the two
 CPUs, and `num_learners=0` still puts the learner on the GPU, because `num_gpus_per_learner`
 becomes a Ray resource request only in `LearnerGroup`'s remote branch.
