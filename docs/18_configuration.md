@@ -568,8 +568,8 @@ runner to hand back its share of `train_batch_size` before giving up on it.
 
 RLlib's default is **60 seconds**, and this environment cannot meet it at the shipped batch size.
 `train_batch_size` is `max_step × num_episodes_per_iter` = 4096 × 4 = 16,384 env steps; the order
-book matches in Python at roughly 60 env-steps/sec per runner with 8 agents, so two runners need
-about two minutes. The failure is silent in the worst way: a timed-out iteration **discards the
+book matches in Python at roughly 90 env-steps/sec per runner with 8 agents (measured,
+[00](00_getting_started.md) §0.2), so two runners need about a minute and a half. The failure is silent in the worst way: a timed-out iteration **discards the
 partial rollouts**, hands the learner nothing, and then counts itself, logs, and checkpoints
 exactly like a real one. A 16-iteration run finishes in 19 minutes having done zero gradient steps,
 and its checkpoints hold the initial random weights.
@@ -921,7 +921,8 @@ Two choices in there are worth stating outright:
   (`learner_group.py`, the `is_remote` branch). A remote learner would cost one of the two CPUs and
   buy nothing at a 256×256 MLP.
 - **`num_env_runners=2` under the gpu set.** Sampling is the bottleneck here, not the update — the
-  environment matches orders in Python, measured at ~500 env-steps/sec on one core, against a PPO
+  environment matches orders in Python, measured at 86–112 env-steps/sec on one core
+  ([00](00_getting_started.md) §0.2), against a PPO
   update the GPU finishes in seconds. This is the `num_env_runners=N, num_learners=0` shape
   [docs/09 §5](09_distributed_training.md) recommends for exactly this case. A test asserts
   `num_env_runners × num_cpus_per_env_runner ≤ num_cpus`, because runners are actors: ask for more
