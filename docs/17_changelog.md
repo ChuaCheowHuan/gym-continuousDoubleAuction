@@ -4271,11 +4271,13 @@ behaviour). The code was right; both notes now say so.
   it and keep the MoE and JEPA terms.
 - **Why.** The DiscoRL integration is to live in its own package (`cda-discorl`, in the
   `disco_rl` repository), installed to turn it on and uninstalled to remove it.
-- **Resumes.** The enabled set and every resolved setting are unrestorable; the sidecar records
+- **Resumes.** The enabled set and every resolved setting are unrestorable, in both directions: a
+  default run's config has no extensions group, and its fingerprint still reads as "none
+  enabled", so turning an extension off on a resume is refused too. The sidecar records
   each extension's version and a restore without it is refused by name. A default run writes no
   new sidecar key and resolves the same classes as before.
-- **Tests.** `test_extensions.py` (29) and `test_loss_seam.py` (5); unit 2,133 to 2,167.
-  `integration/test_extensions_wiring.py` (5); integration 185 to 190; suite 2,357.
+- **Tests.** `test_extensions.py` (30) and `test_loss_seam.py` (5); unit 2,133 to 2,168.
+  `integration/test_extensions_wiring.py` (5); integration 185 to 190; suite 2,358.
 
 ## 99. Documentation consolidation: one home for each overlapping topic
 
@@ -4332,8 +4334,8 @@ filed thirteen issues. This section fixes twelve of them; #327 (literal defaults
 - **#320.** [04](04_accounting.md): dead `modify`/`cancel` actions are counted
   (`num_unmatched_step`, `unmatched_action_fraction`) and agents see their own orders; the paragraph
   saying otherwise predated S3-24 and S4-14.
-- **#321.** Test counts: 2,170 unit and 190 integration (2,360) after the three new tests, in 00,
-  01, 02, 10, 14 and 15; 00 keeps the counts its timings were measured at. 14's code size is 57,347
+- **#321.** Test counts: 2,171 unit and 190 integration (2,361) after the three new tests, in 00,
+  01, 02, 10, 14 and 15; 00 keeps the counts its timings were measured at. 14's code size is 57,362
   lines. 10's `test_layout_version.py` heading says 16.
 - **#322.** [02](02_architecture.md) §2.3's package map drops the deleted `envs/orderbook/test/` and
   adds `settings.py`, `account_state.py`, `run_lock.py`, `extensions.py`, `performance.py`,
