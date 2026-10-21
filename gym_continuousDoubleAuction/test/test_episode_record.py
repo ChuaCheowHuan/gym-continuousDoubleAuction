@@ -2,7 +2,7 @@
 
 This replaced a `pickle.dump` of every step of every episode, performed inline
 in `on_episode_end` on the env runner. Four properties are under test here, and
-each of them is a defect that shipped (docs/21 §2.2-2.4, §6):
+each of them is a defect that shipped (docs/11 §5.2.2-5.2.4, §5.6):
 
 * it writes a **typed, declared schema** rather than a pickle whose only reader
   is Python with this package importable;
@@ -325,7 +325,7 @@ class TestBounds:
     def test_an_episode_that_never_ends_is_evicted(self, tmp_path):
         """A force-reset discards in-flight episodes without calling
         `on_episode_end`, so rows keyed by episode id and released only there
-        are held for the life of the worker (docs/21 §3.2)."""
+        are held for the life of the worker (docs/11 §5.3.2)."""
         recorder = EpisodeRecorder(str(tmp_path), max_live_episodes=3)
         for i in range(10):
             recorder.record_step(FakeEpisode(f"ep_{i}"), 0)

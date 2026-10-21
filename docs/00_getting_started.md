@@ -41,8 +41,8 @@ configuration (8 agents, `max_step` 4,096, 4 episodes per iteration, the `cpu` p
 | Task | Wall time | Peak RAM |
 |---|---|---|
 | `CDA_rand.py` smoke run (1,000 steps, 4 random agents) | 8 s | 0.6 GB |
-| Unit tests (2,133) | 3 min | 2.9 GB |
-| Integration tests (185, real RLlib builds) | 3.5 min | 3.3 GB |
+| Unit tests (2,133 when measured; 2,208 now) | 3 min | 2.9 GB |
+| Integration tests (185 when measured; 190 now, real RLlib builds) | 3.5 min | 3.3 GB |
 | One training iteration (16,384 env steps) | 2 min 40 s: 2 min 26 s sampling at about 112 steps/s, 12.5 s PPO update | 2.2 GB |
 | The default 16-iteration run | about 45 min (extrapolated from one iteration) | 2.2 GB |
 | One checkpoint | | 6.5 MB on disk |
@@ -54,7 +54,8 @@ default run ([11](11_logging_and_observability.md) §1.1). Pass `--no-episode-da
 
 ## 0.3 Install
 
-Python **3.12** is the only version CI tests.
+Python **3.12** is the only version CI tests: `setup.py` says `>=3.12`, and scipy's pin has no
+3.11 wheels ([10](10_testing.md) §7).
 
 ```bash
 git clone https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction.git
@@ -69,23 +70,31 @@ pip install -r requirements.txt
 pip install -e ".[dev]"
 ```
 
-`pip install -e .` is required. On import, the package registers the env with Gymnasium and reads
-its configuration from the repository's `config/` folder ([18](18_configuration.md) §1).
+Install the checkout editable (`pip install -e .`). On import, the package registers the env with
+Gymnasium and reads its configuration from the repository's `config/` folder, so an edit there takes
+effect on the next run ([18](18_configuration.md) §1). A non-editable install also works, but it reads
+the copy of `config/` shipped inside the package instead.
 
 | Where you run | Use |
 |---|---|
 | A Linux machine, CPU only (macOS is untested) | the commands above |
-| A machine with an NVIDIA GPU | the training image, [19_docker.md](19_docker.md) |
+| A machine with an NVIDIA GPU | skip the CPU wheel line and let `requirements.txt` resolve torch, or use the training image, [19_docker.md](19_docker.md) |
 | Google Colab | the notebook, [20_colab.md](20_colab.md) |
 
 ## 0.4 Check that it works
+
+The same three checks CI runs ([10](10_testing.md) §7), cheapest first. CI runs them in the order
+unit suite, `CDA_rand`, integration suite, and runs `CDA_rand` with no arguments (1,000 steps,
+4 agents).
 
 ```bash
 # the exchange alone, random agents, no learning: a few seconds
 python -m gym_continuousDoubleAuction.CDA_rand --steps 200 --agents 4
 
-# the unit tests (about 3 minutes), then the real RLlib builds (about 3.5 minutes)
+# the unit tests (about 3 minutes; test/integration is left out by default, pyproject.toml addopts)
 python -m pytest gym_continuousDoubleAuction/test -q
+
+# RLlib wiring, real Algorithm builds, save/restore, evaluate (about 3.5 minutes)
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 ```
 

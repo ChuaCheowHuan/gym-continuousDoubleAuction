@@ -133,7 +133,8 @@ def load_module(checkpoint: str, module_id: str) -> RLModule:
     """
     path = _module_path(checkpoint, module_id)
     logger.info("loading module from %s", path)
-    return RLModule.from_checkpoint(path)
+    # Ray reads a bare relative path as a URI with no scheme and raises (#316).
+    return RLModule.from_checkpoint(os.path.abspath(path))
 
 
 def _module_path(checkpoint: str, module_id: str) -> str:

@@ -44,7 +44,7 @@
   },
   "cda_pretrain": {
     "_module": "python -m gym_continuousDoubleAuction.train.pretrain",
-    "_note": "Offline JEPA pretraining - see docs/24_pretraining.md. Trains an encoder's self-supervised objective on observations alone, with no reward, policy or opponents, then writes the weights beside an encoder fingerprint that a mismatched load refuses. log_level null defers to the logging group of tunable_constants.json.",
+    "_note": "Offline JEPA pretraining - see docs/23_probe_harness.md Part 2. Trains an encoder's self-supervised objective on observations alone, with no reward, policy or opponents, then writes the weights beside an encoder fingerprint that a mismatched load refuses. log_level null defers to the logging group of tunable_constants.json.",
     "_note_corpus": "num_episodes / max_step / num_agents describe the random-agent rollouts used when --parquet is not given. A book made by random agents does not look like one made by a trained league, so prefer --parquet over a real run's episode record once one exists; these defaults are a warm start, not a training corpus.",
     "_note_collapse": "Watch latent_std in the report, not the loss. A collapsed JEPA maps every observation to the same vector, which makes its prediction perfect - the loss goes to zero and reads as success. The CLI exits non-zero when it detects one.",
     "_note_spec": "The encoder's hyperparameters are NOT duplicated here: they come from the encoder_specs block of train_config.json, so a pretrained encoder is built from the same numbers the training run will build it from, and the fingerprint written beside the weights is comparable with the one train.py computes.",

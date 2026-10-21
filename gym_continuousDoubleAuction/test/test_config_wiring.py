@@ -164,7 +164,7 @@ class TestTrainConfigRoundTrip:
 class TestEpisodeRecordPath:
     """Where the per-step episode record is resolved to.
 
-    docs/21 §2.3: this was the one output path with no protection at all. It was
+    docs/11 §5.2.3: this was the one output path with no protection at all. It was
     a bare relative string, pickled into every env runner and resolved there
     against whatever working directory that worker inherited - which today is
     usually the driver's, by accident rather than by guarantee. The run log has

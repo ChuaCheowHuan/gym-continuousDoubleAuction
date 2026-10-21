@@ -17,8 +17,8 @@ average.
 
 | Signal | Measurement |
 |---|---|
-| Python code | 57,639 lines across 208 Python files |
-| Tests | 2,133 unit and 185 integration, all passing |
+| Python code | 57,690 lines across 208 Python files |
+| Tests | 2,208 unit and 190 integration, all passing |
 | CI | GitHub Actions on Python 3.12: a `test` job (unit → random smoke run → RLlib integration) and a `packaging` job that installs the built wheel into a clean venv |
 | Logging | `logging_setup`: levelled, worker-attributed, a rotating run log; a test fails the build on a bare `print` in `envs/` or `train/` |
 | `sys.exit()` in library code | **0** — the matching engine raises `ValueError` |
@@ -297,10 +297,5 @@ Low risk overall (a self-contained simulator), but two notes:
 
 Twelve of the fifteen items on the agenda this document first set are done; the table, with what
 closed each, is in [29](29_fixed_issues.md#14-511--the-engineering-agenda-as-first-set). What is
-left:
-
-| # | Change | Effort | Why |
-|---|---|---|---|
-| 9 | Add `pre-commit`; enforce the coverage floor in CI | S | `ruff`, `ruff format` and `pytest-cov` are configured; the hooks and the CI gate are not |
-| 12 | Move `TrainConfig` under `tune.Tuner` | M | Free scheduling, fault tolerance, sweeps |
-| 15 | Finish the composition refactor for the state/action pair | L | Makes observation variants swappable (§5.2) |
+left (`pre-commit` and the coverage gate, `tune.Tuner`, the state/action composition refactor of
+§5.2) is in [15](15_findings_and_recommendations.md#open-from-the-perspective-reviews).

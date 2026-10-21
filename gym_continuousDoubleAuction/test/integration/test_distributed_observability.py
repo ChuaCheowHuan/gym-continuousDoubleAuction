@@ -5,7 +5,7 @@ on an **env runner** whenever `num_env_runners > 0` - which is the shape the GPU
 profile in `runtime_profiles.json` actually runs. The unit tests drive those
 hooks in-process, where a returned value is simply a returned value; none of
 them can tell whether the value reaches the driver, and two of the defects in
-docs/21 were exactly that it did not:
+docs/11 §5 were exactly that it did not:
 
 * `strict_nav_check` raised inside the hook. On a remote runner RLlib's fault
   tolerance swallowed the raise and restarted the actor, so the run continued -

@@ -74,7 +74,7 @@ and what to do after the first run.
 
 ## Documentation
 
-All documentation is in [`docs/`](docs/README.md). Its index maps every document and gives
+All documentation is in [`docs/`](docs/map.md). Its index maps every document and gives
 reading paths for common goals.
 
 | Start with | For |

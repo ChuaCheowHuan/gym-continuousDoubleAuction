@@ -335,4 +335,4 @@ independently:
 The write is handed to a background thread per process, so it is off the sampling path, and every
 failure in it is a warning. Both properties exist because the previous synchronous `pickle.dump`
 could raise into `on_episode_end` - and on a remote runner an exception there is a killed and
-restarted worker, not a stopped run. See [21 §2.4](21_logging_review.md).
+restarted worker, not a stopped run. See [11 §5.2.4](11_logging_and_observability.md).

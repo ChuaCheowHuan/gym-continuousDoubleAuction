@@ -857,7 +857,7 @@ class TestPropagation:
     `ray.init` a `LoggingConfig`: that configures the *root* logger of this
     process and of every worker Ray starts for the job, so a record travelling
     on to root would be printed once by the handler attached here and once by
-    Ray's (docs/21 §6 item 7).
+    Ray's (docs/11 §5.6 item 7).
     """
 
     def teardown_method(self):
@@ -905,7 +905,7 @@ class TestRayLoggingConfig:
     This package's own logging crosses to the runners already, through
     `$CDA_LOG_LEVEL`, `$CDA_LOG_DIR` and the `runtime_env`. Ray's does not: the
     env-runner restart notices, and the traceback `EnvRunnerGroup` swallows when
-    a runner dies with `restart_failed_env_runners` on (docs/21 §2.1), are
+    a runner dies with `restart_failed_env_runners` on (docs/11 §5.2.1), are
     emitted by Ray's loggers in processes this package never configures. A
     `LoggingConfig` is applied by Ray to the driver and to every process it
     starts for the job.

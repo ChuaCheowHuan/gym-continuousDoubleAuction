@@ -306,7 +306,7 @@ class TestBookkeeping:
     def test_a_tally_for_an_episode_that_never_ends_is_dropped(self):
         """A force-reset discards in-flight episodes without calling
         on_episode_end, so a dict pruned only there grows for the life of the
-        worker (docs/21 §3.2)."""
+        worker (docs/11 §5.3.2)."""
         h = ActivityHarness()
         limit = h.callback._MAX_LIVE_EPISODES
 

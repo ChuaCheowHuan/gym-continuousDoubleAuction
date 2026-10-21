@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 Multi-agent continuous double auction (Gymnasium / RLlib `MultiAgentEnv`, Ray 2.56 new API stack)
-with league self-play PPO. Documentation is in `docs/` (start at `docs/README.md`); the findings
+with league self-play PPO. Documentation is in `docs/` (start at `docs/map.md`); the findings
 register is `docs/15_findings_and_recommendations.md` (open items only); every fixed problem is in
 `docs/29_fixed_issues.md`, under its original ID. A fix moves its finding from 15 to 29; the other
 docs describe the current code and link to 29 for a defect's history.

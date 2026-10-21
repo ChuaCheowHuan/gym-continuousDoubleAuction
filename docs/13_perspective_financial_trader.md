@@ -305,10 +305,5 @@ Items 1–9 of the original agenda are done, and the liquidation half of 10: fra
 units, fees, self-match prevention, a mid mark, bankrupt termination, private state, trade flow,
 desk metrics, multiple orders per level, and maintenance margin with liquidation. The table, with
 what closed each item, is in [29](29_fixed_issues.md#13-10--the-trading-realism-agenda-done-items).
-What is left:
-
-| # | Change | Effort | Why |
-|---|---|---|---|
-| 10 | Position limits | M | Real risk control rather than a reward penalty |
-| 11 | Post-only and IOC order types | M | Required for realistic market making |
-| 12 | An exogenous information process (a latent fundamental + informed traders) | L | Turns redistribution into price discovery, which is what the microstructure framing needs |
+What is left (position limits, post-only and IOC orders, an exogenous information process) is
+in [15](15_findings_and_recommendations.md#open-from-the-perspective-reviews).

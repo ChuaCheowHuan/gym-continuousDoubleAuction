@@ -299,7 +299,7 @@ def pretrain(
 
     # The test fifth is held out deliberately, not wasted. The probe scores a
     # pretrained encoder "on identical rows with an identical split"
-    # (docs/24 section 6), so these are exactly the episodes its test score is
+    # (docs/23 section 16), so these are exactly the episodes its test score is
     # read on; training on them here would leak them into that score.
     train_mask, validation_mask, _test_mask = probe_module.split_masks(
         corpus.episode_index, len(corpus)
@@ -371,7 +371,8 @@ def save(module, path: str, encoder_type: str, encoder_spec: Optional[Dict[str, 
     encoder = _jepa_encoder(module)
 
     torch.save(encoder.state_dict(), os.path.join(path, WEIGHTS_FILE))
-    module.save_to_path(os.path.join(path, MODULE_SUBDIR))
+    # Ray reads a bare relative path as a URI with no scheme and raises (#316).
+    module.save_to_path(os.path.abspath(os.path.join(path, MODULE_SUBDIR)))
     with open(os.path.join(path, FINGERPRINT_FILE), "w") as handle:
         fingerprint = encoder_fingerprint(encoder_type, encoder_spec)
         # The tuple of pairs becomes a list of lists here; `fingerprints_match`
