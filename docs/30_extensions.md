@@ -105,8 +105,10 @@ the PPO and JEPA Learners.
 - `league_state.json` records `{"extensions": {name: version}}` beside a checkpoint whose run
   enabled any. A restore reads it before RLlib unpickles anything, and refuses by name when one is
   not installed: "trained with extension(s) myext 0.1.0, which are not installed here".
-- `extensions_enabled` is unrestorable: changing it on a resume raises. A checkpoint from before
-  this feature reads as "none enabled", so it restores with the default config.
+- `extensions_enabled` is unrestorable: changing it on a resume raises, whether it turns an
+  extension on or off. A default run's config carries no extensions group, and it is compared as
+  "none enabled". A checkpoint from before this feature reads the same way, so it restores with the
+  default config.
 - Every resolved setting is fingerprinted as `ext.<name>.<key>`. Changing one on a resume raises
   as unrestorable; changing one listed in `structural_keys` raises as structural.
 

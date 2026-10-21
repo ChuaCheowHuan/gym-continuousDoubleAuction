@@ -30,6 +30,7 @@ from gym_continuousDoubleAuction.train.checkpoint import (
     _config_fingerprint,
 )
 from gym_continuousDoubleAuction.train.model.moe_learner import CDAPPOTorchLearner
+from gym_continuousDoubleAuction.train.build import _learner_config_dict
 from gym_continuousDoubleAuction.train.train import TrainConfig, _learner_class
 
 DUMMY_MODULE = textwrap.dedent(
@@ -276,6 +277,14 @@ class TestResumeIsGuarded:
             _check_restored_config(
                 _algo_config(), _algo_config(["dummy"], {"dummy": {"scale": 1.0}})
             )
+
+    def test_disabling_an_extension_on_resume_is_refused(self, dummy):
+        """A default run's config carries no extensions group at all, so the
+        desired side must still read as "none enabled" rather than be skipped."""
+        desired = SimpleNamespace(learner_config_dict=_learner_config_dict(_cfg()))
+        assert extensions.EXTENSIONS_CONFIG_KEY not in desired.learner_config_dict
+        with pytest.raises(ValueError, match="extensions_enabled"):
+            _check_restored_config(_algo_config(["dummy"], {"dummy": {"scale": 1.0}}), desired)
 
     def test_changing_a_setting_on_resume_is_refused(self, dummy):
         with pytest.raises(ValueError, match="ext.dummy.scale"):

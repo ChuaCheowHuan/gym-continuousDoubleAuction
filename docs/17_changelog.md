@@ -4271,11 +4271,13 @@ behaviour). The code was right; both notes now say so.
   it and keep the MoE and JEPA terms.
 - **Why.** The DiscoRL integration is to live in its own package (`cda-discorl`, in the
   `disco_rl` repository), installed to turn it on and uninstalled to remove it.
-- **Resumes.** The enabled set and every resolved setting are unrestorable; the sidecar records
+- **Resumes.** The enabled set and every resolved setting are unrestorable, in both directions: a
+  default run's config has no extensions group, and its fingerprint still reads as "none
+  enabled", so turning an extension off on a resume is refused too. The sidecar records
   each extension's version and a restore without it is refused by name. A default run writes no
   new sidecar key and resolves the same classes as before.
-- **Tests.** `test_extensions.py` (29) and `test_loss_seam.py` (5); unit 2,133 to 2,167.
-  `integration/test_extensions_wiring.py` (5); integration 185 to 190; suite 2,357.
+- **Tests.** `test_extensions.py` (30) and `test_loss_seam.py` (5); unit 2,133 to 2,168.
+  `integration/test_extensions_wiring.py` (5); integration 185 to 190; suite 2,358.
 
 ## 99. Preparing Continual Backprop to move into its own package
 
@@ -4293,7 +4295,7 @@ The first phase of the CBP extraction plan: no behaviour changes, and CBP still 
   discovery use only that, so it no longer knows the model's attribute paths.
 - **Tests.** `test_learner_class_compat.py` (7) loads Learner classes cloudpickled on master at
   f7c1353; `test_model_layout.py` (26) pins `trunk_outputs` for every encoder; `test_cbp.py` 70 to
-  71 checks discovery against the layers recorded at f7c1353; `test_extensions.py` 29 to 32. Unit
-  2,167 to 2,204. The four tuned-Adam tests that use no CBP setting moved from
+  71 checks discovery against the layers recorded at f7c1353; `test_extensions.py` 30 to 33. Unit
+  2,168 to 2,205. The four tuned-Adam tests that use no CBP setting moved from
   `integration/test_cbp_wiring.py` (46 to 42) to `integration/test_tuned_adam.py`; integration stays
-  190; suite 2,394.
+  190; suite 2,395.
