@@ -3103,3 +3103,67 @@ A layer that runs more than once in a step (each MoE expert once per top-k slot;
 masked and the full input) was judged only on its last call. The hook now merges the calls' statistics
 by row count (R-14, #184).
 
+
+### From 30 · Extensions
+
+Source: [30_extensions.md](30_extensions.md).
+Bare section numbers (§) and "this document" in this group refer to [30](30_extensions.md).
+Found by the 2026-10-22 review of gym-CDA, cda-cbp and cda-discorl; each was reproduced before it
+was filed.
+
+#### 30 §5 · `train.evaluate` restored without the extension guards (#336)
+
+Register: none (GitHub issue #336).
+
+`train.evaluate` checked only the layout stamp before `Algorithm.from_checkpoint`. A checkpoint
+trained with an extension that is not installed failed inside RLlib, which swallows the unpickle
+`ImportError` and builds with no config: `'NoneType' object has no attribute 'to_dict'`. It now
+runs `extensions.check_installed` and `check_pickled_classes_load` first, as a training resume
+does, and names the missing extension or module. `test_evaluate.py`
+(`TestARestoreIsGuardedLikeTraining`) pins both ([17](17_changelog.md) §107).
+
+#### 30 §1 · Every installed extension was imported by every run (#337)
+
+Register: none (GitHub issue #337).
+
+`extensions.discover()` loaded every entry point in `gym_cda.extensions` on its first call, and
+`TrainConfig` calls it to validate even with nothing enabled. With cda-discorl installed every run
+imported JAX (1.3 s for `TrainConfig()`), and one package whose import failed broke every run.
+`available()` now lists the entry points without importing them and `load(name)` imports one;
+the training path loads only the names a config enables or a checkpoint records.
+`test_extensions.py` (`TestOnlyWhatIsEnabledIsLoaded`) installs a package whose import raises
+beside the dummy one ([17](17_changelog.md) §107).
+
+#### 30 §8 · Continual Backprop could not see the heads an extension adds (#338)
+
+Register: none (GitHub issue #338).
+
+`layout.trunk_outputs` reported only `pi` and `vf` as the heads reading a trunk. cda-discorl's
+`aux_pi` and `disco_heads` read the actor embedding too, so a CBP replacement zeroed the new
+unit's outgoing weights in `pi` and left those heads reading it with the old unit's weights
+(measured: the `aux_pi` column kept Σ|w| = 8.4, and its output moved by 0.013). A module class
+now declares `extra_trunk_heads`, merged across its MRO and reported as `TrunkOutput.extra_heads`;
+cda-cbp and cda-discorl use it. `test_model_layout.py` (`TestExtraTrunkHeads`) pins it
+([17](17_changelog.md) §107).
+
+#### 30 §1 · The version did not move with the extension API (#339)
+
+Register: none (GitHub issue #339).
+
+The extension API grew under version 2.0.0 (`adam_settings`, `effective_rank`'s tensor input,
+tuned Adam inside the extensions, and now lazy loading and `extra_trunk_heads`), so an extension
+pinned `>=2.0,<3` could not say it needed them. `setup.py`, `CITATION.cff` and the README citation
+say 2.1.0, and a test in `test_extensions.py` (`TestThePackageVersion`) holds the three equal
+([17](17_changelog.md) §107).
+
+#### 30 §6 · Seven tests put the working directory's parent on `sys.path` (#341)
+
+Register: none (GitHub issue #341, found by the independent review of #340).
+
+Seven test files ran `sys.path.append("../")`, which is relative to where pytest runs. From the
+repository root it added the parent folder, where a sibling `cda_cbp` checkout then shadowed the
+installed extension as a namespace package: with both extensions installed editable,
+`test_extensions.py` passed alone (38) and errored 25 times after `test_cash_check.py`
+(`module 'cda_cbp' has no attribute 'EXTENSION'`). CI installs no extension, so it never showed
+there. The appends are gone, and `test_lint.py` refuses a relative path literal on `sys.path` in
+the tests ([17](17_changelog.md) §108).

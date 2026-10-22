@@ -4493,3 +4493,41 @@ weight decay `TunedAdamMixin` reads. Its `cbp_batch_effective_rank` metric kept 
   papers tune Adam to β₁ = β₂ = 0.99. Only the Nature paper does; arXiv 2108.06325v3 Appendix D
   runs PPO, PPO+L2 and Continual PPO at torch's (0.9, 0.999). The defaults were already torch's,
   so no run changes.
+
+## 107. Four findings from the 2026-10-22 review: evaluate's restore guards, lazy extension loading, heads an extension adds, version 2.1.0
+
+The 2026-10-22 review of gym-CDA, cda-cbp and cda-discorl found five moderate (S3) problems, each
+reproduced before it was filed. Four are fixed here; the fifth, cda-cbp's `arxiv` count rule, is
+cda-cbp's own (its issue #2). The history of each is in [29](29_fixed_issues.md#from-30--extensions).
+
+- **#336 · evaluate.** `train.evaluate` runs `extensions.check_installed` and
+  `check_pickled_classes_load` before `Algorithm.from_checkpoint`, as a training resume does. A
+  checkpoint trained with an extension not installed here used to fail with
+  `'NoneType' object has no attribute 'to_dict'`.
+- **#337 · lazy loading.** `extensions.available()` lists entry points without importing them and
+  `load(name)` imports one. The training path loads only enabled or recorded names, so with
+  cda-discorl installed `TrainConfig()` no longer imports JAX, and a package whose import fails
+  breaks only a run that enables it. `discover()` still loads them all, and
+  `discover.cache_clear()` still resets the listing.
+- **#338 · extra heads.** A module class declares `extra_trunk_heads = {trunk: (attribute, ...)}`;
+  `layout.trunk_outputs` merges the declarations across the MRO and reports them as
+  `TrunkOutput.extra_heads`, so cda-cbp can reset the input weights of cda-discorl's `aux_pi` and
+  `disco_heads` with the unit it replaces.
+- **#339 · version.** 2.1.0 in `setup.py`, `CITATION.cff` (released 2026-10-22) and the README
+  citation. The extensions pin `>=2.1,<3`.
+- **Tests.** `test_evaluate.py` 7 to 9, `test_extensions.py` 33 to 38, `test_model_layout.py` 26 to
+  30; each new test fails on the previous source. Unit 2,163 to 2,174; integration 148; suite
+  2,322. Python code 55,087 lines in 207 files. [30](30_extensions.md) §1, §5 and §8 describe the
+  new behaviour; [10](10_testing.md), [14](14_perspective_ai_engineer.md) and the overview counts
+  move with it.
+
+## 108. Tests no longer put the working directory's parent on `sys.path` (#341)
+
+Found by the independent review of #340. Seven test files (`test_accounting`, `test_cash_check`,
+`test_modify_order`, `test_orderbook_new`, `test_orderbook_crossed_book`,
+`test_orderbook_volume_sync`, `test_resting_exposure`) ran `sys.path.append("../")`. From the
+repository root that is the parent folder, so a sibling `cda_cbp` checkout shadowed the installed
+extension: `test_extensions.py` after `test_cash_check.py` gave 25 errors with both extensions
+installed. The appends are removed. A new lint test in `test_lint.py` (3 to 4) fails on the
+previous source, listing the seven. Unit 2,174 to 2,175; suite 2,323. Python code 55,076 lines in
+207 files. History in [29](29_fixed_issues.md#from-30--extensions).

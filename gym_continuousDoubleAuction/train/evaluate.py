@@ -310,13 +310,21 @@ def evaluate(
         continuousDoubleAuctionEnv,
     )
     from gym_continuousDoubleAuction.envs.layout_version import check_layout_stamp
+    from gym_continuousDoubleAuction.train import extensions
+    from gym_continuousDoubleAuction.train.checkpoint import check_pickled_classes_load
     from gym_continuousDoubleAuction.train.train import _read_league_state, register_env
 
-    # A checkpoint from another layout cannot drive this env; say so by name.
-    check_layout_stamp(_read_league_state(checkpoint), checkpoint)
-    register_env(None)
     # Ray reads a bare relative path as a URI with no scheme and raises (#316).
-    algo = Algorithm.from_checkpoint(os.path.abspath(checkpoint))
+    path = os.path.abspath(checkpoint)
+    # The guards a training resume runs (build.py): a checkpoint from another
+    # layout, or trained with an extension or class missing here, is named
+    # before RLlib swallows the unpickle error and builds with no config (#336).
+    sidecar = _read_league_state(path)
+    check_layout_stamp(sidecar, path)
+    extensions.check_installed(sidecar, path)
+    check_pickled_classes_load(path)
+    register_env(None)
+    algo = Algorithm.from_checkpoint(path)
     try:
         env_overrides = dict(env_overrides or {})
         env_config = dict(algo.config.env_config)

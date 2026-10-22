@@ -39,7 +39,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 from functools import lru_cache
-from importlib.metadata import entry_points
+from importlib.metadata import EntryPoint, entry_points
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 #: The entry-point group an extension package registers under.
@@ -90,28 +90,52 @@ class Extension:
 
 
 @lru_cache(maxsize=None)
-def discover() -> Dict[str, Extension]:
-    """Every installed extension, keyed by name. Loaded once per process.
+def available() -> Dict[str, EntryPoint]:
+    """Every installed extension's entry point, keyed by name, not loaded.
+
+    Listing reads only package metadata, so an installed extension that a run
+    does not enable is never imported (#337) - with cda-discorl installed,
+    loading every entry point would import JAX into every run.
+    """
+    return {ep.name: ep for ep in entry_points(group=ENTRY_POINT_GROUP)}
+
+
+def load(name: str) -> Extension:
+    """Import the extension installed under `name` and check what it exports.
 
     Raises:
-        TypeError: an entry point does not resolve to an `Extension`.
+        KeyError: no entry point is named `name`.
+        TypeError: the entry point does not resolve to an `Extension`.
         ValueError: its `name` differs from the entry-point name.
     """
-    found: Dict[str, Extension] = {}
-    for ep in entry_points(group=ENTRY_POINT_GROUP):
-        ext = ep.load()
-        if not isinstance(ext, Extension):
-            raise TypeError(
-                f"entry point {ep.name!r} in {ENTRY_POINT_GROUP!r} resolves to "
-                f"{type(ext).__name__}, not an Extension."
-            )
-        if ext.name != ep.name:
-            raise ValueError(
-                f"entry point {ep.name!r} resolves to an Extension named {ext.name!r}; "
-                "they must match, since the name is how a config enables it."
-            )
-        found[ext.name] = ext
-    return found
+    ext = available()[name].load()
+    if not isinstance(ext, Extension):
+        raise TypeError(
+            f"entry point {name!r} in {ENTRY_POINT_GROUP!r} resolves to "
+            f"{type(ext).__name__}, not an Extension."
+        )
+    if ext.name != name:
+        raise ValueError(
+            f"entry point {name!r} resolves to an Extension named {ext.name!r}; "
+            "they must match, since the name is how a config enables it."
+        )
+    return ext
+
+
+def discover() -> Dict[str, Extension]:
+    """Every installed extension, loaded, keyed by name.
+
+    Imports every package, so the training path does not call it: it lists
+    with `available` and loads only the enabled names. `discover.cache_clear()`
+    forgets the entry points listed, for a test that installs one mid-process.
+
+    Raises:
+        TypeError, ValueError: as `load`, for any installed entry point.
+    """
+    return {name: load(name) for name in available()}
+
+
+discover.cache_clear = available.cache_clear  # type: ignore[attr-defined]
 
 
 def resolve(enabled: Sequence[str], settings: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -129,7 +153,7 @@ def resolve(enabled: Sequence[str], settings: Mapping[str, Any]) -> Dict[str, Di
     if duplicates:
         raise ValueError(f"extensions_enabled lists {duplicates} more than once.")
 
-    installed = discover()
+    installed = available()
     missing = sorted(set(names) - set(installed))
     if missing:
         raise ValueError(
@@ -140,7 +164,7 @@ def resolve(enabled: Sequence[str], settings: Mapping[str, Any]) -> Dict[str, Di
 
     resolved: Dict[str, Dict[str, Any]] = {}
     for name in sorted(names):
-        ext = installed[name]
+        ext = load(name)
         given = dict(settings.get(name) or {})
         unknown = sorted(set(given) - set(ext.defaults))
         if unknown:
@@ -155,18 +179,16 @@ def resolve(enabled: Sequence[str], settings: Mapping[str, Any]) -> Dict[str, Di
 def validate(cfg) -> Dict[str, Dict[str, Any]]:
     """Resolve and validate a TrainConfig's extensions; returns the settings."""
     resolved = resolve(cfg.extensions_enabled, cfg.extension_settings)
-    installed = discover()
     for name, settings in resolved.items():
-        check = installed[name].validate
+        check = load(name).validate
         if check is not None:
             check(settings, cfg)
     return resolved
 
 
 def _enabled(cfg) -> List[Tuple[Extension, Dict[str, Any]]]:
-    installed = discover()
     return [
-        (installed[name], s)
+        (load(name), s)
         for name, s in resolve(cfg.extensions_enabled, cfg.extension_settings).items()
     ]
 
@@ -223,9 +245,8 @@ def wrap_env(env, enabled: Sequence[str], settings: Mapping[str, Any]):
     """Apply every enabled extension's env wrapper, in name order."""
     if not enabled:
         return env
-    installed = discover()
     for name, s in resolve(enabled, settings).items():
-        wrapper = installed[name].env_wrapper
+        wrapper = load(name).env_wrapper
         if wrapper is not None:
             env = wrapper(env, s)
     return env
@@ -255,20 +276,20 @@ def versions(learner_config_dict: Optional[Mapping[str, Any]]) -> Dict[str, str]
     failing a checkpoint save over a bookkeeping field.
     """
     group = (learner_config_dict or {}).get(EXTENSIONS_CONFIG_KEY) or {}
-    installed = discover()
+    installed = available()
     return {
-        name: (installed[name].version if name in installed else "unknown")
+        name: (load(name).version if name in installed else "unknown")
         for name in group.get("extensions_enabled") or []
     }
 
 
 def structural_keys(learner_config_dict: Optional[Mapping[str, Any]]) -> Tuple[str, ...]:
     """Fingerprint keys (`ext.<name>.<key>`) the enabled extensions declare structural."""
-    installed = discover()
+    installed = available()
     keys: List[str] = []
     for name in versions(learner_config_dict):
         if name in installed:
-            keys.extend(f"ext.{name}.{key}" for key in installed[name].structural_keys)
+            keys.extend(f"ext.{name}.{key}" for key in load(name).structural_keys)
     return tuple(keys)
 
 
@@ -280,7 +301,7 @@ def check_installed(sidecar: Optional[Mapping[str, Any]], path: str) -> None:
     checkpoint and fail the same way there.
     """
     recorded = (sidecar or {}).get(EXTENSIONS_STATE_KEY) or {}
-    missing = sorted(set(recorded) - set(discover()))
+    missing = sorted(set(recorded) - set(available()))
     if missing:
         detail = ", ".join(f"{name} {recorded[name]}" for name in missing)
         raise ValueError(

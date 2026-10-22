@@ -76,3 +76,27 @@ def test_the_lint_reaches_the_directories_it_claims_to():
         list((REPO_ROOT / ".claude" / "skills").glob("*/scripts/*.py"))
         or not (REPO_ROOT / ".claude" / "skills").exists()
     )
+
+
+def test_no_test_puts_a_working_directory_relative_path_on_sys_path():
+    """`sys.path.append("../")` is relative to where pytest runs, not to the file:
+    from the repository root it adds the repository's parent folder, where a
+    sibling `cda_cbp` checkout then shadows the installed extension as a
+    namespace package (issue #341). The package is installed, so a test needs
+    no path of its own."""
+    import ast
+
+    found = []
+    for path in sorted((PACKAGE_DIR / "test").rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr in ("append", "insert")
+                and ast.unparse(node.func.value) == "sys.path"
+            ):
+                continue
+            literals = [a.value for a in node.args if isinstance(a, ast.Constant)]
+            if any(isinstance(v, str) and not v.startswith("/") for v in literals):
+                found.append(f"{path.relative_to(REPO_ROOT)}:{node.lineno}")
+    assert not found, "relative sys.path entries:\n" + "\n".join(found)

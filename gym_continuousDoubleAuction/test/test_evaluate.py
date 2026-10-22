@@ -175,3 +175,49 @@ class TestARelativeCheckpointPath:
         with pytest.raises(_Stop):
             evaluate.evaluate("iter_00001", episodes=1, seed=0, deterministic=True)
         assert seen["path"] == str(tmp_path / "iter_00001")
+
+
+class TestARestoreIsGuardedLikeTraining:
+    """`train.evaluate` restores with the same two guards as a training resume
+    (#336). Without them RLlib swallows the unpickle ImportError of a checkpoint
+    trained with an extension that is not installed here, builds with no config,
+    and fails with "'NoneType' object has no attribute 'to_dict'"."""
+
+    @staticmethod
+    def _never_restore(monkeypatch):
+        from ray.rllib.algorithms.algorithm import Algorithm
+
+        def _from_checkpoint(path, *args, **kwargs):
+            raise AssertionError("from_checkpoint must not be reached")
+
+        monkeypatch.setattr(Algorithm, "from_checkpoint", staticmethod(_from_checkpoint))
+
+    def test_a_checkpoint_whose_extension_is_missing_names_it(self, tmp_path, monkeypatch):
+        import json
+
+        from gym_continuousDoubleAuction.envs.layout_version import LAYOUT_KEY, layout_stamp
+        from gym_continuousDoubleAuction.train import extensions
+        from gym_continuousDoubleAuction.train.checkpoint import LEAGUE_STATE_FILE
+
+        self._never_restore(monkeypatch)
+        (tmp_path / LEAGUE_STATE_FILE).write_text(
+            json.dumps(
+                {
+                    LAYOUT_KEY: layout_stamp(),
+                    extensions.EXTENSIONS_STATE_KEY: {"no_such_extension": "0.1.0"},
+                }
+            )
+        )
+        with pytest.raises(ValueError, match="no_such_extension 0.1.0, which are not installed"):
+            evaluate.evaluate(str(tmp_path), episodes=1, seed=0, deterministic=True)
+
+    def test_a_class_that_cannot_be_imported_is_named(self, tmp_path, monkeypatch):
+        from ray.rllib.utils.checkpoints import Checkpointable
+
+        self._never_restore(monkeypatch)
+        # A protocol-0 pickle of a global from a module that does not exist.
+        (tmp_path / Checkpointable.CLASS_AND_CTOR_ARGS_FILE_NAME).write_bytes(
+            b"cno_such_module_for_336\nThing\n."
+        )
+        with pytest.raises(ImportError, match="Cannot restore .*no_such_module_for_336"):
+            evaluate.evaluate(str(tmp_path), episodes=1, seed=0, deterministic=True)

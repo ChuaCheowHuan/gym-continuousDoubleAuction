@@ -21,7 +21,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 # so this never runs the slow RLlib suite as well
 python -m pytest gym_continuousDoubleAuction/test -q
 
-# then the integration suite, named explicitly - everything is these two (2,311 tests).
+# then the integration suite, named explicitly - everything is these two (2,323 tests).
 # RLlib wiring, the real save/restore, the progress log and a real remote
 # runner (148 tests, builds real Algorithms)
 python -m pytest gym_continuousDoubleAuction/test/integration -q
@@ -69,7 +69,7 @@ Counts re-measured with `--collect-only`.
 | `test_order_slot.py` | 17 | `order_slot`: cancel by slot, cancel-all, modify by slot and by FIFO, clamping, the cash check on the slotted order, the head in the action space, and a random-play hit-rate floor (S3-24 phase 2) |
 | `test_dead_action_penalty.py` | 3 | The sixth reward term: zero by default and bit-for-bit neutral, charged per miss when set, forwarded by `TrainConfig` |
 | `test_layout_version.py` | 16 | The layout stamp: written beside every checkpoint, passes for the current layout, refuses a version, field or `book_mode` mismatch by name (S4-19, S3-15) |
-| `test_evaluate.py` | 7 | `train.evaluate`'s pure half: unbatching a Dict action, per-module means, the rendered table, the CLI defaults (S4-12), and a relative checkpoint path reaching Ray absolute (#316) |
+| `test_evaluate.py` | 9 | `train.evaluate`'s pure half: unbatching a Dict action, per-module means, the rendered table, the CLI defaults (S4-12), a relative checkpoint path reaching Ray absolute (#316), and the extension and class guards before a restore (#336) |
 | `test_tick_grid.py` | 18 | Every action price sits on the `tick_size` grid; upsert and cancel find their order on a fractional tick (S3-4) |
 | `test_modify_order.py` | 7 | The six modify-order accounting scenarios, plus a guard that the dead escrow helper stays deleted |
 | `test_new_action_space.py` | 18 | Action decoding, ghost pricing, `tick_size` reaching the action layer, price levels matching book depth |
@@ -131,7 +131,7 @@ Counts re-measured with `--collect-only`.
 | `test_probe_corpus_config.py` | 8 | The probe corpus follows the run's env config: `book_mode` and `n_hist` change its width, explicit arguments win, the caller's dict is untouched, and `train.compare` hands its overridden config to the corpus (#261) |
 | `test_compare.py` | 18 | The encoder comparison driver's aggregation: means and standard deviations across seeds, the separation rule and its three-seed floor, the rendered table and its caveats |
 | `test_export.py` | 20 | `train.export`'s pure half: which module is the winner, the no-champion and foreign-layout messages, and what the written record carries (docs/26 §26.9.2) |
-| `test_lint.py` | 3 | The package, `tools/` and the skill scripts are pyflakes-clean, and the lint reaches the directories it claims to; any message fails the suite (S4-6, #249) |
+| `test_lint.py` | 4 | The package, `tools/` and the skill scripts are pyflakes-clean, and the lint reaches the directories it claims to; any message fails the suite (S4-6, #249); no test puts a working-directory-relative path on `sys.path` (#341) |
 | `test_links.py` | 8 | `tools/check_links.py` reports no broken link in the docs, the skills and the repo files they name (#250) |
 | `test_s4_docs_and_tooling.py` | 22 | The documentation-and-tooling S4 fixes: the layout-version pointer, the CI command quoted in CLAUDE.md and docs/27, the built skills, stale texts (including the mark-price notes' fallback order), and every config key and flag being documented (#273, #266, #267, #251, #249); four PR #308 review findings (#309-#312); and that CI runs the integration suite once (a default run leaves it out, naming it runs it) |
 | `test_s4_hardening.py` | 59 | The hardening and speed fixes: call-time account defaults, `settle_batch`'s pre-check, `flat_view`, the `info` fast path and the cached reference price (#247, #248) |
@@ -140,11 +140,11 @@ Counts re-measured with `--collect-only`.
 | `test_composition.py` | 24 | Reward, episode status, info and liquidation as composed components: out of the MRO, usable alone with explicit inputs, the env's old attributes still forwarded, and `SharedState` / `AccountState` naming real attributes (#152) |
 | `test_types.py` | 3 | `mypy` finds nothing in `envs/`, `ruff format --check` finds nothing to change, and the coverage floor stays configured (#148) |
 | `test_refactors.py` | 117 | The refactoring review's issues: `Account` initialised in one place and its step counters listed once, `_plain`'s call count, one order-book routine per operation, `place_order` and `parse_overrides` flat, `clear_batch` as four steps, `EnvSettings` and the generated `env_config`, the `train/` module split with its re-exports and import order, the callback as a `League` plus an `ActivityLog` plus the NAV audit and league statistics, a real pickle from before that split still loading, and the league and activity log working alone (#252-#258) |
-| `test_extensions.py` | 33 | The extension point ([30](30_extensions.md)): discovery through real entry points, nothing enabled changing nothing, validation of names and settings, composition order under CBP and by `learner_order`, and the resume guards |
+| `test_extensions.py` | 38 | The extension point ([30](30_extensions.md)): discovery through real entry points, nothing enabled changing nothing, validation of names and settings, composition order under CBP and by `learner_order`, the resume guards, an installed extension that is not enabled never imported (#337), and the version strings agreeing (#339) |
 | `test_loss_seam.py` | 5 | PPO's own loss sits behind `_policy_value_loss`, so an extension that replaces it keeps the MoE and JEPA terms |
 | `test_optim_learner.py` | 4 | `adam_settings` reads the `optimizer` group once: only the keys a run sets, betas as a tuple, nothing for the defaults so RLlib's own Adam is built. cda-cbp builds the authors' `AdamGnT` from the same function |
 | `test_learner_class_compat.py` | 10 | Learner classes cloudpickled on master (f7c1353) for the default, tuned-Adam and CBP compositions still load: a checkpoint names its mixins by module path. The CBP ones load with cda-cbp installed and fail naming it without |
-| `test_model_layout.py` | 26 | The model-layout contract: `layout.trunk_outputs` reports each encoder's MLP or LSTM trunk output and the heads reading it, with and without `vf_share_layers` |
+| `test_model_layout.py` | 30 | The model-layout contract: `layout.trunk_outputs` reports each encoder's MLP or LSTM trunk output and the heads reading it, with and without `vf_share_layers`, plus the `extra_trunk_heads` a module declares (#338) |
 | `test_cbp_moved.py` | 19 | Continual Backprop moved to cda-cbp ([25](25_continual_backprop.md)): an old `cbp_*` key names the package, an old checkpoint's group reads as the `cbp` extension's settings, the old mixin name resolves or names the package, and a restore without the package stops instead of falling back |
 | **unit total** | **2,156** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
@@ -175,7 +175,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((2,311 tests))
+  root((2,323 tests))
     Simulator
       orderbook 88
         the demo scripts as tests, a shadow model
@@ -246,7 +246,7 @@ mindmap
         obs layout, tokenisation
         the contract every encoder meets
         transformer, lstm, MoE specifics
-      tooling 50
+      tooling 53
         speed regression against a calibration loop
         lint enforced, comparison driver
         evaluate a checkpoint, export its weights
@@ -268,14 +268,14 @@ mindmap
         fingerprint refuses a mismatch
       continual backprop moved 19
         old keys and checkpoints name cda-cbp
-      extensions 38
+      extensions 43
         found through entry points
         learner_order decides the wrapping
-        nothing enabled changes nothing
+        nothing enabled changes nothing, nor is imported
         PPO loss replaceable, MoE and JEPA kept
-      checkpoint and layout contracts 36
+      checkpoint and layout contracts 40
         old pickled Learner classes load
-        trunk outputs per encoder
+        trunk outputs per encoder, extra heads declared
       visualize 32
         the loader and every chart script on synthetic runs
       packaging 8
@@ -1017,7 +1017,7 @@ What stays here is what this repository promises the package and the people who 
 
 | File | Pins |
 |---|---|
-| `test_model_layout.py` (26) | Where each encoder's trunk ends and which heads read it, the contract CBP finds its layers through |
+| `test_model_layout.py` (30) | Where each encoder's trunk ends and which heads read it, the contract CBP finds its layers through |
 | `test_extensions.py::TestLearnerOrder` (3) | A higher `learner_order` wraps further out, whatever the names, so CBP sees every other mixin's step |
 | `test_learner_class_compat.py` (10) | Learner classes pickled before the move, CBP ones included, still load, or fail naming cda-cbp |
 | `test_cbp_moved.py` (19) | Old `cbp_*` keys name the package; an old checkpoint's `continual_backprop` group reads as the `cbp` extension's settings, so resuming it with the same settings passes, a changed setting or a config that leaves CBP out is refused; a restore without the package stops before RLlib, instead of falling back to a fresh run |
