@@ -4466,3 +4466,30 @@ depended on the env's internals. As an env option it uses the env's own generato
 and is available to every run. `test_market_variety.py` (20 tests) brings the unit total to 2,156
 and the suite to 2,304.
 
+## 106. One reader of the Adam settings, one effective rank; tuned Adam inside the extensions; the β claim corrected
+
+Part of making gym-CDA, cda-cbp and the authors' `loss-of-plasticity` code share rather than copy.
+cda-cbp now builds the authors' `AdamGnT` when it replaces units, and it needs the same betas and
+weight decay `TunedAdamMixin` reads. Its `cbp_batch_effective_rank` metric kept a torch copy of
+`train/probe/rank.py`'s `effective_rank`, held equal only by a test in cda-cbp.
+
+- **Code.** `optim_learner.adam_settings(learner_config_dict)` returns the Adam keyword arguments
+  the `optimizer` group sets, and nothing at the defaults; `TunedAdamMixin` builds torch's Adam
+  from it, unchanged in behaviour. `probe.rank.effective_rank` accepts a tensor (detached and moved
+  to the CPU) and a `too_few_rows` value, 0 by default as before; cda-cbp passes NaN.
+- **Tests.** `test_optim_learner.py` (new, 4) and `test_probe.py` 59 to 62
+  (`TestEffectiveRankIsTheOneDefinition`); all seven fail on the previous source. Unit 2,156 to
+  2,163; integration 148; suite 2,311. Python code CODESIZE.
+- **Tuned Adam inside the extensions.** `_learner_class` wrapped tuned Adam around the composed
+  extensions. `TunedAdamMixin.configure_optimizers_for_module` builds torch's Adam without calling
+  `super()`, so a CBP run that also set `adam_betas` or `adam_weight_decay` trained with torch
+  Adam instead of cda-cbp's `AdamGnT`, silently (found in this PR's review). Tuned Adam now wraps
+  the encoder's Learner and the extensions wrap it. `test_extensions.py`'s order test is reversed
+  (it fails on the previous source); cda-cbp's `test_adam_gnt.py` checks the built optimiser's
+  type with and without the settings. [30](30_extensions.md) and [18](18_configuration.md) §5.6.1
+  say where it sits.
+- **The β claim.** The `optimizer` note in `train_config.json`, the `TrainConfig` comment,
+  `TunedAdamMixin`'s docstring and [18](18_configuration.md) §5.6 said both continual-backprop
+  papers tune Adam to β₁ = β₂ = 0.99. Only the Nature paper does; arXiv 2108.06325v3 Appendix D
+  runs PPO, PPO+L2 and Continual PPO at torch's (0.9, 0.999). The defaults were already torch's,
+  so no run changes.

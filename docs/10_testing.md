@@ -21,7 +21,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 # so this never runs the slow RLlib suite as well
 python -m pytest gym_continuousDoubleAuction/test -q
 
-# then the integration suite, named explicitly - everything is these two (2,304 tests).
+# then the integration suite, named explicitly - everything is these two (2,311 tests).
 # RLlib wiring, the real save/restore, the progress log and a real remote
 # runner (148 tests, builds real Algorithms)
 python -m pytest gym_continuousDoubleAuction/test/integration -q
@@ -119,7 +119,7 @@ Counts re-measured with `--collect-only`.
 | `test_pretrain.py` | 38 | Offline JEPA pretraining: the loop trains only the trunk and predictor, a collapse is reported rather than hidden, a NaN or unmeasured run counts as unusable and is never saved (#239), the checkpoint's fingerprint refuses a mismatched architecture, and a relative path saves and loads (#316) |
 | `test_visualize_scripts.py` | 32 | `visualize/` end to end on small synthetic Parquet and `progress.jsonl` runs: the loader's complete-episode rule, the data in each chart's lines, `run_all`, both inspectors (#211) |
 | `test_visualize_orderbook.py` | 12 | The newest book snapshot is read from the middle of the observation, never off the end — the only arithmetic in `visualize/` that can be wrong without raising |
-| `test_probe.py` | 59 | The reward-free probe harness's arithmetic on synthetic observations: target definitions, episode-boundary masking, the splits, the metrics, unscoreable cells, and that `snapshots` reads the book rather than the private tail |
+| `test_probe.py` | 62 | The reward-free probe harness's arithmetic on synthetic observations: target definitions, episode-boundary masking, the splits, the metrics, unscoreable cells, and that `snapshots` reads the book rather than the private tail |
 | `test_bankrupt_termination.py` | 13 | A trader whose NAV reaches zero is terminated, and the episode ends when too few solvent traders remain |
 | `test_resting_exposure.py` | 8 | Escrow against live orders: what a resting order commits, and the layered-closing-order exploit that left a trader short (S1-5) |
 | `test_self_match.py` | 14 | A trader cannot trade with itself: the crossing leg is withdrawn before the matcher, and the resting leg cannot become the mark (S2-5) |
@@ -142,6 +142,7 @@ Counts re-measured with `--collect-only`.
 | `test_refactors.py` | 117 | The refactoring review's issues: `Account` initialised in one place and its step counters listed once, `_plain`'s call count, one order-book routine per operation, `place_order` and `parse_overrides` flat, `clear_batch` as four steps, `EnvSettings` and the generated `env_config`, the `train/` module split with its re-exports and import order, the callback as a `League` plus an `ActivityLog` plus the NAV audit and league statistics, a real pickle from before that split still loading, and the league and activity log working alone (#252-#258) |
 | `test_extensions.py` | 33 | The extension point ([30](30_extensions.md)): discovery through real entry points, nothing enabled changing nothing, validation of names and settings, composition order under CBP and by `learner_order`, and the resume guards |
 | `test_loss_seam.py` | 5 | PPO's own loss sits behind `_policy_value_loss`, so an extension that replaces it keeps the MoE and JEPA terms |
+| `test_optim_learner.py` | 4 | `adam_settings` reads the `optimizer` group once: only the keys a run sets, betas as a tuple, nothing for the defaults so RLlib's own Adam is built. cda-cbp builds the authors' `AdamGnT` from the same function |
 | `test_learner_class_compat.py` | 10 | Learner classes cloudpickled on master (f7c1353) for the default, tuned-Adam and CBP compositions still load: a checkpoint names its mixins by module path. The CBP ones load with cda-cbp installed and fail naming it without |
 | `test_model_layout.py` | 26 | The model-layout contract: `layout.trunk_outputs` reports each encoder's MLP or LSTM trunk output and the heads reading it, with and without `vf_share_layers` |
 | `test_cbp_moved.py` | 19 | Continual Backprop moved to cda-cbp ([25](25_continual_backprop.md)): an old `cbp_*` key names the package, an old checkpoint's group reads as the `cbp` extension's settings, the old mixin name resolves or names the package, and a restore without the package stops instead of falling back |
@@ -174,7 +175,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((2,304 tests))
+  root((2,311 tests))
     Simulator
       orderbook 88
         the demo scripts as tests, a shadow model
@@ -253,11 +254,14 @@ mindmap
         logging, progress log, info dict
         activity metrics, episode record
         NAV conservation, book rendering
-      probe 59
+      probe 62
         targets, episode masking
         splits never shuffled
         unscoreable vs zero
         effective rank on a fixed corpus
+        the one effective rank, cda-cbp's included
+      optimiser settings 4
+        read once, for torch Adam and AdamGnT
       pretrain 28
         trains trunk + predictor only
         collapse reported not hidden
@@ -943,7 +947,7 @@ Two files, added with `train/probe/` ([23](23_probe_harness.md)). The harness pr
 people will cite*, so what these pin is not that it runs but the handful of properties that decide
 whether its numbers mean anything.
 
-#### 6.5.1 `test_probe.py` — 59 tests
+#### 6.5.1 `test_probe.py` — 62 tests
 
 Runs on synthetic observations built by hand, not on env rollouts: the arithmetic is the subject,
 and a target checked against the same expression that computes it checks nothing.
@@ -957,6 +961,7 @@ and a target checked against the same expression that computes it checks nothing
 | Metrics | R² of the mean predictor is 0 and of a constant target is 0 (not 1); balanced accuracy of a constant predictor is 0.5 — the reason it is balanced, since `two_sided` is true in almost every step |
 | `fit_and_score` | A linearly readable target scores > 0.99; pure noise does **not** score hugely negative, because the alpha grid reaches far enough to decline the overfit; a single-class or constant target is *unscoreable* rather than a floor value; the intercept is not penalised |
 | Report | Every feature set is scored on identical rows with an identical split; a misaligned set raises; a target below its `min_horizon` is skipped, not fatal; a tie names no winner |
+| Effective rank | The one definition: cda-cbp's `cbp_batch_effective_rank` calls it rather than keeping a torch copy, so it takes a tensor (one that requires grad included) and, with `too_few_rows=nan`, returns NaN rather than 0 for fewer than two rows |
 | Parquet | One row per `(episode, step)` by default, and `per_agent=True` keeps them all. The rows at one step are **no longer identical** — §4.2 gave each agent its own private tail — so the default now *drops* N-1 agents' private state rather than dropping duplicates, and the tests pin both halves of that. See [17](17_changelog.md) §34.5 |
 
 The two most load-bearing are `test_pure_noise_does_not_score_above_zero` and the row-selection
