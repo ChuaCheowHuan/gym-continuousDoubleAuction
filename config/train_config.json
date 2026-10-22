@@ -32,6 +32,8 @@
     "_note_fees": "See env_defaults.json. Exchange fees in basis points of a fill's notional; both 0 by default.",
     "maker_fee_bps": 0,
     "taker_fee_bps": 0,
+    "_note_market_variety": "See env_defaults.json. {} keeps one market; a dict of lists redraws matching_rule, step_clearing and the fees at every reset. Compare with train.compare --set 'market_variety={\"step_clearing\": [\"sequential\", \"batch\"]}'.",
+    "market_variety": {},
     "liquidation_horizon": 10,
     "initial_price_min": 10,
     "initial_price_max": 100,
