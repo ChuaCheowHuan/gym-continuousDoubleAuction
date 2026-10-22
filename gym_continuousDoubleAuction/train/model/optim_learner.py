@@ -21,10 +21,11 @@ class TunedAdamMixin:
     """Adam's betas and weight decay, from config instead of torch's defaults.
 
     A mixin of its own rather than part of `CBPLearnerMixin`, because the two
-    interventions are independent and the papers treat them that way. Both
-    papers run every algorithm *except* the standard-PPO baseline with
-    `beta_1 = beta_2 = 0.99`, on the grounds that the usual (0.9, 0.999)
-    mismatch is itself a cause of plasticity loss: the squared-gradient
+    interventions are independent and the papers treat them that way. The
+    Nature paper runs every algorithm *except* the standard-PPO baseline with
+    `beta_1 = beta_2 = 0.99` (the arXiv paper, 2108.06325v3 Appendix D, runs
+    all of its PPO variants at torch's (0.9, 0.999)), on the grounds that the
+    usual (0.9, 0.999) mismatch is itself a cause of plasticity loss: the squared-gradient
     estimate in the denominator updates far more slowly than the gradient
     estimate in the numerator, so one large gradient produces one very large,
     destabilising update. The Nature paper separately applies continual

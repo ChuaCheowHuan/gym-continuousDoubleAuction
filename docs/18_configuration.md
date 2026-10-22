@@ -1204,12 +1204,13 @@ fails at load, naming the package.
 
 ### 5.6.1 Why tuned Adam is separate from CBP
 
-The continual-backprop papers' reinforcement-learning recipe is not CBP alone. It is CBP **plus**
+The Nature continual-backprop paper's reinforcement-learning recipe is not CBP alone. It is CBP **plus**
 L2 at a weight decay of `1e-4` **plus** "tuned Adam" at `β₁ = β₂ = 0.99`, the last on the grounds
 that the usual `(0.9, 0.999)` is itself a cause of plasticity loss — the squared-gradient estimate
 in Adam's denominator updates far more slowly than the gradient estimate in its numerator, so one
-large gradient produces one very large update. Every algorithm in both papers except the
-standard-PPO baseline uses the retuned values.
+large gradient produces one very large update. Every algorithm in that paper except the
+standard-PPO baseline uses the retuned values. The arXiv paper (2108.06325v3, Appendix D) does
+not: its PPO, PPO+L2 and Continual PPO all run at torch's `(0.9, 0.999)`.
 
 That makes them easy to bundle, and bundling them would be a mistake: turning CBP on and retuning
 Adam in the same change would measure the two together, and neither paper claims they are the same
@@ -1220,8 +1221,8 @@ extension is enabled (`train/model/optim_learner.py`).
 
 | Key | Default | Meaning |
 |---|---|---|
-| `adam_betas` | `[0.9, 0.999]` | Adam's `betas`. The papers' tuned value is `[0.99, 0.99]` |
-| `adam_weight_decay` | `0.0` | L2. The papers' RL value is `1e-4` |
+| `adam_betas` | `[0.9, 0.999]` | Adam's `betas`. The Nature paper's tuned value is `[0.99, 0.99]`; the arXiv paper keeps the default |
+| `adam_weight_decay` | `0.0` | L2. The Nature paper's RL value is `1e-4` |
 
 At the defaults, `configure_optimizers_for_module` defers to RLlib's own implementation, so the
 optimiser is bit-for-bit the one every existing run and checkpoint was built with.
