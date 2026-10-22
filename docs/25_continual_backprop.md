@@ -8,7 +8,7 @@ is that kind of non-stationary problem by construction, which is why it was buil
 **It is no longer part of this repository.** It is the `cbp` extension in the
 [cda-cbp](https://github.com/ChuaCheowHuan/cda_cbp) package, loaded through the extension point
 of [30_extensions.md](30_extensions.md). The mechanism, its measurements and its settings moved
-with it, unchanged:
+with it unchanged; the package has since added two settings (below, "Using it"):
 
 | What | Where in cda_cbp |
 |---|---|
@@ -37,7 +37,11 @@ Then enable it in `train_config.json` (or a config passed with `--config`):
 ```
 
 The settings are the old `cbp_*` keys without the prefix; any left out take the package's
-defaults. `"metrics_only": true` measures the utility and the plasticity metrics without replacing
+defaults. The package has since added two settings whose defaults differ from what the built-in
+version did: `optimizer` (`adam_gnt`, the authors' Adam with a per-weight timestep, against torch
+Adam) and `count_rule` (`arxiv`, the arXiv paper's counter, against at most one replacement per
+layer per step). Set `"optimizer": "torch_adam", "count_rule": "nature"` to repeat a built-in run;
+a resumed checkpoint keeps its own behaviour without them. `"metrics_only": true` measures the utility and the plasticity metrics without replacing
 anything. Installing the package changes no run until `cbp` is listed.
 
 What stayed here:

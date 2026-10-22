@@ -4531,3 +4531,23 @@ extension: `test_extensions.py` after `test_cash_check.py` gave 25 errors with b
 installed. The appends are removed. A new lint test in `test_lint.py` (3 to 4) fails on the
 previous source, listing the seven. Unit 2,174 to 2,175; suite 2,323. Python code 55,076 lines in
 207 files. History in [29](29_fixed_issues.md#from-30--extensions).
+
+## 109. Docs pass after 2.1.0 and the extension packages' fixes
+
+A documentation review across gym-CDA, cda-discorl and cda-cbp, checked against the code on each
+`master`/`main` after #340, cda_disco_rl #7 and cda_cbp #5. No code changes.
+
+- **Counts.** The unit total in [10](10_testing.md) (the command comment, the "[verified]" line
+  and the inventory's total row) and in [00](00_getting_started.md) §0.2 still said 2,156; the
+  inventory rows already summed to 2,175, the current total.
+- **DiscoRL** ([30](30_extensions.md) §7). It said cda-discorl imports nothing from `disco_rl` and
+  lists `env_variety` as a component. Since cda-discorl 0.2.0 it imports `disco_rl` from a pinned
+  submodule of the fork, its five components are `target_policy`, `adv_ema`, `value_norm`,
+  `policy_prediction` and `disco103` (the last two experimental), and the per-episode market draw
+  is the `market_variety` env key. The install note says what the submodule brings, and the
+  metrics table gains Disco103's. [18](18_configuration.md) §3.5 puts `env_variety` in the past.
+- **Continual Backprop** ([25](25_continual_backprop.md)). cda-cbp added `optimizer` (default
+  `adam_gnt`) and `count_rule` (default `arxiv`) after the move, so old settings without them no
+  longer repeat a built-in run; the page says which values do.
+- **evaluate** ([26](26_runbook.md) §26.9.1, §26.10). The runbook names the restore guards
+  `train.evaluate` gained in #336, and the troubleshooting table has the missing-extension message.

@@ -140,9 +140,11 @@ contract it relies on.
 ## 7. Using the DiscoRL extension
 
 The `cda-discorl` package lives in its own repository,
-[cda_disco_rl](https://github.com/ChuaCheowHuan/cda_disco_rl), and imports nothing from DeepMind's
-`disco_rl`. Its own documentation covers each component, every setting and the comparison
-against PPO. This section covers only the steps on this side.
+[cda_disco_rl](https://github.com/ChuaCheowHuan/cda_disco_rl). It imports what DeepMind's
+`disco_rl` provides (the Disco103 rule and its weights, the debiased moving average, the published
+settings) from a pinned, unchanged copy of the ChuaCheowHuan/disco_rl fork that it ships as a git
+submodule, and keeps local only what has to be torch. Its own documentation covers each component,
+every setting and the comparison against PPO. This section covers only the steps on this side.
 
 ### 7.1 Install
 
@@ -153,7 +155,9 @@ pip install -e .
 pip install "git+https://github.com/ChuaCheowHuan/cda_disco_rl"
 ```
 
-Installing it changes no run. Run `pip uninstall cda-discorl` and remove its name from
+pip fetches the submodule, so the second line also installs `disco_rl` and its JAX stack (JAX
+runs on the CPU, beside PyTorch). Installing it changes no run, and a run that does not enable
+`discorl` never imports it or JAX (§1). Run `pip uninstall cda-discorl` and remove its name from
 `extensions_enabled` to undo it.
 
 ### 7.2 Enable it for a run
@@ -171,8 +175,10 @@ pass the copy with `--config`:
 With two trained agents, this setting gives `policy_0` the component and leaves `policy_1` as plain
 PPO, so one league compares the two. The package's
 [configuration guide](https://github.com/ChuaCheowHuan/cda_disco_rl/blob/main/docs/configuration.md)
-lists the five components (`target_policy`, `adv_ema`, `value_norm`, `env_variety` and
-`policy_prediction`), their settings and ready-made blocks.
+lists the five components (`target_policy`, `adv_ema`, `value_norm`, and the experimental
+`policy_prediction` and `disco103`), their settings and ready-made blocks. Redrawing the market per
+episode, which the package's 0.1.0 did as `env_variety`, is this repository's `market_variety` env
+key ([18](18_configuration.md) §3.5).
 
 ### 7.3 Compare it against plain PPO
 
@@ -190,8 +196,8 @@ python -m gym_continuousDoubleAuction.train.compare \
 The package's
 [findings](https://github.com/ChuaCheowHuan/cda_disco_rl/blob/main/docs/findings.md) record the
 results so far. At three seeds and 30 iterations, no component separated from PPO on return.
-Target policy had the best mean, and the categorical critic and Disco103 did not learn here, so
-the package leaves both out.
+Target policy had the best mean. The categorical critic did not learn here and is left out;
+Disco103 did not learn either, and is back only as the experimental `disco103` component.
 
 ### 7.4 What to read in the logs
 
@@ -202,6 +208,7 @@ Each component logs under its trained module's learner metrics, with a `discorl_
 | `discorl_target_kl` | `target_policy` |
 | `discorl_value_norm_mean`, `discorl_value_norm_std` | `value_norm` |
 | `discorl_policy_prediction_loss` | `policy_prediction` |
+| `discorl_d103_<component>_{pi,y,z,aux,q}_loss`, `discorl_d103_size_policy_loss` | `disco103` |
 
 `vf_explained_var` stays comparable with a plain PPO run's. With `value_norm` on it is computed
 from normalised targets and predictions, and normalising both the same way leaves explained
