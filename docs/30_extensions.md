@@ -49,8 +49,15 @@ EXTENSION = Extension(
 )
 ```
 
-Discovery fails loudly: an entry point that does not resolve to an `Extension`, or whose `name`
-differs from the entry-point name, raises on the first lookup.
+Discovery lists the entry points from package metadata and imports nothing. Only a name a run
+enables, or a checkpoint being restored records, is imported, so an installed package costs a run
+that does not enable it nothing, not even its imports (cda-discorl's JAX). An entry point that does
+not resolve to an `Extension`, or whose `name` differs from the entry-point name, raises when it is
+loaded. `extensions.discover()` loads every installed one, for tooling that wants them all; the
+training path never calls it ([29](29_fixed_issues.md#from-30--extensions), #337).
+
+An extension that relies on the lazy loading or on `extra_trunk_heads` (§8) pins
+`gym_continuousDoubleAuction>=2.1,<3`.
 
 ## 2. Enabling one
 
@@ -104,7 +111,9 @@ the PPO and JEPA Learners.
 
 - `league_state.json` records `{"extensions": {name: version}}` beside a checkpoint whose run
   enabled any. A restore reads it before RLlib unpickles anything, and refuses by name when one is
-  not installed: "trained with extension(s) myext 0.1.0, which are not installed here".
+  not installed: "trained with extension(s) myext 0.1.0, which are not installed here". A training
+  resume and `train.evaluate` run the same guards, this one and the class check below
+  ([29](29_fixed_issues.md#from-30--extensions), #336).
 - `extensions_enabled` is unrestorable: changing it on a resume raises, whether it turns an
   extension on or off. A default run's config carries no extensions group, and it is compared as
   "none enabled". A checkpoint from before this feature reads the same way, so it restores with the
@@ -211,6 +220,19 @@ only, and shows the two parts of this contract the DiscoRL example does not use:
   rather than this repository's attribute paths, and
   [`test_model_layout.py`](../gym_continuousDoubleAuction/test/test_model_layout.py) fails here if
   a rename would break it.
+- **Heads an extension adds.** A module mixin whose head reads a trunk's output declares it, so
+  CBP resets that head's input weights with the trunk unit it replaces:
+
+  ```python
+  class MyModuleMixin:
+      extra_trunk_heads = {"encoder": ("aux_pi",), "actor_encoder": ("aux_pi",)}
+  ```
+
+  The keys are trunk names (`encoder` under `vf_share_layers`, else `actor_encoder` and
+  `critic_encoder`). The declarations of every class in the module's MRO merge, and
+  `trunk_outputs` reports the attributes the module has as `TrunkOutput.extra_heads`, apart from
+  `heads` (`pi`, `vf`). An undeclared head keeps reading a replaced unit with the old unit's
+  weights ([29](29_fixed_issues.md#from-30--extensions), #338).
 
 ```bash
 pip install "git+https://github.com/ChuaCheowHuan/cda_cbp"
