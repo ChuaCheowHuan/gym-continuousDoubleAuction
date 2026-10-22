@@ -384,6 +384,8 @@ masking, a non-negligible `unmatched_action_fraction` would be a bug, not a beha
 Added 2026-09-18 ([16](16_verification_log.md) §16.26). Two knobs on the env, both kept for
 comparison rather than to change the default, which stays the continuous double auction's
 price-time priority with sequential arrival.
+`market_variety` ([18](18_configuration.md) §3.5) can redraw both per episode, for training across
+regimes.
 
 ### 8.1 `matching_rule`: how a price level is shared
 

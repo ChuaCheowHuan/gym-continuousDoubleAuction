@@ -368,6 +368,35 @@ near the end - the agent does not know whether a step is its last - and `time_le
 reaching 0 in most episodes. Which of these matters is an empirical question; both modes run under
 `train.compare --set episode_length_mode=random --set max_step_min=... --set max_step_max=...`.
 
+## 3.5 Market variety: `market_variety`
+
+| Key | Default | Meaning |
+|---|---|---|
+| `market_variety` | `{}` | `{}`: every episode runs under the configured market. Otherwise a dict mapping any of `matching_rule`, `step_clearing`, `maker_fee_bps` and `taker_fee_bps` to a non-empty list of values; each reset draws one value per listed key |
+
+The draw uses the env's seeded generator, like the horizon above, so `reset(seed=...)` repeats an
+episode's market, and keys are drawn in a fixed order whatever order the config lists them in. A
+key not listed keeps its configured value. The matching rule takes effect on the book `reset`
+builds, the clearing mode on every step, and the fees on every account. The drawn values are
+reported as `market` in each agent's reset `infos`; the policy is not shown them. With `{}` nothing
+is drawn, so the generator's stream, and every existing run, is unchanged.
+
+Only these four keys can vary: none changes the observation or action space, and none needs the
+env rebuilt. Construction refuses an unknown key, an empty list, a matching rule or clearing mode
+the env does not have, and any maker and taker pair the lists can produce that the fee rules of
+§3.0.4 reject. For example:
+
+```json
+"market_variety": {"matching_rule": ["fifo", "pro_rata"], "step_clearing": ["sequential", "batch"]}
+```
+
+**Why one would want it.** A league trains against changing opponents but on one fixed market,
+so a policy can fit that market's rules. Drawing the rules per episode trains it across a spread
+of markets, the environment-diversity lesson of DiscoRL's discovery runs (Oh et al., 2025). Judge
+such a run on held-out markets rather than training return, since fees change returns. It changes
+the game rather than the layout, so a checkpoint restores across it. It replaces the `env_variety`
+wrapper of the `cda-discorl` extension, which did the same from outside the env.
+
 ## 4. Structural constants
 
 `config/tunable_constants.json`. These shape the observation and action spaces, the module-ID

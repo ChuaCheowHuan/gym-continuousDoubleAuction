@@ -17,11 +17,11 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# the unit tests (2,136). pyproject.toml's addopts ignores test/integration by default,
+# the unit tests (2,156). pyproject.toml's addopts ignores test/integration by default,
 # so this never runs the slow RLlib suite as well
 python -m pytest gym_continuousDoubleAuction/test -q
 
-# then the integration suite, named explicitly - everything is these two (2,284 tests).
+# then the integration suite, named explicitly - everything is these two (2,304 tests).
 # RLlib wiring, the real save/restore, the progress log and a real remote
 # runner (148 tests, builds real Algorithms)
 python -m pytest gym_continuousDoubleAuction/test/integration -q
@@ -44,7 +44,7 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `1363 passed` on the unit half, `172 passed` on the integration half, when this was first measured; the current totals are 2,136 and 148 (§ "File inventory" below). There is no xfail.
+**[verified]** — `1363 passed` on the unit half, `172 passed` on the integration half, when this was first measured; the current totals are 2,156 and 148 (§ "File inventory" below). There is no xfail.
 
 ### File inventory
 
@@ -53,6 +53,7 @@ Counts re-measured with `--collect-only`.
 | File | Tests | Area |
 |---|---|---|
 | `test_orderbook_new.py` | 23 | Matching engine components and integration; malformed input raises `ValueError`, never `SystemExit` (S3-7); the constructor takes no tick (S3-4) |
+| `test_market_variety.py` | 20 | `market_variety` ([18](18_configuration.md) §3.5): off by default and drawing nothing, a seeded reset repeating its market, every choice drawn, the draw reaching the book, the clearing mode and every account, the spaces unchanged, money conserved across drawn markets, bad choices refused at construction |
 | `test_matching_regimes.py` | 24 | The allocation rule (fifo, pro-rata with exact largest-remainder rounding) and batch clearing at the book: the uniform price and its tie-breaks, resting-first rationing, position independence off the margin, deferred modifies, settlement that conserves NAV, and price improvement on a resting order re-basing its escrow so `cash_on_hold` never goes negative (S3-25) |
 | `test_clearing_env.py` | 13 | The regimes through the env config: defaults, validation, the rule on every episode's book, a crossing pair clearing at the reference whatever the shuffle, passive-fill accounting, render alignment, NAV conservation under random play in every combination |
 | `test_orderbook_properties.py` | 4 | Hypothesis: every book, escrow and ledger invariant, for any order sequence and under random env play at three ticks (S4-13) |
@@ -144,7 +145,7 @@ Counts re-measured with `--collect-only`.
 | `test_learner_class_compat.py` | 10 | Learner classes cloudpickled on master (f7c1353) for the default, tuned-Adam and CBP compositions still load: a checkpoint names its mixins by module path. The CBP ones load with cda-cbp installed and fail naming it without |
 | `test_model_layout.py` | 26 | The model-layout contract: `layout.trunk_outputs` reports each encoder's MLP or LSTM trunk output and the heads reading it, with and without `vf_share_layers` |
 | `test_cbp_moved.py` | 19 | Continual Backprop moved to cda-cbp ([25](25_continual_backprop.md)): an old `cbp_*` key names the package, an old checkpoint's group reads as the `cbp` extension's settings, the old mixin name resolves or names the package, and a restore without the package stops instead of falling back |
-| **unit total** | **2,136** | |
+| **unit total** | **2,156** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -173,7 +174,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((2,284 tests))
+  root((2,304 tests))
     Simulator
       orderbook 88
         the demo scripts as tests, a shadow model
@@ -226,6 +227,8 @@ mindmap
         truncation on max_step, or on a drawn horizon
         seeded episodes, bankruptcy
         margin, liquidation in the book, ADL
+      market variety 20
+        rules redrawn per episode, seeded
     Training
       config 89
         loading, wiring, no literals

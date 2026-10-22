@@ -4451,3 +4451,18 @@ driver, so the two figures were never two setups: 60 was stale. The note and 18 
 90 per runner; 09 and 18 §8 cite 86–112 measured; 00 §0.2 has the table, replacing its "estimate,
 not a measurement" for two runners; 20's 2-runner row cites it. `sample_timeout_s` (600 s) is
 unchanged: two runners need about 90 s for their share and one about 190 s.
+
+## 105. Market variety: the market's rules redrawn per episode
+
+A new env key, `market_variety` ([18](18_configuration.md) §3.5), maps any of `matching_rule`,
+`step_clearing`, `maker_fee_bps` and `taker_fee_bps` to a list of values; each reset draws one per
+key from the env's seeded generator. The default, `{}`, draws nothing, so no run changes. The
+choices, including every fee pair they can produce, are checked at construction. The key is in
+both JSON files and `TrainConfig`.
+
+It moves into the env what the `cda-discorl` extension's `env_variety` wrapper did from outside:
+that wrapper replaced `reset`, kept its own generator and set the env's attributes directly, so it
+depended on the env's internals. As an env option it uses the env's own generator and validation
+and is available to every run. `test_market_variety.py` (20 tests) brings the unit total to 2,156
+and the suite to 2,304.
+
