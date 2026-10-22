@@ -4479,7 +4479,7 @@ weight decay `TunedAdamMixin` reads. Its `cbp_batch_effective_rank` metric kept 
   to the CPU) and a `too_few_rows` value, 0 by default as before; cda-cbp passes NaN.
 - **Tests.** `test_optim_learner.py` (new, 4) and `test_probe.py` 59 to 62
   (`TestEffectiveRankIsTheOneDefinition`); all seven fail on the previous source. Unit 2,156 to
-  2,163; integration 148; suite 2,311. Python code CODESIZE.
+  2,163; integration 148; suite 2,311. Python code 54,863 lines in 207 files.
 - **Tuned Adam inside the extensions.** `_learner_class` wrapped tuned Adam around the composed
   extensions. `TunedAdamMixin.configure_optimizers_for_module` builds torch's Adam without calling
   `super()`, so a CBP run that also set `adam_betas` or `adam_weight_decay` trained with torch
