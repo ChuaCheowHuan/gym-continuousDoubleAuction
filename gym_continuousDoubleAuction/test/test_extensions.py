@@ -139,6 +139,44 @@ class TestDiscovery:
             extensions.discover()
 
 
+class TestOnlyWhatIsEnabledIsLoaded:
+    """Discovery lists entry points without importing them (#337): installing a
+    package, even one whose import fails or is slow (JAX), changes no run that
+    does not enable it."""
+
+    BROKEN = "raise ImportError('cda_broken_ext must not be imported')\n"
+
+    @pytest.fixture
+    def broken(self, dummy, tmp_path):
+        _install(tmp_path, "broken", "EXTENSION", self.BROKEN, module="cda_broken_ext")
+        extensions.discover.cache_clear()
+
+    def test_nothing_enabled_imports_no_extension(self, broken):
+        import sys
+
+        cfg = _cfg()
+        assert extensions.learner_config(cfg)["extension_settings"] == {}
+        assert "cda_broken_ext" not in sys.modules
+
+    def test_enabling_one_imports_only_that_one(self, broken):
+        import sys
+
+        cfg = _cfg(extensions_enabled=["dummy"])
+        assert sorted(extensions.learner_config(cfg)["extension_settings"]) == ["dummy"]
+        assert extensions.wrap_env(SimpleNamespace(), ["dummy"], {}).wrapped_by == ("dummy", 4)
+        assert "cda_broken_ext" not in sys.modules
+
+    def test_a_recorded_extension_is_checked_without_importing_it(self, broken):
+        import sys
+
+        extensions.check_installed({extensions.EXTENSIONS_STATE_KEY: {"broken": "0.1.0"}}, "ckpt")
+        assert "cda_broken_ext" not in sys.modules
+
+    def test_enabling_a_broken_one_still_raises_its_error(self, broken):
+        with pytest.raises(ImportError, match="must not be imported"):
+            _cfg(extensions_enabled=["broken"])
+
+
 class TestNothingEnabledChangesNothing:
     def test_the_shipped_config_enables_nothing(self):
         cfg = TrainConfig()
