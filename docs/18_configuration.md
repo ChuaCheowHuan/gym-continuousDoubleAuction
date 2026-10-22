@@ -395,7 +395,8 @@ so a policy can fit that market's rules. Drawing the rules per episode trains it
 of markets, the environment-diversity lesson of DiscoRL's discovery runs (Oh et al., 2025). Judge
 such a run on held-out markets rather than training return, since fees change returns. It changes
 the game rather than the layout, so a checkpoint restores across it. It replaces the `env_variety`
-wrapper of the `cda-discorl` extension, which did the same from outside the env.
+wrapper that version 0.1.0 of the `cda-discorl` extension used to do the same from outside the env;
+0.2.0 removed it.
 
 ## 4. Structural constants
 

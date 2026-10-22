@@ -404,7 +404,9 @@ checkpoints evaluated with the same seed face the same price anchors and opponen
 checkpoint's sampled actions repeat, and the difference is the policies. `--max-step` also pins
 `max_step_min` and `max_step_max` when the checkpoint trained with `episode_length_mode: random`,
 which ignores `max_step`. A checkpoint from another
-observation or action layout is refused by name.
+observation or action layout is refused by name, and so is one trained with an extension, or
+pickling a class, that this install lacks: `evaluate` runs the same restore guards as a training
+resume ([30](30_extensions.md) §5).
 
 
 ### 26.9.2 Take a policy's weights out of a checkpoint
@@ -457,6 +459,7 @@ applied inside the module, so nothing extra is needed for it.
 | `Cannot restore: the configuration changes the shape of the problem` | a structural key differs from the checkpoint | revert the key, or start fresh in a new `--log-base-dir` |
 | `Cannot restore: these keys are read when the Learner class is chosen` | `adam_*`, `extensions_enabled` or an `ext.<name>.*` setting changed alongside `--restore` | same: fresh run. For a checkpoint trained with Continual Backprop, enable `cbp` with the settings it used ([25](25_continual_backprop.md)) |
 | `This checkpoint was trained with Continual Backprop ... Install the cda-cbp package` | resuming a CBP checkpoint without the package | `pip install git+https://github.com/ChuaCheowHuan/cda_cbp`, then enable `cbp` ([25](25_continual_backprop.md)) |
+| `it was trained with extension(s) <name> <version>, which are not installed here` | `--restore` or `train.evaluate` on a checkpoint whose run enabled an extension this install lacks | install that package (the version recorded is the one it ran), or start a fresh run ([30](30_extensions.md) §5) |
 | `... Continual Backprop moved out of gym-continuousDoubleAuction into the cda-cbp package` | a config or `--set` still names a `cbp_*` key | move it to `extension_settings.cbp` without the prefix ([25](25_continual_backprop.md)) |
 | `NavConservationError` stops the run | the ledger created or destroyed cash | a bug, not a tuning problem: keep the run directory and the episode Parquet, open an issue with `run.log`'s `NAV conservation VIOLATED` block |
 | `checkpoint is already at iteration N, at or past the target` | `num_iters` is a target and the restore is past it | raise `--iters` or pass `--iters-is-delta` |
