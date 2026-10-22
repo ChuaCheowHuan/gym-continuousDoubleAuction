@@ -749,3 +749,30 @@ class TestPerAgentCorporaAreNotScored:
         report_module.run(
             got, {"raw": np.random.default_rng(0).normal(size=(len(got), 3))}, ["mid_return"], [1]
         )
+
+
+class TestEffectiveRankIsTheOneDefinition:
+    """cda-cbp imports this function for its `cbp_batch_effective_rank` metric
+    instead of keeping a torch copy, so it takes what that metric needs."""
+
+    def test_too_few_rows_can_report_nan(self):
+        """0 in a report column; NaN in a metric series, where 0 reads as collapse."""
+        assert rank_module.effective_rank(np.ones((1, 8))) == 0
+        assert np.isnan(rank_module.effective_rank(np.ones((1, 8)), too_few_rows=float("nan")))
+        assert np.isnan(rank_module.effective_rank(np.empty((0, 8)), too_few_rows=float("nan")))
+
+    def test_it_takes_a_torch_tensor(self):
+        import torch
+
+        matrix = np.random.default_rng(0).standard_normal((64, 8))
+        assert rank_module.effective_rank(torch.tensor(matrix)) == rank_module.effective_rank(
+            matrix
+        )
+
+    def test_a_tensor_that_requires_grad_is_measured_without_it(self):
+        import torch
+
+        tensor = torch.randn(32, 4, requires_grad=True)
+        assert rank_module.effective_rank(tensor) == rank_module.effective_rank(
+            tensor.detach().numpy()
+        )

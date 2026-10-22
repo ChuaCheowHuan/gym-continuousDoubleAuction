@@ -83,39 +83,43 @@ OPTIMIZER_CONFIG_KEY = "optimizer"
 
 
 def _learner_class(cfg: TrainConfig):
-    """The Learner for this run: the encoder's, then extensions, then tuned Adam.
+    """The Learner for this run: the encoder's, then tuned Adam, then extensions.
 
     Three separate mechanisms, resolved in order:
 
     1. `learner_class_for` picks the Learner the *encoder* needs - the JEPA one
        for `jepa`, the shared MoE one for everything else. RLlib takes a single
        algorithm-wide Learner, so this is a one-of-N choice.
-    2. Enabled extensions (docs/30) are composed over it, so they inherit the
-       MoE and JEPA loss terms. Continual Backprop is one of them now (the
-       `cda-cbp` package); its `learner_order` keeps it outside the others.
-    3. Tuned Adam, when its knobs differ from torch's defaults. It only
-       overrides `configure_optimizers_for_module`, which no extension
-       touches, so its place in the MRO changes nothing else.
+    2. Tuned Adam, when its knobs differ from torch's defaults. It overrides
+       `configure_optimizers_for_module` and does not call `super()` when it
+       builds the optimiser itself, so it sits *inside* the extensions: an
+       extension that builds its own optimiser (cda-cbp builds the authors'
+       `AdamGnT`) must run first and still read the same betas and weight
+       decay through `optim_learner.adam_settings`. Outside them it silently
+       replaced that optimiser with torch's Adam (#335 review).
+    3. Enabled extensions (docs/30) are composed over it, so they inherit the
+       MoE and JEPA loss terms and tuned Adam. Continual Backprop is one of them
+       now (the `cda-cbp` package); its `learner_order` keeps it outside the
+       others.
 
     With no extension and torch's Adam this returns exactly what step 1
     returned, which is what keeps a default run identical to one from before.
     """
     base = learner_class_for(cfg.encoder_type, CDAPPOTorchLearner)
-    base = extensions.compose_learner(base, cfg)
 
     # The optimiser knobs are composed independently of any extension, so that
     # the papers' tuned Adam can be run on its own: composing it only alongside
     # Continual Backprop would make every CBP-vs-baseline comparison a
     # comparison of both at once.
     tuned_adam = list(cfg.adam_betas) != [0.9, 0.999] or cfg.adam_weight_decay != 0.0
-    if not tuned_adam:
-        return base
+    if tuned_adam:
+        # Imported here rather than at module scope: a run without it should not
+        # pay for importing the mixin, and nothing else in this module needs it.
+        from gym_continuousDoubleAuction.train.model.optim_learner import with_tuned_adam
 
-    # Imported here rather than at module scope: a run without it should not
-    # pay for importing the mixin, and nothing else in this module needs it.
-    from gym_continuousDoubleAuction.train.model.optim_learner import with_tuned_adam
+        base = with_tuned_adam(base)
 
-    return with_tuned_adam(base)
+    return extensions.compose_learner(base, cfg)
 
 
 def _learner_config_dict(cfg: TrainConfig) -> dict:

@@ -69,7 +69,7 @@ them while the package is uninstalled.
 
 | Piece | Composed in | Order |
 |---|---|---|
-| Learner mixin | `build._learner_class`, after the encoder's Learner and before tuned Adam | Mixins sorted by `learner_order` (highest outermost), then by name, ahead of the base |
+| Learner mixin | `build._learner_class`, over the encoder's Learner and tuned Adam, so an extension that builds its own optimiser runs before tuned Adam's | Mixins sorted by `learner_order` (highest outermost), then by name, ahead of the base |
 | Module mixin | `build.build_config`, on each trainable module the extension's `module_ids` selects | By extension name; frozen baselines are never touched |
 | Env wrapper | `build.register_env`, on every env RLlib creates | By extension name |
 

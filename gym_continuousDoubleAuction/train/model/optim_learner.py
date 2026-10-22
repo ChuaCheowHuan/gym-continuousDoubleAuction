@@ -9,6 +9,8 @@ reference to `cbp_learner.TunedAdamMixin` (test_learner_class_compat.py).
 
 from __future__ import annotations
 
+from typing import Any, Dict
+
 import torch
 
 #: Key under which the optimiser group rides on `learner_config_dict`.
@@ -19,10 +21,11 @@ class TunedAdamMixin:
     """Adam's betas and weight decay, from config instead of torch's defaults.
 
     A mixin of its own rather than part of `CBPLearnerMixin`, because the two
-    interventions are independent and the papers treat them that way. Both
-    papers run every algorithm *except* the standard-PPO baseline with
-    `beta_1 = beta_2 = 0.99`, on the grounds that the usual (0.9, 0.999)
-    mismatch is itself a cause of plasticity loss: the squared-gradient
+    interventions are independent and the papers treat them that way. The
+    Nature paper runs every algorithm *except* the standard-PPO baseline with
+    `beta_1 = beta_2 = 0.99` (the arXiv paper, 2108.06325v3 Appendix D, runs
+    all of its PPO variants at torch's (0.9, 0.999)), on the grounds that the
+    usual (0.9, 0.999) mismatch is itself a cause of plasticity loss: the squared-gradient
     estimate in the denominator updates far more slowly than the gradient
     estimate in the numerator, so one large gradient produces one very large,
     destabilising update. The Nature paper separately applies continual
@@ -36,29 +39,38 @@ class TunedAdamMixin:
     """
 
     def configure_optimizers_for_module(self, module_id, config=None) -> None:
-        values = (getattr(self.config, "learner_config_dict", None) or {}).get(
-            OPTIMIZER_CONFIG_KEY
-        ) or {}
-        betas = values.get("adam_betas")
-        weight_decay = values.get("adam_weight_decay")
-        if not betas and not weight_decay:
+        settings = adam_settings(getattr(self.config, "learner_config_dict", None))
+        if not settings:
             # Nothing configured - defer, so the optimiser is bit-for-bit the
             # one RLlib builds. This is the path every existing run takes.
             super().configure_optimizers_for_module(module_id, config=config)
             return
 
         params = self.get_parameters(self.module[module_id])
-        optimizer = torch.optim.Adam(
-            params,
-            betas=tuple(betas) if betas else (0.9, 0.999),
-            weight_decay=float(weight_decay or 0.0),
-        )
+        optimizer = torch.optim.Adam(params, **settings)
         self.register_optimizer(
             module_id=module_id,
             optimizer=optimizer,
             params=params,
             lr_or_lr_schedule=config.lr,
         )
+
+
+def adam_settings(learner_config_dict) -> Dict[str, Any]:
+    """Adam keyword arguments from the `optimizer` group: only the ones it sets.
+
+    A setting left unset (or at zero) is not passed, so the optimiser's own
+    default applies and an empty dict means Adam exactly as RLlib builds it.
+    The one reader of the group: `TunedAdamMixin` builds torch's Adam from it,
+    and the cda-cbp extension builds the authors' `AdamGnT` from it.
+    """
+    values = (learner_config_dict or {}).get(OPTIMIZER_CONFIG_KEY) or {}
+    settings: Dict[str, Any] = {}
+    if values.get("adam_betas"):
+        settings["betas"] = tuple(values["adam_betas"])
+    if values.get("adam_weight_decay"):
+        settings["weight_decay"] = float(values["adam_weight_decay"])
+    return settings
 
 
 def with_tuned_adam(base):

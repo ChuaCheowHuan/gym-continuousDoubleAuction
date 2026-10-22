@@ -260,10 +260,11 @@ class TrainConfig:
     # --- Optimiser -----------------------------------------------------------
     # Both default to torch's own values, so a run that changes neither builds
     # exactly the optimiser RLlib has always built. Set them to reproduce the
-    # continual-backprop papers' RL recipe, which runs every algorithm but the
-    # standard-PPO baseline at beta_1 = beta_2 = 0.99 and pairs CBP with a
-    # weight decay of 1e-4. Kept apart from CBP (now the `cda-cbp` extension)
-    # on purpose: turning both on at once would measure them together.
+    # Nature continual-backprop paper's RL recipe, which runs every algorithm
+    # but the standard-PPO baseline at beta_1 = beta_2 = 0.99 and pairs CBP with
+    # a weight decay of 1e-4 (the arXiv paper keeps torch's betas). Kept apart
+    # from CBP (now the `cda-cbp` extension) on purpose: turning both on at once
+    # would measure them together.
     adam_betas: List[float] = _default("adam_betas")
     adam_weight_decay: float = _default("adam_weight_decay")
 
