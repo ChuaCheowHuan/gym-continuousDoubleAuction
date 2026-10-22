@@ -67,28 +67,28 @@ DEFAULT_THRESHOLD = 0.99
 MIN_ROWS_PER_WIDTH = 2.0
 
 
-def effective_rank(matrix: np.ndarray, threshold: float = DEFAULT_THRESHOLD) -> int:
+def effective_rank(matrix, threshold: float = DEFAULT_THRESHOLD, too_few_rows: float = 0):
     """Smallest number of singular values carrying `threshold` of the total.
 
-    The same definition `cda_cbp.cbp.effective_rank` implements in torch, on
-    numpy here because that is what this harness works in. Two array libraries,
-    one definition, and nothing but cda-cbp's `tests/test_moved_checks.py`
-    keeping them the same measurement.
+    The one definition: cda-cbp's `cbp_batch_effective_rank` metric calls this
+    too, on its torch activations, rather than keeping a torch copy. `matrix`
+    is anything `np.asarray` takes, a CPU tensor included (detached here).
 
     Returns 0 for an empty matrix and for one whose singular values are all
     zero, both of which mean "no directions at all" rather than "one".
 
-    **The one place the two deliberately differ** is a matrix with fewer than
-    two rows. Here that is 0, because the number goes into a report column
-    where it is read as a rank; cda-cbp's `effective_rank` returns NaN, because that
-    one goes into a metric series where 0 would be read as total collapse. The
-    agreement test pins both answers so the divergence stays deliberate.
+    A matrix with fewer than two rows has nothing to decompose and returns
+    `too_few_rows`: 0 by default, because here the number goes into a report
+    column where it is read as a rank. cda-cbp passes NaN, because its value
+    goes into a metric series where 0 would be read as total collapse.
     """
+    if hasattr(matrix, "detach"):
+        matrix = matrix.detach().cpu()
     values = np.asarray(matrix, dtype=np.float64)
     if values.ndim > 2:
         values = values.reshape(-1, values.shape[-1])
     if values.size == 0 or values.shape[0] < 2:
-        return 0
+        return too_few_rows
 
     singular = np.linalg.svd(values, compute_uv=False)
     total = singular.sum()
