@@ -1,9 +1,4 @@
-import sys
 from decimal import Decimal
-
-# Add parent directory to path to import modules
-if "../" not in sys.path:
-    sys.path.append("../")
 
 from gym_continuousDoubleAuction.envs.orderbook.orderbook import OrderBook
 

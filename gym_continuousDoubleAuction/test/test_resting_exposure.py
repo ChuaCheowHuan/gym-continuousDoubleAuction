@@ -16,11 +16,7 @@ convention and is asserted here rather than fixed, so a change to it is a
 deliberate one.
 """
 
-import sys
 from decimal import Decimal
-
-if "../" not in sys.path:
-    sys.path.append("../")
 
 from gym_continuousDoubleAuction.envs.orderbook.orderbook import OrderBook
 from gym_continuousDoubleAuction.envs.agent.trader import Trader
