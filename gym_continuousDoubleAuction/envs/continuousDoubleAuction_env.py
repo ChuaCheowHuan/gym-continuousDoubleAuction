@@ -54,6 +54,10 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
         self.episode_horizon = self.time_left_horizon
         is_render = settings.is_render
         self.n_hist = settings.n_hist
+        # Market rules redrawn at every reset, or {} for one market (docs/18
+        # section 3.5). `market` is what the episode in progress drew.
+        self.market_variety = dict(settings.market_variety)
+        self.market = {}
 
         # Initialize parent classes
         super().__init__(
@@ -205,6 +209,11 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
         # (issue #247); this env defines none of its own.
         super().reset(seed=seed, options=options)
 
+        # This episode's market, drawn before the book is built since the book
+        # takes the matching rule. Off by default, when nothing is drawn and the
+        # generator's stream is the same as without the key.
+        self.market = self._draw_market()
+
         # A fresh book. The tick grid is not the book's concern: it keys
         # prices on whatever Decimal it is handed, and `Action_Helper.min_tick`
         # is what puts every quoted price on the configured grid.
@@ -261,8 +270,37 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
         infos = {
             agent_id: {"episode_horizon": self.episode_horizon} for agent_id in self._agent_ids
         }
+        if self.market:
+            for info in infos.values():
+                info["market"] = dict(self.market)
 
         return observations, infos
+
+    def _draw_market(self):
+        """One value per `market_variety` key from the seeded generator, applied.
+
+        Keys are drawn in `EnvSettings.MARKET_VARIETY_KEYS` order, so a seeded
+        reset repeats its market whatever order the config listed them in. The
+        matching rule takes effect when `reset` builds the book, the clearing
+        mode on every step, and the fees on every account (`reset_acc` keeps an
+        account's rates).
+        """
+        drawn = {}
+        for key in EnvSettings.MARKET_VARIETY_KEYS:
+            if key in self.market_variety:
+                choices = self.market_variety[key]
+                drawn[key] = choices[int(self.np_random.integers(len(choices)))]
+        if "matching_rule" in drawn:
+            self.matching_rule = drawn["matching_rule"]
+        if "step_clearing" in drawn:
+            self.step_clearing = drawn["step_clearing"]
+        if "maker_fee_bps" in drawn or "taker_fee_bps" in drawn:
+            self.maker_fee_bps = drawn.get("maker_fee_bps", self.maker_fee_bps)
+            self.taker_fee_bps = drawn.get("taker_fee_bps", self.taker_fee_bps)
+            for trader in self.traders:
+                trader.acc.maker_fee_bps = Decimal(str(self.maker_fee_bps))
+                trader.acc.taker_fee_bps = Decimal(str(self.taker_fee_bps))
+        return drawn
 
     # Updated step method to return 5 values: obs, rewards, terminated, truncated, infos
     def step(self, actions):

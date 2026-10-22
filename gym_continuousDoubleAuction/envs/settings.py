@@ -51,6 +51,7 @@ class EnvSettings:
     liquidation_horizon: int
     maker_fee_bps: Any
     taker_fee_bps: Any
+    market_variety: Mapping[str, Any]
     initial_price_min: Any
     initial_price_max: Any
     min_size: int
@@ -76,8 +77,12 @@ class EnvSettings:
             "maker_fee_bps",
             "taker_fee_bps",
             "allow_multiple_orders_per_level",
+            "market_variety",
         }
     )
+    #: The keys `market_variety` may redraw at reset: each can change between
+    #: episodes without changing the observation or action space.
+    MARKET_VARIETY_KEYS = ("matching_rule", "step_clearing", "maker_fee_bps", "taker_fee_bps")
     #: The reward model's coefficients (`RewardModel`).
     REWARD_KEYS = (
         "order_penalty",
@@ -101,6 +106,7 @@ class EnvSettings:
                 f"allow_multiple_orders_per_level must be true or false; got "
                 f"{self.allow_multiple_orders_per_level!r}."
             )
+        self._check_market_variety()
         if self.episode_length_mode not in ("fixed", "random"):
             raise ValueError(
                 f"episode_length_mode must be 'fixed' or 'random'; got "
@@ -116,6 +122,43 @@ class EnvSettings:
             raise ValueError(
                 f"episode_length_mode 'fixed' needs max_step >= 1; got {self.max_step!r}."
             )
+
+    def _check_market_variety(self) -> None:
+        """Refuse a `market_variety` that could draw a market the env would reject."""
+        # Imported here: the exchange imports the env's components, not this module,
+        # but keeping the import local keeps settings importable on its own.
+        from .exchg.exchg_helper import Exchg_Helper
+        from .orderbook.orderbook import OrderBook
+
+        variety = self.market_variety
+        if not isinstance(variety, Mapping):
+            raise ValueError(
+                f"market_variety must be a dict of lists (or {{}} for off); got {variety!r}."
+            )
+        unknown = sorted(set(variety) - set(self.MARKET_VARIETY_KEYS))
+        if unknown:
+            raise ValueError(
+                f"market_variety may only name {list(self.MARKET_VARIETY_KEYS)}, which can "
+                f"change between episodes without changing the spaces; got {unknown}."
+            )
+        allowed = {
+            "matching_rule": OrderBook.MATCHING_RULES,
+            "step_clearing": Exchg_Helper.STEP_CLEARINGS,
+        }
+        for key, values in variety.items():
+            if not isinstance(values, list) or not values:
+                raise ValueError(
+                    f"market_variety[{key!r}] must be a non-empty list; got {values!r}."
+                )
+            if key in allowed and not set(values) <= set(allowed[key]):
+                raise ValueError(
+                    f"market_variety[{key!r}] may only hold {list(allowed[key])}; got {values!r}."
+                )
+        makers = variety.get("maker_fee_bps", [self.maker_fee_bps])
+        takers = variety.get("taker_fee_bps", [self.taker_fee_bps])
+        for maker in makers:
+            for taker in takers:
+                validate_fee_rates(maker, taker)
 
     @classmethod
     def keys(cls) -> tuple:

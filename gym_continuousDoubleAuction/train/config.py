@@ -183,6 +183,9 @@ class TrainConfig:
     # Both 0 by default.
     maker_fee_bps: float = _default("maker_fee_bps")
     taker_fee_bps: float = _default("taker_fee_bps")
+    # Per-episode market draw (docs/18 section 3.5): {} keeps one market; a dict
+    # of lists redraws matching_rule, step_clearing and the fees at every reset.
+    market_variety: Dict[str, Any] = _default("market_variety")
 
     # Bounds of the per-episode price anchor, drawn as randint(min, max) in
     # reset(). These were readable by the env but had no TrainConfig field, so
