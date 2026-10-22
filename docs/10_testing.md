@@ -21,7 +21,7 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 # so this never runs the slow RLlib suite as well
 python -m pytest gym_continuousDoubleAuction/test -q
 
-# then the integration suite, named explicitly - everything is these two (2,322 tests).
+# then the integration suite, named explicitly - everything is these two (2,323 tests).
 # RLlib wiring, the real save/restore, the progress log and a real remote
 # runner (148 tests, builds real Algorithms)
 python -m pytest gym_continuousDoubleAuction/test/integration -q
@@ -131,7 +131,7 @@ Counts re-measured with `--collect-only`.
 | `test_probe_corpus_config.py` | 8 | The probe corpus follows the run's env config: `book_mode` and `n_hist` change its width, explicit arguments win, the caller's dict is untouched, and `train.compare` hands its overridden config to the corpus (#261) |
 | `test_compare.py` | 18 | The encoder comparison driver's aggregation: means and standard deviations across seeds, the separation rule and its three-seed floor, the rendered table and its caveats |
 | `test_export.py` | 20 | `train.export`'s pure half: which module is the winner, the no-champion and foreign-layout messages, and what the written record carries (docs/26 §26.9.2) |
-| `test_lint.py` | 3 | The package, `tools/` and the skill scripts are pyflakes-clean, and the lint reaches the directories it claims to; any message fails the suite (S4-6, #249) |
+| `test_lint.py` | 4 | The package, `tools/` and the skill scripts are pyflakes-clean, and the lint reaches the directories it claims to; any message fails the suite (S4-6, #249); no test puts a working-directory-relative path on `sys.path` (#341) |
 | `test_links.py` | 8 | `tools/check_links.py` reports no broken link in the docs, the skills and the repo files they name (#250) |
 | `test_s4_docs_and_tooling.py` | 22 | The documentation-and-tooling S4 fixes: the layout-version pointer, the CI command quoted in CLAUDE.md and docs/27, the built skills, stale texts (including the mark-price notes' fallback order), and every config key and flag being documented (#273, #266, #267, #251, #249); four PR #308 review findings (#309-#312); and that CI runs the integration suite once (a default run leaves it out, naming it runs it) |
 | `test_s4_hardening.py` | 59 | The hardening and speed fixes: call-time account defaults, `settle_batch`'s pre-check, `flat_view`, the `info` fast path and the cached reference price (#247, #248) |
@@ -175,7 +175,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((2,322 tests))
+  root((2,323 tests))
     Simulator
       orderbook 88
         the demo scripts as tests, a shadow model
@@ -246,7 +246,7 @@ mindmap
         obs layout, tokenisation
         the contract every encoder meets
         transformer, lstm, MoE specifics
-      tooling 52
+      tooling 53
         speed regression against a calibration loop
         lint enforced, comparison driver
         evaluate a checkpoint, export its weights

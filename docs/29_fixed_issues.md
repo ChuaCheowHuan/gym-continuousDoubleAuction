@@ -3155,3 +3155,15 @@ tuned Adam inside the extensions, and now lazy loading and `extra_trunk_heads`),
 pinned `>=2.0,<3` could not say it needed them. `setup.py`, `CITATION.cff` and the README citation
 say 2.1.0, and a test in `test_extensions.py` (`TestThePackageVersion`) holds the three equal
 ([17](17_changelog.md) §107).
+
+#### 30 §6 · Seven tests put the working directory's parent on `sys.path` (#341)
+
+Register: none (GitHub issue #341, found by the independent review of #340).
+
+Seven test files ran `sys.path.append("../")`, which is relative to where pytest runs. From the
+repository root it added the parent folder, where a sibling `cda_cbp` checkout then shadowed the
+installed extension as a namespace package: with both extensions installed editable,
+`test_extensions.py` passed alone (38) and errored 25 times after `test_cash_check.py`
+(`module 'cda_cbp' has no attribute 'EXTENSION'`). CI installs no extension, so it never showed
+there. The appends are gone, and `test_lint.py` refuses a relative path literal on `sys.path` in
+the tests ([17](17_changelog.md) §108).

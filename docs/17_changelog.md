@@ -4520,3 +4520,14 @@ cda-cbp's own (its issue #2). The history of each is in [29](29_fixed_issues.md#
   2,322. Python code 55,087 lines in 207 files. [30](30_extensions.md) §1, §5 and §8 describe the
   new behaviour; [10](10_testing.md), [14](14_perspective_ai_engineer.md) and the overview counts
   move with it.
+
+## 108. Tests no longer put the working directory's parent on `sys.path` (#341)
+
+Found by the independent review of #340. Seven test files (`test_accounting`, `test_cash_check`,
+`test_modify_order`, `test_orderbook_new`, `test_orderbook_crossed_book`,
+`test_orderbook_volume_sync`, `test_resting_exposure`) ran `sys.path.append("../")`. From the
+repository root that is the parent folder, so a sibling `cda_cbp` checkout shadowed the installed
+extension: `test_extensions.py` after `test_cash_check.py` gave 25 errors with both extensions
+installed. The appends are removed. A new lint test in `test_lint.py` (3 to 4) fails on the
+previous source, listing the seven. Unit 2,174 to 2,175; suite 2,323. Python code 55,076 lines in
+207 files. History in [29](29_fixed_issues.md#from-30--extensions).
