@@ -212,14 +212,20 @@ class TestComposition:
         assert issubclass(composed, CDAPPOTorchLearner)
         assert composed._policy_value_loss is CDAPPOTorchLearner._policy_value_loss
 
-    def test_tuned_adam_wraps_the_composed_learner(self, dummy):
+    def test_extensions_wrap_tuned_adam(self, dummy):
+        """An extension's optimiser setup runs before tuned Adam's (#335 review).
+
+        TunedAdamMixin builds torch's Adam without calling `super()`, so outside
+        an extension it silently replaced the extension's own optimiser (cda-cbp's
+        AdamGnT) whenever `adam_betas` or `adam_weight_decay` was set.
+        """
         from gym_continuousDoubleAuction.train.model.optim_learner import TunedAdamMixin
 
         composed = _learner_class(_cfg(extensions_enabled=["dummy"], adam_betas=[0.99, 0.99]))
         mro = composed.__mro__
         assert (
-            mro.index(TunedAdamMixin)
-            < mro.index(dummy.learner_mixin)
+            mro.index(dummy.learner_mixin)
+            < mro.index(TunedAdamMixin)
             < mro.index(CDAPPOTorchLearner)
         )
 
