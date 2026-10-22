@@ -1215,7 +1215,9 @@ not: its PPO, PPO+L2 and Continual PPO all run at torch's `(0.9, 0.999)`.
 That makes them easy to bundle, and bundling them would be a mistake: turning CBP on and retuning
 Adam in the same change would measure the two together, and neither paper claims they are the same
 intervention. So the optimiser stays here, composed by `_learner_class` whether or not any
-extension is enabled (`train/model/optim_learner.py`).
+extension is enabled (`train/model/optim_learner.py`). It sits inside the extensions: cda-cbp builds
+the authors' `AdamGnT` itself and reads the same two keys through `optim_learner.adam_settings`,
+so setting them changes that optimiser's betas and weight decay, not its type.
 
 ### 5.6.2 `optimizer`
 
