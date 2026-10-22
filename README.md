@@ -110,7 +110,7 @@ in any way.
 
 ## How to cite
 
-> Chua Cheow Huan. (2025). *gym-continuousDoubleAuction* (Version 2.0.0) [Computer software].
+> Chua Cheow Huan. (2026). *gym-continuousDoubleAuction* (Version 2.1.0) [Computer software].
 
 Citations in other formats are under **"Cite this repository"** on the repository page
 ([`CITATION.cff`](CITATION.cff)). For version 1.0.0, cite the
