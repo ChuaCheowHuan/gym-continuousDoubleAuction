@@ -397,3 +397,26 @@ class TestLearnerOrder:
         # The existing single-extension behaviour: the mixin sits directly over the base.
         composed = _learner_class(_cfg(extensions_enabled=["dummy"]))
         assert composed.__mro__[1] is dummy.learner_mixin
+
+
+class TestThePackageVersion:
+    """The extensions pin `gym_continuousDoubleAuction>=2.1,<3` for lazy loading
+    (#337) and `extra_trunk_heads` (#338). The version is stated in three places;
+    they must agree and be at least that (#339)."""
+
+    def test_setup_citation_and_readme_name_one_version_of_at_least_2_1(self):
+        import re
+        from pathlib import Path
+
+        root = Path(extensions.__file__).resolve().parents[2]
+        found = {
+            "setup.py": re.search(r'version="([\d.]+)"', (root / "setup.py").read_text()),
+            "CITATION.cff": re.search(
+                r"^version: ([\d.]+)$", (root / "CITATION.cff").read_text(), re.M
+            ),
+            "README.md": re.search(r"\(Version ([\d.]+)\)", (root / "README.md").read_text()),
+        }
+        versions = {name: match.group(1) for name, match in found.items() if match}
+        assert len(versions) == 3 and len(set(versions.values())) == 1, versions
+        (version,) = set(versions.values())
+        assert tuple(int(p) for p in version.split(".")) >= (2, 1, 0)
