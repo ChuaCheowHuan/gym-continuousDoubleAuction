@@ -3,11 +3,11 @@
 A pretrained encoder is a directory of three things: the encoder's weights, the
 fingerprint of the architecture they belong to, and an RLlib module checkpoint.
 This module reads and writes that format and nothing more. *Producing* the
-weights is a trainer's job - `train.pretrain` for the encoders that ship a
-self-supervised objective - and an encoder opts in by giving its config a
+weights is a trainer's job - `cda-jepa`'s `python -m cda_jepa.pretrain` for its
+`jepa` encoder - and an encoder opts in by giving its config a
 `pretrained_path` field, the same test `build_encoder_config` applies.
 
-It lives here rather than in `train.pretrain` because three callers need it and
+It lives here rather than beside a trainer because three callers need it and
 only one of them trains anything: `model_handler` verifies the fingerprint before
 a run starts from pretrained weights, the probe loads them to score them, and an
 encoder loads them at construction. None of those should depend on a trainer, or

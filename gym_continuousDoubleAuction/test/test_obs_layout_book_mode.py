@@ -146,7 +146,7 @@ class TestTheProbe:
 class TestEncodersAreBuiltInTheCorpusMode:
     """Review of #187: naming the mode to `from_parquet` is not enough if the module built
     afterwards is not told it. A `levels` corpus at the ambiguous width must go all the way
-    through the probe and pretraining."""
+    through the probe (and through pretraining, checked in cda-jepa)."""
 
     @staticmethod
     def _corpus(rows=24):
@@ -167,25 +167,6 @@ class TestEncodersAreBuiltInTheCorpusMode:
         features = probe_main.build_features(self._corpus(), ["transformer"])
 
         assert features["transformer"].shape[0] == 24
-
-    def test_pretraining_builds_the_encoder_in_the_corpus_mode(self):
-        from gym_continuousDoubleAuction.train.pretrain import pretrain
-        from gym_continuousDoubleAuction.train.probe import __main__ as probe_main
-
-        corpus = self._corpus()
-        env = continuousDoubleAuctionEnv({**probe_main.env_config_for(corpus), "num_of_agents": 2})
-        agent = env.agents[0]
-
-        module, _report = pretrain(
-            corpus,
-            env.get_observation_space(agent),
-            env.get_action_space(agent),
-            encoder_type="jepa",
-            steps=2,
-            batch_size=8,
-        )
-
-        assert module is not None
 
     def test_the_helpers_pass_the_mode_to_the_spec(self):
         from gym_continuousDoubleAuction.train.probe import features

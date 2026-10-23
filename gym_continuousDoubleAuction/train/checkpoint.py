@@ -13,6 +13,7 @@ from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback im
 )
 from gym_continuousDoubleAuction.train.model.encoders import (
     MLP_ENCODER_TYPE,
+    encoder_extension,
     encoder_fingerprint,
     model_config_get,
 )
@@ -496,7 +497,32 @@ def _config_fingerprint(config) -> dict:
 
     fingerprint.update(_encoder_fingerprint(config))
 
+    # An encoder an extension provides needs that extension enabled, so a run
+    # of it had it on whether or not its config said so. A checkpoint written
+    # while gym-CDA shipped `jepa` itself lists no extension; the config that
+    # resumes it must list `"jepa"` (cda-jepa). Both now compare equal, and a
+    # checkpoint written since already lists it.
+    extension = _encoder_extension(fingerprint.get("encoder_type"))
+    if extension is not None:
+        enabled = fingerprint.get("extensions_enabled", PRE_FEATURE_BEHAVIOUR["extensions_enabled"])
+        if extension not in enabled:
+            fingerprint["extensions_enabled"] = tuple(enabled) + (extension,)
+
     return fingerprint
+
+
+def _encoder_extension(encoder_type) -> Optional[str]:
+    """The extension providing `encoder_type`, or None (built in, or not installed).
+
+    Not installed is not an error here: the restore then fails on the missing
+    classes, with the message naming the package (`check_pickled_classes_load`).
+    """
+    if not encoder_type:
+        return None
+    try:
+        return encoder_extension(encoder_type)
+    except ValueError:
+        return None
 
 
 def _comparable(value):

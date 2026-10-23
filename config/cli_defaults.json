@@ -1,5 +1,5 @@
 {
-  "_source": "gym_continuousDoubleAuction/CDA_rand.py (main), and the main() of train.probe, train.pretrain, train.compare, train.export and train.evaluate (each block names its module in _module). train.train takes its defaults from TrainConfig, not this file.",
+  "_source": "gym_continuousDoubleAuction/CDA_rand.py (main), and the main() of train.probe, train.compare, train.export and train.evaluate (each block names its module in _module). train.train takes its defaults from TrainConfig, not this file.",
   "_description": "Defaults for command-line flags that have no other config home. Read through config_loader.cli_default; neither entry point holds a literal default.",
   "_note": "train.py is deliberately absent. Its flags declare argparse.SUPPRESS as their default, so an unset flag is absent from the namespace entirely and the value comes from TrainConfig - whose defaults are train_config.json. Duplicating them here would create a second set that can disagree. Precedence for train.py is: train_config.json -> --config <other file> -> explicit flags.",
   "cda_env_rand": {
@@ -26,6 +26,8 @@
       "mlp",
       "transformer"
     ],
+    "_note_pretrained_encoder": "The architecture a --pretrained directory holds, when --pretrained-encoder is not given. jepa comes from the cda-jepa package; the directory's fingerprint is checked against it.",
+    "pretrained_encoder": "jepa",
     "targets": [
       "mid_return",
       "mid_moves",
@@ -40,24 +42,6 @@
       20
     ],
     "module_id": "policy_0",
-    "log_level": null
-  },
-  "cda_pretrain": {
-    "_module": "python -m gym_continuousDoubleAuction.train.pretrain",
-    "_note": "Offline JEPA pretraining - see docs/23_probe_harness.md Part 2. Trains an encoder's self-supervised objective on observations alone, with no reward, policy or opponents, then writes the weights beside an encoder fingerprint that a mismatched load refuses. log_level null defers to the logging group of tunable_constants.json.",
-    "_note_corpus": "num_episodes / max_step / num_agents describe the random-agent rollouts used when --parquet is not given. A book made by random agents does not look like one made by a trained league, so prefer --parquet over a real run's episode record once one exists; these defaults are a warm start, not a training corpus.",
-    "_note_collapse": "Watch latent_std in the report, not the loss. A collapsed JEPA maps every observation to the same vector, which makes its prediction perfect - the loss goes to zero and reads as success. The CLI exits non-zero when it detects one.",
-    "_note_spec": "The encoder's hyperparameters are NOT duplicated here: they come from the encoder_specs block of train_config.json, so a pretrained encoder is built from the same numbers the training run will build it from, and the fingerprint written beside the weights is comparable with the one train.py computes.",
-    "out_dir": "pretrained/jepa",
-    "encoder_type": "jepa",
-    "steps": 300,
-    "batch_size": 128,
-    "lr": 0.0003,
-    "seed": 0,
-    "log_every": 50,
-    "num_episodes": 6,
-    "max_step": 512,
-    "num_agents": 4,
     "log_level": null
   },
   "cda_compare": {

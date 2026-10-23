@@ -1119,8 +1119,8 @@ propagation off without a `LoggingConfig`), are in [29](29_fixed_issues.md#21-8-
 
 Emitted per trainable module by the [cda-cbp](https://github.com/ChuaCheowHuan/cda_cbp) package's
 `CBPLearnerMixin` when the `cbp` extension is enabled (with or without `metrics_only`), through the
-same `self.metrics.log_dict(..., key=module_id, window=1)` path the MoE and JEPA terms use. Absent
-entirely without it. The names are unchanged from when CBP was built in; the package's
+same `self.metrics.log_dict(..., key=module_id, window=1)` path the MoE term and cda-jepa's JEPA
+terms use. Absent entirely without it. The names are unchanged from when CBP was built in; the package's
 `docs/metrics.md` is the reference, and its `docs/continual_backprop.md` §4.1 the context
 ([25](25_continual_backprop.md)).
 

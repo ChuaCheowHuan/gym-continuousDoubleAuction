@@ -183,7 +183,6 @@ _ENTRY_POINTS = (
     "CDA_rand.py",
     "train/train.py",
     "train/probe/__main__.py",
-    "train/pretrain/__main__.py",
     "train/compare.py",
     "train/evaluate.py",
     "train/export.py",

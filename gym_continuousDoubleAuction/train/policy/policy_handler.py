@@ -100,9 +100,9 @@ def build_multi_rl_module_spec(
             None reads the `encoder` group of `config/train_config.json`.
         encoder_specs: Per-encoder hyperparameter blocks. None reads the same
             group.
-        pretrained_path: A `train.pretrain` checkpoint the trainable modules
-            start from. Every trainable module gets the same one - they train
-            against each other from a shared representation, which is the point
+        pretrained_path: A pretrained-encoder checkpoint (`encoders.pretrained`)
+            the trainable modules start from. Every trainable module gets the
+            same one - they train against each other from a shared representation, which is the point
             of having pretrained it. Champions are snapshots of a trained
             module and so never read this.
 

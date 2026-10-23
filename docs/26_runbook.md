@@ -57,7 +57,7 @@ flowchart LR
 
     G --> E["Study encoders<br/>without the reward"]
     E --> E1["train.probe --encoders<br/>microstructure targets · 26.9"]
-    E --> E2["train.pretrain --out<br/>JEPA on observations alone · 26.9"]
+    E --> E2["cda_jepa.pretrain --out<br/>JEPA on observations alone (cda-jepa) · 26.9"]
     E --> E3["train.compare --encoders --seeds<br/>multi-seed protocol, --set FIELD=VALUE · 26.9"]
 ```
 
@@ -324,7 +324,8 @@ The Parquet record itself is one `pandas.read_parquet` away, with one row per
 ## 26.9 Reward-free tools: probe and pretrain
 
 Both exist because the reward could not settle an encoder comparison
-([23](23_probe_harness.md) Parts 1 and 2). Both take a corpus from random-agent
+([23](23_probe_harness.md) Parts 1 and 2). Pretraining is the cda-jepa package's, with the `jepa`
+encoder ([30](30_extensions.md) §9). Both take a corpus from random-agent
 rollouts by default, or from a run's episode record with `--parquet`, which is the better corpus
 once a run exists.
 
@@ -337,21 +338,18 @@ python -m gym_continuousDoubleAuction.train.probe --encoders mlp transformer \
 python -m gym_continuousDoubleAuction.train.probe \
     --checkpoint results/chkpt/iter_00002 --module-id policy_0
 
-# pretrain a JEPA encoder on observations alone, then point a run at it
-python -m gym_continuousDoubleAuction.train.pretrain --out pretrained/jepa --steps 300
-# ... set encoder_type "jepa" and pretrained_encoder_path "pretrained/jepa" in train_config.json
+# with cda-jepa installed: pretrain a JEPA encoder on observations alone, then point a run at it
+python -m cda_jepa.pretrain --out pretrained/jepa --steps 300
+# ... set encoder_type "jepa", extensions_enabled ["jepa"] and
+#     pretrained_encoder_path "pretrained/jepa" in train_config.json
 python -m gym_continuousDoubleAuction.train.probe --pretrained pretrained/jepa \
     --pretrained-encoder jepa
 ```
 
-`pretrain` takes `--encoder` (only `jepa` has a self-supervised objective), `--steps` (optimiser
-steps), `--batch-size` and `--lr` (the optimiser), `--log-every` (steps between validation and the
-`latent_std` read-out), and `--env-steps` (steps per rollout episode, with `--episodes` and
-`--agents`, when no `--parquet` is given). Their defaults are in `cli_defaults.json` under
-`cda_pretrain`.
-
-For pretraining watch `latent_std`, not the loss: a collapsed encoder has a perfect loss
-([23](23_probe_harness.md) §15). The CLI exits non-zero when it detects one.
+The pretrainer's flags and defaults are cda-jepa's ([docs/pretraining.md](https://github.com/ChuaCheowHuan/cda_jepa/blob/main/docs/pretraining.md)).
+`--pretrained-encoder` defaults to `cda_probe.pretrained_encoder` (`jepa`). For pretraining watch
+`latent_std`, not the loss: a collapsed encoder has a perfect loss, and the CLI exits non-zero
+when it detects one.
 
 **Comparing encoders** is one command, the protocol of [18](18_configuration.md) §5.5: every
 (encoder, seed) is a separate run with the seed pinned, the final checkpoint is probed against one

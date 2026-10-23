@@ -208,9 +208,9 @@ def build_trainable_module_spec(
         vf_share_layers: Ditto. Also honoured by custom encoders, since
             `ActorCriticEncoderConfig` reads it to decide whether the actor and
             critic share a trunk.
-        pretrained_path: A directory written by `train.pretrain`, whose weights
-            the module starts from. The checkpoint's encoder fingerprint is
-            verified against the encoder being built *here*, before the path
+        pretrained_path: A pretrained-encoder directory (`encoders.pretrained`),
+            whose weights the module starts from. The checkpoint's encoder
+            fingerprint is verified against the encoder being built *here*, before the path
             reaches RLlib - a mismatch is a hard error rather than a shape
             failure several frames later. Ignored for `mlp`, which has no
             self-supervised objective to have been pretrained on.

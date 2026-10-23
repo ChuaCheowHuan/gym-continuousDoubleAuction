@@ -107,7 +107,6 @@ for mod in (
     "CDA_rand",
     "train.train",
     "train.probe",
-    "train.pretrain",
     "train.compare",
     "train.evaluate",
     "train.export",

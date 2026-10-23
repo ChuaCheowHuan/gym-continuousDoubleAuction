@@ -16,7 +16,6 @@ from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
 from gym_continuousDoubleAuction.envs.orderbook.orderbook import OrderBook
 from gym_continuousDoubleAuction.train import train as train_module
 from gym_continuousDoubleAuction.train.model.encoders import (
-    jepa,
     token_embed,
     tokenize,
     transformer,
@@ -247,9 +246,8 @@ class TestEnvResetHandsOptionsOn:
 
 
 class TestOnePoolingsDefinition:
-    def test_the_three_encoders_share_the_tokenizers_tuple(self):
+    def test_the_encoders_share_the_tokenizers_tuple(self):
         assert transformer.POOLINGS is tokenize.POOLINGS
-        assert jepa.POOLINGS is tokenize.POOLINGS
         assert token_embed.POOLINGS is tokenize.POOLINGS
         assert tokenize.POOLINGS == ("mean", "attention")
 

@@ -112,6 +112,13 @@ ENCODER_NEXT_OBS: Dict[str, Callable[[Dict[str, Any]], bool]] = {}
 #: The entry-point group an installed package lists its encoder modules under.
 ENCODER_ENTRY_POINT_GROUP = "gym_cda.encoders"
 
+#: Encoders that shipped here and moved into a package, with how to install it.
+#: Asking for one without the package installed names the package rather than
+#: listing what is available, since the config is not wrong - it is a version older.
+MOVED_ENCODERS = {
+    "jepa": "cda-jepa (pip install git+https://github.com/ChuaCheowHuan/cda_jepa)",
+}
+
 #: Spec keys applied to the top-level model config rather than to the encoder,
 #: because RLlib reads them itself. See `model_config_overrides`.
 MODEL_CONFIG_SPEC_KEYS = ("max_seq_len",)
@@ -147,7 +154,7 @@ class CDAModelConfig(DefaultModelConfig):
     #: That encoder's block from `encoder_specs`, passed through to its builder.
     encoder_spec: Dict[str, Any] = field(default_factory=dict)
 
-    #: A `train.pretrain` checkpoint whose weights the encoder starts from.
+    #: A pretrained-encoder checkpoint (`encoders.pretrained`) whose weights the encoder starts from.
     #:
     #: A field of its own rather than a key inside `encoder_spec`, deliberately:
     #: `encoder_spec` is what `encoder_fingerprint` hashes, and a fingerprint
@@ -408,6 +415,12 @@ def known_encoder_type(encoder_type: str) -> str:
     if encoder_type == MLP_ENCODER_TYPE or encoder_type in ENCODER_REGISTRY:
         return encoder_type
 
+    if encoder_type in MOVED_ENCODERS:
+        raise ValueError(
+            f"encoder_type {encoder_type!r} is no longer part of gym-continuousDoubleAuction: "
+            f"it moved to the {MOVED_ENCODERS[encoder_type]} package. Install it and list "
+            f"{encoder_type!r} in extensions_enabled (docs/30)."
+        )
     raise ValueError(
         f"Unknown encoder_type {encoder_type!r}. Available: "
         f"{', '.join(selectable_encoder_types())}."
@@ -604,7 +617,6 @@ def build_encoder_config(
 # Encoder modules are imported for their `@register` side effect, at the bottom
 # so they can import the registry above without a cycle.
 from gym_continuousDoubleAuction.train.model.encoders import (  # noqa: E402
-    jepa,
     lstm,
     moe_transformer,
     passthrough,
@@ -613,4 +625,4 @@ from gym_continuousDoubleAuction.train.model.encoders import (  # noqa: E402
 
 #: The registered encoder modules, named so the side-effect imports above read
 #: as the deliberate re-exports they are rather than as unused imports.
-REGISTERED_ENCODER_MODULES = (jepa, lstm, moe_transformer, passthrough, transformer)
+REGISTERED_ENCODER_MODULES = (lstm, moe_transformer, passthrough, transformer)

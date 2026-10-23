@@ -3,9 +3,10 @@
 `CDAPPOTorchLearner.compute_loss_for_module` used to compute PPO's loss and add
 the MoE load-balancing term in one method. An extension that replaces PPO's
 loss (an update rule rather than an extra term) had to override that whole
-method, and so dropped the MoE term and, through `CDAJEPALearner`'s `super()`
-call, the JEPA one. `_policy_value_loss` is the part such an extension
-overrides; the auxiliary terms are added around it whatever it returns.
+method, and so dropped the MoE term and, through the `super()` call of an
+encoder's own Learner (cda-jepa's `CDAJEPALearner`), that encoder's term.
+`_policy_value_loss` is the part such an extension overrides; the auxiliary
+terms are added around it whatever it returns.
 
 No Algorithm is built here: the learner is constructed without `__init__` and
 PPO's own loss is stubbed, because what is pinned is which method calls which,
@@ -16,7 +17,6 @@ import pytest
 import torch
 from ray.rllib.algorithms.ppo.torch.ppo_torch_learner import PPOTorchLearner
 
-from gym_continuousDoubleAuction.train.model.jepa_learner import CDAJEPALearner
 from gym_continuousDoubleAuction.train.model.moe_learner import (
     MOE_AUX_LOSS,
     MOE_EXPERT_FRACTIONS,
@@ -59,6 +59,18 @@ def _moe_out():
     return {MOE_AUX_LOSS: MOE_TERM, MOE_EXPERT_FRACTIONS: torch.tensor([0.5, 0.5])}
 
 
+class _AddsATerm(CDAPPOTorchLearner):
+    """What an encoder's own Learner looks like: it overrides the outer method,
+    adds its term and reaches PPO's loss through `super()` (cda-jepa's
+    `CDAJEPALearner` does exactly this)."""
+
+    def compute_loss_for_module(self, *, module_id, config, batch, fwd_out):
+        total = super().compute_loss_for_module(
+            module_id=module_id, config=config, batch=batch, fwd_out=fwd_out
+        )
+        return total + 1.0
+
+
 class _ReplacesPPO(CDAPPOTorchLearner):
     """What a loss-replacing extension looks like: it overrides the seam only."""
 
@@ -86,12 +98,12 @@ class TestPolicyValueLossSeam:
         out = _loss(_learner(_ReplacesPPO), _moe_out())
         assert torch.equal(out, torch.tensor(10.0) + COEFF * MOE_TERM)
 
-    def test_jepa_learner_reaches_the_seam_through_super(self):
-        """`CDAJEPALearner` overrides the outer method and calls `super()`, so a
-        replacement composed beneath it is still used."""
-        replaced_jepa = type(
-            "ReplacedJEPA",
-            (CDAJEPALearner,),
+    def test_an_encoder_learner_reaches_the_seam_through_super(self):
+        """An encoder's Learner overrides the outer method and calls `super()`,
+        so a replacement composed beneath it is still used."""
+        replaced = type(
+            "ReplacedEncoderLearner",
+            (_AddsATerm,),
             {"_policy_value_loss": _ReplacesPPO._policy_value_loss},
         )
-        assert torch.equal(_loss(_learner(replaced_jepa), {}), torch.tensor(10.0))
+        assert torch.equal(_loss(_learner(replaced), {}), torch.tensor(11.0))

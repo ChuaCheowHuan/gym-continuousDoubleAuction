@@ -17,13 +17,13 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# the unit tests (2,191). pyproject.toml's addopts ignores test/integration by default,
+# the unit tests (2,087). pyproject.toml's addopts ignores test/integration by default,
 # so this never runs the slow RLlib suite as well
 python -m pytest gym_continuousDoubleAuction/test -q
 
-# then the integration suite, named explicitly - everything is these two (2,339 tests).
+# then the integration suite, named explicitly - everything is these two (2,219 tests).
 # RLlib wiring, the real save/restore, the progress log and a real remote
-# runner (148 tests, builds real Algorithms)
+# runner (132 tests, builds real Algorithms)
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 
 # a single file
@@ -96,9 +96,7 @@ Counts re-measured with `--collect-only`.
 | `test_action_dist.py` | 15 | A stateful module's log-probability for two agents in one step: RLlib's `(B, B)` result pinned as the bug, the corrected `(B, 1)`, `(B,)` and `(B, T)` shapes, the old squeeze case, the wrapper cached and idempotent (#278) |
 | `test_champion_guard.py` | 26 | The entropy schedule and its validation; the promotion guard (a passive candidate refused, a trading one promoted, the bar inclusive, off at 0, missing counts warn and do not block); the shipped multiplier; the `sqrt(n - 1)` warning; the per-module trade counts (S3-11) |
 | `test_league_rollback.py` | 10 | A failed champion snapshot undoes `add_module` (the corrected pool reaches the runners; a failing undo only logs) and a full league evicts its oldest only after the new champion exists, so a failure never shrinks it, even an over-limit history (#176, #178) |
-| `test_world_model_actions.py` | 4 | The JEPA world model embeds every head of the action: the embedded heads equal the env's `ACTION_KEYS`, two actions differing only in `order_slot` embed differently (#186) |
-| `test_obs_layout_book_mode.py` | 16 | A width that fits two book modes (569 floats) raises `AmbiguousObsLayout` unless the mode is given; the run's `book_mode` reaches the encoder spec, the policy builder and the probe (`--book-mode`); the action mask is unaffected; the probe and pretraining build their encoders in the corpus's mode (#187) |
-| `test_jepa_value_pass.py` | 10 | JEPA's `compute_values` pass runs no objective and takes no EMA step (restored even on error); mask sampling uses the encoder's own generator, reproducible per seed and distinct per encoder (#185) |
+| `test_obs_layout_book_mode.py` | 15 | A width that fits two book modes (569 floats) raises `AmbiguousObsLayout` unless the mode is given; the run's `book_mode` reaches the encoder spec, the policy builder and the probe (`--book-mode`); the action mask is unaffected; the probe builds its encoders in the corpus's mode (#187; pretraining's check moved to cda-jepa) |
 | `test_run_lock.py` | 15 | One live run per checkpoint folder: the lock's contents, release, refusal of a live or other-machine holder, takeover of a dead one, and `train()` holding it from before the restore until it returns or raises (#179), and two runs finding one stale lock taking it one after the other (#296) |
 | `test_matchmaking_edges.py` | 20 | League matchmaking at its edges: an all-zero pool draws uniformly (with one warning), a champions-only pool, an empty pool, reproducibility per episode and agent, the draw share following 3:1 weights, bad weights refused by name (#207) |
 | `test_orderbook_scripts.py` | 31 | The worked example of the retired `example.py` asserted by outcome (who traded with whom, at what price, what rests), and `genOrders.py` as a seeded shadow model over 25 seeds: the book must agree with a picture rebuilt from trade records alone (#210) |
@@ -112,12 +110,11 @@ Counts re-measured with `--collect-only`.
 | `test_performance.py` | 27 | Risk-adjusted performance (S3-9): Sharpe, Sortino, max drawdown, hit rate, turnover and inventory against a hand-worked series, undefined metrics left out rather than logged as 0, bad NAVs skipped, and the callback logging them per module (#121) |
 | `test_doc_sync_claims.py` | 13 | `cda-doc-sync`'s `claims.py` checking the inventory table, the code size and that every config key and CLI flag is mentioned in some doc, each in both directions (#264) |
 | `test_open_bug_fixes.py` | 14 | The last three open `bug` issues: run logging turns propagation back on without a Ray encoding (#238), the byte cap never deletes the newest episode file and warns once (#246), and `apply_env_vars()` is pinned to run before `ray.init` in every entry point, with the fact that the configured variable is not read at Ray's import checked against the installed Ray (#244) |
-| `test_s4_minor_fixes.py` | 76 | The fourteen S4-minor bugs, one class each (#230 #232 #234 #235 #236 #237 #240 #241 #242 #243 #262 #263 #265 #275): a `Decimal` fee rate, order book bookkeeping, the layout-stamp order message, a `None` module return, `--set` booleans, `$CDA_PLATFORM` case, the plots on bad records, a foreign `config/`, a single-row JEPA batch, `evaluate`'s `--max-step`, the compare table's failed run, the `size_high` bound and the doc-sync `TMPDIR` default |
+| `test_s4_minor_fixes.py` | 71 | Thirteen of the fourteen S4-minor bugs, one class each (#230 #232 #234 #235 #236 #237 #240 #241 #243 #262 #263 #265 #275; #242, the single-row JEPA batch, moved to cda-jepa): a `Decimal` fee rate, order book bookkeeping, the layout-stamp order message, a `None` module return, `--set` booleans, `$CDA_PLATFORM` case, the plots on bad records, a foreign `config/`, `evaluate`'s `--max-step`, the compare table's failed run, the `size_high` bound and the doc-sync `TMPDIR` default |
 | `test_episode_record.py` | 47 | The Parquet per-step record: declared schema and its drift guard against `InfoBuilder`, identity columns, sampling rate, byte cap, eviction of episodes that never end, the ways it must fail without raising, and the end-of-sample flush that gets finished episodes to disk without waiting for exit (#245) |
 | `test_encoder_registry.py` | 46 | The selectable-encoder seam: registry, `CDACatalog`, the `mlp` pass-through staying byte-for-byte what it was, `ObsLayout`, tokenisation |
-| `test_encoder_plugins.py` | 16 | An encoder an installed package lists under `gym_cda.encoders`: listed without importing, imported on first lookup, refused unless its extension is enabled, says for itself whether it needs `NEXT_OBS`; the pretrained-weights format in `encoders.pretrained` |
-| `test_encoder_architectures.py` | 170 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
-| `test_pretrain.py` | 38 | Offline JEPA pretraining: the loop trains only the trunk and predictor, a collapse is reported rather than hidden, a NaN or unmeasured run counts as unusable and is never saved (#239), the checkpoint's fingerprint refuses a mismatched architecture, and a relative path saves and loads (#316) |
+| `test_encoder_plugins.py` | 15 | An encoder an installed package lists under `gym_cda.encoders`: listed without importing, imported on first lookup, refused unless its extension is enabled, says for itself whether it needs `NEXT_OBS`; the pretrained-weights format in `encoders.pretrained` |
+| `test_encoder_architectures.py` | 111 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
 | `test_visualize_scripts.py` | 32 | `visualize/` end to end on small synthetic Parquet and `progress.jsonl` runs: the loader's complete-episode rule, the data in each chart's lines, `run_all`, both inspectors (#211) |
 | `test_visualize_orderbook.py` | 12 | The newest book snapshot is read from the middle of the observation, never off the end — the only arithmetic in `visualize/` that can be wrong without raising |
 | `test_probe.py` | 62 | The reward-free probe harness's arithmetic on synthetic observations: target definitions, episode-boundary masking, the splits, the metrics, unscoreable cells, and that `snapshots` reads the book rather than the private tail |
@@ -142,11 +139,12 @@ Counts re-measured with `--collect-only`.
 | `test_types.py` | 3 | `mypy` finds nothing in `envs/`, `ruff format --check` finds nothing to change, and the coverage floor stays configured (#148) |
 | `test_refactors.py` | 117 | The refactoring review's issues: `Account` initialised in one place and its step counters listed once, `_plain`'s call count, one order-book routine per operation, `place_order` and `parse_overrides` flat, `clear_batch` as four steps, `EnvSettings` and the generated `env_config`, the `train/` module split with its re-exports and import order, the callback as a `League` plus an `ActivityLog` plus the NAV audit and league statistics, a real pickle from before that split still loading, and the league and activity log working alone (#252-#258) |
 | `test_extensions.py` | 38 | The extension point ([30](30_extensions.md)): discovery through real entry points, nothing enabled changing nothing, validation of names and settings, composition order under CBP and by `learner_order`, the resume guards, an installed extension that is not enabled never imported (#337), and the version strings agreeing (#339) |
-| `test_loss_seam.py` | 5 | PPO's own loss sits behind `_policy_value_loss`, so an extension that replaces it keeps the MoE and JEPA terms |
+| `test_loss_seam.py` | 5 | PPO's own loss sits behind `_policy_value_loss`, so an extension that replaces it keeps the MoE term and an encoder Learner's term added through `super()` |
 | `test_optim_learner.py` | 4 | `adam_settings` reads the `optimizer` group once: only the keys a run sets, betas as a tuple, nothing for the defaults so RLlib's own Adam is built. cda-cbp builds the authors' `AdamGnT` from the same function |
 | `test_learner_class_compat.py` | 10 | Learner classes cloudpickled on master (f7c1353) for the default, tuned-Adam and CBP compositions still load: a checkpoint names its mixins by module path. The CBP ones load with cda-cbp installed and fail naming it without |
-| `test_model_layout.py` | 30 | The model-layout contract: `layout.trunk_outputs` reports each encoder's MLP or LSTM trunk output and the heads reading it, with and without `vf_share_layers`, plus the `extra_trunk_heads` a module declares (#338) |
+| `test_model_layout.py` | 26 | The model-layout contract: `layout.trunk_outputs` reports each encoder's MLP or LSTM trunk output and the heads reading it, with and without `vf_share_layers`, plus the `extra_trunk_heads` a module declares (#338) |
 | `test_cbp_moved.py` | 19 | Continual Backprop moved to cda-cbp ([25](25_continual_backprop.md)): an old `cbp_*` key names the package, an old checkpoint's group reads as the `cbp` extension's settings, the old mixin name resolves or names the package, and a restore without the package stops instead of falling back |
+| `test_jepa_moved.py` | 18 | The `jepa` encoder moved to cda-jepa ([30](30_extensions.md) §9): selecting it without the package names the package, no JEPA config, code or pretrainer ships here, old checkpoints' pickled JEPA classes resolve through `jepa_learner` or fail naming the package (`fixtures/jepa_classes_98c4900.pkl`), an encoder's extension counts as enabled in the restore guard, and the old pretrainer command says where it went |
 | **unit total** | **2,191** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
@@ -155,8 +153,8 @@ Counts re-measured with `--collect-only`.
 | `integration/test_progress_and_vf.py` | 6 | A real short run's `progress.jsonl`; `vf_explained_var` reported, finite, and **above 1e-3** — a live guard on S1-1 |
 | `integration/test_evaluate_seed.py` | 3 | `train.evaluate --seed` repeats sampled actions on a real module set, a different seed does not, and an unseeded run is not claimed to (#243) |
 | `integration/test_distributed_observability.py` | 14 | A real `num_env_runners=1` iteration: every episode-hook metric arrives on the driver, the episode record is written by the *worker* into the driver's absolute run-scoped path, and at the shipped `episode_rows_per_file` it is on disk when the iteration returns (#245) |
-| `integration/test_encoder_wiring.py` | 48 | Champions inherit the encoder; a restore cannot change it; the recurrent and MoE paths train end to end; a real checkpoint round-trip with a custom encoder |
-| `integration/test_probe_harness.py` | 28 | The probe against the real env: a usable rollout corpus, every registered encoder frozen and read, the LSTM's state reset per episode, a real checkpoint restored with its weights |
+| `integration/test_encoder_wiring.py` | 35 | Champions inherit the encoder; a restore cannot change it; the recurrent and MoE paths train end to end; a real checkpoint round-trip with a custom encoder |
+| `integration/test_probe_harness.py` | 25 | The probe against the real env: a usable rollout corpus, every registered encoder frozen and read, the LSTM's state reset per episode, a real checkpoint restored with its weights |
 | `integration/test_stateful_logp.py` | 7 | The real `lstm` and `mlp` modules: log-probability shape for 1, 2 and 3 agents, and every distribution getter returns the corrected class (#278) |
 | `integration/test_champion_guard_wiring.py` | 3 | A real run: every trainable module's trade count reaches the driver, the league state says whether a candidate was refused, and RLlib applies the decaying entropy bonus (S3-11) |
 | `integration/test_tuned_adam.py` | 4 | Tuned Adam on its own: it composes alone, and the configured betas and weight decay land on the built optimiser |
@@ -176,7 +174,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((2,339 tests))
+  root((2,219 tests))
     Simulator
       orderbook 88
         the demo scripts as tests, a shadow model
@@ -242,7 +240,7 @@ mindmap
         a failed snapshot is undone; evict after success
         matchmaking, promotion triggers
         empty pool, zero and bad weights
-      encoders 232
+      encoders 172
         registry, catalog, mlp pass-through
         obs layout, tokenisation
         the contract every encoder meets
@@ -263,25 +261,23 @@ mindmap
         the one effective rank, cda-cbp's included
       optimiser settings 4
         read once, for torch Adam and AdamGnT
-      pretrain 28
-        trains trunk + predictor only
-        collapse reported not hidden
-        fingerprint refuses a mismatch
+      jepa moved 18
+        old configs and checkpoints name cda-jepa
       continual backprop moved 19
         old keys and checkpoints name cda-cbp
       extensions 43
         found through entry points
         learner_order decides the wrapping
         nothing enabled changes nothing, nor is imported
-        PPO loss replaceable, MoE and JEPA kept
-      checkpoint and layout contracts 40
+        PPO loss replaceable, MoE and encoder terms kept
+      checkpoint and layout contracts 36
         old pickled Learner classes load
         trunk outputs per encoder, extra heads declared
       visualize 32
         the loader and every chart script on synthetic runs
       packaging 8
         gymnasium.make, visualize importable
-    Integration 148
+    Integration 132
       league wiring, 3 topologies
       real save and restore
       real progress.jsonl, live vf_explained_var guard
@@ -845,7 +841,7 @@ but `known_encoder_type` allows a test to build. It exists solely to travel the 
 (`CDAModelConfig` → `CDACatalog` → `build_encoder_config` → `ActorCriticEncoderConfig` → the stock
 pi/vf heads) so that route is covered without shipping an architecture nobody asked for.
 
-### 6.4.2 `test_encoder_architectures.py` — 10 classes, 170 tests
+### 6.4.2 `test_encoder_architectures.py` — 7 classes, 111 tests
 
 `TestEveryEncoder` is parametrised over **every registered encoder**, so a new one is covered the
 moment it is registered rather than when someone remembers to write its tests. What it pins is the
@@ -875,7 +871,7 @@ no memory), `TestMoETransformer` (the auxiliary loss reaching `fwd_out` and carr
 routing fractions summing to `top_k`, stats cleared when taken, and that the term does not scale
 with `num_layers` or `vf_share_layers`), and `TestCommonSpecKeys`.
 
-### 6.4.3 `integration/test_encoder_wiring.py` — 9 classes, 48 tests
+### 6.4.3 `integration/test_encoder_wiring.py` — 7 classes, 35 tests
 
 The claims that only hold once a real `Algorithm` exists.
 
@@ -887,11 +883,10 @@ The claims that only hold once a real `Algorithm` exists.
 | `TestMoEAuxLossReachesTheOptimiser` | The load-balancing term is computed three layers from the loss; every link is invisible from either end |
 | `TestCustomEncoderCheckpointRoundTrip` | A real save and `from_checkpoint`, which `get_state`/`set_state` cannot show because it never leaves the process |
 
-`TestJEPAAuxLossReachesTheOptimiser` makes the same claim for the latent-prediction term, and adds
-one the MoE class does not need: that selecting `jepa` swaps in **both** its RLModule and its
-Learner. `TestOtherEncodersAreUnaffectedByJEPA` is the other half — every encoder that existed
-first must still resolve to the default module and learner classes. Together they are the
-mechanical form of the isolation claim, alongside a `git diff` over the eight shared files.
+`TestTheBuiltInEncodersNeedNoClassesOfTheirOwn` pins that every encoder shipped here resolves to
+the default module and Learner classes, and `TestTheNextObsConnectorIsConditional` that none asks
+for `Columns.NEXT_OBS`. The JEPA classes that used to sit here moved with the encoder to
+[cda-jepa](https://github.com/ChuaCheowHuan/cda_jepa)'s `tests/test_wiring.py`.
 
 Two of these were written *because* the unit tests could not have caught what they found.
 `test_the_fingerprint_survives_a_champion_snapshot` pins a live bug: `add_module` normalises every
@@ -903,42 +898,15 @@ time-dimension connectors produce, so every env step failed nowhere near the mod
 
 ---
 
-### 6.4.4 The JEPA classes — 44 tests
+### 6.4.4 The JEPA classes — moved
 
-Three classes in `test_encoder_architectures.py`: `TestJEPA` (19), `TestJEPAWorldModel` (7) and
-`TestJEPAReviewRegressions` (18). The encoder is covered by `TestEveryEncoder` for the contract
-automatically; `TestJEPA` covers what decides whether the *objective* is doing anything.
-
-| Test | What it pins |
-|---|---|
-| `test_the_policy_latent_ignores_the_mask` | Two training forwards draw two masks; the latent must not move between them. If masking reached the policy, the agent would act on a random subset of the book and PPO's ratio would compare log-probs taken under different masks |
-| `test_the_objective_runs_only_in_train_mode` | `eval()` produces no stats at all. Mask sampling is stochastic, so an objective on the inference path injects noise into the ratio rather than raising |
-| `test_the_target_trunk_takes_no_gradient` | It moves by EMA and never by gradient. If it learned by gradient it would stop lagging, and the asymmetry that discourages collapse would be gone |
-| `test_the_target_trails_the_online_trunk` | It does move, and by roughly one decay step — a target that never moved would make the objective trivial |
-| `test_collapse_is_visible_in_latent_std` | **The load-bearing one.** A collapsed encoder maps everything to one latent, which makes the prediction *perfect* — loss near zero, reading as success. Only `latent_std` separates that from a working encoder |
-| `test_a_mask_never_hides_everything_or_nothing` | Over every (tokenisation × axis × ratio): an empty mask leaves nothing to predict, a total one leaves no context. Both are silent |
-| `test_a_dense_encoder_produces_no_jepa_loss` | The plumbing is inert for every other architecture |
-
-`TestJEPAWorldModel` (7 tests) covers the action-conditioned term. The two worth naming:
-`test_a_batch_without_next_obs_is_not_an_error` — PPO's own batch has none and `compute_values`
-runs on one, so raising on a key PPO never promised would break every path but training — and
-`test_the_prediction_depends_on_the_action`, without which the model would be predicting the next
-book from the current one and ignoring what the agent did, which is a different and much less
-interesting object.
-
-`test_a_mask_never_hides_everything_or_nothing` found a real bug while being written: a `level`
-mask under `time` tokenisation indexed a level axis that tokenisation does not have. It now falls
-back to a random mask, so a `tokenization × mask_axis` sweep needs no special cases.
-
-`TestJEPAReviewRegressions` (18 tests) was added by the review recorded in [17](17_changelog.md)
-§34, one or more tests per finding, each written to fail against the commit before its fix. The
-three worth naming:
-
-| Test | What it pins |
-|---|---|
-| `test_an_inference_only_module_builds` | The finding that mattered most. `RLModuleSpec.build` catches an `AttributeError` from `__init__` and falls back to a deprecated constructor, so a module that could not be built inference-only failed *silently* — and a champion snapshot is an inference-only copy, so a `jepa` league would have died at its first promotion with an unrelated-looking error |
-| `test_a_mask_leaves_context_at_every_n_hist` | The original mask test swept tokenisations and axes at one `n_hist`. The clamp was against `n_hist - 1` snapshots rather than the token count, so `n_hist: 1` masked the whole sequence and the objective silently predicted from nothing |
-| `test_evaluation_does_not_step_the_ema` | The EMA update ran on validation batches, so the number a probe or a pretraining validation pass reported depended on how many times it had been evaluated |
+The 44 tests of `TestJEPA`, `TestJEPAWorldModel` and `TestJEPAReviewRegressions`, with
+`test_pretrain.py`, `test_jepa_value_pass.py` and `test_world_model_actions.py`, moved with the
+`jepa` encoder to [cda-jepa](https://github.com/ChuaCheowHuan/cda_jepa) ([30](30_extensions.md) §9), which runs them against this
+repository. What is left here is `test_jepa_moved.py`: a config selecting `jepa` names the package,
+old checkpoints' pickled JEPA classes resolve through `train/model/jepa_learner.py` (or fail naming
+the package), the restore guard treats an old `jepa` checkpoint as having had the extension on, and
+the old pretrainer command says where it went.
 
 ---
 
@@ -969,7 +937,7 @@ The two most load-bearing are `test_pure_noise_does_not_score_above_zero` and th
 tests. Both pin the difference between a harness that reports representation quality and one that
 reports overfitting while looking identical.
 
-#### 6.5.2 `integration/test_probe_harness.py` — 28 tests
+#### 6.5.2 `integration/test_probe_harness.py` — 25 tests
 
 The parts that can only break where the harness meets the rest of the system.
 
@@ -1018,7 +986,7 @@ What stays here is what this repository promises the package and the people who 
 
 | File | Pins |
 |---|---|
-| `test_model_layout.py` (30) | Where each encoder's trunk ends and which heads read it, the contract CBP finds its layers through |
+| `test_model_layout.py` (26) | Where each encoder's trunk ends and which heads read it, the contract CBP finds its layers through |
 | `test_extensions.py::TestLearnerOrder` (3) | A higher `learner_order` wraps further out, whatever the names, so CBP sees every other mixin's step |
 | `test_learner_class_compat.py` (10) | Learner classes pickled before the move, CBP ones included, still load, or fail naming cda-cbp |
 | `test_cbp_moved.py` (19) | Old `cbp_*` keys name the package; an old checkpoint's `continual_backprop` group reads as the `cbp` extension's settings, so resuming it with the same settings passes, a changed setting or a config that leaves CBP out is refused; a restore without the package stops before RLlib, instead of falling back to a fresh run |

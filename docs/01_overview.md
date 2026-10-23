@@ -204,15 +204,15 @@ observation content, reward scaling, PPO hyper-parameters — is where the high-
 | `python -m gym_continuousDoubleAuction.train.train --iters 4 --agents 4` | League self-play PPO training |
 | `python -m gym_continuousDoubleAuction.train.train --help` | Full CLI |
 | `python gym_continuousDoubleAuction/CDA_rand.py` | Random-agent smoke run, no learning (CI stage 2) |
-| `python -m pytest gym_continuousDoubleAuction/test -q` | 2,191 unit tests; the integration suite is left out by default |
-| `python -m pytest gym_continuousDoubleAuction/test/integration -q` | 148 integration tests that build real `Algorithm`s |
+| `python -m pytest gym_continuousDoubleAuction/test -q` | 2,087 unit tests; the integration suite is left out by default |
+| `python -m pytest gym_continuousDoubleAuction/test/integration -q` | 132 integration tests that build real `Algorithm`s |
 | `python -m gym_continuousDoubleAuction.CDA_rand --help` | Flags for the smoke run; defaults in `config/cli_defaults.json` |
 | `CDA_train.ipynb` | Notebook driver; imports `TrainConfig` / `train` from `train.py`. Runs unchanged on [Colab](20_colab.md) and in the [docker image](19_docker.md) — set `PLATFORM` / `USE_GPU` in its first cell, everything else comes from `config/runtime_profiles.json` |
 | `python -m gym_continuousDoubleAuction.visualize.run_all` | Regenerates every chart in `visualize/` from the latest episode Parquet record and `progress.jsonl` |
 | `python -m gym_continuousDoubleAuction.train.evaluate --checkpoint <dir>` | Roll episodes with a checkpoint's policies and report what they do ([26](26_runbook.md)) |
 | `python -m gym_continuousDoubleAuction.train.export --checkpoint <dir>` | Export one module's weights from a checkpoint; `--list` shows the league ([26](26_runbook.md) §26.9.2) |
 | `python -m gym_continuousDoubleAuction.train.probe` | Score encoders on microstructure targets without the reward ([23](23_probe_harness.md)) |
-| `python -m gym_continuousDoubleAuction.train.pretrain` | Pretrain a JEPA encoder on observations alone ([23](23_probe_harness.md) Part 2) |
+| `python -m cda_jepa.pretrain` | Pretrain a JEPA encoder on observations alone; needs the cda-jepa package ([30](30_extensions.md) §9) |
 | `python -m gym_continuousDoubleAuction.train.compare --encoders mlp transformer --seeds 0 1 2` | Seeded encoder sweep, each run scored by the probe ([18](18_configuration.md) §5.5) |
 
 Installation:

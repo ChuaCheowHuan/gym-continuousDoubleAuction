@@ -4571,3 +4571,34 @@ what an extension needs to bring an *encoder*, which the extension point of
   and pretrained directories keep working.
 - **Tests.** `test_encoder_plugins.py` (16). Unit total 2,191; suite 2,339.
 - **Version** 2.2.0 in `setup.py`, `CITATION.cff` and the README.
+
+## 111. JEPA moves to the cda-jepa package (version 2.3.0)
+
+The second gym-CDA step of moving JEPA out (§110 was the first). The `jepa` encoder, its RLModule
+and Learner, the offline pretrainer and their tests now live in the cda-jepa package
+([cda_jepa](https://github.com/ChuaCheowHuan/cda_jepa)), which gym-CDA finds through the
+`gym_cda.encoders` entry point and which builds on the I-JEPA and LeJEPA authors' code, installed
+unchanged. Before this step, cda-jepa's equivalence test showed its encoder trains bit for bit like
+the one removed here: same weights, EMA target, optimiser state and `jepa_*` metrics from the same
+state on the same episodes, with the world model on and off and the trunk shared or not.
+
+- **Removed:** `train/model/encoders/jepa.py`, `train/pretrain/pretrain.py`, the
+  `encoder_specs.jepa` block of `train_config.json` (the package carries the defaults) and
+  `cli_defaults.cda_pretrain`. `test_pretrain.py`, `test_jepa_value_pass.py`,
+  `test_world_model_actions.py`, the JEPA classes of `test_encoder_architectures.py` and
+  `integration/test_encoder_wiring.py`, and the JEPA checks in `test_s4_minor_fixes.py` (#242),
+  `test_s4_hardening.py` and `test_obs_layout_book_mode.py` (#187) moved to cda-jepa.
+- **Kept for what was written before:** `train/model/jepa_learner.py` forwards `CDAJEPALearner` and
+  `JEPARLModule` to the package (PEP 562, like `cbp_learner.py`), so an old checkpoint resumes with
+  cda-jepa installed and fails naming it without. `encoder_type: "jepa"` without the package names
+  it (`MOVED_ENCODERS`). The restore guard counts an encoder's extension as enabled, so an old
+  `jepa` checkpoint (no extension listed) resumes under a config listing `"jepa"`; checked by hand
+  on a checkpoint written at 98c4900 with tuned Adam and the world model. `python -m
+  gym_continuousDoubleAuction.train.pretrain` says where the pretrainer went and exits 2.
+- **Config:** `cda_probe.pretrained_encoder` (`jepa`) is the default of the probe's
+  `--pretrained-encoder`, which was a literal.
+- **Docs:** 22 is a stub pointing at cda-jepa's `docs/jepa.md` (same section numbers); 23 Part 2
+  points at its `docs/pretraining.md`; 30 gains §9; 18, 26, 01, 02, 10, 11, 28 and the map reworded.
+- **Tests.** `test_jepa_moved.py` (18), written first: 13 of them failed on the previous source.
+  Unit total 2,087; integration 132; suite 2,219. Four encoders ship here.
+- **Version** 2.3.0 in `setup.py`, `CITATION.cff` and the README.
