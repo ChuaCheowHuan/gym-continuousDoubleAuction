@@ -516,6 +516,8 @@ def _encoder_extension(encoder_type) -> Optional[str]:
 
     Not installed is not an error here: the restore then fails on the missing
     classes, with the message naming the package (`check_pickled_classes_load`).
+    Installed but failing to import is: `ensure_registered`'s ImportError, which
+    names the package, propagates.
     """
     if not encoder_type:
         return None
