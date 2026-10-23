@@ -4614,3 +4614,34 @@ naming the package and its module, chained to the original. 30 §3.1 says so.
 
 - **Tests.** `test_encoder_plugins.py` gains `TestAPackageThatFailsToImport` (3), written first:
   all three failed on the previous source. Unit total 2,090; integration 132; suite 2,222.
+
+## 113. Docs pass: one home for each fact, extensions on one page
+
+A docs-only pass after JEPA moved out (§111). No code, config or test changed.
+
+- **Extensions.** 30 is the one page in this repository about the three extension packages. It
+  gains §0, a diagram of gym-CDA, cda-cbp, cda-discorl and cda-jepa and the forks each ships as a
+  pinned submodule (loss-of-plasticity, disco_rl, ijepa, lejepa), with a table of the three. §7
+  keeps only the steps on this side; the DiscoRL metric table and component list are the package's
+  (its `docs/components.md`). §8 gains what 25 said stayed here, including how old CBP configs and
+  checkpoints are handled.
+- **22 and 25** are one-paragraph pointers to the moved notes (their section numbers still hold,
+  for code comments and these history files) and to 30 §8–9.
+- **11 §6** was a copy of cda-cbp's `docs/metrics.md`; it is now a table of where each extension
+  documents its metrics. **18 §5.6** keeps tuned Adam and points at 30 §8 for CBP. **23** drops
+  "and Offline Pretraining" from its title; Part 2 is a one-line pointer (17 links its heading).
+  **10** merges the two "moved" sections into §6.6 and corrects §6.5's effective-rank note: cda-cbp
+  calls `train/probe/rank.py`, it keeps no torch copy (cda-cbp 0.2.0).
+- **Test totals** are stated only in 10's file inventory, whose two total rows said 2,191 and 148
+  (2,090 and 132). 01, 02, 14 and 15 link to it instead of quoting a number; CONTRIBUTING §4 and
+  the cda-doc-sync skill say so. 00 keeps the counts its timings were measured at.
+- **Legacy notes removed:** 10 §1.3 (a test file deleted long ago), 11 §1.4 (`g_store`, which 29
+  covers), 02's list of deleted `train/` folders, 18's `env_variety` and `plot_defaults` asides,
+  10's list of stale file names.
+- **18** puts §5.4–5.7 back under §5: the `lstm`, `moe_transformer` and shared-key subsections of
+  §5.4 had ended up after §8. Headings 3.4, 3.5 and 5.4–5.7 take the level and form of their
+  siblings; their anchors are unchanged.
+- **Diagrams.** The layer maps in the README and 02 §2.2 show the extension packages; 02's
+  environment box says two mixins and four components. The docs map groups 23 and 30 under
+  Research with the three extensions, and its reading paths for JEPA, pretraining and CBP start at
+  30. The glossary gains **Extension**, and its **Encoder** row says four ship here.
