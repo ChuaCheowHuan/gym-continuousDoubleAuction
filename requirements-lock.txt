@@ -46,7 +46,7 @@ numpy==2.5.2
 ormsgpack==1.12.2
 packaging==26.3
 pandas==3.0.5
-pillow==12.3.0
+pillow==13.0.0
 protobuf==7.35.1
 pyarrow==25.0.0
 pydantic==2.13.4
