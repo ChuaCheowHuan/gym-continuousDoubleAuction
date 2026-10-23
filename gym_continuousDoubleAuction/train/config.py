@@ -284,10 +284,11 @@ class TrainConfig:
     # Both are STRUCTURAL_CONFIG_KEYS - a restore cannot change them.
     encoder_type: str = _default("encoder_type")
     encoder_specs: Dict[str, Any] = _default("encoder_specs")
-    # A `train.pretrain` checkpoint the trainable modules start from, or null
-    # for a fresh initialisation. The checkpoint's encoder fingerprint is
-    # checked against `encoder_type` / `encoder_specs` when the spec is built,
-    # so a mismatch fails there rather than as a shape error inside RLlib.
+    # A pretrained-encoder checkpoint (`encoders.pretrained`) the trainable
+    # modules start from, or null for a fresh initialisation. The checkpoint's
+    # encoder fingerprint is checked against `encoder_type` / `encoder_specs`
+    # when the spec is built, so a mismatch fails there rather than as a shape
+    # error inside RLlib.
     #
     # Deliberately NOT a structural key. It changes where the weights *start*,
     # not what shape they are, so resuming a run that used one is fine - the

@@ -99,10 +99,10 @@
     "_source": "gym_continuousDoubleAuction/train/model/encoders/ (ENCODER_REGISTRY)",
     "_note": "Selects the network the *trainable* PPO modules encode observations with. The frozen RandomRLModule baselines have no network and ignore this entirely. `mlp` is the default and is a pass-through: it resolves to the stock RLlib DefaultModelConfig built from the `ppo` group's fcnet_hiddens / fcnet_activation / vf_share_layers, touching none of the custom encoder machinery, so a default run and every checkpoint written by one are unaffected by this group existing. Any other value routes the trainable modules through CDACatalog and a custom encoder. An unregistered name raises at config-build time, naming the ones that are registered.",
     "_note_structural": "encoder_type and everything in encoder_specs are STRUCTURAL_CONFIG_KEYS: the restored weights depend on them, so changing one in the same pass as is_restore is a hard error rather than a silent no-op. Comparing architectures means separate runs, not a resume.",
-    "_note_specs": "Per-architecture hyperparameters, keyed by encoder_type. `mlp` has no block: its shape comes from the `ppo` group, which is where it has always lived and where STRUCTURAL_CONFIG_KEYS already guards it. A block is added here alongside each new encoder, so an entry existing is the signal that its encoder is implemented.",
+    "_note_specs": "Per-architecture hyperparameters, keyed by encoder_type. `mlp` has no block: its shape comes from the `ppo` group, which is where it has always lived and where STRUCTURAL_CONFIG_KEYS already guards it. A block is added here alongside each new encoder, so an entry existing is the signal that its encoder is implemented. An encoder an installed package provides (`jepa`, from cda-jepa) carries its own defaults; a block for it here only overrides them.",
     "_note_common_keys": "Two further keys are accepted in EVERY spec block and handled centrally: `lr` and `vf_share_layers`. Both defaults in the `ppo` group were chosen for the 2x256 tanh MLP - holding an attention stack to that learning rate measures the learning rate rather than the architecture, and vf_share_layers false doubles a transformer where it barely costs an MLP anything. Omit them to inherit the `ppo` group; set either to override it for that encoder only. They are not listed in the blocks below because absent means inherit, and a null would be indistinguishable from a value nobody chose.",
     "encoder_type": "mlp",
-    "_note_pretrained": "pretrained_encoder_path points at a directory written by `python -m gym_continuousDoubleAuction.train.pretrain`, whose weights the trainable modules start from instead of a fresh initialisation. null means no pretraining. The checkpoint carries an encoder fingerprint that is checked against encoder_type and encoder_specs when the module spec is built, so pointing at a checkpoint for a different architecture is a hard error there rather than a shape failure inside RLlib. It is NOT a structural key: it changes where the weights start, not their shape, so resuming a run that used one is fine - the restored checkpoint already contains whatever pretraining contributed. `mlp` cannot use one, having no self-supervised objective that could have produced the weights.",
+    "_note_pretrained": "pretrained_encoder_path points at a pretrained-encoder directory (the format in train/model/encoders/pretrained.py, written for example by cda-jepa's `python -m cda_jepa.pretrain`), whose weights the trainable modules start from instead of a fresh initialisation. null means no pretraining. The checkpoint carries an encoder fingerprint that is checked against encoder_type and encoder_specs when the module spec is built, so pointing at a checkpoint for a different architecture is a hard error there rather than a shape failure inside RLlib. It is NOT a structural key: it changes where the weights start, not their shape, so resuming a run that used one is fine - the restored checkpoint already contains whatever pretraining contributed. `mlp` cannot use one, having no self-supervised objective that could have produced the weights.",
     "pretrained_encoder_path": null,
     "encoder_specs": {
       "transformer": {
@@ -144,30 +144,6 @@
         "num_experts": 4,
         "top_k": 2,
         "aux_loss_coeff": 0.01
-      },
-      "jepa": {
-        "_note": "Joint-Embedding Predictive Architecture. The transformer keys mean what they do in that block; the rest configure the self-supervised objective. Predicts MASKED TOKENS' LATENTS from the visible ones, scored against an EMA copy of the encoder - nothing reconstructs the input, which matters here because a reconstruction loss would be dominated by sqrt(volume) jitter (measured channel sigmas [1.27, 8.17, 0.046, 9.52]).",
-        "_note_policy_latent": "The POLICY latent is always computed from the UNMASKED observation - the agent acts on everything it was given. Masking exists only for the auxiliary loss, and runs in train mode only, so a training step costs two trunk passes plus the target's while inference costs exactly one, the same as `transformer`.",
-        "_note_mask_axis": "What a mask hides. 'level' hides a contiguous depth band in every snapshot (what depth is consistent with this touch?); 'time' hides whole snapshots (where is the book heading?); 'random' uses no structure and is the ablation baseline. Under 'level' tokenisation there is only one snapshot, so all three degenerate to random.",
-        "_note_collapse": "WATCH jepa_latent_std IN THE LEARNER METRICS. A collapsed JEPA drives its prediction loss to ZERO, which reads as success - loss and throughput look identical to a working one. latent_std goes to 0 exactly when every observation maps to the same latent and should sit near 1.0. variance_coeff weights a VICReg-style hinge that pushes back once it starts falling. Both the metric and the hinge are computed on the ONLINE side (the predictor's output), not on the EMA target: read off the target they carried no gradient at all and the term was a constant added to the loss - finding S2-9; jepa_offdiag_cov catches dimensional collapse, where variance holds up but the dimensions become redundant.",
-        "_note_ema_decay": "How slowly the target encoder follows the online one. The asymmetry - a frozen, lagging target the predictor has to chase - is the primary anti-collapse mechanism; a constant encoder cannot satisfy a moving target. Higher is slower and more stable; too high and the target carries no signal.",
-        "_note_world_model": "world_model turns on the ACTION-CONDITIONED term: predict the next observation's latent from this one's plus the action taken, z_hat_t+1 = P(z_t, a_t), scored against the EMA target encoder's view of o_t+1. What it learns is the latent market impact of an order - how the book responds to a market order versus a passive quote versus a cancel - which is a microstructure quantity this env generates endogenously. Off by default because it needs Columns.NEXT_OBS in the train batch, which PPO does not add; train.py attaches RLlib's learner connector for it ONLY when this is on, so no other architecture pays for a column it never reads. Honest bound: z_t+1 depends on every agent's action and this conditions on one of them, so the predictor fits a conditional expectation over the opponents. The loss therefore has a non-zero floor which is NOT underfitting - it is an opponent model, and tuning it away would mean overfitting to noise.",
-        "tokenization": "both",
-        "d_model": 128,
-        "num_heads": 4,
-        "num_layers": 2,
-        "ff_dim": 256,
-        "dropout": 0.0,
-        "pool": "attention",
-        "mask_axis": "level",
-        "mask_ratio": 0.4,
-        "predictor_layers": 1,
-        "predictor_dim": 64,
-        "ema_decay": 0.996,
-        "aux_loss_coeff": 0.1,
-        "variance_coeff": 1.0,
-        "world_model": false,
-        "world_model_coeff": 0.1
       }
     }
   },

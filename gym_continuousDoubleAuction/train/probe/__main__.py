@@ -165,7 +165,8 @@ def main(argv=None):
         "--pretrained",
         type=str,
         default=None,
-        help="A directory written by `train.pretrain`, scored alongside the "
+        help="A pretrained-encoder directory (e.g. from `python -m cda_jepa.pretrain`), "
+        "scored alongside the "
         "untrained encoders. Putting the same architecture in the report "
         "twice - once at initialisation, once pretrained - is what "
         "isolates what the self-supervised objective actually taught it.",
@@ -173,7 +174,7 @@ def main(argv=None):
     p.add_argument(
         "--pretrained-encoder",
         type=str,
-        default="jepa",
+        default=_cli("pretrained_encoder"),
         help="Which architecture --pretrained holds. Its spec comes from "
         "train_config.json, so the fingerprint check is meaningful.",
     )

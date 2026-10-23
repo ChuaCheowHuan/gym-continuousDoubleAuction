@@ -81,7 +81,7 @@ setup(
     # Matches CITATION.cff and the README's citation block. They said 2.0.0
     # while this said 0.1.0, so `pip show` reported a version no document
     # mentioned.
-    version="2.2.0",
+    version="2.3.0",
     description=(
         "A multi-agent continuous double auction (limit order book) environment "
         "for reinforcement learning, with RLlib league-based self-play."
