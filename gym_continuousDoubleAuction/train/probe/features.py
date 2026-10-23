@@ -192,15 +192,14 @@ def pretrained_module(
     identical split. Everything between those two columns is what pretraining
     taught the encoder.
 
-    Imported lazily because `train.pretrain` imports this module - the probe is
-    the corpus reader pretraining reuses, so the dependency only runs one way
-    at import time.
+    The weights format is `encoders.pretrained`, which knows nothing about how
+    the weights were trained, so the probe scores any encoder that can load them.
 
     Raises:
         FileNotFoundError: if `path` is not a pretrain checkpoint.
         ValueError: if its fingerprint does not match the encoder being built.
     """
-    from gym_continuousDoubleAuction.train.pretrain import load_into
+    from gym_continuousDoubleAuction.train.model.encoders.pretrained import load_into
 
     module = build_module(obs_space, act_space, encoder_type, encoder_spec, book_mode)
     load_into(module, path, encoder_type, encoder_spec)
