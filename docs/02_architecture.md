@@ -194,7 +194,8 @@ gym_continuousDoubleAuction/
 │   ├── model/model_handler.py          RandomRLModule + DefaultModelConfig + CDACatalog
 │   ├── model/action_mask.py            reads the mask out of the private block (docs/06 §7)
 │   ├── model/action_dist.py            the Dict action distribution, with a rank-safe log-prob
-│   ├── model/encoders/                 selectable observation encoders for the trainable modules
+│   ├── model/encoders/                 selectable observation encoders for the trainable modules;
+│   │                                   pretrained.py is the pretrained-weights format
 │   ├── model/jepa_learner.py           JEPA module + learner (docs/22 4.2)
 │   ├── model/moe_learner.py            CDAPPOTorchRLModule (masking) + CDAPPOTorchLearner (MoE aux loss)
 │   ├── model/cbp_learner.py            shim for old checkpoints; CBP is now cda-cbp (docs/25)
@@ -215,7 +216,7 @@ gym_continuousDoubleAuction/
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   ├── inspect_latest_episode*.py        print the newest episode as a table or JSON
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               2,175 unit tests
+└── test/                               2,191 unit tests
     └── integration/                    148 tests that build real Algorithms
 ```
 
