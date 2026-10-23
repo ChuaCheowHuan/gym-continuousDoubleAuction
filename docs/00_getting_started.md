@@ -41,7 +41,7 @@ configuration (8 agents, `max_step` 4,096, 4 episodes per iteration, the `cpu` p
 | Task | Wall time | Peak RAM |
 |---|---|---|
 | `CDA_rand.py` smoke run (1,000 steps, 4 random agents) | 8 s | 0.6 GB |
-| Unit tests (2,133 when measured; 2,175 now) | 3 min | 2.9 GB |
+| Unit tests (2,133 when measured; 2,191 now) | 3 min | 2.9 GB |
 | Integration tests (185 when measured; 148 now, real RLlib builds) | 3.5 min | 3.3 GB |
 | One training iteration (16,384 env steps) | 2 min 40 s: 2 min 26 s sampling at about 112 steps/s, 12.5 s PPO update | 2.2 GB |
 | The default 16-iteration run | about 45 min (extrapolated from one iteration) | 2.2 GB |

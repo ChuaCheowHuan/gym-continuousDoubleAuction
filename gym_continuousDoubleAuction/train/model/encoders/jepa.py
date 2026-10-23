@@ -59,7 +59,6 @@ from __future__ import annotations
 
 import copy
 import itertools
-import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -590,16 +589,9 @@ class TorchJEPAEncoder(TorchModel, Encoder):
         # construction means there is no window in which some worker holds a
         # differently-initialised trunk.
         if config.pretrained_path:
-            from gym_continuousDoubleAuction.train.pretrain import (
-                WEIGHTS_FILE,
-            )
+            from gym_continuousDoubleAuction.train.model.encoders.pretrained import load_state
 
-            state = torch.load(
-                os.path.join(config.pretrained_path, WEIGHTS_FILE),
-                map_location="cpu",
-                weights_only=True,
-            )
-            self.load_state_dict(state)
+            self.load_state_dict(load_state(config.pretrained_path))
 
     # --- The auxiliary objective -----------------------------------------
 
@@ -835,6 +827,9 @@ class TorchJEPAEncoder(TorchModel, Encoder):
         "gym_continuousDoubleAuction.train.model.jepa_learner",
         "CDAJEPALearner",
     ),
+    # The world model predicts the next observation, which PPO's train batch
+    # does not carry; `build.py` attaches the connector that adds it.
+    needs_next_obs=lambda settings: bool(settings["world_model"]),
 )
 def build_jepa_config(
     layout: ObsLayout,

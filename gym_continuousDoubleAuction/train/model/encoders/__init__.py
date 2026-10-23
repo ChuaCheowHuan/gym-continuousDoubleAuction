@@ -42,12 +42,30 @@ becomes `latent_dims`) and its `Encoder`, decorate a builder with `@register`,
 import it at the bottom of this file, and add its block to `encoder_specs` in
 `config/train_config.json`. A spec block existing is the signal that its encoder
 is implemented.
+
+An encoder from another package
+-------------------------------
+An installed extension package (docs/30) can bring an encoder too. It names a
+module under the `gym_cda.encoders` entry-point group:
+
+    [project.entry-points."gym_cda.encoders"]
+    myenc = "my_package.encoder"
+
+and that module calls `@register("myenc", ..., extension="myext")`. The module is
+imported the first time anything here is asked about `myenc` - in every process
+that builds one, env runners and learners included - so nothing has to import it
+by hand and a run that never selects it never imports it. `extension` names the
+extension that must be listed in `extensions_enabled` for a run to select it
+(`TrainConfig` checks), and the spec defaults are the package's, like any other
+extension setting.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from functools import lru_cache
+from importlib.metadata import EntryPoint, entry_points
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 import gymnasium as gym
 from ray.rllib.core.models.configs import ModelConfig
@@ -82,6 +100,17 @@ ENCODER_MODULE_CLASSES: Dict[str, tuple] = {}
 #: The learner is algorithm-wide rather than per-module, so `train.py` resolves
 #: this once from the configured encoder; see `learner_class_for`.
 ENCODER_LEARNER_CLASSES: Dict[str, tuple] = {}
+
+#: `encoder_type` -> the extension that provides it, for an encoder registered by
+#: an installed package rather than by this repository.
+ENCODER_EXTENSIONS: Dict[str, str] = {}
+
+#: `encoder_type` -> `(settings) -> bool`: whether that encoder, so configured,
+#: needs `Columns.NEXT_OBS` in its train batch. Absent means it never does.
+ENCODER_NEXT_OBS: Dict[str, Callable[[Dict[str, Any]], bool]] = {}
+
+#: The entry-point group an installed package lists its encoder modules under.
+ENCODER_ENTRY_POINT_GROUP = "gym_cda.encoders"
 
 #: Spec keys applied to the top-level model config rather than to the encoder,
 #: because RLlib reads them itself. See `model_config_overrides`.
@@ -137,6 +166,8 @@ def register(
     defaults: Optional[Dict[str, Any]] = None,
     module_class_path: Optional[tuple] = None,
     learner_class_path: Optional[tuple] = None,
+    extension: Optional[str] = None,
+    needs_next_obs: Optional[Callable[[Dict[str, Any]], bool]] = None,
 ) -> Callable[[EncoderConfigBuilder], EncoderConfigBuilder]:
     """Register an encoder config builder under an `encoder_type`.
 
@@ -157,6 +188,11 @@ def register(
             were already registered.
         learner_class_path: `(module, attribute)` naming a Learner class, same
             rules. Resolved by `train.py`, once, from the configured encoder.
+        extension: For an encoder an installed package registers: the name of
+            its extension, which a run must enable to select the encoder.
+        needs_next_obs: `(settings) -> bool`, given the encoder's merged
+            settings: whether its train batch must carry `Columns.NEXT_OBS`.
+            Omit it and the encoder never asks for that column.
 
     Both paths are strings resolved on demand rather than imported classes:
     those classes live in `train/model/`, which imports this package, so an
@@ -176,9 +212,53 @@ def register(
             ENCODER_MODULE_CLASSES[name] = module_class_path
         if learner_class_path is not None:
             ENCODER_LEARNER_CLASSES[name] = learner_class_path
+        if extension is not None:
+            ENCODER_EXTENSIONS[name] = extension
+        if needs_next_obs is not None:
+            ENCODER_NEXT_OBS[name] = needs_next_obs
         return builder
 
     return decorate
+
+
+@lru_cache(maxsize=None)
+def installed_encoders() -> Dict[str, EntryPoint]:
+    """Encoder modules installed packages list, keyed by `encoder_type`, not loaded.
+
+    Listing reads package metadata only, so an installed encoder that no run
+    selects is never imported. `installed_encoders.cache_clear()` forgets the
+    listing, for a test that installs one mid-process.
+    """
+    return {ep.name: ep for ep in entry_points(group=ENCODER_ENTRY_POINT_GROUP)}
+
+
+def ensure_registered(encoder_type: str) -> None:
+    """Import the installed module that registers `encoder_type`, if it is not yet.
+
+    Does nothing for a registered encoder, for `mlp`, or for a name no package
+    lists, so every lookup below can call it first and then fail in its own words.
+
+    Raises:
+        ValueError: the module was imported and did not register the encoder it
+            is listed under.
+    """
+    if encoder_type in ENCODER_REGISTRY or encoder_type == MLP_ENCODER_TYPE:
+        return
+    entry = installed_encoders().get(encoder_type)
+    if entry is None:
+        return
+    entry.load()
+    if encoder_type not in ENCODER_REGISTRY:
+        raise ValueError(
+            f"{entry.value!r} is listed under {ENCODER_ENTRY_POINT_GROUP!r} as "
+            f"encoder {encoder_type!r}, but importing it registered no such encoder."
+        )
+
+
+def encoder_extension(encoder_type: str) -> Optional[str]:
+    """The extension that provides `encoder_type`, or None for this repository's own."""
+    ensure_registered(encoder_type)
+    return ENCODER_EXTENSIONS.get(encoder_type)
 
 
 def _resolve(path: tuple):
@@ -195,6 +275,7 @@ def module_class_for(encoder_type: str, default):
     `default` is what every encoder resolved to before any of them declared one,
     so an encoder that says nothing is unaffected by this mechanism existing.
     """
+    ensure_registered(encoder_type)
     path = ENCODER_MODULE_CLASSES.get(encoder_type)
     return _resolve(path) if path else default
 
@@ -208,6 +289,7 @@ def learner_class_for(encoder_type: str, default):
     learners, which is why every Learner registered here subclasses the default
     rather than replacing it.
     """
+    ensure_registered(encoder_type)
     path = ENCODER_LEARNER_CLASSES.get(encoder_type)
     return _resolve(path) if path else default
 
@@ -252,6 +334,7 @@ def encoder_settings(encoder_type: str, spec: Dict[str, Any]) -> Dict[str, Any]:
     Excludes `COMMON_SPEC_KEYS`, which every encoder accepts but none consumes,
     so a builder can splat this straight into its config dataclass.
     """
+    ensure_registered(encoder_type)
     _check_keys(encoder_type, spec)
     defaults = ENCODER_DEFAULTS.get(encoder_type, {})
     return {**defaults, **{k: v for k, v in spec.items() if k in defaults}}
@@ -263,6 +346,7 @@ def common_settings(encoder_type: str, spec: Dict[str, Any]) -> Dict[str, Any]:
     Null means "inherit", so an encoder that says nothing about `lr` gets the
     `ppo` group's value rather than overriding it with a None.
     """
+    ensure_registered(encoder_type)
     _check_keys(encoder_type, spec)
     given = {k: v for k, v in spec.items() if k in COMMON_SPEC_KEYS}
     merged = {**COMMON_SPEC_KEYS, **given}
@@ -302,10 +386,12 @@ def training_overrides(encoder_type: str, spec: Dict[str, Any]) -> Dict[str, Any
 
 
 def selectable_encoder_types() -> List[str]:
-    """Every `encoder_type` a config file may name, sorted."""
-    return sorted(
-        [MLP_ENCODER_TYPE] + [name for name in ENCODER_REGISTRY if not name.startswith("_")]
-    )
+    """Every `encoder_type` a config file may name, sorted.
+
+    Includes the encoders installed packages provide, without importing them.
+    """
+    names = {MLP_ENCODER_TYPE} | set(ENCODER_REGISTRY) | set(installed_encoders())
+    return sorted(name for name in names if not name.startswith("_"))
 
 
 def known_encoder_type(encoder_type: str) -> str:
@@ -318,6 +404,7 @@ def known_encoder_type(encoder_type: str) -> str:
     Raises:
         ValueError: if it names no registered encoder.
     """
+    ensure_registered(encoder_type)
     if encoder_type == MLP_ENCODER_TYPE or encoder_type in ENCODER_REGISTRY:
         return encoder_type
 
@@ -327,7 +414,9 @@ def known_encoder_type(encoder_type: str) -> str:
     )
 
 
-def validate_encoder_type(encoder_type: str) -> str:
+def validate_encoder_type(
+    encoder_type: str, extensions_enabled: Optional[Sequence[str]] = None
+) -> str:
     """Check an `encoder_type` *read from config*, returning it unchanged.
 
     Stricter than `known_encoder_type`: it also refuses test fixtures, which
@@ -335,16 +424,32 @@ def validate_encoder_type(encoder_type: str) -> str:
     the boundary where a config value is read - not on every build, or a test
     could never exercise a fixture.
 
+    Args:
+        encoder_type: The configured value.
+        extensions_enabled: The run's enabled extensions. When given, an encoder
+            an extension provides is refused unless that extension is enabled:
+            installing a package changes no run (docs/30), and selecting its
+            encoder alone would.
+
     Raises:
-        ValueError: if it names no registered encoder, or names a test fixture.
+        ValueError: if it names no registered encoder, names a test fixture, or
+            names an extension's encoder without that extension enabled.
     """
+    ensure_registered(encoder_type)
     if encoder_type.startswith("_") and encoder_type in ENCODER_REGISTRY:
         raise ValueError(
             f"Encoder {encoder_type!r} is a test fixture and cannot be "
             "selected from config. Available: "
             f"{', '.join(selectable_encoder_types())}."
         )
-    return known_encoder_type(encoder_type)
+    known_encoder_type(encoder_type)
+    extension = ENCODER_EXTENSIONS.get(encoder_type)
+    if extensions_enabled is not None and extension and extension not in extensions_enabled:
+        raise ValueError(
+            f"encoder_type {encoder_type!r} is provided by the {extension!r} extension, "
+            f"which is not enabled. Add {extension!r} to extensions_enabled."
+        )
+    return encoder_type
 
 
 def needs_next_obs(encoder_type: str, encoder_spec: Optional[Dict[str, Any]]) -> bool:
@@ -354,13 +459,16 @@ def needs_next_obs(encoder_type: str, encoder_spec: Optional[Dict[str, Any]]) ->
     a learner connector attached - and attaching one unconditionally would make
     every other architecture pay for a column it never reads.
 
-    True only for a `jepa` encoder with `world_model` on. Read from the merged
-    settings rather than the raw spec block, so a config file that omits the key
-    still gets the registered default.
+    Each encoder answers for itself through `register(needs_next_obs=...)`; one
+    that registered no answer never needs it. Asked with the merged settings
+    rather than the raw spec block, so a config file that omits a key still gets
+    the registered default.
     """
-    if encoder_type not in ENCODER_DEFAULTS:
+    ensure_registered(encoder_type)
+    check = ENCODER_NEXT_OBS.get(encoder_type)
+    if check is None:
         return False
-    return bool(encoder_settings(encoder_type, encoder_spec or {}).get("world_model"))
+    return bool(check(encoder_settings(encoder_type, encoder_spec or {})))
 
 
 def encoder_fingerprint(
@@ -454,6 +562,7 @@ def build_encoder_config(
             `MLP_ENCODER_TYPE`, which must never reach a custom catalog.
     """
     encoder_type = model_config_dict["encoder_type"]
+    ensure_registered(encoder_type)
 
     if encoder_type == MLP_ENCODER_TYPE:
         raise ValueError(

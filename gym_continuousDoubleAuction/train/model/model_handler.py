@@ -288,9 +288,12 @@ def build_trainable_module_spec(
         # every process that constructs the encoder - env runners and learners
         # alike - loads the weights itself, with no state to synchronise.
         #
-        # Imported here rather than at module scope: `train.pretrain` imports
-        # the probe, which imports this module.
-        from gym_continuousDoubleAuction.train.pretrain import verify_fingerprint
+        # Imported here rather than at module scope: the format module imports
+        # the encoder registry, which a run with no pretrained weights never needs
+        # beyond what is already loaded.
+        from gym_continuousDoubleAuction.train.model.encoders.pretrained import (
+            verify_fingerprint,
+        )
 
         verify_fingerprint(pretrained_path, encoder_type, encoder_spec)
         fields["pretrained_path"] = pretrained_path

@@ -93,6 +93,32 @@ An env wrapper must not change the observation or action space: the spaces are b
 unwrapped env before any wrapper runs. `train.evaluate` builds its own env from the checkpoint's
 `env_config`, so it rolls episodes without any wrapper.
 
+### 3.1 An encoder from a package
+
+An encoder is not one of the three pieces above: it is selected per run by `encoder_type`, and
+every process that builds a module must find it in the encoder registry
+(`train/model/encoders/__init__.py`). A package that brings one lists the module that registers it
+under a second entry-point group:
+
+```toml
+[project.entry-points."gym_cda.encoders"]
+myenc = "my_package.encoder"
+```
+
+That module calls `@register("myenc", defaults=..., extension="myext")`, and may pass
+`module_class_path`, `learner_class_path` and `needs_next_obs` like an encoder in this repository.
+Nothing imports it until the name `myenc` is first looked up, which happens in each process that
+builds the module, env runners and learners included. `selectable_encoder_types` lists it without
+importing it. A run selects it with `encoder_type: "myenc"`, its settings in
+`encoder_specs.myenc`, and `"myext"` in `extensions_enabled`; `TrainConfig` refuses the encoder
+without its extension enabled, since installing a package changes no run.
+
+An encoder whose config has a `pretrained_path` field can start from pretrained weights. The
+checkpoint format (`encoder.pt`, `encoder_fingerprint.json`, `rl_module/`) is
+`train/model/encoders/pretrained.py`, which `pretrained_encoder_path` and the probe's
+`--pretrained` use; a package that trains such weights writes them with its `save`.
+[`test_encoder_plugins.py`](../gym_continuousDoubleAuction/test/test_encoder_plugins.py) pins both.
+
 ## 4. Adding a loss term, or replacing PPO's
 
 `CDAPPOTorchLearner.compute_loss_for_module` is PPO's loss plus the MoE term, and

@@ -4551,3 +4551,23 @@ A documentation review across gym-CDA, cda-discorl and cda-cbp, checked against 
   longer repeat a built-in run; the page says which values do.
 - **evaluate** ([26](26_runbook.md) §26.9.1, §26.10). The runbook names the restore guards
   `train.evaluate` gained in #336, and the troubleshooting table has the missing-extension message.
+
+## 110. Encoders from installed packages, and a generic pretrained-weights format (version 2.2.0)
+
+First step of moving JEPA into its own package, `cda-jepa` (the plan is in the project files,
+`jepa/jepa_extraction_plan.md`). JEPA is still built in and behaves exactly as before; this adds
+what an extension needs to bring an *encoder*, which the extension point of
+[30](30_extensions.md) could not do.
+
+- **`gym_cda.encoders` entry points** ([30](30_extensions.md) §3.1). A package lists the module that
+  registers its encoder; the module is imported on the first lookup of the name, in whichever
+  process asks, so remote env runners and learners need no setup. `@register` gains `extension`
+  (a run must enable it to select the encoder; `TrainConfig` checks) and `needs_next_obs` (the
+  encoder says whether its train batch needs `Columns.NEXT_OBS`; `jepa` answers from
+  `world_model`, as `needs_next_obs` did before).
+- **Pretrained weights.** The checkpoint format (`encoder.pt`, `encoder_fingerprint.json`,
+  `rl_module/`) moved from `train.pretrain` to `train/model/encoders/pretrained.py`, for any encoder
+  whose config has a `pretrained_path` field. `train.pretrain` re-exports it, so existing imports
+  and pretrained directories keep working.
+- **Tests.** `test_encoder_plugins.py` (16). Unit total 2,191; suite 2,339.
+- **Version** 2.2.0 in `setup.py`, `CITATION.cff` and the README.

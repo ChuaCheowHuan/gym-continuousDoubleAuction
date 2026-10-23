@@ -400,7 +400,7 @@ class TrainConfig:
         if not self.run_id:
             self.run_id = generate_run_id()
 
-        validate_encoder_type(self.encoder_type)
+        validate_encoder_type(self.encoder_type, self.extensions_enabled)
 
         if not 0.0 < self.gamma <= 1.0:
             raise ValueError(f"gamma must be in (0, 1]; got {self.gamma}.")
