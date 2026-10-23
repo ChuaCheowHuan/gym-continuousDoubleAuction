@@ -39,7 +39,7 @@ docs describe the current code and link to 29 for a defect's history.
   plus four composed components on `Exchg_Helper`: `reward_model`, `episode_status`, `info_builder`,
   `liquidation_engine`. Accounts: `cash`, `cash_on_hold`, `position_val`, `cost_basis`.
 - Observation: 233 floats in `grid` mode (4 x 48 + 41), 305 in `levels` mode; the private block is
-  41. Five action heads, six reward terms, five encoders. Skill `cda-doc-sync` recomputes these.
+  41. Five action heads, six reward terms, four encoders (`jepa` is the cda-jepa package). Skill `cda-doc-sync` recomputes these.
 - NAV conservation: `sum(NAV) + env.fees_collected == starting cash`.
 
 ## GitHub in this environment

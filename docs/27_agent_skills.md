@@ -257,7 +257,7 @@ not** show (returns are noise at this scale; the probe is reward-free).
 
 **Trigger.** Pretraining a JEPA encoder, or scoring one on the probe harness.
 
-**Steps.** Pretrain with `train.pretrain`; read `latent_std` before the loss, since a collapsed run
+**Steps.** Pretrain with cda-jepa's `python -m cda_jepa.pretrain`; read `latent_std` before the loss, since a collapsed run
 has an excellent loss ([23](23_probe_harness.md) Part 2); probe with `--pretrained <dir> --pretrained-encoder jepa`
 against the held-out fifth; compare to the untrained encoder on the same targets and horizons; report
 the effective rank per feature set.

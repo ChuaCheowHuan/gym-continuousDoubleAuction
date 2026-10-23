@@ -24,7 +24,7 @@ beginning with `_`, at every level.
 | [`config/train_config.json`](../config/train_config.json) | Every `TrainConfig` value, **including the env keys** | `TrainConfig`, `default_model_config`, `SelfPlayCallback` |
 | [`config/env_defaults.json`](../config/env_defaults.json) | Fallbacks for an env built without a full config dict | `continuousDoubleAuctionEnv` and the env mixins |
 | [`config/tunable_constants.json`](../config/tunable_constants.json) | Structural constants: space layout, ID prefixes, logging setup, path defaults | `state_helper`, `action_helper`, `policy_handler`, `logging_setup`, `visualize/` |
-| [`config/cli_defaults.json`](../config/cli_defaults.json) | Flag defaults with no other config home | `CDA_rand`, `train/probe`, `train/pretrain`, `train/compare`, `train/export`, `train/evaluate` |
+| [`config/cli_defaults.json`](../config/cli_defaults.json) | Flag defaults with no other config home | `CDA_rand`, `train/probe`, `train/compare`, `train/export`, `train/evaluate` |
 | [`config/runtime_profiles.json`](../config/runtime_profiles.json) | *Where* a run executes: the `gpu` / `cpu` hardware sets and per-platform paths | `train/runtime.py`, `CDA_train.ipynb` |
 
 ```mermaid
@@ -63,7 +63,7 @@ mindmap
       visualize_paths
     cli_defaults.json
       flag defaults for CDA_rand, probe,
-      pretrain, compare, evaluate, export
+      compare, evaluate, export
       train.py deliberately absent
     runtime_profiles.json
       where the run executes
@@ -762,8 +762,8 @@ Selects the network the **trainable** modules encode observations with. The froz
 
 | Key | Meaning |
 |---|---|
-| `encoder_type` | Which encoder. `mlp` (default) plus whatever is registered in [`train/model/encoders/`](../gym_continuousDoubleAuction/train/model/encoders/). |
-| `encoder_specs` | Per-encoder hyperparameter blocks, keyed by encoder type. A block existing is the signal that its encoder is implemented. `num_heads` is the attention-head count (4 in `transformer`, `moe_transformer` and `jepa`); in `lstm` it configures the per-step tokenizer, and `hidden_dim` (256) is the width of the LSTM that recurs over the rollout axis on top of it. |
+| `encoder_type` | Which encoder. `mlp` (default) plus whatever is registered in [`train/model/encoders/`](../gym_continuousDoubleAuction/train/model/encoders/), and any an installed package provides (`jepa`, from cda-jepa, with its extension enabled). |
+| `encoder_specs` | Per-encoder hyperparameter blocks, keyed by encoder type. A block existing is the signal that its encoder is implemented. `num_heads` is the attention-head count (4 in `transformer` and `moe_transformer`); in `lstm` it configures the per-step tokenizer, and `hidden_dim` (256) is the width of the LSTM that recurs over the rollout axis on top of it. |
 
 Available encoders:
 
@@ -773,7 +773,7 @@ Available encoders:
 | `transformer` | Pre-norm self-attention over the order-book grid, with a learned two-axis positional encoding and attention pooling. |
 | `lstm` | A per-step embedding of the book grid, then an LSTM over the rollout axis. Stateful. |
 | `moe_transformer` | The transformer with each block's feed-forward replaced by a top-k gated mixture of experts. |
-| `jepa` | A transformer that also trains a self-supervised objective: mask part of the book, predict the masked part's *representation* from the rest, scored against an EMA copy of itself. |
+| `jepa` | From the cda-jepa package, not this repository. A transformer that also trains a self-supervised objective: mask part of the book, predict the masked part's *representation* from the rest, scored against an EMA copy of itself. |
 
 #### What a token is
 
@@ -808,51 +808,14 @@ dropped every scalar past the fourth — only for the encoders that tokenise, so
 `mlp` would have gone on seeing features the transformer and LSTM no longer
 received.
 
-#### What `jepa` adds
+#### `jepa`, from cda-jepa
 
-It is the only encoder that trains on something other than the reward. The policy latent is
-computed from the **unmasked** observation exactly as `transformer`'s is — the agent acts on
-everything it was given — and the masking exists only for the auxiliary loss, which runs in train
-mode only. So inference costs one trunk pass, the same as `transformer`; a training step costs
-two plus the target's.
-
-| Key | Meaning |
-|---|---|
-| `mask_axis` | What a mask hides. `level` hides a contiguous depth band in every snapshot ("what depth is consistent with this touch?"); `time` hides whole snapshots ("where is the book heading?"); `random` uses no structure and is the ablation baseline. A tokenisation that lacks the requested axis falls back to `random` rather than raising, so a `tokenization × mask_axis` sweep needs no special cases |
-| `mask_ratio` | Fraction of tokens hidden. Clamped so a mask is never empty (nothing to predict) or total (no context) |
-| `predictor_layers`, `predictor_dim` | The predictor is deliberately narrower than the trunk. A predictor able to invert any encoding would let the trunk emit anything at all, a constant included |
-| `ema_decay` | How slowly the target trunk follows the online one. The lagging, frozen target is the primary anti-collapse mechanism — a constant encoder cannot satisfy a moving target |
-| `aux_loss_coeff` | Weight on the latent-prediction term in PPO's total loss |
-| `variance_coeff` | Weight on a VICReg-style hinge that pushes back once the latent's spread starts falling |
-| `world_model` | Also train the **action-conditioned** term: `ẑ_{t+1} = P(z_t, a_t)`, scored against the target encoder's view of `o_{t+1}`. Off by default |
-| `world_model_coeff` | Weight on that term |
-
-#### The world model
-
-What it learns is the **latent market impact of an order** — how the book responds to a market
-order versus a passive quote versus a cancel. That is a first-class microstructure quantity, and
-this environment generates it endogenously, which is the setting [01](01_overview.md) §1.3
-describes.
-
-It needs `Columns.NEXT_OBS` in the train batch and PPO does not add it, so `train.py` attaches
-RLlib's `AddNextObservationsFromEpisodesToTrainBatch` **only when `world_model` is on**. No other
-architecture pays for an observation-sized column per row that it never reads.
-
-**The honest bound.** `z_{t+1}` depends on every agent's action and the predictor conditions on one
-of them, so it is fitting a conditional expectation over the opponents. Its loss therefore has a
-non-zero floor. That is not underfitting — it is an opponent model, and tuning the floor away would
-mean overfitting to noise.
-
-**Watch `jepa_latent_std`.** This is the same class of trap as `moe_max_expert_share`, and worse.
-A collapsed JEPA maps every observation to the same latent, which makes the prediction *perfect* —
-its loss goes to **zero**, which reads as success, and throughput is unchanged. `jepa_latent_std`
-goes to zero at the same moment and is the only thing that distinguishes the two; it should sit
-near 1.0, the scale LayerNormed targets already have. `jepa_offdiag_cov` catches the slower
-variant, where variance holds up while the dimensions become redundant.
-
-`jepa` is also the only encoder that brings its own RLModule and Learner classes, declared through
-`@register`. Both subclass the defaults, so nothing about the other architectures changes — see
-[22 §4.2](22_jepa_integration.md).
+The `jepa` encoder moved to the cda-jepa package ([30](30_extensions.md) §9). Installed, it is
+selected like the others plus `"jepa"` in `extensions_enabled`, and its block under
+`encoder_specs.jepa` overrides the package's defaults; with no block it runs on them. Its keys
+(`mask_axis`, `mask_ratio`, the predictor, `ema_decay`, the loss weights, `world_model`) and what
+to watch (`jepa_latent_std`) are cda-jepa's [docs/settings.md](https://github.com/ChuaCheowHuan/cda_jepa/blob/main/docs/settings.md) and
+[docs/metrics.md](https://github.com/ChuaCheowHuan/cda_jepa/blob/main/docs/metrics.md).
 
 Every non-`mlp` encoder LayerNorms immediately after its input projection, and that
 is deliberately not configurable. Measured on real steps, the four channels in a

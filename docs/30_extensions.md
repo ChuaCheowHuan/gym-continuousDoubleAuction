@@ -14,6 +14,8 @@ The first extension is DiscoRL (the `cda-discorl` package in its own repository,
 [cda_disco_rl](https://github.com/ChuaCheowHuan/cda_disco_rl)),
 which brings learning mechanisms from *Discovering state-of-the-art reinforcement learning
 algorithms* (Oh et al., 2025) to the PPO learner. §7 shows how to install, enable and compare it.
+Two more were built into this repository and moved out into packages: Continual Backprop (§8) and
+the `jepa` encoder (§9).
 
 The code is [`train/extensions.py`](../gym_continuousDoubleAuction/train/extensions.py). Related:
 [18_configuration.md](18_configuration.md) §5.7 (the config group),
@@ -121,17 +123,17 @@ checkpoint format (`encoder.pt`, `encoder_fingerprint.json`, `rl_module/`) is
 
 ## 4. Adding a loss term, or replacing PPO's
 
-`CDAPPOTorchLearner.compute_loss_for_module` is PPO's loss plus the MoE term, and
-`CDAJEPALearner` adds the JEPA term on top through `super()`. PPO's own part sits behind one
+`CDAPPOTorchLearner.compute_loss_for_module` is PPO's loss plus the MoE term, and an encoder's own
+Learner (cda-jepa's `CDAJEPALearner`, §9) adds its term on top through `super()`. PPO's own part sits behind one
 method, `_policy_value_loss`:
 
 - **To add a term**, override `compute_loss_for_module` and add to `super()`'s result.
 - **To replace PPO's policy, value and entropy loss**, override `_policy_value_loss`. The MoE and
-  JEPA terms are still added around it. Overriding `compute_loss_for_module` instead would drop
+  encoder terms are still added around it. Overriding `compute_loss_for_module` instead would drop
   them.
 
 [`test_loss_seam.py`](../gym_continuousDoubleAuction/test/test_loss_seam.py) pins both halves for
-the PPO and JEPA Learners.
+the PPO Learner and for an encoder Learner that reaches it through `super()`.
 
 ## 5. Checkpoints and resumes
 
@@ -149,6 +151,10 @@ the PPO and JEPA Learners.
   later with an unrelated error, which read as a corrupt save and fell back to an older one.
 - Every resolved setting is fingerprinted as `ext.<name>.<key>`. Changing one on a resume raises
   as unrestorable; changing one listed in `structural_keys` raises as structural.
+- An encoder an extension provides counts as that extension enabled, in both fingerprints. A
+  checkpoint written while this repository shipped `jepa` lists no extension, and the config that
+  resumes it lists `"jepa"`; the two compare equal
+  ([`test_jepa_moved.py`](../gym_continuousDoubleAuction/test/test_jepa_moved.py)).
 
 ## 6. Tests
 
@@ -278,3 +284,34 @@ pip install "git+https://github.com/ChuaCheowHuan/cda_cbp"
 
 Its settings, metrics, and how to move a config or resume a checkpoint from the built-in version
 are in [25](25_continual_backprop.md) and the package's own docs.
+
+## 9. JEPA
+
+The third extension is the `jepa` encoder, which was built into this repository until it moved to
+the `cda-jepa` package ([cda_jepa](https://github.com/ChuaCheowHuan/cda_jepa)). It is the example of §3.1: an encoder, its module and
+Learner classes, and the action-conditioned world model that asks for `Columns.NEXT_OBS`, all
+registered from the package through the `gym_cda.encoders` entry point. The package installs the
+I-JEPA and LeJEPA authors' code unchanged and builds on it.
+
+```bash
+pip install "git+https://github.com/ChuaCheowHuan/cda_jepa"
+```
+
+```json
+"extensions_enabled": ["jepa"],
+"encoder_type": "jepa",
+"encoder_specs": {"jepa": {}}
+```
+
+What stayed here, so nothing written before the move breaks:
+
+- `train/model/jepa_learner.py` forwards `CDAJEPALearner` and `JEPARLModule` to the package, for
+  checkpoints that pickled them by that path, and without the package fails naming it.
+- `encoder_type: "jepa"` without the package fails naming it (`MOVED_ENCODERS`), and the restore
+  guard treats an old `jepa` checkpoint as having had the extension on (§5).
+- The pretrained-weights format (§3.1), so weights pretrained before the move load. The pretrainer
+  is `python -m cda_jepa.pretrain`.
+
+Its settings, metrics, pretraining and research note are in the package's own docs
+([docs/jepa.md](https://github.com/ChuaCheowHuan/cda_jepa/blob/main/docs/jepa.md), the former [22](22_jepa_integration.md)).
+
