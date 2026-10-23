@@ -17,11 +17,11 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# the unit tests (2,087). pyproject.toml's addopts ignores test/integration by default,
+# the unit tests (2,090). pyproject.toml's addopts ignores test/integration by default,
 # so this never runs the slow RLlib suite as well
 python -m pytest gym_continuousDoubleAuction/test -q
 
-# then the integration suite, named explicitly - everything is these two (2,219 tests).
+# then the integration suite, named explicitly - everything is these two (2,222 tests).
 # RLlib wiring, the real save/restore, the progress log and a real remote
 # runner (132 tests, builds real Algorithms)
 python -m pytest gym_continuousDoubleAuction/test/integration -q
@@ -113,7 +113,7 @@ Counts re-measured with `--collect-only`.
 | `test_s4_minor_fixes.py` | 71 | Thirteen of the fourteen S4-minor bugs, one class each (#230 #232 #234 #235 #236 #237 #240 #241 #243 #262 #263 #265 #275; #242, the single-row JEPA batch, moved to cda-jepa): a `Decimal` fee rate, order book bookkeeping, the layout-stamp order message, a `None` module return, `--set` booleans, `$CDA_PLATFORM` case, the plots on bad records, a foreign `config/`, `evaluate`'s `--max-step`, the compare table's failed run, the `size_high` bound and the doc-sync `TMPDIR` default |
 | `test_episode_record.py` | 47 | The Parquet per-step record: declared schema and its drift guard against `InfoBuilder`, identity columns, sampling rate, byte cap, eviction of episodes that never end, the ways it must fail without raising, and the end-of-sample flush that gets finished episodes to disk without waiting for exit (#245) |
 | `test_encoder_registry.py` | 46 | The selectable-encoder seam: registry, `CDACatalog`, the `mlp` pass-through staying byte-for-byte what it was, `ObsLayout`, tokenisation |
-| `test_encoder_plugins.py` | 15 | An encoder an installed package lists under `gym_cda.encoders`: listed without importing, imported on first lookup, refused unless its extension is enabled, says for itself whether it needs `NEXT_OBS`; the pretrained-weights format in `encoders.pretrained` |
+| `test_encoder_plugins.py` | 18 | An encoder an installed package lists under `gym_cda.encoders`: listed without importing, imported on first lookup, a failed import named by package and chained to its cause, refused unless its extension is enabled, says for itself whether it needs `NEXT_OBS`; the pretrained-weights format in `encoders.pretrained` |
 | `test_encoder_architectures.py` | 111 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
 | `test_visualize_scripts.py` | 32 | `visualize/` end to end on small synthetic Parquet and `progress.jsonl` runs: the loader's complete-episode rule, the data in each chart's lines, `run_all`, both inspectors (#211) |
 | `test_visualize_orderbook.py` | 12 | The newest book snapshot is read from the middle of the observation, never off the end — the only arithmetic in `visualize/` that can be wrong without raising |
@@ -174,7 +174,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((2,219 tests))
+  root((2,222 tests))
     Simulator
       orderbook 88
         the demo scripts as tests, a shadow model

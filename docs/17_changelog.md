@@ -4602,3 +4602,15 @@ state on the same episodes, with the world model on and off and the trunk shared
 - **Tests.** `test_jepa_moved.py` (18), written first: 13 of them failed on the previous source.
   Unit total 2,087; integration 132; suite 2,219. Four encoders ship here.
 - **Version** 2.3.0 in `setup.py`, `CITATION.cff` and the README.
+
+## 112. An installed encoder package that fails to import is named
+
+`ensure_registered` let the ImportError of an installed encoder package through bare. A run that
+selected `jepa` with cda-jepa installed but a dependency of it missing failed with, for example,
+`No module named 'scipy'`, and nothing said which package needed it. That happened both when the
+config was validated and when a checkpoint was restored (the restore fingerprint looks the encoder
+up, and `_encoder_extension` catches only `ValueError`). The lookup now raises an `ImportError`
+naming the package and its module, chained to the original. 30 §3.1 says so.
+
+- **Tests.** `test_encoder_plugins.py` gains `TestAPackageThatFailsToImport` (3), written first:
+  all three failed on the previous source. Unit total 2,090; integration 132; suite 2,222.

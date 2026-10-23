@@ -246,6 +246,8 @@ def ensure_registered(encoder_type: str) -> None:
     lists, so every lookup below can call it first and then fail in its own words.
 
     Raises:
+        ImportError: importing the module failed. The message names the package
+            and module; the package's own ImportError is the `__cause__`.
         ValueError: the module was imported and did not register the encoder it
             is listed under.
     """
@@ -254,7 +256,16 @@ def ensure_registered(encoder_type: str) -> None:
     entry = installed_encoders().get(encoder_type)
     if entry is None:
         return
-    entry.load()
+    try:
+        entry.load()
+    except ImportError as exc:
+        dist = getattr(entry, "dist", None)
+        package = f"package {dist.name!r}" if dist is not None else "an installed package"
+        raise ImportError(
+            f"Encoder {encoder_type!r} is provided by {package} (module {entry.value!r}), "
+            f"but importing it failed: {exc}. Reinstall that package with its "
+            "dependencies, or uninstall it."
+        ) from exc
     if encoder_type not in ENCODER_REGISTRY:
         raise ValueError(
             f"{entry.value!r} is listed under {ENCODER_ENTRY_POINT_GROUP!r} as "

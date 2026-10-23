@@ -114,6 +114,9 @@ builds the module, env runners and learners included. `selectable_encoder_types`
 importing it. A run selects it with `encoder_type: "myenc"`, its settings in
 `encoder_specs.myenc`, and `"myext"` in `extensions_enabled`; `TrainConfig` refuses the encoder
 without its extension enabled, since installing a package changes no run.
+If the module fails to import (a dependency of the package is missing, say), the lookup raises an
+`ImportError` that names the package and the module, with the package's own error as its cause;
+config validation and the checkpoint restore guard both make that lookup.
 
 An encoder whose config has a `pretrained_path` field can start from pretrained weights. The
 checkpoint format (`encoder.pt`, `encoder_fingerprint.json`, `rl_module/`) is

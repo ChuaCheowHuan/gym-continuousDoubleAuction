@@ -16,6 +16,8 @@ Then the checkpoint format for pretrained encoder weights, which lives in
 produced them.
 """
 
+from types import SimpleNamespace
+
 import pytest
 
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
@@ -55,13 +57,17 @@ class _FakeEntryPoint:
     """What `importlib.metadata` hands back for a listed encoder module."""
 
     value = "plugin_package.encoder"
+    dist = SimpleNamespace(name="plugin-package")
 
-    def __init__(self, registers=True):
+    def __init__(self, registers=True, fails=None):
         self.registers = registers
+        self.fails = fails
         self.loads = 0
 
     def load(self):
         self.loads += 1
+        if self.fails is not None:
+            raise self.fails
         if not self.registers:
             return
 
@@ -124,6 +130,53 @@ class TestAnInstalledEncoderLoadsOnFirstUse:
         module = spec.build()
         assert module.encoder is not None
         assert plugin.loads == 1
+
+
+class TestAPackageThatFailsToImport:
+    """An installed package whose own import breaks, as cda-jepa does without scipy.
+
+    The error names the package and its module, and keeps the real ImportError as
+    its cause, at startup and when a checkpoint is restored: the bare
+    `No module named 'scipy'` alone does not say which package needs it.
+    """
+
+    CAUSE = ModuleNotFoundError("No module named 'scipy'")
+
+    @pytest.fixture
+    def broken(self, monkeypatch):
+        entry = _FakeEntryPoint(fails=self.CAUSE)
+        monkeypatch.setattr(encoders, "installed_encoders", lambda: {PLUGIN: entry})
+        yield entry
+        for table in REGISTRY_TABLES:
+            table.pop(PLUGIN, None)
+
+    def _check(self, error):
+        message = str(error.value)
+        assert "plugin-package" in message
+        assert "plugin_package.encoder" in message
+        assert "No module named 'scipy'" in message
+        assert error.value.__cause__ is self.CAUSE
+
+    def test_at_startup_the_error_names_the_package(self, broken):
+        with pytest.raises(ImportError) as error:
+            validate_encoder_type(PLUGIN, [EXTENSION])
+        self._check(error)
+
+    def test_on_restore_the_error_names_the_package(self, broken, monkeypatch):
+        from gym_continuousDoubleAuction.train import checkpoint
+
+        monkeypatch.setattr(
+            checkpoint, "_encoder_fingerprint", lambda config: {"encoder_type": PLUGIN}
+        )
+        with pytest.raises(ImportError) as error:
+            checkpoint._config_fingerprint(SimpleNamespace(learner_config_dict={}))
+        self._check(error)
+
+    def test_an_entry_point_without_a_distribution_still_names_its_module(self, broken):
+        broken.dist = None
+        with pytest.raises(ImportError, match="plugin_package.encoder") as error:
+            ensure_registered(PLUGIN)
+        assert error.value.__cause__ is self.CAUSE
 
 
 class TestSelectingItNeedsTheExtensionEnabled:
