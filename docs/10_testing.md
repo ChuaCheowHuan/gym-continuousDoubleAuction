@@ -17,13 +17,13 @@ of `self.assertX(...)`, and pytest's built-in xunit-style hooks (`setup_method` 
 `unittest`-based suite; see [17_changelog.md](17_changelog.md).
 
 ```bash
-# the unit tests (2,090). pyproject.toml's addopts ignores test/integration by default,
+# the unit tests. pyproject.toml's addopts ignores test/integration by default,
 # so this never runs the slow RLlib suite as well
 python -m pytest gym_continuousDoubleAuction/test -q
 
-# then the integration suite, named explicitly - everything is these two (2,222 tests).
+# then the integration suite, named explicitly - everything is these two.
 # RLlib wiring, the real save/restore, the progress log and a real remote
-# runner (132 tests, builds real Algorithms)
+# runner (builds real Algorithms)
 python -m pytest gym_continuousDoubleAuction/test/integration -q
 
 # a single file
@@ -44,7 +44,8 @@ collects `TestCase` subclasses, and none of these classes are one any more. **[v
 `python -m unittest discover -s gym_continuousDoubleAuction/test -p "test_*.py"` reports
 `Ran 0 tests`.
 
-**[verified]** — `1363 passed` on the unit half, `172 passed` on the integration half, when this was first measured; the current totals are 2,191 and 148 (§ "File inventory" below). There is no xfail.
+The totals of both halves are in the file inventory below, the one place this repository states
+them. There is no xfail.
 
 ### File inventory
 
@@ -143,9 +144,9 @@ Counts re-measured with `--collect-only`.
 | `test_optim_learner.py` | 4 | `adam_settings` reads the `optimizer` group once: only the keys a run sets, betas as a tuple, nothing for the defaults so RLlib's own Adam is built. cda-cbp builds the authors' `AdamGnT` from the same function |
 | `test_learner_class_compat.py` | 10 | Learner classes cloudpickled on master (f7c1353) for the default, tuned-Adam and CBP compositions still load: a checkpoint names its mixins by module path. The CBP ones load with cda-cbp installed and fail naming it without |
 | `test_model_layout.py` | 26 | The model-layout contract: `layout.trunk_outputs` reports each encoder's MLP or LSTM trunk output and the heads reading it, with and without `vf_share_layers`, plus the `extra_trunk_heads` a module declares (#338) |
-| `test_cbp_moved.py` | 19 | Continual Backprop moved to cda-cbp ([25](25_continual_backprop.md)): an old `cbp_*` key names the package, an old checkpoint's group reads as the `cbp` extension's settings, the old mixin name resolves or names the package, and a restore without the package stops instead of falling back |
+| `test_cbp_moved.py` | 19 | Continual Backprop moved to cda-cbp ([30](30_extensions.md) §8): an old `cbp_*` key names the package, an old checkpoint's group reads as the `cbp` extension's settings, the old mixin name resolves or names the package, and a restore without the package stops instead of falling back |
 | `test_jepa_moved.py` | 18 | The `jepa` encoder moved to cda-jepa ([30](30_extensions.md) §9): selecting it without the package names the package, no JEPA config, code or pretrainer ships here, old checkpoints' pickled JEPA classes resolve through `jepa_learner` or fail naming the package (`fixtures/jepa_classes_98c4900.pkl`), an encoder's extension counts as enabled in the restore guard, and the old pretrainer command says where it went |
-| **unit total** | **2,191** | |
+| **unit total** | **2,090** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -159,11 +160,7 @@ Counts re-measured with `--collect-only`.
 | `integration/test_champion_guard_wiring.py` | 3 | A real run: every trainable module's trade count reaches the driver, the league state says whether a candidate was refused, and RLlib applies the decaying entropy bonus (S3-11) |
 | `integration/test_tuned_adam.py` | 4 | Tuned Adam on its own: it composes alone, and the configured betas and weight decay land on the built optimiser |
 | `integration/test_extensions_wiring.py` | 5 | An enabled extension inside a real `Algorithm`: its Learner replaces PPO's loss for one iteration, its module mixin is only on the module it selected, the sampled env is wrapped, and a checkpoint round-trips and records it |
-| **integration total** | **148** | |
-
-> **Stale references in older docs.** `test_orderbook.py`, `repro_orderbook_crossed_book.py`,
-> `test_OrderBook.py`, `test_cda_nsp.py` and `test_orderbook_double_delete_order.py` do not exist.
-> The current names are in the table above.
+| **integration total** | **132** | |
 
 > **Side effects.** The suite writes no `episode_data/` into the working tree:
 > `test_nav_callback` builds its callback with `episode_data_dir=None`, and `test_episode_record`
@@ -261,10 +258,8 @@ mindmap
         the one effective rank, cda-cbp's included
       optimiser settings 4
         read once, for torch Adam and AdamGnT
-      jepa moved 18
-        old configs and checkpoints name cda-jepa
-      continual backprop moved 19
-        old keys and checkpoints name cda-cbp
+      moved to packages 37
+        old configs and checkpoints name cda-jepa or cda-cbp
       extensions 43
         found through entry points
         learner_order decides the wrapping
@@ -334,18 +329,6 @@ mindmap
 Either the engine matches the crossing modification immediately, or it must at minimum refuse to
 leave `best_bid >= best_ask` resting. A failure here means the matching engine corrupted market
 state during modification — and the `log1p_spread_ticks` sentinel would stop being unambiguous.
-
-### 1.3 Double-delete regression — `test_orderbook_double_delete_order.py` (removed)
-
-**This file no longer exists**; the case it describes is covered by
-`test_modify_order_price_change` in §1.1. The description is kept because the failure mode is
-worth knowing about when touching `modify_order`.
-
-`test_modify_order_price_no_double_delete`. Changing an order's price is two micro-steps —
-**remove** from the `OrderList` at 100, **insert** into the one at 101. The bug guarded against is
-the update logic attempting the removal *again* after the order has already moved, surfacing as a
-`ValueError` (removing an item not in the list) or an internal volume/length counter going
-negative. The `modify_order` call is wrapped in `try/except`; the test asserts no `ValueError`.
 
 ### 1.4 Volume synchronization — `test_orderbook_volume_sync.py`
 
@@ -898,18 +881,6 @@ time-dimension connectors produce, so every env step failed nowhere near the mod
 
 ---
 
-### 6.4.4 The JEPA classes — moved
-
-The 44 tests of `TestJEPA`, `TestJEPAWorldModel` and `TestJEPAReviewRegressions`, with
-`test_pretrain.py`, `test_jepa_value_pass.py` and `test_world_model_actions.py`, moved with the
-`jepa` encoder to [cda-jepa](https://github.com/ChuaCheowHuan/cda_jepa) ([30](30_extensions.md) §9), which runs them against this
-repository. What is left here is `test_jepa_moved.py`: a config selecting `jepa` names the package,
-old checkpoints' pickled JEPA classes resolve through `train/model/jepa_learner.py` (or fail naming
-the package), the restore guard treats an old `jepa` checkpoint as having had the extension on, and
-the old pretrainer command says where it went.
-
----
-
 ### 6.5 The probe harness
 
 Two files, added with `train/probe/` ([23](23_probe_harness.md)). The harness produces *numbers
@@ -959,30 +930,27 @@ pickle instead of naming the modules that were there.
 ### 6.5.1 `test_probe.py::TestEffectiveRank` — 7 tests
 
 The rank measurement the probe harness gained after the Learner's own turned out to be
-confounded ([25](25_continual_backprop.md) §3.8). Rank-one and collapsed matrices score as
+confounded (cda-cbp's docs/continual_backprop.md §3.8). Rank-one and collapsed matrices score as
 expected; degenerate inputs report **0** rather than 1, since an empty or all-zero matrix has no
 directions at all; a corpus too short for the feature width is flagged rather than reported
 straight, because rank is bounded by `min(rows, width)` and a short corpus caps every set at the
 same number.
 
-There is a second implementation of effective rank, in torch, in Continual Backprop's code, which
-moved to the [cda-cbp](https://github.com/ChuaCheowHuan/cda_cbp) package. The test that keeps the
-two the same measurement, and the one that pins their single deliberate difference (fewer than two
-rows is `0` here, a report column, and `NaN` there, a metric series where `0.0` would read as
-total collapse), moved with it: they need both packages installed, which is the package's CI.
+This is the only implementation: cda-cbp's `cbp_batch_effective_rank` calls it on its torch
+activations with `too_few_rows=nan`, because there a `0.0` in a metric series would read as total
+collapse. The `Effective rank` row of §6.5.1 pins both.
 
 ---
 
-### 6.6 Continual Backprop
+### 6.6 The extensions that moved out
 
-Continual Backprop moved to the [cda-cbp](https://github.com/ChuaCheowHuan/cda_cbp) package
-([25](25_continual_backprop.md)), and its tests moved with it: the algorithm-core file
-(`test_cbp.py`, 71 tests), the LSTM-core file (21), and the integration wiring file (42), plus an
-equivalence test that ran the built-in and the extension side by side from the same state and found
-them bit-identical. Their history, including the bugs they found, is in
-[17](17_changelog.md) and [29](29_fixed_issues.md).
+Continual Backprop and the `jepa` encoder were built in until they moved to
+[cda-cbp](https://github.com/ChuaCheowHuan/cda_cbp) and
+[cda-jepa](https://github.com/ChuaCheowHuan/cda_jepa) ([30](30_extensions.md) §8–9), and their
+tests moved with them; each package runs them against this repository. Their history, including
+the bugs they found, is in [17](17_changelog.md) and [29](29_fixed_issues.md).
 
-What stays here is what this repository promises the package and the people who used it:
+What stays here is what this repository promises the packages and the people who used them:
 
 | File | Pins |
 |---|---|
@@ -990,6 +958,8 @@ What stays here is what this repository promises the package and the people who 
 | `test_extensions.py::TestLearnerOrder` (3) | A higher `learner_order` wraps further out, whatever the names, so CBP sees every other mixin's step |
 | `test_learner_class_compat.py` (10) | Learner classes pickled before the move, CBP ones included, still load, or fail naming cda-cbp |
 | `test_cbp_moved.py` (19) | Old `cbp_*` keys name the package; an old checkpoint's `continual_backprop` group reads as the `cbp` extension's settings, so resuming it with the same settings passes, a changed setting or a config that leaves CBP out is refused; a restore without the package stops before RLlib, instead of falling back to a fresh run |
+| `test_jepa_moved.py` (18) | A config selecting `jepa` names the package; old checkpoints' pickled JEPA classes resolve through `train/model/jepa_learner.py` (or fail naming the package); the restore guard treats an old `jepa` checkpoint as having had the extension on; the old pretrainer command says where it went |
+| `test_encoder_plugins.py` (18) | An encoder a package lists under `gym_cda.encoders`, and the pretrained-weights format |
 
 ---
 

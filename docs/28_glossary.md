@@ -72,10 +72,11 @@ is given in `code`.
 | **Idle module** | A module drawn into no episode this iteration. It is left out of the league statistics | [08](08_self_play_league.md) |
 | **Env runner, learner** | RLlib's sampling processes (`num_env_runners`) and update processes (`num_learners`) | [09](09_distributed_training.md) |
 | **Iteration** | One `algo.train()` call: sample a batch, run PPO's update epochs, check the league | [09](09_distributed_training.md), [26](26_runbook.md) |
-| **Encoder** | The network that turns the observation into features for the policy and value heads. Five are selectable by `encoder_type` | [18](18_configuration.md) §5.4 |
-| **JEPA** | Joint-embedding predictive architecture: a self-supervised objective that predicts masked observation latents from visible ones | [22](22_jepa_integration.md), [30](30_extensions.md) §9; the encoder is the cda-jepa package |
+| **Encoder** | The network that turns the observation into features for the policy and value heads. Four ship here (`mlp`, `transformer`, `lstm`, `moe_transformer`) and are selected by `encoder_type`; an extension can add more (`jepa`) | [18](18_configuration.md) §5.4 |
+| **JEPA** | Joint-embedding predictive architecture: a self-supervised objective that predicts masked observation latents from visible ones | [30](30_extensions.md) §9; the encoder is the cda-jepa package |
 | **Probe** | A linear model scoring an encoder's features on future market quantities, with no reward involved | [23](23_probe_harness.md) |
-| **CBP (Continual Backprop)** | Re-initialising low-utility hidden units during training to keep the network plastic. The `cbp` extension in the cda-cbp package | [25](25_continual_backprop.md) |
+| **CBP (Continual Backprop)** | Re-initialising low-utility hidden units during training to keep the network plastic. The `cbp` extension in the cda-cbp package | [30](30_extensions.md) §8 |
+| **Extension** | A separately installed package that adds to the learning stack (a Learner or module mixin, an env wrapper, an encoder), found through an entry point and used only by a run that lists it in `extensions_enabled`: `cbp`, `discorl`, `jepa` | [30](30_extensions.md) |
 | **Episode record** | The Parquet file with one row per (episode, step, agent) | [11](11_logging_and_observability.md) |
 
 ## Project vocabulary

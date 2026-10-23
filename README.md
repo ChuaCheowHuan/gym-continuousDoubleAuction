@@ -40,10 +40,12 @@ flowchart BT
     L3["<b>Environment</b><br/>envs/exchg/<br/>observation, action, reward, episode end"]
     L4["<b>Training</b><br/>train/<br/>RLlib PPO, league self-play, encoders"]
     X["<b>config/</b> · logging<br/>every value, every log record"]
+    E["<b>Extensions</b>, installed separately<br/>cda-cbp · cda-discorl · cda-jepa"]
 
     L1 --> L2 --> L3 --> L4
     X -.-> L3
     X -.-> L4
+    E -.-> L4
 
     classDef learn fill:#2E4986,stroke:#1F3366,color:#fff
     classDef book fill:#0E6F58,stroke:#0A5242,color:#fff
@@ -52,11 +54,12 @@ flowchart BT
     class L1 book
     class L2 ledger
     class L3,L4 learn
-    class X neutral
+    class X,E neutral
 ```
 
 Each layer builds on the one below it. One environment step, end to end, is drawn in
-[docs/02_architecture.md](docs/02_architecture.md).
+[docs/02_architecture.md](docs/02_architecture.md); the extension packages and the forks they
+build on, in [docs/30_extensions.md](docs/30_extensions.md).
 
 ## Quick start
 

@@ -73,7 +73,7 @@ R-12 (Continual Backprop with `num_learners > 1`, refused rather than synchronis
 Continual Backprop: CBP is now the [cda-cbp](https://github.com/ChuaCheowHuan/cda_cbp) package,
 whose own validation refuses that combination, and synchronising the choice across learners is
 work for that package ([#182](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/182))
-([25](25_continual_backprop.md), [17](17_changelog.md) §100).
+([30](30_extensions.md) §8, [17](17_changelog.md) §100).
 
 ---
 
@@ -161,7 +161,7 @@ for research code:
   into lottery tickets in thin books — correctly motivated and well tested.
 - **Dependency pins are explained, not just asserted** (`gymnasium` ↔ Ray coupling; CPU-vs-CUDA
   torch wheel selection; Ray's `/dev/shm` requirement).
-- **2,090 unit tests pass** (plus 132 integration), covering every position-flip path, cash-check edge case, modify-order
+- **The unit and integration suites pass** ([10](10_testing.md)), covering every position-flip path, cash-check edge case, modify-order
   scenario and observation invariant, and — since the encoder group — the contract every selectable
   network must meet.
 

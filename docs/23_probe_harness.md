@@ -1,16 +1,16 @@
-# 23. Reward-Free Tools: the Probe Harness and Offline Pretraining
-
-Two tools that work on observations alone, with no reward: the probe harness (§1–§10) scores what an
-encoder represents, and offline pretraining (Part 2, §11–§18) trains a JEPA encoder before any PPO
-run. Pretraining moved with the `jepa` encoder into the cda-jepa package, and its sections are now
-cda-jepa's [docs/pretraining.md](https://github.com/ChuaCheowHuan/cda_jepa/blob/main/docs/pretraining.md), with the same numbers. Pretraining was once its
-own page here, `24_pretraining.md` (since deleted): its §N was §(10+N).
-
-## Part 1: the probe harness
+# 23. Reward-Free Tools: the Probe Harness
 
 `train/probe/` scores what an observation encoder has learned to represent, **without going
-through the reward**. It is the implementation of Proposal A in the JEPA research note
-([22_jepa_integration.md](22_jepa_integration.md), now cda-jepa's [docs/jepa.md](https://github.com/ChuaCheowHuan/cda_jepa/blob/main/docs/jepa.md)) §4.1.
+through the reward**, and §10 measures a network's effective rank on a fixed corpus. It is the
+implementation of Proposal A in the JEPA research note (cda-jepa's
+[docs/jepa.md](https://github.com/ChuaCheowHuan/cda_jepa/blob/main/docs/jepa.md) §4.1).
+
+Offline JEPA pretraining, once Part 2 of this page (§11 to §18, and before that its own page
+`24_pretraining.md`), is the cda-jepa package's
+[docs/pretraining.md](https://github.com/ChuaCheowHuan/cda_jepa/blob/main/docs/pretraining.md),
+with the same section numbers. What stayed here reads its output: the pretrained-weights format
+(`train/model/encoders/pretrained.py`, [30](30_extensions.md) §3.1) and the probe's `--pretrained`
+flag (§2).
 
 Related: [10_testing.md](10_testing.md) §7 (the gap this closes),
 [18_configuration.md](18_configuration.md) §5.4–5.5 (the encoder group and the comparison
@@ -329,7 +329,7 @@ and it did not move. The Learner-side metric is kept — "what the network is do
 is actually training on" is a real thing to want — but it is named `cbp_batch_effective_rank` so
 that what it is measured on is visible before it is interpreted.
 
-The practical consequence for [25](25_continual_backprop.md)'s open question: a plasticity
+The practical consequence for Continual Backprop's open question ([30](30_extensions.md) §8): a plasticity
 measurement that wants to say something about the *network* must read this table across
 checkpoints (`--checkpoint`), not the training-time metric across a run.
 
@@ -337,12 +337,6 @@ checkpoints (`--checkpoint`), not the training-time metric across a run.
 
 ## Part 2: offline JEPA pretraining
 
-Offline pretraining moved with the `jepa` encoder into the cda-jepa package. Its sections, §11 to
-§18 here before, are cda-jepa's [docs/pretraining.md](https://github.com/ChuaCheowHuan/cda_jepa/blob/main/docs/pretraining.md), with the same numbers;
-run it as `python -m cda_jepa.pretrain`. `python -m gym_continuousDoubleAuction.train.pretrain`
-now only says so and exits 2.
-
-What stayed here is what reads the result, not what trains it: the checkpoint format and its
-fingerprint guard (`train/model/encoders/pretrained.py`, [30](30_extensions.md) §3.1), which
-`pretrained_encoder_path` and the probe's `--pretrained` use (§2 above), so weights pretrained
-before the move still load.
+Moved to cda-jepa's
+[docs/pretraining.md](https://github.com/ChuaCheowHuan/cda_jepa/blob/main/docs/pretraining.md),
+with its section numbers (§11 to §18) unchanged.

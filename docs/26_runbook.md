@@ -25,7 +25,7 @@ flowchart LR
     W -->|"disconnect, collapse"| R["26.7 Resume<br/>--restore / --from-checkpoint"]
     R --> T
     O --> V["26.8 Inspect<br/>visualize.run_all"]
-    O --> P["26.9 Reward-free tools<br/>probe, pretrain"]
+    O --> P["26.9 Reward-free tools<br/>probe, compare"]
     P --> K
 ```
 
@@ -293,7 +293,7 @@ A restore rebuilds the algorithm from the checkpoint's own config and **ignores*
 would not fit the weights (`num_agents`, `n_hist`, the encoder) or would silently not apply
 (`extensions_enabled`, `adam_betas`). Read the message; it names the key. Comparing architectures or
 switching an extension such as Continual Backprop on means a fresh run in a new `log_base_dir`
-([18](18_configuration.md) §5.3, [25](25_continual_backprop.md)).
+([18](18_configuration.md) §5.3, [30](30_extensions.md) §5).
 
 ---
 
@@ -324,7 +324,7 @@ The Parquet record itself is one `pandas.read_parquet` away, with one row per
 ## 26.9 Reward-free tools: probe and pretrain
 
 Both exist because the reward could not settle an encoder comparison
-([23](23_probe_harness.md) Parts 1 and 2). Pretraining is the cda-jepa package's, with the `jepa`
+([23](23_probe_harness.md)). Pretraining is the cda-jepa package's, with the `jepa`
 encoder ([30](30_extensions.md) §9). Both take a corpus from random-agent
 rollouts by default, or from a run's episode record with `--parquet`, which is the better corpus
 once a run exists.
@@ -346,10 +346,9 @@ python -m gym_continuousDoubleAuction.train.probe --pretrained pretrained/jepa \
     --pretrained-encoder jepa
 ```
 
-The pretrainer's flags and defaults are cda-jepa's ([docs/pretraining.md](https://github.com/ChuaCheowHuan/cda_jepa/blob/main/docs/pretraining.md)).
-`--pretrained-encoder` defaults to `cda_probe.pretrained_encoder` (`jepa`). For pretraining watch
-`latent_std`, not the loss: a collapsed encoder has a perfect loss, and the CLI exits non-zero
-when it detects one.
+`--pretrained-encoder` defaults to `cda_probe.pretrained_encoder` (`jepa`). The pretrainer's flags,
+defaults and what to watch while it runs are cda-jepa's
+([docs/pretraining.md](https://github.com/ChuaCheowHuan/cda_jepa/blob/main/docs/pretraining.md)).
 
 **Comparing encoders** is one command, the protocol of [18](18_configuration.md) §5.5: every
 (encoder, seed) is a separate run with the seed pinned, the final checkpoint is probed against one
@@ -455,10 +454,10 @@ applied inside the module, so nothing extra is needed for it.
 | `ValueError: ... unknown config keys` | a key in `--config` or a profile names no `TrainConfig` field | fix the spelling; see `--help` for names |
 | `iter N trained on no samples` | remote runners did not deliver the batch in `sample_timeout_s` | raise `--sample-timeout`, or lower `--max-step` / `num_episodes_per_iter` ([09](09_distributed_training.md) §5, [18](18_configuration.md) §5.1) |
 | `Cannot restore: the configuration changes the shape of the problem` | a structural key differs from the checkpoint | revert the key, or start fresh in a new `--log-base-dir` |
-| `Cannot restore: these keys are read when the Learner class is chosen` | `adam_*`, `extensions_enabled` or an `ext.<name>.*` setting changed alongside `--restore` | same: fresh run. For a checkpoint trained with Continual Backprop, enable `cbp` with the settings it used ([25](25_continual_backprop.md)) |
-| `This checkpoint was trained with Continual Backprop ... Install the cda-cbp package` | resuming a CBP checkpoint without the package | `pip install git+https://github.com/ChuaCheowHuan/cda_cbp`, then enable `cbp` ([25](25_continual_backprop.md)) |
+| `Cannot restore: these keys are read when the Learner class is chosen` | `adam_*`, `extensions_enabled` or an `ext.<name>.*` setting changed alongside `--restore` | same: fresh run. For a checkpoint trained with Continual Backprop, enable `cbp` with the settings it used ([30](30_extensions.md) §8) |
+| `This checkpoint was trained with Continual Backprop ... Install the cda-cbp package` | resuming a CBP checkpoint without the package | `pip install git+https://github.com/ChuaCheowHuan/cda_cbp`, then enable `cbp` ([30](30_extensions.md) §8) |
 | `it was trained with extension(s) <name> <version>, which are not installed here` | `--restore` or `train.evaluate` on a checkpoint whose run enabled an extension this install lacks | install that package (the version recorded is the one it ran), or start a fresh run ([30](30_extensions.md) §5) |
-| `... Continual Backprop moved out of gym-continuousDoubleAuction into the cda-cbp package` | a config or `--set` still names a `cbp_*` key | move it to `extension_settings.cbp` without the prefix ([25](25_continual_backprop.md)) |
+| `... Continual Backprop moved out of gym-continuousDoubleAuction into the cda-cbp package` | a config or `--set` still names a `cbp_*` key | move it to `extension_settings.cbp` without the prefix ([30](30_extensions.md) §8) |
 | `NavConservationError` stops the run | the ledger created or destroyed cash | a bug, not a tuning problem: keep the run directory and the episode Parquet, open an issue with `run.log`'s `NAV conservation VIOLATED` block |
 | `checkpoint is already at iteration N, at or past the target` | `num_iters` is a target and the restore is past it | raise `--iters` or pass `--iters-is-delta` |
 | `already holds N checkpoint(s) from an earlier run` | fresh run into a used `results/chkpt` | harmless now; dangerous with a later `--restore`. Move them or change `--log-base-dir` |
