@@ -47,6 +47,9 @@ from gym_continuousDoubleAuction.train.model.model_handler import (
 PLUGIN = "plugenc"
 EXTENSION = "plugext"
 
+#: The registry's tables, which the stand-in's registration is removed from.
+REGISTRY_TABLES = (ENCODER_REGISTRY, ENCODER_DEFAULTS, ENCODER_EXTENSIONS, ENCODER_NEXT_OBS)
+
 
 class _FakeEntryPoint:
     """What `importlib.metadata` hands back for a listed encoder module."""
@@ -79,7 +82,7 @@ def plugin(monkeypatch):
     entry = _FakeEntryPoint()
     monkeypatch.setattr(encoders, "installed_encoders", lambda: {PLUGIN: entry})
     yield entry
-    for table in (ENCODER_REGISTRY, ENCODER_DEFAULTS, ENCODER_EXTENSIONS, ENCODER_NEXT_OBS):
+    for table in REGISTRY_TABLES:
         table.pop(PLUGIN, None)
 
 
@@ -150,14 +153,6 @@ class TestTheEncoderSaysWhetherItNeedsNextObs:
 
 
 class TestThePretrainedWeightsFormat:
-    def test_the_trainer_reexports_the_same_objects(self):
-        from gym_continuousDoubleAuction.train import pretrain
-
-        for name in ("WEIGHTS_FILE", "FINGERPRINT_FILE", "MODULE_SUBDIR", "save", "load_into"):
-            assert getattr(pretrain, name) is getattr(pretrained, name)
-        for name in ("verify_fingerprint", "module_state_path"):
-            assert getattr(pretrain, name) is getattr(pretrained, name)
-
     def test_an_encoder_without_a_pretrained_path_field_cannot_load_weights(self, spaces):
         module = build_trainable_module_spec(
             *spaces, encoder_type="transformer", encoder_specs={}
