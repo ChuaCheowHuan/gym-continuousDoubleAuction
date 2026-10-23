@@ -297,10 +297,6 @@ tabulate tables and pandas DataFrames of the whole book, tape and every account 
 output that would be dropped. `env.render()` still defaults to `is_render=True` on a bare env, but
 at the default INFO level that no longer produces anything.
 
-### 1.4 Legacy Ray actor storage (`g_store`) - removed
-
-Deleted; what it was and why is in [29](29_fixed_issues.md#11-14--the-g_store-telemetry-that-could-not-run).
-
 ### 1.5 The NAV conservation check
 
 The sum of every agent's NAV must equal the cash the system started with: the ledger is `Decimal`
@@ -1115,63 +1111,19 @@ propagation off without a `LoggingConfig`), are in [29](29_fixed_issues.md#21-8-
 
 ---
 
-## 6. Continual Backprop metrics
+## 6. Metrics from extensions
 
-Emitted per trainable module by the [cda-cbp](https://github.com/ChuaCheowHuan/cda_cbp) package's
-`CBPLearnerMixin` when the `cbp` extension is enabled (with or without `metrics_only`), through the
-same `self.metrics.log_dict(..., key=module_id, window=1)` path the MoE term and cda-jepa's JEPA
-terms use. Absent entirely without it. The names are unchanged from when CBP was built in; the package's
-`docs/metrics.md` is the reference, and its `docs/continual_backprop.md` §4.1 the context
-([25](25_continual_backprop.md)).
+An enabled extension ([30](30_extensions.md)) logs its own metrics per trainable module, beside
+PPO's under `learners/<module_id>/`, through the same `self.metrics.log_dict(..., key=module_id,
+window=1)` path the MoE term uses. They are absent when the extension is not enabled. Each package
+documents its own:
 
-The first three are the **three correlates of loss of plasticity** both papers track. The Nature
-paper's claim for continual backprop is precisely that it is the only method that keeps all three
-healthy at once, so they are read together rather than individually.
-
-| Metric | Reduction across layers | What a bad value looks like |
+| Prefix | Package | Reference |
 |---|---|---|
-| `cbp_dead_unit_frac` | max | Rising. Units whose mean \|activation\| has fallen below the threshold and stopped contributing |
-| `cbp_mean_weight_magnitude` | mean | Rising. Weight growth is the correlate L2 addresses and CBP also suppresses |
-| `cbp_batch_effective_rank` | mean | **Confounded — see below.** Units becoming redundant, but measured on the training minibatch |
-| `cbp_saturated_unit_frac` | max | Rising. Specific to tanh, which is this project's default: past \|h\| > 0.9 the local gradient vanishes |
-| `cbp_utility_min` / `_median` | min / mean | A widening gap means capacity is concentrating in fewer units |
-| `cbp_mature_unit_frac` | mean | **Pinned at 0.0 means the mechanism cannot fire at all** — see below |
-| `cbp_replacements` | **sum** | **Flat at 0 means it never fired** |
+| `cbp_` | cda-cbp | [docs/metrics.md](https://github.com/ChuaCheowHuan/cda_cbp/blob/main/docs/metrics.md). Read `cbp_replacements` and `cbp_mature_unit_frac` first: a CBP that never fires logs what a working one logs |
+| `discorl_` | cda-discorl | [docs/components.md](https://github.com/ChuaCheowHuan/cda_disco_rl/blob/main/docs/components.md) |
+| `jepa_` | cda-jepa | [docs/metrics.md](https://github.com/ChuaCheowHuan/cda_jepa/blob/main/docs/metrics.md). Read `jepa_latent_std` first: a collapsed encoder has a prediction loss of zero |
 
-`cbp_replacements` is summed rather than averaged because it counts events in the network rather
-than describing a layer; `cbp_dead_unit_frac` and `cbp_saturated_unit_frac` take the max and
-`cbp_utility_min` the min, because one collapsing layer is the thing worth seeing and an average
-over healthy neighbours would hide it. The rest are averaged. Reduced to one value per module
-rather than emitted per layer, which would be 80 series for a 16-layer `moe_transformer`.
-
-**The two that decide whether any of the others mean anything** are `cbp_replacements` and
-`cbp_mature_unit_frac`. A continual backprop that never fires — which is the *expected* outcome at
-the default replacement rate over a short run, because its rate and maturity are counted in
-optimiser steps and this project takes about 4 per iteration (cda-cbp's `docs/settings.md`) — logs
-exactly what a working one logs. Read those two first.
-
-`cbp_batch_effective_rank` runs an SVD and is therefore computed every `metrics_every_n_updates`
-optimiser steps rather than every one; the same counter gates keeping an activation sample in the
-forward hook at all.
-
-### The rank metric is confounded, and was renamed to say so
-
-The rank of an activation matrix depends on the inputs as much as on the network. This one is
-measured on whatever minibatch training produced, and the policy chooses its own inputs — so under
-S1-3, where passivity is the joint optimum, a converging agent visits a narrower set of book states
-and this falls **with the network unchanged**.
-
-Measured ([16](16_verification_log.md) §16.16), over ~18,000 optimiser steps: this metric fell
-**24.6%** while the same network's rank on a fixed corpus moved by **+2.5% to −1.9%**. Read on its
-own it is a textbook plasticity collapse; it is the agent's behaviour.
-
-It is kept because "what the network is doing on the data it is training on" is a real thing to
-want, and it is named for the batch it is measured on rather than for what it looks like it
-measures. **For a statement about the network, use `train/probe/rank.py`** across checkpoints
-([23](23_probe_harness.md) §10), where the corpus is fixed while the encoder varies.
-
-The other two correlates are robust to this — weights do not depend on the batch, and a unit dead
-on one input distribution is generally dead on others — but both read zero on the shipped network
-for their own reasons: `cbp_dead_unit_frac` is ReLU-shaped and a tanh unit does not die toward
-zero, and `cbp_saturated_unit_frac` uses the per-unit batch mean, which is stricter than the
-papers' per-output definition.
+`cbp_batch_effective_rank` is measured on the training minibatch, which the policy chooses, so it
+falls as an agent's behaviour narrows with the network unchanged. For a statement about the network,
+use the probe's effective rank across checkpoints ([23](23_probe_harness.md) §10).

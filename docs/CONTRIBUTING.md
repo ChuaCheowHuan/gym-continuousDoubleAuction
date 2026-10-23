@@ -77,9 +77,11 @@ including its diagrams. For a change worth recording, add a new section to
 A change to behaviour is recorded in three places by convention: the finding or its status in
 [15](15_findings_and_recommendations.md) (open) or [29](29_fixed_issues.md) (fixed), the
 measurement in [16](16_verification_log.md), and the narrative in [17](17_changelog.md). A change
-to the test inventory updates [10](10_testing.md) and the totals quoted in
-[00](00_getting_started.md), [01](01_overview.md), [02](02_architecture.md),
-[14](14_perspective_ai_engineer.md) and [15](15_findings_and_recommendations.md).
+to the test inventory updates the file inventory and its totals in [10](10_testing.md), the one
+place they are stated, and the code size in [14](14_perspective_ai_engineer.md).
+
+An extension package documents itself in its own repository; this repository documents only the
+contract and the steps on this side, in [30](30_extensions.md).
 
 ## 5. Reviews and issues
 

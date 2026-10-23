@@ -41,8 +41,8 @@ configuration (8 agents, `max_step` 4,096, 4 episodes per iteration, the `cpu` p
 | Task | Wall time | Peak RAM |
 |---|---|---|
 | `CDA_rand.py` smoke run (1,000 steps, 4 random agents) | 8 s | 0.6 GB |
-| Unit tests (2,133 when measured; 2,191 now) | 3 min | 2.9 GB |
-| Integration tests (185 when measured; 148 now, real RLlib builds) | 3.5 min | 3.3 GB |
+| Unit tests (2,133 of them when measured) | 3 min | 2.9 GB |
+| Integration tests (185 of them when measured, real RLlib builds) | 3.5 min | 3.3 GB |
 | One training iteration (16,384 env steps) | 2 min 40 s: 2 min 26 s sampling at about 112 steps/s, 12.5 s PPO update | 2.2 GB |
 | The default 16-iteration run | about 45 min (extrapolated from one iteration) | 2.2 GB |
 | One checkpoint | | 6.5 MB on disk |
@@ -145,7 +145,8 @@ python -m gym_continuousDoubleAuction.train.evaluate \
 |---|---|
 | Understand what the market and the agents are | [01_overview.md](01_overview.md), then [02_architecture.md](02_architecture.md) |
 | Change a value: agents, cash, reward, network | [18_configuration.md](18_configuration.md) |
-| Resume, inspect, probe, pretrain, troubleshoot | [26_runbook.md](26_runbook.md) |
+| Resume, inspect, probe, troubleshoot | [26_runbook.md](26_runbook.md) |
+| Add Continual Backprop, DiscoRL or the JEPA encoder | [30_extensions.md](30_extensions.md) |
 | Know where the project stands | [15_findings_and_recommendations.md](15_findings_and_recommendations.md) (open), [29_fixed_issues.md](29_fixed_issues.md) (fixed) |
 | Look up a term (NAV, mark, ADL, champion…) | [28_glossary.md](28_glossary.md) |
 | Contribute | [CONTRIBUTING.md](CONTRIBUTING.md) |

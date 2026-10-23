@@ -102,11 +102,13 @@ learning problem.
 flowchart BT
     L1["<b>1 · Matching engine</b><br/>envs/orderbook/<br/>price levels in a SortedDict, FIFO per level, tape with both parties"]
     L2["<b>2 · Trader + accounting</b><br/>envs/agent/ · envs/account/<br/>order gating, Decimal cash escrow, position, VWAP, NAV, margin"]
-    L3["<b>3 · Environment</b><br/>continuousDoubleAuction_env.py · envs/exchg/<br/>MultiAgentEnv step: action, state, reward, done, info mixins"]
+    L3["<b>3 · Environment</b><br/>continuousDoubleAuction_env.py · envs/exchg/<br/>MultiAgentEnv step: two mixins, four components"]
     L4["<b>4 · Training</b><br/>train/<br/>RLlib PPO, league self-play, encoders, extensions, checkpoints"]
     X["<b>Cross-cutting</b><br/>config_loader.py · logging_setup.py<br/>every configured value, every log record"]
+    E["<b>Extension packages</b> (separate repositories)<br/>cda-cbp · cda-discorl · cda-jepa<br/>found by entry point, used only when enabled"]
 
     L1 --> L2 --> L3 --> L4
+    E -.-> L4
     X -.-> L1
     X -.-> L2
     X -.-> L3
@@ -119,10 +121,11 @@ flowchart BT
     class L1 book
     class L2 ledger
     class L3,L4 learn
-    class X neutral
+    class X,E neutral
 ```
 
-Arrows point up the dependency direction: each layer is built on the one below it.
+Arrows point up the dependency direction: each layer is built on the one below it. The extension
+packages build on the training layer from outside this repository ([30](30_extensions.md) §0).
 
 | Layer | Package | Responsibility |
 |---|---|---|
@@ -130,8 +133,9 @@ Arrows point up the dependency direction: each layer is built on the one below i
 | Trader + accounting | [`envs/agent/`](../gym_continuousDoubleAuction/envs/agent/), [`envs/account/`](../gym_continuousDoubleAuction/envs/account/) | Order gating, cash escrow, position and NAV tracking |
 | Environment | [`continuousDoubleAuction_env.py`](../gym_continuousDoubleAuction/envs/continuousDoubleAuction_env.py), [`envs/exchg/`](../gym_continuousDoubleAuction/envs/exchg/) | Gym API, observation / action / reward / termination |
 | Training | [`train/`](../gym_continuousDoubleAuction/train/) | Modules, league self-play callback, checkpointing, the per-step episode record |
-| Cross-cutting | [`config_loader.py`](../gym_continuousDoubleAuction/config_loader.py), [`logging_setup.py`](../gym_continuousDoubleAuction/logging_setup.py) | Every configured value; every log record. Imported by all three layers above |
+| Cross-cutting | [`config_loader.py`](../gym_continuousDoubleAuction/config_loader.py), [`logging_setup.py`](../gym_continuousDoubleAuction/logging_setup.py) | Every configured value; every log record. Imported by all four layers above |
 | Offline analysis | [`visualize/`](../gym_continuousDoubleAuction/visualize/) | Charts built from the episode Parquet record and `progress.jsonl` |
+| Extensions | separate repositories ([30](30_extensions.md)) | Continual Backprop (cda-cbp), DiscoRL (cda-discorl), the `jepa` encoder (cda-jepa) |
 
 ---
 
@@ -196,9 +200,9 @@ gym_continuousDoubleAuction/
 │   ├── model/action_dist.py            the Dict action distribution, with a rank-safe log-prob
 │   ├── model/encoders/                 selectable observation encoders for the trainable modules;
 │   │                                   pretrained.py is the pretrained-weights format
-│   ├── model/jepa_learner.py           forwards old checkpoints' JEPA classes to cda-jepa
+│   ├── model/jepa_learner.py           forwards old checkpoints' JEPA classes to cda-jepa (docs/30)
 │   ├── model/moe_learner.py            CDAPPOTorchRLModule (masking) + CDAPPOTorchLearner (MoE aux loss)
-│   ├── model/cbp_learner.py            shim for old checkpoints; CBP is now cda-cbp (docs/25)
+│   ├── model/cbp_learner.py            forwards old checkpoints' CBP classes to cda-cbp (docs/30)
 │   ├── model/optim_learner.py          tuned Adam (betas, weight decay)
 │   ├── model/layout.py                 where each trunk ends and which heads read it
 │   ├── probe/                          reward-free encoder scoring (docs/23)
@@ -216,12 +220,9 @@ gym_continuousDoubleAuction/
 │   ├── episode_data.py                   loads the newest run's Parquet record
 │   ├── inspect_latest_episode*.py        print the newest episode as a table or JSON
 │   └── visualize_*.py                    book, NAV, rewards, execution, training, modules
-└── test/                               2,090 unit tests
-    └── integration/                    148 tests that build real Algorithms
+└── test/                               unit tests (docs/10)
+    └── integration/                    tests that build real Algorithms
 ```
-
-`train/logger/`, `train/plotter/` and `train/storage/` — the legacy Ray-actor telemetry an earlier
-revision of this document listed — have been deleted.
 
 ---
 

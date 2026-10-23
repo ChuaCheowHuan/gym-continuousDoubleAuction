@@ -345,7 +345,7 @@ rest, so `kwargs` is empty by the time the chain reaches `object`. Argument defa
 and `Exchg_Helper` are `env_default(...)` calls, so one constructed directly gets the same values
 the env would have given it; the components read theirs when they are built.
 
-## 3.4 Episode horizon: fixed or random
+### 3.4 Episode horizon: fixed or random
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -368,7 +368,7 @@ near the end - the agent does not know whether a step is its last - and `time_le
 reaching 0 in most episodes. Which of these matters is an empirical question; both modes run under
 `train.compare --set episode_length_mode=random --set max_step_min=... --set max_step_max=...`.
 
-## 3.5 Market variety: `market_variety`
+### 3.5 Market variety: `market_variety`
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -394,9 +394,7 @@ the env does not have, and any maker and taker pair the lists can produce that t
 so a policy can fit that market's rules. Drawing the rules per episode trains it across a spread
 of markets, the environment-diversity lesson of DiscoRL's discovery runs (Oh et al., 2025). Judge
 such a run on held-out markets rather than training return, since fees change returns. It changes
-the game rather than the layout, so a checkpoint restores across it. It replaces the `env_variety`
-wrapper that version 0.1.0 of the `cda-discorl` extension used to do the same from outside the env;
-0.2.0 removed it.
+the game rather than the layout, so a checkpoint restores across it.
 
 ## 4. Structural constants
 
@@ -511,8 +509,7 @@ logger so RLlib's diagnostics land beside the narrative they explain.
 `episode_parquet_dir` (default `episode_data`) with `episode_parquet_fallback` (`../episode_data`,
 tried when the first does not exist, as when run from inside `visualize/`), `training_log_dir`
 (`results`) with `training_log_fallback`, and `default_agent_id` (`agent_0`), the agent a chart plots
-when `--agent-id` is not given. (The `plot_defaults` group went
-with `plot_handler.py` — see [11 §1.4](11_logging_and_observability.md).)
+when `--agent-id` is not given.
 
 ---
 
@@ -755,7 +752,7 @@ To train with new values, start a fresh run — `is_restore` false, or a new `lo
 
 ---
 
-## 5.4. The `encoder` group
+### 5.4 The `encoder` group
 
 Selects the network the **trainable** modules encode observations with. The frozen
 `RandomRLModule` baselines have no network and ignore it.
@@ -808,15 +805,6 @@ dropped every scalar past the fourth — only for the encoders that tokenise, so
 `mlp` would have gone on seeing features the transformer and LSTM no longer
 received.
 
-#### `jepa`, from cda-jepa
-
-The `jepa` encoder moved to the cda-jepa package ([30](30_extensions.md) §9). Installed, it is
-selected like the others plus `"jepa"` in `extensions_enabled`, and its block under
-`encoder_specs.jepa` overrides the package's defaults; with no block it runs on them. Its keys
-(`mask_axis`, `mask_ratio`, the predictor, `ema_decay`, the loss weights, `world_model`) and what
-to watch (`jepa_latent_std`) are cda-jepa's [docs/settings.md](https://github.com/ChuaCheowHuan/cda_jepa/blob/main/docs/settings.md) and
-[docs/metrics.md](https://github.com/ChuaCheowHuan/cda_jepa/blob/main/docs/metrics.md).
-
 Every non-`mlp` encoder LayerNorms immediately after its input projection, and that
 is deliberately not configurable. Measured on real steps, the four channels in a
 token have standard deviations of `[1.27, 8.17, 0.046, 9.52]` — `sqrt(volume)` runs
@@ -836,6 +824,242 @@ path, but refused from a config file.
 Both keys are **structural** (§5.3). Changing either with `is_restore` set is a hard error, for the
 same reason `n_hist` is: the restored weights are that architecture's weights. Comparing
 architectures means separate runs, not a resume.
+
+#### The `lstm` encoder and its two time axes
+
+`lstm` is the *structured* recurrent encoder, not RLlib's `use_lstm` shortcut. The
+shortcut feeds the raw 233-float observation to a stock MLP tokenizer, discarding
+the book structure exactly as `mlp` does. This one's tokenizer reads the grid.
+
+Two different time axes are involved and they are easy to confuse:
+
+- **`n_hist`** is a window *inside a single observation*, already stacked by the env.
+  The tokenizer collapses it.
+- **The rollout axis** is consecutive env steps. That is what the LSTM's memory runs
+  along, and what `max_seq_len` cuts into training sequences.
+
+They overlap: at `n_hist` 4 the LSTM re-reads the last four snapshots every step, so
+its memory is partly redundant with the observation itself. Setting `n_hist` to 1 for
+a recurrent run removes the redundancy — at the cost of invalidating checkpoints,
+since `n_hist` is structural.
+
+`max_seq_len` is declared in the `lstm` spec block but applied to the **top-level**
+model config, because RLlib's connectors read it before any encoder is called.
+`build_trainable_module_spec` lifts it across.
+
+Selecting `lstm` makes the trainable modules stateful, which changes more than the
+network: RLlib forces `inference_only=False` so the critic's states are collected,
+wraps the encoder in `TorchStatefulActorCriticEncoder`, and adds a time dimension to
+every batch. The frozen `RandomRLModule` baselines stay stateless throughout, which
+is fine — statefulness is per-module.
+
+#### `moe_transformer` and its second loss term
+
+Identical to `transformer` except that each block's dense feed-forward becomes a
+top-k gated mixture. `ff_dim` is now each **expert's** width, so the feed-forward
+parameter count is roughly `num_experts ×` what the same `ff_dim` buys in
+`transformer`, while per-token compute is `top_k ×` it.
+
+An MoE needs a second loss term. Nothing in the policy gradient rewards a gate for
+using more than one expert — collapsing onto one is a perfectly good local optimum
+that leaves you with a dense feed-forward you paid `num_experts` times over for. The
+Switch-Transformer load-balancing term, weighted by `aux_loss_coeff`, is the only
+pressure against that. Getting it from the encoder to the optimiser takes a chain,
+because no link can see both ends:
+
+```
+MoEFeedForward.forward   returns (output, stats)
+TransformerBlock.forward passes the tuple through
+the encoder              stages per-block stats
+CDAPPOTorchRLModule      moves them into fwd_out
+CDAPPOTorchLearner       adds aux_loss_coeff * aux to PPO's total
+```
+
+The hop through the module is unavoidable: `ActorCriticEncoder._forward` keeps only
+`ENCODER_OUT` and discards anything else an encoder returns. Both the module and the
+learner are wired unconditionally and are inert for every other encoder, so there is
+one code path rather than two.
+
+The term is **averaged over MoE blocks, not summed**, so `aux_loss_coeff` means the
+same thing whatever the stack looks like. Summed — which is what Switch Transformer
+does — it would scale with `num_layers` and *double* when `vf_share_layers` is false,
+because the critic's blocks route separately and count too. A coefficient tuned at
+`num_layers: 2` would then apply twice the pressure at 4, silently, and comparing two
+MoE configs of different depths would confound depth with how hard the gate was being
+pushed — the same confound the per-encoder `lr` override exists to remove. Averaged,
+the floor is `top_k` at perfectly uniform routing, so an untrained gate reads just
+above 2 at the shipped settings regardless of depth.
+
+**Expect collapse, and watch for it.** This env’s observation is 233 floats and the
+league is small, so MoE's premise — capacity you cannot afford densely — may simply
+not apply. A collapsed mixture and a healthy one have identical losses and identical
+throughput; the only difference is `moe_max_expert_share` and `moe_min_expert_share`
+in the learner metrics, which a healthy mixture holds near `top_k / num_experts`.
+
+#### Two keys every encoder accepts
+
+`lr` and `vf_share_layers` may appear in **any** `encoder_specs` block and are handled
+centrally rather than by the encoder. Omit them to inherit the `ppo` group; set either
+to override it for that encoder only.
+
+They exist because both `ppo` defaults were chosen for the MLP. `lr = 5e-05` was tuned
+for a 2×256 tanh net, and holding an attention stack to it measures the learning rate
+rather than the architecture. `vf_share_layers: false` costs an MLP little and doubles
+a transformer — a real trade-off, since the `false` is itself deliberate (a shared
+value trunk destabilises against non-stationary league opponents).
+
+Neither is listed in the shipped blocks: absent means inherit, and a `null` would be
+indistinguishable from a value nobody chose.
+
+#### `jepa`, from cda-jepa
+
+The `jepa` encoder comes from the cda-jepa package ([30](30_extensions.md) §9). Installed, it is
+selected like the others plus `"jepa"` in `extensions_enabled`, and its block under
+`encoder_specs.jepa` overrides the package's defaults; with no block it runs on them. Its keys
+(`mask_axis`, `mask_ratio`, the predictor, `ema_decay`, the loss weights, `world_model`) and what
+to watch (`jepa_latent_std`) are cda-jepa's [docs/settings.md](https://github.com/ChuaCheowHuan/cda_jepa/blob/main/docs/settings.md) and
+[docs/metrics.md](https://github.com/ChuaCheowHuan/cda_jepa/blob/main/docs/metrics.md).
+
+---
+
+### 5.5 Comparing architectures
+
+The `encoder` group exists to make architectures comparable, and a comparison is easy
+to run in a way that measures the wrong thing. Four points, in rough order of how much
+damage getting them wrong does:
+
+0. **Change one thing.** `train.compare --set FIELD=VALUE` (repeatable) overrides any
+   `TrainConfig` field for every run in the comparison, coerced to the field's type, so a
+   representation or matching regime can be compared under identical seeds and encoders:
+   `--set book_mode=levels`, for instance, against the default grid.
+
+1. **Fix the seed, and use more than one.** `run.seed` ships as `null`, so each run
+   draws its own. Single-seed RL comparisons are mostly noise, and self-play league
+   dynamics are noisier than most — the champion pool amplifies an early divergence for
+   the rest of the run. Pin `seed` and run at least three per architecture.
+
+2. **Separate runs, never a resume.** `encoder_type` and `encoder_spec` are structural
+   (§5.3), so switching them with `is_restore` set is a hard error by design. Give each
+   architecture its own `run_id`.
+
+3. **Re-tune, or say you didn't.** See the two common keys above. Comparing at a single
+   learning rate is a legitimate experiment, but it answers "which architecture is best
+   at `lr=5e-05`", not "which architecture is best".
+
+4. **Read the parameter counts.** Each trainable module logs its own at startup:
+
+   ```
+   policy_0: encoder mlp             | 225,051 parameters
+   policy_0: encoder transformer     | 671,899 parameters
+   policy_0: encoder lstm            | 799,259 parameters
+   policy_0: encoder moe_transformer | 1,464,987 parameters
+   ```
+
+   At the shipped settings the alternatives are 3–6.5× the MLP. A win at 6.5× the
+   parameters and a fraction of the throughput is a different claim from a win at
+   parity, and the per-iteration line reports `env steps sampled` for the other half.
+
+0. **Run the protocol as a command.** Points 1, 2 and 4 are what
+   `python -m gym_continuousDoubleAuction.train.compare` does for you: every (encoder, seed) is a
+   separate run with the seed pinned and its own `log_base_dir`, the parameter count is recorded,
+   and the final checkpoint is scored on the probe of point 5 against one shared corpus collected under the same env config as the runs (so a `--set` of `book_mode`, `n_hist` or the fees applies to it too). It writes
+   per-run JSON and a Markdown table of means and standard deviations, and marks two encoders as
+   *separated* on a metric only when the gap exceeds both standard deviations with at least three
+   seeds a side. Defaults are in `cli_defaults.json` under `cda_compare` (`out_dir`, `probe_episodes`,
+`probe_steps` and `probe_seed` are the keys behind `--out`, `--probe-episodes`, `--probe-steps` and
+`--probe-seed`); see
+   [26](26_runbook.md) §26.9 for the command and [16](16_verification_log.md) §16.18 for a
+   smoke-scale run.
+
+5. **Score them without the reward first.** Points 1–4 are about running the comparison
+   well; this one is about whether the comparison can answer anything at all. A ranking taken
+   from returns is only as good as the reward: while S1-1 and S1-3 stood, it would have ranked
+   how fast each architecture descends to doing nothing. Both are fixed ([S1-1](29_fixed_issues.md#s1-1--ppos-critic-receives-zero-gradient-verified-fixed), [S1-3](29_fixed_issues.md#s1-3--doing-nothing-is-a-dominant-strategy-verified-fixed)), and a
+   reward-free score is still the cheaper first measurement.
+
+   ```bash
+   python -m gym_continuousDoubleAuction.train.probe --encoders mlp transformer lstm
+   ```
+
+   That ranks encoders on public microstructure targets — the next midpoint move, the
+   spread change, depth imbalance — with no reward, policy or value function in the path.
+   It runs in seconds, needs no training run, and scores each architecture *untrained* as
+   well, which is the inductive-bias baseline a trained encoder has to beat. See
+   [23_probe_harness.md](23_probe_harness.md).
+
+   It does not replace a training comparison. It answers "does this architecture represent
+   the market better", not "does it trade better", and the second needs a multi-seed training
+   comparison.
+
+For `moe_transformer` also watch `moe_max_expert_share` and `moe_min_expert_share` in
+the learner metrics — a collapsed mixture is indistinguishable from a healthy one by
+loss or throughput alone.
+
+---
+
+### 5.6 The `optimizer` group
+
+A group that changes how the network is *updated* rather than what shape it is. It ships inert:
+leave it alone and a run builds the same optimiser it always has.
+
+Continual Backprop (CBP), which used to be a second group here, is the `cbp` extension of the
+cda-cbp package ([30](30_extensions.md) §8). A config that still carries a `cbp_*` key fails at
+load, naming the package.
+
+### 5.6.1 Why tuned Adam is separate from CBP
+
+The Nature continual-backprop paper's reinforcement-learning recipe is not CBP alone. It is CBP **plus**
+L2 at a weight decay of `1e-4` **plus** "tuned Adam" at `β₁ = β₂ = 0.99`, the last on the grounds
+that the usual `(0.9, 0.999)` is itself a cause of plasticity loss — the squared-gradient estimate
+in Adam's denominator updates far more slowly than the gradient estimate in its numerator, so one
+large gradient produces one very large update. Every algorithm in that paper except the
+standard-PPO baseline uses the retuned values. The arXiv paper (2108.06325v3, Appendix D) does
+not: its PPO, PPO+L2 and Continual PPO all run at torch's `(0.9, 0.999)`.
+
+That makes them easy to bundle, and bundling them would be a mistake: turning CBP on and retuning
+Adam in the same change would measure the two together, and neither paper claims they are the same
+intervention. So the optimiser stays here, composed by `_learner_class` whether or not any
+extension is enabled (`train/model/optim_learner.py`). It sits inside the extensions: cda-cbp builds
+the authors' `AdamGnT` itself and reads the same two keys through `optim_learner.adam_settings`,
+so setting them changes that optimiser's betas and weight decay, not its type.
+
+### 5.6.2 `optimizer`
+
+| Key | Default | Meaning |
+|---|---|---|
+| `adam_betas` | `[0.9, 0.999]` | Adam's `betas`. The Nature paper's tuned value is `[0.99, 0.99]`; the arXiv paper keeps the default |
+| `adam_weight_decay` | `0.0` | L2. The Nature paper's RL value is `1e-4` |
+
+At the defaults, `configure_optimizers_for_module` defers to RLlib's own implementation, so the
+optimiser is bit-for-bit the one every existing run and checkpoint was built with.
+
+**Changing either alongside `is_restore` is a hard error.** Not for the reason `encoder_spec` is —
+no tensor shape depends on them and the weights would restore perfectly well — but because they
+are consumed when the Learner class is chosen and the optimiser is built, both of which happen
+*before* a restore. `Algorithm.from_checkpoint` then rebuilds from the checkpoint's own config and
+discards them, so a retuned optimiser alongside a resume did nothing at all and looked exactly like
+a run that honoured it. They are `UNRESTORABLE_CONFIG_KEYS` rather than `STRUCTURAL_CONFIG_KEYS`,
+and the error message says so, because a reader who concluded the checkpoint was unusable would
+throw away a good one. A checkpoint written before the group existed is compared against what
+such a run actually *did* (torch's own Adam) rather than being skipped. The same rule covers
+`extensions_enabled` and every extension setting (§5.7).
+
+### 5.7 The `extensions` group
+
+Separately installed packages that add to the learning stack ([30](30_extensions.md)). Both keys
+are unrestorable: a resume must enable exactly what the checkpoint did, with the same settings.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `extensions_enabled` | `[]` | Names of installed extensions to compose into this run. Installing a package changes nothing until its name is here; a name that is not installed raises |
+| `extension_settings` | `{}` | One object per extension, keyed by name. Each extension fills in its own defaults and rejects keys it does not declare. A block for an extension that is not enabled is ignored |
+
+A config that enables nothing counts as `extensions_enabled: []` in the restore check, so a
+checkpoint that ran an extension cannot be resumed by a config that leaves it out (the run would
+otherwise go on running it from the checkpoint's own config, with nothing saying so). A checkpoint
+from before Continual Backprop moved out carries its settings as the old `continual_backprop`
+group; the restore check reads that group as the `cbp` extension's settings, so it resumes with
+`extensions_enabled: ["cbp"]` and the same values ([30](30_extensions.md) §8).
 
 ---
 
@@ -988,235 +1212,3 @@ flowchart TB
     WARN --> R
     R --> APPLY["apply(): dataclasses.replace<br/>hardware and path fields only"]
 ```
-
-#### The `lstm` encoder and its two time axes
-
-`lstm` is the *structured* recurrent encoder, not RLlib's `use_lstm` shortcut. The
-shortcut feeds the raw 233-float observation to a stock MLP tokenizer, discarding
-the book structure exactly as `mlp` does. This one's tokenizer reads the grid.
-
-Two different time axes are involved and they are easy to confuse:
-
-- **`n_hist`** is a window *inside a single observation*, already stacked by the env.
-  The tokenizer collapses it.
-- **The rollout axis** is consecutive env steps. That is what the LSTM's memory runs
-  along, and what `max_seq_len` cuts into training sequences.
-
-They overlap: at `n_hist` 4 the LSTM re-reads the last four snapshots every step, so
-its memory is partly redundant with the observation itself. Setting `n_hist` to 1 for
-a recurrent run removes the redundancy — at the cost of invalidating checkpoints,
-since `n_hist` is structural.
-
-`max_seq_len` is declared in the `lstm` spec block but applied to the **top-level**
-model config, because RLlib's connectors read it before any encoder is called.
-`build_trainable_module_spec` lifts it across.
-
-Selecting `lstm` makes the trainable modules stateful, which changes more than the
-network: RLlib forces `inference_only=False` so the critic's states are collected,
-wraps the encoder in `TorchStatefulActorCriticEncoder`, and adds a time dimension to
-every batch. The frozen `RandomRLModule` baselines stay stateless throughout, which
-is fine — statefulness is per-module.
-
-#### `moe_transformer` and its second loss term
-
-Identical to `transformer` except that each block's dense feed-forward becomes a
-top-k gated mixture. `ff_dim` is now each **expert's** width, so the feed-forward
-parameter count is roughly `num_experts ×` what the same `ff_dim` buys in
-`transformer`, while per-token compute is `top_k ×` it.
-
-An MoE needs a second loss term. Nothing in the policy gradient rewards a gate for
-using more than one expert — collapsing onto one is a perfectly good local optimum
-that leaves you with a dense feed-forward you paid `num_experts` times over for. The
-Switch-Transformer load-balancing term, weighted by `aux_loss_coeff`, is the only
-pressure against that. Getting it from the encoder to the optimiser takes a chain,
-because no link can see both ends:
-
-```
-MoEFeedForward.forward   returns (output, stats)
-TransformerBlock.forward passes the tuple through
-the encoder              stages per-block stats
-CDAPPOTorchRLModule      moves them into fwd_out
-CDAPPOTorchLearner       adds aux_loss_coeff * aux to PPO's total
-```
-
-The hop through the module is unavoidable: `ActorCriticEncoder._forward` keeps only
-`ENCODER_OUT` and discards anything else an encoder returns. Both the module and the
-learner are wired unconditionally and are inert for every other encoder, so there is
-one code path rather than two.
-
-The term is **averaged over MoE blocks, not summed**, so `aux_loss_coeff` means the
-same thing whatever the stack looks like. Summed — which is what Switch Transformer
-does — it would scale with `num_layers` and *double* when `vf_share_layers` is false,
-because the critic's blocks route separately and count too. A coefficient tuned at
-`num_layers: 2` would then apply twice the pressure at 4, silently, and comparing two
-MoE configs of different depths would confound depth with how hard the gate was being
-pushed — the same confound the per-encoder `lr` override exists to remove. Averaged,
-the floor is `top_k` at perfectly uniform routing, so an untrained gate reads just
-above 2 at the shipped settings regardless of depth.
-
-**Expect collapse, and watch for it.** This env’s observation is 233 floats and the
-league is small, so MoE's premise — capacity you cannot afford densely — may simply
-not apply. A collapsed mixture and a healthy one have identical losses and identical
-throughput; the only difference is `moe_max_expert_share` and `moe_min_expert_share`
-in the learner metrics, which a healthy mixture holds near `top_k / num_experts`.
-
-#### Two keys every encoder accepts
-
-`lr` and `vf_share_layers` may appear in **any** `encoder_specs` block and are handled
-centrally rather than by the encoder. Omit them to inherit the `ppo` group; set either
-to override it for that encoder only.
-
-They exist because both `ppo` defaults were chosen for the MLP. `lr = 5e-05` was tuned
-for a 2×256 tanh net, and holding an attention stack to it measures the learning rate
-rather than the architecture. `vf_share_layers: false` costs an MLP little and doubles
-a transformer — a real trade-off, since the `false` is itself deliberate (a shared
-value trunk destabilises against non-stationary league opponents).
-
-Neither is listed in the shipped blocks: absent means inherit, and a `null` would be
-indistinguishable from a value nobody chose.
-
----
-
-## 5.5. Comparing architectures
-
-The `encoder` group exists to make architectures comparable, and a comparison is easy
-to run in a way that measures the wrong thing. Four points, in rough order of how much
-damage getting them wrong does:
-
-0. **Change one thing.** `train.compare --set FIELD=VALUE` (repeatable) overrides any
-   `TrainConfig` field for every run in the comparison, coerced to the field's type, so a
-   representation or matching regime can be compared under identical seeds and encoders:
-   `--set book_mode=levels`, for instance, against the default grid.
-
-1. **Fix the seed, and use more than one.** `run.seed` ships as `null`, so each run
-   draws its own. Single-seed RL comparisons are mostly noise, and self-play league
-   dynamics are noisier than most — the champion pool amplifies an early divergence for
-   the rest of the run. Pin `seed` and run at least three per architecture.
-
-2. **Separate runs, never a resume.** `encoder_type` and `encoder_spec` are structural
-   (§5.3), so switching them with `is_restore` set is a hard error by design. Give each
-   architecture its own `run_id`.
-
-3. **Re-tune, or say you didn't.** See the two common keys above. Comparing at a single
-   learning rate is a legitimate experiment, but it answers "which architecture is best
-   at `lr=5e-05`", not "which architecture is best".
-
-4. **Read the parameter counts.** Each trainable module logs its own at startup:
-
-   ```
-   policy_0: encoder mlp             | 225,051 parameters
-   policy_0: encoder transformer     | 671,899 parameters
-   policy_0: encoder lstm            | 799,259 parameters
-   policy_0: encoder moe_transformer | 1,464,987 parameters
-   ```
-
-   At the shipped settings the alternatives are 3–6.5× the MLP. A win at 6.5× the
-   parameters and a fraction of the throughput is a different claim from a win at
-   parity, and the per-iteration line reports `env steps sampled` for the other half.
-
-0. **Run the protocol as a command.** Points 1, 2 and 4 are what
-   `python -m gym_continuousDoubleAuction.train.compare` does for you: every (encoder, seed) is a
-   separate run with the seed pinned and its own `log_base_dir`, the parameter count is recorded,
-   and the final checkpoint is scored on the probe of point 5 against one shared corpus collected under the same env config as the runs (so a `--set` of `book_mode`, `n_hist` or the fees applies to it too). It writes
-   per-run JSON and a Markdown table of means and standard deviations, and marks two encoders as
-   *separated* on a metric only when the gap exceeds both standard deviations with at least three
-   seeds a side. Defaults are in `cli_defaults.json` under `cda_compare` (`out_dir`, `probe_episodes`,
-`probe_steps` and `probe_seed` are the keys behind `--out`, `--probe-episodes`, `--probe-steps` and
-`--probe-seed`); see
-   [26](26_runbook.md) §26.9 for the command and [16](16_verification_log.md) §16.18 for a
-   smoke-scale run.
-
-5. **Score them without the reward first.** Points 1–4 are about running the comparison
-   well; this one is about whether the comparison can answer anything at all. A ranking taken
-   from returns is only as good as the reward: while S1-1 and S1-3 stood, it would have ranked
-   how fast each architecture descends to doing nothing. Both are fixed ([S1-1](29_fixed_issues.md#s1-1--ppos-critic-receives-zero-gradient-verified-fixed), [S1-3](29_fixed_issues.md#s1-3--doing-nothing-is-a-dominant-strategy-verified-fixed)), and a
-   reward-free score is still the cheaper first measurement.
-
-   ```bash
-   python -m gym_continuousDoubleAuction.train.probe --encoders mlp transformer lstm
-   ```
-
-   That ranks encoders on public microstructure targets — the next midpoint move, the
-   spread change, depth imbalance — with no reward, policy or value function in the path.
-   It runs in seconds, needs no training run, and scores each architecture *untrained* as
-   well, which is the inductive-bias baseline a trained encoder has to beat. See
-   [23_probe_harness.md](23_probe_harness.md).
-
-   It does not replace a training comparison. It answers "does this architecture represent
-   the market better", not "does it trade better", and the second needs a multi-seed training
-   comparison.
-
-For `moe_transformer` also watch `moe_max_expert_share` and `moe_min_expert_share` in
-the learner metrics — a collapsed mixture is indistinguishable from a healthy one by
-loss or throughput alone.
-
----
-
-## 5.6. The `optimizer` group, and where Continual Backprop went
-
-A group that changes how the network is *updated* rather than what shape it is. It ships inert:
-leave it alone and a run builds the same optimiser it always has.
-
-Continual Backprop (CBP), which used to be a second group here (`continual_backprop`, the `cbp_*`
-keys), is now the `cbp` extension in the [cda-cbp](https://github.com/ChuaCheowHuan/cda_cbp)
-package: install it, list `"cbp"` in `extensions_enabled` and put its settings, without the
-`cbp_` prefix, under `extension_settings.cbp` (§5.7, [25](25_continual_backprop.md)). Its settings
-table, the notes that were in `train_config.json`, and the cadence caveat (its rate and maturity
-are counted in optimiser steps, of which this project takes about 4 per iteration against the
-papers' 320) are in that package's `docs/settings.md`. A config that still carries a `cbp_*` key
-fails at load, naming the package.
-
-### 5.6.1 Why tuned Adam is separate from CBP
-
-The Nature continual-backprop paper's reinforcement-learning recipe is not CBP alone. It is CBP **plus**
-L2 at a weight decay of `1e-4` **plus** "tuned Adam" at `β₁ = β₂ = 0.99`, the last on the grounds
-that the usual `(0.9, 0.999)` is itself a cause of plasticity loss — the squared-gradient estimate
-in Adam's denominator updates far more slowly than the gradient estimate in its numerator, so one
-large gradient produces one very large update. Every algorithm in that paper except the
-standard-PPO baseline uses the retuned values. The arXiv paper (2108.06325v3, Appendix D) does
-not: its PPO, PPO+L2 and Continual PPO all run at torch's `(0.9, 0.999)`.
-
-That makes them easy to bundle, and bundling them would be a mistake: turning CBP on and retuning
-Adam in the same change would measure the two together, and neither paper claims they are the same
-intervention. So the optimiser stays here, composed by `_learner_class` whether or not any
-extension is enabled (`train/model/optim_learner.py`). It sits inside the extensions: cda-cbp builds
-the authors' `AdamGnT` itself and reads the same two keys through `optim_learner.adam_settings`,
-so setting them changes that optimiser's betas and weight decay, not its type.
-
-### 5.6.2 `optimizer`
-
-| Key | Default | Meaning |
-|---|---|---|
-| `adam_betas` | `[0.9, 0.999]` | Adam's `betas`. The Nature paper's tuned value is `[0.99, 0.99]`; the arXiv paper keeps the default |
-| `adam_weight_decay` | `0.0` | L2. The Nature paper's RL value is `1e-4` |
-
-At the defaults, `configure_optimizers_for_module` defers to RLlib's own implementation, so the
-optimiser is bit-for-bit the one every existing run and checkpoint was built with.
-
-**Changing either alongside `is_restore` is a hard error.** Not for the reason `encoder_spec` is —
-no tensor shape depends on them and the weights would restore perfectly well — but because they
-are consumed when the Learner class is chosen and the optimiser is built, both of which happen
-*before* a restore. `Algorithm.from_checkpoint` then rebuilds from the checkpoint's own config and
-discards them, so a retuned optimiser alongside a resume did nothing at all and looked exactly like
-a run that honoured it. They are `UNRESTORABLE_CONFIG_KEYS` rather than `STRUCTURAL_CONFIG_KEYS`,
-and the error message says so, because a reader who concluded the checkpoint was unusable would
-throw away a good one. A checkpoint written before the group existed is compared against what
-such a run actually *did* (torch's own Adam) rather than being skipped. The same rule covers
-`extensions_enabled` and every extension setting (§5.7).
-
-## 5.7. The `extensions` group
-
-Separately installed packages that add to the learning stack ([30](30_extensions.md)). Both keys
-are unrestorable: a resume must enable exactly what the checkpoint did, with the same settings.
-
-| Key | Default | Meaning |
-|---|---|---|
-| `extensions_enabled` | `[]` | Names of installed extensions to compose into this run. Installing a package changes nothing until its name is here; a name that is not installed raises |
-| `extension_settings` | `{}` | One object per extension, keyed by name. Each extension fills in its own defaults and rejects keys it does not declare. A block for an extension that is not enabled is ignored |
-
-A config that enables nothing counts as `extensions_enabled: []` in the restore check, so a
-checkpoint that ran an extension cannot be resumed by a config that leaves it out (the run would
-otherwise go on running it from the checkpoint's own config, with nothing saying so). A checkpoint
-from before Continual Backprop moved out carries its settings as the old `continual_backprop`
-group; the restore check reads that group as the `cbp` extension's settings, so it resumes with
-`extensions_enabled: ["cbp"]` and the same values ([25](25_continual_backprop.md)).

@@ -42,9 +42,11 @@ mindmap
       29 Fixed issues
       16 Verification log
     Research
-      22 JEPA, moved to cda-jepa
       23 Probe harness
-      25 Continual Backprop
+      30 Extensions
+        cbp, cda-cbp
+        discorl, cda-discorl
+        jepa, cda-jepa
 ```
 
 ### Start here
@@ -87,10 +89,8 @@ mindmap
 | 29 | [29_fixed_issues.md](29_fixed_issues.md) | Every problem found and fixed, under its original ID: what was wrong, how it was found, what fixed it |
 | 16 | [16_verification_log.md](16_verification_log.md) | Every executed probe and its raw output |
 | 17 | [17_changelog.md](17_changelog.md) | What changed since `original_v1` (2020) and why |
-| 22 | [22_jepa_integration.md](22_jepa_integration.md) | JEPA moved to the cda-jepa package: where its research note (what JEPA is, why this observation suits it, four ways to use it) now lives, and how to enable it |
-| 23 | [23_probe_harness.md](23_probe_harness.md) | The two reward-free tools. Part 1: scoring an encoder on microstructure targets without the reward, how to read it, why the probe is linear. Part 2: where offline JEPA pretraining went (cda-jepa) and the pretrained-weights format that stayed |
-| 25 | [25_continual_backprop.md](25_continual_backprop.md) | Continual Backprop moved to the cda-cbp package: where its full note, settings and metrics now live, how to install and enable it, and how old configs and checkpoints are handled |
-| 30 | [30_extensions.md](30_extensions.md) | Adding to the learning stack from a separately installed package: what it declares, how a run enables it, where its Learner, module and env pieces are composed, how resumes are guarded, and how to install, enable and compare the DiscoRL extension |
+| 23 | [23_probe_harness.md](23_probe_harness.md) | Scoring an encoder on microstructure targets without the reward, how to read it, why the probe is linear, and the effective rank of a network on a fixed corpus |
+| 30 | [30_extensions.md](30_extensions.md) | The three extension packages (Continual Backprop, DiscoRL, JEPA) and the forks they build on; what a package declares, how a run enables it, where its pieces are composed, how resumes are guarded, and what stayed here when CBP and JEPA moved out |
 | 27 | [27_agent_skills.md](27_agent_skills.md) | Which agent skills this repository would pay for, from the work that was done by hand in the review passes: what each does, its evidence, the scripts it needs, the mistakes it must not repeat, and the order to build them in |
 
 ### Configuration and deployment
@@ -133,22 +133,22 @@ mindmap
 [05](05_observation_space.md) → [07](07_reward_function.md)
 
 **Weighing a representation-learning change (JEPA)**
-[22](22_jepa_integration.md) → [05](05_observation_space.md) →
-[18](18_configuration.md) §5.4–5.5 → [12](12_perspective_rl_researcher.md) §4, §7
+[30](30_extensions.md) §9 (install cda-jepa) → cda-jepa's docs/jepa.md (the research note) →
+[05](05_observation_space.md) → [18](18_configuration.md) §5.4–5.5
 
 **Comparing encoders**
 [23](23_probe_harness.md) (a metric that does not go through the reward) →
 [18](18_configuration.md) §5.5 (seeds, separate runs, parameter counts)
 
 **Pretraining an encoder before training a policy**
-[30](30_extensions.md) §9 (install cda-jepa) → cda-jepa's docs/pretraining.md (running it, via
-[23](23_probe_harness.md) Part 2) → [23](23_probe_harness.md) Part 1 (measuring what it taught)
+[30](30_extensions.md) §9 (install cda-jepa) → cda-jepa's docs/pretraining.md →
+[23](23_probe_harness.md) (measuring what it taught)
 
 **Weighing a plasticity change for long runs (Continual Backprop)**
-[25](25_continual_backprop.md) (moved to cda-cbp; its note, settings and cadence caveat) →
+[30](30_extensions.md) §8 (install cda-cbp, and what stayed here) → cda-cbp's
+docs/continual_backprop.md (its note and cadence caveat) →
 [18](18_configuration.md) §5.6 (tuned Adam, kept here) →
-[11](11_logging_and_observability.md) (the three correlates) →
-[23](23_probe_harness.md) (the reward-free metric it must be scored on) →
+[23](23_probe_harness.md) §10 (the reward-free rank it must be scored on) →
 [29](29_fixed_issues.md) (S1-1, S1-3, which gated the returns comparison)
 
 **Adding a learning method from another package (extensions)**
@@ -175,7 +175,9 @@ mindmap
 **Trading / microstructure review**
 [13](13_perspective_financial_trader.md) → [03](03_matching_engine.md) → [04](04_accounting.md)
 
-## Retired numbers
+## Retired and moved numbers
 
 21 (the logging review) is now [11](11_logging_and_observability.md) §5, and 24 (offline
-pretraining) was [23](23_probe_harness.md) Part 2, which is now cda-jepa's docs/pretraining.md. The numbers are not reused.
+pretraining) is cda-jepa's docs/pretraining.md. [22](22_jepa_integration.md) (JEPA) and [25](25_continual_backprop.md) (Continual Backprop) moved to
+their packages; each keeps a one-paragraph page here with the new location, because code comments
+and the history files cite them. The numbers are not reused.

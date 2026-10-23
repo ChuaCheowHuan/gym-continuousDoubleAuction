@@ -25,9 +25,9 @@ They drift. Work from the code, not from the docs.
 3. **Triage every hit.** Current tense is corrected. Historical ("193 to 216 with the own-book
    block", "was 168 floats") is left alone. A measured figure that reads as current gets the
    current value added beside it. A hit may be a number that only sits near a noun; ignore those.
-4. **Recompute the dependent figures** that the scanner still cannot see: the coverage mindmap in
-   `docs/10_testing.md` and the expected lines in `docs/26_runbook.md` (§26.2). Take them from
-   `facts.json`. (The inventory rows and the code size are checked in step 2; `facts.code` counts
+4. **Recompute the dependent figures** that the scanner still cannot see: the coverage mindmap and
+   the two total rows of the file inventory in `docs/10_testing.md`, the only place test totals
+   are stated. Take them from `facts.json`. (The inventory rows and the code size are checked in step 2; `facts.code` counts
    `git ls-files '*.py'`.)
 5. **Check links:** `python tools/check_links.py`. It must print `TOTAL 0`. Re-run it after any
    heading edit: renaming a heading breaks anchors in other files.
