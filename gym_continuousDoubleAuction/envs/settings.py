@@ -214,9 +214,7 @@ class EnvSettings:
         """
         unknown = sorted(set(config) - set(cls.keys()))
         if unknown:
-            raise ValueError(
-                f"unknown env config keys {unknown}. Valid keys: {sorted(cls.keys())}"
-            )
+            raise ValueError(f"unknown env config keys {unknown}. Valid keys: {sorted(cls.keys())}")
         values = {key: config[key] if key in config else env_default(key) for key in cls.keys()}
         # The horizon bounds are integers whatever a JSON or CLI source handed over.
         values["max_step_min"] = int(values["max_step_min"])
