@@ -21,6 +21,13 @@ WORKDIR /app
 CMD ["bash"]
 
 # Command to run container
+#
+# WARNING: the /var/run/docker.sock mount below gives this container the host's
+# Docker daemon, which is root-equivalent on the host: it can start a privileged
+# container that mounts the host filesystem. Only pass it if the workflow really
+# needs Docker inside the agent, and never with an agent you would not run as
+# root on the host. Nothing in this image requires it - drop the line for normal
+# use.
 # docker run -it --rm \
 #   --name gemini-agent \
 #   -v /mnt/c/Users/User/Documents/Code/gym-continuousDoubleAuction_agent_based_0:/app \

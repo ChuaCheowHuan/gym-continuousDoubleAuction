@@ -24,11 +24,13 @@ apt/torch/ray layers.
 Run it, with your working tree mounted so edits take effect immediately:
 
 ```bash
-docker run --gpus all -it --rm -p 8888:8888 --shm-size=2g \
+docker run --gpus all -it --rm -p 127.0.0.1:8888:8888 --shm-size=2g \
     -v "$PWD":/workspace/code cda-ray-torch
 ```
 
-PowerShell needs different quoting — `-v "${PWD}:/workspace/code"`. Then open the
+PowerShell needs different quoting — `-v "${PWD}:/workspace/code"`. The `127.0.0.1:` prefix on the
+port is deliberate: it publishes Jupyter on the host's loopback rather than every interface (the
+container still binds `0.0.0.0` internally), and the token is required either way. Then open the
 `http://127.0.0.1:8888/?token=...` URL from the container's output and run
 [`CDA_train.ipynb`](../gym_continuousDoubleAuction/CDA_train.ipynb) top to bottom. **Nothing in the
 notebook needs editing for this image** — `PLATFORM` and `USE_GPU` are both `auto`, and the
@@ -37,7 +39,7 @@ Colab bootstrap cell is a no-op here.
 Or run the source exactly as it was at build time, with no mount at all:
 
 ```bash
-docker run --gpus all -it --rm -p 8888:8888 --shm-size=2g cda-ray-torch
+docker run --gpus all -it --rm -p 127.0.0.1:8888:8888 --shm-size=2g cda-ray-torch
 ```
 
 Headless training, no notebook:
@@ -100,7 +102,7 @@ flowchart TD
 |---|---|
 | `--gpus all` | Exposes the GPU. Without it, `runtime.detect_hardware()` selects the `cpu` parameter set and `resolved_gpus_per_learner()` returns 0: training proceeds on one core. Both print a line saying so, but neither fails, so it is easy to miss — check `hardware profile` in the notebook's output. |
 | `--shm-size=2g` | Ray's object store lives on `/dev/shm`. Docker's 64MB default makes Ray fall back to `/tmp` and warn about degraded performance. Ray recommends >30% of available RAM. |
-| `-p 8888:8888` | Publishes Jupyter. The `CMD` binds `--ip=0.0.0.0`, which is required for the port to be reachable from outside the container. |
+| `-p 127.0.0.1:8888:8888` | Publishes Jupyter on the host's **loopback only**. `-p 8888:8888` binds every host interface, so anyone who can reach the machine can reach the notebook; the token is still required, but there is no reason to expose it. The `CMD` binds `--ip=0.0.0.0` inside the container, which is what makes the forwarding work. Jupyter runs as root with `--allow-root` and `/workspace` is `chmod 777`, so a process that does get in has the whole mounted tree. |
 | `-it` | Keeps the Jupyter token visible and `Ctrl-C` working. |
 | `--rm` | Deletes the container on exit. Anything you want to keep must be on the mount — see §19.5. |
 

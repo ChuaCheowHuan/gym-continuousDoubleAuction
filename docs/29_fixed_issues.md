@@ -78,7 +78,8 @@ finding confirmed by executing the code.
 | [S3-33](#s3-33--the-reward-charts-dropped-dead_action_penalty-verified-fixed) | The reward charts dropped `dead_action_penalty` | [#142](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/142) |
 
 S4-1 … S4-28 are in [§ S4](#s4--minor), the 2026-10-07 review's R-items in
-[§ R](#from-the-2026-10-07-review), problems fixed before the register existed in
+[§ R](#from-the-2026-10-07-review), the 2026-11-08 review's GitHub issues in
+[§ 2026-11-08](#from-the-2026-11-08-review), problems fixed before the register existed in
 [§ Older](#resolved-before-the-register), and fixed problems recorded outside the register in
 [§ Other documents](#fixed-problems-recorded-in-other-documents).
 
@@ -1474,6 +1475,28 @@ colour. Colours are keyed by term name, and a term without one fails at import.
 | S4-26 ([#168](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/168)) | **Fixed.** A restore refused by `build_algo`'s post-restore checks dropped the algorithm without `stop()`, so its actors kept their CPUs. It is stopped before the error propagates |
 | S4-27 ([#169](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/169)) | **Fixed.** With `ray_log_encoding` set, package logs stopped propagating to root even when Ray applied no `LoggingConfig`, so nothing printed them. Propagation is restored on those paths |
 | S4-28 ([#170](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/170)) | **Fixed.** Text that described the code wrongly: `visualize.run_all --help` printed no description; the probe's rank table always claimed the default threshold; the tape comment named the wrong end; a duplicated comment block in `state_helper`; `effective_rank` called itself the papers' rank (it is a threshold rank, [23](23_probe_harness.md) §8); the pretrain docstring's probe command could not find the module; nine comments pointed the action mask at [06](06_action_space.md) §6 rather than §7 |
+
+---
+
+## From the 2026-11-08 review
+
+Register: none (GitHub issues). Found by the 2026-11-07 code and security review of master
+`7f35535`, plus the Python-version failures those runs exposed. #357 was the security umbrella,
+split into #362-#364; #353 split into #367 (stamp) and #368 (fixture skip), with #369 (the
+`python_requires` decision) still open and `human`; #365 is the lockfile audit those reviews had
+to run by hand.
+
+| Issue | Finding |
+|---|---|
+| #354 | **Fixed.** `EnvSettings.__post_init__` now validates the order-shape keys: `tick_size > 0`, `min_size >= 1`, `mkt_max_size >= min_size`, `limit_size_multiple >= 1`, `n_hist >= 1` and `initial_price_min >= tick_size`, each naming its key. `from_config` refuses keys outside `EnvSettings.keys()` instead of silently using the default, so `init_cahs` is an error. Previously `min_size: 0` crashed at step 74, `tick_size: -1` rested orders at price -1, `tick_size: 0` raised `DivisionByZero` at construction, `min_size > mkt_max_size` produced negative market sizes and `n_hist: 0` raised a numpy concatenate error, all without naming the key. `test_refactors.py` (`TestEnvSettings`) has a case per key plus the unknown-key check |
+| #355 | **Fixed.** `TrainConfig.tick_size` is annotated `float`, which is what fractional ticks are (docs/18 §6, `test_tick_grid.py`), so `train.compare --set tick_size=0.5` parses. `compare._coerce` also turns a failed `int()`/`float()` into the same `SystemExit` naming the field and the spelling that every other `--set` error gives. `test_compare.py` pins both |
+| #356 | **Fixed.** The action mask judged a limit bid's affordability at the reference price, so a trader whose cash covered a bid a few ticks lower but not one at the reference had every limit bid masked. A bid limit is now judged at the cheapest price the price head can produce (`Action_Helper._cheapest_limit_bid`: deepest level, most passive offset, through the same `_set_price` the action uses). The ask side keeps the documented residue. `test_action_mask.py` reproduces the near-broke trader and holds the mask equal to `_order_approved` at the judged price under random play; docs/06 §7 says what "exact" now means for this row |
+| #357 / #362 | **Fixed.** docs/18 §5.2, docs/26 §26.7 and the `--help` text of `train.train --restore` / `--from-checkpoint`, `train.evaluate --checkpoint`, `train.export --checkpoint` and the probe's `--checkpoint` now say that loading a checkpoint unpickles code and may run it, so only load one you produced or trust. The pretrained-encoder path is named as the safe exception (`torch.load(..., weights_only=True)`) |
+| #363 | **Fixed.** `.github/workflows/tests.yml` has `permissions: contents: read`, every `uses:` is a full commit SHA with the tag in a trailing comment, and `.github/dependabot.yml` updates the `github-actions` pins weekly. `test_s4_docs_and_tooling.py` pins the permissions block, the SHA form and the Dependabot entry |
+| #364 | **Fixed.** The Jupyter run commands in `docker/ml/dockerfile_ray_torch` and docs/19 §19.1-19.2 publish `127.0.0.1:8888:8888`, with a note on what the bare mapping exposes and why the container still binds `0.0.0.0`. `docker/gemini/dockerfile` carries a warning beside the `/var/run/docker.sock` example: the mount is root-equivalent on the host, and nothing in the image needs it. `test_s4_docs_and_tooling.py` pins both comments |
+| #365 | **Fixed.** CI's `test` job installs `pip-audit` and runs `pip-audit -r requirements-lock.txt --no-deps --disable-pip` after the install, failing the build on a known vulnerability; a finding with no fix is handled with an explicit `--ignore-vuln <ID>` and its reason. docs/10 §7 documents the step. The msgpack 1.2.1 CVE (#366) that motivated it was found by hand because this step did not exist |
+| #367 | **Fixed.** `_write_league_state` stamps `sys.version_info[:2]` into `league_state.json` as `python`. `check_python_version` reads it before anything is unpickled - called from `build_algo` and `train.evaluate`, and from `probe.features.load_module` for `train.export` and the probe - and refuses a mismatch naming both versions and the way out (use the interpreter that wrote it, or start fresh). An unstamped checkpoint loads as before with a one-line warning. `test_checkpointing.py` and `test_evaluate.py` pin the refusal, the pass and the warning, and that `build_algo` refuses before `Algorithm.from_checkpoint` |
+| #368 | **Fixed.** `test_refactors.py` records `FIXTURE_PYTHON = (3, 12)` for `fixtures/callback_before_league.pkl` and skips its three fixture tests under any other minor, so the 3.13 segfault in `test_its_mapping_function_still_maps` cannot end the suite. The other two fixtures (`learner_classes_f7c1353.pkl`, `jepa_classes_98c4900.pkl`) hold their classes by reference, with no bytecode, so they need no skip; `test_learner_class_compat.py` and `test_jepa_moved.py` say so |
 
 ---
 

@@ -4,7 +4,9 @@ docs/06 section 7. The env writes, into the last `category_n` entries of each
 agent's private block, which of the action categories that agent can take on
 the coming step (`Action_Helper.action_mask_for`): a modify or cancel needs a
 resting order on that side, a market or limit order needs to pass the cash
-check for the minimum size at the reference price. Those are the two dead
+check for the minimum size (a bid limit at the cheapest price the price head
+can produce, everything else at the reference price - docs/29 #356). Those are
+the two dead
 actions the activity metrics count - 27-30% of random agent-steps were
 "unmatched" before this - and a policy given the choice can only learn to
 avoid them slowly, because from its side a dead action and a pass are the same

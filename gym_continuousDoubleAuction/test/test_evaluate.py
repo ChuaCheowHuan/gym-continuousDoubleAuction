@@ -221,3 +221,22 @@ class TestARestoreIsGuardedLikeTraining:
         )
         with pytest.raises(ImportError, match="Cannot restore .*no_such_module_for_336"):
             evaluate.evaluate(str(tmp_path), episodes=1, seed=0, deterministic=True)
+
+    def test_a_checkpoint_from_another_python_minor_is_named(self, tmp_path, monkeypatch):
+        """#367: the version check runs before RLlib unpickles anything."""
+        import json
+        import sys
+
+        from gym_continuousDoubleAuction.envs.layout_version import LAYOUT_KEY, layout_stamp
+        from gym_continuousDoubleAuction.train.checkpoint import (
+            LEAGUE_STATE_FILE,
+            PYTHON_VERSION_KEY,
+        )
+
+        self._never_restore(monkeypatch)
+        other = [sys.version_info[0], sys.version_info[1] + 1]
+        (tmp_path / LEAGUE_STATE_FILE).write_text(
+            json.dumps({LAYOUT_KEY: layout_stamp(), PYTHON_VERSION_KEY: other})
+        )
+        with pytest.raises(ValueError, match="was written by Python"):
+            evaluate.evaluate(str(tmp_path), episodes=1, seed=0, deterministic=True)

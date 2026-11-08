@@ -1,10 +1,8 @@
 """The package is pyflakes-clean, and stays that way.
 
-docs/29 S4-6 asked for a linter. The CI workflow cannot be changed from the
-sessions that maintain this repository (the push credential has no `workflow`
-scope - docs/17 §37.6), so the linter runs as a test: CI already installs the
-`dev` extra and runs this directory, and a new unused import or undefined name
-fails the same job a broken test would.
+docs/29 S4-6 asked for a linter. The linter runs as a test: CI already installs
+the `dev` extra and runs this directory, and a new unused import or undefined
+name fails the same job a broken test would.
 
 pyflakes rather than a style checker on purpose. Its findings are the ones that
 are bugs or near-bugs - undefined names, unused imports and locals, redefined

@@ -4,12 +4,19 @@
 #   docker build -f docker/ml/dockerfile_ray_torch -t cda-ray-torch .
 #
 # Run (GPU), with your working tree mounted over the baked-in copy:
-#   docker run --gpus all -it --rm -p 8888:8888 --shm-size=2g \
+#   docker run --gpus all -it --rm -p 127.0.0.1:8888:8888 --shm-size=2g \
 #       -v "$PWD":/workspace/code cda-ray-torch
 #   (PowerShell: -v "${PWD}:/workspace/code")
 #
 # Run the source as built, no mount:
-#   docker run --gpus all -it --rm -p 8888:8888 --shm-size=2g cda-ray-torch
+#   docker run --gpus all -it --rm -p 127.0.0.1:8888:8888 --shm-size=2g cda-ray-torch
+#
+# Publish Jupyter on the host's loopback only. `-p 8888:8888` binds every host
+# interface, so anyone who can reach this machine can reach the notebook; the
+# token is still required, but `-p 127.0.0.1:8888:8888` keeps it local. Jupyter
+# itself must bind 0.0.0.0 inside the container (see CMD) for the forwarding to
+# work. It runs as root with --allow-root and /workspace is chmod 777, so a
+# process that does get in has the whole mounted working tree.
 #
 # Either way the package is already importable - no `pip install -e .` needed.
 #

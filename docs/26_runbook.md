@@ -261,6 +261,14 @@ python -m gym_continuousDoubleAuction.train.train \
     --from-checkpoint results/chkpt/iter_00001 --run-id run_runbook --iters 4
 ```
 
+> **Only restore a checkpoint you produced or trust.** A checkpoint stores pickled code — RLlib
+> unpickles its `class_and_ctor_args` with `ray.cloudpickle`, and the callback and config travel
+> with it — so a folder from someone else can run arbitrary code on load. The same applies to
+> `train.evaluate --checkpoint`, `train.export --checkpoint` and the probe's `--checkpoint`. The
+> pretrained-encoder weights path is the safe exception: it uses `torch.load(...,
+> weights_only=True)` and reconstructs no classes. The sidecar also records the Python minor; a
+> checkpoint from another minor is refused before unpickling ([18](18_configuration.md) §5.2).
+
 How a save is written and how a restore picks one:
 
 ```mermaid

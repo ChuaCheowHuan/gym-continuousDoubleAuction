@@ -144,7 +144,11 @@ class TrainConfig:
     num_agents: int = _default("num_agents")
     num_trained_agents: int = _default("num_trained_agents")
     init_cash: int = _default("init_cash")
-    tick_size: int = _default("tick_size")
+    # float, not int: fractional ticks are supported and tested down to 0.0001
+    # (docs/18 §6, test_tick_grid.py). The annotation is what `train.compare
+    # --set` picks its parser from, so `int` made `--set tick_size=0.5` raise
+    # `invalid literal for int()` while a JSON config with 0.5 worked (issue #355).
+    tick_size: float = _default("tick_size")
     mark_price_source: str = _default("mark_price_source")
     tape_display_length: int = _default("tape_display_length")
     max_step: int = _default("max_step")

@@ -1,10 +1,9 @@
 """The documentation's links and anchors, as a test (issue #268).
 
 CLAUDE.md rule 7 says `tools/check_links.py` must report 0 broken links, and nothing
-ran it: a broken link or a renamed heading was caught by whoever remembered. The CI
-workflow cannot be edited from the sessions that maintain this repository (no
-`workflow` scope, docs/17 §37.6), so it runs here, in the job that already runs the
-suite - the same arrangement as `test_lint.py`.
+ran it: a broken link or a renamed heading was caught by whoever remembered. It runs
+here, in the job that already runs the suite - the same arrangement as
+`test_lint.py`.
 """
 
 import pathlib

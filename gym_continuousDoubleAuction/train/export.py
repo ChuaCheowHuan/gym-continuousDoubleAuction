@@ -269,7 +269,12 @@ def main(argv=None) -> int:
         description="Export one module's weights from a training checkpoint. "
         "See docs/26 section 26.9.2.",
     )
-    p.add_argument("--checkpoint", required=True, help="One iter_<n> directory.")
+    p.add_argument(
+        "--checkpoint",
+        required=True,
+        help="One iter_<n> directory. A checkpoint stores pickled code, which "
+        "loading unpickles: only load one you produced or trust.",
+    )
     p.add_argument(
         "--module-id",
         type=str,

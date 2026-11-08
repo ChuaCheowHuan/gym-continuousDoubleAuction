@@ -340,7 +340,15 @@ them, and "possible" is exact rather than advisory:
 |---|---|
 | pass | always — the mask can never be empty |
 | bid / ask `modify`, `cancel` | the agent has at least one order resting on that side |
-| bid / ask `market`, `limit` | `Trader._order_approved` would approve the **minimum size** at the **reference price** (market: at the best opposing quote), i.e. the same check that judges the order, so the mask and the refusal cannot disagree about affordability at that price |
+| bid / ask `market` | `Trader._order_approved` would approve the **minimum size** at the best opposing quote, i.e. the same check that judges the order |
+| ask `limit` | the same check at the **reference price**; an ask needs no cash to open, so this is the documented residue where the mask permits an order the size head can still get refused |
+| bid `limit` | the same check at the **cheapest price the price head can produce** — deepest level, most passive offset — not at the reference. A bid a few ticks below the reference is affordable when one at the reference is not, and judging the whole category at the reference masked every limit bid for a trader whose cash covered only a deeper one (issue #356) |
+
+The bid-limit row is the one place "exact" needs a qualifier: the category is possible when *some*
+price the head can produce is affordable, so a size or a more expensive price can still be
+refused, and that remains part of `num_rejected_step` (docs/06 §7's measured residue). The
+alternative — masking the category unless the reference price is affordable — forbade every bid for
+exactly the near-broke traders a cheap passive quote would help.
 
 **How it is applied.** `CDAPPOTorchRLModule` adds `−10⁹` to a masked category's logit on every
 forward pass — inference, exploration and training alike — so the sampler draws no mass there,

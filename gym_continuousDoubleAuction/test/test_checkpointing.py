@@ -12,6 +12,7 @@ See docs/20_colab.md 20.5 and docs/29_fixed_issues.md S3-8/S3-11.
 import json
 import logging
 import os
+import sys
 import time
 from dataclasses import replace as dataclasses_replace
 from types import SimpleNamespace
@@ -25,9 +26,11 @@ from gym_continuousDoubleAuction.train.train import (
     CHECKPOINT_PREFIX,
     CHECKPOINT_TMP_SUFFIX,
     LEAGUE_STATE_FILE,
+    PYTHON_VERSION_KEY,
     TrainConfig,
     _check_restored_config,
     algo_callback,
+    check_python_version,
     list_checkpoints,
     restore_candidates,
     save_checkpoint,
@@ -228,6 +231,60 @@ class TestLeagueSidecar:
         callback = SelfPlayCallback(num_trainable_policies=1, num_random_policies=1)
         assert algo_callback(FakeAlgo(callback=callback)) is callback
         assert algo_callback(FakeAlgo()) is None
+
+
+class TestPythonVersionStamp:
+    """#367: a checkpoint's pickles belong to the interpreter that wrote them."""
+
+    @staticmethod
+    def _other_minor():
+        major, minor = sys.version_info[:2]
+        return [major, minor + 1 if minor < 20 else minor - 1]
+
+    @staticmethod
+    def _save(cfg):
+        callback = SelfPlayCallback(num_trainable_policies=1, num_random_policies=1)
+        return save_checkpoint(FakeAlgo(callback=callback), cfg, 1)
+
+    def test_a_save_stamps_the_writing_interpreter(self, cfg):
+        path = self._save(cfg)
+        with open(os.path.join(path, LEAGUE_STATE_FILE)) as fh:
+            assert json.load(fh)[PYTHON_VERSION_KEY] == list(sys.version_info[:2])
+        # The same interpreter passes the check.
+        check_python_version({PYTHON_VERSION_KEY: list(sys.version_info[:2])}, path)
+
+    def test_another_minor_is_refused_naming_both(self):
+        other = self._other_minor()
+        current = list(sys.version_info[:2])
+        with pytest.raises(
+            ValueError, match=rf"Python {other[0]}\.{other[1]}.*Python {current[0]}\.{current[1]}"
+        ):
+            check_python_version({PYTHON_VERSION_KEY: other}, "/tmp/iter_00001")
+
+    def test_an_unstamped_sidecar_warns_and_loads(self, caplog):
+        with caplog.at_level(logging.WARNING):
+            check_python_version({}, "/tmp/iter_00001")
+        assert "no Python version stamp" in caplog.text
+
+    def test_build_algo_refuses_before_unpickling(self, cfg, monkeypatch):
+        """The check runs on the sidecar, so RLlib's loader is never reached."""
+        path = self._save(cfg)
+        with open(os.path.join(path, LEAGUE_STATE_FILE)) as fh:
+            state = json.load(fh)
+        state[PYTHON_VERSION_KEY] = self._other_minor()
+        with open(os.path.join(path, LEAGUE_STATE_FILE), "w") as fh:
+            json.dump(state, fh)
+
+        loaded = []
+        monkeypatch.setattr(build_mod, "build_config", lambda _cfg: (None, None))
+        monkeypatch.setattr(
+            build_mod,
+            "Algorithm",
+            SimpleNamespace(from_checkpoint=lambda p: loaded.append(p)),
+        )
+        with pytest.raises(ValueError, match="was written by Python"):
+            train_mod.build_algo(dataclasses_replace(cfg, is_restore=True))
+        assert loaded == []
 
 
 class TestLeagueStateReconciliation:

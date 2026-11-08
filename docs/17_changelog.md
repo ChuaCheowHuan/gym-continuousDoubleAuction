@@ -4685,3 +4685,47 @@ bugs in `Unpacker.skip()` and `unpackb()`. msgpack comes in through Ray, which a
 `msgpack>=1.0.0,<2.0.0`; the repo's own code does not import it. No code under `envs/` or
 `train/` changed. msgpack 1.2.4 was already on PyPI at merge time; Dependabot has not opened a
 bump for it yet.
+
+## 116. The 2026-11-08 review: order-shape validation, the bid mask, and hardening (2026-11-08)
+
+The code, security and documentation items from the review of master `7f35535`, plus the
+Python-version failures the review's own test runs exposed. Nine issues: #354-#357, #362-#365,
+#367 and #368. #353/#369 (pin 3.12 or support 3.13) remain a decision.
+
+- **Order-shape validation (#354).** `EnvSettings.__post_init__` now checks `tick_size > 0`,
+  `min_size >= 1`, `mkt_max_size >= min_size`, `limit_size_multiple >= 1`, `n_hist >= 1` and
+  `initial_price_min >= tick_size`, each naming the key, and `from_config` refuses unknown keys
+  rather than silently using the default. Before this, `min_size: 0` crashed at step 74,
+  `tick_size: -1` rested orders at price -1, `tick_size: 0` raised `DivisionByZero` at
+  construction, and `n_hist: 0` raised a numpy concatenate error - none naming the key.
+- **Fractional ticks through `--set` (#355).** `TrainConfig.tick_size` is annotated `float` (the
+  type fractional ticks already had), so `train.compare --set tick_size=0.5` parses; a failed
+  `int()`/`float()` now exits through `SystemExit` naming the field, as every other `--set` error
+  does.
+- **The bid-limit mask (#356).** A limit bid was judged at the reference price, so a trader whose
+  cash covered a deeper bid but not one at the reference had every limit bid masked. It is now
+  judged at the cheapest price the price head can produce (`_cheapest_limit_bid`), through the
+  same `_set_price` the action uses. The ask side keeps its documented residue.
+- **Checkpoint code execution (#357/#362).** docs/18, docs/26 and the `--help` of `--restore`,
+  `--from-checkpoint`, `evaluate`/`export`/`probe --checkpoint` now say that loading a checkpoint
+  unpickles code from it and that only checkpoints you produced or trust should be loaded. The
+  pretrained-encoder path is named as the safe exception (`torch.load(..., weights_only=True)`).
+- **CI hardening (#363, #365).** `tests.yml` has `permissions: contents: read`, every action is
+  pinned to a full commit SHA with its tag in a trailing comment, `.github/dependabot.yml` updates
+  the `github-actions` pins weekly, and the `test` job audits `requirements-lock.txt` with
+  `pip-audit --no-deps --disable-pip`, failing the build on a known vulnerability.
+- **Docker notes (#364).** Both Jupyter run commands, in `docker/ml/dockerfile_ray_torch` and
+  docs/19, publish `127.0.0.1:8888:8888`; the socket-mount example in
+  `docker/gemini/dockerfile` carries a warning that the mount is root-equivalent on the host.
+- **Python version stamp (#367).** Every save writes `sys.version_info[:2]` into
+  `league_state.json`; `build_algo`, `train.evaluate` and `probe.features.load_module` (which
+  serves `train.export` and the probe) refuse another minor before anything is unpickled, naming
+  both versions and the way out. An unstamped checkpoint loads with a one-line warning.
+- **The 3.12 fixture (#368).** `test_refactors.py` records that
+  `fixtures/callback_before_league.pkl` was written by Python 3.12 and skips its three fixture
+  tests under another minor, so the 3.13 segfault in
+  `test_its_mapping_function_still_maps` can no longer end the suite. The two class-by-reference
+  fixtures need no skip, and their test modules say why.
+- **Tests and docs.** The unit suite grows from 2,079 to 2,100 and the suite from 2,211 to 2,232.
+  docs/29 gains a 2026-11-08 group; docs/06 §7, docs/10 §7-8, docs/18 §5.2 and §7, docs/19 and
+  docs/26 §26.7 describe the new behaviour. The code size in docs/14 is re-measured.

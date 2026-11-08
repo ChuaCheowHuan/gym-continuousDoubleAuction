@@ -24,6 +24,7 @@ from gym_continuousDoubleAuction.train.policy.policy_handler import (
 from gym_continuousDoubleAuction.train.config import TrainConfig, ENV_NAME
 from gym_continuousDoubleAuction.train.checkpoint import (
     check_pickled_classes_load,
+    check_python_version,
     restore_candidates,
     _read_league_state,
     _fix_checkpoint_optimizer_betas,
@@ -315,6 +316,9 @@ def build_algo(cfg: TrainConfig):
         # action layout can never be resumed into this one, and falling back
         # to an older save would only find the same layout again.
         sidecar = _read_league_state(path)
+        # Likewise one written by another Python minor, whose pickles may not
+        # load - or may crash the process - before any shape is checked (#367).
+        check_python_version(sidecar, path)
         check_layout_stamp(sidecar, path, book_mode=cfg.book_mode)
         # Likewise a checkpoint trained with an extension that is not installed
         # here: unpickling it would fail inside RLlib, on every older save too.

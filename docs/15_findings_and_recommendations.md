@@ -36,6 +36,8 @@ mindmap
       R-11 what obs and action mean in the episode record
       R-18 per-agent probe corpus - refused for scoring
       R-19 stream switches agent only on termination
+    Decision from the 2026-11-08 review
+      pin python_requires to 3.12, or support 3.13
     Remainders of fixed findings
       grad_clip unset
       no agent identity in the observation
@@ -74,6 +76,15 @@ Continual Backprop: CBP is now the [cda-cbp](https://github.com/ChuaCheowHuan/cd
 whose own validation refuses that combination, and synchronising the choice across learners is
 work for that package ([#182](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/182))
 ([30](30_extensions.md) §8, [17](17_changelog.md) §100).
+
+### Open from the 2026-11-08 review
+
+**The Python-version decision is still open.** A checkpoint written by
+Python 3.12 can fail - or segfault the test process - under 3.13 (#353). The code and test halves
+are fixed and in [29](29_fixed_issues.md#from-the-2026-11-08-review): every save now stamps its
+interpreter and a mismatch is refused before unpickling (#367), and the one 3.12-pickled fixture
+test skips on another minor (#368). What remains is the choice in #369: pin `python_requires` to
+3.12, or support 3.13 and its CI job. That needs a decision, so it is `human`.
 
 ---
 

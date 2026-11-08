@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 from typing import List, Optional, Tuple
 import torch
 from gym_continuousDoubleAuction.envs.layout_version import LAYOUT_KEY, layout_stamp
@@ -45,6 +46,13 @@ CHECKPOINT_TMP_SUFFIX = ".tmp"
 
 #: Champion bookkeeping, written beside each checkpoint. See `_write_league_state`.
 LEAGUE_STATE_FILE = "league_state.json"
+
+
+#: The interpreter's `(major, minor)` as a JSON list, written beside each
+#: checkpoint (issue #367). A checkpoint's cloudpickled classes and code are tied
+#: to the Python that wrote them: a 3.12 pickle restored under 3.13 either fails
+#: to unpickle or, worse, loads and crashes the process (docs/15 #353/#368).
+PYTHON_VERSION_KEY = "python"
 
 
 #: Checkpoint roots already reported as holding an old-layout checkpoint, so the
@@ -234,6 +242,10 @@ def _write_league_state(path: str, algo, iteration: int) -> None:
     # by name at `build_algo`, before RLlib gets as far as a tensor shape.
     env_config = getattr(getattr(algo, "config", None), "env_config", None) or {}
     state[LAYOUT_KEY] = layout_stamp(env_config.get("book_mode"))
+    # The interpreter that wrote the pickles in this checkpoint (issue #367).
+    # Read before anything is unpickled; a checkpoint from another minor is
+    # refused by name rather than left to fail (or crash) inside RLlib.
+    state[PYTHON_VERSION_KEY] = list(sys.version_info[:2])
     # Which installed extensions (docs/30) trained these weights. Only written
     # when there are any, so a default run's sidecar is unchanged; read back by
     # `extensions.check_installed` before a restore touches RLlib.
@@ -254,6 +266,70 @@ def _read_league_state(path: str) -> Optional[dict]:
     except (OSError, ValueError) as exc:
         logger.warning("could not read %s: %s", state_file, exc)
         return None
+
+
+def check_python_version(sidecar, path: str) -> None:
+    """Refuse a checkpoint written by another Python minor before it is unpickled.
+
+    A cloudpickled class carries bytecode and object layouts from the
+    interpreter that wrote it. Restoring a 3.12 checkpoint under 3.13 does not
+    always fail cleanly: one fixture test segfaults, which ends the whole pytest
+    process (docs/15 #353). The sidecar records `(major, minor)` beside the
+    layout stamp, so the mismatch is named here - before `cloudpickle.load` or
+    `Algorithm.from_checkpoint` touches the checkpoint - with both versions and
+    the way out.
+
+    Args:
+        sidecar: the parsed `league_state.json`, or None when the checkpoint has
+            none. No sidecar means no stamp either (the old single-directory
+            layout); it warns and proceeds.
+        path: the checkpoint directory, for the message.
+
+    Raises:
+        ValueError: the recorded `(major, minor)` is not this interpreter's.
+    """
+    if sidecar is None:
+        logger.warning(
+            "%s has no %s, so no Python version stamp. It is being loaded by "
+            "Python %s.%s; if unpickling fails, restore it with the interpreter "
+            "that wrote it.",
+            path,
+            LEAGUE_STATE_FILE,
+            sys.version_info[0],
+            sys.version_info[1],
+        )
+        return
+    recorded = sidecar.get(PYTHON_VERSION_KEY)
+    current = list(sys.version_info[:2])
+    if recorded is None:
+        # Written before the stamp existed. Load it the way it always loaded,
+        # but say that the reason a restore can fail is now known.
+        logger.warning(
+            "%s has no Python version stamp (written before this check). It is "
+            "being loaded by Python %s.%s; if unpickling fails, restore it with "
+            "the interpreter that wrote it.",
+            path,
+            current[0],
+            current[1],
+        )
+        return
+    try:
+        recorded = [int(part) for part in recorded]
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"Cannot restore {path}: its {LEAGUE_STATE_FILE} has a malformed "
+            f"{PYTHON_VERSION_KEY} version stamp {recorded!r}. It should be a "
+            f"two-item list such as [3, 12]."
+        ) from None
+    if recorded != current:
+        raise ValueError(
+            f"Cannot restore {path}: it was written by Python "
+            f"{recorded[0]}.{recorded[1]}, and this is Python {current[0]}.{current[1]}. "
+            "A checkpoint's pickled classes and bytecode belong to the interpreter "
+            f"that wrote them. Restore it with Python {recorded[0]}.{recorded[1]} "
+            "(the interpreter that wrote it), or train a fresh run under this one "
+            "(is_restore false)."
+        )
 
 
 def _present_module_ids(algo) -> Optional[set]:

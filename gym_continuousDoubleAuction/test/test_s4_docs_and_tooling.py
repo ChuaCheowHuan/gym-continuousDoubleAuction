@@ -243,3 +243,51 @@ class TestThePr308ReviewFindings:
         for i in groups:
             head = " ".join(lines[i : i + 6])
             assert "section numbers" in head and "this document" in head, lines[i]
+
+
+class TestThe20261108ReviewHardening:
+    """#357/#362-#365: the security items that are configuration and prose."""
+
+    @staticmethod
+    def _workflow():
+        return open(".github/workflows/tests.yml", encoding="utf-8").read()
+
+    def test_the_token_is_read_only_and_every_action_is_sha_pinned(self):
+        workflow = self._workflow()
+        assert re.search(r"^permissions:\n  contents: read$", workflow, re.M)
+        uses = re.findall(r"^ +- uses: +(\S+)(.*)$", workflow, re.M)
+        assert uses, "no `uses:` steps found"
+        for action, tail in uses:
+            assert re.fullmatch(r"[^@]+@[0-9a-f]{40}", action), action
+            assert re.search(r"#\s*v\d+", tail), f"{action} has no tag comment"
+
+    def test_dependabot_keeps_the_action_pins_current(self):
+        dependabot = open(".github/dependabot.yml", encoding="utf-8").read()
+        assert "github-actions" in dependabot
+        assert re.search(r"interval:\s*\"?weekly", dependabot)
+
+    def test_ci_audits_the_lockfile(self):
+        workflow = self._workflow()
+        assert "pip-audit -r requirements-lock.txt --no-deps --disable-pip" in workflow
+
+    def test_the_docker_usage_keeps_jupyter_local_and_warns_about_the_socket(self):
+        ml = open("docker/ml/dockerfile_ray_torch", encoding="utf-8").read()
+        assert "-p 127.0.0.1:8888:8888" in ml
+        assert "root-equivalent" in ml or "loopback" in ml
+        gemini = open("docker/gemini/dockerfile", encoding="utf-8").read()
+        assert "root-equivalent" in gemini
+        docs = open("docs/19_docker.md", encoding="utf-8").read()
+        assert "-p 127.0.0.1:8888:8888" in docs
+
+    def test_every_checkpoint_loader_warns_that_it_unpickles_code(self):
+        for relative in (
+            "gym_continuousDoubleAuction/train/cli.py",
+            "gym_continuousDoubleAuction/train/evaluate.py",
+            "gym_continuousDoubleAuction/train/export.py",
+            "gym_continuousDoubleAuction/train/probe/__main__.py",
+        ):
+            source = open(relative, encoding="utf-8").read()
+            assert "produced or trust" in source, relative
+        for relative in ("docs/18_configuration.md", "docs/26_runbook.md"):
+            text = open(relative, encoding="utf-8").read()
+            assert "weights_only=True" in text, relative

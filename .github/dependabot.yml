@@ -1,0 +1,13 @@
+# Keep the workflow's SHA-pinned actions current. `.github/workflows/tests.yml`
+# pins each `uses:` to a full commit SHA so a moved tag cannot change what CI
+# runs; this is what moves the pins when the action releases (docs/15 #363).
+#
+# pip is not listed here: the repository's Dependabot security-update setting
+# already opens the PRs for a vulnerable pin (it opened #352, the msgpack bump
+# that closed #366).
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

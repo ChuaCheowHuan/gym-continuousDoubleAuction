@@ -137,6 +137,22 @@ class TestWhatIsMasked:
         m1 = _mask(env, obs, "agent_1")
         assert m1["can_bid_limit"] == 1.0 and m1["can_ask_limit"] == 1.0
 
+    def test_a_deep_bid_is_possible_when_only_it_is_affordable(self):
+        """#356: the bid limit bit was judged at the reference price, so a
+        near-broke trader could not post a deeper bid it could afford."""
+        env = _env()
+        obs, _ = env.reset(seed=1)
+        a = env.traders[0]
+        reference = env.reference_price()
+        cheapest = env._cheapest_limit_bid()
+        assert cheapest < reference
+        a.acc.cash = a.acc.cash.__class__(cheapest)
+        assert not a._order_approved("bid", env.min_size, reference, env.LOB, "limit")
+        assert a._order_approved("bid", env.min_size, cheapest, env.LOB, "limit")
+
+        obs, *_ = env.step(_pass(env))
+        assert _mask(env, obs)["can_bid_limit"] == 1.0
+
     def test_a_position_can_be_closed_without_cash(self):
         env = _env()
         a, b = env.traders
@@ -151,20 +167,23 @@ class TestWhatIsMasked:
 
     def test_the_mask_agrees_with_the_cash_check(self):
         """Random play: every step, a category the mask allows for a limit
-        order at the reference and minimum size is one `_order_approved`
-        would approve, and one it masks is one it would refuse."""
+        order at the price it is judged at (the cheapest bid, the reference
+        ask) and minimum size is one `_order_approved` would approve, and one
+        it masks is one it would refuse (#356)."""
         env = _env(num_of_agents=4, init_cash=2000, max_step=60)
         for _ in range(60):
             obs, _, dones, truncs, _ = env.step(
                 {agent: env.action_spaces[agent].sample() for agent in env.agents}
             )
             R = env.reference_price()
+            cheapest_bid = env._cheapest_limit_bid()
             for trader in env.traders:
                 if trader.acc.nav <= 0:
                     continue
                 m = _mask(env, obs, f"agent_{trader.ID}")
                 for side in ("bid", "ask"):
-                    ok = trader._order_approved(side, env.min_size, R, env.LOB, "limit")
+                    price = cheapest_bid if side == "bid" else R
+                    ok = trader._order_approved(side, env.min_size, price, env.LOB, "limit")
                     assert m[f"can_{side}_limit"] == float(ok), (side, m)
             if dones["__all__"] or truncs["__all__"]:
                 break

@@ -98,6 +98,7 @@ class EnvSettings:
     def __post_init__(self) -> None:
         if self.num_of_agents < 1:
             raise ValueError(f"num_of_agents must be at least 1; got {self.num_of_agents!r}.")
+        self._check_order_shape()
         # Validated here so a bad schedule fails at construction, before the book is
         # built; `Account` validates again for callers that skip the env.
         validate_fee_rates(self.maker_fee_bps, self.taker_fee_bps)
@@ -121,6 +122,43 @@ class EnvSettings:
         elif self.max_step < 1:
             raise ValueError(
                 f"episode_length_mode 'fixed' needs max_step >= 1; got {self.max_step!r}."
+            )
+
+    def _check_order_shape(self) -> None:
+        """Refuse order-shape values the exchange cannot honour (issue #354).
+
+        These keys had no validation at all, so a bad value was accepted at
+        construction and failed later, far from its cause: `min_size: 0` crashed
+        on the first order with `quantity must be > 0`, `tick_size: 0` raised
+        `DivisionByZero` while building the price grid, `n_hist: 0` raised a
+        numpy concatenate error while building the observation, and
+        `min_size > mkt_max_size` made market-order sizes negative. Each check
+        names the key and the value that was refused, as docs/18 §7 item 4
+        requires.
+        """
+        try:
+            tick_ok = self.tick_size > 0
+        except TypeError:
+            tick_ok = False
+        if not tick_ok:
+            raise ValueError(f"tick_size must be a number > 0; got {self.tick_size!r}.")
+        if self.min_size < 1:
+            raise ValueError(f"min_size must be at least 1; got {self.min_size!r}.")
+        if self.mkt_max_size < self.min_size:
+            raise ValueError(
+                f"mkt_max_size must be at least min_size ({self.min_size}); "
+                f"got {self.mkt_max_size!r}."
+            )
+        if self.limit_size_multiple < 1:
+            raise ValueError(
+                f"limit_size_multiple must be at least 1; got {self.limit_size_multiple!r}."
+            )
+        if self.n_hist < 1:
+            raise ValueError(f"n_hist must be at least 1; got {self.n_hist!r}.")
+        if self.initial_price_min < self.tick_size:
+            raise ValueError(
+                f"initial_price_min must be at least tick_size ({self.tick_size!r}); "
+                f"got {self.initial_price_min!r}."
             )
 
     def _check_market_variety(self) -> None:
@@ -167,7 +205,18 @@ class EnvSettings:
 
     @classmethod
     def from_config(cls, config: Mapping[str, Any]) -> "EnvSettings":
-        """Every key from `config`, else from `config/env_defaults.json`; validated."""
+        """Every key from `config`, else from `config/env_defaults.json`; validated.
+
+        A key outside `EnvSettings.keys()` raises rather than being ignored. A
+        direct env config is the path RLlib users and the test fixtures take,
+        and unlike `TrainConfig.from_json` it had no unknown-key check, so a
+        typo such as `init_cahs` silently fell back to the default (issue #354).
+        """
+        unknown = sorted(set(config) - set(cls.keys()))
+        if unknown:
+            raise ValueError(
+                f"unknown env config keys {unknown}. Valid keys: {sorted(cls.keys())}"
+            )
         values = {key: config[key] if key in config else env_default(key) for key in cls.keys()}
         # The horizon bounds are integers whatever a JSON or CLI source handed over.
         values["max_step_min"] = int(values["max_step_min"])

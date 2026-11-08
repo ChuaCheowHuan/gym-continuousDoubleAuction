@@ -312,7 +312,11 @@ def evaluate(
     from gym_continuousDoubleAuction.envs.layout_version import check_layout_stamp
     from gym_continuousDoubleAuction.train import extensions
     from gym_continuousDoubleAuction.train.checkpoint import check_pickled_classes_load
-    from gym_continuousDoubleAuction.train.train import _read_league_state, register_env
+    from gym_continuousDoubleAuction.train.train import (
+        _read_league_state,
+        check_python_version,
+        register_env,
+    )
 
     # Ray reads a bare relative path as a URI with no scheme and raises (#316).
     path = os.path.abspath(checkpoint)
@@ -320,6 +324,9 @@ def evaluate(
     # layout, or trained with an extension or class missing here, is named
     # before RLlib swallows the unpickle error and builds with no config (#336).
     sidecar = _read_league_state(path)
+    # Before RLlib unpickles anything, not after: a 3.12 checkpoint under 3.13
+    # can fail or crash the process rather than raise (#367).
+    check_python_version(sidecar, path)
     check_layout_stamp(sidecar, path)
     extensions.check_installed(sidecar, path)
     check_pickled_classes_load(path)
@@ -356,7 +363,12 @@ def main(argv=None) -> int:
         description="Roll episodes with a trained checkpoint's policies and report what "
         "they do. See docs/26 section 26.10.",
     )
-    p.add_argument("--checkpoint", required=True, help="One iter_<n> directory.")
+    p.add_argument(
+        "--checkpoint",
+        required=True,
+        help="One iter_<n> directory. A checkpoint stores pickled code and RLlib "
+        "unpickles it, so only load one you produced or trust.",
+    )
     p.add_argument("--episodes", type=int, default=_cli("episodes"))
     p.add_argument(
         "--seed",

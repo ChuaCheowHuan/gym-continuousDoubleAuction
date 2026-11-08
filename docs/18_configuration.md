@@ -288,6 +288,11 @@ change the observation or action layout, so a checkpoint restores across them.
 `limit_max_size` and the two `*_size_mul` values are **derived**, not configured.
 `limit_size_multiple` was previously the single-letter attribute `Action_Helper.N`.
 
+The three are validated at construction: `min_size >= 1`, `mkt_max_size >= min_size` and
+`limit_size_multiple >= 1`. A smaller `mkt_max_size` makes `mkt_size_mul` negative, so market
+orders come out below `min_size` or with a negative size, and the env refuses it by name rather
+than letting that happen mid-episode (docs/29 #354).
+
 ### 3.2 Reward coefficients
 
 Every coefficient multiplies a quantity already expressed as a **fraction of the trader's
@@ -693,6 +698,17 @@ counter, the matchmaking pool — lives on the cloudpickled callback, and surviv
 modules that actually came back, and any repair is printed. See
 [08_self_play_league.md](08_self_play_league.md).
 
+**Only load a checkpoint you produced or trust.** A checkpoint is not a passive data file: RLlib
+unpickles its `class_and_ctor_args` with `ray.cloudpickle` (and the pickled callback and config
+with it), so a checkpoint folder from someone else can run arbitrary code when restored. This is
+inherent to RLlib, not specific to this package, and it applies to `train.train --restore` and
+`--from-checkpoint`, `train.evaluate --checkpoint`, `train.export --checkpoint` and the probe's
+`--checkpoint`. The one safe exception here is the pretrained-encoder weights path, which uses
+`torch.load(..., weights_only=True)` and reconstructs no classes. The sidecar also records the
+Python `(major, minor)` that wrote the checkpoint: a restore under another minor is refused by
+name before anything is unpickled, and a checkpoint from before the stamp loads with a warning
+([29](29_fixed_issues.md#from-the-2026-11-08-review), #362/#367).
+
 **Choosing a checkpoint.** `restore_path` null — the default — takes the newest readable
 checkpoint, which is what a disconnect wants. Name one to go back further:
 
@@ -1071,7 +1087,11 @@ which is the only thing that constructs prices — `_set_price` builds them as
 
 One value: the configured `tick_size` is `Action_Helper.min_tick`, `reset()` keeps it, and the
 book takes no tick of its own. There is no rounding or tick validation anywhere in the matching
-path; the grid is the action layer's alone.
+path; the grid is the action layer's alone. `EnvSettings` does validate the value itself:
+`tick_size` must be a number greater than zero, and `initial_price_min` must be at least one tick,
+so a zero, negative or absurdly large tick is refused at construction rather than producing
+`DivisionByZero` or prices below one tick (docs/29 #354). Any positive value is accepted, fractional
+ones included, and `TrainConfig.tick_size` is annotated `float` for that reason (#355).
 
 **Every price the action layer emits is on this grid, for any tick.** `_set_price` snaps its
 result to `min_tick` in `Decimal` before returning it, `agg_LOB_raw` is float64, and
@@ -1100,7 +1120,10 @@ replayed real order flow, an external feed.
    so a field without a key (or a key without a field) fails the suite.
 4. If the code cannot honour every value the key could take — a cardinality wired to a mapping, a
    count that has to be odd — validate it and raise. A structural value that is silently ignored is
-   worse than a literal, because the file claims it works.
+   worse than a literal, because the file claims it works. `EnvSettings._check_order_shape` is the
+   worked example: `tick_size`, `min_size`, `mkt_max_size`, `limit_size_multiple`, `n_hist` and
+   `initial_price_min` are each checked at construction, naming the key, and an unknown env-config
+   key is refused rather than replaced by its default (docs/29 #354).
 
 ---
 

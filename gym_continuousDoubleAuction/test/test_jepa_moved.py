@@ -17,6 +17,11 @@ so that nothing written before the move breaks silently:
 
 The checks that need the package are skipped without it, and the ones that need
 its absence are skipped with it: gym-CDA's CI installs no extension.
+
+`fixtures/jepa_classes_98c4900.pkl` holds its classes *by reference* (module
+path at unpickle time, no bytecode), unlike `callback_before_league.pkl` in
+`test_refactors.py`, so it is safe to load under another Python minor and needs
+no version skip (#368).
 """
 
 import importlib.util

@@ -158,7 +158,9 @@ def main(argv=None):
         "--checkpoint",
         type=str,
         default=None,
-        help="An iter_<n> checkpoint directory, scored alongside the untrained encoders.",
+        help="An iter_<n> checkpoint directory, scored alongside the untrained "
+        "encoders. A checkpoint stores pickled code, which loading unpickles: "
+        "only load one you produced or trust.",
     )
     p.add_argument("--module-id", type=str, default=_cli("module_id"))
     p.add_argument(

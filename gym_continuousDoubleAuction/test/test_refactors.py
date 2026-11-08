@@ -8,6 +8,7 @@ cannot quietly drift back.
 import ast
 import inspect
 import os
+import sys
 from decimal import Decimal
 
 import numpy as np
@@ -505,6 +506,15 @@ class TestEnvSettings:
                 "needs 1 <= max_step_min <= max_step_max",
             ),
             ({"episode_length_mode": "fixed", "max_step": 0}, "needs max_step >= 1"),
+            # The order-shape keys (#354). Each used to be accepted and then fail
+            # mid-episode, far from the key that caused it.
+            ({"tick_size": 0}, "tick_size must be a number > 0"),
+            ({"tick_size": -1}, "tick_size must be a number > 0"),
+            ({"min_size": 0}, "min_size must be at least 1"),
+            ({"min_size": 50, "mkt_max_size": 10}, "mkt_max_size must be at least min_size"),
+            ({"limit_size_multiple": 0}, "limit_size_multiple must be at least 1"),
+            ({"n_hist": 0}, "n_hist must be at least 1"),
+            ({"initial_price_min": 0, "tick_size": 1}, "initial_price_min must be at least"),
         ],
     )
     def test_a_bad_value_is_refused_naming_the_key(self, override, message):
@@ -512,6 +522,15 @@ class TestEnvSettings:
 
         with pytest.raises(ValueError, match=message):
             EnvSettings.from_config(override)
+
+    def test_an_unknown_key_is_refused_rather_than_ignored(self):
+        """`init_cahs` used to fall back to the default silently (#354)."""
+        from gym_continuousDoubleAuction.envs.settings import EnvSettings
+
+        with pytest.raises(ValueError, match="unknown env config keys.*init_cahs"):
+            EnvSettings.from_config({"init_cahs": 1})
+        with pytest.raises(ValueError, match="nonsense"):
+            EnvSettings.from_config({"nonsense": 1})
 
     def test_the_horizon_is_the_latest_possible_end(self):
         from gym_continuousDoubleAuction.envs.settings import EnvSettings
@@ -873,10 +892,29 @@ class TestTheCallbackIsComposed:
 
 
 class TestACheckpointWrittenBeforeTheSplitStillLoads:
-    """#253: a callback is cloudpickled into every checkpoint; the new class must read the old one."""
+    """#253: a callback is cloudpickled into every checkpoint; the new class must read the old one.
+
+    `fixtures/callback_before_league.pkl` was written by Python 3.12 and holds
+    cloudpickled *bytecode*. Loading it under another Python minor is not a
+    supported operation: on 3.13 `test_its_mapping_function_still_maps` segfaults,
+    and a segfault ends the whole pytest process rather than failing one test
+    (#368). Skip the three fixture tests on any other minor; the fourth test in
+    this class builds its callback from the current source and runs everywhere.
+    """
 
     FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "callback_before_league.pkl")
+    #: The interpreter that wrote `FIXTURE` (docs/15 #353/#368).
+    FIXTURE_PYTHON = (3, 12)
+    needs_fixture_python = pytest.mark.skipif(
+        sys.version_info[:2] != FIXTURE_PYTHON,
+        reason=(
+            f"fixtures/callback_before_league.pkl holds Python "
+            f"{FIXTURE_PYTHON[0]}.{FIXTURE_PYTHON[1]} cloudpickled bytecode; loading it "
+            f"under {sys.version_info[0]}.{sys.version_info[1]} can segfault the suite"
+        ),
+    )
 
+    @needs_fixture_python
     def test_a_real_pickle_from_the_previous_source_loads_and_keeps_its_league(self):
         import pickle
 
@@ -891,6 +929,7 @@ class TestACheckpointWrittenBeforeTheSplitStillLoads:
         assert cb.markout_horizons == (1, 5) and cb.num_trainable == 2
         assert cb.min_champion_trades == 1.0 and cb.promotion_reference == "pooled"
 
+    @needs_fixture_python
     def test_its_mapping_function_still_maps(self):
         import pickle
 
@@ -911,6 +950,7 @@ class TestACheckpointWrittenBeforeTheSplitStillLoads:
             "champion_1",
         }
 
+    @needs_fixture_python
     def test_the_restored_callback_keeps_working_and_can_be_pickled_again(self):
         import pickle
 

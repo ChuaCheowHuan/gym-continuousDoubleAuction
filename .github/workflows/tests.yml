@@ -3,12 +3,21 @@ name: tests
 # Replaces the old .travis.yml, which pinned Python 3.7.7 and ran two scripts
 # that no longer exist (gym_continuousDoubleAuction/test/test_OrderBook.py and
 # test_cda_nsp.py).
+#
+# Actions are pinned to a full commit SHA with the tag in a trailing comment;
+# .github/dependabot.yml bumps the pins weekly. Do not replace one with a tag.
 
 on:
   push:
     branches: [master]
   pull_request:
   workflow_dispatch:
+
+# Nothing here writes to the repository, so neither job needs more than read
+# access to the checkout. Without this block the GITHUB_TOKEN gets the
+# repository's default scope (docs/15 #363).
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -19,9 +28,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.12"
           cache: pip
@@ -34,6 +43,16 @@ jobs:
           pip install torch==2.13.0 --extra-index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements.txt
           pip install -e ".[dev]"
+
+      - name: Audit the lockfile
+        # Dependabot opens a PR for a vulnerable pin; this fails the build if
+        # one is present, which is the part Dependabot does not do. `--no-deps`
+        # audits exactly the pins in the lockfile; a finding with no fix yet
+        # gets an explicit `--ignore-vuln <ID>` with the reason beside it, not a
+        # loosened check (docs/15 #365, docs/10 section 7).
+        run: |
+          python -m pip install pip-audit
+          pip-audit -r requirements-lock.txt --no-deps --disable-pip
 
       - name: Env + order book unit tests
         run: python -m pytest gym_continuousDoubleAuction/test -q
@@ -58,9 +77,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.12"
           cache: pip

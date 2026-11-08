@@ -129,10 +129,16 @@ def _coerce(name: str, raw: str, annotation: str):
         return _parse_container(name, raw, dict if container == "dict" else list)
     if "bool" in annotation:
         return _parse_bool(name, raw)
-    if "int" in annotation:
-        return int(raw)
-    if "float" in annotation:
-        return float(raw)
+    try:
+        if "int" in annotation:
+            return int(raw)
+        if "float" in annotation:
+            return float(raw)
+    except ValueError as exc:
+        # A raw traceback here said `invalid literal for int()` and left the
+        # reader to work out which field and which spelling. Every other
+        # `--set` error names both and exits through `SystemExit` (issue #355).
+        raise SystemExit(f"--set {name}: expected {annotation}, got {raw!r} ({exc})") from exc
     return raw
 
 

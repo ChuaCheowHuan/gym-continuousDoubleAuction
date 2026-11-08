@@ -146,6 +146,19 @@ class TestParseOverrides:
             "action_mask": False,
         }
 
+    def test_a_fractional_tick_is_a_float(self):
+        """`tick_size` was annotated int, so the parser chose `int()` and
+        `--set tick_size=0.5` raised `invalid literal for int()` although
+        fractional ticks are supported and tested (#355)."""
+        assert compare.parse_overrides(["tick_size=0.5"]) == {"tick_size": 0.5}
+        assert compare.parse_overrides(["tick_size=1"]) == {"tick_size": 1.0}
+
+    def test_an_unparseable_scalar_names_the_field_and_exits(self):
+        with pytest.raises(SystemExit, match="--set tick_size: expected float"):
+            compare.parse_overrides(["tick_size=half"])
+        with pytest.raises(SystemExit, match="--set max_step: expected int"):
+            compare.parse_overrides(["max_step=soon"])
+
 
 class TestFinalCheckpoint:
     """The checkpoint a run is scored by is the one *it* wrote last.

@@ -132,6 +132,16 @@ def load_module(checkpoint: str, module_id: str) -> RLModule:
         FileNotFoundError: if no module directory is found.
     """
     path = _module_path(checkpoint, module_id)
+    # The checkpoint's sidecar records the Python that wrote it; a mismatch is
+    # refused before `RLModule.from_checkpoint` unpickles it (#367). A bare
+    # module directory has no sidecar of its own, and is left as it was.
+    from gym_continuousDoubleAuction.train.checkpoint import (
+        _read_league_state,
+        check_python_version,
+    )
+
+    if not _is_module_dir(checkpoint):
+        check_python_version(_read_league_state(os.path.abspath(checkpoint)), checkpoint)
     logger.info("loading module from %s", path)
     # Ray reads a bare relative path as a URI with no scheme and raises (#316).
     return RLModule.from_checkpoint(os.path.abspath(path))

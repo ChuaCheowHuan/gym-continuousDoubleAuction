@@ -65,14 +65,22 @@ def _parse_args(argv=None) -> TrainConfig:
         "Too low and the iteration discards its rollouts and trains on "
         "nothing; watch for 'No samples returned from remote workers'.",
     )
-    p.add_argument("--restore", action="store_true", dest="is_restore", default=argparse.SUPPRESS)
+    p.add_argument(
+        "--restore",
+        action="store_true",
+        dest="is_restore",
+        default=argparse.SUPPRESS,
+        help="Resume from the newest checkpoint. A checkpoint stores pickled "
+        "code and RLlib unpickles it, so only restore one you produced or trust.",
+    )
     p.add_argument(
         "--from-checkpoint",
         type=str,
         dest="restore_path",
         default=argparse.SUPPRESS,
         help="Resume from this checkpoint directory (one iter_* save, not the "
-        "directory holding them) instead of the newest. Implies --restore.",
+        "directory holding them) instead of the newest. Implies --restore. A "
+        "checkpoint stores pickled code: only load one you produced or trust.",
     )
     p.add_argument("--chkpt-freq", type=int, default=argparse.SUPPRESS)
     p.add_argument(

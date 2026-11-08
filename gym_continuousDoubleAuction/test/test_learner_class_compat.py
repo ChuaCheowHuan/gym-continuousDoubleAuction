@@ -14,6 +14,12 @@ package, rather than with a bare AttributeError from inside pickle.
 
 `fixtures/learner_classes_f7c1353.pkl` holds `_learner_class(...)` cloudpickled
 on master at f7c1353, before any of the code moved, for five configs.
+
+Unlike `callback_before_league.pkl` (see `test_refactors.py`), this fixture holds
+its classes *by reference*: every nested pickle resolves a module path with
+`STACK_GLOBAL`, and no object carries bytecode. Loading it under another Python
+minor therefore cannot execute 3.12 bytecode, so it needs no version skip
+(#368).
 """
 
 import importlib.util

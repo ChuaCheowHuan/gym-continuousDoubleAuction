@@ -352,11 +352,17 @@ class Action_Helper(SharedState):
           resting - the "unmatched" dead action, which `num_unmatched_step`
           counts and which 27-30% of random agent-steps used to be.
         * a `market` or `limit` order the cash check would refuse for the
-          minimum size at the reference price - the "rejected" dead action.
-          Judged by the same `Trader._order_approved` that judges the order,
-          so the mask and the refusal cannot disagree about what is affordable
-          at that price; a larger size or a worse price may still be refused,
-          and that residue stays counted in `num_rejected_step`.
+          minimum size - the "rejected" dead action. Market orders and asks are
+          judged at the reference price (asks at the reference are the
+          documented residue: the mask permits some they cannot place, because
+          an ask needs no cash to open). A limit **bid** is judged at the
+          cheapest price its price head can produce, not at the reference: the
+          price code runs from the reference down to the deepest level, so a
+          trader with cash for a deeper bid but not one at the reference had
+          every limit bid masked (issue #356). Judged by the same
+          `Trader._order_approved` that judges the order; a larger size or a
+          more expensive price may still be refused, and that residue stays
+          counted in `num_rejected_step`.
 
         Pass (category 0) is always possible, so the mask never empties. With
         `action_mask` off every entry is 1.0: the layout is the same and only
@@ -377,10 +383,29 @@ class Action_Helper(SharedState):
                 continue
             if reference is None:
                 reference = self.reference_price()
-            price = -1.0 if kind == "market" else reference
+            if kind == "market":
+                price = -1.0
+            elif side == "bid":
+                # The price head's cheapest bid, not the reference: a deeper
+                # bid is affordable when one at the reference is not (#356).
+                price = self._cheapest_limit_bid()
+            else:
+                price = reference
             if not trader._order_approved(side, self.min_size, price, self.LOB, kind):
                 mask[category] = 0.0
         return mask
+
+    def _cheapest_limit_bid(self) -> float:
+        """The lowest price the price head can quote for a limit bid.
+
+        `price` runs over `k_rows` levels and `price_offset` over its codes; in
+        `grid` mode the deepest level with the most passive offset is
+        `R - k_rows * tick`, and in `levels` mode the deepest occupied (or
+        ghost) price minus one tick, both clamped to at least one tick.
+        `_set_price` is the one definition of that mapping, so the mask cannot
+        disagree with the order it is judging about which price a code names.
+        """
+        return self._set_price(self.min_tick, "bid", self.k_rows - 1, 0)
 
     def _neutral_price_offset(self):
         """The 'join' offset code: the middle of the price_offset codes."""
