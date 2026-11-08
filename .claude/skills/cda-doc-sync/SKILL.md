@@ -42,5 +42,6 @@ They drift. Work from the code, not from the docs.
 - Counts move together. A new test file changes the unit total, the suite total, the line count in
   doc 14 and the inventory in doc 10.
 - Commit docs separately from code (atomic commits), after the code and tests.
-- A test that fails when a config key or CLI flag is documented nowhere would turn steps 1 and 2
-  into CI. Issues #249 and #250 track the undocumented keys and flags.
+- `test_s4_docs_and_tooling.py` already fails when a config key or CLI flag is documented
+  nowhere, and `test_links.py` runs the link check, so steps 2 and 5 are partly in CI. The
+  number categories are not; run the scripts.
