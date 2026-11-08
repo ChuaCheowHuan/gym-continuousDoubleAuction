@@ -4676,3 +4676,12 @@ No code under `envs/` or `train/` changed.
 - **Removed:** `docs/README_v1.md` and `docs/pic/`. Both are on the `original_v1` branch, whose
   README the top-level README and the docs map now link. The four links to it in this file now
   point at that branch; the text is unchanged.
+
+## 115. msgpack 1.2.3 in the lockfile (2026-11-08)
+
+Dependabot PR #352 merged, closing #366. `requirements-lock.txt` pins `msgpack==1.2.3` (was
+1.2.1), which fixes GHSA-j586-36cw-2gc2 (CVE-2026-114613) and the C-extension use-after-free
+bugs in `Unpacker.skip()` and `unpackb()`. msgpack comes in through Ray, which allows
+`msgpack>=1.0.0,<2.0.0`; the repo's own code does not import it. No code under `envs/` or
+`train/` changed. msgpack 1.2.4 was already on PyPI at merge time; Dependabot has not opened a
+bump for it yet.
