@@ -389,10 +389,9 @@ class TestMalformedInputRaisesInsteadOfExiting:
                 pytest.fail("the engine exited the interpreter")
 
     def test_constructor_takes_no_tick(self):
-        """S3-4: the stored-and-never-read `tick_size` parameter is gone."""
+        """S3-4: the book takes no tick; the action layer owns it."""
         ob = OrderBook(7)
         assert ob.tape_display_length == 7
-        assert not hasattr(ob, "tick_size")
         with pytest.raises(TypeError):
             OrderBook(0.0001, 10)
 

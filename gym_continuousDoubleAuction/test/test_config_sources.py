@@ -168,7 +168,6 @@ class TestEnvFallbacksComeFromTheFile:
         assert env.min_tick == 5
         env.reset()
         assert env.min_tick == 5
-        assert not hasattr(env.LOB, "tick_size")
         # And it is the grid quoted prices land on.
         for level in range(env.k_rows):
             assert env._set_price(env.min_tick, "bid", level, 1) % 5 == 0

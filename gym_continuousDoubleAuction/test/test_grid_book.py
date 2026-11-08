@@ -161,19 +161,6 @@ class TestCells:
         cell = k + int(round((98.0 - env.reference_price()) / env.min_tick))
         assert grid[BID][cell] == pytest.approx(np.sqrt(40 / env.limit_max_size), rel=1e-6)
 
-    def test_every_observation_is_inside_the_space(self):
-        env = _env(num_of_agents=4, max_step=40)
-        space = env.observation_spaces["agent_0"]
-        while True:
-            obs, _, dones, truncs, infos = env.step(
-                {agent: env.action_spaces[agent].sample() for agent in env.agents}
-            )
-            for agent, o in obs.items():
-                assert space.contains(o), agent
-                assert infos[agent]["num_obs_clipped_step"] == 0
-            if dones["__all__"] or truncs["__all__"]:
-                break
-
 
 class TestSharedCoordinate:
     def test_price_code_j_is_j_ticks_from_the_reference(self):

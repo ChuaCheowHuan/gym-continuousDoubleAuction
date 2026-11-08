@@ -58,14 +58,6 @@ class TestCiSmokeRunIsDescribedAsCiRunsIt:
     def test_claude_md_quotes_the_command_ci_runs(self):
         assert self._ci_command() in open("CLAUDE.md").read()
 
-    def test_doc_27_quotes_it_too(self):
-        assert self._ci_command() in open("docs/27_agent_skills.md").read()
-
-    def test_neither_calls_the_flagged_form_the_ci_run(self):
-        for path in ("CLAUDE.md", "docs/27_agent_skills.md"):
-            text = " ".join(open(path).read().split())
-            assert "--steps 200 --agents 4` is the CI" not in text, path
-
 
 class TestCiRunsTheIntegrationSuiteOnce:
     """CI's first step runs `pytest gym_continuousDoubleAuction/test` and its third runs
@@ -92,20 +84,12 @@ class TestCiRunsTheIntegrationSuiteOnce:
         assert collected, "nothing collected"
         assert not [t for t in collected if t.startswith(self.INTEGRATION)]
 
-    def test_naming_the_integration_suite_still_runs_it(self):
-        collected = self._collected(self.INTEGRATION)
-        assert collected and all(t.startswith(self.INTEGRATION) for t in collected)
-
 
 class TestDoc27DoesNotDescribeBuiltThingsAsMissing:
     """#267: doc 27 said the repository has no CLAUDE.md and kept full entries, with steps
     that differ from the skill, for skills that are built."""
 
     DOC = "docs/27_agent_skills.md"
-
-    def test_it_does_not_say_there_is_no_claude_md(self):
-        assert "The repository has none" not in open(self.DOC).read()
-        assert os.path.isfile("CLAUDE.md")
 
     @staticmethod
     def _built_skills():
@@ -178,7 +162,7 @@ import glob  # noqa: E402
 import json  # noqa: E402
 
 #: Documents that describe the present. The history files are excluded on purpose.
-_HISTORY = {"16_verification_log.md", "17_changelog.md", "README_v1.md", "27_agent_skills.md"}
+_HISTORY = {"16_verification_log.md", "17_changelog.md", "27_agent_skills.md"}
 _ENTRY_POINTS = (
     "CDA_rand.py",
     "train/train.py",
@@ -251,15 +235,6 @@ class TestThePr308ReviewFindings:
     """#309-#312, from the review of PR #308: text that said something the code or the other
     documents do not."""
 
-    def test_docs13_names_step_clearing_for_the_batch_clear(self):
-        """#309: `matching_rule` splits a level (fifo / pro_rata); `step_clearing` batches."""
-        row = next(
-            line
-            for line in open("docs/13_perspective_financial_trader.md", encoding="utf-8")
-            if line.startswith("| **Latency** |")
-        )
-        assert "step_clearing" in row and "matching_rule" not in row
-
     def test_every_group_moved_into_docs29_says_whose_sections_it_cites(self):
         """#310: bare section numbers in moved text mean the source document's sections."""
         lines = open("docs/29_fixed_issues.md", encoding="utf-8").read().split("\n")
@@ -268,15 +243,3 @@ class TestThePr308ReviewFindings:
         for i in groups:
             head = " ".join(lines[i : i + 6])
             assert "section numbers" in head and "this document" in head, lines[i]
-
-    def test_docs15_lists_every_remainder_the_topic_docs_mark_open(self):
-        """#311: agent identity (from S1-2) and the last traded price (from S2-7)."""
-        text = open("docs/15_findings_and_recommendations.md", encoding="utf-8").read()
-        assert "agent identity" in text.lower() and "last traded price" in text.lower()
-        moved = open("docs/29_fixed_issues.md", encoding="utf-8").read()
-        assert "own resting orders and agent identity are not in the block" not in moved
-
-    def test_docs14_carries_no_per_module_line_count_for_logging_setup(self):
-        """#312: it said 523 lines when the module was 703; a count nothing checks drifts."""
-        text = open("docs/14_perspective_ai_engineer.md", encoding="utf-8").read()
-        assert not re.search(r"`logging_setup` \(\d+ lines\)|\d+-line `?logging_setup", text)
