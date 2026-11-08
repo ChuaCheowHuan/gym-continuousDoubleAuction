@@ -39,7 +39,7 @@ lz4==4.4.5
 MarkupSafe==3.0.3
 matplotlib==3.11.1
 mpmath==1.3.0
-msgpack==1.2.1
+msgpack==1.2.3
 narwhals==2.24.0
 networkx==3.6.1
 numpy==2.5.2
