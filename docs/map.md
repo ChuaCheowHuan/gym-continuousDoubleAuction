@@ -110,9 +110,9 @@ mindmap
 
 ### Version 1
 
-| Document | What it is |
-|---|---|
-| [README_v1.md](README_v1.md) | The original 2020 README of the `original_v1` branch, kept as it was |
+The original 2020 README and its plots are on the
+[`original_v1`](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/original_v1/README.md)
+branch.
 
 ---
 

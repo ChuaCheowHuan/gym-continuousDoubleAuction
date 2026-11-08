@@ -96,7 +96,7 @@ reading paths for common goals.
 
 This is version 2. Version 1 (2020) is on the
 [`original_v1`](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/tree/original_v1)
-branch, and its README is kept as [docs/README_v1.md](docs/README_v1.md). The
+branch, with its own [README](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/original_v1/README.md). The
 [changelog](docs/17_changelog.md) records what changed since then and why.
 
 ## Acknowledgements

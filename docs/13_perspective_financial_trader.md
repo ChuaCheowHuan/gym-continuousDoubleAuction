@@ -204,8 +204,8 @@ within ±1.2 ([05](05_observation_space.md) §2.3). They used to reach ±47 agai
 | Book slope / cumulative depth | Liquidity beyond L1 |
 | Own queue position | The agent sees its own resting size at each level ([05](05_observation_space.md) §1.0.1) but not where in the queue it sits |
 
-The `pic/ten_k/` directory contains plots named `ord_imb.png` and `sum_imb.png`, so order
-imbalance was studied at some point; it just never became a model input.
+Version 1's plots (`pic/ten_k/ord_imb.png` and `sum_imb.png` on the `original_v1` branch) show
+order imbalance was studied at some point; it just never became a model input.
 
 ---
 
