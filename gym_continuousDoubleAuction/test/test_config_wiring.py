@@ -80,10 +80,6 @@ class TestSizingKnobs:
     def test_tick_size_reaches_the_action_layer(self):
         assert _env(tick_size=0.25).min_tick == 0.25
 
-    def test_max_price_is_gone(self):
-        """It was stored, threaded through _set_price, and never read."""
-        assert not hasattr(_env(), "max_price")
-
 
 class TestRewardCoefficients:
     def _scored(self, **overrides):

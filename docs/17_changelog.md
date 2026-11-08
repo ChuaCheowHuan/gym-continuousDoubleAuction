@@ -3364,7 +3364,7 @@ orientation page it was meant to be.
 | Was in the README | Now in |
 |---|---|
 | The "system at a glance" diagram | [02](02_architecture.md) §2.0, the canonical copy, now coloured by package. The README keeps a copy marked as such |
-| The documentation mindmap, the five document tables, the reading paths | [doc/README.md](map.md), new. Links rewritten relative to `doc/`; a row added for [README_v1.md](README_v1.md) |
+| The documentation mindmap, the five document tables, the reading paths | [doc/README.md](map.md), new. Links rewritten relative to `doc/`; a row added for [README_v1.md](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/original_v1/README.md) |
 | The "Main problems" status paragraph | [15](15_findings_and_recommendations.md) "Status in brief" |
 | Summary, v1 pointer, acknowledgements, disclaimer, citation | still the README, verbatim |
 
@@ -4233,7 +4233,7 @@ Every problem the documentation recorded as fixed now lives in
 - **Code comments.** 203 references of the form `docs/15 S..` / `docs/15 R-n` to a fixed finding
   now name `docs/29`; the open R-items stay on 15. `.github/workflows/tests.yml` carries one more
   (`docs/15 S3-6/S3-18`) and is left for an edit with `workflow` scope.
-- **Unchanged.** [16](16_verification_log.md), this changelog and [README_v1](README_v1.md); no
+- **Unchanged.** [16](16_verification_log.md), this changelog and [README_v1](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/original_v1/README.md); no
   README_v1 link needed changing.
 
 ## 96. The mark-price notes give the order `mark_price` uses
@@ -4282,7 +4282,7 @@ behaviour). The code was right; both notes now say so.
 ## 99. Documentation consolidation: one home for each overlapping topic
 
 Asked for: identify markdown files and content in `docs/` that overlap, and consolidate them, with
-[README_v1](README_v1.md) and everything it links to unchanged.
+[README_v1](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/original_v1/README.md) and everything it links to unchanged.
 
 - **Open items.** [15](15_findings_and_recommendations.md) gains "Open from the perspective
   reviews": position limits, post-only and IOC orders and an exogenous information process
@@ -4309,7 +4309,7 @@ Asked for: identify markdown files and content in `docs/` that overlap, and cons
   the two links that meant it ([11](11_logging_and_observability.md) §6, [18](18_configuration.md)
   §5.6) now say §10. The `pretrain` CLI's help text and `config/cli_defaults.json` name 23.
 - **The index is `docs/map.md`.** `docs/README.md` was renamed so that `docs/` holds one README,
-  the 2020 [README_v1](README_v1.md). Links to it in `README.md`, `CLAUDE.md`, CONTRIBUTING and
+  the 2020 [README_v1](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/blob/original_v1/README.md). Links to it in `README.md`, `CLAUDE.md`, CONTRIBUTING and
   three link targets in this changelog's §§ (their wording unchanged) now point at
   [map.md](map.md). Browsing `docs/` on GitHub now shows the file list rather than the index.
 - **Unchanged.** README_v1, [05](05_observation_space.md) (its three linked headings), the
@@ -4645,3 +4645,34 @@ A docs-only pass after JEPA moved out (§111). No code, config or test changed.
   environment box says two mixins and four components. The docs map groups 23 and 30 under
   Research with the three extensions, and its reading paths for JEPA, pretraining and CBP start at
   30. The glossary gains **Extension**, and its **Encoder** row says four ship here.
+
+## 114. Review, triage, skills and test pruning (2026-11-08)
+
+A code and security review of master `7f35535`, with the issue triage, skills and tests it led to.
+No code under `envs/` or `train/` changed.
+
+- **Review.** The unit suite passed (2,084 passed, 6 skipped), `bandit -ll` found nothing at medium
+  or high, and `pip-audit` found one known vulnerability, msgpack 1.2.1 in the lockfile
+  (#366; the fix is Dependabot PR #352). The new ledger scan was clean on every row
+  (160 seeds x 80 steps, and 60 x 150 at 8 agents and 300 cash). New issues: #358 (helper
+  defaults read at import), #359 (visualize output paths), #360 (lint beyond pyflakes), #361
+  (test files named by review batch), #365 (no lockfile audit in CI).
+- **Triage.** Every open issue carries `agent` or `human` (`req_human` was renamed `human`).
+  #351, a request for a security review, was closed with its findings as sub-issues. #357 was
+  split into #362-#364, #353 into #367-#369 (the Python-version pin is a decision, `human`), and
+  #206 into the run (#370, `human`: it needs compute) and its write-up (#371).
+- **Skills.** Added `cda-ledger-invariants` (with `scripts/scan_ledger.py`), `cda-issue-triage`
+  and `cda-add-config-key`. `cda-verify-finding` points at the triage skill instead of carrying a
+  second copy of the filing rules, and `cda-doc-sync` drops a guardrail about #249/#250, which
+  are closed. 27 marks the three as built, replaces `cda-findings-sync` (its bulk import is done)
+  with `cda-issue-triage`, drops `cda-cbp-check` (it belongs in cda-cbp) and the skeleton that
+  was §4, and shortens §1 to a pointer at `CLAUDE.md`. `CLAUDE.md` rule 8 names the `agent` /
+  `human` split.
+- **Tests.** Eleven removed, 2,090 to 2,079 unit: three that only asserted a deleted name stays
+  deleted, a rollout that `test_observation_bounds` repeats, two line-count limits, and five
+  checks that a sentence is absent from a document. The 5-second check that naming the
+  integration suite collects it is gone too; CI's own integration step would fail on an empty
+  collection.
+- **Removed:** `docs/README_v1.md` and `docs/pic/`. Both are on the `original_v1` branch, whose
+  README the top-level README and the docs map now link. The four links to it in this file now
+  point at that branch; the text is unchanged.

@@ -20,7 +20,6 @@ ROOT, FACTS = sys.argv[1], sys.argv[2]
 SKIP = {
     "16_verification_log.md",
     "17_changelog.md",
-    "README_v1.md",
     "27_agent_skills.md",
     "29_fixed_issues.md",
 }

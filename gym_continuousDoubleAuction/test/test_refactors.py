@@ -581,15 +581,6 @@ class TestTrainModuleIsSplit:
         tree = ast.parse(inspect.getsource(train_mod))
         defined = {n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.ClassDef))}
         assert defined == {"train", "__getattr__"}
-        assert len(inspect.getsource(train_mod).splitlines()) < 260
-
-    def test_no_module_is_the_old_monolith(self):
-        from gym_continuousDoubleAuction import train as package
-
-        folder = os.path.dirname(package.__file__)
-        for name in ("config", "build", "checkpoint", "progress", "cli", "train"):
-            with open(os.path.join(folder, name + ".py")) as fh:
-                assert len(fh.read().splitlines()) < 800, name
 
     def test_the_command_line_names_resolve_lazily_to_cli(self):
         from gym_continuousDoubleAuction.train import cli

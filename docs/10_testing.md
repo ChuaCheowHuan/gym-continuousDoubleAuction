@@ -72,14 +72,14 @@ Counts re-measured with `--collect-only`.
 | `test_layout_version.py` | 16 | The layout stamp: written beside every checkpoint, passes for the current layout, refuses a version, field or `book_mode` mismatch by name (S4-19, S3-15) |
 | `test_evaluate.py` | 9 | `train.evaluate`'s pure half: unbatching a Dict action, per-module means, the rendered table, the CLI defaults (S4-12), a relative checkpoint path reaching Ray absolute (#316), and the extension and class guards before a restore (#336) |
 | `test_tick_grid.py` | 18 | Every action price sits on the `tick_size` grid; upsert and cancel find their order on a fractional tick (S3-4) |
-| `test_modify_order.py` | 7 | The six modify-order accounting scenarios, plus a guard that the dead escrow helper stays deleted |
+| `test_modify_order.py` | 6 | The six modify-order accounting scenarios |
 | `test_new_action_space.py` | 18 | Action decoding, ghost pricing, `tick_size` reaching the action layer, price levels matching book depth |
 | `test_obs_normalization.py` | 12 | Price/volume normalization (both sides positive since S4-17), action unnormalization |
 | `test_observation_history.py` | 6 | Temporal stacking, and the shared-book / private-tail split (S1-2) |
 | `test_obs_market_features.py` | 18 | `log_mid` under every branch of the reference-price chain, `log1p_spread_ticks`, observation shape across `n_hist` |
 | `test_action_mask.py` | 18 | The action mask (06 section 7): its place in the private block and in the logits is derived from the spaces; nothing resting masks modify and cancel, no cash masks opening orders, a position can still be closed, the mask agrees with the cash check under random play; the PPO module penalises masked logits and never samples them, the random baseline redraws, a masked random episode has no unmatched actions; the flag emits all ones |
 | `test_episode_horizon.py` | 17 | Fixed horizons truncate at `max_step` as before; random ones are drawn inside the range, reproduce under a seed, truncate on the draw, and keep `time_left` against the upper bound; validation; batch sizing by the expected length |
-| `test_grid_book.py` | 14 | The fixed tick-offset grid (S3-15): a quote sits in the cell of its tick offset, the same price lands in the same cell of every frame, out-of-window levels are not shown, price code j is j ticks from the reference whatever rests, own block and tokeniser alignment, `ObsLayout` reads both modes |
+| `test_grid_book.py` | 13 | The fixed tick-offset grid (S3-15): a quote sits in the cell of its tick offset, the same price lands in the same cell of every frame, out-of-window levels are not shown, price code j is j ticks from the reference whatever rests, own block and tokeniser alignment, `ObsLayout` reads both modes |
 | `test_occupancy_channel.py` | 11 | The two occupancy rows equal `size > 0` on every cell of every step and ride with their frame; an absent level and a quote at the reference price differ; a one-sided book is referenced to the last trade, agreeing with `mark_price`; layout version 4 (S3-14) |
 | `test_reward_logic.py` | 8 | Reward formula components: normalisation by `init_nav`, scale invariance, the signed drawdown telescoping, zero-sum symmetry |
 | `test_liquidation.py` | 41 | Maintenance margin and close-out (04 section 8): the trigger, the book inside the bankruptcy band (priced to include the taker fee, #233) then ADL, the counters, a bankrupt trader terminated flat, the pro-rata ADL split, `gradual_adl` slices and freeze, and refusing a non-numeric margin or horizon by name |
@@ -91,7 +91,7 @@ Counts re-measured with `--collect-only`.
 | `test_probabilistic_mapping.py` | 1 | League matchmaking distribution |
 | `test_config_loading.py` | 17 | `train_config.json` → `TrainConfig` → env |
 | `test_config_sources.py` | 29 | No literal copy of a configured value survives in Python |
-| `test_config_wiring.py` | 33 | Config keys reaching their consumers; `episode_data_path` absolute and run-scoped; an iteration samples `train_batch_size` steps and the entropy schedule ends after `entropy_decay_iters` iterations at any `num_learners` (#299); the uneven-batch refusal names the keys of the active mode (#304); `minibatch_size` fits each learner's share, RLlib's default included when it is null (#305, #307) |
+| `test_config_wiring.py` | 32 | Config keys reaching their consumers; `episode_data_path` absolute and run-scoped; an iteration samples `train_batch_size` steps and the entropy schedule ends after `entropy_decay_iters` iterations at any `num_learners` (#299); the uneven-batch refusal names the keys of the active mode (#304); `minibatch_size` fits each learner's share, RLlib's default included when it is null (#305, #307) |
 | `test_runtime_profiles.py` | 28 | `runtime_profiles.json` → hardware sets, platform paths |
 | `test_checkpointing.py` | 52 | Checkpoint retention, restore selection, league state across a save |
 | `test_action_dist.py` | 15 | A stateful module's log-probability for two agents in one step: RLlib's `(B, B)` result pinned as the bug, the corrected `(B, 1)`, `(B,)` and `(B, T)` shapes, the old squeeze case, the wrapper cached and idempotent (#278) |
@@ -132,13 +132,13 @@ Counts re-measured with `--collect-only`.
 | `test_export.py` | 20 | `train.export`'s pure half: which module is the winner, the no-champion and foreign-layout messages, and what the written record carries (docs/26 §26.9.2) |
 | `test_lint.py` | 4 | The package, `tools/` and the skill scripts are pyflakes-clean, and the lint reaches the directories it claims to; any message fails the suite (S4-6, #249); no test puts a working-directory-relative path on `sys.path` (#341) |
 | `test_links.py` | 8 | `tools/check_links.py` reports no broken link in the docs, the skills and the repo files they name (#250) |
-| `test_s4_docs_and_tooling.py` | 22 | The documentation-and-tooling S4 fixes: the layout-version pointer, the CI command quoted in CLAUDE.md and docs/27, the built skills, stale texts (including the mark-price notes' fallback order), and every config key and flag being documented (#273, #266, #267, #251, #249); four PR #308 review findings (#309-#312); and that CI runs the integration suite once (a default run leaves it out, naming it runs it) |
+| `test_s4_docs_and_tooling.py` | 15 | The documentation-and-tooling S4 fixes: the layout-version pointer, the CI command quoted in CLAUDE.md, the built skills linked from docs/27, the config notes against the code (including the mark-price fallback order), and every config key and flag being documented (#273, #266, #267, #251, #249); docs/29's moved groups naming whose sections they cite (#310); and that a default run leaves the integration suite out |
 | `test_s4_hardening.py` | 59 | The hardening and speed fixes: call-time account defaults, `settle_batch`'s pre-check, `flat_view`, the `info` fast path and the cached reference price (#247, #248) |
 | `test_pnl_split_and_markouts.py` | 39 | Realised and unrealised P&L against the NAV identity in random play, fill counters, forced fills excluded, mark-outs, and the callback and config wiring (#286) |
 | `test_logging_issues.py` | 40 | The logging review's issues under multiple env runners: the kept start of a run log, pruning of worker logs, Ray's own records in the run log (once per record), the driver learning each process's log path, the iteration broadcast to remote learners, a missed broadcast reading `-`, and a worker's console not repeating its file (#216-#221) |
 | `test_composition.py` | 24 | Reward, episode status, info and liquidation as composed components: out of the MRO, usable alone with explicit inputs, the env's old attributes still forwarded, and `SharedState` / `AccountState` naming real attributes (#152) |
 | `test_types.py` | 3 | `mypy` finds nothing in `envs/`, `ruff format --check` finds nothing to change, and the coverage floor stays configured (#148) |
-| `test_refactors.py` | 117 | The refactoring review's issues: `Account` initialised in one place and its step counters listed once, `_plain`'s call count, one order-book routine per operation, `place_order` and `parse_overrides` flat, `clear_batch` as four steps, `EnvSettings` and the generated `env_config`, the `train/` module split with its re-exports and import order, the callback as a `League` plus an `ActivityLog` plus the NAV audit and league statistics, a real pickle from before that split still loading, and the league and activity log working alone (#252-#258) |
+| `test_refactors.py` | 116 | The refactoring review's issues: `Account` initialised in one place and its step counters listed once, `_plain`'s call count, one order-book routine per operation, `place_order` and `parse_overrides` flat, `clear_batch` as four steps, `EnvSettings` and the generated `env_config`, the `train/` module split with its re-exports and import order, the callback as a `League` plus an `ActivityLog` plus the NAV audit and league statistics, a real pickle from before that split still loading, and the league and activity log working alone (#252-#258) |
 | `test_extensions.py` | 38 | The extension point ([30](30_extensions.md)): discovery through real entry points, nothing enabled changing nothing, validation of names and settings, composition order under CBP and by `learner_order`, the resume guards, an installed extension that is not enabled never imported (#337), and the version strings agreeing (#339) |
 | `test_loss_seam.py` | 5 | PPO's own loss sits behind `_policy_value_loss`, so an extension that replaces it keeps the MoE term and an encoder Learner's term added through `super()` |
 | `test_optim_learner.py` | 4 | `adam_settings` reads the `optimizer` group once: only the keys a run sets, betas as a tuple, nothing for the defaults so RLlib's own Adam is built. cda-cbp builds the authors' `AdamGnT` from the same function |
@@ -146,7 +146,7 @@ Counts re-measured with `--collect-only`.
 | `test_model_layout.py` | 26 | The model-layout contract: `layout.trunk_outputs` reports each encoder's MLP or LSTM trunk output and the heads reading it, with and without `vf_share_layers`, plus the `extra_trunk_heads` a module declares (#338) |
 | `test_cbp_moved.py` | 19 | Continual Backprop moved to cda-cbp ([30](30_extensions.md) §8): an old `cbp_*` key names the package, an old checkpoint's group reads as the `cbp` extension's settings, the old mixin name resolves or names the package, and a restore without the package stops instead of falling back |
 | `test_jepa_moved.py` | 18 | The `jepa` encoder moved to cda-jepa ([30](30_extensions.md) §9): selecting it without the package names the package, no JEPA config, code or pretrainer ships here, old checkpoints' pickled JEPA classes resolve through `jepa_learner` or fail naming the package (`fixtures/jepa_classes_98c4900.pkl`), an encoder's extension counts as enabled in the restore guard, and the old pretrainer command says where it went |
-| **unit total** | **2,090** | |
+| **unit total** | **2,079** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -171,7 +171,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((2,222 tests))
+  root((2,211 tests))
     Simulator
       orderbook 88
         the demo scripts as tests, a shadow model
@@ -181,7 +181,7 @@ mindmap
         fifo or pro-rata, sequential or batch
       properties 4
         Hypothesis: any order sequence
-      accounting 73
+      accounting 72
       exchange fees 55
       no overdraw 32
         covering a losing short reserves its loss
@@ -199,7 +199,7 @@ mindmap
       tick grid 18
         on-grid prices for any tick
     Learning problem
-      observation 126
+      observation 125
         different markets and accounts look different
         normalization, stacking
         one normaliser per stack
@@ -227,7 +227,7 @@ mindmap
       market variety 20
         rules redrawn per episode, seeded
     Training
-      config 89
+      config 88
         loading, wiring, no literals
         runtime profiles
       checkpointing 60
@@ -491,7 +491,7 @@ the same level five times leaves one order at one level, a cancel at a fractiona
 removes its order with the escrow returned, and sixty steps of random play conserve NAV exactly
 with every price-map key on the grid.
 
-### 2.3 `test_modify_order.py` (7 tests)
+### 2.3 `test_modify_order.py` (6 tests)
 
 Mathematically verifies all six modify-order accounting scenarios — price cross, price move,
 quantity increase, quantity decrease, and the two cross-plus-quantity combinations — for both the
