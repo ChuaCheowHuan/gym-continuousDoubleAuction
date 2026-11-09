@@ -521,7 +521,7 @@ A worker's NAV table is therefore dated, attributed and durable: §1.12 sends ea
 iteration. The dash remains for a process that legitimately has no iteration: the driver before the
 first one and after the last.
 
-Covered by `test_logging_setup.py` (61 tests): the file appears beside the metrics and mirrors
+Covered by `test_logging_setup.py` (60 tests): the file appears beside the metrics and mirrors
 stdout, rotation bounds it, an unwritable destination warns instead of raising, a worker resolves
 the directory from the environment and writes its own uniquely tagged file, the driver keeps the
 plain name, the iteration tag follows `set_iteration` and defaults to a dash, the timestamp

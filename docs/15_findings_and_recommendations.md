@@ -38,6 +38,8 @@ mindmap
       R-19 stream switches agent only on termination
     Decision from the 2026-11-08 review
       pin python_requires to 3.12, or support 3.13
+    Hardening from the 2026-11-09 review
+      Docker images run as root and are unpinned
     Remainders of fixed findings
       grad_clip unset
       no agent identity in the observation
@@ -84,7 +86,17 @@ Python 3.12 can fail - or segfault the test process - under 3.13 (#353). The cod
 are fixed and in [29](29_fixed_issues.md#from-the-2026-11-08-review): every save now stamps its
 interpreter and a mismatch is refused before unpickling (#367), and the one 3.12-pickled fixture
 test skips on another minor (#368). What remains is the choice in #369: pin `python_requires` to
-3.12, or support 3.13 and its CI job. That needs a decision, so it is `human`.
+3.12, or support 3.13 and its CI job. That needs a decision, so it is `req_human`.
+
+### Open from the 2026-11-09 review
+
+**The Docker images are not hardened** (#377). `docker/ml/dockerfile_ray_torch` and
+`docker/gemini/dockerfile` run as root, the ML image makes `/workspace` world-writable and starts
+Jupyter with `--allow-root`, and the base images, `torchvision`, `torchaudio`, `jupyterlab`,
+`notebook` and `@google/gemini-cli` are unpinned (the Gemini base, Debian 11, is past its LTS
+window). Nothing is exploitable by itself. The Dockerfile change and its text check are #378
+(`agent`); building and running the images needs Docker and a GPU, so it is #379 (`req_human`).
+The rest of the review found nothing: see [17](17_changelog.md) §118.
 
 ---
 

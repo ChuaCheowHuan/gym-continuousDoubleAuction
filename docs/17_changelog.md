@@ -4763,3 +4763,38 @@ section.
 - **Still blocked.** #371 is the write-up of the at-scale encoder comparison; it needs the run
   in #370 (16 iterations x 3 seeds x every encoder, `jepa` included), which has not been done.
   docs/10 §8 keeps the gap open.
+
+## 118. Triage and test pruning across the four repositories (2026-11-09)
+
+A review of gym-CDA, cda-jepa, cda-cbp and cda-discorl (the last three are their own
+repositories). Nothing new was found in the simulator or the training stack: the unit suite
+(2,112 passed, 6 skipped), the integration suite (132) and the three extension suites (153, 212,
+120) pass on Python 3.12.3 with torch 2.13.0; `scan_ledger.py` is clean at both sizes (51,200 and
+72,000 agent-steps per row, every row 0); `bandit` reports nothing above low severity (two
+`try/except/pass` in `checkpoint.py`, one `try/except/continue` in `progress.py`, and `#2a78d6`, a
+chart colour, read as a password); `pip-audit` of `requirements-lock.txt` reports no known vulnerabilities. The issues
+filed are hardening, listed in the register.
+
+- **Tests that pinned the shape of the source, not behaviour, were removed (24 tests, one file).**
+  `test_docs_and_dead_code.py` (a docstring's wording, a source string, an AST walk with an
+  `if False else` in it); the prose pins in `test_docs_pointers.py` (notes in
+  `cli_defaults.json`, doc 29's headings); the refactor-size pins (`the callback is a quarter of the
+  size it was`, `clear_batch` at most 30 lines, `place_order` nesting depth at most 2, `train.py`
+  defines only two names, `reset` source contains a string); five source greps
+  (`"cal_profit" in getsource(...)`, `"_find_agent" in ...`, `clear_step_counters()` in the
+  exchange, no `== 'bid'` in the book, `install_excepthooks()` indented eight spaces); one
+  docstring-wording test in `test_runtime_env_contract.py`; and one duplicate
+  (`test_a_matching_resume_says_nothing` repeated `test_identical_config_says_nothing`). Each had a
+  behavioural test beside it that stays. Tests that guard an invariant by reading source stay (no
+  bare `assert` in `clear_batch`, the order of `apply_env_vars()` and `ray.init`, the Ray
+  memory-monitor contract).
+- **Dead helpers removed.** Section 117's split copied one block of AST helpers (`_stored`,
+  `_depth`, `_function`, `_MOVED`, `_REPO`) into six files, and 14 more files carried a private
+  helper nothing called; 49 definitions and the imports they left unused are gone.
+- **docs/10** has the new counts (unit 2,094, suite 2,226), a row for `test_pretrained_format.py`
+  (15 tests, which had none) and no row for the deleted file; docs/11 and docs/14 follow
+  (60 tests in `test_logging_setup.py`, 53,374 lines across 224 files). docs/26 §26.8 names
+  `visualize_paths.dump_dir`, which no document did.
+- **Filed.** #377 (the Docker images run as root and are unpinned), with #378 (the change,
+  `agent`) and #379 (build and smoke-test on a GPU host, `req_human`). #353 lost its `agent`
+  label: its code and test halves are fixed, and #369 is the only part left.

@@ -87,7 +87,7 @@ Counts re-measured with `--collect-only`.
 | `test_env_lifecycle.py` | 10 | The bare env is tradable (S1-4) and truncation lands exactly on `max_step` (S3-19) |
 | `test_seeding.py` | 11 | `reset(seed=...)` really seeds the episode: anchor, sizes, queueing order; the global NumPy stream is not the source; `sklearn` is not imported (S3-5, S3-6) |
 | `test_nav_callback.py` | 25 | Episode-end NAV conservation, in both halves: the hook counts a violation without raising, the driver stops the run from the count, tolerance, exactness at a scale `float` cannot resolve, a missing metric reading as "nothing seen" |
-| `test_logging_setup.py` | 61 | Level resolution and export, handler setup, no `print` in `envs/` or `train/`, the rotating run log, per-worker files, the `iter=` tag, dated stamps, concurrent configuration, two-process isolation, unhandled exceptions, warning capture, propagation control and `ray.LoggingConfig` |
+| `test_logging_setup.py` | 60 | Level resolution and export, handler setup, no `print` in `envs/` or `train/`, the rotating run log, per-worker files, the `iter=` tag, dated stamps, concurrent configuration, two-process isolation, unhandled exceptions, warning capture, propagation control and `ray.LoggingConfig` |
 | `test_probabilistic_mapping.py` | 1 | League matchmaking distribution |
 | `test_config_loading.py` | 17 | `train_config.json` → `TrainConfig` → env |
 | `test_config_sources.py` | 30 | No literal copy of a configured value survives in Python; a reloaded tree reaches a bare `Action_Helper` too (#358) |
@@ -139,31 +139,31 @@ Counts re-measured with `--collect-only`.
 | `test_model_layout.py` | 26 | The model-layout contract: `layout.trunk_outputs` reports each encoder's MLP or LSTM trunk output and the heads reading it, with and without `vf_share_layers`, plus the `extra_trunk_heads` a module declares (#338) |
 | `test_cbp_moved.py` | 19 | Continual Backprop moved to cda-cbp ([30](30_extensions.md) §8): an old `cbp_*` key names the package, an old checkpoint's group reads as the `cbp` extension's settings, the old mixin name resolves or names the package, and a restore without the package stops instead of falling back |
 | `test_jepa_moved.py` | 18 | The `jepa` encoder moved to cda-jepa ([30](30_extensions.md) §9): selecting it without the package names the package, no JEPA config, code or pretrainer ships here, old checkpoints' pickled JEPA classes resolve through `jepa_learner` or fail naming the package (`fixtures/jepa_classes_98c4900.pkl`), an encoder's extension counts as enabled in the restore guard, and the old pretrainer command says where it went |
+| `test_pretrained_format.py` | 15 | The shared pretrained-encoder format, tested without cda-jepa: the fingerprint merge and the checkpoint writer and loader, against a test encoder that has a `pretrained_path` field but no self-supervised objective ([22](22_jepa_integration.md), cda-jepa #28) |
 | `test_config_and_visualization_fixes.py` | 21 | `$CDA_PLATFORM` case, a foreign `config/`, the doc-sync `TMPDIR` default, and the visualizers on bad records (#237, #241, #265, #240) |
 | `test_compare_and_evaluate_fixes.py` | 24 | `--set` booleans, the compare table's failed run, and `evaluate`'s `--max-step` under a random horizon (#236, #262, #263) |
 | `test_orderbook_and_accounting_fixes.py` | 15 | `Decimal` fee rates, order-book bookkeeping, and the layout-stamp order message (#230, #232, #234) |
 | `test_league_and_action_fixes.py` | 11 | A `None` module return, and the `size_high` upper bound (#235, #275) |
-| `test_ppo_objective_fixes.py` | 11 | `gamma` / `lambda_` reaching PPO with validation and the restore warning (#125) |
+| `test_ppo_objective_fixes.py` | 10 | `gamma` / `lambda_` reaching PPO with validation and the restore warning (#125) |
 | `test_orderbook_and_league_fixes.py` | 27 | Several orders per level, default replace-in-place, escrow and clearing modes (#122); and `promotion_reference` (#124) |
 | `test_batch_clearing_hardening.py` | 6 | Batch clearing checks its volume without an `assert`, `settle_batch` refuses before booking, and a fresh book has no unaffordable batch (#247) |
-| `test_market_and_accounting_hardening.py` | 8 | One definition of a market price, mark-to-market through the profit rule, one agent lookup and one pooling definition (#247, #248) |
-| `test_config_and_env_hardening.py` | 12 | Defaults read when the object is built, `TrainConfig`'s cached `flat_view`, and env reset forwarding `options` (#247, #248) |
+| `test_market_and_accounting_hardening.py` | 6 | One definition of a market price, mark-to-market through the profit rule, one agent lookup and one pooling definition (#247, #248) |
+| `test_config_and_env_hardening.py` | 11 | Defaults read when the object is built, `TrainConfig`'s cached `flat_view`, and env reset forwarding `options` (#247, #248) |
 | `test_info_and_reference_cache.py` | 30 | `_plain`'s fast path, and the reference price cached per snapshot (#248) |
-| `test_docs_and_dead_code.py` | 3 | Tidied docs and deleted dead code (#247) |
 | `test_run_logging_records.py` | 4 | An earlier `ray_log_encoding` run no longer leaves `propagate=False` (#238) |
 | `test_episode_record_cap.py` | 5 | The byte cap never deletes the newest episode file, and warns once (#246) |
-| `test_runtime_env_contract.py` | 5 | `apply_env_vars()` runs before `ray.init` in every entry point (#244) |
-| `test_account_refactor.py` | 7 | `Account` initialised in one place and its step counters listed once (#255) |
+| `test_runtime_env_contract.py` | 4 | `apply_env_vars()` runs before `ray.init` in every entry point (#244) |
+| `test_account_refactor.py` | 5 | `Account` initialised in one place and its step counters listed once (#255) |
 | `test_info_fast_path_refactor.py` | 13 | `_plain`'s call count and its fast path (#258) |
-| `test_orderbook_refactor.py` | 31 | One order-book routine per operation, `place_order` / `parse_overrides` flat, `clear_batch` as four steps (#252, #256) |
-| `test_config_refactor.py` | 23 | `EnvSettings` and the generated `env_config` (#257), including the order-shape validation (#354) |
-| `test_train_module_split.py` | 16 | The `train/` module split, its re-exports and import order (#254) |
-| `test_callback_refactor.py` | 34 | The callback as a `League` plus an `ActivityLog` plus the NAV audit and league statistics, a real pickle from before that split still loading (skipped on another Python minor, #368), and the league and activity log working alone (#253) |
-| `test_docs_pointers.py` | 8 | The layout-version pointer, doc 27's built skills, stale comments and notes, and docs/29's moved groups citing whose sections they use (#273, #267, #251, #310) |
+| `test_orderbook_refactor.py` | 27 | One order-book routine per operation and `clear_batch` as four steps (#252, #256) |
+| `test_config_refactor.py` | 22 | `EnvSettings` and the generated `env_config` (#257), including the order-shape validation (#354) |
+| `test_train_module_split.py` | 15 | The `train/` module split, its re-exports and import order (#254) |
+| `test_callback_refactor.py` | 31 | The callback as a `League` plus an `ActivityLog` plus the NAV audit and league statistics, a real pickle from before that split still loading (skipped on another Python minor, #368), and the league and activity log working alone (#253) |
+| `test_docs_pointers.py` | 4 | The layout-version pointer and doc 27's built skills (#273, #267) |
 | `test_ci_configuration.py` | 8 | The CI smoke command, the integration suite collected once, and the 2026-11-08 hardening: read-only token, SHA pins, Dependabot, the lockfile audit, loopback Jupyter, the Docker-socket warning and the checkpoint code warning (#266, #363-#365, #357/#362) |
 | `test_docs_coverage.py` | 4 | Every config key and CLI flag is mentioned in some document (#249, #250) |
 | `test_logging_multi_runner.py` | 40 | The logging review's issues under multiple env runners: the kept start of a run log, pruning of worker logs, Ray's own records in the run log (once per record), the driver learning each process's log path, the iteration broadcast to remote learners, a missed broadcast reading `-`, and a worker's console not repeating its file (#216-#221) |
-| **unit total** | **2,103** | |
+| **unit total** | **2,094** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -188,7 +188,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((2,235 tests))
+  root((2,226 tests))
     Simulator
       orderbook 88
         the demo scripts as tests, a shadow model
