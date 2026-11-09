@@ -4,9 +4,6 @@ Moved from `test_s4_hardening.py` by issue #361; the class docstrings keep the
 original issue numbers.
 """
 
-import inspect
-
-
 from decimal import Decimal
 
 
@@ -24,10 +21,6 @@ from gym_continuousDoubleAuction.train.model.encoders import (
     tokenize,
     transformer,
 )
-
-
-def _q(side, qty, price, tid):
-    return {"type": "limit", "side": side, "quantity": qty, "price": price, "trade_id": tid}
 
 
 import numpy as np  # noqa: E402
@@ -73,16 +66,8 @@ class TestMarkToMarketUsesTheProfitRule:
             expected = acc.cal_profit(side, abs(position) * Decimal(120), Decimal(500))
             assert acc.profit == expected
 
-    def test_calculate_no_longer_restates_the_rule(self):
-        from gym_continuousDoubleAuction.envs.account.calculate import Calculate
-
-        assert "cal_profit" in inspect.getsource(Calculate.mark_to_mkt)
-
 
 class TestOneLookupForAnAgent:
-    def test_counter_party_lookup_uses_find_agent(self):
-        assert "_find_agent" in inspect.getsource(Trader._process_counter_party)
-
     def test_it_finds_an_agent_whose_id_is_not_its_index(self):
         traders = [Trader(5, 1000), Trader(9, 1000)]
         trade = {

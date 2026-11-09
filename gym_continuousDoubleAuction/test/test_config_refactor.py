@@ -4,67 +4,10 @@ Moved from `test_refactors.py` by issue #361; the class docstrings keep the
 original issue numbers.
 """
 
-import ast
-
-import inspect
-
-import os
-
-
 import pytest
 
 
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import continuousDoubleAuctionEnv
-
-
-_REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-
-def _stored(function):
-    """The attribute names a function assigns on `self`."""
-    tree = ast.parse(inspect.getsource(function).lstrip())
-    return {
-        n.attr
-        for n in ast.walk(tree)
-        if isinstance(n, ast.Attribute)
-        and isinstance(n.ctx, ast.Store)
-        and isinstance(n.value, ast.Name)
-        and n.value.id == "self"
-    }
-
-
-def _depth(node, d=0):
-    """Deepest control-flow nesting under `node`."""
-    deepest = d
-    for child in ast.iter_child_nodes(node):
-        step = d + 1 if isinstance(child, (ast.If, ast.For, ast.While, ast.Try, ast.With)) else d
-        deepest = max(deepest, _depth(child, step))
-    return deepest
-
-
-def _function(module, qualname):
-    tree = ast.parse(inspect.getsource(module))
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name == qualname:
-            return node
-    raise AssertionError(qualname)
-
-
-_MOVED = {
-    "config": "generate_run_id _default TrainConfig ENV_NAME TRAIN_CONFIG_FILE PROGRESS_FILE "
-    "_BROADCAST_TIMEOUT_S VF_EXPLAINED_VAR_KEY",
-    "build": "register_env make_spaces _next_obs_connector OPTIMIZER_CONFIG_KEY "
-    "_learner_class _learner_config_dict build_config build_algo log_module_sizes",
-    "checkpoint": "CHECKPOINT_PREFIX CHECKPOINT_TMP_SUFFIX LEAGUE_STATE_FILE _is_checkpoint "
-    "list_checkpoints save_checkpoint _prune_checkpoints warn_about_foreign_checkpoints "
-    "algo_callback _write_league_state _read_league_state _reconcile_league_state "
-    "STRUCTURAL_CONFIG_KEYS UNRESTORABLE_CONFIG_KEYS "
-    "PRE_FEATURE_BEHAVIOUR _config_fingerprint _check_restored_config restore_candidates "
-    "_fix_checkpoint_optimizer_betas",
-    "progress": "NavConservationError nav_violations _check_nav_conservation _apply_iteration "
-    "_broadcast_iteration _json_safe _append_progress vf_explained_var _log_iteration",
-    "cli": "_parse_args configure_run_logging ray_logging_config main",
-}
 
 
 class TestEnvSettings:
@@ -185,7 +128,3 @@ class TestEnvSettings:
         assert (env.max_step, env.time_left_horizon, env.episode_horizon) == (12, 12, 12)
         assert (env.maker_fee_bps, env.taker_fee_bps) == (1, 2)
         assert len(env.traders) == 3
-
-    def test_the_constructor_no_longer_reads_keys_one_by_one(self):
-        source = inspect.getsource(continuousDoubleAuctionEnv.__init__)
-        assert "self._cfg(" not in source

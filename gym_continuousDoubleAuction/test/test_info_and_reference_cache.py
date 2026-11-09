@@ -15,10 +15,6 @@ from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
 )
 
 
-def _q(side, qty, price, tid):
-    return {"type": "limit", "side": side, "quantity": qty, "price": price, "trade_id": tid}
-
-
 import numpy as np  # noqa: E402
 
 from gym_continuousDoubleAuction.envs.exchg.info_helper import _plain  # noqa: E402

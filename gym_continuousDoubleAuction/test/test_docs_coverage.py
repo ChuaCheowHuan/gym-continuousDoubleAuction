@@ -7,14 +7,6 @@ original issue numbers.
 import re
 
 
-def _section_title(doc, number):
-    for line in Path(doc).read_text(encoding="utf-8").splitlines():
-        match = re.match(rf"^## {number}\. (.+)$", line)
-        if match:
-            return match.group(1)
-    return None
-
-
 import os  # noqa: E402
 
 import glob  # noqa: E402

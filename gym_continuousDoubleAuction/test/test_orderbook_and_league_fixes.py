@@ -16,11 +16,6 @@ from gym_continuousDoubleAuction.train.train import (
 )
 
 
-def _ppo(**overrides):
-    built = build_config(TrainConfig(**overrides))
-    return built[0] if isinstance(built, tuple) else built
-
-
 from decimal import Decimal  # noqa: E402
 
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (  # noqa: E402

@@ -7,36 +7,7 @@ original issue numbers.
 import logging
 
 
-from gym_continuousDoubleAuction import config_loader, logging_setup
-
-
-def _restore_logging():
-    """`configure_run_logging` attaches a file handler and exports the log
-    directory; put the process back as found (the same isolation
-    `test_logging_setup.py` uses)."""
-    import os
-
-    root = logging.getLogger(logging_setup.ROOT_NAME)
-    saved = (
-        list(root.handlers),
-        root.level,
-        root.propagate,
-        logging_setup._configured,
-        logging_setup._log_file_path,
-        os.environ.get(logging_setup.log_dir_env_var()),
-    )
-    yield
-    for handler in list(root.handlers):
-        if handler not in saved[0]:
-            handler.close()
-    root.handlers, root.level, root.propagate = saved[0], saved[1], saved[2]
-    logging_setup._configured, logging_setup._log_file_path = saved[3], saved[4]
-    logging_setup.set_iteration(None)
-    if saved[5] is None:
-        os.environ.pop(logging_setup.log_dir_env_var(), None)
-    else:
-        os.environ[logging_setup.log_dir_env_var()] = saved[5]
-    config_loader.reload()
+from gym_continuousDoubleAuction import logging_setup
 
 
 class TestTheByteCapKeepsTheNewestFile:

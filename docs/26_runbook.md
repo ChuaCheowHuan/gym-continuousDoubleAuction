@@ -310,7 +310,10 @@ switching an extension such as Continual Backprop on means a fresh run in a new 
 Every chart in `visualize/` from one command. It reads the newest run under `episode_data/` and
 `results/` relative to the working directory, and writes PNGs to
 `visualize_paths.chart_dir` — by default the package's own `visualize/chart/`, resolved from
-the package directory rather than the working directory, so it works from the repository root:
+the package directory rather than the working directory, so it works from the repository root.
+The text and JSON dumps of the latest episode (`inspect_latest_episode.py` and
+`inspect_latest_episode_json.py`) go to `visualize_paths.dump_dir` the same way, by default
+`visualize/json/`:
 
 ```bash
 python -m gym_continuousDoubleAuction.visualize.run_all
