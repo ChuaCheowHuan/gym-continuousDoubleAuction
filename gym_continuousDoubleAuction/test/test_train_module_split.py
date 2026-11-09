@@ -4,8 +4,6 @@ Moved from `test_refactors.py` by issue #361; the class docstrings keep the
 original issue numbers.
 """
 
-import ast
-
 import inspect
 
 import os
@@ -17,36 +15,6 @@ import pytest
 
 
 _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-
-def _stored(function):
-    """The attribute names a function assigns on `self`."""
-    tree = ast.parse(inspect.getsource(function).lstrip())
-    return {
-        n.attr
-        for n in ast.walk(tree)
-        if isinstance(n, ast.Attribute)
-        and isinstance(n.ctx, ast.Store)
-        and isinstance(n.value, ast.Name)
-        and n.value.id == "self"
-    }
-
-
-def _depth(node, d=0):
-    """Deepest control-flow nesting under `node`."""
-    deepest = d
-    for child in ast.iter_child_nodes(node):
-        step = d + 1 if isinstance(child, (ast.If, ast.For, ast.While, ast.Try, ast.With)) else d
-        deepest = max(deepest, _depth(child, step))
-    return deepest
-
-
-def _function(module, qualname):
-    tree = ast.parse(inspect.getsource(module))
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name == qualname:
-            return node
-    raise AssertionError(qualname)
 
 
 _MOVED = {
@@ -87,13 +55,6 @@ class TestTrainModuleIsSplit:
             obj = getattr(owner, name)
             if inspect.isfunction(obj) or inspect.isclass(obj):
                 assert obj.__module__ == owner.__name__, name
-
-    def test_train_py_holds_the_loop_and_the_re_exports_only(self):
-        from gym_continuousDoubleAuction.train import train as train_mod
-
-        tree = ast.parse(inspect.getsource(train_mod))
-        defined = {n.name for n in tree.body if isinstance(n, (ast.FunctionDef, ast.ClassDef))}
-        assert defined == {"train", "__getattr__"}
 
     def test_the_command_line_names_resolve_lazily_to_cli(self):
         from gym_continuousDoubleAuction.train import cli

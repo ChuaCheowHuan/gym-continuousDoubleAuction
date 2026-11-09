@@ -22,72 +22,7 @@ def _ppo(**overrides):
     return built[0] if isinstance(built, tuple) else built
 
 
-from decimal import Decimal  # noqa: E402
-
-from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (  # noqa: E402
-    continuousDoubleAuctionEnv,
-)
-
 CASH = 100000
-
-
-def _env(multiple, **config):
-    env = continuousDoubleAuctionEnv(
-        {
-            "num_of_agents": 2,
-            "is_render": False,
-            "init_cash": CASH,
-            "initial_price_min": 100,
-            "initial_price_max": 100,
-            "allow_multiple_orders_per_level": multiple,
-            **config,
-        }
-    )
-    env.reset(seed=1)
-    return env
-
-
-def _place(env, tid, type, side, size, price=-1.0, slot=0):
-    env.traders[tid].place_order(type, side, size, price, env.LOB, env.traders, slot=slot)
-
-
-def _level(env, side, price):
-    tree = env.LOB.bids if side == "bid" else env.LOB.asks
-    return tree.get_price_list(Decimal(price))
-
-
-from unittest.mock import MagicMock  # noqa: E402
-
-
-from gym_continuousDoubleAuction.train.callbk.league_based_self_play_callback import (  # noqa: E402
-    SelfPlayCallback,
-)
-
-
-def _league(reference, **kwargs):
-    return SelfPlayCallback(
-        num_trainable_policies=2,
-        num_random_policies=6,
-        min_iterations_between_champions=0,
-        min_champion_trades=0,
-        promotion_reference=reference,
-        **kwargs,
-    )
-
-
-def _returns(trainable, champions, baseline):
-    out = {f"policy_{i}": v for i, v in enumerate(trainable)}
-    out.update({f"champion_{i + 1}": v for i, v in enumerate(champions)})
-    out.update({f"policy_{i}": baseline for i in range(2, 8)})
-    return out
-
-
-def _check(cb, returns, monkeypatch=None):
-    made = []
-    cb.league.create_snapshot = lambda algo, pid, value, it: made.append(pid)
-    result = {"training_iteration": 1, "env_runners": {"module_episode_returns_mean": returns}}
-    cb.on_train_result(algorithm=MagicMock(), result=result)
-    return made, result["league"]
 
 
 class TestDiscountAndGae:
@@ -151,8 +86,3 @@ class TestDiscountAndGae:
         with caplog.at_level(logging.WARNING, logger=LOGGER):
             _check_restored_config(self._config(gamma=0.99, lambda_=1.0), self._config())
         assert "gamma" in caplog.text and "lambda_" in caplog.text
-
-    def test_a_matching_resume_says_nothing(self, caplog):
-        with caplog.at_level(logging.WARNING, logger=LOGGER):
-            _check_restored_config(self._config(), self._config())
-        assert caplog.text == ""

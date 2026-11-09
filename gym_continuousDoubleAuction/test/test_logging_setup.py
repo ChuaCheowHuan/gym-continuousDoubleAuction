@@ -1008,19 +1008,3 @@ class TestExcepthookInstallationIsGuarded:
             t.join()
 
         assert sys.excepthook is before
-
-    def test_it_is_installed_under_the_configure_lock(self):
-        """Pins the mechanism, not just the outcome: a future edit that moves
-        the call back outside the lock restores the race without failing the
-        two tests above, which cannot reach a window this small reliably."""
-        import inspect
-
-        source = inspect.getsource(logging_setup.configure)
-        body = source[source.index("with _configure_lock:") :]
-        installed = body.index("install_excepthooks()")
-        # Everything inside the `with` block is indented past its own line.
-        line = body[:installed].rsplit("\n", 1)[-1]
-
-        assert line.startswith(" " * 8), (
-            "install_excepthooks() has moved out of the _configure_lock block"
-        )

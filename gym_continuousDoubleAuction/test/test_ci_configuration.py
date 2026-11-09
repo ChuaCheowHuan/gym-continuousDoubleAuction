@@ -7,38 +7,10 @@ original issue numbers.
 import re
 
 
-def _section_title(doc, number):
-    for line in Path(doc).read_text(encoding="utf-8").splitlines():
-        match = re.match(rf"^## {number}\. (.+)$", line)
-        if match:
-            return match.group(1)
-    return None
-
-
-import os  # noqa: E402
-
-import glob  # noqa: E402
 from pathlib import Path
 
 
 _HISTORY = {"16_verification_log.md", "17_changelog.md", "27_agent_skills.md"}
-
-_ENTRY_POINTS = (
-    "CDA_rand.py",
-    "train/train.py",
-    "train/probe/__main__.py",
-    "train/compare.py",
-    "train/evaluate.py",
-    "train/export.py",
-    "visualize/run_all.py",
-)
-
-
-def _docs_text():
-    paths = ["README.md"] + sorted(
-        p for p in glob.glob("docs/*.md") if os.path.basename(p) not in _HISTORY
-    )
-    return "\n".join(Path(p).read_text(encoding="utf-8") for p in paths)
 
 
 def _leaves(tree, prefix=""):

@@ -4,26 +4,10 @@ Moved from `test_s4_minor_fixes.py` by issue #361; the class docstrings keep the
 original issue numbers.
 """
 
-from decimal import Decimal
-
 import pytest
 
 
-from gym_continuousDoubleAuction.envs.orderbook.order import Order
 from pathlib import Path
-
-
-def _order(order_list, order_id, qty=1, price=10):
-    quote = {
-        "timestamp": 1,
-        "quantity": Decimal(qty),
-        "price": Decimal(price),
-        "order_id": order_id,
-        "trade_id": "t",
-    }
-    order = Order(quote, order_list)
-    order_list.append_order(order)
-    return order
 
 
 class TestPlatformEnvIsCaseInsensitive:

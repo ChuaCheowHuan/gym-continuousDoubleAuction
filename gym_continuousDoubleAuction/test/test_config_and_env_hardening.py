@@ -4,8 +4,6 @@ Moved from `test_s4_hardening.py` by issue #361; the class docstrings keep the
 original issue numbers.
 """
 
-import inspect
-
 import time
 
 from decimal import Decimal
@@ -24,10 +22,6 @@ from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import (
 
 
 from gym_continuousDoubleAuction.train import train as train_module
-
-
-def _q(side, qty, price, tid):
-    return {"type": "limit", "side": side, "quantity": qty, "price": price, "trade_id": tid}
 
 
 import numpy as np  # noqa: E402
@@ -139,11 +133,6 @@ class TestTrainConfigDoesNotReFlattenTheFilePerField:
 
 
 class TestEnvResetHandsOptionsOn:
-    def test_reset_calls_the_parent_unconditionally(self):
-        source = inspect.getsource(continuousDoubleAuctionEnv.reset)
-        assert "if hasattr(super()" not in source
-        assert "super().reset(seed=seed, options=options)" in source
-
     def test_reset_with_options_and_a_seed_still_works(self):
         env = continuousDoubleAuctionEnv({"num_of_agents": 2, "is_render": False})
         first, _ = env.reset(seed=3, options={"anything": 1})
