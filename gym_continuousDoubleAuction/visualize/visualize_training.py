@@ -9,6 +9,7 @@ from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
 
 from gym_continuousDoubleAuction.config_loader import constant
 from gym_continuousDoubleAuction.train.episode_record import REWARD_TERMS
+from gym_continuousDoubleAuction.visualize.paths import output_path
 from gym_continuousDoubleAuction.visualize.visualize_rewards import TERM_COLORS
 
 PROGRESS_FILE = "progress.jsonl"
@@ -272,7 +273,7 @@ def _plot_behavior_fractions(ax, rows):
     ax.legend(bbox_to_anchor=(1.01, 1), loc='upper left')
 
 
-def visualize_training(run_dir=None):
+def visualize_training(run_dir=None, out_dir=None):
     """
     Plots training-health metrics across iterations, from `progress.jsonl`
     (`train._append_progress` writes the whole RLlib result dict, one line per
@@ -311,8 +312,8 @@ def visualize_training(run_dir=None):
     fig.suptitle('Training Health')
     plt.tight_layout(rect=[0, 0, 1, 0.98])
 
-    output_file = 'visualize/chart/training_visualization.png'
-    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    output_file = output_path("chart_dir", "training_visualization.png", out_dir)
+    os.makedirs(output_file.parent, exist_ok=True)
     plt.savefig(output_file)
     print(f"Visualization saved to {output_file}")
     plt.show()

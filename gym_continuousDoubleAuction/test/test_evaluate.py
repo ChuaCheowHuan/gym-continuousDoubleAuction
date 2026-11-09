@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 """The pure half of `train.evaluate`: unbatching, summarising, rendering."""
 
 import numpy as np
@@ -84,7 +86,7 @@ class _ScriptedEnv:
     the truncation at step 4 - the shape the real env gives a mid-episode
     bankruptcy: the terminated agent is absent from every later step."""
 
-    possible_agents = ["agent_0", "agent_1"]
+    possible_agents: ClassVar[list[str]] = ["agent_0", "agent_1"]
     init_cash = 100
 
     def reset(self, seed=None):

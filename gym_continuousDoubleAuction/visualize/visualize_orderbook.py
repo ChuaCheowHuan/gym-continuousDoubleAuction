@@ -10,6 +10,7 @@ from gym_continuousDoubleAuction.envs.exchg.state_helper import (
     obs_row_slice,
 )
 from gym_continuousDoubleAuction.visualize.episode_data import load_episode
+from gym_continuousDoubleAuction.visualize.paths import output_path
 
 
 def _newest_snapshot(obs):
@@ -65,7 +66,7 @@ def _book_sizes(observations):
     return total_bid_size, total_ask_size, skipped
 
 
-def visualize_episode_data(run_dir=None, episode_id=None, agent_id=None):
+def visualize_episode_data(run_dir=None, episode_id=None, agent_id=None, out_dir=None):
     """
     Visualizes price and size changes for the orderbook, for one agent, over
     one episode, from the per-step Parquet record
@@ -136,8 +137,8 @@ def visualize_episode_data(run_dir=None, episode_id=None, agent_id=None):
     plt.tight_layout()
 
     # Save or show
-    output_plot = 'visualize/chart/orderbook_visualization.png'
-    os.makedirs(os.path.dirname(output_plot), exist_ok=True)
+    output_plot = output_path("chart_dir", "orderbook_visualization.png", out_dir)
+    os.makedirs(output_plot.parent, exist_ok=True)
     plt.savefig(output_plot)
     print(f"Plot saved to {output_plot}")
     plt.show()

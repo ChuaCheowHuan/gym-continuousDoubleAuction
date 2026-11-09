@@ -9,6 +9,7 @@ from gym_continuousDoubleAuction.train.policy.policy_handler import (
     POLICY_PREFIX,
 )
 from gym_continuousDoubleAuction.visualize.episode_data import load_run
+from gym_continuousDoubleAuction.visualize.paths import output_path
 from gym_continuousDoubleAuction.visualize.visualize_execution import (
     MAKER_COLOR,
     PASS_COLOR,
@@ -191,7 +192,7 @@ def _plot_behaviour_rates(ax, rows, modules):
     ax.legend(bbox_to_anchor=(1.01, 1), loc='upper left')
 
 
-def visualize_modules(run_dir=None, num_trained_agents=None):
+def visualize_modules(run_dir=None, num_trained_agents=None, out_dir=None):
     """
     Compares the league's modules against each other over a whole run, from
     the per-step Parquet record (`train.episode_record.EpisodeRecorder`).
@@ -274,8 +275,8 @@ def visualize_modules(run_dir=None, num_trained_agents=None):
     fig.suptitle('League Module Comparison')
     plt.tight_layout(rect=[0, 0, 1, 0.98])
 
-    output_file = 'visualize/chart/modules_visualization.png'
-    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    output_file = output_path("chart_dir", "modules_visualization.png", out_dir)
+    os.makedirs(output_file.parent, exist_ok=True)
     plt.savefig(output_file)
     print(f"Visualization saved to {output_file}")
     plt.show()

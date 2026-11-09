@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import continuousDoubleAuctionEnv
+from pathlib import Path
 
 
 class TestActionSpaceRobust:
@@ -299,7 +300,9 @@ class TestSizeHead:
 
         helper = Action_Helper.__new__(Action_Helper)
         helper._act = {
-            **json.load(open("config/tunable_constants.json"))["action_space"],
+            **json.loads(Path("config/tunable_constants.json").read_text(encoding="utf-8"))[
+                "action_space"
+            ],
             "size_low": -0.5,
         }
         with pytest.raises(ValueError, match="size_low"):

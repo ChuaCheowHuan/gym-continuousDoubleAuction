@@ -42,10 +42,10 @@ def env_config_for(corpus) -> Dict[str, object]:
 def build_features(
     corpus,
     encoders: List[str],
-    checkpoint: str = None,
-    module_id: str = None,
-    pretrained: str = None,
-    pretrained_encoder: str = None,
+    checkpoint: str | None = None,
+    module_id: str | None = None,
+    pretrained: str | None = None,
+    pretrained_encoder: str | None = None,
 ) -> Dict[str, np.ndarray]:
     """The feature matrices to compare: `raw`, each encoder, and a checkpoint.
 

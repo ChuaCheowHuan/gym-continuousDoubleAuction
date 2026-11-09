@@ -8,11 +8,13 @@ and `visualize_training.py` never got a notebook cell. This just calls each
 script's own public function directly, so a script that gains a new plot is
 picked up here for free with no second place to update.
 
-Run from the `gym_continuousDoubleAuction` directory - the scripts save to a
-relative `visualize/chart/*.png` - e.g.:
+The charts default to `visualize_paths.chart_dir` in
+`config/tunable_constants.json`, resolved against the package directory rather
+than the working directory - so this works from the repository root:
 
-    cd gym_continuousDoubleAuction
-    python -m visualize.run_all
+    python -m gym_continuousDoubleAuction.visualize.run_all
+
+Pass `--out-dir` to write somewhere else (issue #359).
 """
 
 import argparse
@@ -33,6 +35,7 @@ def run_all(
     agent_id=None,
     num_trained_agents=None,
     training_run_dir=None,
+    out_dir=None,
 ):
     """Runs every visualize_*.py chart function and saves the results.
 
@@ -45,15 +48,18 @@ def run_all(
     reads `progress.jsonl` under `visualize_paths.training_log_dir`, a
     different directory tree than the episode Parquet record the rest of
     these read, so the two are never interchangeable.
+
+    out_dir overrides `visualize_paths.chart_dir` for every chart; a relative
+    path is resolved against the package directory, like the configured one.
     """
-    visualize_orderbook.visualize_episode_data(run_dir, episode_id, agent_id)
-    visualize_nav.visualize_nav(run_dir, episode_id)
-    visualize_nav.visualize_nav_drawdown(run_dir, episode_id)
-    visualize_rewards.visualize_rewards(run_dir, episode_id)
-    visualize_rewards.visualize_reward_decomposition(run_dir, episode_id, agent_id)
-    visualize_execution.visualize_execution_quality(run_dir, episode_id, agent_id)
-    visualize_modules.visualize_modules(run_dir, num_trained_agents)
-    visualize_training.visualize_training(training_run_dir)
+    visualize_orderbook.visualize_episode_data(run_dir, episode_id, agent_id, out_dir=out_dir)
+    visualize_nav.visualize_nav(run_dir, episode_id, out_dir=out_dir)
+    visualize_nav.visualize_nav_drawdown(run_dir, episode_id, out_dir=out_dir)
+    visualize_rewards.visualize_rewards(run_dir, episode_id, out_dir=out_dir)
+    visualize_rewards.visualize_reward_decomposition(run_dir, episode_id, agent_id, out_dir=out_dir)
+    visualize_execution.visualize_execution_quality(run_dir, episode_id, agent_id, out_dir=out_dir)
+    visualize_modules.visualize_modules(run_dir, num_trained_agents, out_dir=out_dir)
+    visualize_training.visualize_training(training_run_dir, out_dir=out_dir)
 
 
 if __name__ == "__main__":
@@ -85,6 +91,12 @@ if __name__ == "__main__":
         default=None,
         help="progress.jsonl run directory; defaults to the most recently written run",
     )
+    p.add_argument(
+        "--out-dir",
+        default=None,
+        help="where to write the charts; defaults to visualize_paths.chart_dir, "
+        "resolved against the package directory",
+    )
     args = p.parse_args()
     run_all(
         args.run_dir,
@@ -92,4 +104,5 @@ if __name__ == "__main__":
         args.agent_id,
         args.num_trained_agents,
         args.training_run_dir,
+        args.out_dir,
     )

@@ -796,13 +796,12 @@ class OrderBook(object):
         return self.asks.max_price()
 
     def tape_dump(self, filename, filemode, tapemode):
-        dumpfile = open(filename, filemode)
-        for tapeitem in self.tape:
-            dumpfile.write(
-                'Time: %s, Price: %s, Quantity: %s\n'
-                % (tapeitem['time'], tapeitem['price'], tapeitem['quantity'])
-            )
-        dumpfile.close()
+        with open(filename, filemode) as dumpfile:
+            for tapeitem in self.tape:
+                dumpfile.write(
+                    'Time: %s, Price: %s, Quantity: %s\n'
+                    % (tapeitem['time'], tapeitem['price'], tapeitem['quantity'])
+                )
         if tapemode == 'wipe':
             self.tape.clear()
 
@@ -813,7 +812,7 @@ class OrderBook(object):
         if self.bids != None and len(self.bids) > 0:
             # price_map is sorted dict, key is price, value is orderlist
             all_bids = []
-            for key, value in reversed(self.bids.price_map.items()):
+            for _key, value in reversed(self.bids.price_map.items()):
                 all_bids.append(value.to_list())
 
             flat_bids = list(self._flatten(all_bids))  # flat list of dicts
@@ -823,7 +822,7 @@ class OrderBook(object):
         tempfile.write("\n***Asks***\n")
         if self.asks != None and len(self.asks) > 0:
             all_asks = []
-            for key, value in self.asks.price_map.items():
+            for _key, value in self.asks.price_map.items():
                 all_asks.append(value.to_list())
 
             flat_ask = list(self._flatten(all_asks))  # flat list of dicts

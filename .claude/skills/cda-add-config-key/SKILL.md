@@ -16,7 +16,7 @@ left.
    `train_config.json` alone (a training-only key). Use the same default in both. Edit the root
    `config/`, never `gym_continuousDoubleAuction/config/` (a gitignored build copy).
 2. **Env key:** add a field to `envs/settings.py` `EnvSettings` (in the order `env_config`
-   lists them). `test_refactors.py::TestEnvSettings` holds the fields to `env_defaults.json`
+   lists them). `test_config_refactor.py::TestEnvSettings` holds the fields to `env_defaults.json`
    key for key. If the exchange should not receive it, add it to `ENV_ONLY`. If it is a reward
    coefficient, add it to `REWARD_KEYS`.
 3. **TrainConfig:** add a field `name: type = _default("name")` in `train/config.py`. Use the
@@ -34,7 +34,7 @@ left.
    change it, add it to `STRUCTURAL_CONFIG_KEYS` in `train/checkpoint.py`.
 7. **Tests:** a wiring test that a configured value reaches its consumer (the pattern in
    `test_config_wiring.py`), and one per validation error.
-8. **Docs:** a row in `docs/18_configuration.md`. `test_s4_docs_and_tooling.py` fails if any
+8. **Docs:** a row in `docs/18_configuration.md`. `test_docs_coverage.py` fails if any
    key is mentioned in no document. A new CLI flag goes in `docs/26_runbook.md`.
 9. **Changelog:** a new section in `docs/17_changelog.md` (never edit an old one).
 

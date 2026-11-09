@@ -12,7 +12,7 @@ import os
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, ClassVar, Dict, List, Optional
 import torch
 from gym_continuousDoubleAuction.config_loader import flat_view, flatten
 from gym_continuousDoubleAuction.envs.settings import EnvSettings
@@ -630,7 +630,7 @@ class TrainConfig:
         return os.path.abspath(os.path.join(self.episode_data_dir, self.run_id))
 
     #: Env config keys whose `TrainConfig` field has another name.
-    _ENV_KEY_FIELDS = {"num_of_agents": "num_agents"}
+    _ENV_KEY_FIELDS: ClassVar[dict] = {"num_of_agents": "num_agents"}
 
     @property
     def env_config(self) -> dict:

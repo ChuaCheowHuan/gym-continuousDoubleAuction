@@ -9,12 +9,18 @@ target-version = "py312"
 extend-exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
-# The same rule family test_lint.py enforces with pyflakes (F = pyflakes), so
-# `ruff check .` locally and the suite in CI agree on what a finding is. Style
-# rules are deliberately not selected: an 18,000-line tree that has never had a
-# formatter is reformatted in one deliberate pass or not at all, not rule by
-# rule in unrelated commits (docs/29 S4-6).
-select = ["F"]
+# `test_lint.py` runs this set over the package, `tools/` and the skill scripts,
+# so `ruff check .` locally and the suite in CI agree on what a finding is.
+# F is pyflakes; B8 adds the bugbear checks worth having (B008's import-time
+# defaults, B007's unused loop variables); SIM115 catches an unclosed file;
+# RUF012/RUF013 are mutable class attributes and implicit Optional. Style rules
+# are deliberately not selected - the formatter pass is `ruff format`, and line
+# length or quote preferences are not findings here (docs/29 S4-6, #360).
+select = ["F", "E9", "B", "PLE", "SIM115", "RUF012", "RUF013"]
+# B905 wants `strict=` on every `zip()`. Most of these pair two equally long
+# sequences where a truncation would be a real bug, but changing the runtime
+# semantics is a code change of its own, not part of the lint pass (#360).
+ignore = ["B905"]
 
 [tool.mypy]
 # The env package is type-checked and `test_types.py` holds it at zero errors. `train/`

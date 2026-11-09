@@ -15,6 +15,7 @@ import json
 import os
 import re
 import sys
+from pathlib import Path
 
 ROOT, FACTS = sys.argv[1], sys.argv[2]
 SKIP = {
@@ -23,7 +24,8 @@ SKIP = {
     "27_agent_skills.md",
     "29_fixed_issues.md",
 }
-f = json.load(open(FACTS))
+with open(FACTS, encoding="utf-8") as fh:
+    f = json.load(fh)
 WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8}
 NUM = r"(\d[\d,]*|" + "|".join(WORDS) + r")"
 
@@ -68,27 +70,28 @@ FILE_COUNT = re.compile(r"`(?:integration/)?(test_\w+\.py)(?:::\w+)?`[^\n]{0,30}
 per_file = {os.path.basename(k): v for k, v in f["tests"]["per_file"].items()}
 hits = 0
 for path in files:
-    for n, line in enumerate(open(path, encoding="utf-8"), 1):
-        for m in FILE_COUNT.finditer(line):
-            name, claimed = m.group(1), int(m.group(2))
-            if (
-                "::" not in line[m.start() : m.end()]
-                and name in per_file
-                and per_file[name] != claimed
-            ):
-                hits += 1
-                print(
-                    f"{'file count':12s} {os.path.relpath(path, ROOT)}:{n}  {name} {claimed} -> {per_file[name]}"
-                )
-        for cat, (pat, ok) in CHECKS.items():
-            for m in re.finditer(pat, line, re.I):
-                v = val(m.group(1))
-                if v is not None and v >= MIN.get(cat, 0) and v not in ok:
+    with open(path, encoding="utf-8") as fh:
+        for n, line in enumerate(fh, 1):
+            for m in FILE_COUNT.finditer(line):
+                name, claimed = m.group(1), int(m.group(2))
+                if (
+                    "::" not in line[m.start() : m.end()]
+                    and name in per_file
+                    and per_file[name] != claimed
+                ):
                     hits += 1
-                    actual = "/".join(str(x) for x in sorted(ok))
                     print(
-                        f"{cat:12s} {os.path.relpath(path, ROOT)}:{n}  {m.group(1)} -> {actual}  | {line.strip()[:120]}"
+                        f"{'file count':12s} {os.path.relpath(path, ROOT)}:{n}  {name} {claimed} -> {per_file[name]}"
                     )
+            for cat, (pat, ok) in CHECKS.items():
+                for m in re.finditer(pat, line, re.I):
+                    v = val(m.group(1))
+                    if v is not None and v >= MIN.get(cat, 0) and v not in ok:
+                        hits += 1
+                        actual = "/".join(str(x) for x in sorted(ok))
+                        print(
+                            f"{cat:12s} {os.path.relpath(path, ROOT)}:{n}  {m.group(1)} -> {actual}  | {line.strip()[:120]}"
+                        )
 
 
 # --- what the numeric categories above cannot see ---------------------------------
@@ -100,16 +103,17 @@ INVENTORY_DOC = "10_testing.md"
 mentioned_in_inventory = set()
 for path in files:
     base = os.path.basename(path)
-    for n, line in enumerate(open(path, encoding="utf-8"), 1):
-        m = INVENTORY_ROW.match(line)
-        if m and base == INVENTORY_DOC:
-            name, claimed = m.group(1), int(m.group(2))
-            mentioned_in_inventory.add(name)
-            if name in per_file and per_file[name] != claimed:
-                hits += 1
-                print(
-                    f"{'inventory':12s} {os.path.relpath(path, ROOT)}:{n}  {name} {claimed} -> {per_file[name]}"
-                )
+    with open(path, encoding="utf-8") as fh:
+        for n, line in enumerate(fh, 1):
+            m = INVENTORY_ROW.match(line)
+            if m and base == INVENTORY_DOC:
+                name, claimed = m.group(1), int(m.group(2))
+                mentioned_in_inventory.add(name)
+                if name in per_file and per_file[name] != claimed:
+                    hits += 1
+                    print(
+                        f"{'inventory':12s} {os.path.relpath(path, ROOT)}:{n}  {name} {claimed} -> {per_file[name]}"
+                    )
             elif name not in per_file:
                 hits += 1
                 print(
@@ -129,7 +133,7 @@ for name in sorted(set(per_file) - mentioned_in_inventory):
     hits += 1
     print(f"{'inventory':12s} docs/{INVENTORY_DOC}  {name} ({per_file[name]} tests) has no row")
 
-corpus = "\n".join(open(p, encoding="utf-8").read() for p in files)
+corpus = "\n".join(Path(p).read_text(encoding="utf-8") for p in files)
 
 
 def leaves(tree, prefix=""):

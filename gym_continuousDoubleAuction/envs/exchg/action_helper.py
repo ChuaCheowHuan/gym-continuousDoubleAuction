@@ -8,6 +8,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from gymnasium import spaces
 
 from ...config_loader import constant, constants, env_default
+from ..account.account import UNSET
 from .state_helper import BOOK_ROW_ORDER
 
 # Side/type decoding of the `category` action code. This table is the
@@ -49,10 +50,10 @@ SIZE_FRACTION_AT_MAX = 2.0
 class Action_Helper(SharedState):
     def __init__(
         self,
-        min_size=env_default("min_size"),
-        mkt_max_size=env_default("mkt_max_size"),
-        limit_size_multiple=env_default("limit_size_multiple"),
-        tick_size=env_default("tick_size"),
+        min_size=UNSET,
+        mkt_max_size=UNSET,
+        limit_size_multiple=UNSET,
+        tick_size=UNSET,
         action_mask=None,
         **kwargs,
     ):
@@ -68,9 +69,19 @@ class Action_Helper(SharedState):
                          (`action_mask_for`). False emits all ones. None reads
                          `env_defaults.json`.
 
-        Defaults come from `config/env_defaults.json`; the env always passes
-        all four explicitly, so they apply only to a bare Action_Helper.
+        Defaults come from `config/env_defaults.json`, read when the helper is
+        built. The env always passes all four explicitly, so they apply only to
+        a bare Action_Helper - and a config reload reaches that bare helper too
+        (issue #358).
         """
+        if min_size is UNSET:
+            min_size = env_default("min_size")
+        if mkt_max_size is UNSET:
+            mkt_max_size = env_default("mkt_max_size")
+        if limit_size_multiple is UNSET:
+            limit_size_multiple = env_default("limit_size_multiple")
+        if tick_size is UNSET:
+            tick_size = env_default("tick_size")
         self.min_size = min_size
         self.action_mask_enabled = bool(
             env_default("action_mask") if action_mask is None else action_mask

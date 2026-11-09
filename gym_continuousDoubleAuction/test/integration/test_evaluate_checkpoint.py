@@ -9,6 +9,7 @@ the layout stamp refusing a foreign checkpoint.
 
 import dataclasses
 import json
+from pathlib import Path
 
 import pytest
 import ray
@@ -99,12 +100,13 @@ def test_deterministic_is_reproducible(checkpoint):
 
 
 def test_refuses_a_foreign_layout(checkpoint, tmp_path):
-    sidecar = json.load(open(f"{checkpoint}/{LEAGUE_STATE_FILE}"))
+    state_file = Path(checkpoint) / LEAGUE_STATE_FILE
+    sidecar = json.loads(state_file.read_text(encoding="utf-8"))
     sidecar[LAYOUT_KEY]["observation_version"] = 1
-    json.dump(sidecar, open(f"{checkpoint}/{LEAGUE_STATE_FILE}", "w"))
+    state_file.write_text(json.dumps(sidecar), encoding="utf-8")
     try:
         with pytest.raises(ValueError, match="observation layout v1"):
             evaluate.evaluate(checkpoint, episodes=1, seed=0, deterministic=True)
     finally:
         sidecar[LAYOUT_KEY]["observation_version"] = 2
-        json.dump(sidecar, open(f"{checkpoint}/{LEAGUE_STATE_FILE}", "w"))
+        state_file.write_text(json.dumps(sidecar), encoding="utf-8")

@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from typing import ClassVar
 
 from gym_continuousDoubleAuction.envs.continuousDoubleAuction_env import continuousDoubleAuctionEnv
 from gym_continuousDoubleAuction.envs.exchg.state_helper import (
@@ -28,7 +29,7 @@ class TestObsMarketFeatures:
       - log1p_spread_ticks  = log1p(spread / min_tick), 0.0 when not two-sided
     """
 
-    BASE_CONFIG = {
+    BASE_CONFIG: ClassVar[dict] = {
         "num_of_agents": 2,
         "init_cash": 1_000_000,
         "is_render": False,

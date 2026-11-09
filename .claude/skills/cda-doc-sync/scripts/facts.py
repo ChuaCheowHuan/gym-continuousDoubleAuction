@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 logging.disable(logging.CRITICAL)
 ROOT = sys.argv[1]
@@ -143,13 +144,13 @@ except (OSError, subprocess.CalledProcessError):
 facts["code"] = {
     "files": len(tracked),
     "lines": sum(
-        len(open(p, encoding="utf-8", errors="ignore").read().splitlines())
+        len(Path(p).read_text(encoding="utf-8", errors="ignore").splitlines())
         for p in tracked
         if os.path.isfile(p)
     ),
 }
 
-json.dump(facts, open(OUT, "w"), indent=1, default=str)
+Path(OUT).write_text(json.dumps(facts, indent=1, default=str), encoding="utf-8")
 print(
     json.dumps(
         {k: v for k, v in facts.items() if k not in ("config", "files", "flags")}, default=str

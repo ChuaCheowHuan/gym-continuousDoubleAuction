@@ -149,7 +149,7 @@ class TestTheOldMixinName:
         monkeypatch.setitem(sys.modules, "cda_cbp", None)
         monkeypatch.setitem(sys.modules, "cda_cbp.learner", None)
         with pytest.raises(ImportError, match="cda-cbp"):
-            cbp_learner.CBPLearnerMixin
+            _ = cbp_learner.CBPLearnerMixin
 
     def test_it_is_the_packages_mixin_when_installed(self):
         learner = pytest.importorskip("cda_cbp.learner")

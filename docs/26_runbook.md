@@ -308,15 +308,20 @@ switching an extension such as Continual Backprop on means a fresh run in a new 
 ## 26.8 Inspect a finished run
 
 Every chart in `visualize/` from one command. It reads the newest run under `episode_data/` and
-`results/` relative to the working directory, and writes PNGs to `./visualize/chart/`:
+`results/` relative to the working directory, and writes PNGs to
+`visualize_paths.chart_dir` — by default the package's own `visualize/chart/`, resolved from
+the package directory rather than the working directory, so it works from the repository root:
 
 ```bash
 python -m gym_continuousDoubleAuction.visualize.run_all
 python -m gym_continuousDoubleAuction.visualize.run_all --run-dir episode_data/run_runbook \
     --training-run-dir results/run_runbook --agent-id agent_1 --episode-id <episode id>
+python -m gym_continuousDoubleAuction.visualize.run_all --out-dir /tmp/charts
 ```
 
 `--episode-id` picks one episode from `--run-dir`; without it the most recent is plotted.
+`--out-dir` overrides the configured chart directory; a relative path is resolved against the
+package directory, like the configured one.
 
 Produces `orderbook`, `nav`, `nav_drawdown`, `cumulative_rewards`, `reward_decomposition`,
 `execution_quality`, `modules` and `training` visualisations. The `modules` chart assumes the

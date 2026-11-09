@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 """Maker/taker fees: charged against NAV in settlement, collected by the exchange.
 
 docs/29 S2-3 (second half). The reward proxies in `order_penalty`, `trade_penalty`
@@ -269,7 +271,7 @@ class TestARestingOrderOwesItsMakerFee:
     it fills, so that fee sits in cash, and a second order could spend it.
     """
 
-    KW = dict(maker_fee_bps=10, taker_fee_bps=10)
+    KW: ClassVar[dict] = dict(maker_fee_bps=10, taker_fee_bps=10)
 
     def test_a_second_order_may_not_spend_the_first_orders_fee(self):
         lob = OrderBook()

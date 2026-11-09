@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, ClassVar, Dict, List, Optional, Sequence, Tuple
 
 from ..account.account import UNSET, Account
 from ...config_loader import env_default
@@ -877,7 +877,7 @@ class Trader:
             return None
 
     #: How each order type reaches the book, by method name; `place_order` looks the type up here.
-    _PLACERS = {
+    _PLACERS: ClassVar[dict] = {
         'market': '_place_market_order',
         'limit': '_place_limit_order',
         'modify': '_modify_limit_order',
@@ -957,7 +957,7 @@ class Trader:
             It's possible that the init_party is also the counter_party.
         """
 
-        for i, trade in enumerate(trades):
+        for _i, trade in enumerate(trades):
             trade_val = Decimal(trade['quantity']) * trade['price']
 
             # init_party is not counter_party

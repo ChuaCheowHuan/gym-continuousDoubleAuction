@@ -3,9 +3,10 @@ import os
 import matplotlib.pyplot as plt
 
 from gym_continuousDoubleAuction.visualize.episode_data import load_episode
+from gym_continuousDoubleAuction.visualize.paths import output_path
 
 
-def visualize_nav(run_dir=None, episode_id=None):
+def visualize_nav(run_dir=None, episode_id=None, out_dir=None):
     """
     Plots the NAV for each agent over one episode, from the per-step Parquet
     record (`train.episode_record.EpisodeRecorder`).
@@ -37,14 +38,14 @@ def visualize_nav(run_dir=None, episode_id=None):
     plt.grid(True, linestyle='--', alpha=0.7)
     plt.tight_layout()
 
-    output_file = 'visualize/chart/nav_visualization.png'
-    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    output_file = output_path("chart_dir", "nav_visualization.png", out_dir)
+    os.makedirs(output_file.parent, exist_ok=True)
     plt.savefig(output_file)
     print(f"Visualization saved to {output_file}")
     plt.show()
 
 
-def visualize_nav_drawdown(run_dir=None, episode_id=None):
+def visualize_nav_drawdown(run_dir=None, episode_id=None, out_dir=None):
     """
     Plots each agent's NAV against its running peak (`max_nav`) over one
     episode, one small-multiple panel per agent, with the gap between them
@@ -102,8 +103,8 @@ def visualize_nav_drawdown(run_dir=None, episode_id=None):
     fig.suptitle('Agent NAV vs. Running Peak (drawdown shaded)')
     plt.tight_layout()
 
-    output_file = 'visualize/chart/nav_drawdown_visualization.png'
-    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    output_file = output_path("chart_dir", "nav_drawdown_visualization.png", out_dir)
+    os.makedirs(output_file.parent, exist_ok=True)
     plt.savefig(output_file)
     print(f"Visualization saved to {output_file}")
     plt.show()

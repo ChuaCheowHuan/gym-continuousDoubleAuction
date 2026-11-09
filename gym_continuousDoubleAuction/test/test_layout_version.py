@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 """docs/29 S4-19: a checkpoint records the layout its weights were trained on.
 
 `train.save_checkpoint` writes `layout_stamp()` into `league_state.json`, and
@@ -15,6 +17,7 @@ from gym_continuousDoubleAuction.envs.layout_version import (
 )
 from gym_continuousDoubleAuction.envs.exchg.action_helper import ACTION_KEYS
 from gym_continuousDoubleAuction.envs.exchg.state_helper import BOOK_MODE, PRIVATE_FIELDS
+from pathlib import Path
 
 
 def test_stamp_describes_the_current_layout():
@@ -87,12 +90,14 @@ def test_save_writes_it(tmp_path, monkeypatch):
     )
 
     class FakeAlgo:
-        callbacks = [
+        callbacks: ClassVar[list] = [
             SelfPlayCallback(num_trainable_policies=1, num_random_policies=1, episode_data_dir=None)
         ]
 
     train_module._write_league_state(str(tmp_path), FakeAlgo(), iteration=3)
-    written = json.load(open(tmp_path / train_module.LEAGUE_STATE_FILE))
+    written = json.loads(
+        Path(tmp_path / train_module.LEAGUE_STATE_FILE).read_text(encoding="utf-8")
+    )
     assert written[LAYOUT_KEY] == layout_stamp()
     assert written["training_iteration"] == 3
     check_layout_stamp(written, str(tmp_path))

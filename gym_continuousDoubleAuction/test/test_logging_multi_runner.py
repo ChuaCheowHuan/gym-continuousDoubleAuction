@@ -9,6 +9,7 @@ import logging
 import os
 import shutil
 import time
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -468,7 +469,9 @@ class TestAWorkersConsoleIsNotADuplicate:
         out = capsys.readouterr().out
         assert "something surprising" in out and "the NAV table" not in out
         written = logging_setup.log_file_path()
-        assert "the NAV table" in open(written).read()  # the file keeps everything
+        assert "the NAV table" in Path(written).read_text(
+            encoding="utf-8"
+        )  # the file keeps everything
 
     def test_the_driver_echoes_everything(self, tmp_path, capsys):
         logging_setup.configure("INFO", log_dir=str(tmp_path), force=True)

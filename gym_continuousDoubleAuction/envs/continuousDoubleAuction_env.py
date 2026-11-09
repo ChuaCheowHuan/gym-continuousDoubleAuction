@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import ClassVar
 
 import logging
 
@@ -23,7 +24,7 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
     # `render_modes`, not the pre-gymnasium `render.modes`. The old key made
     # `gymnasium.make` warn on every construction - it looks for the new one
     # and reports what it found instead.
-    metadata = {'render_modes': ['human']}
+    metadata: ClassVar[dict] = {'render_modes': ['human']}
 
     def __init__(self, config=None):
         # Handle config parameter for RLlib compatibility

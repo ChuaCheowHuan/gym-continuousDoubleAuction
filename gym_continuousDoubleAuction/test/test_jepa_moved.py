@@ -128,7 +128,7 @@ class TestOldCheckpointClassesResolve:
         from gym_continuousDoubleAuction.train.model import jepa_learner
 
         with pytest.raises(AttributeError):
-            jepa_learner.TorchJEPAEncoder
+            _ = jepa_learner.TorchJEPAEncoder
 
 
 class TestAnEncodersExtensionCountsAsEnabled:

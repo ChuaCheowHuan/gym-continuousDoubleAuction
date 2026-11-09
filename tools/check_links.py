@@ -24,16 +24,17 @@ def slug(heading):
 
 def anchors(path):
     out, seen, fence = set(), {}, False
-    for line in open(path, encoding="utf-8"):
-        if line.lstrip().startswith("```"):
-            fence = not fence
-            continue
-        m = None if fence else re.match(r"^#{1,6}\s+(.*)", line)
-        if m:
-            base = slug(m.group(1))
-            n = seen.get(base, 0)
-            seen[base] = n + 1
-            out.add(base if n == 0 else f"{base}-{n}")
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            if line.lstrip().startswith("```"):
+                fence = not fence
+                continue
+            m = None if fence else re.match(r"^#{1,6}\s+(.*)", line)
+            if m:
+                base = slug(m.group(1))
+                n = seen.get(base, 0)
+                seen[base] = n + 1
+                out.add(base if n == 0 else f"{base}-{n}")
     return out
 
 
@@ -57,22 +58,25 @@ def main():
     broken = []
     for f in files:
         fence = False
-        for i, line in enumerate(open(f, encoding="utf-8"), 1):
-            if line.lstrip().startswith("```"):
-                fence = not fence
-                continue
-            if fence:
-                continue
-            for target in LINK.findall(line):
-                if re.match(r"^[a-z]+:", target):
+        with open(f, encoding="utf-8") as fh:
+            for i, line in enumerate(fh, 1):
+                if line.lstrip().startswith("```"):
+                    fence = not fence
                     continue
-                path, _, frag = target.partition("#")
-                dest = f if not path else os.path.normpath(os.path.join(os.path.dirname(f), path))
-                rel = os.path.relpath(f, ROOT)
-                if not os.path.exists(dest):
-                    broken.append(f"{rel}:{i} missing {target}")
-                elif frag and dest.endswith(".md") and frag not in anchors(dest):
-                    broken.append(f"{rel}:{i} anchor {target}")
+                if fence:
+                    continue
+                for target in LINK.findall(line):
+                    if re.match(r"^[a-z]+:", target):
+                        continue
+                    path, _, frag = target.partition("#")
+                    dest = (
+                        f if not path else os.path.normpath(os.path.join(os.path.dirname(f), path))
+                    )
+                    rel = os.path.relpath(f, ROOT)
+                    if not os.path.exists(dest):
+                        broken.append(f"{rel}:{i} missing {target}")
+                    elif frag and dest.endswith(".md") and frag not in anchors(dest):
+                        broken.append(f"{rel}:{i} anchor {target}")
     print("\n".join(broken))
     print(f"TOTAL {len(broken)} broken link(s)", file=sys.stderr)
     return 1 if broken else 0

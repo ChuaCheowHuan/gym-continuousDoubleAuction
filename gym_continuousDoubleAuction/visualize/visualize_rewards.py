@@ -6,6 +6,7 @@ import numpy as np
 from gym_continuousDoubleAuction.config_loader import constant
 from gym_continuousDoubleAuction.train.episode_record import REWARD_TERMS
 from gym_continuousDoubleAuction.visualize.episode_data import load_episode
+from gym_continuousDoubleAuction.visualize.paths import output_path
 
 #: One color per reward term, keyed by name, so each term keeps the same color
 #: across every episode and every run, which is what makes the legend readable
@@ -30,7 +31,7 @@ if set(TERM_COLORS) != set(REWARD_TERMS):
     )
 
 
-def visualize_rewards(run_dir=None, episode_id=None):
+def visualize_rewards(run_dir=None, episode_id=None, out_dir=None):
     """
     Plots the cumulative reward for each agent over one episode, from the
     per-step Parquet record (`train.episode_record.EpisodeRecorder`).
@@ -63,14 +64,14 @@ def visualize_rewards(run_dir=None, episode_id=None):
     plt.grid(True, linestyle='--', alpha=0.7)
     plt.tight_layout()
 
-    output_file = 'visualize/chart/cumulative_rewards_visualization.png'
-    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    output_file = output_path("chart_dir", "cumulative_rewards_visualization.png", out_dir)
+    os.makedirs(output_file.parent, exist_ok=True)
     plt.savefig(output_file)
     print(f"Visualization saved to {output_file}")
     plt.show()
 
 
-def visualize_reward_decomposition(run_dir=None, episode_id=None, agent_id=None):
+def visualize_reward_decomposition(run_dir=None, episode_id=None, agent_id=None, out_dir=None):
     """
     Plots one agent's cumulative reward, split into its six signed terms
     (`REWARD_TERMS`), over one episode. The terms
@@ -127,8 +128,8 @@ def visualize_reward_decomposition(run_dir=None, episode_id=None, agent_id=None)
     plt.grid(True, linestyle='--', alpha=0.7)
     plt.tight_layout()
 
-    output_file = 'visualize/chart/reward_decomposition_visualization.png'
-    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    output_file = output_path("chart_dir", "reward_decomposition_visualization.png", out_dir)
+    os.makedirs(output_file.parent, exist_ok=True)
     plt.savefig(output_file)
     print(f"Visualization saved to {output_file}")
     plt.show()

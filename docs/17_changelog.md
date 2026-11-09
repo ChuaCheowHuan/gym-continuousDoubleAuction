@@ -4729,3 +4729,37 @@ Python-version failures the review's own test runs exposed. Nine issues: #354-#3
 - **Tests and docs.** The unit suite grows from 2,079 to 2,100 and the suite from 2,211 to 2,232.
   docs/29 gains a 2026-11-08 group; docs/06 §7, docs/10 §7-8, docs/18 §5.2 and §7, docs/19 and
   docs/26 §26.7 describe the new behaviour. The code size in docs/14 is re-measured.
+
+## 117. Config defaults, visualize output paths, ruff and the test-file split (2026-11-09)
+
+The code-review items from the 2026-11-08 review that were not part of §116: #358-#361. #371
+(the at-scale encoder write-up) is still blocked on the run in #370, so it is not in this
+section.
+
+- **Helper defaults are read when the helper is built (#358).** `Exchg_Helper`, `State_Helper`
+  and `Action_Helper` used `env_default(...)` in their signatures, which Python evaluates once at
+  import, so a `config_loader.reload()` reached `EnvSettings` and not a directly built helper.
+  They now use the `UNSET` sentinel and resolve it in the body, as `Trader`, `RewardModel` and
+  `LiquidationEngine` already did. A reload test builds `Action_Helper()` from a tree with
+  `min_size: 7`.
+- **`visualize/` writes where the config says (#359).** `visualize_paths.chart_dir` and
+  `dump_dir` were added and resolved against the package directory unless absolute; `run_all`
+  gained `--out-dir`, and each chart and inspector takes `out_dir`. Running the command from the
+  repository root no longer creates a second `./visualize/chart/`. docs/26 §26.8 documents the
+  flag, and `test_visualize_scripts.py` pins the default and the override.
+- **Ruff beyond pyflakes (#360).** `[tool.ruff.lint]` now selects `F`, `E9`, `B`, `PLE`,
+  `SIM115`, `RUF012` and `RUF013` (`B905` is ignored: adding `strict=` everywhere is a
+  behavioural change of its own). The 82 findings were fixed - nine unclosed files, three
+  unused loop variables, ten mutable class attributes, four implicit `Optional`s and the
+  import-time defaults of #358 - and `test_lint.py` runs `ruff check` instead of pyflakes.
+  pyflakes left the `dev` extra.
+- **Test files named by subject (#361).** The seven batch-named files were split into subject
+  files: `test_account_refactor.py`, `test_batch_clearing_hardening.py`,
+  `test_callback_refactor.py`, `test_ci_configuration.py`, `test_config_refactor.py`,
+  `test_docs_coverage.py`, `test_logging_multi_runner.py` and the rest. Class names and
+  docstrings keep the issue numbers. The move changes no test count; #358 and #359 add one and
+  two tests, so the unit suite is 2,103 and the suite 2,235. The split's shared import headers
+  move the code size in docs/14 to 54,019 lines across 224 Python files.
+- **Still blocked.** #371 is the write-up of the at-scale encoder comparison; it needs the run
+  in #370 (16 iterations x 3 seeds x every encoder, `jepa` included), which has not been done.
+  docs/10 §8 keeps the gap open.

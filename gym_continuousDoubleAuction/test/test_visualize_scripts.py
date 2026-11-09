@@ -5,13 +5,16 @@ of `visualize/` (the loader, the six chart scripts, `run_all` and the two inspec
 no test, and a column renamed in the episode record would have broken every chart without a
 failing build.
 
-Each test writes a tiny Parquet run, points a script at it from a temporary working
-directory (the scripts save to a relative `visualize/chart/`) and asserts on what the script
-read: the data in the plotted lines, the files written, the rows selected.
+Each test writes a tiny Parquet run, points a script at it and asserts on what the script read:
+the data in the plotted lines, the files written, the rows selected. Output paths come from
+`visualize_paths.chart_dir` / `dump_dir` resolved against the package directory (#359), so an
+autouse fixture points the package root at `tmp_path`; the assertions then name the files
+relative to it.
 """
 
 import json
 import os
+from pathlib import Path
 
 import matplotlib
 
@@ -32,6 +35,7 @@ from gym_continuousDoubleAuction.visualize import (  # noqa: E402
     episode_data,
     inspect_latest_episode,
     inspect_latest_episode_json,
+    paths,
     run_all,
     visualize_execution,
     visualize_modules,
@@ -45,6 +49,27 @@ AGENTS = ["agent_0", "agent_1", "agent_2"]
 MODULES = {"agent_0": "policy_0", "agent_1": "policy_1", "agent_2": "champion_1"}
 STEPS = 6
 N_HIST = 2
+
+
+@pytest.fixture(autouse=True)
+def _package_root_is_tmp_path(tmp_path, monkeypatch):
+    """The default output is the package's `visualize/` tree; write it in tmp_path."""
+    monkeypatch.setattr(paths, "PACKAGE_ROOT", tmp_path)
+
+
+class TestOutputPaths:
+    def test_the_default_is_resolved_against_the_package_not_the_cwd(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path.parent)
+        assert paths.output_path("chart_dir", "x.png") == (
+            tmp_path / "visualize" / "chart" / "x.png"
+        )
+        assert paths.output_path("dump_dir", "x.json") == (
+            tmp_path / "visualize" / "json" / "x.json"
+        )
+
+    def test_an_explicit_out_dir_is_used_as_given(self, tmp_path):
+        target = tmp_path / "elsewhere"
+        assert paths.output_path("chart_dir", "x.png", target) == target / "x.png"
 
 
 def _obs(step, bid_size):
@@ -370,7 +395,7 @@ class TestRunAllAndInspectors:
 
     def test_the_text_inspector_writes_the_same_episode(self, run_dir):
         inspect_latest_episode.inspect_latest_episode(run_dir)
-        text = open("visualize/json/latest_episode_data.txt").read()
+        text = Path("visualize/json/latest_episode_data.txt").read_text(encoding="utf-8")
         assert text.startswith("--- Episode ep_b ---") and text.rstrip().endswith("End of File ---")
 
     def test_the_inspectors_report_a_missing_run_instead_of_raising(

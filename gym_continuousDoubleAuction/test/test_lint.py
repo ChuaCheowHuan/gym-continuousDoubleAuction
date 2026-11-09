@@ -1,70 +1,58 @@
-"""The package is pyflakes-clean, and stays that way.
+"""The package, `tools/` and the skill scripts are ruff-clean, and stay that way.
 
-docs/29 S4-6 asked for a linter. The linter runs as a test: CI already installs
-the `dev` extra and runs this directory, and a new unused import or undefined
-name fails the same job a broken test would.
+docs/29 S4-6 asked for a linter. It runs as a test: CI already installs the
+`dev` extra and runs this directory, and a finding fails the same job a broken
+test would. Issue #360 extended it from pyflakes to the curated rule set in
+`pyproject.toml` - bugbear, unclosed files, mutable class attributes and
+implicit `Optional` - because pyflakes alone missed every one of those.
 
-pyflakes rather than a style checker on purpose. Its findings are the ones that
-are bugs or near-bugs - undefined names, unused imports and locals, redefined
-names, `from x import *` hiding what is defined - and it has no opinion on line
-length or quote style, so it can be made to pass once and kept passing without
-a formatting pass over 18,000 lines. Every message it emits is a failure here;
-there is no allowlist, because an allowlist is where the next real finding goes
-to be ignored.
+The rule set is `[tool.ruff.lint] select`; `ruff format --check` is separate
+(`test_types.py`). Every message is a failure here: there is no allowlist,
+because an allowlist is where the next real finding goes to be ignored.
 """
 
 import pathlib
-
-from pyflakes import api as pyflakes_api
-from pyflakes import reporter as pyflakes_reporter
+import subprocess
+import sys
 
 import gym_continuousDoubleAuction
 
 PACKAGE_DIR = pathlib.Path(gym_continuousDoubleAuction.__file__).resolve().parent
-
-
-class _Collect:
-    """A pyflakes reporter that keeps the messages instead of printing them."""
-
-    def __init__(self):
-        self.messages = []
-
-    def unexpectedError(self, filename, msg):
-        self.messages.append(f"{filename}: {msg}")
-
-    def syntaxError(self, filename, msg, lineno, offset, text):
-        self.messages.append(f"{filename}:{lineno}:{offset}: {msg}")
-
-    def flake(self, message):
-        self.messages.append(str(message))
-
-
-def test_package_is_pyflakes_clean():
-    collector = _Collect()
-    # `Reporter` is the printing implementation; pyflakes only needs the three
-    # methods above, so the collector stands in for it.
-    assert isinstance(pyflakes_reporter.Reporter, type)
-    count = pyflakes_api.checkRecursive([str(PACKAGE_DIR)], collector)
-    assert count == 0, f"pyflakes reported {count} finding(s):\n" + "\n".join(collector.messages)
-
-
 REPO_ROOT = PACKAGE_DIR.parent
 
 
-def test_tools_and_skill_scripts_are_pyflakes_clean():
+def _lint(targets):
+    """Run `ruff check` over `targets` from the repository root, so it reads pyproject.toml."""
+    return subprocess.run(
+        [sys.executable, "-m", "ruff", "check", *[str(t) for t in targets]],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+
+
+def _assert_clean(result):
+    assert result.returncode == 0, (
+        "ruff reported findings (run `ruff check .`; install the dev extra if ruff is "
+        f"missing: pip install -e '.[dev]'):\n{result.stdout[-4000:]}{result.stderr[-1000:]}"
+    )
+
+
+def test_the_package_is_ruff_clean():
+    _assert_clean(_lint([PACKAGE_DIR]))
+
+
+def test_tools_and_skill_scripts_are_ruff_clean():
     """`tools/` and the skills' scripts are outside the package but run by contributors
     and agents, and an unused import there failed nothing (issue #268). Skipped where
     they are absent, as in an installed wheel."""
     import pytest
 
-    targets = [
-        str(p) for p in (REPO_ROOT / "tools", REPO_ROOT / ".claude" / "skills") if p.is_dir()
-    ]
+    targets = [p for p in (REPO_ROOT / "tools", REPO_ROOT / ".claude" / "skills") if p.is_dir()]
     if not targets:
         pytest.skip("tools/ and .claude/skills are not part of an installed package")
-    collector = _Collect()
-    count = pyflakes_api.checkRecursive(targets, collector)
-    assert count == 0, f"pyflakes reported {count} finding(s):\n" + "\n".join(collector.messages)
+    _assert_clean(_lint(targets))
 
 
 def test_the_lint_reaches_the_directories_it_claims_to():

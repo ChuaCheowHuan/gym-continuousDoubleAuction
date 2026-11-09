@@ -60,19 +60,37 @@ class Exchg_Helper(State_Helper, Action_Helper):
 
     def __init__(
         self,
-        init_cash=env_default("init_cash"),
-        tick_size=env_default("tick_size"),
-        tape_display_length=env_default("tape_display_length"),
-        n_hist=env_default("n_hist"),
-        mark_price_source=env_default("mark_price_source"),
-        matching_rule=env_default("matching_rule"),
-        step_clearing=env_default("step_clearing"),
+        init_cash=UNSET,
+        tick_size=UNSET,
+        tape_display_length=UNSET,
+        n_hist=UNSET,
+        mark_price_source=UNSET,
+        matching_rule=UNSET,
+        step_clearing=UNSET,
         reward_model=None,
         liquidation=UNSET,
         maintenance_margin=UNSET,
         liquidation_horizon=UNSET,
         **kwargs,
     ):
+        # UNSET means the configured default, read when the exchange is built.
+        # These were `env_default(...)` in the signature, evaluated once at
+        # import, so a reloaded config never reached a bare Exchg_Helper (#358).
+        if init_cash is UNSET:
+            init_cash = env_default("init_cash")
+        if tick_size is UNSET:
+            tick_size = env_default("tick_size")
+        if tape_display_length is UNSET:
+            tape_display_length = env_default("tape_display_length")
+        if n_hist is UNSET:
+            n_hist = env_default("n_hist")
+        if mark_price_source is UNSET:
+            mark_price_source = env_default("mark_price_source")
+        if matching_rule is UNSET:
+            matching_rule = env_default("matching_rule")
+        if step_clearing is UNSET:
+            step_clearing = env_default("step_clearing")
+
         # tick_size goes on to Action_Helper as well: it is the tick the action
         # space quotes on, not just a property of the book.
         super().__init__(n_hist=n_hist, tick_size=tick_size, **kwargs)

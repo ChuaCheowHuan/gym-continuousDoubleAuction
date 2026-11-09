@@ -5,6 +5,7 @@ import numpy as np
 
 from gym_continuousDoubleAuction.config_loader import constant
 from gym_continuousDoubleAuction.visualize.episode_data import load_episode
+from gym_continuousDoubleAuction.visualize.paths import output_path
 
 #: Fixed per-quantity colors. `REJECTED`/`MAKER` deliberately match the
 #: rejection-rate/maker-share colors in the rates panel below - same concept,
@@ -23,7 +24,9 @@ MAKER_COLOR = "#1baf7a"  # aqua
 PASS_COLOR = "#2a78d6"  # blue - only appears in the rates panel
 
 
-def visualize_execution_quality(run_dir=None, episode_id=None, agent_id=None, window=50):
+def visualize_execution_quality(
+    run_dir=None, episode_id=None, agent_id=None, window=50, out_dir=None
+):
     """
     Plots one agent's order/fill activity over one episode, from the per-step
     Parquet record (`train.episode_record.EpisodeRecorder`): how much it
@@ -132,8 +135,8 @@ def visualize_execution_quality(run_dir=None, episode_id=None, agent_id=None, wi
 
     plt.tight_layout()
 
-    output_file = 'visualize/chart/execution_quality_visualization.png'
-    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    output_file = output_path("chart_dir", "execution_quality_visualization.png", out_dir)
+    os.makedirs(output_file.parent, exist_ok=True)
     plt.savefig(output_file)
     print(f"Visualization saved to {output_file}")
     plt.show()

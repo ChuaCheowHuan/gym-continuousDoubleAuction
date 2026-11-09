@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 """The episode-end NAV conservation check, in both halves.
 
 The sum of every agent's NAV must equal the cash the system started with: the
@@ -469,7 +471,7 @@ class TestATerminatedAgentWithAPositionStillCounts:
 
     # agent_0 is short; the price rose after it terminated, so it lost a further
     # 174,105 and the survivors gained exactly that between them.
-    FINAL = ["-174165", "1391388", "1391388", "1391389"]
+    FINAL: ClassVar[list[str]] = ["-174165", "1391388", "1391388", "1391389"]
 
     def test_the_ledger_is_read_from_the_finished_env(self):
         env = _LedgerEnv(self.init_cash, self.FINAL)

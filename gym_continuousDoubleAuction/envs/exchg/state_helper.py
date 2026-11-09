@@ -8,6 +8,7 @@ from collections import deque
 from itertools import islice
 
 from ...config_loader import constant, constants, env_default
+from ..account.account import UNSET
 
 
 # Layout of a single observation snapshot, from
@@ -280,13 +281,24 @@ OBSERVATION_LAYOUT_VERSION = 6
 class State_Helper(SharedState):
     def __init__(
         self,
-        n_hist=env_default("n_hist"),
-        initial_price_min=env_default("initial_price_min"),
-        initial_price_max=env_default("initial_price_max"),
-        position_scale=env_default("position_scale"),
+        n_hist=UNSET,
+        initial_price_min=UNSET,
+        initial_price_max=UNSET,
+        position_scale=UNSET,
         book_mode=None,
         **kwargs,
     ):
+        # UNSET means the configured default, read when the helper is built.
+        # These were `env_default(...)` in the signature, evaluated once at
+        # import, so a config reload never reached a bare State_Helper (#358).
+        if n_hist is UNSET:
+            n_hist = env_default("n_hist")
+        if initial_price_min is UNSET:
+            initial_price_min = env_default("initial_price_min")
+        if initial_price_max is UNSET:
+            initial_price_max = env_default("initial_price_max")
+        if position_scale is UNSET:
+            position_scale = env_default("position_scale")
         self.n_hist = n_hist
         # How the public book is emitted (BOOK_MODES above). Per instance, so a
         # test or a `train.compare` run can build the other mode beside the

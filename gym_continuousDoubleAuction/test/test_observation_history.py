@@ -33,7 +33,7 @@ class TestObservationHistory:
         snapshots = [obs_0["agent_0"][book_dim - SNAPSHOT_DIM : book_dim]]
 
         # Take a few steps with sample actions
-        for step_i in range(n_hist + 2):
+        for _step_i in range(n_hist + 2):
             actions = {agent_id: env.action_spaces[agent_id].sample() for agent_id in env.agents}
             obs_t, rewards, terminateds, truncateds, infos = env.step(actions)
 

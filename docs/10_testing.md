@@ -90,7 +90,7 @@ Counts re-measured with `--collect-only`.
 | `test_logging_setup.py` | 61 | Level resolution and export, handler setup, no `print` in `envs/` or `train/`, the rotating run log, per-worker files, the `iter=` tag, dated stamps, concurrent configuration, two-process isolation, unhandled exceptions, warning capture, propagation control and `ray.LoggingConfig` |
 | `test_probabilistic_mapping.py` | 1 | League matchmaking distribution |
 | `test_config_loading.py` | 17 | `train_config.json` → `TrainConfig` → env |
-| `test_config_sources.py` | 29 | No literal copy of a configured value survives in Python |
+| `test_config_sources.py` | 30 | No literal copy of a configured value survives in Python; a reloaded tree reaches a bare `Action_Helper` too (#358) |
 | `test_config_wiring.py` | 32 | Config keys reaching their consumers; `episode_data_path` absolute and run-scoped; an iteration samples `train_batch_size` steps and the entropy schedule ends after `entropy_decay_iters` iterations at any `num_learners` (#299); the uneven-batch refusal names the keys of the active mode (#304); `minibatch_size` fits each learner's share, RLlib's default included when it is null (#305, #307) |
 | `test_runtime_profiles.py` | 28 | `runtime_profiles.json` → hardware sets, platform paths |
 | `test_checkpointing.py` | 56 | Checkpoint retention, restore selection, league state across a save, and the Python-minor stamp refused before unpickling (#367) |
@@ -106,17 +106,14 @@ Counts re-measured with `--collect-only`.
 | `test_info_dict.py` | 24 | Per-step `info`: back-compat, reward terms summing exactly, live counters, spread, pass/rejection fields, JSON, and 0-d numpy arrays — which only a *recurrent* module produces |
 | `test_type_policy.py` | 15 | Decimal money/prices, int sizes, no field changing type mid-episode, book boundary |
 | `test_activity_metrics.py` | 34 | `pass_action_fraction` / `order_rejection_fraction` / `obs_clip_fraction`: the S1-3 detector, per-episode tallies, pickling; the reward-term variance split, the maker-ratio metric and the end-of-episode account metrics |
-| `test_s3_moderate_fixes.py` | 38 | The three design issues: `gamma` / `lambda_` reaching PPO with validation and the restore warning (#125); several resting orders at one price, default replace-in-place, escrow and both clearing modes (#122); and `promotion_reference`, both directions of the pooled-threshold bias, the small-set fallback and the restore default (#124) |
 | `test_speed_regression.py` | 4 | The matching engine and the env step against a same-machine calibration loop (about 10x margin), plus two self-scaling checks that an O(n) scan per order or a quadratic sweep would fail (#209) |
 | `test_performance.py` | 27 | Risk-adjusted performance (S3-9): Sharpe, Sortino, max drawdown, hit rate, turnover and inventory against a hand-worked series, undefined metrics left out rather than logged as 0, bad NAVs skipped, and the callback logging them per module (#121) |
 | `test_doc_sync_claims.py` | 13 | `cda-doc-sync`'s `claims.py` checking the inventory table, the code size and that every config key and CLI flag is mentioned in some doc, each in both directions (#264) |
-| `test_open_bug_fixes.py` | 14 | The last three open `bug` issues: run logging turns propagation back on without a Ray encoding (#238), the byte cap never deletes the newest episode file and warns once (#246), and `apply_env_vars()` is pinned to run before `ray.init` in every entry point, with the fact that the configured variable is not read at Ray's import checked against the installed Ray (#244) |
-| `test_s4_minor_fixes.py` | 71 | Thirteen of the fourteen S4-minor bugs, one class each (#230 #232 #234 #235 #236 #237 #240 #241 #243 #262 #263 #265 #275; #242, the single-row JEPA batch, moved to cda-jepa): a `Decimal` fee rate, order book bookkeeping, the layout-stamp order message, a `None` module return, `--set` booleans, `$CDA_PLATFORM` case, the plots on bad records, a foreign `config/`, `evaluate`'s `--max-step`, the compare table's failed run, the `size_high` bound and the doc-sync `TMPDIR` default |
 | `test_episode_record.py` | 47 | The Parquet per-step record: declared schema and its drift guard against `InfoBuilder`, identity columns, sampling rate, byte cap, eviction of episodes that never end, the ways it must fail without raising, and the end-of-sample flush that gets finished episodes to disk without waiting for exit (#245) |
 | `test_encoder_registry.py` | 46 | The selectable-encoder seam: registry, `CDACatalog`, the `mlp` pass-through staying byte-for-byte what it was, `ObsLayout`, tokenisation |
 | `test_encoder_plugins.py` | 18 | An encoder an installed package lists under `gym_cda.encoders`: listed without importing, imported on first lookup, a failed import named by package and chained to its cause, refused unless its extension is enabled, says for itself whether it needs `NEXT_OBS`; the pretrained-weights format in `encoders.pretrained` |
 | `test_encoder_architectures.py` | 111 | The contract every registered encoder must meet, run over all of them automatically, plus each one's specifics |
-| `test_visualize_scripts.py` | 32 | `visualize/` end to end on small synthetic Parquet and `progress.jsonl` runs: the loader's complete-episode rule, the data in each chart's lines, `run_all`, both inspectors (#211) |
+| `test_visualize_scripts.py` | 34 | `visualize/` end to end on small synthetic Parquet and `progress.jsonl` runs: the loader's complete-episode rule, the data in each chart's lines, `run_all`, both inspectors (#211), and the output paths resolved against the package with `--out-dir` overriding them (#359) |
 | `test_visualize_orderbook.py` | 12 | The newest book snapshot is read from the middle of the observation, never off the end — the only arithmetic in `visualize/` that can be wrong without raising |
 | `test_probe.py` | 62 | The reward-free probe harness's arithmetic on synthetic observations: target definitions, episode-boundary masking, the splits, the metrics, unscoreable cells, and that `snapshots` reads the book rather than the private tail |
 | `test_bankrupt_termination.py` | 13 | A trader whose NAV reaches zero is terminated, and the episode ends when too few solvent traders remain |
@@ -130,15 +127,11 @@ Counts re-measured with `--collect-only`.
 | `test_probe_corpus_config.py` | 8 | The probe corpus follows the run's env config: `book_mode` and `n_hist` change its width, explicit arguments win, the caller's dict is untouched, and `train.compare` hands its overridden config to the corpus (#261) |
 | `test_compare.py` | 20 | The encoder comparison driver's aggregation: means and standard deviations across seeds, the separation rule and its three-seed floor, the rendered table and its caveats; `--set` coerces a fractional `tick_size` to float and names the field on an unparseable scalar (#355) |
 | `test_export.py` | 20 | `train.export`'s pure half: which module is the winner, the no-champion and foreign-layout messages, and what the written record carries (docs/26 §26.9.2) |
-| `test_lint.py` | 4 | The package, `tools/` and the skill scripts are pyflakes-clean, and the lint reaches the directories it claims to; any message fails the suite (S4-6, #249); no test puts a working-directory-relative path on `sys.path` (#341) |
+| `test_lint.py` | 4 | The package, `tools/` and the skill scripts are ruff-clean under the `pyproject.toml` rule set (`F`, `E9`, `B`, `PLE`, `SIM115`, `RUF012`, `RUF013`), and the lint reaches the directories it claims to; any message fails the suite (S4-6, #249, #360); no test puts a working-directory-relative path on `sys.path` (#341) |
 | `test_links.py` | 8 | `tools/check_links.py` reports no broken link in the docs, the skills and the repo files they name (#250) |
-| `test_s4_docs_and_tooling.py` | 20 | The documentation-and-tooling S4 fixes: the layout-version pointer, the CI command quoted in CLAUDE.md, the built skills linked from docs/27, the config notes against the code (including the mark-price fallback order), and every config key and flag being documented (#273, #266, #267, #251, #249); docs/29's moved groups naming whose sections they cite (#310); that a default run leaves the integration suite out; and the 2026-11-08 hardening (#363-#365): read-only CI token, SHA-pinned actions, Dependabot, the lockfile audit, loopback Jupyter and the Docker-socket warning, and the checkpoint code-execution warning in every loader's `--help` and in docs/18/26 (#357/#362) |
-| `test_s4_hardening.py` | 59 | The hardening and speed fixes: call-time account defaults, `settle_batch`'s pre-check, `flat_view`, the `info` fast path and the cached reference price (#247, #248) |
 | `test_pnl_split_and_markouts.py` | 39 | Realised and unrealised P&L against the NAV identity in random play, fill counters, forced fills excluded, mark-outs, and the callback and config wiring (#286) |
-| `test_logging_issues.py` | 40 | The logging review's issues under multiple env runners: the kept start of a run log, pruning of worker logs, Ray's own records in the run log (once per record), the driver learning each process's log path, the iteration broadcast to remote learners, a missed broadcast reading `-`, and a worker's console not repeating its file (#216-#221) |
 | `test_composition.py` | 24 | Reward, episode status, info and liquidation as composed components: out of the MRO, usable alone with explicit inputs, the env's old attributes still forwarded, and `SharedState` / `AccountState` naming real attributes (#152) |
 | `test_types.py` | 3 | `mypy` finds nothing in `envs/`, `ruff format --check` finds nothing to change, and the coverage floor stays configured (#148) |
-| `test_refactors.py` | 124 | The refactoring review's issues: `Account` initialised in one place and its step counters listed once, `_plain`'s call count, one order-book routine per operation, `place_order` and `parse_overrides` flat, `clear_batch` as four steps, `EnvSettings` and the generated `env_config`, the `train/` module split with its re-exports and import order, the callback as a `League` plus an `ActivityLog` plus the NAV audit and league statistics, a real pickle from before that split still loading (skipped on another Python minor, #368), and the league and activity log working alone (#252-#258); `EnvSettings` refuses every bad order-shape value by key and an unknown env-config key (#354) |
 | `test_extensions.py` | 38 | The extension point ([30](30_extensions.md)): discovery through real entry points, nothing enabled changing nothing, validation of names and settings, composition order under CBP and by `learner_order`, the resume guards, an installed extension that is not enabled never imported (#337), and the version strings agreeing (#339) |
 | `test_loss_seam.py` | 5 | PPO's own loss sits behind `_policy_value_loss`, so an extension that replaces it keeps the MoE term and an encoder Learner's term added through `super()` |
 | `test_optim_learner.py` | 4 | `adam_settings` reads the `optimizer` group once: only the keys a run sets, betas as a tuple, nothing for the defaults so RLlib's own Adam is built. cda-cbp builds the authors' `AdamGnT` from the same function |
@@ -146,7 +139,31 @@ Counts re-measured with `--collect-only`.
 | `test_model_layout.py` | 26 | The model-layout contract: `layout.trunk_outputs` reports each encoder's MLP or LSTM trunk output and the heads reading it, with and without `vf_share_layers`, plus the `extra_trunk_heads` a module declares (#338) |
 | `test_cbp_moved.py` | 19 | Continual Backprop moved to cda-cbp ([30](30_extensions.md) §8): an old `cbp_*` key names the package, an old checkpoint's group reads as the `cbp` extension's settings, the old mixin name resolves or names the package, and a restore without the package stops instead of falling back |
 | `test_jepa_moved.py` | 18 | The `jepa` encoder moved to cda-jepa ([30](30_extensions.md) §9): selecting it without the package names the package, no JEPA config, code or pretrainer ships here, old checkpoints' pickled JEPA classes resolve through `jepa_learner` or fail naming the package (`fixtures/jepa_classes_98c4900.pkl`), an encoder's extension counts as enabled in the restore guard, and the old pretrainer command says where it went |
-| **unit total** | **2,100** | |
+| `test_config_and_visualization_fixes.py` | 21 | `$CDA_PLATFORM` case, a foreign `config/`, the doc-sync `TMPDIR` default, and the visualizers on bad records (#237, #241, #265, #240) |
+| `test_compare_and_evaluate_fixes.py` | 24 | `--set` booleans, the compare table's failed run, and `evaluate`'s `--max-step` under a random horizon (#236, #262, #263) |
+| `test_orderbook_and_accounting_fixes.py` | 15 | `Decimal` fee rates, order-book bookkeeping, and the layout-stamp order message (#230, #232, #234) |
+| `test_league_and_action_fixes.py` | 11 | A `None` module return, and the `size_high` upper bound (#235, #275) |
+| `test_ppo_objective_fixes.py` | 11 | `gamma` / `lambda_` reaching PPO with validation and the restore warning (#125) |
+| `test_orderbook_and_league_fixes.py` | 27 | Several orders per level, default replace-in-place, escrow and clearing modes (#122); and `promotion_reference` (#124) |
+| `test_batch_clearing_hardening.py` | 6 | Batch clearing checks its volume without an `assert`, `settle_batch` refuses before booking, and a fresh book has no unaffordable batch (#247) |
+| `test_market_and_accounting_hardening.py` | 8 | One definition of a market price, mark-to-market through the profit rule, one agent lookup and one pooling definition (#247, #248) |
+| `test_config_and_env_hardening.py` | 12 | Defaults read when the object is built, `TrainConfig`'s cached `flat_view`, and env reset forwarding `options` (#247, #248) |
+| `test_info_and_reference_cache.py` | 30 | `_plain`'s fast path, and the reference price cached per snapshot (#248) |
+| `test_docs_and_dead_code.py` | 3 | Tidied docs and deleted dead code (#247) |
+| `test_run_logging_records.py` | 4 | An earlier `ray_log_encoding` run no longer leaves `propagate=False` (#238) |
+| `test_episode_record_cap.py` | 5 | The byte cap never deletes the newest episode file, and warns once (#246) |
+| `test_runtime_env_contract.py` | 5 | `apply_env_vars()` runs before `ray.init` in every entry point (#244) |
+| `test_account_refactor.py` | 7 | `Account` initialised in one place and its step counters listed once (#255) |
+| `test_info_fast_path_refactor.py` | 13 | `_plain`'s call count and its fast path (#258) |
+| `test_orderbook_refactor.py` | 31 | One order-book routine per operation, `place_order` / `parse_overrides` flat, `clear_batch` as four steps (#252, #256) |
+| `test_config_refactor.py` | 23 | `EnvSettings` and the generated `env_config` (#257), including the order-shape validation (#354) |
+| `test_train_module_split.py` | 16 | The `train/` module split, its re-exports and import order (#254) |
+| `test_callback_refactor.py` | 34 | The callback as a `League` plus an `ActivityLog` plus the NAV audit and league statistics, a real pickle from before that split still loading (skipped on another Python minor, #368), and the league and activity log working alone (#253) |
+| `test_docs_pointers.py` | 8 | The layout-version pointer, doc 27's built skills, stale comments and notes, and docs/29's moved groups citing whose sections they use (#273, #267, #251, #310) |
+| `test_ci_configuration.py` | 8 | The CI smoke command, the integration suite collected once, and the 2026-11-08 hardening: read-only token, SHA pins, Dependabot, the lockfile audit, loopback Jupyter, the Docker-socket warning and the checkpoint code warning (#266, #363-#365, #357/#362) |
+| `test_docs_coverage.py` | 4 | Every config key and CLI flag is mentioned in some document (#249, #250) |
+| `test_logging_multi_runner.py` | 40 | The logging review's issues under multiple env runners: the kept start of a run log, pruning of worker logs, Ray's own records in the run log (once per record), the driver learning each process's log path, the iteration broadcast to remote learners, a missed broadcast reading `-`, and a worker's console not repeating its file (#216-#221) |
+| **unit total** | **2,103** | |
 | `integration/test_league_wiring.py` | 13 | RLlib wiring, 3 topologies |
 | `integration/test_checkpoint_roundtrip.py` | 7 | One real save and restore: weights, league, iteration, optimizer |
 | `integration/test_evaluate_checkpoint.py` | 3 | Train one iteration, save, and roll episodes with the checkpoint's own mapping fn and modules; determinism; the layout stamp refusing a foreign checkpoint (S4-12) |
@@ -171,7 +188,7 @@ Counts re-measured with `--collect-only`.
 
 ```mermaid
 mindmap
-  root((2,232 tests))
+  root((2,235 tests))
     Simulator
       orderbook 88
         the demo scripts as tests, a shadow model
@@ -985,9 +1002,10 @@ RLlib-level break are distinguishable from the step name alone:
 2. **Random-agent env smoke run** — `python gym_continuousDoubleAuction/CDA_rand.py`
 3. **RLlib integration** — `pytest gym_continuousDoubleAuction/test/integration -q`
 
-Step 1 also lints: `test_lint.py` runs pyflakes over the package and fails on any message, which
-is how S4-6's linter reached CI without a workflow edit (the push credential has no `workflow`
-scope - [17](17_changelog.md) §37.6). `pyflakes` and `hypothesis` are in the `dev` extra the
+Step 1 also lints: `test_lint.py` runs `ruff check` over the package, `tools/` and the skill
+scripts and fails on any message, which is how S4-6's linter reached CI without a workflow edit
+(the push credential has no `workflow` scope - [17](17_changelog.md) §37.6). The rule set is
+`[tool.ruff.lint]` in `pyproject.toml` (#360). `ruff` and `hypothesis` are in the `dev` extra the
 install step already pulls.
 
 Coverage is not a CI step but is one command locally, and the number it produced on 2026-09-18 is
@@ -1016,4 +1034,4 @@ Honest accounting of what the suite does **not** cover. Gaps that have been clos
 | **The critic is guarded, its loss and the returns are not** | `vf_explained_var >= 1e-3` in `integration/test_progress_and_vf.py` is a live assertion (§6.2.2). Unchecked: `vf_loss` saturation, and "returns improve" across iterations. |
 | **Reproducibility of a whole training run** | `test_seeding.py` covers the env's three randomness sources; reproducibility of a multi-worker *training run* is a different claim and is untested. |
 | **The coverage floor is not a CI step** | `fail_under = 84` applies where `pytest --cov` is run (86.4% line-and-branch on the unit suite when measured, 86.9% with `visualize/`; 89.5% on the unit suite after Continual Backprop moved out, [17](17_changelog.md) §102); CI does not run it. Least covered: `probe/__main__` (0%, run by hand), `cbp_learner` (77%, the shim kept for old checkpoints), `CDA_rand` (18%, the CI smoke run), `evaluate` (64% from the unit half; the integration test covers the rest). |
-| **No encoder is tested for whether it *learns*** ([#206](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/206)) | **Still the largest gap, now with the tool to close it and one dry run of it.** §6.4 proves only mechanics, and `train/probe/` routes around the reward entirely ([23](23_probe_harness.md)). The protocol in [18](18_configuration.md) §5.5 is one command, `python -m gym_continuousDoubleAuction.train.compare`, run once at smoke scale to prove the path and once more, before and after the S3-24 layout change, at three seeds × 8 iterations of the scaled-down protocol ([16](16_verification_log.md) §16.18, §16.20). Both runs are at a scale where the policies are still near random, so they prove plumbing. **The run at scale - 16 iterations, three seeds, every registered encoder, `jepa` included - has not been done.** Until it is, no claim that one encoder trades better than another, or that agents learn to use the new order-management heads, is supported by anything in this repository. |
+| **No encoder is tested for whether it *learns*** ([#206](https://github.com/ChuaCheowHuan/gym-continuousDoubleAuction/issues/206)) | **Still the largest gap, now with the tool to close it and one dry run of it.** §6.4 proves only mechanics, and `train/probe/` routes around the reward entirely ([23](23_probe_harness.md)). The protocol in [18](18_configuration.md) §5.5 is one command, `python -m gym_continuousDoubleAuction.train.compare`, run once at smoke scale to prove the path and once more, before and after the S3-24 layout change, at three seeds × 8 iterations of the scaled-down protocol ([16](16_verification_log.md) §16.18, §16.20). Both runs are at a scale where the policies are still near random, so they prove plumbing. **The run at scale - 16 iterations, three seeds, every registered encoder, `jepa` included - has not been done** (#370), so the write-up (#371) that reads its `results.json` is still blocked. Until it is, no claim that one encoder trades better than another, or that agents learn to use the new order-management heads, is supported by anything in this repository. |

@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 SCRIPT = os.path.join(".claude", "skills", "cda-doc-sync", "scripts", "claims.py")
 ROOT = os.getcwd()
@@ -137,7 +138,7 @@ class TestConfigKeysAndFlags:
 
 def test_the_real_facts_script_emits_the_code_size_the_check_reads():
     """The check is dead if `facts.py` never writes `code`."""
-    source = open(
+    source = Path(
         os.path.join(ROOT, ".claude", "skills", "cda-doc-sync", "scripts", "facts.py")
-    ).read()
+    ).read_text(encoding="utf-8")
     assert 'facts["code"]' in source and "git" in source

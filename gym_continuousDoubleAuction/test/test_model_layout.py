@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 """The model-layout contract (`train/model/layout.py`).
 
 Code outside the model, Continual Backprop included, finds a trunk's output
@@ -125,7 +127,7 @@ class TestExtraTrunkHeads:
                 self.net.mlp = nn.Sequential(nn.Linear(2, 8))
 
         class Base(nn.Module):
-            extra_trunk_heads = {"actor_encoder": ("aux_pi",)}
+            extra_trunk_heads: ClassVar[dict] = {"actor_encoder": ("aux_pi",)}
 
             def __init__(self):
                 super().__init__()
@@ -134,7 +136,10 @@ class TestExtraTrunkHeads:
                 self.aux_pi, self.aux_q = nn.Linear(8, 3), nn.Linear(8, 1)
 
         class Mixin:
-            extra_trunk_heads = {"actor_encoder": ("aux_q", "aux_pi"), "critic_encoder": ("v",)}
+            extra_trunk_heads: ClassVar[dict] = {
+                "actor_encoder": ("aux_q", "aux_pi"),
+                "critic_encoder": ("v",),
+            }
 
         module = type("Both", (Mixin, Base), {})()
         (actor,) = trunk_outputs(module)

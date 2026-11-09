@@ -123,6 +123,13 @@ class TestTrainConfigHasNoValuesOfItsOwn:
 
 
 class TestEnvFallbacksComeFromTheFile:
+    def test_a_bare_action_helper_reads_the_reloaded_tree(self, config_tree):
+        """#358: the mixin defaults were read once, at import."""
+        from gym_continuousDoubleAuction.envs.exchg.action_helper import Action_Helper
+
+        config_tree("env_defaults.json", lambda raw: raw["environment"].update(min_size=7))
+        assert Action_Helper().min_size == 7
+
     def test_bare_env_uses_env_defaults(self, config_tree):
         config_tree(
             "env_defaults.json",
