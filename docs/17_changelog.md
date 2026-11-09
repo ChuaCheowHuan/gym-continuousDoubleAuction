@@ -4759,7 +4759,7 @@ section.
   `test_docs_coverage.py`, `test_logging_multi_runner.py` and the rest. Class names and
   docstrings keep the issue numbers. The move changes no test count; #358 and #359 add one and
   two tests, so the unit suite is 2,103 and the suite 2,235. The split's shared import headers
-  move the code size in docs/14 to 54,019 lines across 224 Python files.
+  move the code size in docs/14 to 54,022 lines across 224 Python files.
 - **Still blocked.** #371 is the write-up of the at-scale encoder comparison; it needs the run
   in #370 (16 iterations x 3 seeds x every encoder, `jepa` included), which has not been done.
   docs/10 §8 keeps the gap open.

@@ -60,7 +60,7 @@ class TestEveryConfigKeyAndFlagIsDocumented:
         text = _docs_text()
         missing = []
         for path in sorted(glob.glob("config/*.json")):
-            for key in _leaves(json.loads(Path(path)).read_text(encoding="utf-8")):
+            for key in _leaves(json.loads(Path(path).read_text(encoding="utf-8"))):
                 leaf = key.split(".")[-1]
                 if not re.search(r"(?<![\w-])" + re.escape(leaf) + r"(?![\w])", text):
                     missing.append(f"{os.path.basename(path)}:{key}")

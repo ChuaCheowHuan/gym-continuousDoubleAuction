@@ -109,25 +109,25 @@ for path in files:
             if m and base == INVENTORY_DOC:
                 name, claimed = m.group(1), int(m.group(2))
                 mentioned_in_inventory.add(name)
-                if name in per_file and per_file[name] != claimed:
+                if name not in per_file:
+                    hits += 1
+                    print(
+                        f"{'inventory':12s} {os.path.relpath(path, ROOT)}:{n}  {name} is listed but no longer collected"
+                    )
+                elif per_file[name] != claimed:
                     hits += 1
                     print(
                         f"{'inventory':12s} {os.path.relpath(path, ROOT)}:{n}  {name} {claimed} -> {per_file[name]}"
                     )
-            elif name not in per_file:
-                hits += 1
-                print(
-                    f"{'inventory':12s} {os.path.relpath(path, ROOT)}:{n}  {name} is listed but no longer collected"
-                )
-        m = CODE_SIZE.search(line)
-        if m and "code" in f:
-            lines, count = int(m.group(1).replace(",", "")), int(m.group(2))
-            if (lines, count) != (f["code"]["lines"], f["code"]["files"]):
-                hits += 1
-                print(
-                    f"{'code size':12s} {os.path.relpath(path, ROOT)}:{n}  {lines:,} lines / {count} files -> "
-                    f"{f['code']['lines']:,} / {f['code']['files']}  | {line.strip()[:100]}"
-                )
+            m = CODE_SIZE.search(line)
+            if m and "code" in f:
+                lines, count = int(m.group(1).replace(",", "")), int(m.group(2))
+                if (lines, count) != (f["code"]["lines"], f["code"]["files"]):
+                    hits += 1
+                    print(
+                        f"{'code size':12s} {os.path.relpath(path, ROOT)}:{n}  {lines:,} lines / {count} files -> "
+                        f"{f['code']['lines']:,} / {f['code']['files']}  | {line.strip()[:100]}"
+                    )
 
 for name in sorted(set(per_file) - mentioned_in_inventory):
     hits += 1

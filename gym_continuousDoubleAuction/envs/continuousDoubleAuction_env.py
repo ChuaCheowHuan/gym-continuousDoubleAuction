@@ -1,5 +1,4 @@
 from decimal import Decimal
-from typing import ClassVar
 
 import logging
 
@@ -24,7 +23,11 @@ class continuousDoubleAuctionEnv(Exchg_Helper, MultiAgentEnv):
     # `render_modes`, not the pre-gymnasium `render.modes`. The old key made
     # `gymnasium.make` warn on every construction - it looks for the new one
     # and reports what it found instead.
-    metadata: ClassVar[dict] = {'render_modes': ['human']}
+    #
+    # A mutable class attribute is what gymnasium's `Env.metadata` is, and mypy
+    # refuses a `ClassVar` override of it, so RUF012 is silenced rather than
+    # annotated (issue #360).
+    metadata = {'render_modes': ['human']}  # noqa: RUF012
 
     def __init__(self, config=None):
         # Handle config parameter for RLlib compatibility
